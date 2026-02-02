@@ -5521,24 +5521,47 @@ export class Client implements LangSmithTracingClientInterface {
             fetchPromise
               .then((value) => cache.set(cacheKey, value))
               .catch((error) => {
-                // Background fetch failed - mark as fresh anyway to prevent retry storms
-                cache.set(cacheKey, cached.value);
-                console.warn(`Background prompt refresh failed for ${cacheKey}:`, error);
+                // If 404, the prompt was deleted - clear from cache
+                if (isLangSmithNotFoundError(error)) {
+                  cache.invalidate(cacheKey);
+                  console.warn(`Prompt not found, cleared from cache: ${cacheKey}`);
+                } else {
+                  // Other errors - mark as fresh to prevent retry storms
+                  cache.set(cacheKey, cached.value);
+                  console.warn(`Background prompt refresh failed for ${cacheKey}:`, error);
+                }
               });
             
             return cached.value;
           } catch (error) {
-            // Fetch failed - return stale data and mark as fresh
+            // Fetch failed immediately
+            // If 404, the prompt was deleted - clear from cache and throw
+            if (isLangSmithNotFoundError(error)) {
+              cache.invalidate(cacheKey);
+              throw error;
+            }
+            // Other errors - return stale data and mark as fresh
             cache.set(cacheKey, cached.value);
             return cached.value;
           }
         }
 
-        // Cache miss - fetch from API and cache it
-        const result = await this._fetchPromptFromApi(
-          promptIdentifier,
-          options
-        );
+        // Cache miss - check for in-flight fetch to avoid thundering herd
+        let fetchPromise = this._inflightPromptFetches.get(cacheKey);
+        
+        if (!fetchPromise) {
+          // Start new fetch
+          fetchPromise = this._fetchPromptFromApi(promptIdentifier, options);
+          this._inflightPromptFetches.set(cacheKey, fetchPromise);
+          
+          // Clean up after completion
+          fetchPromise.finally(() => {
+            this._inflightPromptFetches.delete(cacheKey);
+          });
+        }
+        
+        // Wait for fetch to complete
+        const result = await fetchPromise;
         cache.set(cacheKey, result);
         return result;
       }

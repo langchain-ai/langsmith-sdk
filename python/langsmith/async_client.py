@@ -1778,26 +1778,54 @@ class AsyncClient:
                         try:
                             fresh_value = await asyncio.wait_for(fetch_task, timeout=30.0)
                             cache.set(cache_key, fresh_value)
-                        except Exception:
-                            # Background fetch failed - mark as fresh to prevent retry storms
-                            cache.set(cache_key, cached)
+                        except Exception as e:
+                            # If 404, the prompt was deleted - clear from cache
+                            if isinstance(e, ls_utils.LangSmithNotFoundError):
+                                cache.invalidate(cache_key)
+                            else:
+                                # Other errors - mark as fresh to prevent retry storms
+                                cache.set(cache_key, cached)
                     
                     asyncio.create_task(background_refresh())
                     return cached
-                except Exception:
-                    # Fetch failed - return stale and mark as fresh
+                except Exception as e:
+                    # Fetch failed immediately
+                    # If 404, the prompt was deleted - clear from cache and re-raise
+                    if isinstance(e, ls_utils.LangSmithNotFoundError):
+                        cache.invalidate(cache_key)
+                        raise
+                    # Other errors - return stale and mark as fresh
                     cache.set(cache_key, cached)
                     return cached
 
         # Cache miss or cache disabled - fetch from API
-        result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
-
-        # Store in cache
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
+            
+            # Check for in-flight fetch to avoid thundering herd
+            if cache_key in self._inflight_prompt_fetches:
+                # Reuse existing fetch
+                fetch_task = self._inflight_prompt_fetches[cache_key]
+            else:
+                # Start new fetch
+                fetch_task = asyncio.create_task(
+                    self._afetch_prompt_from_api(prompt_identifier, include_model)
+                )
+                self._inflight_prompt_fetches[cache_key] = fetch_task
+                
+                # Clean up after completion
+                def cleanup(_):
+                    self._inflight_prompt_fetches.pop(cache_key, None)
+                
+                fetch_task.add_done_callback(cleanup)
+            
+            # Wait for fetch to complete
+            result = await fetch_task
             cache.set(cache_key, result)
-
-        return result
+            return result
+        else:
+            # Cache disabled or skipped - fetch directly
+            return await self._afetch_prompt_from_api(prompt_identifier, include_model)
 
     async def list_prompt_commits(
         self,

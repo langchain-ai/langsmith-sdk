@@ -8256,15 +8256,12 @@ class Client:
                     return cached
                 
                 # Stale data - check if there's already an in-flight fetch
-                import concurrent.futures
-                import threading
-                
                 if cache_key in self._inflight_prompt_fetches:
                     # Reuse existing in-flight fetch
                     future = self._inflight_prompt_fetches[cache_key]
                 else:
                     # Start new fetch
-                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    executor = cf.ThreadPoolExecutor(max_workers=1)
                     future = executor.submit(
                         self._fetch_prompt_from_api, prompt_identifier, include_model
                     )
@@ -8282,32 +8279,62 @@ class Client:
                     fresh_value = future.result(timeout=1.0)
                     cache.set(cache_key, fresh_value)
                     return fresh_value
-                except concurrent.futures.TimeoutError:
+                except cf.TimeoutError:
                     # Timeout - return stale data, let fetch complete in background
                     def background_refresh():
                         try:
                             fresh_value = future.result(timeout=30.0)
                             cache.set(cache_key, fresh_value)
-                        except Exception:
-                            # Background fetch failed - mark as fresh to prevent retry storms
-                            cache.set(cache_key, cached)
+                        except Exception as e:
+                            # If 404, the prompt was deleted - clear from cache
+                            if isinstance(e, ls_utils.LangSmithNotFoundError):
+                                cache.invalidate(cache_key)
+                            else:
+                                # Other errors - mark as fresh to prevent retry storms
+                                cache.set(cache_key, cached)
                     
                     threading.Thread(target=background_refresh, daemon=True).start()
                     return cached
-                except Exception:
-                    # Fetch failed - return stale and mark as fresh
+                except Exception as e:
+                    # Fetch failed immediately
+                    # If 404, the prompt was deleted - clear from cache and re-raise
+                    if isinstance(e, ls_utils.LangSmithNotFoundError):
+                        cache.invalidate(cache_key)
+                        raise
+                    # Other errors - return stale and mark as fresh
                     cache.set(cache_key, cached)
                     return cached
 
         # Cache miss or cache skipped - fetch from API
-        result = self._fetch_prompt_from_api(prompt_identifier, include_model)
-
-        # Store in cache
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
+            
+            # Check for in-flight fetch to avoid thundering herd
+            if cache_key in self._inflight_prompt_fetches:
+                # Reuse existing fetch
+                future = self._inflight_prompt_fetches[cache_key]
+            else:
+                # Start new fetch
+                executor = cf.ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(
+                    self._fetch_prompt_from_api, prompt_identifier, include_model
+                )
+                self._inflight_prompt_fetches[cache_key] = future
+                
+                # Clean up after completion
+                def cleanup():
+                    self._inflight_prompt_fetches.pop(cache_key, None)
+                    executor.shutdown(wait=False)
+                
+                future.add_done_callback(lambda _: cleanup())
+            
+            # Wait for fetch to complete
+            result = future.result()
             cache.set(cache_key, result)
-
-        return result
+            return result
+        else:
+            # Cache disabled or skipped - fetch directly
+            return self._fetch_prompt_from_api(prompt_identifier, include_model)
 
     def list_prompt_commits(
         self,

@@ -1,8 +1,8 @@
 /**
  * Prompt caching module for LangSmith SDK.
  *
- * Provides an LRU cache with background refresh for prompt caching.
- * Uses stale-while-revalidate pattern for optimal performance.
+ * Provides an LRU cache with staleness detection for prompt caching.
+ * Supports pull-through refresh pattern for optimal performance.
  *
  * Works in all environments. File operations (dump/load) use helpers
  * that are swapped for browser builds via package.json browser field.
@@ -27,28 +27,29 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
 }
 
 /**
- * LRU cache with background refresh for prompts.
+ * LRU cache with staleness detection for prompts.
  *
  * Features:
  * - In-memory LRU cache with configurable max size
- * - Background refresh using setInterval
- * - Stale-while-revalidate: returns stale data while refresh happens
+ * - Staleness detection based on TTL
+ * - Returns { value, isStale } to support pull-through refresh pattern
  * - JSON dump/load for offline use
  *
  * @example
  * ```typescript
  * const cache = new Cache({
  *   maxSize: 100,
- *   ttlSeconds: 3600,
- *   fetchFunc: async (key) => client.pullPromptCommit(key),
+ *   ttlSeconds: 60,
  * });
  *
  * // Use the cache
  * cache.set("my-prompt:latest", promptCommit);
- * const cached = cache.get("my-prompt:latest");
- *
- * // Cleanup
- * cache.stop();
+ * const result = cache.get("my-prompt:latest");
+ * if (result && !result.isStale) {
+ *   // Use fresh data
+ * } else if (result && result.isStale) {
+ *   // Use stale data and trigger refresh
+ * }
  * ```
  */
 export class Cache {

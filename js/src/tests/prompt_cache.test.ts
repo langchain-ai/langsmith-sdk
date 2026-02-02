@@ -21,15 +21,16 @@ describe("Cache", () => {
     test("should return undefined for missing keys", () => {
       const cache = new Cache();
       expect(cache.get("missing-key")).toBeUndefined();
-      cache.stop();
     });
 
     test("should get and set values", () => {
       const cache = new Cache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
       cache.set("test-key", prompt);
-      expect(cache.get("test-key")).toEqual(prompt);
-      cache.stop();
+      const result = cache.get("test-key");
+      expect(result).toBeDefined();
+      expect(result?.value).toEqual(prompt);
+      expect(result?.isStale).toBe(false);
     });
 
     test("should invalidate entries", () => {
@@ -38,7 +39,6 @@ describe("Cache", () => {
       cache.set("test-key", prompt);
       cache.invalidate("test-key");
       expect(cache.get("test-key")).toBeUndefined();
-      cache.stop();
     });
 
     test("should clear all entries", () => {
@@ -48,7 +48,6 @@ describe("Cache", () => {
       expect(cache.size).toBe(2);
       cache.clear();
       expect(cache.size).toBe(0);
-      cache.stop();
     });
   });
 
@@ -67,7 +66,6 @@ describe("Cache", () => {
       expect(cache.get("key1")).toBeUndefined(); // Evicted
       expect(cache.get("key2")).toBeDefined();
       expect(cache.get("key3")).toBeDefined();
-      cache.stop();
     });
 
     test("should update LRU order on access", () => {
@@ -88,7 +86,6 @@ describe("Cache", () => {
       expect(cache.get("key1")).toBeDefined();
       expect(cache.get("key2")).toBeUndefined(); // Evicted
       expect(cache.get("key3")).toBeDefined();
-      cache.stop();
     });
   });
 
@@ -105,7 +102,6 @@ describe("Cache", () => {
       expect(cache.metrics.misses).toBe(1);
       expect(cache.totalRequests).toBe(3);
       expect(cache.hitRate).toBeCloseTo(0.667, 2);
-      cache.stop();
     });
 
     test("should reset metrics", () => {
@@ -118,9 +114,6 @@ describe("Cache", () => {
 
       expect(cache.metrics.hits).toBe(0);
       expect(cache.metrics.misses).toBe(0);
-      expect(cache.metrics.refreshes).toBe(0);
-      expect(cache.metrics.refreshErrors).toBe(0);
-      cache.stop();
     });
   });
 
@@ -142,7 +135,6 @@ describe("Cache", () => {
       cache1.set("key1", createMockPromptCommit("test1"));
       cache1.set("key2", createMockPromptCommit("test2"));
       cache1.dump(cachePath);
-      cache1.stop();
 
       const cache2 = new Cache({ ttlSeconds: null });
       const loaded = cache2.load(cachePath);
@@ -150,14 +142,12 @@ describe("Cache", () => {
       expect(loaded).toBe(2);
       expect(cache2.get("key1")).toBeDefined();
       expect(cache2.get("key2")).toBeDefined();
-      cache2.stop();
     });
 
     test("should return 0 for non-existent file", () => {
       const cache = new Cache({ ttlSeconds: null });
       const loaded = cache.load("/non/existent/path.json");
       expect(loaded).toBe(0);
-      cache.stop();
     });
 
     test("should return 0 for corrupted file", () => {
@@ -167,7 +157,6 @@ describe("Cache", () => {
       const cache = new Cache({ ttlSeconds: null });
       const loaded = cache.load(cachePath);
       expect(loaded).toBe(0);
-      cache.stop();
     });
 
     test("should respect max size when loading", () => {
@@ -181,7 +170,6 @@ describe("Cache", () => {
         cache1.set(`key${i}`, createMockPromptCommit(`test${i}`));
       }
       cache1.dump(cachePath);
-      cache1.stop();
 
       const cache2 = new Cache({
         maxSize: 3,
@@ -191,7 +179,6 @@ describe("Cache", () => {
 
       expect(loaded).toBe(3);
       expect(cache2.size).toBe(3);
-      cache2.stop();
     });
 
     test("should create parent directories", () => {
@@ -202,101 +189,43 @@ describe("Cache", () => {
       cache.dump(cachePath);
 
       expect(fs.existsSync(cachePath)).toBe(true);
-      cache.stop();
     });
   });
 
-  describe("background refresh", () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
+  describe("staleness detection", () => {
+    test("should mark entries as stale after TTL expires", async () => {
+      const cache = new Cache({ ttlSeconds: 0.1 }); // 100ms TTL
+      const prompt = createMockPromptCommit("test");
+      
+      cache.set("test-key", prompt);
+      
+      // Immediately - should be fresh
+      let result = cache.get("test-key");
+      expect(result).toBeDefined();
+      expect(result?.isStale).toBe(false);
+      
+      // Wait for TTL to expire
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Should now be stale
+      result = cache.get("test-key");
+      expect(result).toBeDefined();
+      expect(result?.isStale).toBe(true);
     });
 
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    test("should not start refresh when ttlSeconds is null", () => {
-      const fetchFunc = jest.fn();
-      const cache = new Cache({
-        ttlSeconds: null, // Infinite TTL
-        fetchFunc: fetchFunc as (key: string) => Promise<PromptCommit>,
-      });
-
-      cache.set("key1", createMockPromptCommit("test1"));
-
-      // Advance time significantly
-      jest.advanceTimersByTime(120_000);
-
-      expect(fetchFunc).not.toHaveBeenCalled();
-      cache.stop();
-    });
-
-    test("should refresh stale entries", async () => {
-      const refreshedPrompt = createMockPromptCommit("refreshed");
-      const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
-        .mockResolvedValue(refreshedPrompt);
-
-      const cache = new Cache({
-        ttlSeconds: 1, // 1 second TTL
-        refreshIntervalSeconds: 1, // Check every second
-        fetchFunc,
-      });
-
-      cache.set("key1", createMockPromptCommit("original"));
-
-      // Advance past TTL and refresh interval
-      jest.advanceTimersByTime(2000);
-
-      // Allow the async refresh to complete
-      await Promise.resolve();
-
-      expect(fetchFunc).toHaveBeenCalledWith("key1");
-      cache.stop();
-    });
-
-    test("should track refresh errors", async () => {
-      const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
-        .mockRejectedValue(new Error("Network error"));
-
-      const cache = new Cache({
-        ttlSeconds: 1,
-        refreshIntervalSeconds: 1,
-        fetchFunc,
-      });
-
-      cache.set("key1", createMockPromptCommit("test1"));
-
-      // Advance past TTL and refresh interval
-      jest.advanceTimersByTime(2000);
-
-      // Allow the async refresh to complete
-      await Promise.resolve();
-
-      expect(cache.metrics.refreshErrors).toBeGreaterThan(0);
-      cache.stop();
-    });
-
-    test("should stop refresh on stop()", () => {
-      const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
-        .mockResolvedValue(createMockPromptCommit("test"));
-
-      const cache = new Cache({
-        ttlSeconds: 1,
-        refreshIntervalSeconds: 1,
-        fetchFunc,
-      });
-
-      cache.set("key1", createMockPromptCommit("test1"));
-      cache.stop();
-
-      // Advance time after stopping
-      jest.advanceTimersByTime(10000);
-
-      // Fetch should not be called since we stopped the cache
-      expect(fetchFunc).not.toHaveBeenCalled();
+    test("should never mark entries as stale with null TTL", async () => {
+      const cache = new Cache({ ttlSeconds: null });
+      const prompt = createMockPromptCommit("test");
+      
+      cache.set("test-key", prompt);
+      
+      // Wait a bit
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Should still be fresh
+      const result = cache.get("test-key");
+      expect(result).toBeDefined();
+      expect(result?.isStale).toBe(false);
     });
   });
 
@@ -321,22 +250,16 @@ describe("Cache", () => {
       onlineCache.set("prompt1", createMockPromptCommit("test1"));
       onlineCache.set("prompt2", createMockPromptCommit("test2"));
       onlineCache.dump(cachePath);
-      onlineCache.stop();
 
       // Step 2: Offline - load from file with infinite TTL
       const offlineCache = new Cache({
         ttlSeconds: null, // Never expire
-        fetchFunc: undefined, // No network access
       });
       const loaded = offlineCache.load(cachePath);
 
       expect(loaded).toBe(2);
       expect(offlineCache.get("prompt1")).toBeDefined();
       expect(offlineCache.get("prompt2")).toBeDefined();
-
-      // Verify no refresh happens
-      expect(offlineCache.metrics.refreshes).toBe(0);
-      offlineCache.stop();
     });
   });
 });
