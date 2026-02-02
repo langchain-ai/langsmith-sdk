@@ -1,8 +1,7 @@
-"""Configuration management for Google ADK tracing."""
+"""Configuration for Google ADK tracing."""
 
 from typing import Any, Optional
 
-# Global configuration for tracing
 _tracing_config: dict[str, Any] = {
     "name": None,
     "project_name": None,
@@ -17,14 +16,6 @@ def set_tracing_config(
     metadata: Optional[dict] = None,
     tags: Optional[list[str]] = None,
 ) -> None:
-    """Set the global tracing configuration for Google ADK.
-
-    Args:
-        name: Name of the root trace.
-        project_name: LangSmith project to trace to.
-        metadata: Metadata to associate with all traces.
-        tags: Tags to associate with all traces.
-    """
     global _tracing_config
     _tracing_config = {
         "name": name,
@@ -35,5 +26,4 @@ def set_tracing_config(
 
 
 def get_tracing_config() -> dict[str, Any]:
-    """Get the current tracing configuration."""
     return _tracing_config.copy()
