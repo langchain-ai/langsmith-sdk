@@ -80,7 +80,10 @@ def before_tool_callback(
     tool: Any, args: dict[str, Any], tool_context: Any, *other_args: Any, **kwargs: Any
 ) -> None:
     """Create tool run before execution."""
-    function_call_id = getattr(tool_context, "function_call_id", None) or f"tool_{id(tool)}_{time.time()}"
+    function_call_id = (
+        getattr(tool_context, "function_call_id", None)
+        or f"tool_{id(tool)}_{time.time()}"
+    )
     tool_name = getattr(tool, "name", None) or type(tool).__name__
     parent = _get_parent_run()
     if not parent:
@@ -109,7 +112,10 @@ def after_tool_callback(
     **kwargs: Any,
 ) -> None:
     """End tool run with response."""
-    function_call_id = getattr(tool_context, "function_call_id", None) or f"tool_{id(tool)}_{time.time()}"
+    function_call_id = (
+        getattr(tool_context, "function_call_id", None)
+        or f"tool_{id(tool)}_{time.time()}"
+    )
     run_info = _active_tool_runs.pop(function_call_id, None)
     if not run_info:
         return
@@ -120,7 +126,11 @@ def after_tool_callback(
         if isinstance(tool_response, dict):
             outputs = tool_response
             is_error = tool_response.get("is_error", False)
-            error_msg = tool_response.get("error") or tool_response.get("output") if is_error else None
+            error_msg = (
+                tool_response.get("error") or tool_response.get("output")
+                if is_error
+                else None
+            )
         elif isinstance(tool_response, list):
             outputs = {"content": tool_response}
             error_msg = None

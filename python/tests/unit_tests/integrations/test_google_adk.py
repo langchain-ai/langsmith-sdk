@@ -3,8 +3,6 @@
 import base64
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from langsmith.integrations.google_adk._config import (
     get_tracing_config,
     set_tracing_config,

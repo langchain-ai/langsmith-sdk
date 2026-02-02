@@ -34,19 +34,28 @@ def configure_google_adk(
     global _patched
 
     if _patched:
-        set_tracing_config(name=name, project_name=project_name, metadata=metadata, tags=tags)
+        set_tracing_config(
+            name=name, project_name=project_name, metadata=metadata, tags=tags
+        )
         return True
 
     try:
-        from wrapt import wrap_function_wrapper
         from google.adk import runners
+        from wrapt import wrap_function_wrapper
     except ImportError as e:
         logger.warning(f"Missing dependency: {e}")
         return False
 
-    set_tracing_config(name=name, project_name=project_name, metadata=metadata, tags=tags)
+    set_tracing_config(
+        name=name, project_name=project_name, metadata=metadata, tags=tags
+    )
 
-    from ._client import wrap_flow_call_llm_async, wrap_runner_init, wrap_runner_run, wrap_runner_run_async
+    from ._client import (
+        wrap_flow_call_llm_async,
+        wrap_runner_init,
+        wrap_runner_run,
+        wrap_runner_run_async,
+    )
 
     wrap_function_wrapper(runners, "Runner.__init__", wrap_runner_init)
     wrap_function_wrapper(runners, "Runner.run", wrap_runner_run)
@@ -54,13 +63,18 @@ def configure_google_adk(
 
     try:
         from google.adk.flows.llm_flows import base_llm_flow
-        wrap_function_wrapper(base_llm_flow, "BaseLlmFlow._call_llm_async", wrap_flow_call_llm_async)
+
+        wrap_function_wrapper(
+            base_llm_flow, "BaseLlmFlow._call_llm_async", wrap_flow_call_llm_async
+        )
     except ImportError:
         pass
 
     try:
         from google.adk.tools.mcp_tool import mcp_tool
+
         from ._client import wrap_mcp_tool_run_async
+
         wrap_function_wrapper(mcp_tool, "McpTool.run_async", wrap_mcp_tool_run_async)
     except ImportError:
         pass
@@ -78,4 +92,11 @@ def create_traced_session_context(
 ):
     """Create a trace context for manual session tracing."""
     from ._client import create_traced_session_context as _create_context
-    return _create_context(name=name, project_name=project_name, metadata=metadata, tags=tags, inputs=inputs)
+
+    return _create_context(
+        name=name,
+        project_name=project_name,
+        metadata=metadata,
+        tags=tags,
+        inputs=inputs,
+    )

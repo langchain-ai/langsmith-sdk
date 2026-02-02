@@ -27,7 +27,11 @@ def _serialize_part(part: Any) -> dict[str, Any]:
         data = getattr(part.inline_data, "data", None)
         mime_type = getattr(part.inline_data, "mime_type", "application/octet-stream")
         if data is not None:
-            encoded = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else str(data)
+            encoded = (
+                base64.b64encode(data).decode("utf-8")
+                if isinstance(data, bytes)
+                else str(data)
+            )
             return {"type": "image", "data": encoded, "mime_type": mime_type}
 
     if hasattr(part, "file_data") and part.file_data:
@@ -128,34 +132,42 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
                 text_parts.append(str(part))
 
         if tool_calls and role == "assistant":
-            messages.append({
-                "role": "assistant",
-                "content": " ".join(text_parts) if text_parts else None,
-                "tool_calls": [
-                    {
-                        "id": f"call_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": tc.get("name", ""),
-                            "arguments": json.dumps(tc.get("input", {})),
-                        },
-                    }
-                    for i, tc in enumerate(tool_calls)
-                ],
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": " ".join(text_parts) if text_parts else None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_{i}",
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name", ""),
+                                "arguments": json.dumps(tc.get("input", {})),
+                            },
+                        }
+                        for i, tc in enumerate(tool_calls)
+                    ],
+                }
+            )
         elif tool_results:
             for tr in tool_results:
                 c = tr.get("content")
-                messages.append({
-                    "role": "tool",
-                    "name": tr.get("name", ""),
-                    "content": json.dumps(c) if isinstance(c, dict) else str(c or ""),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "name": tr.get("name", ""),
+                        "content": json.dumps(c)
+                        if isinstance(c, dict)
+                        else str(c or ""),
+                    }
+                )
         else:
-            messages.append({
-                "role": role,
-                "content": " ".join(text_parts) if text_parts else "",
-            })
+            messages.append(
+                {
+                    "role": role,
+                    "content": " ".join(text_parts) if text_parts else "",
+                }
+            )
 
     return messages
 

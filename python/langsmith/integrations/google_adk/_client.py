@@ -100,7 +100,9 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
     return _trace_run()
 
 
-async def wrap_runner_run_async(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+async def wrap_runner_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
     config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
     trace_name = config.get("name") or TRACE_CHAIN_NAME
 
@@ -160,7 +162,9 @@ def _determine_llm_call_type(llm_request: Any, llm_response: Any) -> str:
         return "unknown"
 
 
-async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+async def wrap_flow_call_llm_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
     """Wrap BaseLlmFlow._call_llm_async to capture TTFT."""
     parent = _get_parent_run()
     if not parent:
@@ -204,10 +208,14 @@ async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwarg
                 if first_token_time is None:
                     first_token_time = time.time()
                     try:
-                        llm_run.add_event({
-                            "name": "new_token",
-                            "time": datetime.fromtimestamp(first_token_time, tz=timezone.utc).isoformat(),
-                        })
+                        llm_run.add_event(
+                            {
+                                "name": "new_token",
+                                "time": datetime.fromtimestamp(
+                                    first_token_time, tz=timezone.utc
+                                ).isoformat(),
+                            }
+                        )
                     except Exception:
                         pass
 
@@ -219,7 +227,11 @@ async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwarg
         outputs: dict[str, Any] = {"role": "assistant"}
         content_source = event_with_content or last_event
 
-        if content_source and hasattr(content_source, "content") and content_source.content:
+        if (
+            content_source
+            and hasattr(content_source, "content")
+            and content_source.content
+        ):
             parts = getattr(content_source.content, "parts", None) or []
             text_parts, tool_calls = [], []
 
@@ -228,14 +240,18 @@ async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwarg
                     text_parts.append(str(part.text))
                 elif hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
-                    tool_calls.append({
-                        "id": f"call_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": getattr(fc, "name", ""),
-                            "arguments": json.dumps(dict(fc.args) if getattr(fc, "args", None) else {}),
-                        },
-                    })
+                    tool_calls.append(
+                        {
+                            "id": f"call_{i}",
+                            "type": "function",
+                            "function": {
+                                "name": getattr(fc, "name", ""),
+                                "arguments": json.dumps(
+                                    dict(fc.args) if getattr(fc, "args", None) else {}
+                                ),
+                            },
+                        }
+                    )
 
             outputs["content"] = " ".join(text_parts) if text_parts else None
             if tool_calls:
@@ -246,10 +262,14 @@ async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwarg
                 llm_run.extra.setdefault("metadata", {})["usage_metadata"] = usage
 
         if first_token_time is not None:
-            llm_run.extra.setdefault("metadata", {})["time_to_first_token"] = first_token_time - start_time
+            llm_run.extra.setdefault("metadata", {})["time_to_first_token"] = (
+                first_token_time - start_time
+            )
 
         if last_event and llm_request:
-            llm_run.extra.setdefault("metadata", {})["llm_call_type"] = _determine_llm_call_type(llm_request, last_event)
+            llm_run.extra.setdefault("metadata", {})["llm_call_type"] = (
+                _determine_llm_call_type(llm_request, last_event)
+            )
 
         llm_run.end(outputs=outputs)
         try:
@@ -266,7 +286,9 @@ async def wrap_flow_call_llm_async(wrapped: Any, instance: Any, args: Any, kwarg
         raise
 
 
-async def wrap_mcp_tool_run_async(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+async def wrap_mcp_tool_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
     """Wrap McpTool.run_async to trace MCP tool invocations."""
     parent = _get_parent_run()
     if not parent:
