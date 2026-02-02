@@ -8452,18 +8452,8 @@ class Client:
         return url
 
     def cleanup(self) -> None:
-        """Manually trigger cleanup of background threads.
-        
-        Note: This does NOT stop the global cache's background refresh thread,
-        as the cache is shared across all clients. If you need to stop the
-        global cache (e.g., when shutting down your application), use:
-        
-            from langsmith import PromptCacheManagerSingleton
-            PromptCacheManagerSingleton.cleanup()
-        """
+        """Manually trigger cleanup of background threads."""
         self._manual_cleanup = True
-        # No-op for cache since it's a singleton now
-        # Cache cleanup is done via PromptCacheManagerSingleton.cleanup()
 
     @overload
     def evaluate(

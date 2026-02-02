@@ -101,20 +101,6 @@ describe("Singleton Cache in Client", () => {
     expect(client2.cache).toBeUndefined();
   });
 
-  test("cleanup should not stop the global cache", () => {
-    const client1 = new Client({ promptCache: true });
-    const cache = client1.cache;
-
-    expect(cache).toBeDefined();
-
-    // Call cleanup on client
-    client1.cleanup();
-
-    // Cache should still be accessible from another client
-    const client2 = new Client({ promptCache: true });
-    expect(client2.cache).toBe(cache);
-  });
-
   test("PromptCacheManagerSingleton.cleanup should stop and clear the cache", () => {
     const client1 = new Client({ promptCache: true });
     const cache1 = client1.cache;

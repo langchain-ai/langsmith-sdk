@@ -139,17 +139,7 @@ class AsyncClient:
         await self.aclose()
 
     async def aclose(self):
-        """Close the async client.
-        
-        Note: This does NOT stop the global cache's background refresh task,
-        as the cache is shared across all async clients. If you need to stop the
-        global cache (e.g., when shutting down your application), use:
-        
-            from langsmith import AsyncPromptCacheManagerSingleton
-            AsyncPromptCacheManagerSingleton.cleanup()
-        """
-        # No-op for cache since it's a singleton now
-        # Cache cleanup is done via AsyncPromptCacheManagerSingleton.cleanup()
+        """Close the async client."""
         await self._client.aclose()
 
     @property

@@ -5468,23 +5468,25 @@ export class Client implements LangSmithTracingClientInterface {
 
     // Check cache first if not skipped and caching is enabled
     if (!options?.skipCache && cachingEnabled) {
-      const config: PromptCacheConfig | undefined =
-        typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
-      const cache = getOrInitializeCache(config);
-      
-      const cacheKey = this._getPromptCacheKey(
-        promptIdentifier,
-        options?.includeModel
-      );
-      const cached = cache.get(cacheKey);
-      if (cached) {
-        return cached;
-      }
+      const cache = this.cache;
+      if (cache) {
+        const cacheKey = this._getPromptCacheKey(
+          promptIdentifier,
+          options?.includeModel
+        );
+        const cached = cache.get(cacheKey);
+        if (cached) {
+          return cached;
+        }
 
-      // Cache miss - fetch from API and cache it
-      const result = await this._fetchPromptFromApi(promptIdentifier, options);
-      cache.set(cacheKey, result);
-      return result;
+        // Cache miss - fetch from API and cache it
+        const result = await this._fetchPromptFromApi(
+          promptIdentifier,
+          options
+        );
+        cache.set(cacheKey, result);
+        return result;
+      }
     }
 
     // No cache or skip cache - fetch directly
@@ -5668,23 +5670,6 @@ export class Client implements LangSmithTracingClientInterface {
     const config: PromptCacheConfig | undefined =
       typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
     return getOrInitializeCache(config);
-  }
-
-  /**
-   * Cleanup resources held by the client.
-   *
-   * Note: This does NOT stop the global cache's background refresh timer,
-   * as the cache is shared across all clients. If you need to stop the
-   * global cache (e.g., when shutting down your application), use:
-   *
-   * ```typescript
-   * import { PromptCacheManagerSingleton } from "langsmith";
-   * PromptCacheManagerSingleton.cleanup();
-   * ```
-   */
-  public cleanup(): void {
-    // No-op now that cache is a singleton
-    // Keeping this method for backward compatibility
   }
 
   /**
