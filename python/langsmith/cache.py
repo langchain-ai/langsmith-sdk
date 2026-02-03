@@ -6,17 +6,15 @@ for prompt caching. Includes both sync and async implementations.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import threading
 import time
 from abc import ABC
 from collections import OrderedDict
-from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     pass

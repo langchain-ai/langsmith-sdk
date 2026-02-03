@@ -22,7 +22,6 @@ export function testExports() {
 
   // Test Cache - in-memory caching works in React Native
   const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
-  cache.stop();
 
   // Test Client with cache enabled
   const clientWithCache = new Client({ apiKey: "test-key", cache: true });

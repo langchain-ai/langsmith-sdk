@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from langsmith import Client, schemas as ls_schemas
+from langsmith import Client
+from langsmith import schemas as ls_schemas
 from langsmith.async_client import AsyncClient
 from langsmith.cache import (
     AsyncCache,

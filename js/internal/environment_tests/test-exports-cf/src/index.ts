@@ -19,7 +19,6 @@ export default {
       // Test Cache import and instantiation
       const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
       results.push("✓ Cache imported and instantiated");
-      cache.stop();
 
       // Test Client with cache enabled
       const clientWithCache = new Client({ apiKey: "test-key", cache: true });

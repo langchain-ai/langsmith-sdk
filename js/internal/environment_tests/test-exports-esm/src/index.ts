@@ -25,7 +25,6 @@ async function testExports() {
   // Test Cache import and instantiation
   const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
   console.log("✓ Cache imported and instantiated");
-  cache.stop();
 
   // Test Client with cache
   const clientWithCache = new Client({ apiKey: "test-key", cache: true });

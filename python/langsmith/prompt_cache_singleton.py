@@ -8,7 +8,7 @@ in the same process.
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from langsmith.cache import AsyncCache, Cache
@@ -162,7 +162,7 @@ def get_or_initialize_cache(
 
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
-        ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
+        ttl_seconds: Cache entry TTL in seconds (used only if not yet initialized).
             Default: 60 seconds.
 
     Returns:
@@ -185,7 +185,7 @@ def get_or_initialize_async_cache(
 
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
-        ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
+        ttl_seconds: Cache entry TTL in seconds (used only if not yet initialized).
             Default: 60 seconds.
 
     Returns:

@@ -2,7 +2,8 @@
 
 import pytest
 
-from langsmith import Client, schemas as ls_schemas
+from langsmith import Client
+from langsmith import schemas as ls_schemas
 from langsmith.prompt_cache_singleton import PromptCacheManagerSingleton
 
 

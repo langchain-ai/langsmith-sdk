@@ -2,7 +2,8 @@
 
 import pytest
 
-from langsmith import AsyncClient, schemas as ls_schemas
+from langsmith import AsyncClient
+from langsmith import schemas as ls_schemas
 from langsmith.prompt_cache_singleton import AsyncPromptCacheManagerSingleton
 
 
