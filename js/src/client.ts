@@ -5455,6 +5455,7 @@ export class Client implements LangSmithTracingClientInterface {
           await raiseForStatus(res, "pull prompt commit");
           return res.json();
         });
+        this._inflightPromptFetches.set(cacheKey, fetchPromise);
       }
       const result = await fetchPromise;
 
@@ -5533,9 +5534,14 @@ export class Client implements LangSmithTracingClientInterface {
                   result.error
                 );
               }
+            } else if (result.commit) {
+              // For successful responses, update the cache entry
+              cache.set(cacheKey, result.commit);
             } else {
-              // For successful responses, update the cache entry mark as fresh
-              cache.set(cacheKey, cached.value);
+              console.error(
+                `Unexpected response when pulling prompt for ${cacheKey}:`,
+                result
+              );
             }
             return result;
           });

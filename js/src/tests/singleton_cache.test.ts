@@ -319,15 +319,26 @@ describe("Pull-Through Refresh Pattern", () => {
     const mockCommit = createMockPromptCommit("abc123");
 
     let fetchCount = 0;
-    const fetchSpy = jest
-      .spyOn(client as any, "_fetchPromptFromApi")
-      .mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            fetchCount++;
-            setTimeout(() => resolve(mockCommit), 200);
-          })
-      );
+    const fetchSpy = jest.spyOn(client as any, "_fetch").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          fetchCount++;
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: async () => ({
+                  commit_hash: "abc123",
+                  manifest: mockCommit.manifest,
+                  examples: mockCommit.examples,
+                }),
+              } as Response),
+            200
+          );
+        })
+    );
 
     // Launch 5 concurrent requests
     const results = await Promise.all([
@@ -341,7 +352,7 @@ describe("Pull-Through Refresh Pattern", () => {
     // Should have only fetched once (reused in-flight fetch)
     expect(fetchCount).toBe(1);
     expect(results).toHaveLength(5);
-    expect(results.every((r) => r.repo === "abc123")).toBe(true);
+    expect(results.every((r) => r.commit_hash === "abc123")).toBe(true);
 
     fetchSpy.mockRestore();
   });
@@ -351,10 +362,19 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
 
-    // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    // Populate cache - mock successful response
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        commit_hash: "old123",
+        manifest: staleCommit.manifest,
+        examples: staleCommit.examples,
+      }),
+    } as Response);
     await client.pullPromptCommit("test-prompt");
 
     // Wait for entry to become stale
@@ -366,7 +386,20 @@ describe("Pull-Through Refresh Pattern", () => {
       () =>
         new Promise((resolve) => {
           refreshCount++;
-          setTimeout(() => resolve(freshCommit), 200);
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: async () => ({
+                  commit_hash: "new456",
+                  manifest: freshCommit.manifest,
+                  examples: freshCommit.examples,
+                }),
+              } as Response),
+            200
+          );
         })
     );
 
@@ -473,44 +506,64 @@ describe("Pull-Through Refresh Pattern", () => {
     const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
     const staleCommit = createMockPromptCommit("old123");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
 
-    // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    // Populate cache - mock successful response
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        commit_hash: "old123",
+        manifest: staleCommit.manifest,
+        examples: staleCommit.examples,
+      }),
+    } as Response);
+
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("old123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
 
-    // Mock slow fetch error (NOT a 404) - will timeout, then fail in background
-    let rejectFn: (error: Error) => void;
-    const errorPromise = new Promise<never>((_, reject) => {
-      rejectFn = reject;
-    });
-    // Add .catch() to suppress unhandled rejection warning
-    errorPromise.catch(() => {});
-    fetchSpy.mockReturnValueOnce(errorPromise);
+    // Mock slow 500 error response (will timeout in foreground, complete in background)
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                ok: false,
+                status: 500,
+                statusText: "Internal Server Error",
+                text: async () => "Server error",
+                json: async () => ({}),
+              } as Response),
+            1500
+          );
+        })
+    );
 
-    // Should return stale data (timeout)
-    const result2Promise = client.pullPromptCommit("test-prompt");
-    
-    // Trigger the error after timeout
-    setTimeout(() => rejectFn(new Error("Network error")), 1500);
-    
-    const result2 = await result2Promise;
-    expect(result2.repo).toBe("old123");
+    // Should return stale data (timeout after 1s)
+    const result2 = await client.pullPromptCommit("test-prompt");
+    expect(result2.commit_hash).toBe("old123");
 
-    // Wait for background error to complete and be handled
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for background error to complete (with retries this can take longer)
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Verify it was marked fresh (no longer stale) after background error
+    // Verify the stale entry still exists (was marked as fresh to prevent eviction)
+    // With short TTL it may be stale again, but it should still be cached
     const cache = client.cache;
     if (cache) {
       const cached = cache.get("test-prompt");
       expect(cached).toBeDefined();
-      expect(cached?.isStale).toBe(false);
+      expect(cached?.value.commit_hash).toBe("old123");
+      // Verify the background error handling was invoked
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Background prompt refresh failed"),
+        expect.anything()
+      );
     }
 
     fetchSpy.mockRestore();
@@ -521,19 +574,25 @@ describe("Pull-Through Refresh Pattern", () => {
     const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
     const staleCommit = createMockPromptCommit("old123");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchApiSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
 
     // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    fetchApiSpy.mockResolvedValueOnce(staleCommit);
     const result1 = await client.pullPromptCommit("test-prompt");
     expect(result1.repo).toBe("old123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
 
-    // Mock 404 error (prompt was deleted) - fast response
-    const notFoundError = new LangSmithNotFoundError("Prompt not found");
-    fetchSpy.mockRejectedValueOnce(notFoundError);
+    // Mock 404 response from fetch
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => "Prompt not found",
+      json: async () => ({}),
+    } as Response);
 
     // Should clear cache and throw
     await expect(client.pullPromptCommit("test-prompt")).rejects.toThrow(
@@ -547,6 +606,7 @@ describe("Pull-Through Refresh Pattern", () => {
       expect(cached).toBeUndefined();
     }
 
+    fetchApiSpy.mockRestore();
     fetchSpy.mockRestore();
   });
 
@@ -554,45 +614,75 @@ describe("Pull-Through Refresh Pattern", () => {
     const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
     const staleCommit = createMockPromptCommit("old123");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation();
 
-    // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    // Populate cache - mock successful response
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        commit_hash: "old123",
+        manifest: staleCommit.manifest,
+        examples: staleCommit.examples,
+      }),
+    } as Response);
+
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("old123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
 
-    // Mock slow 404 (will timeout in foreground, complete in background)
-    let rejectFn: (error: Error) => void;
-    const notFoundPromise = new Promise<never>((_, reject) => {
-      rejectFn = reject;
-    });
-    fetchSpy.mockReturnValueOnce(notFoundPromise);
+    // Mock slow 404 response (fetch itself is slow, then returns 404)
+    // This will timeout in foreground, then complete in background with 404
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                ok: false,
+                status: 404,
+                statusText: "Not Found",
+                text: async () => "Prompt not found",
+                json: async () => ({}),
+              } as Response),
+            1500 // Slower than 1s timeout
+          );
+        })
+    );
 
-    // Should return stale (background 404 pending)
-    const result2Promise = client.pullPromptCommit("test-prompt");
-    
-    // Trigger the 404 error after timeout
-    const notFoundError = new LangSmithNotFoundError("Prompt not found");
-    setTimeout(() => rejectFn(notFoundError), 1500);
-    
-    const result2 = await result2Promise;
-    expect(result2.repo).toBe("old123");
+    // Should return stale (timeout after 1s, before 404 completes)
+    const result2 = await client.pullPromptCommit("test-prompt");
+    expect(result2.commit_hash).toBe("old123");
 
-    // Wait for background refresh to complete and be handled
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Verify cache was cleared by background refresh
+    // Verify cache was cleared by background 404
     const cache = client.cache;
     if (cache) {
       const cached = cache.get("test-prompt");
       expect(cached).toBeUndefined();
     }
 
+    // Now verify that a subsequent request properly throws 404
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => "Prompt not found",
+      json: async () => ({}),
+    } as Response);
+
+    await expect(client.pullPromptCommit("test-prompt")).rejects.toThrow(
+      "Failed to pull prompt commit"
+    );
+
     fetchSpy.mockRestore();
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });
