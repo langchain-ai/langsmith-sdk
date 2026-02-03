@@ -157,6 +157,7 @@ AsyncPromptCacheManagerSingleton = AsyncPromptCacheManager()
 def get_or_initialize_cache(
     max_size: int = 100,
     ttl_seconds: Optional[float] = 60.0,
+    force: bool = False,
 ) -> Cache:
     """Get or initialize the prompt cache singleton.
 
@@ -164,6 +165,7 @@ def get_or_initialize_cache(
         max_size: Maximum entries in cache (used only if not yet initialized).
         ttl_seconds: Cache entry TTL in seconds (used only if not yet initialized).
             Default: 60 seconds.
+        force: If True, reinitialize even if already exists.
 
     Returns:
         The singleton cache instance.
@@ -180,6 +182,7 @@ def get_or_initialize_cache(
 def get_or_initialize_async_cache(
     max_size: int = 100,
     ttl_seconds: Optional[float] = 60.0,
+    force: bool = False,
 ) -> AsyncCache:
     """Get or initialize the async prompt cache singleton.
 
@@ -187,6 +190,7 @@ def get_or_initialize_async_cache(
         max_size: Maximum entries in cache (used only if not yet initialized).
         ttl_seconds: Cache entry TTL in seconds (used only if not yet initialized).
             Default: 60 seconds.
+        force: If True, reinitialize even if already exists.
 
     Returns:
         The singleton async cache instance.

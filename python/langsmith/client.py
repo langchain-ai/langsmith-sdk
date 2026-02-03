@@ -664,7 +664,7 @@ class Client:
         "_use_daemon_threads",
         "_tracing_error_callback",
         "_multipart_disabled",
-        "_prompt_cache_config",
+        "_disable_prompt_cache",
         "_inflight_prompt_fetches",
     ]
 
@@ -703,7 +703,7 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        prompt_cache: Union[Cache, bool, dict] = True,
+        disable_prompt_cache: bool = False,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -811,12 +811,10 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            prompt_cache: Configuration for prompt caching.
+            disable_prompt_cache: Whether to disable prompt caching for this client.
 
-                Can be:
-
-                - `True` or `None`: Enable caching with default settings using a global singleton (default)
-                - `dict`: Configure the global singleton cache with custom settings
+                Default is `False` (caching enabled). Set to `True` to disable caching.
+                Use `configure_prompt_cache()` to configure the global cache settings.
                 - `False`: Disable caching
 
                 The cache is lazy-initialized on the first prompt pull, and is shared across
@@ -1053,7 +1051,7 @@ class Client:
         self._tracing_error_callback = tracing_error_callback
 
         # Store cache config for lazy initialization
-        self._prompt_cache_config: Union[Cache, bool, dict] = prompt_cache
+        self._disable_prompt_cache: bool = disable_prompt_cache
 
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}
@@ -1065,19 +1063,14 @@ class Client:
         Returns:
             The cache instance, or None if caching is disabled.
         """
-        if self._prompt_cache_config is False:
+        if self._disable_prompt_cache:
             return None
 
         from langsmith.prompt_cache_singleton import get_or_initialize_cache
 
-        # Extract config parameters
-        if isinstance(self._prompt_cache_config, dict):
-            max_size = self._prompt_cache_config.get("max_size", 100)
-            ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 60.0)
-        else:
-            # Use defaults
-            max_size = 100
-            ttl_seconds = 60.0
+        # Use defaults (config is set globally via configure_prompt_cache)
+        max_size = 100
+        ttl_seconds = 60.0
 
         # Initialize or get the singleton
         return get_or_initialize_cache(
@@ -9695,3 +9688,31 @@ def prep_obj_for_push(obj: Any) -> Any:
             # called.
             chain_to_push = RunnableSequence(prompt, bound_model)
     return chain_to_push
+
+
+def configure_prompt_cache(
+    max_size: int = 100,
+    ttl_seconds: Optional[float] = 60.0,
+    force: bool = False
+) -> None:
+    """Configure the global prompt cache singleton.
+    
+    This function configures the shared cache instance used by all Client instances
+    (unless they have disable_prompt_cache=True).
+    
+    Args:
+        max_size: Maximum number of prompts to cache (default: 100)
+        ttl_seconds: Time-to-live in seconds for cache entries. Set to None for
+            infinite TTL (useful for offline mode). Default: 60.0
+        force: If True, reinitialize the cache even if it already exists
+        
+    Example:
+        >>> from langsmith import configure_prompt_cache, Client
+        >>> # Configure cache globally
+        >>> configure_prompt_cache(max_size=500, ttl_seconds=300.0)
+        >>> # All clients will use this configuration
+        >>> client = Client(api_key="...")
+    """
+    from langsmith.prompt_cache_singleton import get_or_initialize_cache
+    
+    get_or_initialize_cache(max_size=max_size, ttl_seconds=ttl_seconds, force=force)

@@ -72,7 +72,6 @@ import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
 import { Cache } from "./utils/prompts_cache/index.js";
-import type { PromptCacheConfig } from "./utils/prompts_cache/types.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -129,35 +128,21 @@ export interface ClientConfig {
    */
   fetchImplementation?: typeof fetch;
   /**
-   * Configuration for prompt caching. Can be:
-   * - `true` or `undefined`: Enable caching with default settings using a global singleton (default)
-   * - `PromptCacheConfig` object: Configure the global singleton cache (see Cache constructor)
-   * - `false`: Disable caching
-   *
-   * The cache is lazy-initialized on the first prompt pull, and is shared across
-   * all Client instances in the same process for improved cache hit rates and memory efficiency.
-   * The first client to pull a prompt initializes the singleton with its configuration.
+   * Disable prompt caching for this client. Default is false (caching enabled).
+   * Use `configurePromptCache()` to configure the global cache settings.
    *
    * @example
    * ```typescript
    * import { Client } from "langsmith";
    *
-   * // Enable with defaults (or omit promptCache entirely - it defaults to true)
-   * const client1 = new Client({ promptCache: true });
-   *
-   * // Or use custom configuration
-   * const client2 = new Client({
-   *   promptCache: {
-   *     maxSize: 100,
-   *     ttlSeconds: 3600, // 1 hour, or null for infinite TTL
-   *   }
-   * });
+   * // Caching enabled by default
+   * const client1 = new Client({});
    *
    * // Explicitly disable caching
-   * const client3 = new Client({ promptCache: false });
+   * const client2 = new Client({ disablePromptCache: true });
    * ```
    */
-  promptCache?: boolean | PromptCacheConfig;
+  disablePromptCache?: boolean;
 }
 
 /**
@@ -748,7 +733,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _cacheConfig: boolean | PromptCacheConfig;
+  private _disablePromptCache: boolean;
 
   // Track in-flight prompt fetches to avoid duplicate requests
   private _inflightPromptFetches: Map<string, Promise<PromptCommit>> =
@@ -831,7 +816,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
     // Store cache config for lazy initialization (defaults to true)
-    this._cacheConfig = config.promptCache ?? true;
+    this._disablePromptCache = config.disablePromptCache ?? false;
   }
 
   public static getDefaultClientConfig(): {
@@ -5494,7 +5479,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   ): Promise<PromptCommit> {
     // Check if caching is enabled (not explicitly false)
-    const cachingEnabled = this._cacheConfig !== false;
+    const cachingEnabled = !this._disablePromptCache;
 
     // Check cache first if not skipped and caching is enabled
     if (!options?.skipCache && cachingEnabled) {
@@ -5754,13 +5739,11 @@ export class Client implements LangSmithTracingClientInterface {
    * This will lazy-initialize the cache if not already initialized.
    */
   get cache(): Cache | undefined {
-    if (this._cacheConfig === false) {
+    if (this._disablePromptCache) {
       return undefined;
     }
-
-    const config: PromptCacheConfig | undefined =
-      typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
-    return getOrInitializeCache(config);
+    // Config is set globally via configurePromptCache()
+    return getOrInitializeCache();
   }
 
   /**

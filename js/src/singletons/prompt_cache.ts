@@ -69,3 +69,34 @@ export function getOrInitializeCache(config?: PromptCacheConfig): Cache {
   }
   return PromptCacheManagerSingleton.initializeInstance(config);
 }
+
+/**
+ * Configure the global prompt cache singleton.
+ * 
+ * This function configures the shared cache instance used by all Client instances
+ * (unless they have disablePromptCache=true).
+ * 
+ * @param config - Cache configuration
+ * @param force - If true, reinitialize the cache even if it already exists
+ * 
+ * @example
+ * ```typescript
+ * import { configurePromptCache, Client } from "langsmith";
+ * 
+ * // Configure cache globally
+ * configurePromptCache({ maxSize: 500, ttlSeconds: 300 });
+ * 
+ * // All clients will use this configuration
+ * const client = new Client({ apiKey: "..." });
+ * ```
+ */
+export function configurePromptCache(
+  config?: PromptCacheConfig,
+  force: boolean = false
+): void {
+  if (force && _cacheInstance) {
+    _cacheInstance.clear();
+    _cacheInstance = undefined;
+  }
+  getOrInitializeCache(config);
+}

@@ -20,6 +20,7 @@ export { overrideFetchImplementation } from "./singletons/fetch.js";
 export {
   PromptCacheManagerSingleton,
   getOrInitializeCache,
+  configurePromptCache,
 } from "./singletons/prompt_cache.js";
 
 export { getDefaultProjectName } from "./utils/project.js";

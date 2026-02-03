@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
+import { configurePromptCache } from "../singletons/prompt_cache.js";
 import { PromptCacheManagerSingleton } from "../singletons/prompt_cache.js";
 import type { PromptCommit } from "../schemas.js";
 import { LangSmithNotFoundError } from "../utils/error.js";
@@ -74,8 +75,8 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("multiple clients should share the same cache instance", () => {
-    const client1 = new Client({ promptCache: true });
-    const client2 = new Client({ promptCache: true });
+    const client1 = new Client();
+    const client2 = new Client();
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -89,8 +90,8 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("cache should be shared across client instances", () => {
-    const client1 = new Client({ promptCache: true });
-    const client2 = new Client({ promptCache: true });
+    const client1 = new Client();
+    const client2 = new Client();
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -111,10 +112,7 @@ describe("Singleton Cache in Client", () => {
 
   test("first client configuration should initialize the singleton", () => {
     const client1 = new Client({
-      promptCache: {
-        maxSize: 50,
-        ttlSeconds: 1800,
-      },
+      // Config is set globally,
     });
 
     const cache1 = client1.cache;
@@ -122,10 +120,7 @@ describe("Singleton Cache in Client", () => {
 
     // Second client with different config should use the same instance
     const client2 = new Client({
-      promptCache: {
-        maxSize: 100, // Different config, but should be ignored
-        ttlSeconds: 3600,
-      },
+      // Config is set globally via configurePromptCache,
     });
 
     const cache2 = client2.cache;
@@ -135,15 +130,15 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("client with cache disabled should not access the singleton", () => {
-    const client1 = new Client({ promptCache: true });
-    const client2 = new Client({ promptCache: false });
+    const client1 = new Client();
+    const client2 = new Client({ disablePromptCache: true });
 
     expect(client1.cache).toBeDefined();
     expect(client2.cache).toBeUndefined();
   });
 
   test("PromptCacheManagerSingleton.cleanup should stop and clear the cache", () => {
-    const client1 = new Client({ promptCache: true });
+    const client1 = new Client();
     const cache1 = client1.cache;
 
     expect(cache1).toBeDefined();
@@ -157,7 +152,7 @@ describe("Singleton Cache in Client", () => {
     PromptCacheManagerSingleton.cleanup();
 
     // New client should get a fresh cache
-    const client2 = new Client({ promptCache: true });
+    const client2 = new Client();
     const cache2 = client2.cache;
 
     expect(cache2).toBeDefined();
@@ -171,8 +166,8 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("metrics should be shared across clients", () => {
-    const client1 = new Client({ promptCache: true });
-    const client2 = new Client({ promptCache: true });
+    const client1 = new Client();
+    const client2 = new Client();
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -244,7 +239,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("cache miss should fetch from API and cache result", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 60 } });
+    const client = new Client();
     const mockCommit = createMockPromptCommit("abc123");
 
     // Mock the fetch
@@ -270,7 +265,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("fresh cache hit should return immediately without fetching", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 60 } });
+    const client = new Client();
     const mockCommit = createMockPromptCommit("abc123");
 
     const fetchSpy = jest
@@ -291,7 +286,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("stale cache hit should return stale data when refresh times out", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
@@ -325,7 +321,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("stale cache hit should return fresh data if refresh completes quickly", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
@@ -350,7 +347,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("concurrent requests should reuse in-flight fetch on cache miss", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 60 } });
+    const client = new Client();
     const mockCommit = createMockPromptCommit("abc123");
 
     let fetchCount = 0;
@@ -393,7 +390,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("concurrent requests should reuse in-flight fetch on stale hit", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
@@ -455,7 +453,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("background refresh should update cache after timeout", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
@@ -497,7 +495,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("skip_cache should bypass cache", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 60 } });
+    const client = new Client();
     const mockCommit1 = createMockPromptCommit("abc123");
     const mockCommit2 = createMockPromptCommit("def456");
 
@@ -520,7 +518,7 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("cache disabled should always fetch", async () => {
-    const client = new Client({ promptCache: false });
+    const client = new Client({ disablePromptCache: true });
     const mockCommit1 = createMockPromptCommit("abc123");
     const mockCommit2 = createMockPromptCommit("def456");
 
@@ -540,7 +538,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("fetch error should return stale and mark as fresh", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
@@ -608,7 +607,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("404 during foreground refresh should clear cache and throw", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
@@ -640,7 +640,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("404 during background refresh should clear cache", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
@@ -710,7 +711,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("network failure should return stale data and mark as fresh", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
@@ -757,7 +759,8 @@ describe("Pull-Through Refresh Pattern", () => {
   });
 
   test("429 rate limit should return stale data and mark as fresh", async () => {
-    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    configurePromptCache({ ttlSeconds: 0.1 }, true);
+    const client = new Client();
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");

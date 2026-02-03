@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
-    from langsmith.async_client import AsyncClient
+    from langsmith.async_client import AsyncClient, configure_async_prompt_cache
     from langsmith.cache import AsyncCache, Cache
-    from langsmith.client import Client
+    from langsmith.client import Client, configure_prompt_cache
     from langsmith.evaluation import (
         aevaluate,
         aevaluate_existing,
@@ -43,11 +43,11 @@ def __getattr__(name: str) -> Any:
     if name == "__version__":
         return version
     elif name == "Client":
-        from langsmith.client import Client
+        from langsmith.client import Client, configure_prompt_cache
 
         return Client
     elif name == "AsyncClient":
-        from langsmith.async_client import AsyncClient
+        from langsmith.async_client import AsyncClient, configure_async_prompt_cache
 
         return AsyncClient
     elif name == "RunTree":
@@ -58,6 +58,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation.evaluator import EvaluationResult
 
         return EvaluationResult
+    elif name == "configure_prompt_cache":
+        from langsmith.client import configure_prompt_cache
+
+        return configure_prompt_cache
+    elif name == "configure_async_prompt_cache":
+        from langsmith.async_client import configure_async_prompt_cache
+
+        return configure_async_prompt_cache
     elif name == "RunEvaluator":
         from langsmith.evaluation.evaluator import RunEvaluator
 

@@ -2914,7 +2914,7 @@ def test_pull_prompt(
         api_key="fake_api_key",
         session=mock_session,
         info=info,
-        prompt_cache=False,
+        disable_prompt_cache=True,
     )
     secrets = {
         "ANTHROPIC_API_KEY": "test_anthropic_key",
@@ -2990,7 +2990,7 @@ def test_pull_and_push_prompt(
         session=mock_session,
         info=info,
         auto_batch_tracing=False,
-        prompt_cache=False,
+        disable_prompt_cache=True,
     )
 
     # Mock the necessary methods for push_prompt and settings

@@ -35,7 +35,7 @@ class AsyncClient:
         "_client",
         "_web_url",
         "_settings",
-        "_prompt_cache_config",
+        "_disable_prompt_cache",
         "_inflight_prompt_fetches",
     )
 
@@ -50,7 +50,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        prompt_cache: Union[AsyncCache, bool, dict] = True,
+        disable_prompt_cache: bool = False,
     ):
         """Initialize the async client.
 
@@ -94,7 +94,7 @@ class AsyncClient:
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
         # Store cache config for lazy initialization
-        self._prompt_cache_config: Union[AsyncCache, bool, dict] = prompt_cache
+        self._disable_prompt_cache: bool = disable_prompt_cache
 
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}
@@ -106,19 +106,14 @@ class AsyncClient:
         Returns:
             The async cache instance, or None if caching is disabled.
         """
-        if self._prompt_cache_config is False:
+        if self._disable_prompt_cache:
             return None
 
         from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
 
-        # Extract config parameters
-        if isinstance(self._prompt_cache_config, dict):
-            max_size = self._prompt_cache_config.get("max_size", 100)
-            ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 60.0)
-        else:
-            # Use defaults
-            max_size = 100
-            ttl_seconds = 60.0
+        # Use defaults (config is set globally via configure_async_prompt_cache)
+        max_size = 100
+        ttl_seconds = 60.0
 
         # Initialize or get the singleton
         return get_or_initialize_async_cache(
@@ -2066,3 +2061,31 @@ class AsyncClient:
 def _exclude_none(d: dict) -> dict:
     """Exclude `None` values from a dictionary."""
     return {k: v for k, v in d.items() if v is not None}
+
+
+def configure_async_prompt_cache(
+    max_size: int = 100,
+    ttl_seconds: Optional[float] = 60.0,
+    force: bool = False
+) -> None:
+    """Configure the global async prompt cache singleton.
+    
+    This function configures the shared async cache instance used by all AsyncClient
+    instances (unless they have disable_prompt_cache=True).
+    
+    Args:
+        max_size: Maximum number of prompts to cache (default: 100)
+        ttl_seconds: Time-to-live in seconds for cache entries. Set to None for
+            infinite TTL (useful for offline mode). Default: 60.0
+        force: If True, reinitialize the cache even if it already exists
+        
+    Example:
+        >>> from langsmith import configure_async_prompt_cache, AsyncClient
+        >>> # Configure cache globally
+        >>> configure_async_prompt_cache(max_size=500, ttl_seconds=300.0)
+        >>> # All async clients will use this configuration
+        >>> client = AsyncClient(api_key="...")
+    """
+    from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
+    
+    get_or_initialize_async_cache(max_size=max_size, ttl_seconds=ttl_seconds, force=force)

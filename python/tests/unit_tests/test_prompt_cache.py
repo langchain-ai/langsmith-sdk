@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from langsmith import Client
+from langsmith import Client, configure_prompt_cache
 from langsmith import schemas as ls_schemas
-from langsmith.async_client import AsyncClient
+from langsmith.async_client import AsyncClient, configure_async_prompt_cache
 from langsmith.cache import (
     AsyncCache,
     Cache,
@@ -514,12 +514,14 @@ class TestClientPullThroughRefreshSync:
     def cleanup_singletons(self):
         """Clean up singletons before and after each test."""
         PromptCacheManagerSingleton.cleanup()
+        # Configure cache with short TTL for staleness tests
+        configure_prompt_cache(ttl_seconds=0.1, force=True)
         yield
         PromptCacheManagerSingleton.cleanup()
 
     def test_cache_miss_fetches_and_caches(self, sample_prompt_commit):
         """Test that cache miss fetches from API and caches result."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = Client(api_key="test")
 
         with patch.object(
             Client, "_fetch_prompt_from_api", return_value=sample_prompt_commit
@@ -537,7 +539,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_cache_hit_fresh_returns_immediately(self, sample_prompt_commit):
         """Test that fresh cache hit returns immediately without fetching."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = Client(api_key="test")
 
         with patch.object(
             Client, "_fetch_prompt_from_api", return_value=sample_prompt_commit
@@ -554,7 +556,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_cache_hit_stale_returns_stale_on_timeout(self, sample_prompt_commit):
         """Test that stale cache hit returns stale data when refresh times out."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = Client(api_key="test")
 
         stale_commit = ls_schemas.PromptCommit(
             owner="test-owner",
@@ -595,7 +597,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_cache_hit_stale_returns_fresh_if_fast(self, sample_prompt_commit):
         """Test that stale cache hit returns fresh data if refresh completes quickly."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = Client(api_key="test")
 
         stale_commit = ls_schemas.PromptCommit(
             owner="test-owner",
@@ -629,7 +631,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_concurrent_requests_reuse_inflight_fetch(self, sample_prompt_commit):
         """Test that concurrent requests for same key reuse in-flight fetch."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = Client(api_key="test")
 
         fetch_count = {"count": 0}
 
@@ -664,7 +666,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_skip_cache_bypasses_cache(self, sample_prompt_commit):
         """Test that skip_cache=True bypasses the cache."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = Client(api_key="test")
 
         commit1 = ls_schemas.PromptCommit(
             owner="test-owner",
@@ -694,7 +696,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_404_during_refresh_clears_cache_foreground(self, sample_prompt_commit):
         """Test that 404 during foreground refresh clears cache and throws."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = Client(api_key="test")
 
         # Populate cache
         with patch.object(
@@ -725,7 +727,7 @@ class TestClientPullThroughRefreshSync:
 
     def test_404_during_refresh_clears_cache_background(self, sample_prompt_commit):
         """Test that 404 during background refresh clears cache."""
-        client = Client(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = Client(api_key="test")
 
         # Populate cache
         with patch.object(
@@ -765,13 +767,15 @@ class TestClientPullThroughRefreshAsync:
     def cleanup_singletons(self):
         """Clean up singletons before and after each test."""
         AsyncPromptCacheManagerSingleton.cleanup()
+        # Configure cache with short TTL for staleness tests
+        configure_async_prompt_cache(ttl_seconds=0.1, force=True)
         yield
         AsyncPromptCacheManagerSingleton.cleanup()
 
     @pytest.mark.asyncio
     async def test_cache_miss_fetches_and_caches(self, sample_prompt_commit):
         """Test that cache miss fetches from API and caches result."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = AsyncClient(api_key="test")
 
         with patch.object(
             AsyncClient, "_afetch_prompt_from_api", return_value=sample_prompt_commit
@@ -789,7 +793,7 @@ class TestClientPullThroughRefreshAsync:
     @pytest.mark.asyncio
     async def test_cache_hit_fresh_returns_immediately(self, sample_prompt_commit):
         """Test that fresh cache hit returns immediately without fetching."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = AsyncClient(api_key="test")
 
         with patch.object(
             AsyncClient, "_afetch_prompt_from_api", return_value=sample_prompt_commit
@@ -807,7 +811,7 @@ class TestClientPullThroughRefreshAsync:
     @pytest.mark.asyncio
     async def test_cache_hit_stale_returns_stale_on_timeout(self, sample_prompt_commit):
         """Test that stale cache hit returns stale data when refresh times out."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = AsyncClient(api_key="test")
 
         stale_commit = ls_schemas.PromptCommit(
             owner="test-owner",
@@ -853,7 +857,7 @@ class TestClientPullThroughRefreshAsync:
     @pytest.mark.asyncio
     async def test_cache_hit_stale_returns_fresh_if_fast(self, sample_prompt_commit):
         """Test that stale cache hit returns fresh data if refresh completes quickly."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = AsyncClient(api_key="test")
 
         stale_commit = ls_schemas.PromptCommit(
             owner="test-owner",
@@ -892,7 +896,7 @@ class TestClientPullThroughRefreshAsync:
     @pytest.mark.asyncio
     async def test_concurrent_requests_reuse_inflight_fetch(self, sample_prompt_commit):
         """Test that concurrent requests for same key reuse in-flight fetch."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 60})
+        client = AsyncClient(api_key="test")
 
         fetch_count = {"count": 0}
 
@@ -918,7 +922,7 @@ class TestClientPullThroughRefreshAsync:
         self, sample_prompt_commit
     ):
         """Test that 404 during foreground refresh clears cache and throws."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = AsyncClient(api_key="test")
 
         # Populate cache
         with patch.object(
@@ -952,7 +956,7 @@ class TestClientPullThroughRefreshAsync:
         self, sample_prompt_commit
     ):
         """Test that 404 during background refresh clears cache."""
-        client = AsyncClient(api_key="test", prompt_cache={"ttl_seconds": 0.1})
+        client = AsyncClient(api_key="test")
 
         # Populate cache
         with patch.object(
