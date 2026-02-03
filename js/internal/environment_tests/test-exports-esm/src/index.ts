@@ -29,7 +29,6 @@ async function testExports() {
   // Test Client with cache
   const clientWithCache = new Client({ apiKey: "test-key", cache: true });
   console.log("✓ Client with cache enabled");
-  clientWithCache.cleanup();
 
   console.log("\n✅ All ESM export tests passed!");
 }

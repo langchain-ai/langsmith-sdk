@@ -1053,7 +1053,7 @@ class Client:
         self._tracing_error_callback = tracing_error_callback
 
         # Store cache config for lazy initialization
-        self._prompt_cache_config: Union[bool, dict] = prompt_cache
+        self._prompt_cache_config: Union[Cache, bool, dict] = prompt_cache
 
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}

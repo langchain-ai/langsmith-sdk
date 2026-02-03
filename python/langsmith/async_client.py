@@ -94,7 +94,7 @@ class AsyncClient:
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
         # Store cache config for lazy initialization
-        self._prompt_cache_config: Union[bool, dict] = prompt_cache
+        self._prompt_cache_config: Union[AsyncCache, bool, dict] = prompt_cache
 
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}

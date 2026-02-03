@@ -61,8 +61,8 @@ class PromptCacheManager:
                 return _cache_instance
 
             if _cache_instance is not None and force:
-                # Shutdown the existing cache before replacing
-                _cache_instance.shutdown()
+                # Clear the existing cache before replacing
+                _cache_instance.clear()
 
             # Import here to avoid circular dependency
             from langsmith.cache import Cache
