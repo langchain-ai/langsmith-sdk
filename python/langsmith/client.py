@@ -8223,6 +8223,31 @@ class Client:
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
+
+    def _fetch_prompt_from_api_settled(
+        self,
+        prompt_identifier: str,
+        include_model: Optional[bool] = False,
+    ) -> tuple[Optional[ls_schemas.PromptCommit], Optional[Exception]]:
+        """Fetch a prompt from the API with settled semantics (never raises).
+
+        Similar to JavaScript settled promises, this returns a tuple of (commit, error)
+        where exactly one will be None. This simplifies error handling in background
+        refresh scenarios.
+
+        Args:
+            prompt_identifier: The prompt identifier.
+            include_model: Whether to include model information.
+
+        Returns:
+            Tuple of (commit, error) where exactly one is None.
+        """
+        try:
+            commit = self._fetch_prompt_from_api(prompt_identifier, include_model)
+            return (commit, None)
+        except Exception as error:
+            return (None, error)
+
     def pull_prompt_commit(
         self,
         prompt_identifier: str,
@@ -8260,10 +8285,10 @@ class Client:
                     # Reuse existing in-flight fetch
                     future = self._inflight_prompt_fetches[cache_key]
                 else:
-                    # Start new fetch
+                    # Start new fetch using settled pattern
                     executor = cf.ThreadPoolExecutor(max_workers=1)
                     future = executor.submit(
-                        self._fetch_prompt_from_api, prompt_identifier, include_model
+                        self._fetch_prompt_from_api_settled, prompt_identifier, include_model
                     )
                     self._inflight_prompt_fetches[cache_key] = future
 
@@ -8276,33 +8301,39 @@ class Client:
 
                 try:
                     # Try to get fresh data within 1s
-                    fresh_value = future.result(timeout=1.0)
-                    cache.set(cache_key, fresh_value)
-                    return fresh_value
+                    commit, error = future.result(timeout=1.0)
+                    if error:
+                        # Fetch failed immediately - handle error
+                        if isinstance(error, ls_utils.LangSmithNotFoundError):
+                            # 404: prompt was deleted - clear from cache and re-raise
+                            cache.invalidate(cache_key)
+                            raise error
+                        # Other errors - return stale and mark as fresh
+                        cache.set(cache_key, cached)
+                        return cached
+                    # Success - update cache and return fresh
+                    cache.set(cache_key, commit)
+                    return commit
                 except cf.TimeoutError:
                     # Timeout - return stale data, let fetch complete in background
                     def background_refresh():
                         try:
-                            fresh_value = future.result(timeout=30.0)
-                            cache.set(cache_key, fresh_value)
-                        except Exception as e:
-                            # If 404, the prompt was deleted - clear from cache
-                            if isinstance(e, ls_utils.LangSmithNotFoundError):
-                                cache.invalidate(cache_key)
+                            commit, error = future.result(timeout=30.0)
+                            if error:
+                                if isinstance(error, ls_utils.LangSmithNotFoundError):
+                                    # 404: prompt was deleted - clear from cache
+                                    cache.invalidate(cache_key)
+                                else:
+                                    # Other errors - mark as fresh to prevent retry storms
+                                    cache.set(cache_key, cached)
                             else:
-                                # Other errors - mark as fresh to prevent retry storms
-                                cache.set(cache_key, cached)
+                                # Success - update cache
+                                cache.set(cache_key, commit)
+                        except Exception:
+                            # Timeout or other issue - keep stale marked as fresh
+                            cache.set(cache_key, cached)
 
                     threading.Thread(target=background_refresh, daemon=True).start()
-                    return cached
-                except Exception as e:
-                    # Fetch failed immediately
-                    # If 404, the prompt was deleted - clear from cache and re-raise
-                    if isinstance(e, ls_utils.LangSmithNotFoundError):
-                        cache.invalidate(cache_key)
-                        raise
-                    # Other errors - return stale and mark as fresh
-                    cache.set(cache_key, cached)
                     return cached
 
         # Cache miss or cache skipped - fetch from API
@@ -8314,10 +8345,10 @@ class Client:
                 # Reuse existing fetch
                 future = self._inflight_prompt_fetches[cache_key]
             else:
-                # Start new fetch
+                # Start new fetch using settled pattern
                 executor = cf.ThreadPoolExecutor(max_workers=1)
                 future = executor.submit(
-                    self._fetch_prompt_from_api, prompt_identifier, include_model
+                    self._fetch_prompt_from_api_settled, prompt_identifier, include_model
                 )
                 self._inflight_prompt_fetches[cache_key] = future
 
@@ -8329,9 +8360,11 @@ class Client:
                 future.add_done_callback(lambda _: cleanup())
 
             # Wait for fetch to complete
-            result = future.result()
-            cache.set(cache_key, result)
-            return result
+            commit, error = future.result()
+            if error:
+                raise error
+            cache.set(cache_key, commit)
+            return commit
         else:
             # Cache disabled or skipped - fetch directly
             return self._fetch_prompt_from_api(prompt_identifier, include_model)
