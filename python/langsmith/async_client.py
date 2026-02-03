@@ -1735,7 +1735,9 @@ class AsyncClient:
             Tuple of (commit, error) where exactly one is None.
         """
         try:
-            commit = await self._afetch_prompt_from_api(prompt_identifier, include_model)
+            commit = await self._afetch_prompt_from_api(
+                prompt_identifier, include_model
+            )
             return (commit, None)
         except Exception as error:
             return (None, error)
@@ -1781,7 +1783,9 @@ class AsyncClient:
                 else:
                     # Start new fetch using settled pattern
                     fetch_task = asyncio.create_task(
-                        self._afetch_prompt_from_api_settled(prompt_identifier, include_model)
+                        self._afetch_prompt_from_api_settled(
+                            prompt_identifier, include_model
+                        )
                     )
                     self._inflight_prompt_fetches[cache_key] = fetch_task
 

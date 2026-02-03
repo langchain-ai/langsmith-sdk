@@ -8223,7 +8223,6 @@ class Client:
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
-
     def _fetch_prompt_from_api_settled(
         self,
         prompt_identifier: str,
@@ -8288,7 +8287,9 @@ class Client:
                     # Start new fetch using settled pattern
                     executor = cf.ThreadPoolExecutor(max_workers=1)
                     future = executor.submit(
-                        self._fetch_prompt_from_api_settled, prompt_identifier, include_model
+                        self._fetch_prompt_from_api_settled,
+                        prompt_identifier,
+                        include_model,
                     )
                     self._inflight_prompt_fetches[cache_key] = future
 
@@ -8348,7 +8349,9 @@ class Client:
                 # Start new fetch using settled pattern
                 executor = cf.ThreadPoolExecutor(max_workers=1)
                 future = executor.submit(
-                    self._fetch_prompt_from_api_settled, prompt_identifier, include_model
+                    self._fetch_prompt_from_api_settled,
+                    prompt_identifier,
+                    include_model,
                 )
                 self._inflight_prompt_fetches[cache_key] = future
 
