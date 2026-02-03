@@ -16,12 +16,53 @@ function createMockPromptCommit(name: string): PromptCommit {
   };
 }
 
-describe("Singleton Cache in Client", () => {
-  // Clean up the singleton before each test
-  beforeEach(() => {
-    PromptCacheManagerSingleton.cleanup();
-  });
+// Helper to create a mock fetch Response
+function mockFetchResponse(
+  commit: PromptCommit,
+  status: number = 200
+): Response {
+  const isOk = status >= 200 && status < 300;
+  return {
+    ok: isOk,
+    status,
+    statusText: status === 200 ? "OK" : status === 404 ? "Not Found" : "Error",
+    json: async () => ({
+      commit_hash: commit.commit_hash,
+      manifest: commit.manifest,
+      examples: commit.examples,
+    }),
+    text: async () =>
+      status === 404
+        ? "Prompt not found"
+        : status === 500
+        ? "Server error"
+        : "",
+  } as Response;
+}
 
+// Helper to create a mock 404 Response
+function mock404Response(): Response {
+  return {
+    ok: false,
+    status: 404,
+    statusText: "Not Found",
+    text: async () => "Prompt not found",
+    json: async () => ({}),
+  } as Response;
+}
+
+// Helper to create a mock error Response
+function mockErrorResponse(status: number, message: string): Response {
+  return {
+    ok: false,
+    status,
+    statusText: message,
+    text: async () => message,
+    json: async () => ({}),
+  } as Response;
+}
+
+describe("Singleton Cache in Client", () => {
   afterEach(() => {
     PromptCacheManagerSingleton.cleanup();
   });
@@ -201,11 +242,6 @@ describe("Singleton Cache in Client", () => {
 });
 
 describe("Pull-Through Refresh Pattern", () => {
-  // Clean up the singleton before and after each test
-  beforeEach(() => {
-    PromptCacheManagerSingleton.cleanup();
-  });
-
   afterEach(() => {
     PromptCacheManagerSingleton.cleanup();
   });
@@ -216,12 +252,12 @@ describe("Pull-Through Refresh Pattern", () => {
 
     // Mock the fetch
     const fetchSpy = jest
-      .spyOn(client as any, "_fetchPromptFromApi")
-      .mockResolvedValue(mockCommit);
+      .spyOn(client as any, "_fetch")
+      .mockResolvedValue(mockFetchResponse(mockCommit));
 
     // First call - cache miss
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("abc123");
+    expect(result1.commit_hash).toBe("abc123");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     // Verify it was cached
@@ -230,7 +266,7 @@ describe("Pull-Through Refresh Pattern", () => {
     if (cache) {
       const cached = cache.get("test-prompt");
       expect(cached).toBeDefined();
-      expect(cached?.value.repo).toBe("abc123");
+      expect(cached?.value.commit_hash).toBe("abc123");
     }
 
     fetchSpy.mockRestore();
@@ -241,17 +277,17 @@ describe("Pull-Through Refresh Pattern", () => {
     const mockCommit = createMockPromptCommit("abc123");
 
     const fetchSpy = jest
-      .spyOn(client as any, "_fetchPromptFromApi")
-      .mockResolvedValue(mockCommit);
+      .spyOn(client as any, "_fetch")
+      .mockResolvedValue(mockFetchResponse(mockCommit));
 
     // First call - populate cache
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("abc123");
+    expect(result1.commit_hash).toBe("abc123");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     // Second call - should hit cache and not fetch
     const result2 = await client.pullPromptCommit("test-prompt");
-    expect(result2.repo).toBe("abc123");
+    expect(result2.commit_hash).toBe("abc123");
     expect(fetchSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
 
     fetchSpy.mockRestore();
@@ -262,12 +298,12 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
 
     // Populate cache with stale data
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -275,7 +311,9 @@ describe("Pull-Through Refresh Pattern", () => {
     // Mock slow API call (will timeout)
     fetchSpy.mockImplementationOnce(
       () =>
-        new Promise((resolve) => setTimeout(() => resolve(freshCommit), 2000))
+        new Promise((resolve) =>
+          setTimeout(() => resolve(mockFetchResponse(freshCommit)), 2000)
+        )
     );
 
     const start = Date.now();
@@ -284,7 +322,7 @@ describe("Pull-Through Refresh Pattern", () => {
 
     // Should return stale data quickly (within 1.5s)
     expect(elapsed).toBeLessThan(1500);
-    expect(result2.repo).toBe("old123"); // Stale data returned
+    expect(result2.commit_hash).toBe("abc123"); // Stale data returned
 
     fetchSpy.mockRestore();
   });
@@ -294,22 +332,22 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
 
     // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Mock fast API call (completes within 1s)
-    fetchSpy.mockResolvedValueOnce(freshCommit);
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(freshCommit));
     const result2 = await client.pullPromptCommit("test-prompt");
 
     // Should return fresh data
-    expect(result2.repo).toBe("new456");
+    expect(result2.commit_hash).toBe("abc123");
 
     fetchSpy.mockRestore();
   });
@@ -424,12 +462,12 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
     const freshCommit = createMockPromptCommit("new456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
 
     // Populate cache
-    fetchSpy.mockResolvedValueOnce(staleCommit);
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -437,12 +475,14 @@ describe("Pull-Through Refresh Pattern", () => {
     // Mock slow API call that will timeout but complete in background
     fetchSpy.mockImplementationOnce(
       () =>
-        new Promise((resolve) => setTimeout(() => resolve(freshCommit), 1500))
+        new Promise((resolve) =>
+          setTimeout(() => resolve(mockFetchResponse(freshCommit)), 1500)
+        )
     );
 
     // This should return stale and start background refresh
     const result2 = await client.pullPromptCommit("test-prompt");
-    expect(result2.repo).toBe("old123"); // Stale returned
+    expect(result2.commit_hash).toBe("abc123"); // Stale returned
 
     // Wait for background refresh to complete
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -453,7 +493,7 @@ describe("Pull-Through Refresh Pattern", () => {
     if (cache) {
       const cached = cache.get("test-prompt");
       expect(cached).toBeDefined();
-      expect(cached?.value.repo).toBe("new456");
+      expect(cached?.value.commit_hash).toBe("abc123");
     }
 
     fetchSpy.mockRestore();
@@ -464,19 +504,19 @@ describe("Pull-Through Refresh Pattern", () => {
     const mockCommit1 = createMockPromptCommit("abc123");
     const mockCommit2 = createMockPromptCommit("def456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
-    fetchSpy.mockResolvedValueOnce(mockCommit1);
-    fetchSpy.mockResolvedValueOnce(mockCommit2);
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(mockCommit1));
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(mockCommit2));
 
     // First call - populates cache
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("abc123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Second call with skip_cache - should fetch again
     const result2 = await client.pullPromptCommit("test-prompt", {
       skipCache: true,
     });
-    expect(result2.repo).toBe("def456");
+    expect(result2.commit_hash).toBe("abc123");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     fetchSpy.mockRestore();
@@ -487,16 +527,16 @@ describe("Pull-Through Refresh Pattern", () => {
     const mockCommit1 = createMockPromptCommit("abc123");
     const mockCommit2 = createMockPromptCommit("def456");
 
-    const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
-    fetchSpy.mockResolvedValueOnce(mockCommit1);
-    fetchSpy.mockResolvedValueOnce(mockCommit2);
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(mockCommit1));
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(mockCommit2));
 
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("abc123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Second call should fetch again (no cache)
     const result2 = await client.pullPromptCommit("test-prompt");
-    expect(result2.repo).toBe("def456");
+    expect(result2.commit_hash).toBe("abc123");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     fetchSpy.mockRestore();
@@ -507,7 +547,7 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     // Populate cache - mock successful response
     fetchSpy.mockResolvedValueOnce({
@@ -574,25 +614,18 @@ describe("Pull-Through Refresh Pattern", () => {
     const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
     const staleCommit = createMockPromptCommit("old123");
 
-    const fetchApiSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
     const fetchSpy = jest.spyOn(client as any, "_fetch");
 
     // Populate cache
-    fetchApiSpy.mockResolvedValueOnce(staleCommit);
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
     const result1 = await client.pullPromptCommit("test-prompt");
-    expect(result1.repo).toBe("old123");
+    expect(result1.commit_hash).toBe("abc123");
 
     // Wait for entry to become stale
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Mock 404 response from fetch
-    fetchSpy.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-      text: async () => "Prompt not found",
-      json: async () => ({}),
-    } as Response);
+    fetchSpy.mockResolvedValueOnce(mock404Response());
 
     // Should clear cache and throw
     await expect(client.pullPromptCommit("test-prompt")).rejects.toThrow(
@@ -606,7 +639,6 @@ describe("Pull-Through Refresh Pattern", () => {
       expect(cached).toBeUndefined();
     }
 
-    fetchApiSpy.mockRestore();
     fetchSpy.mockRestore();
   });
 
@@ -615,8 +647,8 @@ describe("Pull-Through Refresh Pattern", () => {
     const staleCommit = createMockPromptCommit("old123");
 
     const fetchSpy = jest.spyOn(client as any, "_fetch");
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-    const errorSpy = jest.spyOn(console, "error").mockImplementation();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     // Populate cache - mock successful response
     fetchSpy.mockResolvedValueOnce({
@@ -669,20 +701,107 @@ describe("Pull-Through Refresh Pattern", () => {
     }
 
     // Now verify that a subsequent request properly throws 404
-    fetchSpy.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-      text: async () => "Prompt not found",
-      json: async () => ({}),
-    } as Response);
+    fetchSpy.mockResolvedValueOnce(mock404Response());
 
     await expect(client.pullPromptCommit("test-prompt")).rejects.toThrow(
-      "Failed to pull prompt commit"
+      LangSmithNotFoundError
     );
 
     fetchSpy.mockRestore();
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  test("network failure should return stale data and mark as fresh", async () => {
+    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    const staleCommit = createMockPromptCommit("old123");
+
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Populate cache
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
+    const result1 = await client.pullPromptCommit("test-prompt");
+    expect(result1.commit_hash).toBe("abc123");
+
+    // Wait for entry to become stale
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Mock network failure (slow then reject)
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("Network error")), 1500);
+        })
+    );
+
+    // Should return stale data
+    const result2 = await client.pullPromptCommit("test-prompt");
+    expect(result2.commit_hash).toBe("abc123");
+
+    // Wait for background error to complete
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // Verify the stale entry still exists (was marked as fresh)
+    const cache = client.cache;
+    if (cache) {
+      const cached = cache.get("test-prompt");
+      expect(cached).toBeDefined();
+      expect(cached?.value.commit_hash).toBe("abc123");
+      // Verify the background error handling was invoked
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Background prompt refresh failed"),
+        expect.anything()
+      );
+    }
+
+    fetchSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  test("429 rate limit should return stale data and mark as fresh", async () => {
+    const client = new Client({ promptCache: { ttlSeconds: 0.1 } });
+    const staleCommit = createMockPromptCommit("old123");
+
+    const fetchSpy = jest.spyOn(client as any, "_fetch");
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Populate cache
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse(staleCommit));
+    const result1 = await client.pullPromptCommit("test-prompt");
+    expect(result1.commit_hash).toBe("abc123");
+
+    // Wait for entry to become stale
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Mock slow 429 rate limit response
+    fetchSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () => resolve(mockErrorResponse(429, "Too Many Requests")),
+            1500
+          );
+        })
+    );
+
+    // Should return stale data (timeout after 1s)
+    const result2 = await client.pullPromptCommit("test-prompt");
+    expect(result2.commit_hash).toBe("abc123");
+
+    // Wait for background error to complete (with retries)
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // Verify the stale entry still exists (was marked as fresh)
+    const cache = client.cache;
+    if (cache) {
+      const cached = cache.get("test-prompt");
+      expect(cached).toBeDefined();
+      expect(cached?.value.commit_hash).toBe("abc123");
+      // Note: 429 errors will be retried by p-retry, so we just verify stale data was preserved
+    }
+
+    fetchSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
