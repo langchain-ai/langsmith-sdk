@@ -27,7 +27,8 @@ import {
 // =============================================================================
 
 const objectToString = Object.prototype.toString;
-const isError = (value: unknown): value is Error => objectToString.call(value) === "[object Error]";
+const isError = (value: unknown): value is Error =>
+  objectToString.call(value) === "[object Error]";
 
 const networkErrorMessages = new Set([
   "network error", // Chrome
@@ -99,7 +100,9 @@ interface ValidationDetail {
  *
  * Expected format: {"detail": {"error": "...", "message": "..."}}
  */
-export async function parseErrorResponse(response: Response): Promise<ParsedError> {
+export async function parseErrorResponse(
+  response: Response
+): Promise<ParsedError> {
   try {
     const data = await response.json();
     const detail = data?.detail;
@@ -108,19 +111,25 @@ export async function parseErrorResponse(response: Response): Promise<ParsedErro
     if (detail && typeof detail === "object" && !Array.isArray(detail)) {
       return {
         errorType: detail.error,
-        message: detail.message || `HTTP ${response.status}: ${response.statusText}`,
+        message:
+          detail.message || `HTTP ${response.status}: ${response.statusText}`,
       };
     }
 
     // Pydantic validation error format: {"detail": [{"loc": [...], "msg": "..."}]}
     if (Array.isArray(detail) && detail.length > 0) {
       const messages = detail
-        .filter((d): d is ValidationDetail => typeof d === "object" && d !== null)
+        .filter(
+          (d): d is ValidationDetail => typeof d === "object" && d !== null
+        )
         .map((d) => d.msg || String(d))
         .filter(Boolean);
       return {
         errorType: undefined,
-        message: messages.length > 0 ? messages.join("; ") : `HTTP ${response.status}: ${response.statusText}`,
+        message:
+          messages.length > 0
+            ? messages.join("; ")
+            : `HTTP ${response.status}: ${response.statusText}`,
       };
     }
 
@@ -142,7 +151,9 @@ export async function parseErrorResponse(response: Response): Promise<ParsedErro
  *
  * Returns a list of validation error details.
  */
-export async function parseValidationError(response: Response): Promise<ValidationDetail[]> {
+export async function parseValidationError(
+  response: Response
+): Promise<ValidationDetail[]> {
   try {
     const data = await response.json();
     const detail = data?.detail;
@@ -162,7 +173,10 @@ export function extractQuotaType(message: string): string | undefined {
   const messageLower = message.toLowerCase();
 
   // Check for sandbox count quota
-  if (messageLower.includes("sandbox") && (messageLower.includes("count") || messageLower.includes("limit"))) {
+  if (
+    messageLower.includes("sandbox") &&
+    (messageLower.includes("count") || messageLower.includes("limit"))
+  ) {
     return "sandbox_count";
   } else if (messageLower.includes("cpu")) {
     return "cpu";
@@ -170,7 +184,10 @@ export function extractQuotaType(message: string): string | undefined {
     return "memory";
   }
   // Check for volume count quota
-  else if (messageLower.includes("volume") && (messageLower.includes("count") || messageLower.includes("limit"))) {
+  else if (
+    messageLower.includes("volume") &&
+    (messageLower.includes("count") || messageLower.includes("limit"))
+  ) {
     return "volume_count";
   } else if (messageLower.includes("storage")) {
     return "storage";
@@ -192,7 +209,9 @@ export function extractQuotaType(message: string): string | undefined {
  * - 503: SandboxCreationError (no resources available)
  * - Other: Falls through to generic error handling
  */
-export async function handleSandboxCreationError(response: Response): Promise<never> {
+export async function handleSandboxCreationError(
+  response: Response
+): Promise<never> {
   const status = response.status;
   const data = await parseErrorResponse(response);
 
@@ -217,7 +236,10 @@ export async function handleSandboxCreationError(response: Response): Promise<ne
     throw new QuotaExceededError(data.message, quotaType);
   } else if (status === 503) {
     // Service Unavailable - scheduling failed
-    throw new SandboxCreationError(data.message, data.errorType || "Unschedulable");
+    throw new SandboxCreationError(
+      data.message,
+      data.errorType || "Unschedulable"
+    );
   }
   // Fall through to generic handling
   return handleClientHttpError(response);
@@ -232,7 +254,9 @@ export async function handleSandboxCreationError(response: Response): Promise<ne
  * - 504: ResourceTimeoutError (volume didn't become ready in time)
  * - Other: Falls through to generic error handling
  */
-export async function handleVolumeCreationError(response: Response): Promise<never> {
+export async function handleVolumeCreationError(
+  response: Response
+): Promise<never> {
   const status = response.status;
   const data = await parseErrorResponse(response);
 
@@ -293,7 +317,9 @@ export async function handlePoolError(response: Response): Promise<never> {
 /**
  * Handle HTTP errors and raise appropriate exceptions (for client operations).
  */
-export async function handleClientHttpError(response: Response): Promise<never> {
+export async function handleClientHttpError(
+  response: Response
+): Promise<never> {
   const data = await parseErrorResponse(response);
   const message = data.message;
   const errorType = data.errorType;
@@ -345,7 +371,9 @@ export async function handleClientHttpError(response: Response): Promise<never> 
  * - NotReady (400) -> SandboxNotReadyError
  * - 403 -> SandboxOperationError (permission denied)
  */
-export async function handleSandboxHttpError(response: Response): Promise<never> {
+export async function handleSandboxHttpError(
+  response: Response
+): Promise<never> {
   const data = await parseErrorResponse(response);
   const message = data.message;
   const errorType = data.errorType;

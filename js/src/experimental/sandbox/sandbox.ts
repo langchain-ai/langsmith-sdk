@@ -4,7 +4,10 @@
 
 import type { SandboxClient } from "./client.js";
 import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
-import { DataplaneNotConfiguredError, SandboxConnectionError } from "./errors.js";
+import {
+  DataplaneNotConfiguredError,
+  SandboxConnectionError,
+} from "./errors.js";
 import { handleSandboxHttpError, isNetworkError } from "./helpers.js";
 
 /**
@@ -92,7 +95,10 @@ export class Sandbox {
    * console.log(result.exit_code); // 0
    * ```
    */
-  async run(command: string, options: RunOptions = {}): Promise<ExecutionResult> {
+  async run(
+    command: string,
+    options: RunOptions = {}
+  ): Promise<ExecutionResult> {
     const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/execute`;
@@ -131,7 +137,9 @@ export class Sandbox {
       };
     } catch (e) {
       if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to sandbox '${this.name}': ${e}`);
+        throw new SandboxConnectionError(
+          `Failed to connect to sandbox '${this.name}': ${e}`
+        );
       }
       throw e;
     }
@@ -152,12 +160,17 @@ export class Sandbox {
    * await sandbox.write("/tmp/script.py", 'print("Hello!")');
    * ```
    */
-  async write(path: string, content: string | Uint8Array, timeout = 60): Promise<void> {
+  async write(
+    path: string,
+    content: string | Uint8Array,
+    timeout = 60
+  ): Promise<void> {
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/upload?path=${encodeURIComponent(path)}`;
 
     // Ensure content is bytes for multipart upload
-    const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+    const bytes =
+      typeof content === "string" ? new TextEncoder().encode(content) : content;
 
     const formData = new FormData();
     // Create a copy to ensure we have a plain ArrayBuffer (not SharedArrayBuffer)
@@ -177,7 +190,9 @@ export class Sandbox {
       }
     } catch (e) {
       if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to sandbox '${this.name}': ${e}`);
+        throw new SandboxConnectionError(
+          `Failed to connect to sandbox '${this.name}': ${e}`
+        );
       }
       throw e;
     }
@@ -220,7 +235,9 @@ export class Sandbox {
       return new Uint8Array(buffer);
     } catch (e) {
       if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to sandbox '${this.name}': ${e}`);
+        throw new SandboxConnectionError(
+          `Failed to connect to sandbox '${this.name}': ${e}`
+        );
       }
       throw e;
     }

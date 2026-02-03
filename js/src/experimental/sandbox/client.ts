@@ -41,7 +41,9 @@ import {
  * Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
  */
 function getDefaultApiEndpoint(): string {
-  const base = getLangSmithEnvironmentVariable("ENDPOINT") ?? "https://api.smith.langchain.com";
+  const base =
+    getLangSmithEnvironmentVariable("ENDPOINT") ??
+    "https://api.smith.langchain.com";
   return `${base.replace(/\/$/, "")}/v2/sandboxes`;
 }
 
@@ -86,7 +88,10 @@ export class SandboxClient {
   private _fetchImpl: typeof fetch;
 
   constructor(config: SandboxClientConfig = {}) {
-    this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(/\/$/, "");
+    this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
+      /\/$/,
+      ""
+    );
     this._apiKey = config.apiKey ?? getDefaultApiKey();
     this._fetchImpl = _getFetchImplementation();
   }
@@ -121,7 +126,10 @@ export class SandboxClient {
    * @throws SandboxCreationError if volume provisioning fails.
    * @throws ResourceTimeoutError if volume doesn't become ready within timeout.
    */
-  async createVolume(name: string, options: CreateVolumeOptions): Promise<Volume> {
+  async createVolume(
+    name: string,
+    options: CreateVolumeOptions
+  ): Promise<Volume> {
     const { size, timeout = 60 } = options;
     const url = `${this._baseUrl}/volumes`;
     const payload = {
@@ -167,7 +175,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Volume '${name}' not found`, "volume");
+          throw new ResourceNotFoundError(
+            `Volume '${name}' not found`,
+            "volume"
+          );
         }
         await handleClientHttpError(response);
       }
@@ -226,7 +237,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Volume '${name}' not found`, "volume");
+          throw new ResourceNotFoundError(
+            `Volume '${name}' not found`,
+            "volume"
+          );
         }
         if (response.status === 409) {
           await handleResourceInUseError(response, "volume");
@@ -254,7 +268,10 @@ export class SandboxClient {
    * @throws ValidationError if storage decrease attempted.
    * @throws ResourceNameConflictError if newName is already in use.
    */
-  async updateVolume(name: string, options: UpdateVolumeOptions): Promise<Volume> {
+  async updateVolume(
+    name: string,
+    options: UpdateVolumeOptions
+  ): Promise<Volume> {
     const { newName, size } = options;
 
     if (newName === undefined && size === undefined) {
@@ -280,7 +297,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Volume '${name}' not found`, "volume");
+          throw new ResourceNotFoundError(
+            `Volume '${name}' not found`,
+            "volume"
+          );
         }
         if (response.status === 409) {
           await handleConflictError(response, "volume");
@@ -315,7 +335,13 @@ export class SandboxClient {
     name: string,
     options: CreateTemplateOptions
   ): Promise<SandboxTemplate> {
-    const { image, cpu = "500m", memory = "512Mi", storage, volumeMounts } = options;
+    const {
+      image,
+      cpu = "500m",
+      memory = "512Mi",
+      storage,
+      volumeMounts,
+    } = options;
     const url = `${this._baseUrl}/templates`;
 
     const payload: Record<string, unknown> = {
@@ -371,7 +397,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Template '${name}' not found`, "template");
+          throw new ResourceNotFoundError(
+            `Template '${name}' not found`,
+            "template"
+          );
         }
         await handleClientHttpError(response);
       }
@@ -447,7 +476,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Template '${name}' not found`, "template");
+          throw new ResourceNotFoundError(
+            `Template '${name}' not found`,
+            "template"
+          );
         }
         if (response.status === 409) {
           await handleConflictError(response, "template");
@@ -479,7 +511,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Template '${name}' not found`, "template");
+          throw new ResourceNotFoundError(
+            `Template '${name}' not found`,
+            "template"
+          );
         }
         if (response.status === 409) {
           await handleResourceInUseError(response, "template");
@@ -714,7 +749,10 @@ export class SandboxClient {
    * }
    * ```
    */
-  async createSandbox(templateName: string, options: CreateSandboxOptions = {}): Promise<Sandbox> {
+  async createSandbox(
+    templateName: string,
+    options: CreateSandboxOptions = {}
+  ): Promise<Sandbox> {
     const { name, timeout = 30 } = options;
     const url = `${this._baseUrl}/boxes`;
 
@@ -766,7 +804,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Sandbox '${name}' not found`, "sandbox");
+          throw new ResourceNotFoundError(
+            `Sandbox '${name}' not found`,
+            "sandbox"
+          );
         }
         await handleClientHttpError(response);
       }
@@ -835,7 +876,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Sandbox '${name}' not found`, "sandbox");
+          throw new ResourceNotFoundError(
+            `Sandbox '${name}' not found`,
+            "sandbox"
+          );
         }
         if (response.status === 409) {
           throw new ResourceNameConflictError(
@@ -870,7 +914,10 @@ export class SandboxClient {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new ResourceNotFoundError(`Sandbox '${name}' not found`, "sandbox");
+          throw new ResourceNotFoundError(
+            `Sandbox '${name}' not found`,
+            "sandbox"
+          );
         }
         await handleClientHttpError(response);
       }

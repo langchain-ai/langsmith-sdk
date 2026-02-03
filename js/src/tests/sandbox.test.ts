@@ -13,7 +13,9 @@ import {
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
-  jest.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockResolvedValue(response);
+  jest
+    .fn<(url: string, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(response);
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -41,7 +43,9 @@ describe("Sandbox", () => {
       // Create a minimal mock client
       const mockClient = {
         _fetch: createMockFetch({}),
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -55,7 +59,9 @@ describe("Sandbox", () => {
         false
       );
 
-      await expect(sandbox.run("echo hello")).rejects.toThrow(DataplaneNotConfiguredError);
+      await expect(sandbox.run("echo hello")).rejects.toThrow(
+        DataplaneNotConfiguredError
+      );
     });
 
     it("should execute a command and return result", async () => {
@@ -70,7 +76,9 @@ describe("Sandbox", () => {
 
       const mockClient = {
         _fetch: mockFetch,
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -104,7 +112,9 @@ describe("Sandbox", () => {
 
       const mockClient = {
         _fetch: mockFetch,
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -118,7 +128,10 @@ describe("Sandbox", () => {
         false
       );
 
-      await sandbox.run("echo $MY_VAR", { env: { MY_VAR: "test-value" }, cwd: "/tmp" });
+      await sandbox.run("echo $MY_VAR", {
+        env: { MY_VAR: "test-value" },
+        cwd: "/tmp",
+      });
 
       const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(options.body as string);
@@ -136,7 +149,9 @@ describe("Sandbox", () => {
 
       const mockClient = {
         _fetch: mockFetch,
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -165,7 +180,9 @@ describe("Sandbox", () => {
 
       const mockClient = {
         _fetch: mockFetch,
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -196,7 +213,9 @@ describe("Sandbox", () => {
 
       const mockClient = {
         _fetch: mockFetch,
-        deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        deleteSandbox: jest
+          .fn<() => Promise<void>>()
+          .mockResolvedValue(undefined),
       } as unknown as SandboxClient;
 
       const sandbox = new (Sandbox as any)(
@@ -219,7 +238,9 @@ describe("Sandbox", () => {
 
   describe("delete", () => {
     it("should call deleteSandbox on the client", async () => {
-      const mockDeleteSandbox = jest.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+      const mockDeleteSandbox = jest
+        .fn<(name: string) => Promise<void>>()
+        .mockResolvedValue(undefined);
 
       const mockClient = {
         _fetch: createMockFetch({}),
@@ -241,7 +262,6 @@ describe("Sandbox", () => {
       expect(mockDeleteSandbox).toHaveBeenCalledWith("test-sandbox");
     });
   });
-
 });
 
 describe("Error classes", () => {
@@ -265,7 +285,9 @@ describe("Error classes", () => {
   });
 
   it("ValidationError should have field and details", () => {
-    const details = [{ loc: ["body", "cpu"], msg: "Invalid", type: "value_error" }];
+    const details = [
+      { loc: ["body", "cpu"], msg: "Invalid", type: "value_error" },
+    ];
     const error = new ValidationError("Validation failed", "cpu", details);
     expect(error.field).toBe("cpu");
     expect(error.details).toEqual(details);
