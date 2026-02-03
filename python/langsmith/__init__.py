@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
-    from langsmith.cache import AsyncCache, Cache
+    from langsmith.cache import AsyncPromptCache, PromptCache
     from langsmith.client import Client
     from langsmith.evaluation import (
         aevaluate,
@@ -144,8 +144,8 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "Client",
     "AsyncClient",
-    "Cache",
-    "AsyncCache",
+    "PromptCache",
+    "AsyncPromptCache",
     "RunTree",
     "configure",
     "__version__",
