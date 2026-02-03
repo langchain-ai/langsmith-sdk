@@ -5431,33 +5431,58 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     options?: { includeModel?: boolean }
   ): Promise<PromptCommit> {
-    const [owner, promptName, commitHash] =
-      parsePromptIdentifier(promptIdentifier);
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
-          options?.includeModel ? "?include_model=true" : ""
-        }`,
-        {
-          method: "GET",
-          headers: this.headers,
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-        }
-      );
-      await raiseForStatus(res, "pull prompt commit");
-      return res;
-    });
+    const cacheKey = this._getPromptCacheKey(
+      promptIdentifier,
+      options?.includeModel
+    );
+    let fetchPromise = this._inflightPromptFetches.get(cacheKey);
+    try {
+      const [owner, promptName, commitHash] =
+        parsePromptIdentifier(promptIdentifier);
+      if (!fetchPromise) {
+        fetchPromise = this.caller.call(async () => {
+          const res = await this._fetch(
+            `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
+              options?.includeModel ? "?include_model=true" : ""
+            }`,
+            {
+              method: "GET",
+              headers: this.headers,
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+            }
+          );
+          await raiseForStatus(res, "pull prompt commit");
+          return res.json();
+        });
+      }
+      const result = await fetchPromise;
 
-    const result = await response.json();
+      return {
+        owner,
+        repo: promptName,
+        commit_hash: result.commit_hash,
+        manifest: result.manifest,
+        examples: result.examples,
+      };
+    } finally {
+      this._inflightPromptFetches.delete(cacheKey);
+    }
+  }
 
-    return {
-      owner,
-      repo: promptName,
-      commit_hash: result.commit_hash,
-      manifest: result.manifest,
-      examples: result.examples,
-    };
+  private async _fetchPromptFromApiSettled(
+    promptIdentifier: string,
+    options?: { includeModel?: boolean }
+  ): Promise<
+    { commit: PromptCommit; error: null } | { commit: null; error: any }
+  > {
+    try {
+      const commit = await this._fetchPromptFromApi(promptIdentifier, options);
+      return { commit, error: null };
+    } catch (error: any) {
+      // Handle error
+      return { commit: null, error };
+    }
   }
 
   public async pullPromptCommit(
@@ -5488,85 +5513,62 @@ export class Client implements LangSmithTracingClientInterface {
             return cached.value;
           }
 
-          // Stale data - check if there's already an in-flight fetch
-          let fetchPromise = this._inflightPromptFetches.get(cacheKey);
+          // Try to get fresh data with timeout if existing values are stale (1s)
+          const fetchPromise = this._fetchPromptFromApiSettled(
+            promptIdentifier,
+            options
+          ).then((result) => {
+            if (result.error) {
+              // Background completion - handle errors
+              if (isLangSmithNotFoundError(result.error)) {
+                cache.invalidate(cacheKey);
+                console.warn(
+                  `Prompt not found, cleared from cache: ${cacheKey}`
+                );
+              } else {
+                // Mark stale entry as fresh to prevent retry storms
+                cache.set(cacheKey, cached.value);
+                console.warn(
+                  `Background prompt refresh failed for ${cacheKey}:`,
+                  result.error
+                );
+              }
+            } else {
+              // For successful responses, update the cache entry mark as fresh
+              cache.set(cacheKey, cached.value);
+            }
+            return result;
+          });
 
-          if (!fetchPromise) {
-            // Start new fetch
-            fetchPromise = this._fetchPromptFromApi(promptIdentifier, options);
-            this._inflightPromptFetches.set(cacheKey, fetchPromise);
+          const freshValue = await Promise.race([
+            fetchPromise,
+            new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), 1000)
+            ),
+          ]);
 
-            // Clean up after completion
-            fetchPromise.finally(() => {
-              this._inflightPromptFetches.delete(cacheKey);
-            });
+          if (freshValue != null) {
+            if (freshValue.error != null) {
+              throw freshValue.error;
+            } else if (freshValue.commit != null) {
+              // Got fresh data within 1s - cache and return it
+              cache.set(cacheKey, freshValue.commit);
+              return freshValue.commit;
+            } else {
+              throw new Error(
+                "Unspecified error encountered while fetching prompt. Please contact us for help"
+              );
+            }
           }
 
-          // Try to get fresh data with timeout (1s)
-          try {
-            const freshValue = await Promise.race([
-              fetchPromise,
-              new Promise<null>((resolve) =>
-                setTimeout(() => resolve(null), 1000)
-              ),
-            ]);
-
-            if (freshValue !== null) {
-              // Got fresh data within 1s - update cache and return
-              cache.set(cacheKey, freshValue);
-              return freshValue;
-            }
-
-            // Timeout - return stale data, let fetch complete in background
-            fetchPromise
-              .then((value) => cache.set(cacheKey, value))
-              .catch((error) => {
-                // If 404, the prompt was deleted - clear from cache
-                if (isLangSmithNotFoundError(error)) {
-                  cache.invalidate(cacheKey);
-                  console.warn(
-                    `Prompt not found, cleared from cache: ${cacheKey}`
-                  );
-                } else {
-                  // Other errors - mark as fresh to prevent retry storms
-                  cache.set(cacheKey, cached.value);
-                  console.warn(
-                    `Background prompt refresh failed for ${cacheKey}:`,
-                    error
-                  );
-                }
-              });
-
-            return cached.value;
-          } catch (error) {
-            // Fetch failed immediately
-            // If 404, the prompt was deleted - clear from cache and throw
-            if (isLangSmithNotFoundError(error)) {
-              cache.invalidate(cacheKey);
-              throw error;
-            }
-            // Other errors - return stale data and mark as fresh
-            cache.set(cacheKey, cached.value);
-            return cached.value;
-          }
+          return cached.value;
         }
 
         // Cache miss - check for in-flight fetch to avoid thundering herd
-        let fetchPromise = this._inflightPromptFetches.get(cacheKey);
-
-        if (!fetchPromise) {
-          // Start new fetch
-          fetchPromise = this._fetchPromptFromApi(promptIdentifier, options);
-          this._inflightPromptFetches.set(cacheKey, fetchPromise);
-
-          // Clean up after completion
-          fetchPromise.finally(() => {
-            this._inflightPromptFetches.delete(cacheKey);
-          });
-        }
-
-        // Wait for fetch to complete
-        const result = await fetchPromise;
+        const result = await this._fetchPromptFromApi(
+          promptIdentifier,
+          options
+        );
         cache.set(cacheKey, result);
         return result;
       }
