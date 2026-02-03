@@ -17,10 +17,7 @@ function createMockPromptCommit(name: string): PromptCommit {
 }
 
 // Helper to create a mock fetch Response
-function mockFetchResponse(
-  commit: PromptCommit,
-  status: number = 200
-): Response {
+function mockFetchResponse(commit: PromptCommit, status = 200): Response {
   const isOk = status >= 200 && status < 300;
   return {
     ok: isOk,
