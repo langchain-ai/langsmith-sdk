@@ -49,17 +49,17 @@ class TestAsyncSandboxClientInit:
         """Test endpoint derivation from LANGSMITH_ENDPOINT."""
         with patch(
             "langsmith.sandbox._async_client._get_default_api_endpoint",
-            return_value="https://custom.langsmith.com/api/v2/sandboxes",
+            return_value="https://custom.langsmith.com/v2/sandboxes",
         ):
             client = AsyncSandboxClient()
-            assert client._base_url == "https://custom.langsmith.com/api/v2/sandboxes"
+            assert client._base_url == "https://custom.langsmith.com/v2/sandboxes"
             await client.aclose()
 
     async def test_explicit_endpoint_overrides_env(self):
         """Test explicit endpoint overrides environment variable."""
         with patch(
             "langsmith.sandbox._async_client._get_default_api_endpoint",
-            return_value="https://env.langsmith.com/api/v2/sandboxes",
+            return_value="https://env.langsmith.com/v2/sandboxes",
         ):
             client = AsyncSandboxClient(api_endpoint="http://explicit:8080")
             assert client._base_url == "http://explicit:8080"

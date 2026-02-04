@@ -48,27 +48,27 @@ class TestSandboxClientInit:
         """Test endpoint derivation from LANGSMITH_ENDPOINT."""
         with patch(
             "langsmith.sandbox._client._get_default_api_endpoint",
-            return_value="https://custom.langsmith.com/api/v2/sandboxes",
+            return_value="https://custom.langsmith.com/v2/sandboxes",
         ):
             client = SandboxClient()
-            assert client._base_url == "https://custom.langsmith.com/api/v2/sandboxes"
+            assert client._base_url == "https://custom.langsmith.com/v2/sandboxes"
             client.close()
 
     def test_derives_endpoint_from_langchain_endpoint(self):
         """Test endpoint derivation from LANGCHAIN_ENDPOINT (fallback)."""
         with patch(
             "langsmith.sandbox._client._get_default_api_endpoint",
-            return_value="https://custom.langchain.com/api/v2/sandboxes",
+            return_value="https://custom.langchain.com/v2/sandboxes",
         ):
             client = SandboxClient()
-            assert client._base_url == "https://custom.langchain.com/api/v2/sandboxes"
+            assert client._base_url == "https://custom.langchain.com/v2/sandboxes"
             client.close()
 
     def test_explicit_endpoint_overrides_env(self):
         """Test explicit endpoint overrides environment variable."""
         with patch(
             "langsmith.sandbox._client._get_default_api_endpoint",
-            return_value="https://env.langsmith.com/api/v2/sandboxes",
+            return_value="https://env.langsmith.com/v2/sandboxes",
         ):
             client = SandboxClient(api_endpoint="http://explicit:8080")
             assert client._base_url == "http://explicit:8080"

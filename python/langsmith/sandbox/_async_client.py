@@ -32,7 +32,7 @@ def _get_default_api_endpoint() -> str:
     Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
     """
     base = ls_utils.get_env_var("ENDPOINT", default="https://api.smith.langchain.com")
-    return f"{base.rstrip('/')}/api/v2/sandboxes"
+    return f"{base.rstrip('/')}/v2/sandboxes"
 
 
 def _get_default_api_key() -> Optional[str]:
