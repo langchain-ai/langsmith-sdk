@@ -1075,10 +1075,10 @@ class TestGlobalSingleton:
             assert result is not None
             assert result.owner == "test-owner"
 
-            # Metrics should be shared
-            assert client1._cache.metrics.hits == 0  # aset doesn't count as hit
-            client1._cache.get("key1")  # Now hit
-            assert client2._cache.metrics.hits == 1  # Same metrics
+            # Metrics should be shared (already 1 hit from client2.get above)
+            assert client1._cache.metrics.hits == 1
+            assert client2._cache.metrics.hits == 1  # Same metrics object
+            assert client1._cache.metrics is client2._cache.metrics
 
         finally:
             async_prompt_cache_singleton.clear()

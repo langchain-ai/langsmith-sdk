@@ -530,4 +530,46 @@ describe("additional singleton tests", () => {
       promptCacheSingleton.clear();
     }
   });
+
+  test("should stop refresh timer when configuring", () => {
+    promptCacheSingleton.clear();
+    promptCacheSingleton.resetMetrics();
+    promptCacheSingleton.stop();
+
+    const mockFetch = jest
+      .fn<(key: string) => Promise<PromptCommit>>()
+      .mockResolvedValue(createMockPromptCommit("refreshed"));
+
+    // Configure with fetch func and start timer
+    (promptCacheSingleton as any).fetchFunc = mockFetch;
+    (promptCacheSingleton as any).ttlSeconds = 10;
+
+    const prompt = createMockPromptCommit("test");
+    promptCacheSingleton.set("key1", prompt);
+
+    // Timer should be running
+    expect((promptCacheSingleton as any).refreshTimer).toBeDefined();
+    const firstTimer = (promptCacheSingleton as any).refreshTimer;
+
+    // Reconfigure - should stop the timer
+    promptCacheSingleton.configure({ maxSize: 200, ttlSeconds: 20 });
+
+    // Timer should be cleared by configure (configure calls stop())
+    expect((promptCacheSingleton as any).refreshTimer).toBeUndefined();
+
+    // Set again to restart timer with new config
+    promptCacheSingleton.set("key2", prompt);
+
+    // New timer should be started
+    expect((promptCacheSingleton as any).refreshTimer).toBeDefined();
+    const secondTimer = (promptCacheSingleton as any).refreshTimer;
+
+    // Should be a different timer object
+    expect(secondTimer).not.toBe(firstTimer);
+
+    // Clean up
+    (promptCacheSingleton as any).fetchFunc = undefined;
+    promptCacheSingleton.stop();
+    promptCacheSingleton.clear();
+  });
 });
