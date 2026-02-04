@@ -1225,3 +1225,187 @@ class TestLazyInitialization:
         except:
             cache.shutdown()
             raise
+
+
+class TestAsyncLazyInitialization:
+    """Tests for lazy background task initialization in AsyncPromptCache."""
+
+    @pytest.mark.asyncio
+    async def test_task_not_started_on_creation(self):
+        """Test that background task is not started when cache is created."""
+        cache = AsyncPromptCache()
+        try:
+            # Task should be None before first set
+            assert cache._refresh_task is None
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_task_starts_on_first_set_with_fetch_func(self):
+        """Test that background task starts on first set when fetch_func is provided."""
+
+        async def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Task should be None before first set
+            assert cache._refresh_task is None
+
+            # Set a value - should trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should now be started
+            assert cache._refresh_task is not None
+            assert not cache._refresh_task.done()
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_task_not_started_without_fetch_func(self):
+        """Test that task doesn't start without fetch_func even after set."""
+        cache = AsyncPromptCache(ttl_seconds=10)
+        try:
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should still be None (no fetch_func)
+            assert cache._refresh_task is None
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_task_not_started_with_infinite_ttl(self):
+        """Test that task doesn't start with infinite TTL (None)."""
+
+        async def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=None)
+        try:
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should not start with infinite TTL
+            assert cache._refresh_task is None
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_configure_stops_and_restarts_task(self):
+        """Test that configure stops existing task and can restart it."""
+
+        async def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should be running
+            assert cache._refresh_task is not None
+
+            # Reconfigure - should stop the task
+            await cache.configure(ttl_seconds=20)
+
+            # Task should be stopped (configure calls stop)
+            # After configure, task won't start until next aset()
+            assert cache._refresh_task is None
+
+            # Set again to trigger restart
+            await cache.aset("test-key-2", prompt)
+
+            # New task should be started
+            assert cache._refresh_task is not None
+            assert not cache._refresh_task.done()
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_configure_stops_background_task(self):
+        """Test that configure stops the background task like TypeScript."""
+
+        async def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Trigger task start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should be running
+            assert cache._refresh_task is not None
+            assert not cache._refresh_task.done()
+            first_task = cache._refresh_task
+
+            # Reconfigure - should stop the task
+            await cache.configure(ttl_seconds=20)
+
+            # Task should be stopped (configure calls stop())
+            assert cache._refresh_task is None
+
+            # Set again to restart with new config
+            await cache.aset("test-key-2", prompt)
+
+            # New task should be started
+            assert cache._refresh_task is not None
+            assert not cache._refresh_task.done()
+            second_task = cache._refresh_task
+
+            # Should be a different task object
+            assert second_task is not first_task
+
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_task(self):
+        """Test that stop cancels the background task."""
+
+        async def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            await cache.aset("test-key", prompt)
+
+            # Task should be running
+            assert cache._refresh_task is not None
+            assert not cache._refresh_task.done()
+
+            # Stop
+            await cache.stop()
+
+            # Task should be None
+            assert cache._refresh_task is None
+        except:
+            await cache.stop()
+            raise

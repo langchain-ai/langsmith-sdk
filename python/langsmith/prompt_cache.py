@@ -24,6 +24,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langsmith.cache")
 
 
+DEFAULT_PROMPT_CACHE_TTL_SECONDS = 5 * 60  # 5 minutes
+DEFAULT_PROMPT_CACHE_MAX_SIZE = 100
+DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS = 60  # 1 minute
+
+
 @dataclass
 class CacheEntry:
     """A single cache entry with metadata for TTL tracking."""
@@ -77,9 +82,9 @@ class _BasePromptCache(ABC):
 
     def __init__(
         self,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
     ) -> None:
         """Initialize the base cache.
 
@@ -311,9 +316,9 @@ class PromptCache(_BasePromptCache):
     def __init__(
         self,
         *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
         fetch_func: Optional[Callable[[str], Any]] = None,
     ) -> None:
         """Initialize the sync prompt cache.
@@ -417,9 +422,9 @@ class PromptCache(_BasePromptCache):
     def configure(
         self,
         *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
     ) -> None:
         """Reconfigure the cache parameters.
 
@@ -466,9 +471,9 @@ class AsyncPromptCache(_BasePromptCache):
     def __init__(
         self,
         *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
         fetch_func: Optional[Callable[[str], Awaitable[Any]]] = None,
     ) -> None:
         """Initialize the async prompt cache.
@@ -584,9 +589,9 @@ class AsyncPromptCache(_BasePromptCache):
     async def configure(
         self,
         *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
     ) -> None:
         """Reconfigure the cache parameters.
 
@@ -606,9 +611,9 @@ async_prompt_cache_singleton = AsyncPromptCache()
 
 def configure_global_prompt_cache(
     *,
-    max_size: Optional[int] = None,
-    ttl_seconds: Optional[float] = None,
-    refresh_interval_seconds: Optional[float] = None,
+    max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+    ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+    refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
 ) -> None:
     """Configure the global prompt cache.
 
@@ -632,9 +637,9 @@ def configure_global_prompt_cache(
 
 async def configure_global_async_prompt_cache(
     *,
-    max_size: Optional[int] = None,
-    ttl_seconds: Optional[float] = None,
-    refresh_interval_seconds: Optional[float] = None,
+    max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+    ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+    refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
 ) -> None:
     """Configure the global prompt cache.
 
