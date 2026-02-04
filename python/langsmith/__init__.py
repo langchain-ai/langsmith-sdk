@@ -138,7 +138,10 @@ def __getattr__(name: str) -> Any:
 
         return AsyncCache
 
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    elif name == "configure_global_prompt_cache":
+        from langsmith.cache import configure_global_prompt_cache
+
+        return configure_global_prompt_cache
 
 
 __all__ = [
@@ -146,6 +149,7 @@ __all__ = [
     "AsyncClient",
     "PromptCache",
     "AsyncPromptCache",
+    "configure_global_prompt_cache",
     "RunTree",
     "configure",
     "__version__",

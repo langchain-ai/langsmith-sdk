@@ -26,8 +26,6 @@ export {
   type CacheConfig,
   type CacheMetrics,
   configureGlobalPromptCache,
-  enableGlobalPromptCache,
-  disableGlobalPromptCache,
 } from "./utils/prompts_cache.js";
 
 // Update using yarn bump-version

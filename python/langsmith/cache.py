@@ -11,7 +11,7 @@ import json
 import logging
 import threading
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -78,9 +78,9 @@ class _BasePromptCache(ABC):
     def __init__(
         self,
         *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
+        max_size: Optional[int],
+        ttl_seconds: Optional[float],
+        refresh_interval_seconds: Optional[float],
     ) -> None:
         """Initialize the base cache.
 
@@ -92,10 +92,8 @@ class _BasePromptCache(ABC):
         """
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = threading.RLock()
-        self._max_size = max_size
-        self._ttl_seconds = ttl_seconds
-        self._refresh_interval = refresh_interval_seconds
         self._metrics = CacheMetrics()
+        self.configure(max_size, ttl_seconds, refresh_interval_seconds)
 
     @property
     def metrics(self) -> CacheMetrics:
@@ -167,6 +165,14 @@ class _BasePromptCache(ABC):
         """Clear all cache entries from memory."""
         with self._lock:
             self._cache.clear()
+
+    @abstractmethod
+    def shutdown(self) -> None:
+        """Stop background refresh thread.
+
+        Should be called when the client is being cleaned up.
+        """
+        ...
 
     def _get_stale_keys(self) -> list[str]:
         """Get list of stale cache keys (thread-safe)."""
@@ -274,6 +280,28 @@ class _BasePromptCache(ABC):
         logger.debug(f"Loaded {loaded} cache entries from {path}")
         return loaded
 
+    def configure(
+        self,
+        *,
+        max_size: int = 100,
+        ttl_seconds: Optional[float] = 300,
+        refresh_interval_seconds: float = 60,
+    ) -> None:
+        """Reconfigure the cache parameters.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale.
+            refresh_interval_seconds: How often to check for stale entries.
+        """
+        self.shutdown()
+        if max_size is not None:
+            self._max_size = max_size
+        if ttl_seconds is not None:
+            self._ttl_seconds = ttl_seconds
+        if refresh_interval_seconds is not None:
+            self._refresh_interval = refresh_interval_seconds
+
 
 class PromptCache(_BasePromptCache):
     """Thread-safe LRU cache with background thread refresh.
@@ -336,29 +364,22 @@ class PromptCache(_BasePromptCache):
 
         Should be called when the client is being cleaned up.
         """
-        self._shutdown_event.set()
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
         if self._refresh_thread is not None:
             self._refresh_thread.join(timeout=5.0)
             self._refresh_thread = None
 
-    def start_refresh_loop(self) -> None:
-        """Start the background refresh loop.
-
-        Can be called to restart refresh after stopping.
-        """
-        self.shutdown()
-        if self._fetch_func is not None and self._ttl_seconds is not None:
-            self._start_refresh_thread()
-
     def _start_refresh_thread(self) -> None:
         """Start background thread for refreshing stale entries."""
-        self._refresh_thread = threading.Thread(
-            target=self._refresh_loop,
-            daemon=True,
-            name="PromptCache-refresh",
-        )
-        self._refresh_thread.start()
-        logger.debug("Started cache refresh thread")
+        if self._fetch_func is not None and self._ttl_seconds is not None:
+            self._refresh_thread = threading.Thread(
+                target=self._refresh_loop,
+                daemon=True,
+                name="PromptCache-refresh",
+            )
+            self._refresh_thread.start()
+            logger.debug("Started cache refresh thread")
 
     def _refresh_loop(self) -> None:
         """Background loop to refresh stale entries."""
@@ -394,31 +415,8 @@ class PromptCache(_BasePromptCache):
                 self._metrics.refresh_errors += 1
                 logger.warning(f"Failed to refresh cache entry {key}: {e}")
 
-    def configure(
-        self,
-        *,
-        max_size: Optional[int] = None,
-        ttl_seconds: Optional[float] = None,
-        refresh_interval_seconds: Optional[float] = None,
-    ) -> None:
-        """Reconfigure the cache parameters.
 
-        Args:
-            max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale.
-            refresh_interval_seconds: How often to check for stale entries.
-        """
-        self.shutdown()
-        if max_size is not None:
-            self._max_size = max_size
-        if ttl_seconds is not None:
-            self._ttl_seconds = ttl_seconds
-        if refresh_interval_seconds is not None:
-            self._refresh_interval = refresh_interval_seconds
-        # Don't automatically start refresh loop - it will start on first set()
-
-
-class AsyncCache(_BasePromptCache):
+class AsyncPromptCache(_BasePromptCache):
     """Thread-safe LRU cache with asyncio task refresh.
 
     For use with the asynchronous AsyncClient.
@@ -490,6 +488,16 @@ class AsyncCache(_BasePromptCache):
         )
         logger.debug("Started async cache refresh task")
 
+    def shutdown(self) -> None:
+        """Stop background refresh task.
+
+        Synchronous wrapper that cancels the refresh task.
+        For proper cleanup in async context, use stop() instead.
+        """
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
+            self._refresh_task = None
+
     async def stop(self) -> None:
         """Stop async background refresh loop.
 
@@ -544,7 +552,7 @@ class AsyncCache(_BasePromptCache):
 
 # Global singleton instances for prompt caching
 prompt_cache_singleton = PromptCache()
-async_prompt_cache_singleton = AsyncCache()
+async_prompt_cache_singleton = AsyncPromptCache()
 
 
 def configure_global_prompt_cache(
@@ -571,25 +579,3 @@ def configure_global_prompt_cache(
         ttl_seconds=ttl_seconds,
         refresh_interval_seconds=refresh_interval_seconds,
     )
-
-
-def enable_global_prompt_cache() -> None:
-    """Enable prompt caching globally.
-
-    Example:
-        >>> from langsmith import enable_global_prompt_cache
-        >>> enable_global_prompt_cache()
-    """
-    prompt_cache_singleton.start_refresh_loop()
-
-
-def disable_global_prompt_cache() -> None:
-    """Disable prompt caching globally.
-
-    When disabled, clients will not use caching unless explicitly overridden.
-
-    Example:
-        >>> from langsmith import disable_global_prompt_cache
-        >>> disable_global_prompt_cache()
-    """
-    prompt_cache_singleton.shutdown()

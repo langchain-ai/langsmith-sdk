@@ -815,8 +815,7 @@ class Client:
                 By default, prompt caching is enabled globally using a singleton cache.
                 Set this to `True` to disable caching for this specific client instance.
 
-                To configure the global cache, use `configure_global_prompt_cache()`,
-                `enable_global_prompt_cache()`, or `disable_global_prompt_cache()`.
+                To configure the global cache, use `configure_global_prompt_cache()`.
 
                 !!! example
 

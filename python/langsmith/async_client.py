@@ -22,7 +22,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncCache, async_prompt_cache_singleton
+from langsmith.cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -86,7 +86,7 @@ class AsyncClient:
         # Initialize prompt cache
         if not disable_prompt_cache:
             # Use the global singleton instance
-            self._cache: Optional[AsyncCache] = async_prompt_cache_singleton
+            self._cache: Optional[AsyncPromptCache] = async_prompt_cache_singleton
         else:
             self._cache = None
 

@@ -347,33 +347,3 @@ export function configureGlobalPromptCache(
 ): void {
   promptCacheSingleton.configure(config);
 }
-
-/**
- * Enable prompt caching globally.
- *
- * @example
- * ```typescript
- * import { enableGlobalPromptCache } from 'langsmith';
- *
- * enableGlobalPromptCache();
- * ```
- */
-export function enableGlobalPromptCache(): void {
-  promptCacheSingleton.startRefreshLoop();
-}
-
-/**
- * Disable prompt caching globally.
- *
- * When disabled, clients will not use caching unless explicitly overridden.
- *
- * @example
- * ```typescript
- * import { disableGlobalPromptCache } from 'langsmith';
- *
- * disableGlobalPromptCache();
- * ```
- */
-export function disableGlobalPromptCache(): void {
-  promptCacheSingleton.stop();
-}
