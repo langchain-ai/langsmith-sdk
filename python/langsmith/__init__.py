@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
-    from langsmith.cache import AsyncPromptCache, PromptCache
     from langsmith.client import Client
     from langsmith.evaluation import (
         aevaluate,
@@ -14,6 +13,7 @@ if TYPE_CHECKING:
         evaluate_existing,
     )
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
+    from langsmith.prompt_cache import AsyncPromptCache, PromptCache
     from langsmith.run_helpers import (
         get_current_run_tree,
         get_tracing_context,
@@ -130,16 +130,16 @@ def __getattr__(name: str) -> Any:
 
         return uuid7_from_datetime
     elif name == "Cache":
-        from langsmith.cache import Cache
+        from langsmith.prompt_cache import Cache
 
         return Cache
     elif name == "AsyncCache":
-        from langsmith.cache import AsyncCache
+        from langsmith.prompt_cache import AsyncCache
 
         return AsyncCache
 
     elif name == "configure_global_prompt_cache":
-        from langsmith.cache import configure_global_prompt_cache
+        from langsmith.prompt_cache import configure_global_prompt_cache
 
         return configure_global_prompt_cache
 

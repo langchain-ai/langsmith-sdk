@@ -8,8 +8,8 @@
  * that are swapped for browser builds via package.json browser field.
  */
 
-import type { PromptCommit } from "../schemas.js";
-import { dumpCache, loadCache } from "./prompts_cache_fs.js";
+import type { PromptCommit } from "../../schemas.js";
+import { dumpCache, loadCache } from "./fs.js";
 
 /**
  * A single cache entry with metadata for TTL tracking.

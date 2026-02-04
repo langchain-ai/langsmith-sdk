@@ -22,7 +22,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncPromptCache, async_prompt_cache_singleton
+from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
 

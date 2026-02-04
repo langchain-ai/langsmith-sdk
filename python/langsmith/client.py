@@ -97,7 +97,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith.cache import PromptCache, prompt_cache_singleton
+from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)

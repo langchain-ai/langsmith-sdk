@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from langsmith import schemas as ls_schemas
-from langsmith.cache import (
+from langsmith.prompt_cache import (
     AsyncPromptCache,
     CacheEntry,
     PromptCache,

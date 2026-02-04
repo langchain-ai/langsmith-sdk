@@ -26,7 +26,7 @@ export {
   type CacheConfig,
   type CacheMetrics,
   configureGlobalPromptCache,
-} from "./utils/prompts_cache.js";
+} from "./utils/prompt_cache/index.js";
 
 // Update using yarn bump-version
 export const __version__ = "0.4.12";

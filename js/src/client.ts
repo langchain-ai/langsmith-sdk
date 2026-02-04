@@ -71,7 +71,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
-import { PromptCache, promptCacheSingleton } from "./utils/prompts_cache.js";
+import {
+  PromptCache,
+  promptCacheSingleton,
+} from "./utils/prompt_cache/index.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
