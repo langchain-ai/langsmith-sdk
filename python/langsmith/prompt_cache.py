@@ -630,7 +630,7 @@ def configure_global_prompt_cache(
     )
 
 
-def configure_global_async_prompt_cache(
+async def configure_global_async_prompt_cache(
     *,
     max_size: Optional[int] = None,
     ttl_seconds: Optional[float] = None,
@@ -649,7 +649,7 @@ def configure_global_async_prompt_cache(
         >>> from langsmith import configure_global_prompt_cache
         >>> configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
     """
-    async_prompt_cache_singleton.configure(
+    await async_prompt_cache_singleton.configure(
         max_size=max_size,
         ttl_seconds=ttl_seconds,
         refresh_interval_seconds=refresh_interval_seconds,
