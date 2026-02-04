@@ -224,6 +224,9 @@ class TestCacheBackgroundRefresh:
             fetch_func=mock_fetch,
         )
 
+        # Trigger lazy thread initialization by setting a value
+        cache.set("test-key", sample_prompt_commit)
+
         # Verify thread is running
         assert cache._refresh_thread is not None
         assert cache._refresh_thread.is_alive()
@@ -305,7 +308,7 @@ class TestAsyncCache:
             fetch_func=mock_fetch,
         )
         try:
-            cache.set("test-key", sample_prompt_commit)
+            await cache.aset("test-key", sample_prompt_commit)
 
             # Start async refresh
             await cache.start()
@@ -334,7 +337,7 @@ class TestAsyncCache:
             fetch_func=failing_fetch,
         )
         try:
-            cache.set("test-key", sample_prompt_commit)
+            await cache.aset("test-key", sample_prompt_commit)
 
             # Start async refresh
             await cache.start()
@@ -397,7 +400,7 @@ class TestAsyncCache:
         cache = AsyncPromptCache()
 
         # Set and get
-        cache.set("test-key", sample_prompt_commit)
+        await cache.aset("test-key", sample_prompt_commit)
         result = cache.get("test-key")
 
         assert result is not None
@@ -524,13 +527,13 @@ class TestCachePersistence:
         finally:
             cache2.shutdown()
 
-    def test_async_cache_dump_load(self, sample_prompt_commit, tmp_path):
+    async def test_async_cache_dump_load(self, sample_prompt_commit, tmp_path):
         """Test that AsyncCache can also dump/load."""
         cache_file = tmp_path / "async_cache.json"
 
         # dump/load are inherited from base class
         cache1 = AsyncPromptCache()
-        cache1.set("prompt1", sample_prompt_commit)
+        await cache1.aset("prompt1", sample_prompt_commit)
         cache1.dump(cache_file)
 
         cache2 = AsyncPromptCache()
@@ -749,13 +752,13 @@ class TestCacheMetrics:
             assert cache.metrics.misses == 1
 
             # Set and hit
-            cache.set("key1", sample_prompt_commit)
+            await cache.aset("key1", sample_prompt_commit)
             cache.get("key1")
             assert cache.metrics.hits == 1
 
             # Start refresh and wait
             await cache.start()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
             assert cache.metrics.refreshes >= 1
         finally:
@@ -767,7 +770,10 @@ class TestGlobalSingleton:
 
     def test_singleton_instances_exist(self):
         """Test that global singletons are created."""
-        from langsmith.cache import async_prompt_cache_singleton, prompt_cache_singleton
+        from langsmith.prompt_cache import (
+            async_prompt_cache_singleton,
+            prompt_cache_singleton,
+        )
 
         assert prompt_cache_singleton is not None
         assert isinstance(prompt_cache_singleton, PromptCache)
@@ -776,18 +782,17 @@ class TestGlobalSingleton:
 
     def test_singleton_is_same_instance(self):
         """Test that singleton returns the same instance."""
-        from langsmith.cache import prompt_cache_singleton
+        from langsmith.prompt_cache import prompt_cache_singleton
 
         # Import again to ensure it's the same instance
-        from langsmith.cache import prompt_cache_singleton as singleton2
+        from langsmith.prompt_cache import prompt_cache_singleton as singleton2
 
         assert prompt_cache_singleton is singleton2
 
     def test_client_uses_singleton_by_default(self):
         """Test that Client uses the global singleton by default."""
-        from langsmith.cache import prompt_cache_singleton
-
         from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
 
         client = Client(api_key="test-key")
         assert client._cache is prompt_cache_singleton
@@ -801,9 +806,8 @@ class TestGlobalSingleton:
 
     def test_async_client_uses_singleton_by_default(self):
         """Test that AsyncClient uses the global singleton by default."""
-        from langsmith.cache import async_prompt_cache_singleton
-
         from langsmith.async_client import AsyncClient
+        from langsmith.prompt_cache import async_prompt_cache_singleton
 
         client = AsyncClient(api_key="test-key")
         assert client._cache is async_prompt_cache_singleton
@@ -817,7 +821,7 @@ class TestGlobalSingleton:
 
     def test_configure_global_prompt_cache(self, sample_prompt_commit):
         """Test configuring the global cache."""
-        from langsmith.cache import (
+        from langsmith.prompt_cache import (
             configure_global_prompt_cache,
             prompt_cache_singleton,
         )
@@ -841,9 +845,8 @@ class TestGlobalSingleton:
 
     def test_multiple_clients_share_singleton(self, sample_prompt_commit):
         """Test that multiple clients share the same cache instance."""
-        from langsmith.cache import prompt_cache_singleton
-
         from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
 
         client1 = Client(api_key="test-key-1")
         client2 = Client(api_key="test-key-2")
@@ -959,14 +962,13 @@ class TestLazyInitialization:
 
             # Thread should be stopped (configure calls shutdown)
             # After configure, thread won't start until next set()
-            assert cache._refresh_thread is None or not cache._refresh_thread.is_alive()
+            assert cache._refresh_thread is None
 
             # Set again to trigger restart
             cache.set("test-key-2", prompt)
 
             # New thread should be started (different from first)
             assert cache._refresh_thread is not None
-            # May or may not be the same thread object, but should be alive
             assert cache._refresh_thread.is_alive()
         finally:
             cache.shutdown()

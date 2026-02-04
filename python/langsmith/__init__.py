@@ -147,8 +147,9 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import configure_global_async_prompt_cache
 
         return configure_global_async_prompt_cache
-        
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Client",

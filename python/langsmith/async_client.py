@@ -1719,7 +1719,7 @@ class AsyncClient:
         # Store in cache
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            await self._cache.aset(cache_key, result)
 
         return result
 
