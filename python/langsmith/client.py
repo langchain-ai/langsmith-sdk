@@ -8193,14 +8193,11 @@ class Client:
                     parameters={
                         "type": "object",
                         "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query"
-                            }
+                            "query": {"type": "string", "description": "The search query"}
                         },
-                        "required": ["query"]
+                        "required": ["query"],
                     },
-                    returns={"type": "string"}
+                    returns={"type": "string"},
                 )
         """
         body: dict[str, Any] = {
@@ -8317,8 +8314,7 @@ class Client:
 
                 client = Client()
                 tool = client.update_tool(
-                    "search-docs",
-                    description="Search docs with improved relevance ranking"
+                    "search-docs", description="Search docs with improved relevance ranking"
                 )
         """
         body: dict[str, Any] = {}
