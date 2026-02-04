@@ -827,8 +827,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             async for example in await self.aget_examples():
                 yield process_example(example)
 
-            await self._aend()
-
         # Run the per-example tasks with max-concurrency
         # This guarantees that max_concurrency is the upper limit
         # for the number of target/evaluators that can be run in parallel
@@ -844,6 +842,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             (result["example"] async for result in r1),
             runs=(result["run"] async for result in r2),
             evaluation_results=(result["evaluation_results"] async for result in r3),
+            _evaluation_feedback_executor=self._evaluation_feedback_executor,
         )
 
     async def awith_predictions(
@@ -940,26 +939,27 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         ):
             yield result
 
-        await self._aend()
-
     async def _ascore(
         self,
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> AsyncIterator[ExperimentResultRow]:
-        with cf.ThreadPoolExecutor(max_workers=4) as feedback_executor:
+        if not hasattr(self, "_evaluation_feedback_executor"):
+            self._evaluation_feedback_executor = cf.ThreadPoolExecutor(max_workers=4)
 
-            async def score_all():
-                async for current_results in self.aget_results():
-                    # Yield the coroutine to be awaited later in aiter_with_concurrency
-                    yield self._arun_evaluators(
-                        evaluators, current_results, feedback_executor=feedback_executor
-                    )
+        async def score_all():
+            async for current_results in self.aget_results():
+                # Yield the coroutine to be awaited later in aiter_with_concurrency
+                yield self._arun_evaluators(
+                    evaluators,
+                    current_results,
+                    feedback_executor=self._evaluation_feedback_executor,
+                )
 
-            async for result in aitertools.aiter_with_concurrency(
-                max_concurrency, score_all(), _eager_consumption_timeout=0.001
-            ):
-                yield result
+        async for result in aitertools.aiter_with_concurrency(
+            max_concurrency, score_all(), _eager_consumption_timeout=0.001
+        ):
+            yield result
 
     async def _arun_evaluators(
         self,
@@ -1152,6 +1152,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         )
 
     def _copy(self, *args: Any, **kwargs: Any) -> _AsyncExperimentManager:
+        # Extract executor before passing to constructor (not a constructor param)
+        executor = kwargs.pop("_evaluation_feedback_executor", None)
         default_args = (self._data,)
         default_kwargs = {
             "experiment": self._experiment,
@@ -1168,7 +1170,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         }
         full_args = list(args) + list(default_args[len(args) :])
         full_kwargs = {**default_kwargs, **kwargs}
-        return self.__class__(*full_args, **full_kwargs)
+        new_manager = self.__class__(*full_args, **full_kwargs)
+        if executor is not None:
+            new_manager._evaluation_feedback_executor = executor
+        return new_manager
 
 
 class AsyncExperimentResults:
@@ -1215,6 +1220,8 @@ class AsyncExperimentResults:
         summary_scores = await manager.aget_summary_scores()
         async with self._lock:
             self._summary_results = summary_scores
+        # Clean up resources after all results are consumed
+        await manager._aend()
 
     def to_pandas(
         self, start: Optional[int] = 0, end: Optional[int] = None
