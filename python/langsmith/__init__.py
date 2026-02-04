@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
-    from langsmith.cache import AsyncCache, Cache
     from langsmith.client import Client
     from langsmith.evaluation import (
         aevaluate,
@@ -14,6 +13,7 @@ if TYPE_CHECKING:
         evaluate_existing,
     )
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
+    from langsmith.prompt_cache import AsyncPromptCache, PromptCache
     from langsmith.run_helpers import (
         get_current_run_tree,
         get_tracing_context,
@@ -129,14 +129,24 @@ def __getattr__(name: str) -> Any:
         from langsmith.uuid import uuid7_from_datetime
 
         return uuid7_from_datetime
-    elif name == "Cache":
-        from langsmith.cache import Cache
+    elif name == "PromptCache":
+        from langsmith.prompt_cache import PromptCache
 
-        return Cache
-    elif name == "AsyncCache":
-        from langsmith.cache import AsyncCache
+        return PromptCache
+    elif name == "AsyncPromptCache":
+        from langsmith.prompt_cache import AsyncPromptCache
 
-        return AsyncCache
+        return AsyncPromptCache
+
+    elif name == "configure_global_prompt_cache":
+        from langsmith.prompt_cache import configure_global_prompt_cache
+
+        return configure_global_prompt_cache
+
+    elif name == "configure_global_async_prompt_cache":
+        from langsmith.prompt_cache import configure_global_async_prompt_cache
+
+        return configure_global_async_prompt_cache
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -144,8 +154,10 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "Client",
     "AsyncClient",
-    "Cache",
-    "AsyncCache",
+    "PromptCache",
+    "AsyncPromptCache",
+    "configure_global_prompt_cache",
+    "configure_global_async_prompt_cache",
     "RunTree",
     "configure",
     "__version__",

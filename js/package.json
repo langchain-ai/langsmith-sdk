@@ -431,6 +431,6 @@
     "./package.json": "./package.json"
   },
   "browser": {
-    "./dist/utils/prompts_cache_fs.js": "./dist/utils/prompts_cache_fs.browser.js"
+    "./dist/utils/prompt_cache/fs.js": "./dist/utils/prompt_cache/fs.browser.js"
   }
 }

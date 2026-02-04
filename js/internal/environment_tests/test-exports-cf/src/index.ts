@@ -5,7 +5,7 @@
  * Note: Cache dump/load are not supported in edge environments.
  */
 
-import { Client, Cache } from "langsmith";
+import { Client, PromptCache } from "langsmith";
 
 export default {
   async fetch(): Promise<Response> {
@@ -17,12 +17,15 @@ export default {
       results.push("✓ Client imported and instantiated");
 
       // Test Cache import and instantiation
-      const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
+      const cache = new PromptCache({ maxSize: 100, ttlSeconds: 3600 });
       results.push("✓ Cache imported and instantiated");
       cache.stop();
 
       // Test Client with cache enabled
-      const clientWithCache = new Client({ apiKey: "test-key", cache: true });
+      const clientWithCache = new Client({
+        apiKey: "test-key",
+        disablePromptCache: false,
+      });
       results.push("✓ Client with cache enabled");
 
       results.push("\n✅ All Cloudflare export tests passed!");
