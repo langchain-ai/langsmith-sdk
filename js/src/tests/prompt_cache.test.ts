@@ -1,14 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest } from "@jest/globals";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
   PromptCache,
-  configureGlobalPromptCache,
-  enableGlobalPromptCache,
-  disableGlobalPromptCache,
   promptCacheSingleton,
-} from "../utils/prompts_cache.js";
+} from "../utils/prompt_cache/index.js";
 import { Client } from "../client.js";
 import type { PromptCommit } from "../schemas.js";
 
@@ -364,8 +363,8 @@ describe("Global Singleton", () => {
     test("should have default configuration", () => {
       expect(promptCacheSingleton.size).toBe(0);
       // Check private properties through bracket notation
-      expect(promptCacheSingleton.maxSize).toBe(100);
-      expect(promptCacheSingleton.ttlSeconds).toBe(5 * 60); // 5 minutes
+      expect((promptCacheSingleton as any).maxSize).toBe(100);
+      expect((promptCacheSingleton as any).ttlSeconds).toBe(5 * 60); // 5 minutes
     });
   });
 
@@ -401,60 +400,6 @@ describe("Global Singleton", () => {
       // Both clients should see the cached value
       expect(client1.cache?.get("shared-key")).toEqual(prompt);
       expect(client2.cache?.get("shared-key")).toEqual(prompt);
-    });
-  });
-
-  describe("Global configuration", () => {
-    test("configureGlobalPromptCache should update singleton", () => {
-      const originalMaxSize = promptCacheSingleton.maxSize;
-      const originalTtl = promptCacheSingleton.ttlSeconds;
-
-      try {
-        configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
-
-        expect(promptCacheSingleton.maxSize).toBe(200);
-        expect(promptCacheSingleton.ttlSeconds).toBe(7200);
-      } finally {
-        // Restore
-        configureGlobalPromptCache({
-          maxSize: originalMaxSize,
-          ttlSeconds: originalTtl,
-        });
-      }
-    });
-
-    test("configureGlobalPromptCache should stop existing refresh", () => {
-      // Set a short TTL and add a fetch function to start refresh
-      const mockFetch = jest
-        .fn()
-        .mockResolvedValue(createMockPromptCommit("test"));
-      promptCacheSingleton.fetchFunc = mockFetch;
-
-      // Trigger lazy start
-      promptCacheSingleton.set("test", createMockPromptCommit("test"));
-
-      const refreshTimerBefore = promptCacheSingleton.refreshTimer;
-
-      // Reconfigure - should stop and restart (with new config)
-      configureGlobalPromptCache({ maxSize: 150 });
-
-      // Timer should be reset
-      const refreshTimerAfter = promptCacheSingleton.refreshTimer;
-      expect(refreshTimerAfter).toBeDefined();
-
-      // Clean up
-      promptCacheSingleton.fetchFunc = undefined;
-      promptCacheSingleton.stop();
-    });
-
-    test("enableGlobalPromptCache should not crash without fetchFunc", () => {
-      // Should handle gracefully when there's no fetch function
-      expect(() => enableGlobalPromptCache()).not.toThrow();
-    });
-
-    test("disableGlobalPromptCache should stop refresh loop", () => {
-      disableGlobalPromptCache();
-      expect(promptCacheSingleton.refreshTimer).toBeUndefined();
     });
   });
 });

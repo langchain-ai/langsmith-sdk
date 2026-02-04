@@ -11,7 +11,7 @@ import json
 import logging
 import threading
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections import OrderedDict
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -77,10 +77,6 @@ class _BasePromptCache(ABC):
 
     def __init__(
         self,
-        *,
-        max_size: Optional[int],
-        ttl_seconds: Optional[float],
-        refresh_interval_seconds: Optional[float],
     ) -> None:
         """Initialize the base cache.
 
@@ -93,7 +89,6 @@ class _BasePromptCache(ABC):
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = threading.RLock()
         self._metrics = CacheMetrics()
-        self.configure(max_size, ttl_seconds, refresh_interval_seconds)
 
     @property
     def metrics(self) -> CacheMetrics:
@@ -165,14 +160,6 @@ class _BasePromptCache(ABC):
         """Clear all cache entries from memory."""
         with self._lock:
             self._cache.clear()
-
-    @abstractmethod
-    def shutdown(self) -> None:
-        """Stop background refresh thread.
-
-        Should be called when the client is being cleaned up.
-        """
-        ...
 
     def _get_stale_keys(self) -> list[str]:
         """Get list of stale cache keys (thread-safe)."""
@@ -280,28 +267,6 @@ class _BasePromptCache(ABC):
         logger.debug(f"Loaded {loaded} cache entries from {path}")
         return loaded
 
-    def configure(
-        self,
-        *,
-        max_size: int = 100,
-        ttl_seconds: Optional[float] = 300,
-        refresh_interval_seconds: float = 60,
-    ) -> None:
-        """Reconfigure the cache parameters.
-
-        Args:
-            max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale.
-            refresh_interval_seconds: How often to check for stale entries.
-        """
-        self.shutdown()
-        if max_size is not None:
-            self._max_size = max_size
-        if ttl_seconds is not None:
-            self._ttl_seconds = ttl_seconds
-        if refresh_interval_seconds is not None:
-            self._refresh_interval = refresh_interval_seconds
-
 
 class PromptCache(_BasePromptCache):
     """Thread-safe LRU cache with background thread refresh.
@@ -333,7 +298,7 @@ class PromptCache(_BasePromptCache):
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 5 * 60,
+        ttl_seconds: Optional[float] = 300.0,
         refresh_interval_seconds: float = 60.0,
         fetch_func: Optional[Callable[[str], Any]] = None,
     ) -> None:
@@ -348,16 +313,24 @@ class PromptCache(_BasePromptCache):
             fetch_func: Callback to fetch fresh data for a cache key.
                 If provided, starts a background thread for refresh.
         """
-        super().__init__(
+        super().__init__()
+        self._fetch_func = fetch_func
+        self._shutdown_event = threading.Event()
+        self._refresh_thread: Optional[threading.Thread] = None
+        self._configure(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
             refresh_interval_seconds=refresh_interval_seconds,
         )
-        self._fetch_func = fetch_func
-        self._shutdown_event = threading.Event()
-        self._refresh_thread: Optional[threading.Thread] = None
 
         # Background refresh will be started lazily on first set() operation
+
+    def stop(self) -> None:
+        """Stop background refresh thread.
+
+        Should be called when the client is being cleaned up.
+        """
+        self.shutdown()
 
     def shutdown(self) -> None:
         """Stop background refresh thread.
@@ -415,6 +388,41 @@ class PromptCache(_BasePromptCache):
                 self._metrics.refresh_errors += 1
                 logger.warning(f"Failed to refresh cache entry {key}: {e}")
 
+    def configure(
+        self,
+        *,
+        max_size: int = 100,
+        ttl_seconds: Optional[float] = 300.0,
+        refresh_interval_seconds: float = 60.0,
+    ) -> None:
+        """Reconfigure the cache parameters.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale.
+            refresh_interval_seconds: How often to check for stale entries.
+        """
+        self.stop()
+        self._configure(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )
+
+    def _configure(
+        self,
+        *,
+        max_size: int,
+        ttl_seconds: Optional[float],
+        refresh_interval_seconds: float,
+    ) -> None:
+        if max_size is not None:
+            self._max_size = max_size
+        if ttl_seconds is not None:
+            self._ttl_seconds = ttl_seconds
+        if refresh_interval_seconds is not None:
+            self._refresh_interval = refresh_interval_seconds
+
 
 class AsyncPromptCache(_BasePromptCache):
     """Thread-safe LRU cache with asyncio task refresh.
@@ -447,7 +455,7 @@ class AsyncPromptCache(_BasePromptCache):
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
+        ttl_seconds: Optional[float] = 300.0,
         refresh_interval_seconds: float = 60.0,
         fetch_func: Optional[Callable[[str], Awaitable[Any]]] = None,
     ) -> None:
@@ -460,13 +468,14 @@ class AsyncPromptCache(_BasePromptCache):
             refresh_interval_seconds: How often to check for stale entries.
             fetch_func: Async callback to fetch fresh data for a cache key.
         """
-        super().__init__(
+        super().__init__()
+        self._fetch_func = fetch_func
+        self._refresh_task: Optional[asyncio.Task[None]] = None
+        self._configure(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
             refresh_interval_seconds=refresh_interval_seconds,
         )
-        self._fetch_func = fetch_func
-        self._refresh_task: Optional[asyncio.Task[None]] = None
 
     async def start(self) -> None:
         """Start async background refresh loop.
@@ -548,6 +557,36 @@ class AsyncPromptCache(_BasePromptCache):
                 # Keep stale data on refresh failure
                 self._metrics.refresh_errors += 1
                 logger.warning(f"Failed to async refresh cache entry {key}: {e}")
+
+    async def configure(
+        self,
+        *,
+        max_size: int = 100,
+        ttl_seconds: Optional[float] = 300.0,
+        refresh_interval_seconds: float = 60.0,
+    ) -> None:
+        """Reconfigure the cache parameters.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale.
+            refresh_interval_seconds: How often to check for stale entries.
+        """
+        await self.stop()
+        self._configure(max_size, ttl_seconds, refresh_interval_seconds)
+
+    def _configure(
+        self,
+        max_size: int,
+        ttl_seconds: Optional[float],
+        refresh_interval_seconds: float,
+    ) -> None:
+        if max_size is not None:
+            self._max_size = max_size
+        if ttl_seconds is not None:
+            self._ttl_seconds = ttl_seconds
+        if refresh_interval_seconds is not None:
+            self._refresh_interval = refresh_interval_seconds
 
 
 # Global singleton instances for prompt caching

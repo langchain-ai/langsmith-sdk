@@ -786,6 +786,7 @@ class TestGlobalSingleton:
     def test_client_uses_singleton_by_default(self):
         """Test that Client uses the global singleton by default."""
         from langsmith.cache import prompt_cache_singleton
+
         from langsmith.client import Client
 
         client = Client(api_key="test-key")
@@ -800,8 +801,9 @@ class TestGlobalSingleton:
 
     def test_async_client_uses_singleton_by_default(self):
         """Test that AsyncClient uses the global singleton by default."""
-        from langsmith.async_client import AsyncClient
         from langsmith.cache import async_prompt_cache_singleton
+
+        from langsmith.async_client import AsyncClient
 
         client = AsyncClient(api_key="test-key")
         assert client._cache is async_prompt_cache_singleton
@@ -840,6 +842,7 @@ class TestGlobalSingleton:
     def test_multiple_clients_share_singleton(self, sample_prompt_commit):
         """Test that multiple clients share the same cache instance."""
         from langsmith.cache import prompt_cache_singleton
+
         from langsmith.client import Client
 
         client1 = Client(api_key="test-key-1")
@@ -869,7 +872,9 @@ class TestLazyInitialization:
             cache.shutdown()
 
     def test_thread_starts_on_first_set_with_fetch_func(self):
-        """Test that background thread starts on first set when fetch_func is provided."""
+        """Test that background thread starts on first set
+        when fetch_func is provided."""
+
         def mock_fetch(key):
             return ls_schemas.PromptCommit(
                 owner="test",
@@ -912,6 +917,7 @@ class TestLazyInitialization:
 
     def test_thread_not_started_with_infinite_ttl(self):
         """Test that thread doesn't start with infinite TTL (None)."""
+
         def mock_fetch(key):
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
@@ -931,6 +937,7 @@ class TestLazyInitialization:
 
     def test_configure_stops_and_restarts_thread(self):
         """Test that configure stops existing thread and can restart it."""
+
         def mock_fetch(key):
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
@@ -946,7 +953,6 @@ class TestLazyInitialization:
 
             # Thread should be running
             assert cache._refresh_thread is not None
-            first_thread = cache._refresh_thread
 
             # Reconfigure - should stop the thread
             cache.configure(ttl_seconds=20)
@@ -967,6 +973,7 @@ class TestLazyInitialization:
 
     def test_shutdown_stops_thread(self):
         """Test that shutdown stops the background thread."""
+
         def mock_fetch(key):
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
