@@ -8146,6 +8146,217 @@ class Client:
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         response.raise_for_status()
 
+    # --- Tool Management Methods ---
+
+    def create_tool(
+        self,
+        name: str,
+        slug: str,
+        description: str,
+        parameters: dict[str, Any],
+        *,
+        returns: Optional[dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> ls_schemas.Tool:
+        """Create a new tool in the tool registry.
+
+        Tools are reusable function definitions that can be attached to prompts.
+        They define the schema (name, description, parameters) without the
+        actual implementation, which is provided at runtime.
+
+        Args:
+            name (str): The display name of the tool (e.g., "Search Documentation").
+            slug (str): URL-safe identifier for the tool (e.g., "search-docs").
+            description (str): A description of what the tool does.
+            parameters (dict[str, Any]): JSON Schema defining the tool's input parameters.
+            returns (Optional[dict[str, Any]]): JSON Schema defining the tool's return
+                value. Defaults to None.
+            metadata (Optional[dict[str, Any]]): Additional metadata to associate with
+                the tool. Defaults to None.
+
+        Returns:
+            Tool: The created tool object.
+
+        Raises:
+            requests.HTTPError: If the server request fails.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                tool = client.create_tool(
+                    name="Search Documentation",
+                    slug="search-docs",
+                    description="Search documentation for relevant information",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    },
+                    returns={"type": "string"}
+                )
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "slug": slug,
+            "description": description,
+            "parameters": parameters,
+        }
+        if returns is not None:
+            body["returns"] = returns
+        if metadata is not None:
+            body["metadata"] = metadata
+
+        response = self.request_with_retries("POST", "/tools", json=body)
+        response.raise_for_status()
+        return ls_schemas.Tool(**response.json())
+
+    def list_tools(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListToolsResponse:
+        """List tools in the tool registry with pagination.
+
+        Args:
+            limit (int, default=100): The maximum number of tools to return.
+            offset (int, default=0): The number of tools to skip.
+            query (Optional[str]): Filter tools by a search query on name or
+                description.
+
+        Returns:
+            ListToolsResponse: A response object containing the list of tools
+            and the total count.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                response = client.list_tools(limit=10, query="search")
+                for tool in response.tools:
+                    print(f"{tool.name}: {tool.description}")
+        """
+        params: dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
+        if query is not None:
+            params["query"] = query
+
+        response = self.request_with_retries("GET", "/tools", params=params)
+        return ls_schemas.ListToolsResponse(**response.json())
+
+    def get_tool(self, tool_slug: str) -> Optional[ls_schemas.Tool]:
+        """Get a specific tool by its slug.
+
+        Args:
+            tool_slug (str): The slug identifier of the tool.
+
+        Returns:
+            Optional[Tool]: The tool object if found, None otherwise.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                tool = client.get_tool("search-docs")
+                if tool:
+                    print(f"Found tool: {tool.name}")
+        """
+        try:
+            response = self.request_with_retries("GET", f"/tools/{tool_slug}")
+            return ls_schemas.Tool(**response.json())
+        except ls_utils.LangSmithNotFoundError:
+            return None
+
+    def update_tool(
+        self,
+        tool_slug: str,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        parameters: Optional[dict[str, Any]] = None,
+        returns: Optional[dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> ls_schemas.Tool:
+        """Update an existing tool's properties.
+
+        Only the provided fields will be updated; others remain unchanged.
+
+        Args:
+            tool_slug (str): The slug identifier of the tool to update.
+            name (Optional[str]): New display name for the tool.
+            description (Optional[str]): New description for the tool.
+            parameters (Optional[dict[str, Any]]): New JSON Schema for input parameters.
+            returns (Optional[dict[str, Any]]): New JSON Schema for return value.
+            metadata (Optional[dict[str, Any]]): New metadata for the tool.
+
+        Returns:
+            Tool: The updated tool object.
+
+        Raises:
+            requests.HTTPError: If the server request fails.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                tool = client.update_tool(
+                    "search-docs",
+                    description="Search docs with improved relevance ranking"
+                )
+        """
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        if parameters is not None:
+            body["parameters"] = parameters
+        if returns is not None:
+            body["returns"] = returns
+        if metadata is not None:
+            body["metadata"] = metadata
+
+        response = self.request_with_retries("PATCH", f"/tools/{tool_slug}", json=body)
+        response.raise_for_status()
+        return ls_schemas.Tool(**response.json())
+
+    def delete_tool(self, tool_slug: str) -> None:
+        """Delete a tool from the tool registry.
+
+        Args:
+            tool_slug (str): The slug identifier of the tool to delete.
+
+        Raises:
+            requests.HTTPError: If the server request fails.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                client.delete_tool("search-docs")
+        """
+        response = self.request_with_retries("DELETE", f"/tools/{tool_slug}")
+        response.raise_for_status()
+
     def _get_cache_key(
         self, prompt_identifier: str, include_model: Optional[bool] = False
     ) -> str:
