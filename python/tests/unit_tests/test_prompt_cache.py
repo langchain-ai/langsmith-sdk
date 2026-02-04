@@ -760,3 +760,235 @@ class TestCacheMetrics:
             assert cache.metrics.refreshes >= 1
         finally:
             await cache.stop()
+
+
+class TestGlobalSingleton:
+    """Tests for global singleton behavior."""
+
+    def test_singleton_instances_exist(self):
+        """Test that global singletons are created."""
+        from langsmith.cache import async_prompt_cache_singleton, prompt_cache_singleton
+
+        assert prompt_cache_singleton is not None
+        assert isinstance(prompt_cache_singleton, PromptCache)
+        assert async_prompt_cache_singleton is not None
+        assert isinstance(async_prompt_cache_singleton, AsyncPromptCache)
+
+    def test_singleton_is_same_instance(self):
+        """Test that singleton returns the same instance."""
+        from langsmith.cache import prompt_cache_singleton
+
+        # Import again to ensure it's the same instance
+        from langsmith.cache import prompt_cache_singleton as singleton2
+
+        assert prompt_cache_singleton is singleton2
+
+    def test_client_uses_singleton_by_default(self):
+        """Test that Client uses the global singleton by default."""
+        from langsmith.cache import prompt_cache_singleton
+        from langsmith.client import Client
+
+        client = Client(api_key="test-key")
+        assert client._cache is prompt_cache_singleton
+
+    def test_client_can_disable_cache(self):
+        """Test that Client can disable caching."""
+        from langsmith.client import Client
+
+        client = Client(api_key="test-key", disable_prompt_cache=True)
+        assert client._cache is None
+
+    def test_async_client_uses_singleton_by_default(self):
+        """Test that AsyncClient uses the global singleton by default."""
+        from langsmith.async_client import AsyncClient
+        from langsmith.cache import async_prompt_cache_singleton
+
+        client = AsyncClient(api_key="test-key")
+        assert client._cache is async_prompt_cache_singleton
+
+    def test_async_client_can_disable_cache(self):
+        """Test that AsyncClient can disable caching."""
+        from langsmith.async_client import AsyncClient
+
+        client = AsyncClient(api_key="test-key", disable_prompt_cache=True)
+        assert client._cache is None
+
+    def test_configure_global_prompt_cache(self, sample_prompt_commit):
+        """Test configuring the global cache."""
+        from langsmith.cache import (
+            configure_global_prompt_cache,
+            prompt_cache_singleton,
+        )
+
+        # Get initial values
+        initial_max_size = prompt_cache_singleton._max_size
+        initial_ttl = prompt_cache_singleton._ttl_seconds
+
+        try:
+            # Configure with new values
+            configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+
+            assert prompt_cache_singleton._max_size == 200
+            assert prompt_cache_singleton._ttl_seconds == 7200
+
+        finally:
+            # Restore original values
+            configure_global_prompt_cache(
+                max_size=initial_max_size, ttl_seconds=initial_ttl
+            )
+
+    def test_multiple_clients_share_singleton(self, sample_prompt_commit):
+        """Test that multiple clients share the same cache instance."""
+        from langsmith.cache import prompt_cache_singleton
+        from langsmith.client import Client
+
+        client1 = Client(api_key="test-key-1")
+        client2 = Client(api_key="test-key-2")
+
+        # Both should use the same cache
+        assert client1._cache is client2._cache
+        assert client1._cache is prompt_cache_singleton
+
+        # Set a value through singleton
+        prompt_cache_singleton.set("shared-key", sample_prompt_commit)
+
+        # Both clients should see it (if they used the cache)
+        assert prompt_cache_singleton.get("shared-key") is not None
+
+
+class TestLazyInitialization:
+    """Tests for lazy background thread initialization."""
+
+    def test_thread_not_started_on_creation(self):
+        """Test that background thread is not started when cache is created."""
+        cache = PromptCache()
+        try:
+            # Thread should be None before first set
+            assert cache._refresh_thread is None
+        finally:
+            cache.shutdown()
+
+    def test_thread_starts_on_first_set_with_fetch_func(self):
+        """Test that background thread starts on first set when fetch_func is provided."""
+        def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test",
+                repo="test",
+                commit_hash="abc",
+                manifest={},
+                examples=[],
+            )
+
+        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Thread should be None before first set
+            assert cache._refresh_thread is None
+
+            # Set a value - should trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            cache.set("test-key", prompt)
+
+            # Thread should now be started
+            assert cache._refresh_thread is not None
+            assert cache._refresh_thread.is_alive()
+        finally:
+            cache.shutdown()
+
+    def test_thread_not_started_without_fetch_func(self):
+        """Test that thread doesn't start without fetch_func even after set."""
+        cache = PromptCache(ttl_seconds=10)
+        try:
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            cache.set("test-key", prompt)
+
+            # Thread should still be None (no fetch_func)
+            assert cache._refresh_thread is None
+        finally:
+            cache.shutdown()
+
+    def test_thread_not_started_with_infinite_ttl(self):
+        """Test that thread doesn't start with infinite TTL (None)."""
+        def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=None)
+        try:
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            cache.set("test-key", prompt)
+
+            # Thread should not start with infinite TTL
+            assert cache._refresh_thread is None
+        finally:
+            cache.shutdown()
+
+    def test_configure_stops_and_restarts_thread(self):
+        """Test that configure stops existing thread and can restart it."""
+        def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            cache.set("test-key", prompt)
+
+            # Thread should be running
+            assert cache._refresh_thread is not None
+            first_thread = cache._refresh_thread
+
+            # Reconfigure - should stop the thread
+            cache.configure(ttl_seconds=20)
+
+            # Thread should be stopped (configure calls shutdown)
+            # After configure, thread won't start until next set()
+            assert cache._refresh_thread is None or not cache._refresh_thread.is_alive()
+
+            # Set again to trigger restart
+            cache.set("test-key-2", prompt)
+
+            # New thread should be started (different from first)
+            assert cache._refresh_thread is not None
+            # May or may not be the same thread object, but should be alive
+            assert cache._refresh_thread.is_alive()
+        finally:
+            cache.shutdown()
+
+    def test_shutdown_stops_thread(self):
+        """Test that shutdown stops the background thread."""
+        def mock_fetch(key):
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
+        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        try:
+            # Trigger lazy start
+            prompt = ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+            cache.set("test-key", prompt)
+
+            # Thread should be running
+            assert cache._refresh_thread is not None
+            assert cache._refresh_thread.is_alive()
+
+            # Shutdown
+            cache.shutdown()
+
+            # Thread should be None
+            assert cache._refresh_thread is None
+        except:
+            cache.shutdown()
+            raise

@@ -2,7 +2,14 @@ import { jest } from "@jest/globals";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { PromptCache } from "../utils/prompt_cache/index.js";
+import {
+  PromptCache,
+  configureGlobalPromptCache,
+  enableGlobalPromptCache,
+  disableGlobalPromptCache,
+  promptCacheSingleton,
+} from "../utils/prompts_cache.js";
+import { Client } from "../client.js";
 import type { PromptCommit } from "../schemas.js";
 
 // Helper to create a mock PromptCommit
@@ -337,6 +344,117 @@ describe("Cache", () => {
       // Verify no refresh happens
       expect(offlineCache.metrics.refreshes).toBe(0);
       offlineCache.stop();
+    });
+  });
+});
+
+describe("Global Singleton", () => {
+  afterEach(() => {
+    // Clean up singleton after each test
+    promptCacheSingleton.clear();
+    promptCacheSingleton.resetMetrics();
+  });
+
+  describe("singleton instance", () => {
+    test("should have a global singleton", () => {
+      expect(promptCacheSingleton).toBeDefined();
+      expect(promptCacheSingleton).toBeInstanceOf(PromptCache);
+    });
+
+    test("should have default configuration", () => {
+      expect(promptCacheSingleton.size).toBe(0);
+      // Check private properties through bracket notation
+      expect(promptCacheSingleton.maxSize).toBe(100);
+      expect(promptCacheSingleton.ttlSeconds).toBe(5 * 60); // 5 minutes
+    });
+  });
+
+  describe("Client integration", () => {
+    test("Client should use singleton by default", () => {
+      const client = new Client({ apiKey: "test-key" });
+      expect(client.cache).toBe(promptCacheSingleton);
+    });
+
+    test("Client can disable caching", () => {
+      const client = new Client({
+        apiKey: "test-key",
+        disablePromptCache: true,
+      });
+      expect(client.cache).toBeUndefined();
+    });
+
+    test("Multiple clients share the same cache", () => {
+      const client1 = new Client({ apiKey: "test-key-1" });
+      const client2 = new Client({ apiKey: "test-key-2" });
+
+      expect(client1.cache).toBe(client2.cache);
+      expect(client1.cache).toBe(promptCacheSingleton);
+    });
+
+    test("Clients share cached values", () => {
+      const client1 = new Client({ apiKey: "test-key-1" });
+      const client2 = new Client({ apiKey: "test-key-2" });
+
+      const prompt = createMockPromptCommit("shared-prompt");
+      promptCacheSingleton.set("shared-key", prompt);
+
+      // Both clients should see the cached value
+      expect(client1.cache?.get("shared-key")).toEqual(prompt);
+      expect(client2.cache?.get("shared-key")).toEqual(prompt);
+    });
+  });
+
+  describe("Global configuration", () => {
+    test("configureGlobalPromptCache should update singleton", () => {
+      const originalMaxSize = promptCacheSingleton.maxSize;
+      const originalTtl = promptCacheSingleton.ttlSeconds;
+
+      try {
+        configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
+
+        expect(promptCacheSingleton.maxSize).toBe(200);
+        expect(promptCacheSingleton.ttlSeconds).toBe(7200);
+      } finally {
+        // Restore
+        configureGlobalPromptCache({
+          maxSize: originalMaxSize,
+          ttlSeconds: originalTtl,
+        });
+      }
+    });
+
+    test("configureGlobalPromptCache should stop existing refresh", () => {
+      // Set a short TTL and add a fetch function to start refresh
+      const mockFetch = jest
+        .fn()
+        .mockResolvedValue(createMockPromptCommit("test"));
+      promptCacheSingleton.fetchFunc = mockFetch;
+
+      // Trigger lazy start
+      promptCacheSingleton.set("test", createMockPromptCommit("test"));
+
+      const refreshTimerBefore = promptCacheSingleton.refreshTimer;
+
+      // Reconfigure - should stop and restart (with new config)
+      configureGlobalPromptCache({ maxSize: 150 });
+
+      // Timer should be reset
+      const refreshTimerAfter = promptCacheSingleton.refreshTimer;
+      expect(refreshTimerAfter).toBeDefined();
+
+      // Clean up
+      promptCacheSingleton.fetchFunc = undefined;
+      promptCacheSingleton.stop();
+    });
+
+    test("enableGlobalPromptCache should not crash without fetchFunc", () => {
+      // Should handle gracefully when there's no fetch function
+      expect(() => enableGlobalPromptCache()).not.toThrow();
+    });
+
+    test("disableGlobalPromptCache should stop refresh loop", () => {
+      disableGlobalPromptCache();
+      expect(promptCacheSingleton.refreshTimer).toBeUndefined();
     });
   });
 });

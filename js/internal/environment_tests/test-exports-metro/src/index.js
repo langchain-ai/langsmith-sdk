@@ -14,7 +14,7 @@
 import { Client, PromptCache } from "langsmith";
 
 // Export to prevent tree-shaking
-export { Client, Cache };
+export { Client, PromptCache };
 
 // Simple test that instantiation works
 export function testExports() {

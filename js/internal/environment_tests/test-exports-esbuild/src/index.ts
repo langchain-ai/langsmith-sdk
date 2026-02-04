@@ -25,7 +25,10 @@ export function testExports() {
   cache.stop();
 
   // Test Client with cache enabled
-  const clientWithCache = new Client({ apiKey: "test-key" });
+  const clientWithCache = new Client({
+    apiKey: "test-key",
+    disablePromptCache: false,
+  });
 
   return { client, cache, clientWithCache };
 }
