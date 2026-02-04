@@ -129,20 +129,26 @@ def __getattr__(name: str) -> Any:
         from langsmith.uuid import uuid7_from_datetime
 
         return uuid7_from_datetime
-    elif name == "Cache":
-        from langsmith.prompt_cache import Cache
+    elif name == "PromptCache":
+        from langsmith.prompt_cache import PromptCache
 
-        return Cache
-    elif name == "AsyncCache":
-        from langsmith.prompt_cache import AsyncCache
+        return PromptCache
+    elif name == "AsyncPromptCache":
+        from langsmith.prompt_cache import AsyncPromptCache
 
-        return AsyncCache
+        return AsyncPromptCache
 
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
 
         return configure_global_prompt_cache
 
+    elif name == "configure_global_async_prompt_cache":
+        from langsmith.prompt_cache import configure_global_async_prompt_cache
+
+        return configure_global_async_prompt_cache
+        
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "Client",
@@ -150,6 +156,7 @@ __all__ = [
     "PromptCache",
     "AsyncPromptCache",
     "configure_global_prompt_cache",
+    "configure_global_async_prompt_cache",
     "RunTree",
     "configure",
     "__version__",
