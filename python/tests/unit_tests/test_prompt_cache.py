@@ -861,6 +861,230 @@ class TestGlobalSingleton:
         # Both clients should see it (if they used the cache)
         assert prompt_cache_singleton.get("shared-key") is not None
 
+    def test_configure_after_clients_created(self, sample_prompt_commit):
+        """Test configuring singleton after clients are already created."""
+        from langsmith.client import Client
+        from langsmith.prompt_cache import (
+            configure_global_prompt_cache,
+            prompt_cache_singleton,
+        )
+
+        # Get initial config
+        initial_max_size = prompt_cache_singleton._max_size
+        initial_ttl = prompt_cache_singleton._ttl_seconds
+
+        try:
+            # Create clients before configure
+            client1 = Client(api_key="test-key-1")
+            client2 = Client(api_key="test-key-2")
+
+            # Configure singleton
+            configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+
+            # Both clients should see new config (same singleton)
+            assert client1._cache._max_size == 200
+            assert client1._cache._ttl_seconds == 7200
+            assert client2._cache._max_size == 200
+            assert client2._cache._ttl_seconds == 7200
+
+            # Verify it's the same object
+            assert client1._cache is client2._cache
+            assert client1._cache is prompt_cache_singleton
+
+        finally:
+            # Restore original values
+            configure_global_prompt_cache(
+                max_size=initial_max_size, ttl_seconds=initial_ttl
+            )
+
+    def test_shared_metrics_across_clients(self, sample_prompt_commit):
+        """Test that metrics are shared across all clients using singleton."""
+        from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
+
+        # Clean up singleton state
+        prompt_cache_singleton.clear()
+        prompt_cache_singleton.reset_metrics()
+
+        try:
+            client1 = Client(api_key="test-key-1")
+            client2 = Client(api_key="test-key-2")
+
+            # Client 1 sets a value
+            client1._cache.set("key1", sample_prompt_commit)
+
+            # Client 2 gets the value (hit)
+            result = client2._cache.get("key1")
+            assert result is not None
+
+            # Metrics should be shared
+            assert client1._cache.metrics.hits == 1
+            assert client2._cache.metrics.hits == 1  # Same metrics object
+            assert client1._cache.metrics is client2._cache.metrics
+
+            # Client 1 misses
+            client1._cache.get("missing-key")
+
+            # Client 2 should see the miss
+            assert client2._cache.metrics.misses == 1
+
+        finally:
+            prompt_cache_singleton.clear()
+            prompt_cache_singleton.reset_metrics()
+
+    def test_singleton_background_thread_shared(self, sample_prompt_commit):
+        """Test that singleton has only ONE background thread shared by all clients."""
+        from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
+
+        # Clean up singleton state
+        prompt_cache_singleton.clear()
+        prompt_cache_singleton.reset_metrics()
+        prompt_cache_singleton.shutdown()
+
+        def mock_fetch(key):
+            return sample_prompt_commit
+
+        # Create singleton with fetch func
+        prompt_cache_singleton._fetch_func = mock_fetch
+        prompt_cache_singleton._ttl_seconds = 10
+
+        try:
+            # Create multiple clients
+            client1 = Client(api_key="test-key-1")
+            client2 = Client(api_key="test-key-2")
+            client3 = Client(api_key="test-key-3")
+
+            # Trigger thread start via any client
+            client1._cache.set("key1", sample_prompt_commit)
+
+            # Should only be ONE thread
+            assert client1._cache._refresh_thread is not None
+            assert client2._cache._refresh_thread is client1._cache._refresh_thread
+            assert client3._cache._refresh_thread is client1._cache._refresh_thread
+
+            # All point to same thread object
+            thread = client1._cache._refresh_thread
+            assert thread.is_alive()
+
+        finally:
+            prompt_cache_singleton._fetch_func = None
+            prompt_cache_singleton.shutdown()
+            prompt_cache_singleton.clear()
+            prompt_cache_singleton.reset_metrics()
+
+    def test_singleton_persistence(self, sample_prompt_commit, tmp_path):
+        """Test dump/load with singleton."""
+        from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
+
+        cache_file = tmp_path / "singleton_cache.json"
+
+        # Clean up singleton state
+        prompt_cache_singleton.clear()
+        prompt_cache_singleton.reset_metrics()
+
+        try:
+            client1 = Client(api_key="test-key-1")
+
+            # Client sets some values
+            client1._cache.set("prompt1", sample_prompt_commit)
+            client1._cache.set("prompt2", sample_prompt_commit)
+
+            # Dump via singleton
+            prompt_cache_singleton.dump(cache_file)
+
+            # Clear and load
+            prompt_cache_singleton.clear()
+            loaded = prompt_cache_singleton.load(cache_file)
+
+            assert loaded == 2
+
+            # New client should see loaded values
+            client2 = Client(api_key="test-key-2")
+            assert client2._cache.get("prompt1") is not None
+            assert client2._cache.get("prompt2") is not None
+
+        finally:
+            prompt_cache_singleton.clear()
+            prompt_cache_singleton.reset_metrics()
+
+    @pytest.mark.asyncio
+    async def test_configure_global_async_prompt_cache(self, sample_prompt_commit):
+        """Test configuring the global async prompt cache."""
+        from langsmith.async_client import AsyncClient
+        from langsmith.prompt_cache import (
+            async_prompt_cache_singleton,
+            configure_global_async_prompt_cache,
+        )
+
+        # Get initial values
+        initial_max_size = async_prompt_cache_singleton._max_size
+        initial_ttl = async_prompt_cache_singleton._ttl_seconds
+
+        # Clean up
+        async_prompt_cache_singleton.clear()
+        async_prompt_cache_singleton.reset_metrics()
+        await async_prompt_cache_singleton.stop()
+
+        try:
+            # Configure async singleton
+            await configure_global_async_prompt_cache(max_size=200, ttl_seconds=7200)
+
+            assert async_prompt_cache_singleton._max_size == 200
+            assert async_prompt_cache_singleton._ttl_seconds == 7200
+
+            # Create client after configure
+            client = AsyncClient(api_key="test-key")
+            assert client._cache is async_prompt_cache_singleton
+            assert client._cache._max_size == 200
+
+        finally:
+            # Restore original values
+            await configure_global_async_prompt_cache(
+                max_size=initial_max_size, ttl_seconds=initial_ttl
+            )
+            async_prompt_cache_singleton.clear()
+            async_prompt_cache_singleton.reset_metrics()
+            await async_prompt_cache_singleton.stop()
+
+    @pytest.mark.asyncio
+    async def test_async_singleton_shared_across_clients(self, sample_prompt_commit):
+        """Test that async clients share the same singleton."""
+        from langsmith.async_client import AsyncClient
+        from langsmith.prompt_cache import async_prompt_cache_singleton
+
+        # Clean up
+        async_prompt_cache_singleton.clear()
+        async_prompt_cache_singleton.reset_metrics()
+        await async_prompt_cache_singleton.stop()
+
+        try:
+            client1 = AsyncClient(api_key="test-key-1")
+            client2 = AsyncClient(api_key="test-key-2")
+
+            # Both should use same singleton
+            assert client1._cache is client2._cache
+            assert client1._cache is async_prompt_cache_singleton
+
+            # Client 1 sets a value
+            await client1._cache.aset("key1", sample_prompt_commit)
+
+            # Client 2 should see it
+            result = client2._cache.get("key1")
+            assert result is not None
+            assert result.owner == "test-owner"
+
+            # Metrics should be shared
+            assert client1._cache.metrics.hits == 0  # aset doesn't count as hit
+            client1._cache.get("key1")  # Now hit
+            assert client2._cache.metrics.hits == 1  # Same metrics
+
+        finally:
+            async_prompt_cache_singleton.clear()
+            async_prompt_cache_singleton.reset_metrics()
+            await async_prompt_cache_singleton.stop()
+
 
 class TestLazyInitialization:
     """Tests for lazy background thread initialization."""

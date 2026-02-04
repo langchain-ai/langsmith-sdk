@@ -7,6 +7,7 @@ import * as path from "node:path";
 import {
   PromptCache,
   promptCacheSingleton,
+  configureGlobalPromptCache,
 } from "../utils/prompt_cache/index.js";
 import { Client } from "../client.js";
 import type { PromptCommit } from "../schemas.js";
@@ -401,5 +402,132 @@ describe("Global Singleton", () => {
       expect(client1.cache?.get("shared-key")).toEqual(prompt);
       expect(client2.cache?.get("shared-key")).toEqual(prompt);
     });
+  });
+});
+
+describe("additional singleton tests", () => {
+  test("should configure singleton after clients created", () => {
+    const client1 = new Client({ apiKey: "test-key-1" });
+    const client2 = new Client({ apiKey: "test-key-2" });
+
+    // Get initial config
+    const initialMaxSize = (promptCacheSingleton as any).maxSize;
+    const initialTtl = (promptCacheSingleton as any).ttlSeconds;
+
+    try {
+      // Configure singleton
+      configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
+
+      // Both clients should see new config (same singleton)
+      expect((client1.cache as any).maxSize).toBe(200);
+      expect((client1.cache as any).ttlSeconds).toBe(7200);
+      expect((client2.cache as any).maxSize).toBe(200);
+      expect((client2.cache as any).ttlSeconds).toBe(7200);
+
+      // Verify it's the same object
+      expect(client1.cache).toBe(client2.cache);
+      expect(client1.cache).toBe(promptCacheSingleton);
+    } finally {
+      // Restore
+      configureGlobalPromptCache({
+        maxSize: initialMaxSize,
+        ttlSeconds: initialTtl,
+      });
+    }
+  });
+
+  test("should share metrics across clients", () => {
+    promptCacheSingleton.clear();
+    promptCacheSingleton.resetMetrics();
+
+    const client1 = new Client({ apiKey: "test-key-1" });
+    const client2 = new Client({ apiKey: "test-key-2" });
+
+    const prompt = createMockPromptCommit("test");
+
+    // Client 1 sets a value
+    client1.cache!.set("key1", prompt);
+
+    // Client 2 gets the value (hit)
+    const result = client2.cache!.get("key1");
+    expect(result).toBeDefined();
+
+    // Metrics should be shared
+    expect(client1.cache!.metrics.hits).toBe(1);
+    expect(client2.cache!.metrics.hits).toBe(1); // Same metrics object
+
+    // Client 1 misses
+    client1.cache!.get("missing-key");
+
+    // Client 2 should see the miss
+    expect(client2.cache!.metrics.misses).toBe(1);
+  });
+
+  test("should share refresh timer across clients", async () => {
+    promptCacheSingleton.clear();
+    promptCacheSingleton.resetMetrics();
+    promptCacheSingleton.stop();
+
+    const mockFetch = jest
+      .fn<(key: string) => Promise<PromptCommit>>()
+      .mockResolvedValue(createMockPromptCommit("refreshed"));
+
+    // Configure singleton with fetch func
+    (promptCacheSingleton as any).fetchFunc = mockFetch;
+    (promptCacheSingleton as any).ttlSeconds = 10;
+
+    try {
+      const client1 = new Client({ apiKey: "test-key-1" });
+      const client2 = new Client({ apiKey: "test-key-2" });
+      const client3 = new Client({ apiKey: "test-key-3" });
+
+      // Trigger timer start via any client
+      const prompt = createMockPromptCommit("test");
+      client1.cache!.set("key1", prompt);
+
+      // All should share the same timer (hard to check directly, but we can verify behavior)
+      expect(client1.cache).toBe(client2.cache);
+      expect(client2.cache).toBe(client3.cache);
+      expect((client1.cache as any).refreshTimer).toBeDefined();
+    } finally {
+      (promptCacheSingleton as any).fetchFunc = undefined;
+      promptCacheSingleton.stop();
+      promptCacheSingleton.clear();
+    }
+  });
+
+  test("should persist and load singleton data", () => {
+    const tempDir = os.tmpdir();
+    const cachePath = path.join(tempDir, "singleton_cache_test.json");
+
+    promptCacheSingleton.clear();
+    promptCacheSingleton.resetMetrics();
+
+    try {
+      const client1 = new Client({ apiKey: "test-key-1" });
+
+      // Client sets some values
+      client1.cache!.set("prompt1", createMockPromptCommit("test1"));
+      client1.cache!.set("prompt2", createMockPromptCommit("test2"));
+
+      // Dump via singleton
+      promptCacheSingleton.dump(cachePath);
+
+      // Clear and load
+      promptCacheSingleton.clear();
+      const loaded = promptCacheSingleton.load(cachePath);
+
+      expect(loaded).toBe(2);
+
+      // New client should see loaded values
+      const client2 = new Client({ apiKey: "test-key-2" });
+      expect(client2.cache!.get("prompt1")).toBeDefined();
+      expect(client2.cache!.get("prompt2")).toBeDefined();
+    } finally {
+      if (fs.existsSync(cachePath)) {
+        fs.unlinkSync(cachePath);
+      }
+      promptCacheSingleton.clear();
+    }
   });
 });
