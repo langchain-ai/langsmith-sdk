@@ -194,8 +194,12 @@ def _unwrap_streamed_messages(
 
 def instrument_claude_client(original_class: Any) -> Any:
     """Wrap `ClaudeSDKClient` to trace both `query()` and `receive_response()`."""
+    if getattr(original_class, "_langsmith_instrumented", False):
+        return original_class  # Already wrapped, avoid double-tracing
 
     class TracedClaudeSDKClient(original_class):
+        _langsmith_instrumented = True
+
         def __init__(self, *args: Any, **kwargs: Any):
             # Inject LangSmith tracing hooks into options before initialization
             options = kwargs.get("options") or (args[0] if args else None)
