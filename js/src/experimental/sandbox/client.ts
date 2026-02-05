@@ -682,7 +682,7 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return Sandbox.fromData(data, this);
+    return new Sandbox(data, this);
   }
 
   /**
@@ -710,7 +710,7 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return Sandbox.fromData(data, this);
+    return new Sandbox(data, this);
   }
 
   /**
@@ -734,7 +734,7 @@ export class SandboxClient {
 
     const data = await response.json();
     return ((data.sandboxes ?? []) as SandboxData[]).map((s) =>
-      Sandbox.fromData(s, this)
+      new Sandbox(s, this)
     );
   }
 
@@ -774,7 +774,7 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return Sandbox.fromData(data, this);
+    return new Sandbox(data, this);
   }
 
   /**

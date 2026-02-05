@@ -4,11 +4,8 @@
 
 import type { SandboxClient } from "./client.js";
 import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
-import {
-  DataplaneNotConfiguredError,
-  SandboxConnectionError,
-} from "./errors.js";
-import { handleSandboxHttpError, isNetworkError } from "./helpers.js";
+import { DataplaneNotConfiguredError } from "./errors.js";
+import { handleSandboxHttpError } from "./helpers.js";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -53,14 +50,6 @@ export class Sandbox {
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
     this._client = client;
-  }
-
-  /**
-   * Create a Sandbox from API response data.
-   * @internal
-   */
-  static fromData(data: SandboxData, client: SandboxClient): Sandbox {
-    return new Sandbox(data, client);
   }
 
   /**
@@ -115,34 +104,25 @@ export class Sandbox {
       payload.cwd = cwd;
     }
 
-    try {
-      const response = await this._client._fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout((timeout + 10) * 1000),
-      });
+    const response = await this._client._fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout((timeout + 10) * 1000),
+    });
 
-      if (!response.ok) {
-        await handleSandboxHttpError(response);
-      }
-
-      const data = await response.json();
-      return {
-        stdout: data.stdout ?? "",
-        stderr: data.stderr ?? "",
-        exit_code: data.exit_code ?? -1,
-      };
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(
-          `Failed to connect to sandbox '${this.name}': ${e}`
-        );
-      }
-      throw e;
+    if (!response.ok) {
+      await handleSandboxHttpError(response);
     }
+
+    const data = await response.json();
+    return {
+      stdout: data.stdout ?? "",
+      stderr: data.stderr ?? "",
+      exit_code: data.exit_code ?? -1,
+    };
   }
 
   /**
@@ -178,23 +158,14 @@ export class Sandbox {
     const blob = new Blob([buffer], { type: "application/octet-stream" });
     formData.append("file", blob, "file");
 
-    try {
-      const response = await this._client._fetch(url, {
-        method: "POST",
-        body: formData,
-        signal: AbortSignal.timeout(timeout * 1000),
-      });
+    const response = await this._client._fetch(url, {
+      method: "POST",
+      body: formData,
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
 
-      if (!response.ok) {
-        await handleSandboxHttpError(response);
-      }
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(
-          `Failed to connect to sandbox '${this.name}': ${e}`
-        );
-      }
-      throw e;
+    if (!response.ok) {
+      await handleSandboxHttpError(response);
     }
   }
 
@@ -221,26 +192,17 @@ export class Sandbox {
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/download?path=${encodeURIComponent(path)}`;
 
-    try {
-      const response = await this._client._fetch(url, {
-        method: "GET",
-        signal: AbortSignal.timeout(timeout * 1000),
-      });
+    const response = await this._client._fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
 
-      if (!response.ok) {
-        await handleSandboxHttpError(response);
-      }
-
-      const buffer = await response.arrayBuffer();
-      return new Uint8Array(buffer);
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(
-          `Failed to connect to sandbox '${this.name}': ${e}`
-        );
-      }
-      throw e;
+    if (!response.ok) {
+      await handleSandboxHttpError(response);
     }
+
+    const buffer = await response.arrayBuffer();
+    return new Uint8Array(buffer);
   }
 
   /**
