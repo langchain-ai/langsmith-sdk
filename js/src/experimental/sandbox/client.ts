@@ -21,9 +21,9 @@ import type {
 } from "./types.js";
 import { Sandbox } from "./sandbox.js";
 import {
-  ResourceNameConflictError,
-  ResourceNotFoundError,
-  SandboxAPIError,
+  LangSmithResourceNameConflictError,
+  LangSmithResourceNotFoundError,
+  LangSmithSandboxAPIError,
 } from "./errors.js";
 import {
   handleClientHttpError,
@@ -168,7 +168,7 @@ export class SandboxClient {
    *
    * @param name - Volume name.
    * @returns Volume.
-   * @throws ResourceNotFoundError if volume not found.
+   * @throws LangSmithResourceNotFoundError if volume not found.
    */
   async getVolume(name: string): Promise<Volume> {
     const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
@@ -177,7 +177,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Volume '${name}' not found`,
           "volume"
         );
@@ -200,7 +200,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new SandboxAPIError(
+        throw new LangSmithSandboxAPIError(
           `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
         );
       }
@@ -215,7 +215,7 @@ export class SandboxClient {
    * Delete a volume.
    *
    * @param name - Volume name.
-   * @throws ResourceNotFoundError if volume not found.
+   * @throws LangSmithResourceNotFoundError if volume not found.
    * @throws ResourceInUseError if volume is referenced by templates.
    */
   async deleteVolume(name: string): Promise<void> {
@@ -225,7 +225,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Volume '${name}' not found`,
           "volume"
         );
@@ -246,9 +246,9 @@ export class SandboxClient {
    * @param name - Current volume name.
    * @param options - Update options.
    * @returns Updated Volume.
-   * @throws ResourceNotFoundError if volume not found.
+   * @throws LangSmithResourceNotFoundError if volume not found.
    * @throws ValidationError if storage decrease attempted.
-   * @throws ResourceNameConflictError if newName is already in use.
+   * @throws LangSmithResourceNameConflictError if newName is already in use.
    */
   async updateVolume(
     name: string,
@@ -278,7 +278,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Volume '${name}' not found`,
           "volume"
         );
@@ -355,7 +355,7 @@ export class SandboxClient {
    *
    * @param name - Template name.
    * @returns SandboxTemplate.
-   * @throws ResourceNotFoundError if template not found.
+   * @throws LangSmithResourceNotFoundError if template not found.
    */
   async getTemplate(name: string): Promise<SandboxTemplate> {
     const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
@@ -364,7 +364,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Template '${name}' not found`,
           "template"
         );
@@ -387,7 +387,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new SandboxAPIError(
+        throw new LangSmithSandboxAPIError(
           `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
         );
       }
@@ -404,8 +404,8 @@ export class SandboxClient {
    * @param name - Current template name.
    * @param options - Update options (e.g., newName).
    * @returns Updated SandboxTemplate.
-   * @throws ResourceNotFoundError if template not found.
-   * @throws ResourceNameConflictError if newName is already in use.
+   * @throws LangSmithResourceNotFoundError if template not found.
+   * @throws LangSmithResourceNameConflictError if newName is already in use.
    */
   async updateTemplate(
     name: string,
@@ -429,7 +429,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Template '${name}' not found`,
           "template"
         );
@@ -447,7 +447,7 @@ export class SandboxClient {
    * Delete a SandboxTemplate.
    *
    * @param name - Template name.
-   * @throws ResourceNotFoundError if template not found.
+   * @throws LangSmithResourceNotFoundError if template not found.
    * @throws ResourceInUseError if template is referenced by sandboxes or pools.
    */
   async deleteTemplate(name: string): Promise<void> {
@@ -457,7 +457,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Template '${name}' not found`,
           "template"
         );
@@ -481,7 +481,7 @@ export class SandboxClient {
    * @param name - Pool name (lowercase letters, numbers, hyphens; max 63 chars).
    * @param options - Creation options including templateName, replicas, and optional timeout.
    * @returns Created Pool.
-   * @throws ResourceNotFoundError if template not found.
+   * @throws LangSmithResourceNotFoundError if template not found.
    * @throws ValidationError if template has volumes attached.
    * @throws ResourceAlreadyExistsError if pool with this name already exists.
    * @throws ResourceTimeoutError if pool doesn't reach ready state within timeout.
@@ -517,7 +517,7 @@ export class SandboxClient {
    *
    * @param name - Pool name.
    * @returns Pool.
-   * @throws ResourceNotFoundError if pool not found.
+   * @throws LangSmithResourceNotFoundError if pool not found.
    */
   async getPool(name: string): Promise<Pool> {
     const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
@@ -526,7 +526,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
       await handleClientHttpError(response);
     }
@@ -546,7 +546,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new SandboxAPIError(
+        throw new LangSmithSandboxAPIError(
           `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
         );
       }
@@ -566,9 +566,9 @@ export class SandboxClient {
    * @param name - Current pool name.
    * @param options - Update options.
    * @returns Updated Pool.
-   * @throws ResourceNotFoundError if pool not found.
+   * @throws LangSmithResourceNotFoundError if pool not found.
    * @throws ValidationError if template was deleted.
-   * @throws ResourceNameConflictError if newName is already in use.
+   * @throws LangSmithResourceNameConflictError if newName is already in use.
    * @throws QuotaExceededError if quota exceeded when scaling up.
    */
   async updatePool(name: string, options: UpdatePoolOptions): Promise<Pool> {
@@ -596,7 +596,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
       if (response.status === 409) {
         await handleConflictError(response, "pool");
@@ -613,7 +613,7 @@ export class SandboxClient {
    * This will terminate all sandboxes in the pool.
    *
    * @param name - Pool name.
-   * @throws ResourceNotFoundError if pool not found.
+   * @throws LangSmithResourceNotFoundError if pool not found.
    */
   async deletePool(name: string): Promise<void> {
     const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
@@ -622,7 +622,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
       await handleClientHttpError(response);
     }
@@ -692,7 +692,7 @@ export class SandboxClient {
    *
    * @param name - Sandbox name.
    * @returns Sandbox.
-   * @throws ResourceNotFoundError if sandbox not found.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
   async getSandbox(name: string): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
@@ -701,7 +701,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
           "sandbox"
         );
@@ -725,7 +725,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new SandboxAPIError(
+        throw new LangSmithSandboxAPIError(
           `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
         );
       }
@@ -744,8 +744,8 @@ export class SandboxClient {
    * @param name - Current sandbox name.
    * @param newName - New display name.
    * @returns Updated Sandbox.
-   * @throws ResourceNotFoundError if sandbox not found.
-   * @throws ResourceNameConflictError if newName is already in use.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
+   * @throws LangSmithResourceNameConflictError if newName is already in use.
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
@@ -759,13 +759,13 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
           "sandbox"
         );
       }
       if (response.status === 409) {
-        throw new ResourceNameConflictError(
+        throw new LangSmithResourceNameConflictError(
           `Sandbox name '${newName}' already in use`,
           "sandbox"
         );
@@ -781,7 +781,7 @@ export class SandboxClient {
    * Delete a Sandbox.
    *
    * @param name - Sandbox name.
-   * @throws ResourceNotFoundError if sandbox not found.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
   async deleteSandbox(name: string): Promise<void> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
@@ -790,7 +790,7 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new ResourceNotFoundError(
+        throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
           "sandbox"
         );

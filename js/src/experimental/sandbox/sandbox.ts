@@ -4,7 +4,7 @@
 
 import type { SandboxClient } from "./client.js";
 import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
-import { DataplaneNotConfiguredError } from "./errors.js";
+import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 
 /**
@@ -54,11 +54,11 @@ export class Sandbox {
 
   /**
    * Validate and return the dataplane URL.
-   * @throws DataplaneNotConfiguredError if dataplane_url is not configured.
+   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    */
   private requireDataplaneUrl(): string {
     if (!this.dataplane_url) {
-      throw new DataplaneNotConfiguredError(
+      throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +
           "Runtime operations require a dataplane URL."
       );
@@ -72,7 +72,7 @@ export class Sandbox {
    * @param command - Shell command to execute.
    * @param options - Execution options.
    * @returns ExecutionResult with stdout, stderr, and exit_code.
-   * @throws DataplaneNotConfiguredError if dataplane_url is not configured.
+   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    * @throws SandboxOperationError if command execution fails.
    * @throws SandboxConnectionError if connection to sandbox fails.
    * @throws SandboxNotReadyError if sandbox is not ready.
@@ -131,7 +131,7 @@ export class Sandbox {
    * @param path - Target file path in the sandbox.
    * @param content - File content (string or bytes).
    * @param timeout - Request timeout in seconds.
-   * @throws DataplaneNotConfiguredError if dataplane_url is not configured.
+   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    * @throws SandboxOperationError if file write fails.
    * @throws SandboxConnectionError if connection to sandbox fails.
    *
@@ -176,7 +176,7 @@ export class Sandbox {
    *               and relative paths (resolved from /home/user/).
    * @param timeout - Request timeout in seconds.
    * @returns File contents as Uint8Array.
-   * @throws DataplaneNotConfiguredError if dataplane_url is not configured.
+   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    * @throws ResourceNotFoundError if the file doesn't exist.
    * @throws SandboxOperationError if file read fails.
    * @throws SandboxConnectionError if connection to sandbox fails.

@@ -56,22 +56,22 @@ export type {
 // Errors
 export {
   // Base and connection errors
-  SandboxClientError,
-  SandboxAPIError,
-  SandboxAuthenticationError,
-  SandboxConnectionError,
+  LangSmithSandboxError,
+  LangSmithSandboxAPIError,
+  LangSmithSandboxAuthenticationError,
+  LangSmithSandboxConnectionError,
   // Resource errors (type-based with resourceType attribute)
-  ResourceNotFoundError,
-  ResourceTimeoutError,
-  ResourceInUseError,
-  ResourceAlreadyExistsError,
-  ResourceNameConflictError,
+  LangSmithResourceNotFoundError,
+  LangSmithResourceTimeoutError,
+  LangSmithResourceInUseError,
+  LangSmithResourceAlreadyExistsError,
+  LangSmithResourceNameConflictError,
   // Validation and quota errors
-  ValidationError,
-  QuotaExceededError,
+  LangSmithValidationError,
+  LangSmithQuotaExceededError,
   // Sandbox-specific errors
-  SandboxCreationError,
-  SandboxNotReadyError,
-  SandboxOperationError,
-  DataplaneNotConfiguredError,
+  LangSmithSandboxCreationError,
+  LangSmithSandboxNotReadyError,
+  LangSmithSandboxOperationError,
+  LangSmithDataplaneNotConfiguredError,
 } from "./errors.js";

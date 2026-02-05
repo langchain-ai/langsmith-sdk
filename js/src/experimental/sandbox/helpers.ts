@@ -6,20 +6,20 @@
  */
 
 import {
-  QuotaExceededError,
-  ResourceAlreadyExistsError,
-  ResourceInUseError,
-  ResourceNameConflictError,
-  ResourceNotFoundError,
-  ResourceTimeoutError,
-  SandboxAPIError,
-  SandboxAuthenticationError,
-  SandboxClientError,
-  SandboxConnectionError,
-  SandboxCreationError,
-  SandboxNotReadyError,
-  SandboxOperationError,
-  ValidationError,
+  LangSmithQuotaExceededError,
+  LangSmithResourceAlreadyExistsError,
+  LangSmithResourceInUseError,
+  LangSmithResourceNameConflictError,
+  LangSmithResourceNotFoundError,
+  LangSmithResourceTimeoutError,
+  LangSmithSandboxAPIError,
+  LangSmithSandboxAuthenticationError,
+  LangSmithSandboxError,
+  LangSmithSandboxConnectionError,
+  LangSmithSandboxCreationError,
+  LangSmithSandboxNotReadyError,
+  LangSmithSandboxOperationError,
+  LangSmithValidationError,
 } from "./errors.js";
 
 // =============================================================================
@@ -146,10 +146,10 @@ export function extractQuotaType(message: string): string | undefined {
  * Handle HTTP errors specific to sandbox creation.
  *
  * Maps API error responses to specific exception types:
- * - 408: ResourceTimeoutError (sandbox didn't become ready in time)
- * - 422: ValidationError (bad input) or SandboxCreationError (runtime)
- * - 429: QuotaExceededError (org limits exceeded)
- * - 503: SandboxCreationError (no resources available)
+ * - 408: LangSmithResourceTimeoutError (sandbox didn't become ready in time)
+ * - 422: LangSmithValidationError (bad input) or LangSmithSandboxCreationError (runtime)
+ * - 429: LangSmithQuotaExceededError (org limits exceeded)
+ * - 503: LangSmithSandboxCreationError (no resources available)
  * - Other: Falls through to generic error handling
  */
 export async function handleSandboxCreationError(
@@ -160,7 +160,7 @@ export async function handleSandboxCreationError(
 
   if (status === 408) {
     // Timeout - include the message which contains last known status
-    throw new ResourceTimeoutError(data.message, "sandbox");
+    throw new LangSmithResourceTimeoutError(data.message, "sandbox");
   } else if (status === 422) {
     // Check if this is a Pydantic validation error (bad input) vs creation error
     const clonedResponse = response.clone();
@@ -168,18 +168,18 @@ export async function handleSandboxCreationError(
     if (details.length > 0 && details.some((d) => d.type === "value_error")) {
       // Pydantic validation error (bad input - exceeds server limits)
       const field = details[0]?.loc?.slice(-1)[0] as string | undefined;
-      throw new ValidationError(data.message, field, details);
+      throw new LangSmithValidationError(data.message, field, details);
     } else {
       // Sandbox creation failed (runtime error like image pull failure)
-      throw new SandboxCreationError(data.message, data.errorType);
+      throw new LangSmithSandboxCreationError(data.message, data.errorType);
     }
   } else if (status === 429) {
     // Organization quota exceeded - extract type or default to sandbox_count
     const quotaType = extractQuotaType(data.message) ?? "unknown";
-    throw new QuotaExceededError(data.message, quotaType);
+    throw new LangSmithQuotaExceededError(data.message, quotaType);
   } else if (status === 503) {
     // Service Unavailable - scheduling failed
-    throw new SandboxCreationError(
+    throw new LangSmithSandboxCreationError(
       data.message,
       data.errorType || "Unschedulable"
     );
@@ -192,9 +192,9 @@ export async function handleSandboxCreationError(
  * Handle HTTP errors specific to volume creation.
  *
  * Maps API error responses to specific exception types:
- * - 429: QuotaExceededError (org limits exceeded)
- * - 503: SandboxCreationError (provisioning failed)
- * - 504: ResourceTimeoutError (volume didn't become ready in time)
+ * - 429: LangSmithQuotaExceededError (org limits exceeded)
+ * - 503: LangSmithSandboxCreationError (provisioning failed)
+ * - 504: LangSmithResourceTimeoutError (volume didn't become ready in time)
  * - Other: Falls through to generic error handling
  */
 export async function handleVolumeCreationError(
@@ -206,13 +206,13 @@ export async function handleVolumeCreationError(
   if (status === 429) {
     // Organization quota exceeded - extract type or default to volume_count
     const quotaType = extractQuotaType(data.message) ?? "unknown";
-    throw new QuotaExceededError(data.message, quotaType);
+    throw new LangSmithQuotaExceededError(data.message, quotaType);
   } else if (status === 503) {
     // Provisioning failed (invalid storage class, quota exceeded)
-    throw new SandboxCreationError(data.message, "VolumeProvisioning");
+    throw new LangSmithSandboxCreationError(data.message, "VolumeProvisioning");
   } else if (status === 504) {
     // Timeout - volume didn't become ready in time
-    throw new ResourceTimeoutError(data.message, "volume");
+    throw new LangSmithResourceTimeoutError(data.message, "volume");
   }
   // Fall through to generic handling
   return handleClientHttpError(response);
@@ -222,10 +222,10 @@ export async function handleVolumeCreationError(
  * Handle HTTP errors specific to pool creation/update.
  *
  * Maps API error responses to specific exception types:
- * - 400: ResourceNotFoundError or ValidationError (template has volumes)
- * - 409: ResourceAlreadyExistsError
- * - 429: QuotaExceededError (org limits exceeded)
- * - 504: ResourceTimeoutError (timeout waiting for ready replicas)
+ * - 400: LangSmithResourceNotFoundError or LangSmithValidationError (template has volumes)
+ * - 409: LangSmithResourceAlreadyExistsError
+ * - 429: LangSmithQuotaExceededError (org limits exceeded)
+ * - 504: LangSmithResourceTimeoutError (timeout waiting for ready replicas)
  * - Other: Falls through to generic error handling
  */
 export async function handlePoolError(response: Response): Promise<never> {
@@ -236,22 +236,22 @@ export async function handlePoolError(response: Response): Promise<never> {
   if (status === 400) {
     // Check the error type to determine the specific exception
     if (errorType === "TemplateNotFound") {
-      throw new ResourceNotFoundError(data.message, "template");
-    } else if (errorType === "ValidationError") {
+      throw new LangSmithResourceNotFoundError(data.message, "template");
+    } else if (errorType === "LangSmithValidationError") {
       // Template has volumes attached
-      throw new ValidationError(data.message, undefined, undefined, errorType);
+      throw new LangSmithValidationError(data.message, undefined, undefined, errorType);
     }
     // Generic bad request - fall through to generic handling
   } else if (status === 409) {
     // Pool already exists
-    throw new ResourceAlreadyExistsError(data.message, "pool");
+    throw new LangSmithResourceAlreadyExistsError(data.message, "pool");
   } else if (status === 429) {
     // Organization quota exceeded - extract type or default to pool_count
     const quotaType = extractQuotaType(data.message) ?? "unknown";
-    throw new QuotaExceededError(data.message, quotaType);
+    throw new LangSmithQuotaExceededError(data.message, quotaType);
   } else if (status === 504) {
     // Timeout waiting for pool to be ready
-    throw new ResourceTimeoutError(data.message, "pool");
+    throw new LangSmithResourceTimeoutError(data.message, "pool");
   }
   // Fall through to generic handling
   return handleClientHttpError(response);
@@ -269,10 +269,10 @@ export async function handleClientHttpError(
   const status = response.status;
 
   if (status === 401 || status === 403) {
-    throw new SandboxAuthenticationError(message);
+    throw new LangSmithSandboxAuthenticationError(message);
   }
   if (status === 404) {
-    throw new ResourceNotFoundError(message);
+    throw new LangSmithResourceNotFoundError(message);
   }
 
   // Handle validation errors (invalid resource values, formats, etc.)
@@ -280,22 +280,22 @@ export async function handleClientHttpError(
     const clonedResponse = response.clone();
     const details = await parseValidationError(clonedResponse);
     const field = details[0]?.loc?.slice(-1)[0] as string | undefined;
-    throw new ValidationError(message, field, details);
+    throw new LangSmithValidationError(message, field, details);
   }
 
   // Handle quota exceeded errors (org limits)
   if (status === 429) {
     const quotaType = extractQuotaType(message);
-    throw new QuotaExceededError(message, quotaType);
+    throw new LangSmithQuotaExceededError(message, quotaType);
   }
 
   if (status === 502 && errorType === "ConnectionError") {
-    throw new SandboxConnectionError(message);
+    throw new LangSmithSandboxConnectionError(message);
   }
   if (status === 500) {
-    throw new SandboxAPIError(message);
+    throw new LangSmithSandboxAPIError(message);
   }
-  throw new SandboxClientError(message);
+  throw new LangSmithSandboxError(message);
 }
 
 // =============================================================================
@@ -306,13 +306,13 @@ export async function handleClientHttpError(
  * Handle HTTP errors for sandbox operations (run, read, write).
  *
  * Maps API error types to specific exceptions:
- * - WriteError -> SandboxOperationError (operation="write")
- * - ReadError -> SandboxOperationError (operation="read")
- * - CommandError -> SandboxOperationError (operation="command")
- * - ConnectionError (502) -> SandboxConnectionError
- * - FileNotFound / 404 -> ResourceNotFoundError (resourceType="file")
- * - NotReady (400) -> SandboxNotReadyError
- * - 403 -> SandboxOperationError (permission denied)
+ * - WriteError -> LangSmithSandboxOperationError (operation="write")
+ * - ReadError -> LangSmithSandboxOperationError (operation="read")
+ * - CommandError -> LangSmithSandboxOperationError (operation="command")
+ * - ConnectionError (502) -> LangSmithSandboxConnectionError
+ * - FileNotFound / 404 -> LangSmithResourceNotFoundError (resourceType="file")
+ * - NotReady (400) -> LangSmithSandboxNotReadyError
+ * - 403 -> LangSmithSandboxOperationError (permission denied)
  */
 export async function handleSandboxHttpError(
   response: Response
@@ -324,34 +324,34 @@ export async function handleSandboxHttpError(
 
   // Operation-specific errors (from sandbox runtime)
   if (errorType === "WriteError") {
-    throw new SandboxOperationError(message, "write", errorType);
+    throw new LangSmithSandboxOperationError(message, "write", errorType);
   }
   if (errorType === "ReadError") {
-    throw new SandboxOperationError(message, "read", errorType);
+    throw new LangSmithSandboxOperationError(message, "read", errorType);
   }
   if (errorType === "CommandError") {
-    throw new SandboxOperationError(message, "command", errorType);
+    throw new LangSmithSandboxOperationError(message, "command", errorType);
   }
 
   // Permission denied
   if (status === 403) {
-    throw new SandboxOperationError(message, undefined, "PermissionDenied");
+    throw new LangSmithSandboxOperationError(message, undefined, "PermissionDenied");
   }
 
   // Connection to sandbox failed
   if (status === 502 && errorType === "ConnectionError") {
-    throw new SandboxConnectionError(message);
+    throw new LangSmithSandboxConnectionError(message);
   }
 
   // Not ready / not found
   if (status === 400 && errorType === "NotReady") {
-    throw new SandboxNotReadyError(message);
+    throw new LangSmithSandboxNotReadyError(message);
   }
   if (status === 404 || errorType === "FileNotFound") {
-    throw new ResourceNotFoundError(message, "file");
+    throw new LangSmithResourceNotFoundError(message, "file");
   }
 
-  throw new SandboxClientError(message);
+  throw new LangSmithSandboxError(message);
 }
 
 /**
@@ -362,7 +362,7 @@ export async function handleConflictError(
   resourceType: string
 ): Promise<never> {
   const data = await parseErrorResponse(response);
-  throw new ResourceNameConflictError(data.message, resourceType);
+  throw new LangSmithResourceNameConflictError(data.message, resourceType);
 }
 
 /**
@@ -373,5 +373,5 @@ export async function handleResourceInUseError(
   resourceType: string
 ): Promise<never> {
   const data = await parseErrorResponse(response);
-  throw new ResourceInUseError(data.message, resourceType);
+  throw new LangSmithResourceInUseError(data.message, resourceType);
 }

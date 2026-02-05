@@ -1,7 +1,7 @@
 /**
  * Custom error classes for the sandbox module.
  *
- * All sandbox errors extend SandboxClientError for unified error handling.
+ * All sandbox errors extend LangSmithSandboxError for unified error handling.
  * The errors are organized by type rather than resource type, with additional
  * properties for specific handling when needed.
  */
@@ -9,10 +9,10 @@
 /**
  * Base exception for sandbox client errors.
  */
-export class SandboxClientError extends Error {
+export class LangSmithSandboxError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "SandboxClientError";
+    this.name = "LangSmithSandboxError";
   }
 }
 
@@ -25,30 +25,30 @@ export class SandboxClientError extends Error {
  *
  * For example, this is raised for wrong URL or path.
  */
-export class SandboxAPIError extends SandboxClientError {
+export class LangSmithSandboxAPIError extends LangSmithSandboxError {
   constructor(message: string) {
     super(message);
-    this.name = "SandboxAPIError";
+    this.name = "LangSmithSandboxAPIError";
   }
 }
 
 /**
  * Raised when authentication fails (invalid or missing API key).
  */
-export class SandboxAuthenticationError extends SandboxClientError {
+export class LangSmithSandboxAuthenticationError extends LangSmithSandboxError {
   constructor(message: string) {
     super(message);
-    this.name = "SandboxAuthenticationError";
+    this.name = "LangSmithSandboxAuthenticationError";
   }
 }
 
 /**
  * Raised when connection to the sandbox server fails.
  */
-export class SandboxConnectionError extends SandboxClientError {
+export class LangSmithSandboxConnectionError extends LangSmithSandboxError {
   constructor(message: string) {
     super(message);
-    this.name = "SandboxConnectionError";
+    this.name = "LangSmithSandboxConnectionError";
   }
 }
 
@@ -59,12 +59,12 @@ export class SandboxConnectionError extends SandboxClientError {
 /**
  * Raised when a resource is not found.
  */
-export class ResourceNotFoundError extends SandboxClientError {
+export class LangSmithResourceNotFoundError extends LangSmithSandboxError {
   resourceType?: string;
 
   constructor(message: string, resourceType?: string) {
     super(message);
-    this.name = "ResourceNotFoundError";
+    this.name = "LangSmithResourceNotFoundError";
     this.resourceType = resourceType;
   }
 }
@@ -72,13 +72,13 @@ export class ResourceNotFoundError extends SandboxClientError {
 /**
  * Raised when an operation times out.
  */
-export class ResourceTimeoutError extends SandboxClientError {
+export class LangSmithResourceTimeoutError extends LangSmithSandboxError {
   resourceType?: string;
   lastStatus?: string;
 
   constructor(message: string, resourceType?: string, lastStatus?: string) {
     super(message);
-    this.name = "ResourceTimeoutError";
+    this.name = "LangSmithResourceTimeoutError";
     this.resourceType = resourceType;
     this.lastStatus = lastStatus;
   }
@@ -95,12 +95,12 @@ export class ResourceTimeoutError extends SandboxClientError {
 /**
  * Raised when deleting a resource that is still in use.
  */
-export class ResourceInUseError extends SandboxClientError {
+export class LangSmithResourceInUseError extends LangSmithSandboxError {
   resourceType?: string;
 
   constructor(message: string, resourceType?: string) {
     super(message);
-    this.name = "ResourceInUseError";
+    this.name = "LangSmithResourceInUseError";
     this.resourceType = resourceType;
   }
 }
@@ -108,12 +108,12 @@ export class ResourceInUseError extends SandboxClientError {
 /**
  * Raised when creating a resource that already exists.
  */
-export class ResourceAlreadyExistsError extends SandboxClientError {
+export class LangSmithResourceAlreadyExistsError extends LangSmithSandboxError {
   resourceType?: string;
 
   constructor(message: string, resourceType?: string) {
     super(message);
-    this.name = "ResourceAlreadyExistsError";
+    this.name = "LangSmithResourceAlreadyExistsError";
     this.resourceType = resourceType;
   }
 }
@@ -121,12 +121,12 @@ export class ResourceAlreadyExistsError extends SandboxClientError {
 /**
  * Raised when updating a resource name to one that already exists.
  */
-export class ResourceNameConflictError extends SandboxClientError {
+export class LangSmithResourceNameConflictError extends LangSmithSandboxError {
   resourceType?: string;
 
   constructor(message: string, resourceType?: string) {
     super(message);
-    this.name = "ResourceNameConflictError";
+    this.name = "LangSmithResourceNameConflictError";
     this.resourceType = resourceType;
   }
 }
@@ -144,7 +144,7 @@ export class ResourceNameConflictError extends SandboxClientError {
  * - Invalid name formats
  * - Pool validation failures (e.g., template has volumes)
  */
-export class ValidationError extends SandboxClientError {
+export class LangSmithValidationError extends LangSmithSandboxError {
   field?: string;
   details?: Array<Record<string, unknown>>;
   errorType?: string;
@@ -156,7 +156,7 @@ export class ValidationError extends SandboxClientError {
     errorType?: string
   ) {
     super(message);
-    this.name = "ValidationError";
+    this.name = "LangSmithValidationError";
     this.field = field;
     this.details = details;
     this.errorType = errorType;
@@ -168,12 +168,12 @@ export class ValidationError extends SandboxClientError {
  *
  * Users should contact support@langchain.dev to increase quotas.
  */
-export class QuotaExceededError extends SandboxClientError {
+export class LangSmithQuotaExceededError extends LangSmithSandboxError {
   quotaType?: string;
 
   constructor(message: string, quotaType?: string) {
     super(message);
-    this.name = "QuotaExceededError";
+    this.name = "LangSmithQuotaExceededError";
     this.quotaType = quotaType;
   }
 }
@@ -185,7 +185,7 @@ export class QuotaExceededError extends SandboxClientError {
 /**
  * Raised when sandbox creation fails.
  */
-export class SandboxCreationError extends SandboxClientError {
+export class LangSmithSandboxCreationError extends LangSmithSandboxError {
   /**
    * Machine-readable error type (ImagePull, CrashLoop, SandboxConfig, Unschedulable).
    */
@@ -193,7 +193,7 @@ export class SandboxCreationError extends SandboxClientError {
 
   constructor(message: string, errorType?: string) {
     super(message);
-    this.name = "SandboxCreationError";
+    this.name = "LangSmithSandboxCreationError";
     this.errorType = errorType;
   }
 
@@ -214,27 +214,27 @@ export class SandboxCreationError extends SandboxClientError {
  *
  * This occurs when the sandbox-router URL is not configured for the cluster.
  */
-export class DataplaneNotConfiguredError extends SandboxClientError {
+export class LangSmithDataplaneNotConfiguredError extends LangSmithSandboxError {
   constructor(message: string) {
     super(message);
-    this.name = "DataplaneNotConfiguredError";
+    this.name = "LangSmithDataplaneNotConfiguredError";
   }
 }
 
 /**
  * Raised when attempting to interact with a sandbox that is not ready.
  */
-export class SandboxNotReadyError extends SandboxClientError {
+export class LangSmithSandboxNotReadyError extends LangSmithSandboxError {
   constructor(message: string) {
     super(message);
-    this.name = "SandboxNotReadyError";
+    this.name = "LangSmithSandboxNotReadyError";
   }
 }
 
 /**
  * Raised when a sandbox operation fails (run, read, write).
  */
-export class SandboxOperationError extends SandboxClientError {
+export class LangSmithSandboxOperationError extends LangSmithSandboxError {
   /**
    * The operation that failed (command, read, write).
    */
@@ -246,7 +246,7 @@ export class SandboxOperationError extends SandboxClientError {
 
   constructor(message: string, operation?: string, errorType?: string) {
     super(message);
-    this.name = "SandboxOperationError";
+    this.name = "LangSmithSandboxOperationError";
     this.operation = operation;
     this.errorType = errorType;
   }
