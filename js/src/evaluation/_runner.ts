@@ -566,23 +566,29 @@ export class _ExperimentManager {
 
   async *getResults(): AsyncGenerator<ExperimentResultRow> {
     const examples = await this.getExamples();
-    const evaluationResults: EvaluationResults[] = [];
+    const runsIterator = this.runs[Symbol.asyncIterator]();
+    const evaluationIterator = this.evaluationResults[Symbol.asyncIterator]();
 
     if (!this._runsArray) {
       this._runsArray = [];
-      for await (const run of this.runs) {
-        this._runsArray.push(run);
-      }
     }
 
-    for await (const evaluationResult of this.evaluationResults) {
-      evaluationResults.push(evaluationResult);
-    }
-    for (let i = 0; i < this._runsArray.length; i++) {
+    for (let i = 0; i < examples.length; i++) {
+      const runResult = await runsIterator.next();
+      if (runResult.done) {
+        break;
+      }
+      const evaluationResult = await evaluationIterator.next();
+      const evaluationResults = evaluationResult.done
+        ? { results: [] }
+        : evaluationResult.value;
+
+      this._runsArray.push(runResult.value);
+
       yield {
-        run: this._runsArray[i],
+        run: runResult.value,
         example: examples[i],
-        evaluationResults: evaluationResults[i],
+        evaluationResults,
       };
     }
   }
@@ -642,10 +648,16 @@ export class _ExperimentManager {
         debug: this.client.debug,
       });
 
-      const futures: Array<Promise<_ForwardResults>> = [];
+      const exampleStream = (async function* () {
+        for (const example of examples) {
+          yield example;
+        }
+      })();
 
-      for await (const example of examples) {
-        futures.push(
+      for await (const result of _mapWithConcurrency(
+        exampleStream,
+        maxConcurrency,
+        (example) =>
           caller.call(
             _forward,
             target,
@@ -655,11 +667,8 @@ export class _ExperimentManager {
             this.client,
             this._includeAttachments
           )
-        );
-      }
-
-      for await (const future of futures) {
-        yield future;
+      )) {
+        yield result;
       }
     }
 
@@ -737,16 +746,15 @@ export class _ExperimentManager {
         maxConcurrency,
         debug: this.client.debug,
       });
-      const futures: Promise<ExperimentResultRow>[] = [];
-      for await (const currentResults of this.getResults()) {
-        futures.push(
+
+      for await (const result of _mapWithConcurrency(
+        this.getResults(),
+        maxConcurrency,
+        (currentResults) =>
           caller.call(this._runEvaluators, evaluators, currentResults, {
             client: this.client,
           })
-        );
-      }
-
-      for (const result of futures) {
+      )) {
         yield result;
       }
     }
@@ -1240,6 +1248,78 @@ async function _resolveExperiment(
   }
 
   return [undefined, undefined];
+}
+
+/**
+ * Map over an async iterable with bounded concurrency.
+ * Results are yielded as soon as they resolve (input order is not preserved).
+ * When `maxConcurrency <= 0`, mapping runs sequentially.
+ * Errors from the source iterable or mapper propagate to the consumer.
+ */
+async function* _mapWithConcurrency<TInput, TOutput>(
+  iterable: AsyncIterable<TInput>,
+  maxConcurrency: number,
+  mapper: (value: TInput) => Promise<TOutput>
+): AsyncGenerator<TOutput> {
+  if (maxConcurrency <= 0) {
+    for await (const value of iterable) {
+      yield await mapper(value);
+    }
+    return;
+  }
+
+  type PendingTask = Promise<{ value: TOutput; self: PendingTask }>;
+
+  const iterator = iterable[Symbol.asyncIterator]();
+  let nextInput: Promise<IteratorResult<TInput>> | null = iterator.next();
+  const pending = new Set<PendingTask>();
+
+  const schedule = (input: TInput) => {
+    let task: PendingTask;
+    task = mapper(input).then((value) => ({ value, self: task }));
+    pending.add(task);
+  };
+
+  while (pending.size > 0 || nextInput) {
+    const racers: Array<
+      Promise<
+        | { type: "input"; res: IteratorResult<TInput> }
+        | { type: "output"; res: { value: TOutput; self: PendingTask } }
+      >
+    > = [];
+
+    if (nextInput && pending.size < maxConcurrency) {
+      racers.push(nextInput.then((res) => ({ type: "input" as const, res })));
+    }
+
+    if (pending.size) {
+      racers.push(
+        Promise.race(
+          Array.from(pending).map((task) =>
+            task.then((res) => ({ type: "output" as const, res }))
+          )
+        )
+      );
+    }
+
+    if (racers.length === 0) {
+      break;
+    }
+
+    const winner = await Promise.race(racers);
+    if (winner.type === "input") {
+      const { res } = winner;
+      if (res.done) {
+        nextInput = null;
+      } else {
+        schedule(res.value);
+        nextInput = iterator.next();
+      }
+    } else {
+      pending.delete(winner.res.self);
+      yield winner.res.value;
+    }
+  }
 }
 
 function _isCallable(
