@@ -29,6 +29,7 @@ const entrypoints = {
   "experimental/otel/processor": "experimental/otel/processor",
   "experimental/vercel": "experimental/vercel/index",
   "experimental/anthropic": "experimental/anthropic/index",
+  "experimental/sandbox": "experimental/sandbox/index",
 };
 
 const defaultEntrypoints = ["vitest/reporter"];
