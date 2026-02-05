@@ -119,6 +119,10 @@ Chinook_Sqlite.sql
 /experimental/anthropic.js
 /experimental/anthropic.d.ts
 /experimental/anthropic.d.cts
+/experimental/sandbox.cjs
+/experimental/sandbox.js
+/experimental/sandbox.d.ts
+/experimental/sandbox.d.cts
 /index.cjs
 /index.js
 /index.d.ts

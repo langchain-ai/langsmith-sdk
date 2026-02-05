@@ -52,3 +52,11 @@ repos:
         language: system
         files: ^js/src/.*\.(ts|js)$
         pass_filenames: false
+
+      # JS - type check with TypeScript (cannot auto-fix)
+      - id: js-typecheck
+        name: JS TypeScript Type Check
+        entry: bash -c 'cd js && yarn run check:types'
+        language: system
+        files: ^js/src/.*\.(ts|tsx|mts)$
+        pass_filenames: false
