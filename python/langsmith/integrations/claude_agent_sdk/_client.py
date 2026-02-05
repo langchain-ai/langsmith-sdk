@@ -199,6 +199,7 @@ def instrument_claude_client(original_class: Any) -> Any:
 
     class TracedClaudeSDKClient(original_class):
         _langsmith_instrumented = True
+
         def __init__(self, *args: Any, **kwargs: Any):
             # Inject LangSmith tracing hooks into options before initialization
             options = kwargs.get("options") or (args[0] if args else None)
