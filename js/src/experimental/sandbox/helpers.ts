@@ -23,63 +23,6 @@ import {
 } from "./errors.js";
 
 // =============================================================================
-// Network Error Detection
-// =============================================================================
-
-const objectToString = Object.prototype.toString;
-const isError = (value: unknown): value is Error =>
-  objectToString.call(value) === "[object Error]";
-
-const networkErrorMessages = new Set([
-  "network error", // Chrome
-  "Failed to fetch", // Chrome
-  "NetworkError when attempting to fetch resource.", // Firefox
-  "The Internet connection appears to be offline.", // Safari 16
-  "Network request failed", // `cross-fetch`
-  "fetch failed", // Undici (Node.js)
-  "terminated", // Undici (Node.js)
-  "A network error occurred.", // Bun (WebKit)
-  "Network connection lost", // Cloudflare Workers (fetch)
-]);
-
-/**
- * Check if an error is a network/fetch error.
- *
- * This is used instead of `instanceof TypeError` to avoid ESLint errors.
- */
-export function isNetworkError(error: unknown): boolean {
-  const isValid =
-    error &&
-    isError(error) &&
-    error.name === "TypeError" &&
-    typeof error.message === "string";
-
-  if (!isValid) {
-    return false;
-  }
-
-  const { message, stack } = error;
-
-  // Safari 17+ has generic message but no stack for network errors
-  if (message === "Load failed") {
-    return stack === undefined;
-  }
-
-  // Deno network errors start with specific text
-  if (message.startsWith("error sending request for url")) {
-    return true;
-  }
-
-  // Check for generic fetch error messages
-  if (message.includes("fetch")) {
-    return true;
-  }
-
-  // Standard network error messages
-  return networkErrorMessages.has(message);
-}
-
-// =============================================================================
 // Error Response Parsing
 // =============================================================================
 

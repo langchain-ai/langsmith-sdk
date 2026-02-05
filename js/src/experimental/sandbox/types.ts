@@ -101,6 +101,16 @@ export interface SandboxClientConfig {
    * Default HTTP timeout in milliseconds.
    */
   timeoutMs?: number;
+  /**
+   * Maximum number of retries for transient failures (network errors, 5xx, 429).
+   * Defaults to 3.
+   */
+  maxRetries?: number;
+  /**
+   * Maximum number of concurrent requests.
+   * Defaults to Infinity (no limit).
+   */
+  maxConcurrency?: number;
 }
 
 /**

@@ -4,6 +4,7 @@
 
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { _getFetchImplementation } from "../../singletons/fetch.js";
+import { AsyncCaller } from "../../utils/async_caller.js";
 import type {
   CreatePoolOptions,
   CreateSandboxOptions,
@@ -23,7 +24,6 @@ import {
   ResourceNameConflictError,
   ResourceNotFoundError,
   SandboxAPIError,
-  SandboxConnectionError,
 } from "./errors.js";
 import {
   handleClientHttpError,
@@ -32,7 +32,6 @@ import {
   handleResourceInUseError,
   handleSandboxCreationError,
   handleVolumeCreationError,
-  isNetworkError,
 } from "./helpers.js";
 
 /**
@@ -86,6 +85,7 @@ export class SandboxClient {
   private _baseUrl: string;
   private _apiKey?: string;
   private _fetchImpl: typeof fetch;
+  private _caller: AsyncCaller;
 
   constructor(config: SandboxClientConfig = {}) {
     this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
@@ -94,10 +94,18 @@ export class SandboxClient {
     );
     this._apiKey = config.apiKey ?? getDefaultApiKey();
     this._fetchImpl = _getFetchImplementation();
+    this._caller = new AsyncCaller({
+      maxRetries: config.maxRetries ?? 3,
+      maxConcurrency: config.maxConcurrency ?? Infinity,
+    });
   }
 
   /**
    * Internal fetch method that adds authentication headers.
+   *
+   * Uses AsyncCaller to handle retries for transient failures
+   * (network errors, 5xx, 429).
+   *
    * @internal
    */
   async _fetch(url: string, init: RequestInit = {}): Promise<Response> {
@@ -105,10 +113,12 @@ export class SandboxClient {
     if (this._apiKey) {
       headers.set("X-Api-Key", this._apiKey);
     }
-    return this._fetchImpl(url, {
-      ...init,
-      headers,
-    });
+    return this._caller.call(() =>
+      this._fetchImpl(url, {
+        ...init,
+        headers,
+      })
+    );
   }
 
   // =========================================================================
@@ -139,25 +149,18 @@ export class SandboxClient {
       timeout,
     };
 
-    try {
-      const response = await this._fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout((timeout + 30) * 1000),
-      });
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout((timeout + 30) * 1000),
+    });
 
-      if (!response.ok) {
-        await handleVolumeCreationError(response);
-      }
-
-      return (await response.json()) as Volume;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+    if (!response.ok) {
+      await handleVolumeCreationError(response);
     }
+
+    return (await response.json()) as Volume;
   }
 
   /**
@@ -170,26 +173,19 @@ export class SandboxClient {
   async getVolume(name: string): Promise<Volume> {
     const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Volume '${name}' not found`,
-            "volume"
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Volume '${name}' not found`,
+          "volume"
+        );
       }
-
-      return (await response.json()) as Volume;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as Volume;
   }
 
   /**
@@ -200,26 +196,19 @@ export class SandboxClient {
   async listVolumes(): Promise<Volume[]> {
     const url = `${this._baseUrl}/volumes`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new SandboxAPIError(
-            `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new SandboxAPIError(
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+        );
       }
-
-      const data = await response.json();
-      return (data.volumes ?? []) as Volume[];
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = await response.json();
+    return (data.volumes ?? []) as Volume[];
   }
 
   /**
@@ -232,26 +221,19 @@ export class SandboxClient {
   async deleteVolume(name: string): Promise<void> {
     const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url, { method: "DELETE" });
+    const response = await this._fetch(url, { method: "DELETE" });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Volume '${name}' not found`,
-            "volume"
-          );
-        }
-        if (response.status === 409) {
-          await handleResourceInUseError(response, "volume");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Volume '${name}' not found`,
+          "volume"
+        );
       }
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        await handleResourceInUseError(response, "volume");
       }
-      throw e;
+      await handleClientHttpError(response);
     }
   }
 
@@ -288,33 +270,26 @@ export class SandboxClient {
       payload.size = size;
     }
 
-    try {
-      const response = await this._fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    const response = await this._fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Volume '${name}' not found`,
-            "volume"
-          );
-        }
-        if (response.status === 409) {
-          await handleConflictError(response, "volume");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Volume '${name}' not found`,
+          "volume"
+        );
       }
-
-      return (await response.json()) as Volume;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        await handleConflictError(response, "volume");
       }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as Volume;
   }
 
   // =========================================================================
@@ -362,24 +337,17 @@ export class SandboxClient {
       }));
     }
 
-    try {
-      const response = await this._fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        await handleClientHttpError(response);
-      }
-
-      return (await response.json()) as SandboxTemplate;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+    if (!response.ok) {
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as SandboxTemplate;
   }
 
   /**
@@ -392,26 +360,19 @@ export class SandboxClient {
   async getTemplate(name: string): Promise<SandboxTemplate> {
     const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Template '${name}' not found`,
-            "template"
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Template '${name}' not found`,
+          "template"
+        );
       }
-
-      return (await response.json()) as SandboxTemplate;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as SandboxTemplate;
   }
 
   /**
@@ -422,26 +383,19 @@ export class SandboxClient {
   async listTemplates(): Promise<SandboxTemplate[]> {
     const url = `${this._baseUrl}/templates`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new SandboxAPIError(
-            `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new SandboxAPIError(
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+        );
       }
-
-      const data = await response.json();
-      return (data.templates ?? []) as SandboxTemplate[];
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = await response.json();
+    return (data.templates ?? []) as SandboxTemplate[];
   }
 
   /**
@@ -467,33 +421,26 @@ export class SandboxClient {
     const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
     const payload = { name: newName };
 
-    try {
-      const response = await this._fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    const response = await this._fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Template '${name}' not found`,
-            "template"
-          );
-        }
-        if (response.status === 409) {
-          await handleConflictError(response, "template");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Template '${name}' not found`,
+          "template"
+        );
       }
-
-      return (await response.json()) as SandboxTemplate;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        await handleConflictError(response, "template");
       }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as SandboxTemplate;
   }
 
   /**
@@ -506,26 +453,19 @@ export class SandboxClient {
   async deleteTemplate(name: string): Promise<void> {
     const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url, { method: "DELETE" });
+    const response = await this._fetch(url, { method: "DELETE" });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Template '${name}' not found`,
-            "template"
-          );
-        }
-        if (response.status === 409) {
-          await handleResourceInUseError(response, "template");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Template '${name}' not found`,
+          "template"
+        );
       }
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        await handleResourceInUseError(response, "template");
       }
-      throw e;
+      await handleClientHttpError(response);
     }
   }
 
@@ -558,25 +498,18 @@ export class SandboxClient {
       timeout,
     };
 
-    try {
-      const response = await this._fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout((timeout + 30) * 1000),
-      });
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout((timeout + 30) * 1000),
+    });
 
-      if (!response.ok) {
-        await handlePoolError(response);
-      }
-
-      return (await response.json()) as Pool;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+    if (!response.ok) {
+      await handlePoolError(response);
     }
+
+    return (await response.json()) as Pool;
   }
 
   /**
@@ -589,23 +522,16 @@ export class SandboxClient {
   async getPool(name: string): Promise<Pool> {
     const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
-
-      return (await response.json()) as Pool;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    return (await response.json()) as Pool;
   }
 
   /**
@@ -616,26 +542,19 @@ export class SandboxClient {
   async listPools(): Promise<Pool[]> {
     const url = `${this._baseUrl}/pools`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new SandboxAPIError(
-            `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new SandboxAPIError(
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+        );
       }
-
-      const data = await response.json();
-      return (data.pools ?? []) as Pool[];
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = await response.json();
+    return (data.pools ?? []) as Pool[];
   }
 
   /**
@@ -669,30 +588,23 @@ export class SandboxClient {
       payload.replicas = replicas;
     }
 
-    try {
-      const response = await this._fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    const response = await this._fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
-        }
-        if (response.status === 409) {
-          await handleConflictError(response, "pool");
-        }
-        await handlePoolError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
-
-      return (await response.json()) as Pool;
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        await handleConflictError(response, "pool");
       }
-      throw e;
+      await handlePoolError(response);
     }
+
+    return (await response.json()) as Pool;
   }
 
   /**
@@ -706,20 +618,13 @@ export class SandboxClient {
   async deletePool(name: string): Promise<void> {
     const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url, { method: "DELETE" });
+    const response = await this._fetch(url, { method: "DELETE" });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(`Pool '${name}' not found`, "pool");
       }
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
   }
 
@@ -765,26 +670,19 @@ export class SandboxClient {
       payload.name = name;
     }
 
-    try {
-      const response = await this._fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout((timeout + 30) * 1000),
-      });
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout((timeout + 30) * 1000),
+    });
 
-      if (!response.ok) {
-        await handleSandboxCreationError(response);
-      }
-
-      const data = (await response.json()) as SandboxData;
-      return Sandbox.fromData(data, this);
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+    if (!response.ok) {
+      await handleSandboxCreationError(response);
     }
+
+    const data = (await response.json()) as SandboxData;
+    return Sandbox.fromData(data, this);
   }
 
   /**
@@ -799,27 +697,20 @@ export class SandboxClient {
   async getSandbox(name: string): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Sandbox '${name}' not found`,
-            "sandbox"
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
       }
-
-      const data = (await response.json()) as SandboxData;
-      return Sandbox.fromData(data, this);
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = (await response.json()) as SandboxData;
+    return Sandbox.fromData(data, this);
   }
 
   /**
@@ -830,28 +721,21 @@ export class SandboxClient {
   async listSandboxes(): Promise<Sandbox[]> {
     const url = `${this._baseUrl}/boxes`;
 
-    try {
-      const response = await this._fetch(url);
+    const response = await this._fetch(url);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new SandboxAPIError(
-            `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new SandboxAPIError(
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+        );
       }
-
-      const data = await response.json();
-      return ((data.sandboxes ?? []) as SandboxData[]).map((s) =>
-        Sandbox.fromData(s, this)
-      );
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = await response.json();
+    return ((data.sandboxes ?? []) as SandboxData[]).map((s) =>
+      Sandbox.fromData(s, this)
+    );
   }
 
   /**
@@ -867,37 +751,30 @@ export class SandboxClient {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
     const payload = { name: newName };
 
-    try {
-      const response = await this._fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    const response = await this._fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Sandbox '${name}' not found`,
-            "sandbox"
-          );
-        }
-        if (response.status === 409) {
-          throw new ResourceNameConflictError(
-            `Sandbox name '${newName}' already in use`,
-            "sandbox"
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
       }
-
-      const data = (await response.json()) as SandboxData;
-      return Sandbox.fromData(data, this);
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
+      if (response.status === 409) {
+        throw new ResourceNameConflictError(
+          `Sandbox name '${newName}' already in use`,
+          "sandbox"
+        );
       }
-      throw e;
+      await handleClientHttpError(response);
     }
+
+    const data = (await response.json()) as SandboxData;
+    return Sandbox.fromData(data, this);
   }
 
   /**
@@ -909,23 +786,16 @@ export class SandboxClient {
   async deleteSandbox(name: string): Promise<void> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
-    try {
-      const response = await this._fetch(url, { method: "DELETE" });
+    const response = await this._fetch(url, { method: "DELETE" });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new ResourceNotFoundError(
-            `Sandbox '${name}' not found`,
-            "sandbox"
-          );
-        }
-        await handleClientHttpError(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
       }
-    } catch (e) {
-      if (isNetworkError(e)) {
-        throw new SandboxConnectionError(`Failed to connect to server: ${e}`);
-      }
-      throw e;
+      await handleClientHttpError(response);
     }
   }
 }
