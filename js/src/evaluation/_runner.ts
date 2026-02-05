@@ -159,7 +159,8 @@ type BaseEvaluateOptions = {
    */
   description?: string;
   /**
-   * The maximum number of concurrent evaluations to run.
+   * The maximum concurrency to use for predictions/evaluations when a more
+   * specific concurrency option is not provided.
    * @default undefined
    */
   maxConcurrency?: number;
@@ -177,6 +178,24 @@ type BaseEvaluateOptions = {
 };
 
 export interface EvaluateOptions extends BaseEvaluateOptions {
+  /**
+   * The maximum number of concurrent predictions to run.
+   * If not provided, defaults to `maxConcurrency` when set.
+   * @default undefined
+   */
+  predictionConcurrency?: number;
+  /**
+   * The maximum number of concurrent evaluators to run.
+   * If not provided, defaults to `maxConcurrency` when set.
+   * @default undefined
+   */
+  evaluationConcurrency?: number;
+  /**
+   * The maximum number of completed runs to buffer ahead of evaluation.
+   * If not provided, predictions will be backpressured by evaluation.
+   * @default undefined
+   */
+  maxBufferedRuns?: number;
   /**
    * A list of evaluators to run on each example.
    * @default undefined
@@ -498,16 +517,21 @@ export class _ExperimentManager {
     target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
+      maxBufferedRuns?: number;
     }
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
+    const runStream =
+      options?.maxBufferedRuns && options.maxBufferedRuns > 0
+        ? _bufferAsyncIterable(experimentResults, options.maxBufferedRuns)
+        : experimentResults;
     return new _ExperimentManager({
       examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
       runs: (async function* (): AsyncGenerator<Run> {
-        for await (const pred of experimentResults) {
+        for await (const pred of runStream) {
           yield pred.run;
         }
       })(),
@@ -986,15 +1010,25 @@ async function _evaluate(
     includeAttachments: standardFields.includeAttachments,
   }).start();
 
+  const predictionConcurrency =
+    standardFields.predictionConcurrency ??
+    standardFields.maxConcurrency ??
+    0;
+  const evaluationConcurrency =
+    standardFields.evaluationConcurrency ??
+    standardFields.maxConcurrency ??
+    0;
+
   if (_isCallable(target)) {
     manager = await manager.withPredictions(target, {
-      maxConcurrency: fields.maxConcurrency,
+      maxConcurrency: predictionConcurrency,
+      maxBufferedRuns: standardFields.maxBufferedRuns,
     });
   }
 
   if (standardFields.evaluators) {
     manager = await manager.withEvaluators(standardFields.evaluators, {
-      maxConcurrency: fields.maxConcurrency,
+      maxConcurrency: evaluationConcurrency,
     });
   }
   if (standardFields.summaryEvaluators) {
@@ -1320,6 +1354,116 @@ async function* _mapWithConcurrency<TInput, TOutput>(
       yield winner.res.value;
     }
   }
+}
+
+type _PendingShift<T> = {
+  resolve: (value: IteratorResult<T>) => void;
+  reject: (error: unknown) => void;
+};
+
+class _BoundedAsyncBuffer<T> {
+  private buffer: T[] = [];
+  private closed = false;
+  private error: unknown = undefined;
+  private pendingShifts: _PendingShift<T>[] = [];
+  private pendingPushes: Array<() => void> = [];
+
+  constructor(private maxSize: number) {}
+
+  async push(value: T): Promise<void> {
+    // Loop to handle waiting for capacity without recursion.
+    while (true) {
+      if (this.closed) {
+        throw this.error ?? new Error("Buffer is closed.");
+      }
+      if (this.pendingShifts.length > 0) {
+        const { resolve } = this.pendingShifts.shift()!;
+        resolve({ value, done: false });
+        return;
+      }
+      if (this.buffer.length < this.maxSize) {
+        this.buffer.push(value);
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.pendingPushes.push(resolve);
+      });
+    }
+  }
+
+  close(): void {
+    this.closed = true;
+    while (this.pendingShifts.length > 0) {
+      const { resolve } = this.pendingShifts.shift()!;
+      resolve({ value: undefined as never, done: true });
+    }
+    while (this.pendingPushes.length > 0) {
+      const resolve = this.pendingPushes.shift()!;
+      resolve();
+    }
+  }
+
+  fail(error: unknown): void {
+    this.error = error;
+    this.closed = true;
+    while (this.pendingShifts.length > 0) {
+      const { reject } = this.pendingShifts.shift()!;
+      reject(error);
+    }
+    while (this.pendingPushes.length > 0) {
+      const resolve = this.pendingPushes.shift()!;
+      resolve();
+    }
+  }
+
+  async shift(): Promise<IteratorResult<T>> {
+    if (this.buffer.length > 0) {
+      const value = this.buffer.shift()!;
+      if (this.pendingPushes.length > 0) {
+        const resolve = this.pendingPushes.shift()!;
+        resolve();
+      }
+      return { value, done: false };
+    }
+    if (this.closed) {
+      if (this.error) throw this.error;
+      return { value: undefined as never, done: true };
+    }
+    return new Promise<IteratorResult<T>>((resolve, reject) => {
+      this.pendingShifts.push({ resolve, reject });
+    });
+  }
+}
+
+function _bufferAsyncIterable<T>(
+  iterable: AsyncIterable<T>,
+  maxBuffer: number
+): AsyncGenerator<T> {
+  if (maxBuffer <= 0) {
+    return iterable as AsyncGenerator<T>;
+  }
+
+  const buffer = new _BoundedAsyncBuffer<T>(maxBuffer);
+
+  (async () => {
+    try {
+      for await (const value of iterable) {
+        await buffer.push(value);
+      }
+      buffer.close();
+    } catch (error) {
+      buffer.fail(error);
+    }
+  })();
+
+  return {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    next() {
+      return buffer.shift();
+    },
+  } as AsyncGenerator<T>;
 }
 
 function _isCallable(
