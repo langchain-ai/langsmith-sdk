@@ -239,7 +239,12 @@ export async function handlePoolError(response: Response): Promise<never> {
       throw new LangSmithResourceNotFoundError(data.message, "template");
     } else if (errorType === "LangSmithValidationError") {
       // Template has volumes attached
-      throw new LangSmithValidationError(data.message, undefined, undefined, errorType);
+      throw new LangSmithValidationError(
+        data.message,
+        undefined,
+        undefined,
+        errorType
+      );
     }
     // Generic bad request - fall through to generic handling
   } else if (status === 409) {
@@ -335,7 +340,11 @@ export async function handleSandboxHttpError(
 
   // Permission denied
   if (status === 403) {
-    throw new LangSmithSandboxOperationError(message, undefined, "PermissionDenied");
+    throw new LangSmithSandboxOperationError(
+      message,
+      undefined,
+      "PermissionDenied"
+    );
   }
 
   // Connection to sandbox failed

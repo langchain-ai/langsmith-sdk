@@ -526,7 +526,10 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(
+          `Pool '${name}' not found`,
+          "pool"
+        );
       }
       await handleClientHttpError(response);
     }
@@ -596,7 +599,10 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(
+          `Pool '${name}' not found`,
+          "pool"
+        );
       }
       if (response.status === 409) {
         await handleConflictError(response, "pool");
@@ -622,7 +628,10 @@ export class SandboxClient {
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(`Pool '${name}' not found`, "pool");
+        throw new LangSmithResourceNotFoundError(
+          `Pool '${name}' not found`,
+          "pool"
+        );
       }
       await handleClientHttpError(response);
     }
@@ -733,8 +742,8 @@ export class SandboxClient {
     }
 
     const data = await response.json();
-    return ((data.sandboxes ?? []) as SandboxData[]).map((s) =>
-      new Sandbox(s, this)
+    return ((data.sandboxes ?? []) as SandboxData[]).map(
+      (s) => new Sandbox(s, this)
     );
   }
 
