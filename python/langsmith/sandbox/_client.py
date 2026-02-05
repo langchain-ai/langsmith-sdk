@@ -51,7 +51,7 @@ class SandboxClient:
 
         # Or with explicit configuration
         client = SandboxClient(
-            api_endpoint="https://api.smith.langchain.com/api/v2/sandboxes",
+            api_endpoint="https://api.smith.langchain.com/v2/sandboxes",
             api_key="your-api-key",
         )
 
