@@ -1175,6 +1175,7 @@ class AsyncExperimentResults:
         self._manager = experiment_manager
         self._results: list[ExperimentResultRow] = []
         self._lock = asyncio.Lock()
+        self._new_result = asyncio.Event()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
 
@@ -1186,10 +1187,6 @@ class AsyncExperimentResults:
         return self
 
     async def __anext__(self) -> ExperimentResultRow:
-        async def _wait_until_index(index: int) -> None:
-            while self._processed_count < index:
-                await asyncio.sleep(0.05)
-
         while True:
             async with self._lock:
                 if self._processed_count < len(self._results):
@@ -1198,19 +1195,24 @@ class AsyncExperimentResults:
                     return result
                 elif self._task.done():
                     raise StopAsyncIteration
+                # Clear before releasing lock to avoid missing signals
+                self._new_result.clear()
 
-            await asyncio.shield(
-                asyncio.wait_for(_wait_until_index(len(self._results)), timeout=None)
-            )
+            # Wait for new result signal instead of polling
+            await self._new_result.wait()
 
     async def _process_data(self, manager: _AsyncExperimentManager) -> None:
         tqdm = _load_tqdm()
         async for item in tqdm(manager.aget_results()):
             async with self._lock:
                 self._results.append(item)
+            # Signal that a new result is available
+            self._new_result.set()
         summary_scores = await manager.aget_summary_scores()
         async with self._lock:
             self._summary_results = summary_scores
+        # Signal completion so waiting consumers can check task.done()
+        self._new_result.set()
 
     def to_pandas(
         self, start: Optional[int] = 0, end: Optional[int] = None
