@@ -3,12 +3,12 @@ import { jest, describe, it, expect } from "@jest/globals";
 import { SandboxClient } from "../experimental/sandbox/client.js";
 import { Sandbox } from "../experimental/sandbox/sandbox.js";
 import {
-  ResourceNotFoundError,
-  DataplaneNotConfiguredError,
-  QuotaExceededError,
-  ValidationError,
-  ResourceTimeoutError,
-  SandboxCreationError,
+  LangSmithResourceNotFoundError,
+  LangSmithDataplaneNotConfiguredError,
+  LangSmithQuotaExceededError,
+  LangSmithValidationError,
+  LangSmithResourceTimeoutError,
+  LangSmithSandboxCreationError,
 } from "../experimental/sandbox/errors.js";
 
 // Helper to create typed mock functions
@@ -60,7 +60,7 @@ describe("Sandbox", () => {
       );
 
       await expect(sandbox.run("echo hello")).rejects.toThrow(
-        DataplaneNotConfiguredError
+        LangSmithDataplaneNotConfiguredError
       );
     });
 
@@ -265,42 +265,56 @@ describe("Sandbox", () => {
 });
 
 describe("Error classes", () => {
-  it("ResourceNotFoundError should have resourceType", () => {
-    const error = new ResourceNotFoundError("Not found", "sandbox");
+  it("LangSmithResourceNotFoundError should have resourceType", () => {
+    const error = new LangSmithResourceNotFoundError("Not found", "sandbox");
     expect(error.resourceType).toBe("sandbox");
     expect(error.message).toBe("Not found");
-    expect(error.name).toBe("ResourceNotFoundError");
+    expect(error.name).toBe("LangSmithResourceNotFoundError");
   });
 
-  it("ResourceTimeoutError should have resourceType and lastStatus", () => {
-    const error = new ResourceTimeoutError("Timeout", "sandbox", "pending");
+  it("LangSmithResourceTimeoutError should have resourceType and lastStatus", () => {
+    const error = new LangSmithResourceTimeoutError(
+      "Timeout",
+      "sandbox",
+      "pending"
+    );
     expect(error.resourceType).toBe("sandbox");
     expect(error.lastStatus).toBe("pending");
     expect(error.toString()).toContain("pending");
   });
 
-  it("QuotaExceededError should have quotaType", () => {
-    const error = new QuotaExceededError("Quota exceeded", "sandbox_count");
+  it("LangSmithQuotaExceededError should have quotaType", () => {
+    const error = new LangSmithQuotaExceededError(
+      "Quota exceeded",
+      "sandbox_count"
+    );
     expect(error.quotaType).toBe("sandbox_count");
   });
 
-  it("ValidationError should have field and details", () => {
+  it("LangSmithValidationError should have field and details", () => {
     const details = [
       { loc: ["body", "cpu"], msg: "Invalid", type: "value_error" },
     ];
-    const error = new ValidationError("Validation failed", "cpu", details);
+    const error = new LangSmithValidationError(
+      "Validation failed",
+      "cpu",
+      details
+    );
     expect(error.field).toBe("cpu");
     expect(error.details).toEqual(details);
   });
 
-  it("SandboxCreationError should have errorType and custom toString", () => {
-    const error = new SandboxCreationError("Creation failed", "ImagePull");
+  it("LangSmithSandboxCreationError should have errorType and custom toString", () => {
+    const error = new LangSmithSandboxCreationError(
+      "Creation failed",
+      "ImagePull"
+    );
     expect(error.errorType).toBe("ImagePull");
     expect(error.toString()).toContain("ImagePull");
   });
 
-  it("DataplaneNotConfiguredError should be a SandboxClientError", () => {
-    const error = new DataplaneNotConfiguredError("No dataplane");
-    expect(error.name).toBe("DataplaneNotConfiguredError");
+  it("LangSmithDataplaneNotConfiguredError should be a LangSmithSandboxError", () => {
+    const error = new LangSmithDataplaneNotConfiguredError("No dataplane");
+    expect(error.name).toBe("LangSmithDataplaneNotConfiguredError");
   });
 });

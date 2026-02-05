@@ -124,6 +124,7 @@
     "lint:fix": "yarn lint --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx,mts}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx,mts}'",
+    "check:types": "tsc --noEmit",
     "precommit": "lint-staged",
     "prepublish": "yarn run build"
   },
