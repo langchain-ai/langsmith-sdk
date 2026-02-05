@@ -44,6 +44,8 @@ const client = new SandboxClient();
 const client = new SandboxClient({
   apiEndpoint: "https://api.smith.langchain.com/v2/sandboxes",
   apiKey: "your-api-key",
+  maxRetries: 3,        // Retries for transient failures (default: 3)
+  maxConcurrency: 10,   // Max concurrent requests (default: Infinity)
 });
 ```
 
@@ -240,12 +242,12 @@ The module provides typed exceptions for specific error handling:
 ```typescript
 import {
   SandboxClient,
-  SandboxClientError,       // Base exception for all sandbox errors
-  ResourceNotFoundError,    // Resource doesn't exist (check resourceType)
-  ResourceTimeoutError,     // Operation timed out (check resourceType)
-  SandboxConnectionError,   // Network error
-  QuotaExceededError,       // Quota limit reached
-  ValidationError,          // Invalid input
+  LangSmithSandboxError,           // Base exception for all sandbox errors
+  LangSmithResourceNotFoundError,  // Resource doesn't exist (check resourceType)
+  LangSmithResourceTimeoutError,   // Operation timed out (check resourceType)
+  LangSmithSandboxConnectionError, // Network error
+  LangSmithQuotaExceededError,     // Quota limit reached
+  LangSmithValidationError,        // Invalid input
 } from "langsmith/experimental/sandbox";
 
 const client = new SandboxClient();
@@ -255,12 +257,12 @@ try {
   const sandbox = await client.createSandbox("nonexistent");
   await sandbox.delete();
 } catch (e) {
-  if (e instanceof ResourceNotFoundError) {
+  if (e instanceof LangSmithResourceNotFoundError) {
     // e.resourceType tells you what wasn't found: "sandbox", "template", "volume", etc.
     console.log(`${e.resourceType} not found: ${e.message}`);
-  } else if (e instanceof ResourceTimeoutError) {
+  } else if (e instanceof LangSmithResourceTimeoutError) {
     console.log(`Timeout waiting for ${e.resourceType}: ${e.message}`);
-  } else if (e instanceof SandboxClientError) {
+  } else if (e instanceof LangSmithSandboxError) {
     console.log(`Error: ${e.message}`);
   }
 }
