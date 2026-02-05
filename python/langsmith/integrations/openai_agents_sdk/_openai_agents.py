@@ -237,7 +237,6 @@ if HAVE_AGENTS:
                 run.end()
                 run.patch()
 
-                # Restore previous parent run tree context
                 _context._PARENT_RUN_TREE.set(run.parent_run)
             except Exception as e:
                 logger.exception(f"Error updating trace run: {e}")
