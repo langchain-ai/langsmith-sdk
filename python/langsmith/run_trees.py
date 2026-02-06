@@ -195,47 +195,33 @@ def validate_extracted_usage_metadata(
     return data  # type: ignore
 
 
-class RunTree(ls_schemas.RunBase):
+class RunTree(NonRecordingRunTree):
     """Run Schema with back-references for posting runs."""
 
+    # Override fields from NonRecordingRunTree with proper defaults for recording
     name: str
     id: UUID = Field(default_factory=uuid7)
-    run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # Note: no longer set.
+    session_name: str = Field(
+        default_factory=lambda: utils.get_tracer_project() or "default",
+        alias="project_name",
+    )
+    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
+
+    # Additional RunTree-specific fields
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: list[RunTree] = Field(
         default_factory=list,
         exclude=True,
     )
-    session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project() or "default",
-        alias="project_name",
-    )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    extra: dict = Field(default_factory=dict)
-    tags: Optional[list[str]] = Field(default_factory=list)
-    events: list[dict] = Field(default_factory=list)
-    """List of events associated with the run, like
-    start and end events."""
     ls_client: Optional[Any] = Field(default=None, exclude=True)
-    dotted_order: str = Field(
-        default="", description="The order of the run in the tree."
-    )
-    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
     replicas: Optional[Sequence[WriteReplica]] = Field(
         default=None,
         description="Projects to replicate this run to with optional updates.",
-    )
-
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        populate_by_name=True,
-        extra="ignore",
     )
 
     @model_validator(mode="before")
@@ -918,7 +904,10 @@ class RunTree(ls_schemas.RunBase):
         )
 
     def is_recording(self) -> bool:
-        """Return True since this RunTree records data."""
+        """Return True since this RunTree records data.
+
+        Overrides the base NonRecordingRunTree.is_recording() method.
+        """
         return True
 
 
@@ -1166,11 +1155,12 @@ def _create_current_dotted_order(
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
 
-class NonRecordingRunTree:
-    """A run tree that does not record any data.
+class NonRecordingRunTree(ls_schemas.RunBase):
+    """A base run tree class that does not record any data.
 
-    This is returned by `get_current_run_tree()` when there is no active trace.
-    It implements the same interface as `RunTree` but all operations are no-ops.
+    This is the base class for `RunTree`. When used directly (not subclassed),
+    it provides a no-op implementation that is returned by `get_current_run_tree()`
+    when there is no active trace.
 
     This allows code to unconditionally call methods like `add_metadata()` without
     checking if tracing is enabled.
@@ -1178,13 +1168,30 @@ class NonRecordingRunTree:
     Use `is_recording()` to check if the run tree is actually recording data.
     """
 
-    def __init__(self) -> None:
-        """Initialize a NonRecordingRunTree with empty placeholder data."""
-        self._metadata: dict[str, Any] = {}
-        self._tags: list[str] = []
-        self._inputs: dict[str, Any] = {}
-        self._outputs: dict[str, Any] = {}
-        self._events: list[dict] = []
+    # Override RunBase fields with non-recording defaults
+    name: str = Field(default="")
+    id: UUID = Field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
+    run_type: str = Field(default="chain")
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Additional fields specific to NonRecordingRunTree/RunTree that are not in RunBase
+    session_name: str = Field(default="", alias="project_name")
+    session_id: Optional[UUID] = Field(default=None, alias="project_id")
+    dotted_order: str = Field(
+        default="", description="The order of the run in the tree."
+    )
+    trace_id: UUID = Field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"),
+        description="The trace id of the run.",
+    )
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
     def __repr__(self) -> str:
         """Return string representation of NonRecordingRunTree."""
@@ -1194,84 +1201,14 @@ class NonRecordingRunTree:
         """Return False since this RunTree does not record data."""
         return False
 
-    @property
-    def id(self) -> UUID:
-        """Return a placeholder UUID."""
-        return UUID("00000000-0000-0000-0000-000000000000")
-
-    @property
-    def trace_id(self) -> UUID:
-        """Return a placeholder trace UUID."""
-        return UUID("00000000-0000-0000-0000-000000000000")
-
-    @property
-    def dotted_order(self) -> str:
-        """Return an empty dotted order."""
-        return ""
-
-    @property
-    def name(self) -> str:
-        """Return a placeholder name."""
-        return ""
-
-    @property
-    def run_type(self) -> str:
-        """Return a placeholder run type."""
-        return "chain"
-
-    @property
-    def session_name(self) -> str:
-        """Return a placeholder session name."""
-        return ""
-
-    @property
-    def metadata(self) -> dict[str, Any]:
-        """Return the metadata dict (writes are no-ops but won't error)."""
-        return self._metadata
-
-    @property
-    def tags(self) -> list[str]:
-        """Return the tags list."""
-        return self._tags
-
-    @property
-    def inputs(self) -> dict[str, Any]:
-        """Return the inputs dict."""
-        return self._inputs
-
-    @inputs.setter
-    def inputs(self, value: dict[str, Any]) -> None:
-        """No-op setter for inputs."""
-        pass
-
-    @property
-    def outputs(self) -> dict[str, Any]:
-        """Return the outputs dict."""
-        return self._outputs
-
-    @outputs.setter
-    def outputs(self, value: dict[str, Any]) -> None:
-        """No-op setter for outputs."""
-        pass
-
-    @property
-    def events(self) -> list[dict]:
-        """Return the events list."""
-        return self._events
-
-    @property
-    def extra(self) -> dict[str, Any]:
-        """Return an empty extra dict."""
-        return {}
-
     def set(
         self,
         *,
-        inputs: Optional[Mapping[str, Any]] = None,
-        outputs: Optional[Mapping[str, Any]] = None,
-        tags: Optional[Sequence[str]] = None,
-        metadata: Optional[Mapping[str, Any]] = None,
-        usage_metadata: Optional[ls_schemas.ExtractedUsageMetadata] = None,
+        inputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        tags: Optional[Sequence[str]] = NOT_PROVIDED,
+        metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        usage_metadata: Optional[ls_schemas.ExtractedUsageMetadata] = NOT_PROVIDED,
     ) -> None:
         """No-op."""
         pass
