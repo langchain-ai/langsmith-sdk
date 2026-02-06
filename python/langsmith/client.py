@@ -8212,7 +8212,6 @@ class Client:
             body["metadata"] = metadata
 
         response = self.request_with_retries("POST", "/v1/platform/tools", json=body)
-        response.raise_for_status()
         return ls_schemas.Tool(**response.json())
 
     def list_tools(
@@ -8274,7 +8273,9 @@ class Client:
                     print(f"Found tool: {tool.name}")
         """
         try:
-            response = self.request_with_retries("GET", f"/v1/platform/tools/{tool_slug}")
+            response = self.request_with_retries(
+                "GET", f"/v1/platform/tools/{tool_slug}"
+            )
             return ls_schemas.Tool(**response.json())
         except ls_utils.LangSmithNotFoundError:
             return None
@@ -8329,8 +8330,9 @@ class Client:
         if metadata is not None:
             body["metadata"] = metadata
 
-        response = self.request_with_retries("PATCH", f"/v1/platform/tools/{tool_slug}", json=body)
-        response.raise_for_status()
+        response = self.request_with_retries(
+            "PATCH", f"/v1/platform/tools/{tool_slug}", json=body
+        )
         return ls_schemas.Tool(**response.json())
 
     def delete_tool(self, tool_slug: str) -> None:
@@ -8350,7 +8352,9 @@ class Client:
                 client = Client()
                 client.delete_tool("search-docs")
         """
-        response = self.request_with_retries("DELETE", f"/v1/platform/tools/{tool_slug}")
+        response = self.request_with_retries(
+            "DELETE", f"/v1/platform/tools/{tool_slug}"
+        )
         response.raise_for_status()
 
     def _get_cache_key(
