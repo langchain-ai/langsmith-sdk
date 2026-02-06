@@ -29,12 +29,13 @@ jobs:
         run: uv sync --group dev
 
       - name: Download baseline
+        id: baseline
         uses: actions/cache/restore@v5
         with:
           key: ${{ runner.os }}-benchmark-baseline
           restore-keys: |
             ${{ runner.os }}-benchmark-baseline-
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false
           path: |
             python/out/benchmark-baseline.json
       - name: Run benchmarks
@@ -46,6 +47,7 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
       - name: Compare benchmarks
+        if: steps.baseline.outputs.cache-hit
         id: compare
         run: |
           {
@@ -64,7 +66,14 @@ jobs:
               title: 'Benchmark results',
               file,
             })
-            core.notice(`${{ steps.compare.outputs.OUTPUT }}`, {
-              title: 'Comparison against main',
-              file,
-            })
+            if (`${{ steps.compare.outputs.OUTPUT }}`) {
+              core.notice(`${{ steps.compare.outputs.OUTPUT }}`, {
+                title: 'Comparison against main',
+                file,
+              })
+            } else {
+              core.warning('No baseline cache found — skipping comparison. Baseline will be available after the next push to main.', {
+                title: 'Benchmark comparison skipped',
+                file,
+              })
+            }
