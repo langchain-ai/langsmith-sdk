@@ -1457,9 +1457,8 @@ def _get_parent_run(
     if run_tree:
         return run_tree
     crt_or_noop = get_current_run_tree()
-    # If crt is the NonRecordingRunTree sentinel (falsy), treat as no parent
     crt: Optional[run_trees.RunTree] = (
-        crt_or_noop if isinstance(crt_or_noop, run_trees.RunTree) else None
+        crt_or_noop if crt_or_noop.is_recording() else None
     )
     if _runtime_env.get_langchain_core_version() is not None:
         if rt := run_trees.RunTree.from_runnable_config(

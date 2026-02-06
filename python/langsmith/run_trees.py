@@ -1199,7 +1199,7 @@ class NonRecordingRunTree(RunTree):
 
     def is_recording(self) -> bool:
         """Return False since this RunTree does not record data.
-        
+
         Overrides RunTree.is_recording() to indicate no recording is happening.
         """
         return False
