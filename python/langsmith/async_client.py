@@ -30,7 +30,7 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = ("_cache", "_client", "_retry_config", "_settings", "_web_url")
 
     def __init__(
         self,
@@ -38,7 +38,8 @@ class AsyncClient:
         api_key: Optional[str] = None,
         timeout_ms: Optional[
             Union[
-                int, tuple[Optional[int], Optional[int], Optional[int], Optional[int]]
+                int,
+                tuple[Optional[int], Optional[int], Optional[int], Optional[int]],
             ]
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
@@ -78,7 +79,9 @@ class AsyncClient:
         else:
             timeout_ = 10
         self._client = httpx.AsyncClient(
-            base_url=api_url, headers=_headers, timeout=timeout_
+            base_url=api_url,
+            headers=_headers,
+            timeout=timeout_,
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
@@ -123,7 +126,7 @@ class AsyncClient:
         **kwargs: Any,
     ) -> httpx.Response:
         """Make an async HTTP request with retries."""
-        max_retries = cast(int, self._retry_config.get("max_retries", 3))
+        max_retries = cast("int", self._retry_config.get("max_retries", 3))
 
         # Python requests library used by the normal Client filters out params with None values
         # The httpx library does not. Filter them out here to keep behavior consistent
@@ -142,38 +145,37 @@ class AsyncClient:
                     raise ls_utils.LangSmithAPIError(
                         f"Server error caused failure to {method}"
                         f" {endpoint} in"
-                        f" LangSmith API. {repr(e)}"
+                        f" LangSmith API. {e!r}",
                     )
-                elif response.status_code == 408:
+                if response.status_code == 408:
                     raise ls_utils.LangSmithRequestTimeout(
-                        f"Client took too long to send request to {method}{endpoint}"
+                        f"Client took too long to send request to {method}{endpoint}",
                     )
-                elif response.status_code == 429:
+                if response.status_code == 429:
                     raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {endpoint}. {repr(e)}"
+                        f"Rate limit exceeded for {endpoint}. {e!r}",
                     )
-                elif response.status_code == 401:
+                if response.status_code == 401:
                     raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {endpoint}. {repr(e)}"
+                        f"Authentication failed for {endpoint}. {e!r}",
                     )
-                elif response.status_code == 404:
+                if response.status_code == 404:
                     raise ls_utils.LangSmithNotFoundError(
-                        f"Resource not found for {endpoint}. {repr(e)}"
+                        f"Resource not found for {endpoint}. {e!r}",
                     )
-                elif response.status_code == 409:
+                if response.status_code == 409:
                     raise ls_utils.LangSmithConflictError(
-                        f"Conflict for {endpoint}. {repr(e)}"
+                        f"Conflict for {endpoint}. {e!r}",
                     )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
-                    )
+                raise ls_utils.LangSmithError(
+                    f"Failed to {method} {endpoint} in LangSmith API. {e!r}",
+                )
             except httpx.RequestError as e:
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithConnectionError(f"Request error: {repr(e)}")
+                    raise ls_utils.LangSmithConnectionError(f"Request error: {e!r}")
                 await asyncio.sleep(2**attempt)
         raise ls_utils.LangSmithAPIError(
-            "Unexpected error connecting to the LangSmith API"
+            "Unexpected error connecting to the LangSmith API",
         )
 
     async def _aget_paginated_list(
@@ -248,7 +250,9 @@ class AsyncClient:
             **kwargs,
         }
         await self._arequest_with_retries(
-            "POST", "/runs", content=ls_client._dumps_json(run_create)
+            "POST",
+            "/runs",
+            content=ls_client._dumps_json(run_create),
         )
 
     async def update_run(
@@ -384,7 +388,7 @@ class AsyncClient:
                 filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
             )
             ```
-        """  # noqa: E501
+        """
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
             project_ids.append(project_id)
@@ -394,7 +398,7 @@ class AsyncClient:
             if isinstance(project_name, str):
                 project_name = [project_name]
             projects = await asyncio.gather(
-                *[self.read_project(project_name=name) for name in project_name]
+                *[self.read_project(project_name=name) for name in project_name],
             )
             project_ids.extend([project.id for project in projects])
 
@@ -437,7 +441,10 @@ class AsyncClient:
                 break
 
     async def share_run(
-        self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
+        self,
+        run_id: ls_client.ID_TYPE,
+        *,
+        share_id: Optional[ls_client.ID_TYPE] = None,
     ) -> str:
         """Get a share link for a run asynchronously.
 
@@ -503,7 +510,9 @@ class AsyncClient:
         """Create a project."""
         data = {"name": project_name, **kwargs}
         response = await self._arequest_with_retries(
-            "POST", "/sessions", content=ls_client._dumps_json(data)
+            "POST",
+            "/sessions",
+            content=ls_client._dumps_json(data),
         )
         return ls_schemas.TracerSession(**response.json())
 
@@ -515,11 +524,14 @@ class AsyncClient:
         """Read a project."""
         if project_id:
             response = await self._arequest_with_retries(
-                "GET", f"/sessions/{ls_client._as_uuid(project_id)}"
+                "GET",
+                f"/sessions/{ls_client._as_uuid(project_id)}",
             )
         elif project_name:
             response = await self._arequest_with_retries(
-                "GET", "/sessions", params={"name": project_name}
+                "GET",
+                "/sessions",
+                params={"name": project_name},
             )
         else:
             raise ValueError("Either project_name or project_id must be provided")
@@ -528,13 +540,16 @@ class AsyncClient:
         if isinstance(data, list):
             if not data:
                 raise ls_utils.LangSmithNotFoundError(
-                    f"Project {project_name} not found"
+                    f"Project {project_name} not found",
                 )
             return ls_schemas.TracerSession(**data[0])
         return ls_schemas.TracerSession(**data)
 
     async def delete_project(
-        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[str] = None,
     ) -> None:
         """Delete a project from LangSmith.
 
@@ -562,7 +577,9 @@ class AsyncClient:
         """Create a dataset."""
         data = {"name": dataset_name, **kwargs}
         response = await self._arequest_with_retries(
-            "POST", "/datasets", content=ls_client._dumps_json(data)
+            "POST",
+            "/datasets",
+            content=ls_client._dumps_json(data),
         )
         return ls_schemas.Dataset(**response.json())
 
@@ -574,11 +591,14 @@ class AsyncClient:
         """Read a dataset."""
         if dataset_id:
             response = await self._arequest_with_retries(
-                "GET", f"/datasets/{ls_client._as_uuid(dataset_id)}"
+                "GET",
+                f"/datasets/{ls_client._as_uuid(dataset_id)}",
             )
         elif dataset_name:
             response = await self._arequest_with_retries(
-                "GET", "/datasets", params={"name": dataset_name}
+                "GET",
+                "/datasets",
+                params={"name": dataset_name},
             )
         else:
             raise ValueError("Either dataset_name or dataset_id must be provided")
@@ -587,7 +607,7 @@ class AsyncClient:
         if isinstance(data, list):
             if not data:
                 raise ls_utils.LangSmithNotFoundError(
-                    f"Dataset {dataset_name} not found"
+                    f"Dataset {dataset_name} not found",
                 )
             return ls_schemas.Dataset(**data[0])
         return ls_schemas.Dataset(**data)
@@ -606,6 +626,524 @@ class AsyncClient:
         """List datasets."""
         async for dataset in self._aget_paginated_list("/datasets", params=kwargs):
             yield ls_schemas.Dataset(**dataset)
+
+    async def has_dataset(
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> bool:
+        """Check whether a dataset exists in your tenant.
+
+        Args:
+            dataset_name (Optional[str]):
+                The name of the dataset to check.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to check.
+
+        Returns:
+            bool: Whether the dataset exists.
+        """
+        try:
+            await self.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
+            return True
+        except ls_utils.LangSmithNotFoundError:
+            return False
+
+    async def read_dataset_shared_schema(
+        self,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        """Retrieve the shared schema of a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+            dataset_name (Optional[str]): The name of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+
+        Returns:
+            ls_schemas.DatasetShareSchema: The shared schema of the dataset.
+
+        Raises:
+            ValueError: If neither `dataset_id` nor `dataset_name` is given.
+        """
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/share",
+        )
+        ls_utils.raise_for_status_with_text(response)
+        d = response.json()
+        return cast(
+            "ls_schemas.DatasetShareSchema",
+            {
+                **d,
+                "url": f"{self._host_url}/public/"
+                f"{ls_client._as_uuid(d['share_token'], 'response.share_token')}/d",
+            },
+        )
+
+    async def share_dataset(
+        self,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        """Get a share link for a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+            dataset_name (Optional[str]): The name of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+
+        Returns:
+            ls_schemas.DatasetShareSchema: The shared schema of the dataset.
+
+        Raises:
+            ValueError: If neither `dataset_id` nor `dataset_name` is given.
+        """
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        data = {
+            "dataset_id": str(dataset_id),
+        }
+        response = await self._arequest_with_retries(
+            "PUT",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/share",
+            content=ls_client._dumps_json(data),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        d: dict = response.json()
+        return cast(
+            "ls_schemas.DatasetShareSchema",
+            {**d, "url": f"{self._host_url}/public/{d['share_token']}/d"},
+        )
+
+    async def unshare_dataset(self, dataset_id: ls_client.ID_TYPE) -> None:
+        """Delete share link for a dataset.
+
+        Args:
+            dataset_id (Union[UUID, str]): The ID of the dataset to unshare.
+
+        Returns:
+            None
+        """
+        response = await self._arequest_with_retries(
+            "DELETE",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/share",
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def read_shared_dataset(
+        self,
+        share_token: str,
+    ) -> ls_schemas.Dataset:
+        """Get shared datasets.
+
+        Args:
+            share_token (Union[UUID, str]): The share token or URL of the shared dataset.
+
+        Returns:
+            Dataset: The shared dataset.
+        """
+        from langsmith.client import _parse_token_or_url
+
+        _, token_uuid = _parse_token_or_url(share_token, self._api_url)
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/public/{token_uuid}/datasets",
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(
+            **response.json(),
+            _host_url=self._host_url,
+            _public_path=f"/public/{share_token}/d",
+        )
+
+    async def list_shared_examples(
+        self,
+        share_token: str,
+        *,
+        example_ids: Optional[list[ls_client.ID_TYPE]] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.Example]:
+        """Get shared examples.
+
+        Args:
+            share_token (Union[UUID, str]): The share token or URL of the shared dataset.
+            example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by.
+            limit (Optional[int]): Maximum number of examples to return, by default None.
+
+        Yields:
+            ls_schemas.Example: The shared examples.
+        """
+        from langsmith.client import _parse_token_or_url
+
+        _, token_uuid = _parse_token_or_url(share_token, self._api_url)
+        params = {}
+        if example_ids is not None:
+            params["id"] = [str(id) for id in example_ids]
+        i = 0
+        async for example in self._aget_paginated_list(
+            f"/public/{ls_client._as_uuid(token_uuid, 'share_token')}/examples",
+            params=params,
+        ):
+            yield ls_schemas.Example(**example, _host_url=self._host_url)
+            i += 1
+            if limit is not None and i >= limit:
+                break
+
+    async def diff_dataset_versions(
+        self,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+        from_version: Union[str, datetime.datetime],
+        to_version: Union[str, datetime.datetime],
+    ) -> ls_schemas.DatasetDiffInfo:
+        """Get the difference between two versions of a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset.
+            dataset_name (Optional[str]):
+                The name of the dataset.
+            from_version (Union[str, datetime.datetime]):
+                The starting version for the diff.
+            to_version (Union[str, datetime.datetime]):
+                The ending version for the diff.
+
+        Returns:
+            DatasetDiffInfo: The difference between the two versions of the dataset.
+
+        Examples:
+            ```python
+            # Get the difference between two tagged versions of a dataset
+            from_version = "prod"
+            to_version = "dev"
+            diff = await client.diff_dataset_versions(
+                dataset_name="my-dataset",
+                from_version=from_version,
+                to_version=to_version,
+            )
+
+            # Get the difference between two timestamped versions of a dataset
+            from_version = datetime.datetime(2024, 1, 1)
+            to_version = datetime.datetime(2024, 2, 1)
+            diff = await client.diff_dataset_versions(
+                dataset_name="my-dataset",
+                from_version=from_version,
+                to_version=to_version,
+            )
+            ```
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide either dataset name or ID")
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        dsid = ls_client._as_uuid(dataset_id, "dataset_id")
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/datasets/{dsid}/versions/diff",
+            params={
+                "from_version": (
+                    from_version.isoformat()
+                    if isinstance(from_version, datetime.datetime)
+                    else from_version
+                ),
+                "to_version": (
+                    to_version.isoformat()
+                    if isinstance(to_version, datetime.datetime)
+                    else to_version
+                ),
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.DatasetDiffInfo(**response.json())
+
+    async def read_dataset_openai_finetuning(
+        self,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> list:
+        """Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to download.
+            dataset_name (Optional[str]):
+                The name of the dataset to download.
+
+        Returns:
+            list[dict]: The dataset loaded as a list of dicts.
+
+        Raises:
+            ValueError: If neither dataset_id nor dataset_name is provided.
+        """
+        if dataset_id is not None:
+            pass
+        elif dataset_name is not None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        else:
+            raise ValueError("Must provide dataset_name or dataset_id")
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/openai_ft",
+        )
+        text_content = (
+            response.text
+            if hasattr(response, "text")
+            else response.content.decode("utf-8")
+        )
+        dataset = [json.loads(line) for line in text_content.strip().split("\n")]
+        return dataset
+
+    async def update_dataset_tag(
+        self,
+        *,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: datetime.datetime,
+        tag: str,
+    ) -> None:
+        """Update the tags of a dataset.
+
+        If the tag is already assigned to a different version of this dataset,
+        the tag will be moved to the new version. The as_of parameter is used to
+        determine which version of the dataset to apply the new tags to.
+        It must be an exact version of the dataset to succeed. You can
+        use the read_dataset_version method to find the exact version
+        to apply the tags to.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to update.
+            dataset_name (Optional[str]):
+                The name of the dataset to update.
+            as_of (datetime.datetime):
+                The timestamp of the dataset to apply the new tags to.
+            tag (str):
+                The new tag to apply to the dataset.
+
+        Returns:
+            None
+
+        Examples:
+            ```python
+            dataset_name = "my-dataset"
+            # Get the version of a dataset <= a given timestamp
+            dataset_version = await client.read_dataset_version(
+                dataset_name=dataset_name, as_of=datetime.datetime(2024, 1, 1)
+            )
+            # Assign that version a new tag
+            await client.update_dataset_tag(
+                dataset_name="my-dataset",
+                as_of=dataset_version.as_of,
+                tag="prod",
+            )
+            ```
+        """
+        if dataset_name is not None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        if dataset_id is None:
+            raise ValueError("Must provide either dataset name or ID")
+        response = await self._arequest_with_retries(
+            "PUT",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/tags",
+            content=ls_client._dumps_json(
+                {
+                    "as_of": as_of.isoformat(),
+                    "tag": tag,
+                },
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def list_dataset_versions(
+        self,
+        *,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.DatasetVersion]:
+        """List dataset versions.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            search (Optional[str]): The search query.
+            limit (Optional[int]): The maximum number of versions to return.
+
+        Yields:
+            The dataset versions.
+        """
+        if dataset_id is None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        params = {
+            "search": search,
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        i = 0
+        async for version in self._aget_paginated_list(
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/versions",
+            params=params,
+        ):
+            yield ls_schemas.DatasetVersion(**version)
+            i += 1
+            if limit is not None and i + 1 >= limit:
+                break
+
+    async def read_dataset_version(
+        self,
+        *,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[datetime.datetime] = None,
+        tag: Optional[str] = None,
+    ) -> ls_schemas.DatasetVersion:
+        """Get dataset version by `as_of` or exact tag.
+
+        Uses this to resolve the nearest version to a given timestamp or for a given tag.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            as_of (Optional[datetime.datetime]): The timestamp of the dataset
+                to retrieve.
+            tag (Optional[str]): The tag of the dataset to retrieve.
+
+        Returns:
+            DatasetVersion: The dataset version.
+
+        Examples:
+            ```python
+            # Get the latest version of a dataset
+            await client.read_dataset_version(dataset_name="my-dataset", tag="latest")
+
+            # Get the version of a dataset <= a given timestamp
+            await client.read_dataset_version(
+                dataset_name="my-dataset",
+                as_of=datetime.datetime(2024, 1, 1),
+            )
+
+
+            # Get the version of a dataset with a specific tag
+            await client.read_dataset_version(dataset_name="my-dataset", tag="prod")
+            ```
+        """
+        if dataset_id is None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        if (as_of and tag) or (as_of is None and tag is None):
+            raise ValueError("Exactly one of as_of and tag must be specified.")
+        params = {}
+        if as_of is not None:
+            params["as_of"] = as_of.isoformat()
+        if tag is not None:
+            params["tag"] = tag
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/version",
+            params=params,
+        )
+        return ls_schemas.DatasetVersion(**response.json())
+
+    async def list_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[Union[str, datetime.datetime]] = None,
+    ) -> list[str]:
+        """Get the splits for a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            as_of (Optional[Union[str, datetime.datetime]]): The version
+                of the dataset to retrieve splits for. Can be a timestamp or a
+                string tag. Defaults to "latest".
+
+        Returns:
+            List[str]: The names of this dataset's splits.
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        params = {}
+        if as_of is not None:
+            params["as_of"] = (
+                as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
+            )
+
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/splits",
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def update_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        split_name: str,
+        example_ids: list[ls_client.ID_TYPE],
+        remove: bool = False,
+    ) -> None:
+        """Update the splits for a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset to update.
+            dataset_name (Optional[str]): The name of the dataset to update.
+            split_name (str): The name of the split to update.
+            example_ids (list[Union[UUID, str]]): The IDs of the examples to add/remove from the split.
+            remove (bool): Whether to remove the examples from the split instead of adding them.
+
+        Returns:
+            None
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+        response = await self._arequest_with_retries(
+            "POST",
+            f"/datasets/{ls_client._as_uuid(dataset_id, 'dataset_id')}/splits",
+            content=ls_client._dumps_json(
+                {
+                    "split_name": split_name,
+                    "example_ids": [
+                        str(ls_client._as_uuid(id_, f"example_ids[{i}]"))
+                        for i, id_ in enumerate(example_ids)
+                    ],
+                    "remove": remove,
+                },
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     async def create_example(
         self,
@@ -629,14 +1167,17 @@ class AsyncClient:
             **kwargs,
         }
         response = await self._arequest_with_retries(
-            "POST", "/examples", content=ls_client._dumps_json(data)
+            "POST",
+            "/examples",
+            content=ls_client._dumps_json(data),
         )
         return ls_schemas.Example(**response.json())
 
     async def read_example(self, example_id: ls_client.ID_TYPE) -> ls_schemas.Example:
         """Read an example."""
         response = await self._arequest_with_retries(
-            "GET", f"/examples/{ls_client._as_uuid(example_id)}"
+            "GET",
+            f"/examples/{ls_client._as_uuid(example_id)}",
         )
         return ls_schemas.Example(**response.json())
 
@@ -658,12 +1199,708 @@ class AsyncClient:
         async for example in self._aget_paginated_list("/examples", params=params):
             yield ls_schemas.Example(**example)
 
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
+    async def create_llm_example(
+        self,
+        prompt: str,
+        generation: Optional[str] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
+        """Add an example (row) to an LLM-type dataset.
+
+        Args:
+            prompt (str):
+                The input prompt for the example.
+            generation (Optional[str]):
+                The output generation for the example.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset.
+            dataset_name (Optional[str]):
+                The name of the dataset.
+            created_at (Optional[datetime.datetime]):
+                The creation timestamp of the example.
+
+        Returns:
+            Example: The created example
+        """
+        return await self.create_example(
+            inputs={"input": prompt},
+            outputs={"output": generation},
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
+
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
+    async def create_chat_example(
+        self,
+        messages: list[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        generations: Optional[
+            Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
+        ] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
+        """Add an example (row) to a Chat-type dataset.
+
+        Args:
+            messages (List[Union[Mapping[str, Any], BaseMessageLike]]):
+                The input messages for the example.
+            generations (Optional[Union[Mapping[str, Any], BaseMessageLike]]):
+                The output messages for the example.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset.
+            dataset_name (Optional[str]):
+                The name of the dataset.
+            created_at (Optional[datetime.datetime]):
+                The creation timestamp of the example.
+
+        Returns:
+            Example: The created example
+        """
+        final_input = []
+        for message in messages:
+            if ls_utils.is_base_message_like(message):
+                final_input.append(
+                    ls_utils.convert_langchain_message(
+                        cast("ls_schemas.BaseMessageLike", message),
+                    ),
+                )
+            else:
+                final_input.append(cast("dict", message))
+        final_generations = None
+        if generations is not None:
+            if ls_utils.is_base_message_like(generations):
+                final_generations = ls_utils.convert_langchain_message(
+                    cast("ls_schemas.BaseMessageLike", generations),
+                )
+            else:
+                final_generations = cast("dict", generations)
+        return await self.create_example(
+            inputs={"input": final_input},
+            outputs=(
+                {"output": final_generations} if final_generations is not None else None
+            ),
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
+
+    async def create_example_from_run(
+        self,
+        run: ls_schemas.Run,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
+        """Add an example (row) to a dataset from a run.
+
+        Args:
+            run (Run): The run to create an example from.
+            dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            created_at (Optional[datetime.datetime]): The creation timestamp of the example.
+
+        Returns:
+            Example: The created example
+        """
+        if dataset_id is None:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+            dataset_name = None  # Nested call expects only 1 defined
+        dataset_type = await self._aget_data_type(dataset_id)
+        if dataset_type == ls_schemas.DataType.llm:
+            if run.run_type != "llm":
+                raise ValueError(
+                    f"Run type {run.run_type} is not supported"
+                    " for dataset of type 'LLM'",
+                )
+            try:
+                prompt = ls_utils.get_prompt_from_inputs(run.inputs)
+            except ValueError:
+                raise ValueError(
+                    "Error converting LLM run inputs to prompt for run"
+                    f" {run.id} with inputs {run.inputs}",
+                )
+            inputs: dict[str, Any] = {"input": prompt}
+            if not run.outputs:
+                outputs: Optional[dict[str, Any]] = None
+            else:
+                try:
+                    generation = ls_utils.get_llm_generation_from_outputs(run.outputs)
+                except ValueError:
+                    raise ValueError(
+                        "Error converting LLM run outputs to generation for run"
+                        f" {run.id} with outputs {run.outputs}",
+                    )
+                outputs = {"output": generation}
+        elif dataset_type == ls_schemas.DataType.chat:
+            if run.run_type != "llm":
+                raise ValueError(
+                    f"Run type {run.run_type} is not supported"
+                    " for dataset of type 'chat'",
+                )
+            try:
+                inputs = {"input": ls_utils.get_messages_from_inputs(run.inputs)}
+            except ValueError:
+                raise ValueError(
+                    "Error converting LLM run inputs to chat messages for run"
+                    f" {run.id} with inputs {run.inputs}",
+                )
+            if not run.outputs:
+                outputs = None
+            else:
+                try:
+                    outputs = {
+                        "output": ls_utils.get_message_generation_from_outputs(
+                            run.outputs,
+                        ),
+                    }
+                except ValueError:
+                    raise ValueError(
+                        "Error converting LLM run outputs to chat generations"
+                        f" for run {run.id} with outputs {run.outputs}",
+                    )
+        elif dataset_type == ls_schemas.DataType.kv:
+            # Anything goes
+            inputs = run.inputs
+            outputs = run.outputs
+
+        else:
+            raise ValueError(f"Dataset type {dataset_type} not recognized.")
+        return await self.create_example(
+            inputs=inputs,
+            outputs=outputs,
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
+
+    async def _aget_data_type(
+        self,
+        dataset_id: ls_client.ID_TYPE,
+    ) -> ls_schemas.DataType:
+        dataset = await self.read_dataset(dataset_id=dataset_id)
+        return dataset.data_type
+
+    async def update_example(
+        self,
+        example_id: ls_client.ID_TYPE,
+        *,
+        inputs: Optional[dict[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[str | list[str]] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+    ) -> dict[str, Any]:
+        """Update a specific example.
+
+        Args:
+            example_id (Union[UUID, str]):
+                The ID of the example to update.
+            inputs (Optional[Dict[str, Any]]):
+                The input values to update.
+            outputs (Optional[Mapping[str, Any]]):
+                The output values to update.
+            metadata (Optional[Dict]):
+                The metadata to update.
+            split (Optional[str | List[str]]):
+                The dataset split to update, such as
+                'train', 'test', or 'validation'.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to update.
+            attachments_operations (Optional[AttachmentsOperations]):
+                The attachments operations to perform.
+            attachments (Optional[Attachments]):
+                The attachments to add to the example.
+
+        Returns:
+            Dict[str, Any]: The updated example.
+        """
+        # Note: For async client, we'll use the simple JSON endpoint for now
+        # Full multipart support would require additional async multipart handling
+        example_dict = dict(
+            inputs=inputs,
+            outputs=outputs,
+            id=example_id,
+            metadata=metadata,
+            split=split,
+            attachments_operations=attachments_operations,
+            attachments=attachments,
+        )
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None},
+        )
+
+        if dataset_id is None:
+            example_obj = await self.read_example(example_id)
+            dataset_id = example_obj.dataset_id
+
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/examples/{ls_client._as_uuid(example_id, 'example_id')}",
+            content=ls_client._dumps_json(
+                {
+                    **{
+                        k: v
+                        for k, v in ls_client.dump_model(example).items()
+                        if v is not None
+                    },
+                    "dataset_id": str(dataset_id),
+                },
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def delete_example(self, example_id: ls_client.ID_TYPE) -> None:
+        """Delete an example by ID.
+
+        Args:
+            example_id (Union[UUID, str]):
+                The ID of the example to delete.
+
+        Returns:
+            None
+        """
+        response = await self._arequest_with_retries(
+            "DELETE",
+            f"/examples/{ls_client._as_uuid(example_id, 'example_id')}",
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def delete_examples(
+        self,
+        example_ids: Sequence[ls_client.ID_TYPE],
+        *,
+        hard_delete: bool = False,
+    ) -> None:
+        """Delete multiple examples by ID.
+
+        Parameters
+        ----------
+        example_ids : Sequence[ID_TYPE]
+            The IDs of the examples to delete.
+        hard_delete : bool, default=False
+            If True, permanently delete the examples. If False, soft delete them.
+        """
+        if hard_delete:
+            # Hard delete uses POST to a different endpoint
+            body = {
+                "example_ids": [
+                    str(ls_client._as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ],
+                "hard_delete": True,
+            }
+            # Use platform path helper for consistent URL construction
+            # Import helper functions from client module
+            from langsmith.client import _construct_url, _platform_path
+
+            path = _platform_path(self._api_url, "datasets/examples/delete")
+            full_url = _construct_url(self._api_url, path)
+            response = await self._client.request(
+                "POST",
+                full_url,
+                headers={**self._client.headers, "Content-Type": "application/json"},
+                content=ls_client._dumps_json(body),
+            )
+            ls_utils.raise_for_status_with_text(response)
+        else:
+            # Soft delete uses DELETE with query params
+            params: dict[str, Any] = {
+                "example_ids": [
+                    str(ls_client._as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ],
+            }
+            response = await self._arequest_with_retries(
+                "DELETE",
+                "/examples",
+                params=params,
+            )
+        ls_utils.raise_for_status_with_text(response)
+
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
+    async def create_examples(
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
+        max_concurrency: int = 1,
+        **kwargs: Any,
+    ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
+        """Create examples in a dataset.
+
+        Args:
+            dataset_name (str | None):
+                The name of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id.
+            dataset_id (UUID | str | None):
+                The ID of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id
+            examples (Sequence[ExampleCreate | dict]):
+                The examples to create.
+            dangerously_allow_filesystem (bool):
+                Whether to allow uploading files from the filesystem.
+            max_concurrency (int):
+                Maximum number of concurrent requests (1-3).
+            **kwargs (Any): Legacy keyword args. Should not be specified if 'examples' is specified.
+
+                - inputs (Sequence[Mapping[str, Any]]): The input values for the examples.
+                - outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]): The output values for the examples.
+                - metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]): The metadata for the examples.
+                - splits (Optional[Sequence[Optional[str | List[str]]]]): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                - source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]): The IDs of the source runs associated with the examples.
+                - ids (Optional[Sequence[Union[UUID, str]]]): The IDs of the examples.
+
+        Raises:
+            ValueError: If 'examples' and legacy args are both provided.
+
+        Returns:
+            The LangSmith JSON response. Includes 'count' and 'example_ids'.
+        """
+        if not 1 <= max_concurrency <= 3:
+            raise ValueError("max_concurrency must be between 1 and 3")
+
+        if kwargs and examples:
+            kwarg_keys = ", ".join([f"'{k}'" for k in kwargs])
+            raise ValueError(
+                f"Cannot specify {kwarg_keys} when 'examples' is specified.",
+            )
+
+        supported_kwargs = {
+            "inputs",
+            "outputs",
+            "metadata",
+            "splits",
+            "ids",
+            "source_run_ids",
+        }
+        if kwargs and (unsupported := set(kwargs).difference(supported_kwargs)):
+            raise ValueError(
+                f"Received unsupported keyword arguments: {tuple(unsupported)}.",
+            )
+
+        if not (dataset_id or dataset_name):
+            raise ValueError("Either dataset_id or dataset_name must be provided.")
+        if not dataset_id:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+
+        if examples:
+            uploads = [
+                ls_schemas.ExampleCreate(**x) if isinstance(x, dict) else x
+                for x in examples
+            ]
+
+        # For backwards compatibility
+        else:
+            inputs = kwargs.get("inputs")
+            if not inputs:
+                raise ValueError("Must specify either 'examples' or 'inputs.'")
+            # Since inputs are required, we will check against them
+            input_len = len(inputs)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != input_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of inputs ({input_len})",
+                    )
+            uploads = [
+                ls_schemas.ExampleCreate(
+                    inputs=in_,
+                    outputs=out_,
+                    metadata=metadata_,
+                    split=split_,
+                    id=id_ or str(uuid.uuid4()),
+                    source_run_id=source_run_id_,
+                )
+                for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
+                    inputs,
+                    kwargs.get("outputs") or (None for _ in range(input_len)),
+                    kwargs.get("metadata") or (None for _ in range(input_len)),
+                    kwargs.get("splits") or (None for _ in range(input_len)),
+                    kwargs.get("ids") or (None for _ in range(input_len)),
+                    kwargs.get("source_run_ids") or (None for _ in range(input_len)),
+                )
+            ]
+
+        if not uploads:
+            return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
+
+        # For async client, use JSON bulk endpoint
+        # Strip attachments for legacy endpoint
+        for upload in uploads:
+            if getattr(upload, "attachments", None) is not None:
+                upload.attachments = None
+                if dangerously_allow_filesystem:
+                    warnings.warn(
+                        "Must upgrade your LangSmith version to use attachments.",
+                    )
+
+        # Upload in batches
+        batch_size = 100  # Reasonable batch size for JSON endpoint
+        all_example_ids = []
+        total_count = 0
+
+        for i in range(0, len(uploads), batch_size):
+            batch = uploads[i : i + batch_size]
+            response = await self._arequest_with_retries(
+                "POST",
+                "/examples/bulk",
+                content=ls_client._dumps_json(
+                    [
+                        {
+                            **ls_client.dump_model(upload, exclude_none=True),
+                            "dataset_id": str(dataset_id),
+                        }
+                        for upload in batch
+                    ],
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            response_data = response.json()
+            all_example_ids.extend([data["id"] for data in response_data])
+            total_count += len(response_data)
+
+        return ls_schemas.UpsertExamplesResponse(
+            example_ids=all_example_ids,
+            count=total_count,
+        )
+
+    async def update_examples(
+        self,
+        *,
+        dataset_name: str | None = None,
+        dataset_id: ls_client.ID_TYPE | None = None,
+        updates: Optional[Sequence[ls_schemas.ExampleUpdate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Update multiple examples.
+
+        Examples are expected to all be part of the same dataset.
+
+        Args:
+            dataset_name (str | None):
+                The name of the dataset to update. Should specify exactly one of
+                'dataset_name' or 'dataset_id'.
+            dataset_id (UUID | str | None):
+                The ID of the dataset to update. Should specify exactly one of
+                'dataset_name' or 'dataset_id'.
+            updates (Sequence[ExampleUpdate | dict] | None):
+                The example updates. Overwrites any specified fields and does not
+                update any unspecified fields.
+            dangerously_allow_filesystem (bool):
+                Whether to allow using filesystem paths as attachments.
+            **kwargs (Any):
+                Legacy keyword args. Should not be specified if 'updates' is specified.
+
+                - example_ids (Sequence[UUID | str]): The IDs of the examples to update.
+                - inputs (Sequence[dict | None] | None): The input values for the examples.
+                - outputs (Sequence[dict | None] | None): The output values for the examples.
+                - metadata (Sequence[dict | None] | None): The metadata for the examples.
+                - splits (Sequence[str | list[str] | None] | None): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                - attachments_operations (Sequence[AttachmentsOperations | None] | None): The operations to perform on the attachments.
+                - dataset_ids (Sequence[UUID | str] | None): The IDs of the datasets to move the examples to.
+
+        Returns:
+            The LangSmith JSON response. Includes 'message', 'count', and 'example_ids'.
+        """
+        if kwargs and updates:
+            raise ValueError(
+                f"Must pass in either 'updates' or args {tuple(kwargs)}, not both.",
+            )
+        if not (kwargs or updates):
+            raise ValueError("Please pass in a non-empty sequence for arg 'updates'.")
+
+        if dataset_name and dataset_id:
+            raise ValueError(
+                "Must pass in exactly one of 'dataset_name' or 'dataset_id'.",
+            )
+        if dataset_name:
+            dataset = await self.read_dataset(dataset_name=dataset_name)
+            dataset_id = dataset.id
+
+        if updates:
+            updates_obj = [
+                ls_schemas.ExampleUpdate(**x) if isinstance(x, dict) else x
+                for x in updates
+            ]
+
+            if not dataset_id:
+                if updates_obj[0].dataset_id:
+                    dataset_id = updates_obj[0].dataset_id
+                else:
+                    raise ValueError(
+                        "Must pass in (exactly) one of 'dataset_name' or 'dataset_id'.",
+                    )
+
+        # For backwards compatibility
+        else:
+            example_ids = kwargs.get("example_ids")
+            if not example_ids:
+                raise ValueError(
+                    "Must pass in (exactly) one of 'updates' or 'example_ids'.",
+                )
+            if not dataset_id:
+                example_obj = await self.read_example(example_ids[0])
+                dataset_id = example_obj.dataset_id
+
+            # Since ids are required, we will check against them
+            examples_len = len(example_ids)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != examples_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of examples ({examples_len})",
+                    )
+            updates_obj = [
+                ls_schemas.ExampleUpdate(
+                    id=id_,
+                    inputs=in_,
+                    outputs=out_,
+                    dataset_id=dataset_id_,
+                    metadata=metadata_,
+                    split=split_,
+                    attachments=attachments_,
+                    attachments_operations=attachments_operations_,
+                )
+                for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
+                    example_ids,
+                    kwargs.get("inputs", (None for _ in range(examples_len))),
+                    kwargs.get("outputs", (None for _ in range(examples_len))),
+                    kwargs.get("metadata", (None for _ in range(examples_len))),
+                    kwargs.get("splits", (None for _ in range(examples_len))),
+                    kwargs.get("dataset_ids", (None for _ in range(examples_len))),
+                    kwargs.get("attachments", (None for _ in range(examples_len))),
+                    kwargs.get(
+                        "attachments_operations",
+                        (None for _ in range(examples_len)),
+                    ),
+                )
+            ]
+
+        # Use JSON bulk endpoint for async client
+        response = await self._arequest_with_retries(
+            "PATCH",
+            "/examples/bulk",
+            content=ls_client._dumps_json(
+                [
+                    {
+                        k: v
+                        for k, v in ls_client.dump_model(example).items()
+                        if v is not None
+                    }
+                    for example in updates_obj
+                ],
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        response_data = response.json()
+        return {
+            "message": f"{len(updates_obj)} examples updated",
+            "count": len(updates_obj),
+            "example_ids": [ex.id for ex in updates_obj],
+            **response_data,
+        }
+
+    async def clone_public_dataset(
+        self,
+        token_or_url: str,
+        *,
+        source_api_url: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.Dataset:
+        """Clone a public dataset to your own langsmith tenant.
+
+        This operation is idempotent. If you already have a dataset with the given name,
+        this function will do nothing.
+
+        Args:
+            token_or_url (str): The token of the public dataset to clone.
+            source_api_url (Optional[str]): The URL of the langsmith server where the data is hosted.
+                Defaults to the API URL of your current client.
+            dataset_name (Optional[str]): The name of the dataset to create in your tenant.
+                Defaults to the name of the public dataset.
+
+        Returns:
+            Dataset: The cloned dataset.
+        """
+        from langsmith.client import Client, _parse_token_or_url
+
+        source_api_url = source_api_url or self._api_url
+        source_api_url, token_uuid = _parse_token_or_url(token_or_url, source_api_url)
+        source_client = Client(
+            # Placeholder API key not needed anymore in most cases, but
+            # some private deployments may have API key-based rate limiting
+            # that would cause this to fail if we provide no value.
+            api_url=source_api_url,
+            api_key="placeholder",
+        )
+        ds = source_client.read_shared_dataset(token_uuid)
+        dataset_name = dataset_name or ds.name
+        try:
+            existing_dataset = await self.read_dataset(dataset_name=dataset_name)
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Dataset {dataset_name} already exists in your tenant. Skipping.",
+            )
+            return existing_dataset
+        except ls_utils.LangSmithNotFoundError:
+            pass
+
+        try:
+            # Fetch examples first
+            examples = list(source_client.list_shared_examples(token_uuid))
+            dataset = await self.create_dataset(
+                dataset_name=dataset_name,
+                description=ds.description,
+                data_type=ds.data_type or ls_schemas.DataType.kv,
+                inputs_schema=ds.inputs_schema,
+                outputs_schema=ds.outputs_schema,
+                transformations=ds.transformations,
+            )
+            try:
+                await self.create_examples(
+                    inputs=[e.inputs for e in examples],
+                    outputs=[e.outputs for e in examples],
+                    dataset_id=dataset.id,
+                )
+            except BaseException as e:
+                # Let's not do automatic clean up for now in case there might be
+                # some other reasons why create_examples fails (i.e., not network issue
+                # or keyboard interrupt).
+                # The risk is that this is an existing dataset that has valid examples
+                # populated from another source so we don't want to delete it.
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"An error occurred while creating dataset {dataset_name}. "
+                    "You should delete it manually.",
+                )
+                raise e
+        finally:
+            del source_client
+        return dataset
+
     async def create_feedback(
         self,
         run_id: Optional[ls_client.ID_TYPE],
         key: str,
         score: Optional[float] = None,
-        value: Union[float, int, bool, str, dict, None] = None,
+        value: Union[float, bool, str, dict, None] = None,
         comment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -684,7 +1921,7 @@ class AsyncClient:
 
         Raises:
             httpx.HTTPStatusError: If the API request fails.
-        """  # noqa: E501
+        """
         data = {
             "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
             "key": key,
@@ -694,16 +1931,18 @@ class AsyncClient:
             **kwargs,
         }
         response = await self._arequest_with_retries(
-            "POST", "/feedback", content=ls_client._dumps_json(data)
+            "POST",
+            "/feedback",
+            content=ls_client._dumps_json(data),
         )
         return ls_schemas.Feedback(**response.json())
 
     async def create_feedback_from_token(
         self,
         token_or_url: Union[str, uuid.UUID],
-        score: Union[float, int, bool, None] = None,
+        score: Union[float, bool, None] = None,
         *,
-        value: Union[float, int, bool, str, dict, None] = None,
+        value: Union[float, bool, str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         metadata: Optional[dict] = None,
@@ -725,7 +1964,9 @@ class AsyncClient:
             This method does not return anything.
         """
         source_api_url, token_uuid = ls_client._parse_token_or_url(
-            token_or_url, self._api_url, num_parts=1
+            token_or_url,
+            self._api_url,
+            num_parts=1,
         )
         if source_api_url != self._api_url:
             raise ValueError(f"Invalid source API URL. {source_api_url}")
@@ -740,7 +1981,7 @@ class AsyncClient:
                     "comment": comment,
                     "metadata": metadata,
                     # TODO: Add ID once the API supports it.
-                }
+                },
             ),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -803,7 +2044,7 @@ class AsyncClient:
         else:
             raise ValueError(
                 f"Invalid expiration type: {type(expiration)}. "
-                "Expected datetime.datetime or datetime.timedelta."
+                "Expected datetime.datetime or datetime.timedelta.",
             )
 
         response = await self._arequest_with_retries(
@@ -814,11 +2055,13 @@ class AsyncClient:
         return ls_schemas.FeedbackIngestToken(**response.json())
 
     async def read_feedback(
-        self, feedback_id: ls_client.ID_TYPE
+        self,
+        feedback_id: ls_client.ID_TYPE,
     ) -> ls_schemas.Feedback:
         """Read feedback."""
         response = await self._arequest_with_retries(
-            "GET", f"/feedback/{ls_client._as_uuid(feedback_id)}"
+            "GET",
+            f"/feedback/{ls_client._as_uuid(feedback_id)}",
         )
         return ls_schemas.Feedback(**response.json())
 
@@ -857,7 +2100,8 @@ class AsyncClient:
             feedback_id (Union[UUID, str]): The ID of the feedback to delete.
         """
         response = await self._arequest_with_retries(
-            "DELETE", f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}"
+            "DELETE",
+            f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}",
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -898,7 +2142,8 @@ class AsyncClient:
         }
         ix = 0
         async for feedback in self._aget_paginated_list(
-            "/annotation-queues", params=params
+            "/annotation-queues",
+            params=params,
         ):
             yield ls_schemas.AnnotationQueue(**feedback)
             ix += 1
@@ -938,7 +2183,8 @@ class AsyncClient:
         )
 
     async def read_annotation_queue(
-        self, queue_id: ID_TYPE
+        self,
+        queue_id: ID_TYPE,
     ) -> ls_schemas.AnnotationQueue:
         """Read an annotation queue with the specified `queue_id`.
 
@@ -952,7 +2198,11 @@ class AsyncClient:
         return await self.list_annotation_queues(queue_ids=[queue_id]).__anext__()
 
     async def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
     ) -> None:
         """Update an annotation queue with the specified `queue_id`.
 
@@ -985,7 +2235,10 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_ids: list[ID_TYPE],
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
@@ -1005,7 +2258,10 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_run_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_id: ID_TYPE
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_id: ID_TYPE,
     ) -> None:
         """Delete a run from an annotation queue with the specified `queue_id` and `run_id`.
 
@@ -1021,7 +2277,10 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def get_run_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, index: int
+        self,
+        queue_id: ID_TYPE,
+        *,
+        index: int,
     ) -> ls_schemas.RunWithAnnotationQueueInfo:
         """Get a run from an annotation queue at the specified index.
 
@@ -1063,7 +2322,7 @@ class AsyncClient:
 
         Raises:
             requests.HTTPError: If the request fails.
-        """  # noqa: E501
+        """
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
             "POST",
@@ -1089,7 +2348,7 @@ class AsyncClient:
 
         Raises:
             requests.HTTPError: If the request fails.
-        """  # noqa: E501
+        """
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
             "POST",
@@ -1179,7 +2438,7 @@ class AsyncClient:
             ]
             ```
 
-        """  # noqa: E501
+        """
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         req = {
             "inputs": inputs,
@@ -1226,17 +2485,22 @@ class AsyncClient:
         return owner == "-" or settings.tenant_handle == owner
 
     async def _owner_conflict_error(
-        self, action: str, owner: str
+        self,
+        action: str,
+        owner: str,
     ) -> ls_utils.LangSmithUserError:
         settings = await self._get_settings()
         return ls_utils.LangSmithUserError(
             f"Cannot {action} for another tenant.\n"
             f"Current tenant: {settings.tenant_handle},\n"
-            f"Requested tenant: {owner}"
+            f"Requested tenant: {owner}",
         )
 
     async def _get_latest_commit_hash(
-        self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0
+        self,
+        prompt_owner_and_name: str,
+        limit: int = 1,
+        offset: int = 0,
     ) -> Optional[str]:
         """Get the latest commit hash for a prompt.
 
@@ -1257,7 +2521,10 @@ class AsyncClient:
         return commits[0]["commit_hash"] if commits else None
 
     async def _create_commit_tags(
-        self, prompt_owner_and_name: str, commit_id: str, tags: Union[str, list[str]]
+        self,
+        prompt_owner_and_name: str,
+        commit_id: str,
+        tags: Union[str, list[str]],
     ) -> None:
         """Update tags for a prompt commit.
 
@@ -1279,14 +2546,18 @@ class AsyncClient:
                 "commit_id": commit_id,
             }
             response = await self._arequest_with_retries(
-                "POST", f"/repos/{prompt_owner_and_name}/tags", json=payload
+                "POST",
+                f"/repos/{prompt_owner_and_name}/tags",
+                json=payload,
             )
             ls_utils.raise_for_status_with_text(response)
 
         await asyncio.gather(*[create_tag(tag) for tag in tag_list])
 
     async def _like_or_unlike_prompt(
-        self, prompt_identifier: str, like: bool
+        self,
+        prompt_identifier: str,
+        like: bool,
     ) -> dict[str, int]:
         """Like or unlike a prompt.
 
@@ -1303,7 +2574,9 @@ class AsyncClient:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = await self._arequest_with_retries(
-            "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
+            "POST",
+            f"/likes/{owner}/{prompt_name}",
+            json={"like": like},
         )
         response.raise_for_status()
         return response.json()
@@ -1319,10 +2592,10 @@ class AsyncClient:
 
         """
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
-            prompt_identifier
+            prompt_identifier,
         )
 
-        if not self._current_tenant_is_owner(owner):
+        if not await self._current_tenant_is_owner(owner):
             return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
 
         settings = await self._get_settings()
@@ -1410,7 +2683,9 @@ class AsyncClient:
         }
 
         response = await self._arequest_with_retries(
-            "GET", "/repos/", params=_exclude_none(params)
+            "GET",
+            "/repos/",
+            params=_exclude_none(params),
         )
         return ls_schemas.ListPromptsResponse(**response.json())
 
@@ -1433,7 +2708,8 @@ class AsyncClient:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = await self._arequest_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
@@ -1475,7 +2751,7 @@ class AsyncClient:
                 "Cannot create a public prompt without first\n"
                 "creating a LangChain Hub handle. "
                 "You can add a handle by creating a public prompt at:\n"
-                "https://smith.langchain.com/prompts"
+                "https://smith.langchain.com/prompts",
             )
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
@@ -1523,7 +2799,7 @@ class AsyncClient:
         """
         if not (await self._prompt_exists(prompt_identifier)):
             raise ls_utils.LangSmithNotFoundError(
-                "Prompt does not exist, you must create it first."
+                "Prompt does not exist, you must create it first.",
             )
 
         # Check if object is already a serialized LangChain manifest
@@ -1536,7 +2812,7 @@ class AsyncClient:
             except ImportError:
                 raise ImportError(
                     "The client.create_commit function requires the langchain-core"
-                    "package to run.\nInstall with `pip install langchain-core`"
+                    "package to run.\nInstall with `pip install langchain-core`",
                 )
 
             json_object = dumps(prepped)
@@ -1547,12 +2823,14 @@ class AsyncClient:
 
         if parent_commit_hash == "latest" or parent_commit_hash is None:
             parent_commit_hash = await self._get_latest_commit_hash(
-                prompt_owner_and_name
+                prompt_owner_and_name,
             )
 
         request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
         response = await self._arequest_with_retries(
-            "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
+            "POST",
+            f"/commits/{prompt_owner_and_name}",
+            json=request_dict,
         )
 
         commit_json = response.json()["commit"]
@@ -1598,7 +2876,7 @@ class AsyncClient:
                 "Cannot create a public prompt without first\n"
                 "creating a LangChain Hub handle. "
                 "You can add a handle by creating a public prompt at:\n"
-                "https://smith.langchain.com/prompts"
+                "https://smith.langchain.com/prompts",
             )
 
         json: dict[str, Union[str, bool, Sequence[str]]] = {}
@@ -1616,7 +2894,9 @@ class AsyncClient:
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = await self._arequest_with_retries(
-            "PATCH", f"/repos/{owner}/{prompt_name}", json=json
+            "PATCH",
+            f"/repos/{owner}/{prompt_name}",
+            json=json,
         )
         response.raise_for_status()
         return response.json()
@@ -1638,12 +2918,15 @@ class AsyncClient:
             raise (await self._owner_conflict_error("delete a prompt", owner))
 
         response = await self._arequest_with_retries(
-            "DELETE", f"/repos/{owner}/{prompt_name}"
+            "DELETE",
+            f"/repos/{owner}/{prompt_name}",
         )
         response.raise_for_status()
 
     def _get_cache_key(
-        self, prompt_identifier: str, include_model: Optional[bool] = False
+        self,
+        prompt_identifier: str,
+        include_model: Optional[bool] = False,
     ) -> str:
         """Generate a cache key for a prompt.
 
@@ -1672,7 +2955,7 @@ class AsyncClient:
             The `PromptCommit` object.
         """
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
-            prompt_identifier
+            prompt_identifier,
         )
         response = await self._arequest_with_retries(
             "GET",
@@ -1682,7 +2965,7 @@ class AsyncClient:
             ),
         )
         return ls_schemas.PromptCommit(
-            **{"owner": owner, "repo": prompt_name, **response.json()}
+            **{"owner": owner, "repo": prompt_name, **response.json()},
         )
 
     async def pull_prompt_commit(
@@ -1775,7 +3058,7 @@ class AsyncClient:
                 if limit is not None and i >= limit:
                     return  # Stop iteration if we've reached the limit
                 yield ls_schemas.ListedPromptCommit(
-                    **{"owner": owner, "repo": prompt_name, **it}
+                    **{"owner": owner, "repo": prompt_name, **it},
                 )
                 i += 1
 
@@ -1833,7 +3116,9 @@ class AsyncClient:
             langsmith package) depends on.
         """
         prompt_object = await self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model, skip_cache=skip_cache
+            prompt_identifier,
+            include_model=include_model,
+            skip_cache=skip_cache,
         )
         return ls_client._process_prompt_manifest(
             prompt_object,
