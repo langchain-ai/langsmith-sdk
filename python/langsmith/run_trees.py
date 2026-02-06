@@ -1328,3 +1328,12 @@ class NonRecordingRunTree(RunTree):
     def get_url(self) -> str:
         """Return an empty URL."""
         return ""
+
+    def to_headers(self) -> dict[str, str]:
+        """Return an empty dict since non-recording runs don't propagate context."""
+        return {}
+
+    @functools.cached_property
+    def trace_start_time(self) -> datetime:
+        """Return current time as placeholder."""
+        return datetime.now(timezone.utc)
