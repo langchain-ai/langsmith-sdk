@@ -25,8 +25,6 @@ permissions:
   contents: read
 
 env:
-  RUST_VERSION: "1.82"
-  RUST_WORKSPACE_PATH: "rust"
   NODE_VERSION: "22.4.1"
 
 jobs:
@@ -39,7 +37,6 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       js: ${{ steps.filter.outputs.js }}
-      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,11 +48,6 @@ jobs:
               - '.github/**'
             js:
               - 'js/**'
-              - '.github/**'
-            rust:
-              - 'rust/**'
-              - 'vendor/orjson/**'
-              - 'vendor/pyo3/**'
               - '.github/**'
 
   # ============================================================================
@@ -375,91 +367,6 @@ jobs:
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
 
   # ============================================================================
-  # Rust CI
-  # ============================================================================
-  rust-lint:
-    name: "Rust Check lint and rustfmt"
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Install rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "${{ env.RUST_VERSION }}"
-          components: rustfmt, clippy
-          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
-          rustflags: ""
-      - name: cargo clippy
-        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
-        run: cargo clippy --workspace --all-targets --all-features --no-deps -- -D warnings --allow deprecated
-      - name: cargo fmt
-        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
-        run: cargo fmt -- --check
-      - name: cargo doc
-        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --workspace --no-deps --document-private-items
-
-  rust-test:
-    name: "Rust cargo test"
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Install rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "${{ env.RUST_VERSION }}"
-          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
-          rustflags: ""
-      - name: cargo test
-        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
-        run: |
-          set -euxo pipefail
-          # We exclude `langsmith-pyo3` since its tests:
-          # - Have to be run under `nextest`, since they require one-process-per-test.
-          # - Require a non-default configuration in order to run.
-          cargo test --workspace --exclude langsmith-pyo3 --all-features
-
-  rust-pyo3-test:
-    name: "Rust langsmith-pyo3 tests"
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Install rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "${{ env.RUST_VERSION }}"
-          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
-          rustflags: ""
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - name: cargo test
-        working-directory: "${{ env.RUST_WORKSPACE_PATH }}/crates/langsmith-pyo3"
-        run: |
-          set -euxo pipefail
-          # See the langsmith-pyo3 README.md file for an explanation
-          # of why tests have to run under nextest & without default features.
-          cargo nextest run --no-default-features
-
-  # ============================================================================
   # Integration Tests
   # ============================================================================
   integration-changes:
@@ -573,6 +480,8 @@ jobs:
           node-version: 20.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   js-vitest-eval:
     name: "JS Vitest Runner Test"
@@ -649,10 +558,6 @@ jobs:
       - js-exports-webpack
       - js-exports-esbuild
       - js-exports-metro
-      # Rust
-      - rust-lint
-      - rust-test
-      - rust-pyo3-test
       # Integration
       - integration-changes
       - python-integration

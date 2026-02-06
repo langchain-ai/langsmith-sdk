@@ -430,7 +430,8 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
 };
 
 const convertSerializableArg = (
-  arg: unknown
+  arg: unknown,
+  options?: { depth?: number; maxDepth?: number }
 ): { converted: unknown; deferredInputs: boolean } => {
   if (isReadableStream(arg)) {
     const proxyState: unknown[] = [];
@@ -556,7 +557,48 @@ const convertSerializableArg = (
   }
 
   if (isThenable(arg)) {
-    return { converted: getSerializablePromise(arg), deferredInputs: true };
+    return {
+      converted: getSerializablePromise(arg),
+      deferredInputs: true,
+    };
+  }
+
+  const maxDepth = options?.maxDepth ?? 0;
+  const currentDepth = options?.depth ?? 0;
+
+  if (currentDepth < maxDepth) {
+    if (Array.isArray(arg)) {
+      const converted = [] as unknown[];
+      let deferredInputs = false;
+
+      for (let i = 0; i < arg.length; i++) {
+        const res = convertSerializableArg(arg[i], {
+          depth: currentDepth + 1,
+          maxDepth,
+        });
+        converted.push(res.converted);
+        deferredInputs = deferredInputs || res.deferredInputs;
+      }
+      return { converted, deferredInputs };
+    }
+
+    if (typeof arg === "object" && arg != null) {
+      const converted = {} as Record<string, unknown>;
+      let deferredInputs = false;
+
+      for (const key in arg) {
+        if (Object.prototype.hasOwnProperty.call(arg, key)) {
+          const res = convertSerializableArg(arg[key as keyof typeof arg], {
+            ...options,
+            depth: currentDepth + 1,
+          });
+          converted[key] = res.converted;
+          deferredInputs = deferredInputs || res.deferredInputs;
+        }
+      }
+
+      return { converted, deferredInputs };
+    }
   }
 
   return { converted: arg, deferredInputs: false };
@@ -587,6 +629,10 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
   argsConfigPath?: [number] | [number, string];
   tracer?: OTELTracer;
   __finalTracedIteratorKey?: string;
+  __deferredSerializableArgOptions?: {
+    depth?: number;
+    maxDepth?: number;
+  };
 
   /**
    * Extract attachments from args and return remaining args.
@@ -751,12 +797,14 @@ export function traceable<Func extends (...args: any[]) => any>(
     };
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
-    // TODO: deal with possible nested promises and async iterables
     const processedArgs = args as Inputs;
     let deferredInputs = false;
     for (let i = 0; i < processedArgs.length; i++) {
       const { converted, deferredInputs: argDefersInput } =
-        convertSerializableArg(processedArgs[i]);
+        convertSerializableArg(
+          processedArgs[i],
+          config?.__deferredSerializableArgOptions
+        );
       processedArgs[i] = converted;
       deferredInputs = deferredInputs || argDefersInput;
     }

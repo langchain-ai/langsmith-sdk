@@ -83,7 +83,11 @@ def _process_inputs(d: dict) -> dict:
 
 
 def _infer_invocation_params(
-    model_type: str, provider: str, use_responses_api: bool, kwargs: dict
+    model_type: str,
+    provider: str,
+    prepopulated_invocation_params: dict,
+    use_responses_api: bool,
+    kwargs: dict,
 ):
     stripped = _strip_not_given(kwargs)
 
@@ -134,7 +138,10 @@ def _infer_invocation_params(
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
-        "ls_invocation_params": invocation_params,
+        "ls_invocation_params": {
+            **prepopulated_invocation_params,
+            **invocation_params,
+        },
     }
 
 
@@ -307,6 +314,16 @@ def _create_usage_metadata(
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is an APIResponse wrapper (from with_raw_response).
+        # The OpenAI SDK's APIResponse wraps the actual response object.
+        # Call .parse() to extract the ChatCompletion/Completion for tracing.
+        # See: github.com/openai/openai-python/blob/main/src/openai/_response.py#L285
+        if hasattr(outputs, "parse") and callable(outputs.parse):
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -425,6 +442,7 @@ def wrap_openai(
         - Sync and async OpenAI clients
         - `create` and `parse` methods
         - With and without streaming
+        - `with_raw_response` API for accessing HTTP headers
 
     Args:
         client: The client to patch.
@@ -462,13 +480,35 @@ def wrap_openai(
             messages=messages,
         )
         print(response.output_text)
+
+        # With raw response to access headers:
+        raw_response = client.chat.completions.with_raw_response.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(raw_response.headers)  # Access HTTP headers
+        completion = raw_response.parse()  # Get parsed response
         ```
 
     !!! warning "Behavior changed in `langsmith` 0.3.16"
 
         Support for Responses API added.
+
+    !!! warning "Behavior changed in `langsmith` 0.3.x"
+
+        Support for `with_raw_response` API added.
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
+
+    # Extract ls_invocation_params from metadata
+    metadata = dict(tracing_extra.get("metadata") or {})
+    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})
+
+    # Create new tracing_extra without ls_invocation_params in metadata
+    tracing_extra_rest: TracingExtra = {  # type: ignore[assignment]
+        k: v for k, v in tracing_extra.items() if k != "metadata"
+    }
+    if metadata:
+        tracing_extra_rest["metadata"] = metadata  # type: ignore[typeddict-item]
 
     ls_provider = "openai"
     try:
@@ -486,9 +526,13 @@ def wrap_openai(
         client.chat.completions.create,
         chat_name,
         _reduce_chat,
-        tracing_extra=tracing_extra,
+        tracing_extra=tracing_extra_rest,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "chat", ls_provider, False
+            _infer_invocation_params,
+            "chat",
+            ls_provider,
+            prepopulated_invocation_params,
+            False,
         ),
         process_outputs=_process_chat_completion,
     )
@@ -497,9 +541,13 @@ def wrap_openai(
         client.completions.create,
         completions_name,
         _reduce_completions,
-        tracing_extra=tracing_extra,
+        tracing_extra=tracing_extra_rest,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "llm", ls_provider, False
+            _infer_invocation_params,
+            "llm",
+            ls_provider,
+            prepopulated_invocation_params,
+            False,
         ),
     )
 
@@ -514,9 +562,13 @@ def wrap_openai(
             client.beta.chat.completions.parse,  # type: ignore
             chat_name,
             _process_chat_completion,
-            tracing_extra=tracing_extra,
+            tracing_extra=tracing_extra_rest,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider, False
+                _infer_invocation_params,
+                "chat",
+                ls_provider,
+                prepopulated_invocation_params,
+                False,
             ),
         )
 
@@ -530,9 +582,13 @@ def wrap_openai(
             client.chat.completions.parse,  # type: ignore
             chat_name,
             _process_chat_completion,
-            tracing_extra=tracing_extra,
+            tracing_extra=tracing_extra_rest,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider, False
+                _infer_invocation_params,
+                "chat",
+                ls_provider,
+                prepopulated_invocation_params,
+                False,
             ),
         )
 
@@ -544,9 +600,13 @@ def wrap_openai(
                 chat_name,
                 _reduce_response_events,
                 process_outputs=_process_responses_api_output,
-                tracing_extra=tracing_extra,
+                tracing_extra=tracing_extra_rest,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider, True
+                    _infer_invocation_params,
+                    "chat",
+                    ls_provider,
+                    prepopulated_invocation_params,
+                    True,
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -554,9 +614,13 @@ def wrap_openai(
                 client.responses.parse,
                 chat_name,
                 _process_responses_api_output,
-                tracing_extra=tracing_extra,
+                tracing_extra=tracing_extra_rest,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider, True
+                    _infer_invocation_params,
+                    "chat",
+                    ls_provider,
+                    prepopulated_invocation_params,
+                    True,
                 ),
             )
 

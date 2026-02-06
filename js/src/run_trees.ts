@@ -24,7 +24,10 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import { uuid7FromTime } from "./utils/_uuid.js";
+import {
+  uuid7FromTime,
+  nonCryptographicUuid7Deterministic,
+} from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "uuid";
 
 const TIMESTAMP_LENGTH = 36;
@@ -165,6 +168,22 @@ type WriteReplica = {
 };
 type Replica = ProjectReplica | WriteReplica;
 
+const HEADER_SAFE_REPLICA_FIELDS = new Set([
+  "projectName",
+  "updates",
+  "reroot",
+]);
+
+function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
+  const filtered: WriteReplica = {};
+  for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
+    if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
+      (filtered as Record<string, unknown>)[key] = replica[key];
+    }
+  }
+  return filtered;
+}
+
 /**
  * Baggage header information
  */
@@ -201,7 +220,13 @@ class Baggage {
       } else if (key === "langsmith-project") {
         project_name = value;
       } else if (key === "langsmith-replicas") {
-        replicas = JSON.parse(value);
+        const parsed = JSON.parse(value) as Replica[];
+        replicas = parsed.map((replica) => {
+          if (Array.isArray(replica)) {
+            return replica;
+          }
+          return filterReplicaForHeaders(replica);
+        });
       }
     }
 
@@ -689,17 +714,18 @@ export class RunTree implements BaseRun {
       }
     }
 
-    // Remap IDs for the replica using uuid5 (deterministic)
-    // This ensures consistency across runs in the same replica
+    // Remap IDs for the replica using nonCryptographicUuid7Deterministic
+    // This ensures consistency across runs in the same replica while
+    // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = uuidv5(`${oldId}:${projectName}`, UUID_NAMESPACE_DNS);
+    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = uuidv5(
-        `${baseRun.trace_id}:${projectName}`,
-        UUID_NAMESPACE_DNS
+      newTraceId = nonCryptographicUuid7Deterministic(
+        baseRun.trace_id,
+        projectName
       );
     } else {
       newTraceId = newId;
@@ -708,9 +734,9 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = uuidv5(
-        `${baseRun.parent_run_id}:${projectName}`,
-        UUID_NAMESPACE_DNS
+      newParentId = nonCryptographicUuid7Deterministic(
+        baseRun.parent_run_id,
+        projectName
       );
     }
 
@@ -721,9 +747,9 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = uuidv5(
-          `${segId}:${projectName}`,
-          UUID_NAMESPACE_DNS
+        const remappedId = nonCryptographicUuid7Deterministic(
+          segId,
+          projectName
         );
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
