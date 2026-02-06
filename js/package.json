@@ -444,6 +444,9 @@
     },
     "./package.json": "./package.json"
   },
+  "resolutions": {
+    "js-yaml": "^4.1.1"
+  },
   "browser": {
     "./dist/utils/prompts_cache_fs.js": "./dist/utils/prompts_cache_fs.browser.js"
   }
