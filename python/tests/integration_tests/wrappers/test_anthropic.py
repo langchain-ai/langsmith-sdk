@@ -348,3 +348,77 @@ async def test_beta_chat_async_api():
         assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
         for call in mock_session.request.call_args_list[1:]:
             assert call[0][0].upper() == "POST"
+
+
+def test_prepopulated_invocation_params():
+    """Test that prepopulated invocation params are merged
+    and runtime params override."""
+    import anthropic
+
+    mock_session = mock.MagicMock()
+    client = Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
+
+    # Wrap client with prepopulated params including top_k
+    patched_client = wrap_anthropic(
+        anthropic.Anthropic(),
+        tracing_extra={
+            "client": client,
+            "metadata": {
+                "ls_invocation_params": {"top_k": 100, "env": "test", "team": "qa"},
+                "custom_key": "custom_value",
+                "version": "1.0.0",
+            },
+        },
+    )
+
+    messages = [{"role": "user", "content": "Say 'hello'"}]
+
+    with tracing_context(enabled=True):
+        patched_client.messages.create(
+            messages=messages,
+            top_k=40,  # Should override prepopulated top_k=100
+            model=model_name,
+            max_tokens=10,
+        )
+
+    # Give the thread a chance
+    time.sleep(0.5)
+
+    # Get the run data using the _get_calls helper
+    calls = _get_calls(client, minimum=1)
+    assert calls
+
+    # Parse the run data from the calls
+    run_data = None
+    for call in calls:
+        if json_bytes := call.kwargs.get("data"):
+            json_str = (
+                json_bytes.decode("utf-8")
+                if isinstance(json_bytes, bytes)
+                else json_bytes
+            )
+            data = json.loads(json_str)
+            # Look in both post and patch arrays
+            for event in data.get("post", []) + data.get("patch", []):
+                if event.get("extra"):
+                    run_data = event
+                    break
+            if run_data:
+                break
+
+    assert run_data is not None
+
+    # Check invocation params - they are in metadata, not extra.invocation_params
+    extra = run_data.get("extra", {})
+    metadata = extra.get("metadata", {})
+    ls_invocation_params = metadata.get("ls_invocation_params", {})
+
+    # Runtime top_k should override prepopulated top_k
+    assert ls_invocation_params.get("top_k") == 40
+    # Prepopulated params without conflicts should still be there
+    assert ls_invocation_params.get("env") == "test"
+    assert ls_invocation_params.get("team") == "qa"
+
+    # Check that other metadata keys are preserved
+    assert metadata.get("custom_key") == "custom_value"
+    assert metadata.get("version") == "1.0.0"

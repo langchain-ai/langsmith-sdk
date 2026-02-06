@@ -1,45 +1,64 @@
-import type { RunTree, RunTreeConfig } from "../../run_trees.js";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-export type AgentSDKContext = {
-  /**
-   * Storage for active tool runs, keyed by tool_use_id.
-   * Used to correlate PreToolUse and PostToolUse hooks.
-   */
-  activeToolRuns: Map<string, { run: RunTree; startTime: number }>;
+// export type {
+//   SDKUserMessage,
+//   SDKResultMessage,
+//   SDKMessage,
+//   ModelUsage,
+//   Options as QueryOptions,
+// } from "@anthropic-ai/claude-agent-sdk";
 
-  /**
-   * Storage for client-managed runs (subagent sessions and their child tools).
-   * These are created when processing AssistantMessage content blocks and
-   * closed when PostToolUse hook fires. Keyed by tool_use_id.
-   */
-  clientManagedRuns: Map<string, RunTree>;
+// import type Anthropic from "@anthropic-ai/sdk";
+// export type BetaContentBlock = Anthropic.Beta.BetaContentBlock;
+// export type BetaToolUseBlock = Anthropic.Beta.BetaToolUseBlock;
 
-  /**
-   * Storage for subagent sessions, keyed by the Task tool's tool_use_id.
-   * Used to parent LLM turns and tools to the correct subagent.
-   */
-  subagentSessions: Map<string, RunTree>;
-
-  /**
-   * Tracks the currently active subagent context (tool_use_id).
-   * Set when a Task tool is called, cleared when the tool result returns.
-   * Assistant messages that arrive while a subagent is active belong to that subagent.
-   */
-  activeSubagentToolUseId: string | undefined;
-
-  /**
-   * Reference to the current parent run tree for tool tracing.
-   * Set when a traced query starts, cleared when it ends.
-   */
-  currentParentRun: RunTree | undefined;
+// Mock types to avoid importing the actual types when consuming
+// Use actual types above when developing
+export type SDKAssistantMessage = {
+  type: "assistant";
+  message: {
+    id: string;
+    role?: string;
+    content: Record<string, any>[];
+    usage?: Record<string, any>;
+    model?: string;
+  };
+  parent_tool_use_id: string | null;
+};
+export type SDKSystemMessage = {
+  type: "system";
 };
 
-/**
- * Configuration options for wrapping Claude Agent SDK with LangSmith tracing.
- */
-export type WrapClaudeAgentSDKConfig = Partial<
-  Omit<
-    RunTreeConfig,
-    "inputs" | "outputs" | "run_type" | "child_runs" | "parent_run" | "error"
-  >
->;
+export type SDKUserMessage = {
+  type: "user";
+  message: {
+    role?: string;
+    content: Record<string, any> | Record<string, any>[] | string;
+    usage?: Record<string, any>;
+    model?: string;
+  };
+  session_id: string;
+  tool_use_result?: unknown;
+  parent_tool_use_id: string | null;
+};
+export type SDKResultMessage = {
+  type: "result";
+  modelUsage: ModelUsage;
+  total_cost_usd: number | null;
+  is_error: boolean | null;
+  num_turns: number | null;
+  session_id: string | null;
+  duration_ms: number | null;
+  duration_api_ms: number | null;
+  usage: Record<string, any>;
+};
+export type SDKMessage =
+  | SDKAssistantMessage
+  | SDKUserMessage
+  | SDKSystemMessage
+  | SDKResultMessage;
+export type ModelUsage = { [key: string]: any };
+export type QueryOptions = { [key: string]: any };
+
+export type BetaContentBlock = { [key: string]: any };
+export type BetaToolUseBlock = { [key: string]: any };

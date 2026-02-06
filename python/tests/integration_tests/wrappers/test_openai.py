@@ -891,3 +891,58 @@ async def test_tool_call_chunking():
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+
+def test_prepopulated_invocation_params():
+    """Test that prepopulated invocation params are merged
+    and runtime params override."""
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(
+        session=mock_session,
+        info=LS_TEST_CLIENT_INFO,
+    )
+
+    # Wrap client with prepopulated params including seed
+    patched_client = wrap_openai(
+        openai.Client(),
+        tracing_extra={
+            "client": client,
+            "metadata": {
+                "ls_invocation_params": {"seed": 100, "test": "qa"},
+                "custom_key": "custom_value",
+                "version": "1.0.0",
+            },
+        },
+    )
+
+    collect = Collect()
+    messages = [{"role": "user", "content": "Say 'hello'"}]
+
+    with langsmith.tracing_context(enabled=True):
+        patched_client.chat.completions.create(
+            messages=messages,
+            seed=42,  # Should override prepopulated seed=100
+            model="gpt-5-nano",
+            langsmith_extra={"on_end": collect},
+        )
+
+    # Give the thread a chance
+    time.sleep(0.1)
+
+    # Check the run data from the callback
+    assert collect.run is not None
+
+    # Check invocation params - they are in metadata, not extra.invocation_params
+    metadata = collect.run.extra.get("metadata", {})
+    ls_invocation_params = metadata.get("ls_invocation_params", {})
+
+    # Runtime seed should override prepopulated seed
+    assert ls_invocation_params.get("seed") == 42
+    # Prepopulated params without conflicts should still be there
+    assert ls_invocation_params.get("test") == "qa"
+
+    # Check that other metadata keys are preserved
+    assert metadata.get("custom_key") == "custom_value"
+    assert metadata.get("version") == "1.0.0"

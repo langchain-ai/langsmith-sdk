@@ -166,6 +166,8 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       options: {
         model: "claude-3-5-haiku-20241022",
         maxTurns: 5,
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
         mcpServers: {
           calculator: mcpServer,
         },
@@ -238,6 +240,9 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of wrappedSDK.query({
       prompt: "Write a haiku about programming.",
       options: {
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
+        includePartialMessages: true,
         model: "claude-3-5-haiku-20241022",
         maxTurns: 1,
       },
@@ -298,11 +303,18 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const messages: any[] = [];
 
     for await (const message of wrappedSDK.query({
-      prompt: "Try to use the error-tool.",
+      prompt: "Try to use the error-tool from the error-server.",
       options: {
         model: "claude-3-5-haiku-20241022",
-        maxTurns: 2,
-        tools: [errorTool] as any,
+        maxTurns: 5,
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
+        mcpServers: {
+          errorTool: wrappedSDK.createSdkMcpServer({
+            name: "error-server",
+            tools: [errorTool],
+          }),
+        },
       },
     })) {
       messages.push(message);
@@ -425,5 +437,32 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
     await expect(() => query.supportedModels()).not.toThrow();
     await expect(() => query.supportedCommands()).not.toThrow();
+  });
+
+  test("streaming input", async () => {
+    const query = wrappedSDK.query({
+      prompt: (async function* () {
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: "Hello" },
+        } as unknown as claudeSDK.SDKUserMessage;
+
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: "How are you?" },
+        } as unknown as claudeSDK.SDKUserMessage;
+      })(),
+      options: {
+        model: "claude-3-5-haiku-20241022",
+        maxTurns: 1,
+      },
+    });
+
+    const messages: any[] = [];
+    for await (const message of query) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBeGreaterThan(0);
   });
 });

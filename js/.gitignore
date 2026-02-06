@@ -87,6 +87,10 @@ Chinook_Sqlite.sql
 /wrappers/openai.js
 /wrappers/openai.d.ts
 /wrappers/openai.d.cts
+/wrappers/gemini.cjs
+/wrappers/gemini.js
+/wrappers/gemini.d.ts
+/wrappers/gemini.d.cts
 /singletons/traceable.cjs
 /singletons/traceable.js
 /singletons/traceable.d.ts
@@ -111,6 +115,14 @@ Chinook_Sqlite.sql
 /experimental/vercel.js
 /experimental/vercel.d.ts
 /experimental/vercel.d.cts
+/experimental/anthropic.cjs
+/experimental/anthropic.js
+/experimental/anthropic.d.ts
+/experimental/anthropic.d.cts
+/experimental/sandbox.cjs
+/experimental/sandbox.js
+/experimental/sandbox.d.ts
+/experimental/sandbox.d.cts
 /index.cjs
 /index.js
 /index.d.ts
