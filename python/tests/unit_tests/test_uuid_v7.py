@@ -94,6 +94,40 @@ def test_post_and_patch_include_run_type_and_start_time() -> None:
     assert update_kwargs["start_time"] == fixed_start
 
 
+def test_uuid7_deterministic_produces_expected_values() -> None:
+    """Test with hard-coded values to ensure compatibility across implementations.
+
+    These values should match the TypeScript implementation exactly.
+    """
+    from uuid import UUID
+
+    test_cases = [
+        {
+            "input": UUID("019c0711-e1aa-7223-bf21-12119afe80f7"),
+            "key": "other-key",
+            "expected": UUID("019c0711-e1aa-7614-833c-500ba8e2e686"),
+        },
+        {
+            "input": UUID("019c0711-e1aa-7223-bf21-12119afe80f7"),
+            "key": "replica-project",
+            "expected": UUID("019c0711-e1aa-7817-8301-943c0df9a3cd"),
+        },
+        {
+            "input": UUID("01900000-0000-7000-8000-000000000000"),
+            "key": "test",
+            "expected": UUID("01900000-0000-7132-8131-f80e352488a3"),
+        },
+    ]
+
+    for test_case in test_cases:
+        result = uuid7_deterministic(test_case["input"], test_case["key"])
+        assert result == test_case["expected"], (
+            f"Expected {test_case['expected']} but got {result} "
+            f"for input {test_case['input']} with key '{test_case['key']}'"
+        )
+        assert result.version == 7
+
+
 def test_uuid7_deterministic() -> None:
     """Test uuid7_deterministic produces valid, deterministic UUID7s."""
 

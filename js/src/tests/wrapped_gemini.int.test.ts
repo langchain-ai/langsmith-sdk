@@ -39,6 +39,8 @@ test("models.generateContent non-streaming", async () => {
     contents: "Say 'hello'",
   });
 
+  await client.awaitPendingTraceBatches();
+
   // TypeScript knows response should have certain properties
   // Let's verify the basic response structure
   expect(response).toBeDefined();
@@ -82,6 +84,8 @@ test("models.generateContentStream streaming", async () => {
   // Verify we got some chunks
   expect(chunks.length).toBeGreaterThan(0);
 
+  await client.awaitPendingTraceBatches();
+
   // Verify tracing was called
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
@@ -115,6 +119,8 @@ test("should trace calls to langsmith", async () => {
     contents: "Say 'hello'",
   });
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   const firstCall = callSpy.mock.calls[0];
@@ -145,6 +151,8 @@ test("should extract usage metadata in outputs", async () => {
     model: "gemini-2.5-flash",
     contents: "Say hello world",
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
@@ -186,6 +194,8 @@ test("should extract usage metadata in extra.metadata.usage_metadata", async () 
     model: "gemini-2.5-flash",
     contents: "Say hello world",
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
@@ -243,6 +253,8 @@ test("should handle function calling", async () => {
   });
 
   expect(response).toBeDefined();
+
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   // Find the PATCH call
@@ -283,7 +295,7 @@ test("should handle image input", async () => {
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 
   const response = await geminiClient.models.generateContent({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash-image",
     contents: [
       {
         role: "user",
@@ -301,6 +313,8 @@ test("should handle image input", async () => {
       },
     ],
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
   expect(response).toBeDefined();
@@ -352,6 +366,8 @@ test("should handle image generation output", async () => {
     },
   });
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
   expect(response).toBeDefined();
 
@@ -382,6 +398,55 @@ test("should handle image generation output", async () => {
   }
 
   expect(foundImageOutput).toBe(true);
+
+  callSpy.mockClear();
+});
+
+test("prepopulated invocation params are passed through", async () => {
+  const { client, callSpy } = mockClient();
+
+  const wrappedClient = wrapGemini(
+    new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || "test-key",
+    }),
+    {
+      client,
+      tracingEnabled: true,
+      metadata: {
+        ls_invocation_params: { env: "test", team: "qa" },
+        custom_key: "custom_value",
+        version: "1.0.0",
+      },
+    }
+  );
+
+  await wrappedClient.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: "Say 'hello'",
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  // Get the POST call with run data (should have extra.metadata)
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+
+  // ls_invocation_params is in metadata, not in extra.invocation_params
+  const metadata = postBody.extra?.metadata;
+  const lsInvocationParams = metadata?.ls_invocation_params;
+
+  // Should have prepopulated params (Gemini doesn't extract runtime params)
+  expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+
+  // Check that other metadata keys are preserved
+  expect(metadata?.custom_key).toBe("custom_value");
+  expect(metadata?.version).toBe("1.0.0");
 
   callSpy.mockClear();
 });

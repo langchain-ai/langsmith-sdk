@@ -21,12 +21,15 @@ const entrypoints = {
   anonymizer: "anonymizer/index",
   "wrappers/anthropic": "wrappers/anthropic",
   "wrappers/openai": "wrappers/openai",
+  "wrappers/gemini": "wrappers/gemini",
   "singletons/traceable": "singletons/traceable",
   "utils/jestlike": "utils/jestlike/index",
   "experimental/otel/setup": "experimental/otel/setup",
   "experimental/otel/exporter": "experimental/otel/exporter",
   "experimental/otel/processor": "experimental/otel/processor",
   "experimental/vercel": "experimental/vercel/index",
+  "experimental/anthropic": "experimental/anthropic/index",
+  "experimental/sandbox": "experimental/sandbox/index",
 };
 
 const defaultEntrypoints = ["vitest/reporter"];

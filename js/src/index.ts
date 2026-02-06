@@ -28,4 +28,4 @@ export {
 } from "./utils/prompts_cache.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.4.7";
+export const __version__ = "0.4.12";
