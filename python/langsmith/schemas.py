@@ -641,6 +641,8 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
+    start_time: Optional[datetime] = None
+    """The start time of the run this feedback is associated with."""
     comparative_experiment_id: Optional[UUID] = None
     """If logged within a 'comparative experiment', this is the ID of the experiment."""
     feedback_group_id: Optional[UUID] = None
@@ -1109,9 +1111,11 @@ class InputTokenDetails(TypedDict, total=False):
     """
     cache_read: int
     """Input tokens that were cached and there was a cache hit.
-
     Since there was a cache hit, the tokens were read from the cache. More precisely,
     the model state given these tokens was read from the cache.
+    """
+    cache_read_over_200k: int
+    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing. 
     """
 
 
@@ -1238,6 +1242,8 @@ class UpsertExamplesResponse(TypedDict):
     """The number of examples that were upserted."""
     example_ids: list[str]
     """The ids of the examples that were upserted."""
+    as_of: NotRequired[str | None]
+    """The timestamp when the examples were created/updated. None if backend doesn't support it."""
 
 
 class ExampleWithRuns(Example):

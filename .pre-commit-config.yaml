@@ -1,0 +1,62 @@
+# Pre-commit hooks that auto-fix formatting and linting issues
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      # ==========================================================================
+      # Python Checks
+      # ==========================================================================
+
+      # Python - auto-format with ruff
+      - id: python-format
+        name: Python Ruff Format
+        entry: bash -c 'cd python && uv run ruff format .'
+        language: system
+        files: ^python/.*\.py$
+        pass_filenames: false
+
+      # Python - lint and auto-fix with ruff
+      - id: python-lint-ruff
+        name: Python Ruff Lint
+        entry: bash -c 'cd python && uv run ruff check --fix .'
+        language: system
+        files: ^python/.*\.py$
+        pass_filenames: false
+
+      # Python - type check with mypy (cannot auto-fix)
+      - id: python-mypy
+        name: Python MyPy Type Check
+        entry: bash -c 'cd python && uv run mypy langsmith'
+        language: system
+        files: ^python/langsmith/.*\.py$
+        pass_filenames: false
+
+      # ==========================================================================
+      # JavaScript/TypeScript Checks
+      # ==========================================================================
+
+      # JS - auto-format with prettier
+      - id: js-format
+        name: JS Prettier Format
+        entry: bash -c 'cd js && yarn run format'
+        language: system
+        files: ^js/src/.*\.(ts|tsx|mts)$
+        pass_filenames: false
+
+      # JS - lint and auto-fix with eslint
+      - id: js-lint
+        name: JS ESLint
+        entry: bash -c 'cd js && yarn run lint:fix'
+        language: system
+        files: ^js/src/.*\.(ts|js)$
+        pass_filenames: false
+
+      # JS - type check with TypeScript (cannot auto-fix)
+      - id: js-typecheck
+        name: JS TypeScript Type Check
+        entry: bash -c 'cd js && yarn run check:types'
+        language: system
+        files: ^js/src/.*\.(ts|tsx|mts)$
+        pass_filenames: false

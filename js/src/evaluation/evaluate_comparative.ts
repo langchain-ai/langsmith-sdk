@@ -338,16 +338,20 @@ export async function evaluateComparative(
           })
         : await (evaluator as _ComparativeEvaluatorLegacy)(runs, example);
 
+    // Build a lookup for run metadata
+    const runsById = new Map(runs.map((r) => [r.id, r]));
     for (const [runId, score] of Object.entries(result.scores)) {
       // validate if the run id
       if (!expectedRunIds.has(runId)) {
         throw new Error(`Returning an invalid run id ${runId} from evaluator.`);
       }
-
+      const run = runsById.get(runId);
       await client.createFeedback(runId, result.key, {
         score,
         sourceRunId: result.source_run_id,
         comparativeExperimentId: comparativeExperiment.id,
+        sessionId: run?.session_id,
+        startTime: run?.start_time,
       });
     }
 

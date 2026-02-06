@@ -243,8 +243,9 @@ class TestProcessGenerateContentResponse:
                         }
                     ],
                     "usage_metadata": {
-                        "prompt_token_count": 5,
+                        "prompt_token_count": 200050,
                         "candidates_token_count": 10,
+                        "cached_content_token_count": 200050,
                     },
                 }
 
@@ -254,7 +255,15 @@ class TestProcessGenerateContentResponse:
         assert result["finish_reason"] == "STOP"
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
-        assert result["usage_metadata"]["input_tokens"] == 5
+        assert result["usage_metadata"]["input_tokens"] == 200050
+        assert result["usage_metadata"]["input_token_details"]["over_200k"] == 50
+        assert result["usage_metadata"]["input_token_details"]["cache_read"] == 200050
+        assert (
+            result["usage_metadata"]["input_token_details"]["cache_read_over_200k"]
+            == 50
+        )
+        assert result["usage_metadata"]["output_tokens"] == 10
+        assert result["usage_metadata"]["output_token_details"]["over_200k"] == 0
 
     def test_text_attribute_fallback(self):
         # Mock response with direct text attribute
@@ -489,7 +498,7 @@ class TestInferInvocationParams:
                 "stop_sequences": ["END"],
             },
         }
-        result = _infer_invocation_params(kwargs)
+        result = _infer_invocation_params({}, kwargs)
 
         expected = {
             "ls_provider": "google",
@@ -498,6 +507,7 @@ class TestInferInvocationParams:
             "ls_temperature": 0.7,
             "ls_max_tokens": 1000,
             "ls_stop": ["END"],
+            "ls_invocation_params": {},
         }
         assert result == expected
 
@@ -509,7 +519,7 @@ class TestInferInvocationParams:
             stop_sequences = None
 
         kwargs = {"model": "gemini-flash", "config": MockConfig()}
-        result = _infer_invocation_params(kwargs)
+        result = _infer_invocation_params({}, kwargs)
 
         expected = {
             "ls_provider": "google",
@@ -518,12 +528,13 @@ class TestInferInvocationParams:
             "ls_temperature": 0.5,
             "ls_max_tokens": 2000,
             "ls_stop": None,
+            "ls_invocation_params": {},
         }
         assert result == expected
 
     def test_empty_config(self):
         kwargs = {"model": "gemini-pro"}
-        result = _infer_invocation_params(kwargs)
+        result = _infer_invocation_params({}, kwargs)
 
         expected = {
             "ls_provider": "google",
@@ -532,6 +543,31 @@ class TestInferInvocationParams:
             "ls_temperature": None,
             "ls_max_tokens": None,
             "ls_stop": None,
+            "ls_invocation_params": {},
+        }
+        assert result == expected
+
+    def test_prepopulated_invocation_params(self):
+        kwargs = {"model": "gemini-pro"}
+        prepopulated = {
+            "custom_key": "custom_value",
+            "env": "production",
+            "version": "1.0.0",
+        }
+        result = _infer_invocation_params(prepopulated, kwargs)
+
+        expected = {
+            "ls_provider": "google",
+            "ls_model_type": "chat",
+            "ls_model_name": "gemini-pro",
+            "ls_temperature": None,
+            "ls_max_tokens": None,
+            "ls_stop": None,
+            "ls_invocation_params": {
+                "custom_key": "custom_value",
+                "env": "production",
+                "version": "1.0.0",
+            },
         }
         assert result == expected
 

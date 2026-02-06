@@ -1179,3 +1179,51 @@ describe.skip("Requires Anthropic API key", () => {
     );
   });
 });
+
+test("prepopulated invocation params are merged and runtime params override", async () => {
+  const { client, callSpy } = mockClient();
+
+  const wrappedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+    metadata: {
+      ls_invocation_params: { top_k: 100, env: "test", team: "qa" },
+      custom_key: "custom_value",
+      version: "1.0.0",
+    },
+  });
+
+  await wrappedClient.messages.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    model: "claude-haiku-4-5",
+    top_k: 40, // Should override prepopulated top_k=100
+    max_tokens: 10,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  // Get the POST call with run data (should have extra.metadata)
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+
+  // ls_invocation_params is in metadata, not in extra.invocation_params
+  const metadata = postBody.extra?.metadata;
+  const lsInvocationParams = metadata?.ls_invocation_params;
+
+  // Runtime top_k should override prepopulated top_k
+  expect(lsInvocationParams?.top_k).toBe(40);
+  // Prepopulated params without conflicts should still be there
+  expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+
+  // Check that other metadata keys are preserved
+  expect(metadata?.custom_key).toBe("custom_value");
+  expect(metadata?.version).toBe("1.0.0");
+
+  callSpy.mockClear();
+});

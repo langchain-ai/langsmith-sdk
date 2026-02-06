@@ -32,6 +32,7 @@ dependencies = [
     "zstandard>=0.23.0",
     "packaging>=23.2",
     "uuid-utils>=0.12.0,<1.0",
+    "xxhash>=3.0.0",
 ]
 
 [project.urls]
@@ -106,6 +107,7 @@ dev = [
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
     "ty==0.0.10",
+    "pytest-httpx>=0.30.0",
 ]
 
 # Linting dependencies

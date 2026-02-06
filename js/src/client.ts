@@ -349,6 +349,7 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  start_time?: number | string;
   comparative_experiment_id?: string;
 }
 
@@ -746,6 +747,9 @@ export class Client implements LangSmithTracingClientInterface {
   private multipartStreamingDisabled = false;
 
   private _multipartDisabled = false;
+
+  private _runCompressionDisabled =
+    getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
 
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
@@ -1201,7 +1205,9 @@ export class Client implements LangSmithTracingClientInterface {
           !this._multipartDisabled &&
           (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
         if (useMultipart) {
-          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
+          const useGzip =
+            !this._runCompressionDisabled &&
+            serverInfo?.instance_flags?.gzip_body_enabled;
           try {
             await this.multipartIngestRuns(ingestParams, {
               ...options,
@@ -3051,7 +3057,8 @@ export class Client implements LangSmithTracingClientInterface {
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
-    formData.append("file", csvFile, fileName);
+    const csvBlob = new Blob([csvFile], { type: "text/csv" });
+    formData.append("file", csvBlob, fileName);
     inputKeys.forEach((key) => {
       formData.append("input_keys", key);
     });
@@ -4143,6 +4150,8 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackConfig,
       projectId,
       comparativeExperimentId,
+      sessionId,
+      startTime,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -4156,6 +4165,10 @@ export class Client implements LangSmithTracingClientInterface {
       eager?: boolean;
       projectId?: string;
       comparativeExperimentId?: string;
+      /** The session (project) ID of the run this feedback is for. */
+      sessionId?: string;
+      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
+      startTime?: number | string;
     }
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -4192,7 +4205,8 @@ export class Client implements LangSmithTracingClientInterface {
       feedback_source: feedback_source,
       comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
-      session_id: projectId,
+      session_id: sessionId ?? projectId,
+      start_time: startTime,
     };
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
@@ -4495,6 +4509,8 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
+          sessionId: run?.session_id,
+          startTime: run?.start_time,
         })
       );
     }

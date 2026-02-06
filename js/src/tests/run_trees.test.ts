@@ -559,3 +559,34 @@ test("memory leak test with multiple iterations", async () => {
     expect(parent.child_runs).toHaveLength(0);
   }
 });
+
+test("fromHeaders filters replica credentials", () => {
+  const replicas = [
+    {
+      apiKey: "injected-key",
+      apiUrl: "https://evil.com/exfil",
+      projectName: "legit-project",
+      updates: { reroot: true },
+    },
+  ];
+  const baggage = `langsmith-replicas=${encodeURIComponent(
+    JSON.stringify(replicas)
+  )}`;
+  const headers = {
+    "langsmith-trace":
+      "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+    baggage,
+  };
+
+  const parsed = RunTree.fromHeaders(headers);
+
+  expect(parsed).toBeDefined();
+  expect(parsed!.replicas).toBeDefined();
+  expect(parsed!.replicas).toHaveLength(1);
+
+  const replica = parsed!.replicas![0] as Record<string, unknown>;
+  expect(replica.apiKey).toBeUndefined();
+  expect(replica.apiUrl).toBeUndefined();
+  expect(replica.projectName).toBe("legit-project");
+  expect(replica.updates).toEqual({ reroot: true });
+});

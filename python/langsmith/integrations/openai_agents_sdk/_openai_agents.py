@@ -236,6 +236,8 @@ if HAVE_AGENTS:
                 # End and patch
                 run.end()
                 run.patch()
+
+                _context._PARENT_RUN_TREE.set(run.parent_run)
             except Exception as e:
                 logger.exception(f"Error updating trace run: {e}")
 
@@ -282,7 +284,6 @@ if HAVE_AGENTS:
                 )
 
                 child_run.post()
-                _context._PARENT_RUN_TREE.set(child_run)
                 self._runs[span.span_id] = child_run
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
