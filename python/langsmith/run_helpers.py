@@ -133,7 +133,7 @@ def tracing_context(
             Defaults to `None`, meaning it will use the current context value or environment variables.
         replicas: A sequence of `WriteReplica` dictionaries to send runs to.
 
-            Example: `[{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]`
+            Example: `[{"api_url": "https://api.example.com", "auth": {"api_key": "key"}, "project_name": "proj"}]`
             or `[{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]`
         distributed_parent_id: The distributed parent ID for distributed tracing. Defaults to None.
     """
