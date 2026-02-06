@@ -22,7 +22,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncCache
+from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -43,7 +43,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        cache: Union[AsyncCache, bool] = False,
+        disable_prompt_cache: bool = False,
     ):
         """Initialize the async client.
 
@@ -83,11 +83,10 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[AsyncCache] = AsyncCache()
-        elif isinstance(cache, AsyncCache):
-            self._cache = cache
+        # Initialize prompt cache
+        if not disable_prompt_cache:
+            # Use the global singleton instance
+            self._cache: Optional[AsyncPromptCache] = async_prompt_cache_singleton
         else:
             self._cache = None
 
@@ -1720,7 +1719,7 @@ class AsyncClient:
         # Store in cache
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            await self._cache.aset(cache_key, result)
 
         return result
 

@@ -8,8 +8,8 @@
  * that are swapped for browser builds via package.json browser field.
  */
 
-import type { PromptCommit } from "../schemas.js";
-import { dumpCache, loadCache } from "./prompts_cache_fs.js";
+import type { PromptCommit } from "../../schemas.js";
+import { dumpCache, loadCache } from "./fs.js";
 
 /**
  * A single cache entry with metadata for TTL tracking.
@@ -79,7 +79,7 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  * cache.stop();
  * ```
  */
-export class Cache {
+export class PromptCache {
   private cache: Map<string, CacheEntry<PromptCommit>> = new Map();
   private maxSize: number;
   private ttlSeconds: number | null;
@@ -94,15 +94,8 @@ export class Cache {
   };
 
   constructor(config: CacheConfig = {}) {
-    this.maxSize = config.maxSize ?? 100;
-    this.ttlSeconds = config.ttlSeconds ?? 3600;
-    this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
     this.fetchFunc = config.fetchFunc;
-
-    // Start background refresh if fetch function provided and TTL is set
-    if (this.fetchFunc && this.ttlSeconds !== null) {
-      this.startRefreshLoop();
-    }
+    this.configure(config);
   }
 
   /**
@@ -164,6 +157,9 @@ export class Cache {
    * Set a value in the cache.
    */
   set(key: string, value: PromptCommit): void {
+    if (this.refreshTimer === undefined) {
+      this.startRefreshLoop();
+    }
     // Check if we need to evict (and key is new)
     if (!this.cache.has(key) && this.cache.size >= this.maxSize) {
       // Evict oldest (first item in Map)
@@ -261,17 +257,20 @@ export class Cache {
   /**
    * Start the background refresh loop.
    */
-  private startRefreshLoop(): void {
-    this.refreshTimer = setInterval(() => {
-      this.refreshStaleEntries().catch((e) => {
-        // Log but don't die - keep the refresh loop running
-        console.warn("Unexpected error in cache refresh loop:", e);
-      });
-    }, this.refreshIntervalSeconds * 1000);
+  startRefreshLoop(): void {
+    this.stop();
+    if (this.fetchFunc && this.ttlSeconds !== null) {
+      this.refreshTimer = setInterval(() => {
+        this.refreshStaleEntries().catch((e) => {
+          // Log but don't die - keep the refresh loop running
+          console.warn("Unexpected error in cache refresh loop:", e);
+        });
+      }, this.refreshIntervalSeconds * 1000);
 
-    // Don't block Node.js from exiting
-    if (this.refreshTimer.unref) {
-      this.refreshTimer.unref();
+      // Don't block Node.js from exiting
+      if (this.refreshTimer.unref) {
+        this.refreshTimer.unref();
+      }
     }
   }
 
@@ -313,4 +312,38 @@ export class Cache {
       }
     }
   }
+
+  configure(config: Omit<CacheConfig, "fetchFunc">): void {
+    this.stop();
+    this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
+    this.maxSize = config.maxSize ?? 100;
+    this.ttlSeconds = config.ttlSeconds ?? 5 * 60;
+  }
+}
+
+/**
+ * @internal
+ * Global singleton instance of PromptCache.
+ * Use configureGlobalPromptCache(), enableGlobalPromptCache(), or disableGlobalPromptCache() instead.
+ */
+export const promptCacheSingleton = new PromptCache();
+
+/**
+ * Configure the global prompt cache.
+ *
+ * This should be called before any cache instances are created.
+ *
+ * @param config - Cache configuration options
+ *
+ * @example
+ * ```typescript
+ * import { configureGlobalPromptCache } from 'langsmith';
+ *
+ * configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
+ * ```
+ */
+export function configureGlobalPromptCache(
+  config: Omit<CacheConfig, "fetchFunc">
+): void {
+  promptCacheSingleton.configure(config);
 }

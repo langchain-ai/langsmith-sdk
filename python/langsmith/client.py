@@ -97,7 +97,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith.cache import Cache
+from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)
@@ -702,7 +702,7 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        cache: Union[Cache, bool] = False,
+        disable_prompt_cache: bool = False,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -810,28 +810,26 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            cache: Configuration for caching.
+            disable_prompt_cache: Disable prompt caching for this client.
 
-                Can be:
+                By default, prompt caching is enabled globally using a singleton cache.
+                Set this to `True` to disable caching for this specific client instance.
 
-                - `True`: Enable caching with default settings
-                - `Cache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                To configure the global cache, use `configure_global_prompt_cache()`.
 
                 !!! example
 
                     ```python
-                    from langsmith import Client, Cache
+                    from langsmith import Client, configure_global_prompt_cache
 
-                    # Enable with defaults
-                    client = Client(cache=True)
+                    # Use default global cache
+                    client = Client()
 
-                    # Or use custom configuration
-                    my_cache = Cache(
-                        max_size=100,
-                        ttl_seconds=3600,  # 1 hour, or None for infinite TTL
-                    )
-                    client = Client(cache=my_cache)
+                    # Disable caching for this client
+                    client_no_cache = Client(disable_prompt_cache=True)
+
+                    # Configure global cache settings
+                    configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
                     ```
 
         Raises:
@@ -1043,11 +1041,10 @@ class Client:
 
         self._tracing_error_callback = tracing_error_callback
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[Cache] = Cache()
-        elif isinstance(cache, Cache):
-            self._cache = cache
+        # Initialize prompt cache
+        if not disable_prompt_cache:
+            # Use the global singleton instance
+            self._cache: Optional[PromptCache] = prompt_cache_singleton
         else:
             self._cache = None
 

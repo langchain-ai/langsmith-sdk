@@ -71,7 +71,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
-import { Cache } from "./utils/prompts_cache.js";
+import {
+  PromptCache,
+  promptCacheSingleton,
+} from "./utils/prompt_cache/index.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -147,7 +150,11 @@ export interface ClientConfig {
    * const client2 = new Client({ cache: myCache });
    * ```
    */
-  cache?: Cache | boolean;
+  /**
+   * Disable prompt caching for this client.
+   * By default, prompt caching is enabled globally.
+   */
+  disablePromptCache?: boolean;
 }
 
 /**
@@ -738,7 +745,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _cache?: Cache;
+  private _cache?: PromptCache;
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -816,13 +823,10 @@ export class Client implements LangSmithTracingClientInterface {
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
-    // Initialize cache
-    if (config.cache === true) {
-      this._cache = new Cache();
-    } else if (config.cache && typeof config.cache === "object") {
-      this._cache = config.cache;
-    } else {
-      this._cache = undefined;
+    // Initialize prompt cache
+    if (!config.disablePromptCache) {
+      // Use the global singleton instance
+      this._cache = promptCacheSingleton;
     }
   }
 
@@ -5646,7 +5650,7 @@ export class Client implements LangSmithTracingClientInterface {
    * Get the cache instance, if caching is enabled.
    * Useful for accessing cache metrics or manually managing the cache.
    */
-  get cache(): Cache | undefined {
+  get cache(): PromptCache | undefined {
     return this._cache;
   }
 

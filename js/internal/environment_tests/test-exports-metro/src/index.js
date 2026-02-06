@@ -11,21 +11,24 @@
  * Note: Cache dump/load are not supported in React Native.
  */
 
-import { Client, Cache } from "langsmith";
+import { Client, PromptCache } from "langsmith";
 
 // Export to prevent tree-shaking
-export { Client, Cache };
+export { Client, PromptCache };
 
 // Simple test that instantiation works
 export function testExports() {
   const client = new Client({ apiKey: "test-key" });
 
   // Test Cache - in-memory caching works in React Native
-  const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
+  const cache = new PromptCache({ maxSize: 100, ttlSeconds: 3600 });
   cache.stop();
 
   // Test Client with cache enabled
-  const clientWithCache = new Client({ apiKey: "test-key", cache: true });
+  const clientWithCache = new Client({
+    apiKey: "test-key",
+    disablePromptCache: false,
+  });
 
   return { client, cache, clientWithCache };
 }

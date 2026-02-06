@@ -3,7 +3,7 @@
  * Tests that public API works correctly in ES module environments.
  */
 
-import { Client, Cache } from "langsmith";
+import { Client, PromptCache } from "langsmith";
 import { RunTree } from "langsmith/run_trees";
 import { traceable } from "langsmith/traceable";
 
@@ -23,12 +23,15 @@ async function testExports() {
   console.log("✓ traceable imported successfully");
 
   // Test Cache import and instantiation
-  const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
+  const cache = new PromptCache({ maxSize: 100, ttlSeconds: 3600 });
   console.log("✓ Cache imported and instantiated");
   cache.stop();
 
   // Test Client with cache
-  const clientWithCache = new Client({ apiKey: "test-key", cache: true });
+  const clientWithCache = new Client({
+    apiKey: "test-key",
+    disablePromptCache: false,
+  });
   console.log("✓ Client with cache enabled");
   clientWithCache.cleanup();
 
