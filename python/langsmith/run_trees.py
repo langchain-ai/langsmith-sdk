@@ -1193,6 +1193,42 @@ class NonRecordingRunTree(RunTree):
         description="The trace id of the run.",
     )
 
+    @model_validator(mode="before")
+    def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Override to use placeholder values instead of generating real UUIDs."""
+        # Set placeholder UUID if not provided
+        if "id" not in values:
+            values["id"] = UUID("00000000-0000-0000-0000-000000000000")
+        if "trace_id" not in values:
+            values["trace_id"] = UUID("00000000-0000-0000-0000-000000000000")
+        if "name" not in values:
+            values["name"] = ""
+        if "session_name" not in values and "project_name" not in values:
+            values["session_name"] = ""
+        if "dotted_order" not in values:
+            values["dotted_order"] = ""
+
+        # Initialize other fields with empty defaults
+        cast(dict, values.setdefault("extra", {}))
+        if values.get("events") is None:
+            values["events"] = []
+        if values.get("tags") is None:
+            values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
+        if values.get("inputs") is None:
+            values["inputs"] = {}
+        if values.get("attachments") is None:
+            values["attachments"] = {}
+
+        return values
+
+    @model_validator(mode="after")
+    def ensure_dotted_order(self) -> NonRecordingRunTree:
+        """Override to skip dotted order generation for non-recording runs."""
+        # Don't generate dotted order for non-recording runs
+        return self
+
     def __repr__(self) -> str:
         """Return string representation of NonRecordingRunTree."""
         return "NonRecordingRunTree()"
