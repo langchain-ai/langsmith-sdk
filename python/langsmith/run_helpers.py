@@ -69,7 +69,7 @@ _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
 _OTEL_AVAILABLE: Optional[bool] = None
 
 
-def get_current_run_tree() -> Union[run_trees.RunTree, run_trees.NonRecordingRunTree]:
+def get_current_run_tree() -> run_trees.RunTree:
     """Get the current run tree.
 
     Returns the active run tree if inside a traced context, otherwise returns
