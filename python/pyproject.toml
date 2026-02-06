@@ -90,7 +90,7 @@ dev = [
     "pyperf>=2.7.0",
     "py-spy>=0.3.14",
     "multipart>=1.0.0",
-    "httpx>=0.23.0,<0.28.0",
+    "httpx>=0.23.0,<0.29.0",
     "rich>=13.9.4",
     "pytest-retry>=1.7.0",
     "pytest-dotenv>=0.5.2",
@@ -106,7 +106,7 @@ dev = [
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.10",
+    "ty==0.0.15",
     "pytest-httpx>=0.30.0",
 ]
 
