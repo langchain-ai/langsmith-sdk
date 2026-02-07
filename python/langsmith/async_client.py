@@ -421,7 +421,7 @@ class AsyncClient:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
-            "limit": limit,
+            "limit": min(limit, 100) if limit is not None else 100,
             **kwargs,
         }
         if project_ids:
