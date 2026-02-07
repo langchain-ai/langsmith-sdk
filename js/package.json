@@ -445,6 +445,7 @@
     "./package.json": "./package.json"
   },
   "resolutions": {
+    "js-yaml": "^4.1.1",
     "rimraf/**/glob": "10.5.0"
   },
   "browser": {
