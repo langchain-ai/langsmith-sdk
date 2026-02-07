@@ -917,6 +917,10 @@ class RunTree(ls_schemas.RunBase):
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
         )
 
+    def is_recording(self) -> bool:
+        """Return True since this RunTree records data."""
+        return True
+
 
 class _Baggage:
     """Baggage header information."""
@@ -1150,7 +1154,7 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
 
 
 _CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
-__all__ = ["RunTree", "RunTree"]
+__all__ = ["RunTree", "NonRecordingRunTree"]
 
 
 def _create_current_dotted_order(
@@ -1160,3 +1164,176 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
+
+
+class NonRecordingRunTree(RunTree):
+    """A run tree that does not record any data.
+
+    This is returned by `get_current_run_tree()` when there is no active trace.
+    It inherits from RunTree but overrides all recording methods to be no-ops.
+
+    This allows code to unconditionally call methods like `add_metadata()` without
+    checking if tracing is enabled.
+
+    Use `is_recording()` to check if the run tree is actually recording data.
+    """
+
+    # Override RunTree fields with non-recording defaults
+    name: str = Field(default="")
+    id: UUID = Field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    session_name: str = Field(default="", alias="project_name")
+    dotted_order: str = Field(
+        default="", description="The order of the run in the tree."
+    )
+    trace_id: UUID = Field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"),
+        description="The trace id of the run.",
+    )
+
+    @model_validator(mode="before")
+    def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Override to use placeholder values instead of generating real UUIDs."""
+        # Set placeholder UUID if not provided
+        if "id" not in values:
+            values["id"] = UUID("00000000-0000-0000-0000-000000000000")
+        if "trace_id" not in values:
+            values["trace_id"] = UUID("00000000-0000-0000-0000-000000000000")
+        if "name" not in values:
+            values["name"] = ""
+        if "session_name" not in values and "project_name" not in values:
+            values["session_name"] = ""
+        if "dotted_order" not in values:
+            values["dotted_order"] = ""
+
+        # Initialize other fields with empty defaults
+        cast(dict, values.setdefault("extra", {}))
+        if values.get("events") is None:
+            values["events"] = []
+        if values.get("tags") is None:
+            values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
+        if values.get("inputs") is None:
+            values["inputs"] = {}
+        if values.get("attachments") is None:
+            values["attachments"] = {}
+
+        return values
+
+    @model_validator(mode="after")
+    def ensure_dotted_order(self) -> NonRecordingRunTree:
+        """Override to skip dotted order generation for non-recording runs."""
+        # Don't generate dotted order for non-recording runs
+        return self
+
+    def __repr__(self) -> str:
+        """Return string representation of NonRecordingRunTree."""
+        return "NonRecordingRunTree()"
+
+    def is_recording(self) -> bool:
+        """Return False since this RunTree does not record data.
+
+        Overrides RunTree.is_recording() to indicate no recording is happening.
+        """
+        return False
+
+    def set(
+        self,
+        *,
+        inputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        tags: Optional[Sequence[str]] = NOT_PROVIDED,
+        metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        usage_metadata: Optional[ls_schemas.ExtractedUsageMetadata] = NOT_PROVIDED,
+    ) -> None:
+        """No-op."""
+        pass
+
+    def add_tags(self, tags: Union[Sequence[str], str]) -> None:
+        """No-op."""
+        pass
+
+    def add_metadata(self, metadata: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_outputs(self, outputs: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_inputs(self, inputs: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_event(
+        self,
+        events: Union[
+            ls_schemas.RunEvent,
+            Sequence[ls_schemas.RunEvent],
+            Sequence[dict],
+            dict,
+            str,
+        ],
+    ) -> None:
+        """No-op."""
+        pass
+
+    def end(
+        self,
+        *,
+        outputs: Optional[dict] = None,
+        error: Optional[str] = None,
+        end_time: Optional[datetime] = None,
+        events: Optional[Sequence[ls_schemas.RunEvent]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """No-op."""
+        pass
+
+    def create_child(
+        self,
+        name: str,
+        run_type: RUN_TYPE_T = "chain",
+        *,
+        run_id: Optional[ID_TYPE] = None,
+        serialized: Optional[dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        error: Optional[str] = None,
+        reference_example_id: Optional[UUID] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        tags: Optional[list[str]] = None,
+        extra: Optional[dict] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+    ) -> NonRecordingRunTree:
+        """Return self (no child creation)."""
+        return self
+
+    def post(self, exclude_child_runs: bool = True) -> None:
+        """No-op."""
+        pass
+
+    def patch(self, *, exclude_inputs: bool = False) -> None:
+        """No-op."""
+        pass
+
+    def wait(self) -> None:
+        """No-op."""
+        pass
+
+    def get_url(self) -> str:
+        """Return an empty URL."""
+        return ""
+
+    def to_headers(self) -> dict[str, str]:
+        """Return an empty dict since non-recording runs don't propagate context."""
+        return {}
+
+    @functools.cached_property
+    def trace_start_time(self) -> datetime:
+        """Return current time as placeholder."""
+        return datetime.now(timezone.utc)

@@ -22,7 +22,10 @@ if TYPE_CHECKING:
         traceable,
         tracing_context,
     )
-    from langsmith.run_trees import RunTree, configure
+    from langsmith.run_trees import (
+        RunTree,
+        configure,
+    )
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
     from langsmith.uuid import uuid7, uuid7_from_datetime
