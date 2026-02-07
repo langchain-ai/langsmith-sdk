@@ -5,6 +5,9 @@ on:
     paths:
       - "python/langsmith/**"
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
