@@ -53,13 +53,14 @@ class TestCacheBasic:
     def test_get_set_basic(self, sample_prompt_commit):
         """Test basic get/set operations."""
         cache = PromptCache(max_size=100)
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
             # Initially empty
-            assert cache.get("test-key") is None
+            assert cache.get("test-key", mock_refresh) is None
 
             # Set and get
-            cache.set("test-key", sample_prompt_commit)
-            result = cache.get("test-key")
+            cache.set("test-key", sample_prompt_commit, mock_refresh)
+            result = cache.get("test-key", mock_refresh)
 
             assert result is not None
             assert result.owner == "test-owner"
@@ -71,27 +72,29 @@ class TestCacheBasic:
     def test_invalidate(self, sample_prompt_commit):
         """Test cache invalidation."""
         cache = PromptCache()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("test-key", sample_prompt_commit)
-            assert cache.get("test-key") is not None
+            cache.set("test-key", sample_prompt_commit, mock_refresh)
+            assert cache.get("test-key", mock_refresh) is not None
 
             cache.invalidate("test-key")
-            assert cache.get("test-key") is None
+            assert cache.get("test-key", mock_refresh) is None
         finally:
             cache.shutdown()
 
     def test_clear(self, sample_prompt_commit):
         """Test clearing entire cache."""
         cache = PromptCache()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("key1", sample_prompt_commit)
-            cache.set("key2", sample_prompt_commit)
-            assert cache.get("key1") is not None
-            assert cache.get("key2") is not None
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.set("key2", sample_prompt_commit, mock_refresh)
+            assert cache.get("key1", mock_refresh) is not None
+            assert cache.get("key2", mock_refresh) is not None
 
             cache.clear()
-            assert cache.get("key1") is None
-            assert cache.get("key2") is None
+            assert cache.get("key1", mock_refresh) is None
+            assert cache.get("key2", mock_refresh) is None
         finally:
             cache.shutdown()
 
@@ -102,41 +105,43 @@ class TestCacheLRU:
     def test_lru_eviction(self, sample_prompt_commit):
         """Test that LRU eviction works when max_size is exceeded."""
         cache = PromptCache(max_size=3)
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
             # Fill cache to max
-            cache.set("key1", sample_prompt_commit)
-            cache.set("key2", sample_prompt_commit)
-            cache.set("key3", sample_prompt_commit)
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.set("key2", sample_prompt_commit, mock_refresh)
+            cache.set("key3", sample_prompt_commit, mock_refresh)
 
             # All should be present
-            assert cache.get("key1") is not None
-            assert cache.get("key2") is not None
-            assert cache.get("key3") is not None
+            assert cache.get("key1", mock_refresh) is not None
+            assert cache.get("key2", mock_refresh) is not None
+            assert cache.get("key3", mock_refresh) is not None
 
             # Add one more - key1 should be evicted (oldest)
-            cache.set("key4", sample_prompt_commit)
+            cache.set("key4", sample_prompt_commit, mock_refresh)
 
             # key1 was accessed most recently due to get() above,
             # but let's test the actual behavior
-            assert cache.get("key4") is not None
+            assert cache.get("key4", mock_refresh) is not None
         finally:
             cache.shutdown()
 
     def test_lru_access_updates_order(self, sample_prompt_commit):
         """Test that accessing an entry updates its position in LRU."""
         cache = PromptCache(max_size=2)
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("key1", sample_prompt_commit)
-            cache.set("key2", sample_prompt_commit)
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.set("key2", sample_prompt_commit, mock_refresh)
 
             # Access key1 to make it most recently used
-            cache.get("key1")
+            cache.get("key1", mock_refresh)
 
             # Add key3 - key2 should be evicted (now oldest)
-            cache.set("key3", sample_prompt_commit)
+            cache.set("key3", sample_prompt_commit, mock_refresh)
 
-            assert cache.get("key1") is not None  # Still present
-            assert cache.get("key3") is not None  # Present
+            assert cache.get("key1", mock_refresh) is not None  # Still present
+            assert cache.get("key3", mock_refresh) is not None  # Present
             # key2 was evicted
         finally:
             cache.shutdown()
@@ -187,27 +192,28 @@ class TestCacheBackgroundRefresh:
             assert call_count[0] > 0
 
             # Stale data should still be served
-            result = cache.get("test-key")
+            result = cache.get("test-key", failing_fetch)
             assert result is not None
             assert result.owner == "test-owner"
         finally:
             cache.shutdown()
 
     def test_no_refresh_without_fetch_func(self, sample_prompt_commit):
-        """Test that no background refresh happens without fetch_func."""
+        """Test that no background refresh happens without refresh_func on entry."""
         cache = PromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
-            # No fetch_func
         )
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("test-key", sample_prompt_commit)
+            # Set without refresh_func by passing a no-op that won't be called
+            cache.set("test-key", sample_prompt_commit, mock_refresh)
 
             # Wait - should not crash
             time.sleep(0.3)
 
             # Data should still be there
-            result = cache.get("test-key")
+            result = cache.get("test-key", mock_refresh)
             assert result is not None
         finally:
             cache.shutdown()
@@ -240,8 +246,9 @@ class TestCacheThreadSafety:
     def test_concurrent_reads(self, sample_prompt_commit):
         """Test concurrent read operations."""
         cache = PromptCache()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("test-key", sample_prompt_commit)
+            cache.set("test-key", sample_prompt_commit, mock_refresh)
 
             results = []
             errors = []
@@ -249,7 +256,7 @@ class TestCacheThreadSafety:
             def read_cache():
                 try:
                     for _ in range(100):
-                        result = cache.get("test-key")
+                        result = cache.get("test-key", mock_refresh)
                         results.append(result is not None)
                 except Exception as e:
                     errors.append(e)
@@ -268,13 +275,16 @@ class TestCacheThreadSafety:
     def test_concurrent_writes(self, sample_prompt_commit):
         """Test concurrent write operations."""
         cache = PromptCache(max_size=1000)
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
             errors = []
 
             def write_cache(thread_id):
                 try:
                     for i in range(50):
-                        cache.set(f"key-{thread_id}-{i}", sample_prompt_commit)
+                        cache.set(
+                            f"key-{thread_id}-{i}", sample_prompt_commit, mock_refresh
+                        )
                 except Exception as e:
                     errors.append(e)
 
@@ -338,7 +348,7 @@ class TestAsyncCache:
             assert call_count[0] > 0
 
             # Stale data should still be served
-            result = cache.get("test-key")
+            result = cache.get("test-key", failing_fetch)
             assert result is not None
             assert result.owner == "test-owner"
         finally:
@@ -367,17 +377,16 @@ class TestAsyncCache:
 
     @pytest.mark.asyncio
     async def test_start_without_fetch_func(self, sample_prompt_commit):
-        """Test that start() is a no-op without fetch_func."""
+        """Test that start() with no entries starts task but it remains idle."""
         cache = AsyncPromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
-            # No fetch_func
         )
 
         await cache.start()
-
-        # No task should be created
-        assert cache._refresh_task is None
+        # Task should be started (lazy start no longer applies to explicit start())
+        assert cache._refresh_task is not None
+        assert not cache._refresh_task.done()
 
         # Should not crash
         await cache.stop()
@@ -386,17 +395,18 @@ class TestAsyncCache:
     async def test_basic_operations(self, sample_prompt_commit):
         """Test basic get/set operations work without starting refresh."""
         cache = AsyncPromptCache()
+        mock_refresh = AsyncMock(return_value=sample_prompt_commit)
 
         # Set and get
-        await cache.aset("test-key", sample_prompt_commit)
-        result = cache.get("test-key")
+        await cache.aset("test-key", sample_prompt_commit, mock_refresh)
+        result = cache.get("test-key", mock_refresh)
 
         assert result is not None
         assert result.owner == "test-owner"
 
         # Invalidate
         cache.invalidate("test-key")
-        assert cache.get("test-key") is None
+        assert cache.get("test-key", mock_refresh) is None
 
 
 class TestCachePersistence:
@@ -405,12 +415,13 @@ class TestCachePersistence:
     def test_dump_and_load(self, sample_prompt_commit, tmp_path):
         """Test dumping and loading cache to/from file."""
         cache_file = tmp_path / "cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Create cache and add entries
         cache1 = PromptCache()
         try:
-            cache1.set("prompt1", sample_prompt_commit)
-            cache1.set("prompt2", sample_prompt_commit)
+            cache1.set("prompt1", sample_prompt_commit, mock_refresh)
+            cache1.set("prompt2", sample_prompt_commit, mock_refresh)
 
             # Dump to file
             cache1.dump(cache_file)
@@ -427,14 +438,14 @@ class TestCachePersistence:
 
             assert loaded == 2
 
-            # Verify data
-            result1 = cache2.get("prompt1")
+            # Verify data (need to pass refresh_func to get)
+            result1 = cache2.get("prompt1", mock_refresh)
             assert result1 is not None
             assert result1.owner == "test-owner"
             assert result1.repo == "test-prompt"
             assert result1.commit_hash == "abc123"
 
-            result2 = cache2.get("prompt2")
+            result2 = cache2.get("prompt2", mock_refresh)
             assert result2 is not None
         finally:
             cache2.shutdown()
@@ -463,12 +474,13 @@ class TestCachePersistence:
     def test_load_respects_max_size(self, sample_prompt_commit, tmp_path):
         """Test that load respects max_size limit."""
         cache_file = tmp_path / "cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Create cache with many entries
         cache1 = PromptCache(max_size=100)
         try:
             for i in range(10):
-                cache1.set(f"prompt{i}", sample_prompt_commit)
+                cache1.set(f"prompt{i}", sample_prompt_commit, mock_refresh)
             cache1.dump(cache_file)
         finally:
             cache1.shutdown()
@@ -484,10 +496,11 @@ class TestCachePersistence:
     def test_dump_creates_parent_dirs(self, sample_prompt_commit, tmp_path):
         """Test that dump creates parent directories if needed."""
         cache_file = tmp_path / "nested" / "dir" / "cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         cache = PromptCache()
         try:
-            cache.set("prompt1", sample_prompt_commit)
+            cache.set("prompt1", sample_prompt_commit, mock_refresh)
             cache.dump(cache_file)
         finally:
             cache.shutdown()
@@ -497,11 +510,12 @@ class TestCachePersistence:
     def test_load_gives_fresh_ttl(self, sample_prompt_commit, tmp_path):
         """Test that loaded entries get fresh TTL."""
         cache_file = tmp_path / "cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Create and dump cache
         cache1 = PromptCache()
         try:
-            cache1.set("prompt1", sample_prompt_commit)
+            cache1.set("prompt1", sample_prompt_commit, mock_refresh)
             cache1.dump(cache_file)
         finally:
             cache1.shutdown()
@@ -510,7 +524,8 @@ class TestCachePersistence:
         cache2 = PromptCache(ttl_seconds=3600)
         try:
             cache2.load(cache_file)
-            stale_keys = cache2._get_stale_keys()
+            stale_entries = cache2._get_stale_entries()
+            stale_keys = [key for key, _ in stale_entries]
             assert "prompt1" not in stale_keys  # Fresh TTL, not stale
         finally:
             cache2.shutdown()
@@ -518,17 +533,18 @@ class TestCachePersistence:
     async def test_async_cache_dump_load(self, sample_prompt_commit, tmp_path):
         """Test that AsyncCache can also dump/load."""
         cache_file = tmp_path / "async_cache.json"
+        mock_refresh = AsyncMock(return_value=sample_prompt_commit)
 
         # dump/load are inherited from base class
         cache1 = AsyncPromptCache()
-        await cache1.aset("prompt1", sample_prompt_commit)
+        await cache1.aset("prompt1", sample_prompt_commit, mock_refresh)
         cache1.dump(cache_file)
 
         cache2 = AsyncPromptCache()
         loaded = cache2.load(cache_file)
 
         assert loaded == 1
-        assert cache2.get("prompt1") is not None
+        assert cache2.get("prompt1", mock_refresh) is not None
 
 
 class TestOfflineMode:
@@ -537,18 +553,19 @@ class TestOfflineMode:
     def test_infinite_ttl_never_stale(self, sample_prompt_commit):
         """Test that entries with ttl_seconds=None are never stale."""
         cache = PromptCache(ttl_seconds=None)
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("prompt1", sample_prompt_commit)
+            cache.set("prompt1", sample_prompt_commit, mock_refresh)
 
             # Manually set old timestamp
             cache._cache["prompt1"].created_at = time.time() - 1000000
 
             # Should still not be stale
-            stale_keys = cache._get_stale_keys()
-            assert "prompt1" not in stale_keys
+            stale_entries = cache._get_stale_entries()
+            assert "prompt1" not in [key for key, _ in stale_entries]
 
             # Should still be retrievable
-            assert cache.get("prompt1") is not None
+            assert cache.get("prompt1", mock_refresh) is not None
         finally:
             cache.shutdown()
 
@@ -574,12 +591,13 @@ class TestOfflineMode:
     def test_offline_workflow(self, sample_prompt_commit, tmp_path):
         """Test full offline workflow: dump online, load offline."""
         cache_file = tmp_path / "offline_cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Online: populate and dump cache
         online_cache = PromptCache(ttl_seconds=3600)
         try:
-            online_cache.set("prompt1", sample_prompt_commit)
-            online_cache.set("prompt2", sample_prompt_commit)
+            online_cache.set("prompt1", sample_prompt_commit, mock_refresh)
+            online_cache.set("prompt2", sample_prompt_commit, mock_refresh)
             online_cache.dump(cache_file)
         finally:
             online_cache.shutdown()
@@ -591,8 +609,8 @@ class TestOfflineMode:
             assert loaded == 2
 
             # Entries work and never expire
-            assert offline_cache.get("prompt1") is not None
-            assert offline_cache.get("prompt2") is not None
+            assert offline_cache.get("prompt1", mock_refresh) is not None
+            assert offline_cache.get("prompt2", mock_refresh) is not None
 
             # No refresh thread
             assert offline_cache._refresh_thread is None
@@ -635,24 +653,25 @@ class TestCacheMetrics:
     def test_hit_miss_tracking(self, sample_prompt_commit):
         """Test that hits and misses are tracked correctly."""
         cache = PromptCache()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
             # Miss on empty cache
-            cache.get("key1")
+            cache.get("key1", mock_refresh)
             assert cache.metrics.misses == 1
             assert cache.metrics.hits == 0
 
             # Set and hit
-            cache.set("key1", sample_prompt_commit)
-            cache.get("key1")
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.get("key1", mock_refresh)
             assert cache.metrics.hits == 1
             assert cache.metrics.misses == 1
 
             # Another hit
-            cache.get("key1")
+            cache.get("key1", mock_refresh)
             assert cache.metrics.hits == 2
 
             # Another miss
-            cache.get("key2")
+            cache.get("key2", mock_refresh)
             assert cache.metrics.misses == 2
 
             # Verify totals
@@ -704,10 +723,11 @@ class TestCacheMetrics:
     def test_reset_metrics(self, sample_prompt_commit):
         """Test that metrics can be reset."""
         cache = PromptCache()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
         try:
-            cache.set("key1", sample_prompt_commit)
-            cache.get("key1")
-            cache.get("key2")
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.get("key1", mock_refresh)
+            cache.get("key2", mock_refresh)
 
             assert cache.metrics.hits == 1
             assert cache.metrics.misses == 1
@@ -731,12 +751,12 @@ class TestCacheMetrics:
         )
         try:
             # Miss
-            cache.get("key1")
+            cache.get("key1", mock_fetch)
             assert cache.metrics.misses == 1
 
             # Set and hit
             await cache.aset("key1", sample_prompt_commit, mock_fetch)
-            cache.get("key1")
+            cache.get("key1", mock_fetch)
             assert cache.metrics.hits == 1
 
             # Wait for refresh
@@ -772,17 +792,18 @@ class TestGlobalSingleton:
         assert prompt_cache_singleton is singleton2
 
     def test_client_uses_singleton_by_default(self):
-        """Test that Client can enable caching."""
+        """Test that Client uses singleton by default."""
         from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
 
-        client = Client(api_key="test-key", cache=True)
-        assert client._cache is not None
+        client = Client(api_key="test-key")
+        assert client._cache is prompt_cache_singleton
 
     def test_client_can_disable_cache(self):
         """Test that Client can disable caching."""
         from langsmith.client import Client
 
-        client = Client(api_key="test-key", cache=False)
+        client = Client(api_key="test-key", disable_prompt_cache=True)
         assert client._cache is None
 
     def test_async_client_uses_singleton_by_default(self):
@@ -825,67 +846,78 @@ class TestGlobalSingleton:
             )
 
     def test_multiple_clients_share_singleton(self, sample_prompt_commit):
-        """Test that multiple clients can use a shared cache instance."""
+        """Test that multiple clients share the same singleton cache."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import PromptCache
+        from langsmith.prompt_cache import prompt_cache_singleton
 
-        shared_cache = PromptCache()
-
-        client1 = Client(api_key="test-key-1", cache=shared_cache)
-        client2 = Client(api_key="test-key-2", cache=shared_cache)
+        client1 = Client(api_key="test-key-1")
+        client2 = Client(api_key="test-key-2")
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Both should use the same cache
         assert client1._cache is client2._cache
-        assert client1._cache is shared_cache
+        assert client1._cache is prompt_cache_singleton
 
-        # Set a value through cache
-        shared_cache.set("shared-key", sample_prompt_commit)
+        # Set a value through singleton
+        prompt_cache_singleton.set("shared-key", sample_prompt_commit, mock_refresh)
 
         # Both clients should see it
-        assert shared_cache.get("shared-key") is not None
+        assert prompt_cache_singleton.get("shared-key", mock_refresh) is not None
 
     def test_configure_after_clients_created(self, sample_prompt_commit):
-        """Test that shared cache can be configured."""
+        """Test that singleton can be configured after clients are created."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import PromptCache
+        from langsmith.prompt_cache import (
+            configure_global_prompt_cache,
+            prompt_cache_singleton,
+        )
 
-        shared_cache = PromptCache(max_size=100, ttl_seconds=300)
-
-        # Create clients with shared cache
-        client1 = Client(api_key="test-key-1", cache=shared_cache)
-        client2 = Client(api_key="test-key-2", cache=shared_cache)
-
-        # Configure cache
-        shared_cache.configure(max_size=200, ttl_seconds=7200)
-
-        # Both clients should see new config (same cache instance)
-        assert client1._cache._max_size == 200
-        assert client1._cache._ttl_seconds == 7200
-        assert client2._cache._max_size == 200
-        assert client2._cache._ttl_seconds == 7200
-
-        # Verify it's the same object
-        assert client1._cache is client2._cache
-        assert client1._cache is shared_cache
-
-    def test_shared_metrics_across_clients(self, sample_prompt_commit):
-        """Test that metrics are shared across clients using same cache."""
-        from langsmith.client import Client
-        from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
-
-        shared_cache = PromptCache()
-        shared_cache.clear()
-        shared_cache.reset_metrics()
+        # Get initial values
+        initial_max_size = prompt_cache_singleton._max_size
+        initial_ttl = prompt_cache_singleton._ttl_seconds
 
         try:
-            client1 = Client(api_key="test-key-1", cache=shared_cache)
-            client2 = Client(api_key="test-key-2", cache=shared_cache)
+            # Create clients
+            client1 = Client(api_key="test-key-1")
+            client2 = Client(api_key="test-key-2")
+
+            # Configure singleton
+            configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+
+            # Both clients should see new config (same singleton)
+            assert client1._cache._max_size == 200
+            assert client1._cache._ttl_seconds == 7200
+            assert client2._cache._max_size == 200
+            assert client2._cache._ttl_seconds == 7200
+
+            # Verify it's the same object
+            assert client1._cache is client2._cache
+            assert client1._cache is prompt_cache_singleton
+        finally:
+            # Restore
+            configure_global_prompt_cache(
+                max_size=initial_max_size, ttl_seconds=initial_ttl
+            )
+
+    def test_shared_metrics_across_clients(self, sample_prompt_commit):
+        """Test that metrics are shared across clients using singleton."""
+        from langsmith.client import Client
+        from langsmith.prompt_cache import prompt_cache_singleton
+
+        # Clean up singleton state
+        prompt_cache_singleton.clear()
+        prompt_cache_singleton.reset_metrics()
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
+
+        try:
+            client1 = Client(api_key="test-key-1")
+            client2 = Client(api_key="test-key-2")
 
             # Client 1 sets a value
-            client1._cache.set("key1", sample_prompt_commit)
+            client1._cache.set("key1", sample_prompt_commit, mock_refresh)
 
             # Client 2 gets the value (hit)
-            result = client2._cache.get("key1")
+            result = client2._cache.get("key1", mock_refresh)
             assert result is not None
 
             # Metrics should be shared
@@ -894,7 +926,7 @@ class TestGlobalSingleton:
             assert client1._cache.metrics is client2._cache.metrics
 
             # Client 1 misses
-            client1._cache.get("missing-key")
+            client1._cache.get("missing-key", mock_refresh)
 
             # Client 2 should see the miss
             assert client2._cache.metrics.misses == 1
@@ -912,12 +944,8 @@ class TestGlobalSingleton:
         prompt_cache_singleton.clear()
         prompt_cache_singleton.reset_metrics()
         prompt_cache_singleton.shutdown()
+        mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
-        def mock_fetch(key):
-            return sample_prompt_commit
-
-        # Create singleton with fetch func
-        prompt_cache_singleton._fetch_func = mock_fetch
         prompt_cache_singleton._ttl_seconds = 10
 
         try:
@@ -926,8 +954,8 @@ class TestGlobalSingleton:
             client2 = Client(api_key="test-key-2")
             client3 = Client(api_key="test-key-3")
 
-            # Trigger thread start via any client
-            client1._cache.set("key1", sample_prompt_commit)
+            # Trigger thread start via any client (pass refresh_func per entry)
+            client1._cache.set("key1", sample_prompt_commit, mock_fetch)
 
             # Should only be ONE thread
             assert client1._cache._refresh_thread is not None
@@ -939,7 +967,6 @@ class TestGlobalSingleton:
             assert thread.is_alive()
 
         finally:
-            prompt_cache_singleton._fetch_func = None
             prompt_cache_singleton.shutdown()
             prompt_cache_singleton.clear()
             prompt_cache_singleton.reset_metrics()
@@ -950,6 +977,7 @@ class TestGlobalSingleton:
         from langsmith.prompt_cache import prompt_cache_singleton
 
         cache_file = tmp_path / "singleton_cache.json"
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
 
         # Clean up singleton state
         prompt_cache_singleton.clear()
@@ -959,8 +987,8 @@ class TestGlobalSingleton:
             client1 = Client(api_key="test-key-1")
 
             # Client sets some values
-            client1._cache.set("prompt1", sample_prompt_commit)
-            client1._cache.set("prompt2", sample_prompt_commit)
+            client1._cache.set("prompt1", sample_prompt_commit, mock_refresh)
+            client1._cache.set("prompt2", sample_prompt_commit, mock_refresh)
 
             # Dump via singleton
             prompt_cache_singleton.dump(cache_file)
@@ -973,8 +1001,8 @@ class TestGlobalSingleton:
 
             # New client should see loaded values
             client2 = Client(api_key="test-key-2")
-            assert client2._cache.get("prompt1") is not None
-            assert client2._cache.get("prompt2") is not None
+            assert client2._cache.get("prompt1", mock_refresh) is not None
+            assert client2._cache.get("prompt2", mock_refresh) is not None
 
         finally:
             prompt_cache_singleton.clear()
@@ -1039,10 +1067,11 @@ class TestGlobalSingleton:
             assert client1._cache is async_prompt_cache_singleton
 
             # Client 1 sets a value
-            await client1._cache.aset("key1", sample_prompt_commit)
+            mock_refresh = AsyncMock(return_value=sample_prompt_commit)
+            await client1._cache.aset("key1", sample_prompt_commit, mock_refresh)
 
             # Client 2 should see it
-            result = client2._cache.get("key1")
+            result = client2._cache.get("key1", mock_refresh)
             assert result is not None
             assert result.owner == "test-owner"
 
@@ -1070,10 +1099,9 @@ class TestLazyInitialization:
             cache.shutdown()
 
     def test_thread_starts_on_first_set_with_fetch_func(self):
-        """Test that background thread starts on first set
-        when fetch_func is provided."""
+        """Test that background thread starts on first set."""
 
-        def mock_fetch(key):
+        def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test",
                 repo="test",
@@ -1082,7 +1110,7 @@ class TestLazyInitialization:
                 examples=[],
             )
 
-        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = PromptCache(ttl_seconds=10)
         try:
             # Thread should be None before first set
             assert cache._refresh_thread is None
@@ -1091,7 +1119,7 @@ class TestLazyInitialization:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            cache.set("test-key", prompt)
+            cache.set("test-key", prompt, mock_fetch)
 
             # Thread should now be started
             assert cache._refresh_thread is not None
@@ -1100,33 +1128,35 @@ class TestLazyInitialization:
             cache.shutdown()
 
     def test_thread_not_started_without_fetch_func(self):
-        """Test that thread doesn't start without fetch_func even after set."""
+        """Test that thread starts even without using refresh_func
+        (it just won't refresh anything)."""
         cache = PromptCache(ttl_seconds=10)
+        mock_fetch = MagicMock()
         try:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            cache.set("test-key", prompt)
+            cache.set("test-key", prompt, mock_fetch)
 
-            # Thread should still be None (no fetch_func)
-            assert cache._refresh_thread is None
+            # Thread should be started (lazy start happens on first set)
+            assert cache._refresh_thread is not None
         finally:
             cache.shutdown()
 
     def test_thread_not_started_with_infinite_ttl(self):
         """Test that thread doesn't start with infinite TTL (None)."""
 
-        def mock_fetch(key):
+        def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=None)
+        cache = PromptCache(ttl_seconds=None)
         try:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            cache.set("test-key", prompt)
+            cache.set("test-key", prompt, mock_fetch)
 
             # Thread should not start with infinite TTL
             assert cache._refresh_thread is None
@@ -1136,18 +1166,18 @@ class TestLazyInitialization:
     def test_configure_stops_and_restarts_thread(self):
         """Test that configure stops existing thread and can restart it."""
 
-        def mock_fetch(key):
+        def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = PromptCache(ttl_seconds=10)
         try:
             # Trigger lazy start
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            cache.set("test-key", prompt)
+            cache.set("test-key", prompt, mock_fetch)
 
             # Thread should be running
             assert cache._refresh_thread is not None
@@ -1160,7 +1190,7 @@ class TestLazyInitialization:
             assert cache._refresh_thread is None
 
             # Set again to trigger restart
-            cache.set("test-key-2", prompt)
+            cache.set("test-key-2", prompt, mock_fetch)
 
             # New thread should be started (different from first)
             assert cache._refresh_thread is not None
@@ -1171,18 +1201,18 @@ class TestLazyInitialization:
     def test_shutdown_stops_thread(self):
         """Test that shutdown stops the background thread."""
 
-        def mock_fetch(key):
+        def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = PromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = PromptCache(ttl_seconds=10)
         try:
             # Trigger lazy start
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            cache.set("test-key", prompt)
+            cache.set("test-key", prompt, mock_fetch)
 
             # Thread should be running
             assert cache._refresh_thread is not None
@@ -1215,12 +1245,12 @@ class TestAsyncLazyInitialization:
     async def test_task_starts_on_first_set_with_fetch_func(self):
         """Test that background task starts on first set when fetch_func is provided."""
 
-        async def mock_fetch(key):
+        async def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = AsyncPromptCache(ttl_seconds=10)
         try:
             # Task should be None before first set
             assert cache._refresh_task is None
@@ -1229,7 +1259,7 @@ class TestAsyncLazyInitialization:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
             # Task should now be started
             assert cache._refresh_task is not None
@@ -1239,16 +1269,22 @@ class TestAsyncLazyInitialization:
 
     @pytest.mark.asyncio
     async def test_task_not_started_without_fetch_func(self):
-        """Test that task doesn't start without fetch_func even after set."""
+        """Test that task starts even with per-entry fetch_func (lazy start)."""
+
+        async def mock_fetch():
+            return ls_schemas.PromptCommit(
+                owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
+            )
+
         cache = AsyncPromptCache(ttl_seconds=10)
         try:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
-            # Task should still be None (no fetch_func)
-            assert cache._refresh_task is None
+            # Task should be started (lazy start happens on first set)
+            assert cache._refresh_task is not None
         finally:
             await cache.stop()
 
@@ -1256,17 +1292,17 @@ class TestAsyncLazyInitialization:
     async def test_task_not_started_with_infinite_ttl(self):
         """Test that task doesn't start with infinite TTL (None)."""
 
-        async def mock_fetch(key):
+        async def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=None)
+        cache = AsyncPromptCache(ttl_seconds=None)
         try:
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
             # Task should not start with infinite TTL
             assert cache._refresh_task is None
@@ -1277,18 +1313,18 @@ class TestAsyncLazyInitialization:
     async def test_configure_stops_and_restarts_task(self):
         """Test that configure stops existing task and can restart it."""
 
-        async def mock_fetch(key):
+        async def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = AsyncPromptCache(ttl_seconds=10)
         try:
             # Trigger lazy start
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
             # Task should be running
             assert cache._refresh_task is not None
@@ -1301,7 +1337,7 @@ class TestAsyncLazyInitialization:
             assert cache._refresh_task is None
 
             # Set again to trigger restart
-            await cache.aset("test-key-2", prompt)
+            await cache.aset("test-key-2", prompt, mock_fetch)
 
             # New task should be started
             assert cache._refresh_task is not None
@@ -1313,18 +1349,18 @@ class TestAsyncLazyInitialization:
     async def test_configure_stops_background_task(self):
         """Test that configure stops the background task like TypeScript."""
 
-        async def mock_fetch(key):
+        async def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = AsyncPromptCache(ttl_seconds=10)
         try:
             # Trigger task start
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
             # Task should be running
             assert cache._refresh_task is not None
@@ -1338,7 +1374,7 @@ class TestAsyncLazyInitialization:
             assert cache._refresh_task is None
 
             # Set again to restart with new config
-            await cache.aset("test-key-2", prompt)
+            await cache.aset("test-key-2", prompt, mock_fetch)
 
             # New task should be started
             assert cache._refresh_task is not None
@@ -1355,18 +1391,18 @@ class TestAsyncLazyInitialization:
     async def test_stop_cancels_task(self):
         """Test that stop cancels the background task."""
 
-        async def mock_fetch(key):
+        async def mock_fetch():
             return ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
 
-        cache = AsyncPromptCache(fetch_func=mock_fetch, ttl_seconds=10)
+        cache = AsyncPromptCache(ttl_seconds=10)
         try:
             # Trigger lazy start
             prompt = ls_schemas.PromptCommit(
                 owner="test", repo="test", commit_hash="abc", manifest={}, examples=[]
             )
-            await cache.aset("test-key", prompt)
+            await cache.aset("test-key", prompt, mock_fetch)
 
             # Task should be running
             assert cache._refresh_task is not None
