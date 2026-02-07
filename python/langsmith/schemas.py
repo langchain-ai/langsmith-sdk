@@ -1357,3 +1357,74 @@ class FeedbackFormula(FeedbackFormulaCreate):
     id: UUID
     created_at: datetime
     modified_at: datetime
+
+
+class Tool(BaseModel):
+    """Represents a Tool definition in the tool registry.
+
+    Tools are reusable function definitions that can be attached to prompts.
+    They define the schema (name, description, parameters) without the
+    actual implementation, which is provided at runtime.
+    """
+
+    id: UUID
+    """The unique identifier for the tool."""
+    tenant_id: UUID
+    """The tenant that owns this tool."""
+    name: str
+    """The display name of the tool."""
+    slug: str
+    """URL-safe identifier for the tool."""
+    description: str
+    """A description of what the tool does."""
+    parameters: dict[str, Any]
+    """JSON Schema defining the tool's input parameters."""
+    returns: Optional[dict[str, Any]] = None
+    """JSON Schema defining the tool's return value (optional)."""
+    metadata: Optional[dict[str, Any]] = None
+    """Additional metadata associated with the tool."""
+    created_at: datetime
+    """The timestamp when the tool was created."""
+    updated_at: datetime
+    """The timestamp when the tool was last updated."""
+
+
+class ToolCreate(BaseModel):
+    """Schema for creating a new tool."""
+
+    name: str
+    """The display name of the tool."""
+    slug: str
+    """URL-safe identifier for the tool."""
+    description: str
+    """A description of what the tool does."""
+    parameters: dict[str, Any]
+    """JSON Schema defining the tool's input parameters."""
+    returns: Optional[dict[str, Any]] = None
+    """JSON Schema defining the tool's return value (optional)."""
+    metadata: Optional[dict[str, Any]] = None
+    """Additional metadata associated with the tool."""
+
+
+class ToolUpdate(BaseModel):
+    """Schema for updating an existing tool."""
+
+    name: Optional[str] = None
+    """The display name of the tool."""
+    description: Optional[str] = None
+    """A description of what the tool does."""
+    parameters: Optional[dict[str, Any]] = None
+    """JSON Schema defining the tool's input parameters."""
+    returns: Optional[dict[str, Any]] = None
+    """JSON Schema defining the tool's return value (optional)."""
+    metadata: Optional[dict[str, Any]] = None
+    """Additional metadata associated with the tool."""
+
+
+class ListToolsResponse(BaseModel):
+    """Response for listing tools."""
+
+    tools: list[Tool]
+    """The list of tools."""
+    total: int
+    """The total number of tools matching the query."""

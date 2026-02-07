@@ -62,7 +62,7 @@ def test_cleanup_periodic_behavior():
         stale_span.end.assert_not_called()
 
 
-@patch("langsmith.utils.get_env_var")
+@patch("langsmith._internal.otel._otel_exporter.ls_utils.get_env_var")
 def test_env_var_ttl(mock_get_env_var):
     """Test TTL loading from environment variable with correct default."""
     with patch(
@@ -74,4 +74,4 @@ def test_env_var_ttl(mock_get_env_var):
         exporter = OTELExporter()
 
         assert exporter._span_ttl_seconds == 1800
-        mock_get_env_var.assert_called_with("OTEL_SPAN_TTL_SECONDS", default="3600")
+        mock_get_env_var.assert_any_call("OTEL_SPAN_TTL_SECONDS", default="3600")
