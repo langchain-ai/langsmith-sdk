@@ -473,45 +473,6 @@ def _hybrid_tracing_thread_handle_batch(
                     raise
 
 
-def _is_using_internal_otlp_provider(client: Client) -> bool:
-    """Check if client is using LangSmith's internal OTLP provider.
-
-    Returns True if using LangSmith's internal provider, False if user
-    provided their own.
-    """
-    if not hasattr(client, "otel_exporter") or client.otel_exporter is None:
-        return False
-
-    try:
-        # Use OpenTelemetry's standard API to get the global TracerProvider
-        # Check if OTEL is available
-        if not ls_utils.is_env_var_truish("OTEL_ENABLED"):
-            return False
-
-        # Get the global TracerProvider and check its resource attributes
-        from opentelemetry import trace  # type: ignore[import]
-
-        tracer_provider = trace.get_tracer_provider()
-        if hasattr(tracer_provider, "resource") and hasattr(
-            tracer_provider.resource, "attributes"
-        ):
-            is_internal = tracer_provider.resource.attributes.get(
-                "langsmith.internal_provider", False
-            )
-            logger.debug(
-                f"TracerProvider resource check: "
-                f"langsmith.internal_provider={is_internal}"
-            )
-            return is_internal
-
-        return False
-    except Exception as e:
-        logger.debug(
-            f"Could not determine TracerProvider type: {e}, assuming user-provided"
-        )
-        return False
-
-
 def get_size_limit_from_env() -> Optional[int]:
     size_limit_str = ls_utils.get_env_var(
         "BATCH_INGEST_SIZE_LIMIT",
