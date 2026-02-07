@@ -8,6 +8,9 @@ on:
       - "python/langsmith/**"
       - "python/bench/**"
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
