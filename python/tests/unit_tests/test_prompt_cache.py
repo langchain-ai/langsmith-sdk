@@ -152,17 +152,16 @@ class TestCacheBackgroundRefresh:
         cache = PromptCache(
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
-            fetch_func=mock_fetch,
         )
         try:
-            cache.set("test-key", sample_prompt_commit)
+            cache.set("test-key", sample_prompt_commit, mock_fetch)
 
             # Wait for entry to become stale and refresh to run
             time.sleep(0.5)
 
             # Fetch should have been called
             assert mock_fetch.called
-            mock_fetch.assert_called_with("test-key")
+            mock_fetch.assert_called_with()
         finally:
             cache.shutdown()
 
@@ -170,17 +169,16 @@ class TestCacheBackgroundRefresh:
         """Test that refresh failure keeps serving stale data."""
         call_count = [0]
 
-        def failing_fetch(key):
+        def failing_fetch():
             call_count[0] += 1
             raise Exception("API error")
 
         cache = PromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
-            fetch_func=failing_fetch,
         )
         try:
-            cache.set("test-key", sample_prompt_commit)
+            cache.set("test-key", sample_prompt_commit, failing_fetch)
 
             # Wait for refresh attempt
             time.sleep(0.5)
@@ -221,11 +219,10 @@ class TestCacheBackgroundRefresh:
         cache = PromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
-            fetch_func=mock_fetch,
         )
 
         # Trigger lazy thread initialization by setting a value
-        cache.set("test-key", sample_prompt_commit)
+        cache.set("test-key", sample_prompt_commit, mock_fetch)
 
         # Verify thread is running
         assert cache._refresh_thread is not None
@@ -305,20 +302,16 @@ class TestAsyncCache:
         cache = AsyncPromptCache(
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
-            fetch_func=mock_fetch,
         )
         try:
-            await cache.aset("test-key", sample_prompt_commit)
-
-            # Start async refresh
-            await cache.start()
+            await cache.aset("test-key", sample_prompt_commit, mock_fetch)
 
             # Wait for entry to become stale and refresh to run
             await asyncio.sleep(0.5)
 
             # Fetch should have been called
             assert mock_fetch.called
-            mock_fetch.assert_called_with("test-key")
+            mock_fetch.assert_called_with()
         finally:
             await cache.stop()
 
@@ -327,20 +320,16 @@ class TestAsyncCache:
         """Test that async refresh failure keeps serving stale data."""
         call_count = [0]
 
-        async def failing_fetch(key):
+        async def failing_fetch():
             call_count[0] += 1
             raise Exception("API error")
 
         cache = AsyncPromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
-            fetch_func=failing_fetch,
         )
         try:
-            await cache.aset("test-key", sample_prompt_commit)
-
-            # Start async refresh
-            await cache.start()
+            await cache.aset("test-key", sample_prompt_commit, failing_fetch)
 
             # Wait for refresh attempt
             await asyncio.sleep(0.5)
@@ -363,10 +352,9 @@ class TestAsyncCache:
         cache = AsyncPromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
-            fetch_func=mock_fetch,
         )
 
-        await cache.start()
+        await cache.aset("test-key", sample_prompt_commit, mock_fetch)
 
         # Verify task is running
         assert cache._refresh_task is not None
@@ -570,13 +558,12 @@ class TestOfflineMode:
 
         cache = PromptCache(
             ttl_seconds=None,
-            fetch_func=mock_fetch,
         )
         try:
             # No refresh thread should be started
             assert cache._refresh_thread is None
 
-            cache.set("prompt1", sample_prompt_commit)
+            cache.set("prompt1", sample_prompt_commit, mock_fetch)
 
             # Wait a bit - fetch should never be called
             time.sleep(0.3)
@@ -619,10 +606,9 @@ class TestOfflineMode:
 
         cache = AsyncPromptCache(
             ttl_seconds=None,
-            fetch_func=mock_fetch,
         )
 
-        await cache.start()
+        await cache.aset("test-key", sample_prompt_commit, mock_fetch)
 
         # No task should be created
         assert cache._refresh_task is None
@@ -682,10 +668,9 @@ class TestCacheMetrics:
         cache = PromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
-            fetch_func=mock_fetch,
         )
         try:
-            cache.set("key1", sample_prompt_commit)
+            cache.set("key1", sample_prompt_commit, mock_fetch)
 
             # Wait for refresh
             time.sleep(0.5)
@@ -698,16 +683,15 @@ class TestCacheMetrics:
     def test_refresh_error_tracking(self, sample_prompt_commit):
         """Test that refresh errors are tracked."""
 
-        def failing_fetch(key):
+        def failing_fetch():
             raise Exception("API error")
 
         cache = PromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
-            fetch_func=failing_fetch,
         )
         try:
-            cache.set("key1", sample_prompt_commit)
+            cache.set("key1", sample_prompt_commit, failing_fetch)
 
             # Wait for refresh attempt
             time.sleep(0.5)
@@ -744,7 +728,6 @@ class TestCacheMetrics:
         cache = AsyncPromptCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
-            fetch_func=mock_fetch,
         )
         try:
             # Miss
@@ -752,12 +735,11 @@ class TestCacheMetrics:
             assert cache.metrics.misses == 1
 
             # Set and hit
-            await cache.aset("key1", sample_prompt_commit)
+            await cache.aset("key1", sample_prompt_commit, mock_fetch)
             cache.get("key1")
             assert cache.metrics.hits == 1
 
-            # Start refresh and wait
-            await cache.start()
+            # Wait for refresh
             await asyncio.sleep(1)
 
             assert cache.metrics.refreshes >= 1
@@ -790,18 +772,17 @@ class TestGlobalSingleton:
         assert prompt_cache_singleton is singleton2
 
     def test_client_uses_singleton_by_default(self):
-        """Test that Client uses the global singleton by default."""
+        """Test that Client can enable caching."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import prompt_cache_singleton
 
-        client = Client(api_key="test-key")
-        assert client._cache is prompt_cache_singleton
+        client = Client(api_key="test-key", cache=True)
+        assert client._cache is not None
 
     def test_client_can_disable_cache(self):
         """Test that Client can disable caching."""
         from langsmith.client import Client
 
-        client = Client(api_key="test-key", disable_prompt_cache=True)
+        client = Client(api_key="test-key", cache=False)
         assert client._cache is None
 
     def test_async_client_uses_singleton_by_default(self):
@@ -844,71 +825,61 @@ class TestGlobalSingleton:
             )
 
     def test_multiple_clients_share_singleton(self, sample_prompt_commit):
-        """Test that multiple clients share the same cache instance."""
+        """Test that multiple clients can use a shared cache instance."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import prompt_cache_singleton
+        from langsmith.prompt_cache import PromptCache
 
-        client1 = Client(api_key="test-key-1")
-        client2 = Client(api_key="test-key-2")
+        shared_cache = PromptCache()
+
+        client1 = Client(api_key="test-key-1", cache=shared_cache)
+        client2 = Client(api_key="test-key-2", cache=shared_cache)
 
         # Both should use the same cache
         assert client1._cache is client2._cache
-        assert client1._cache is prompt_cache_singleton
+        assert client1._cache is shared_cache
 
-        # Set a value through singleton
-        prompt_cache_singleton.set("shared-key", sample_prompt_commit)
+        # Set a value through cache
+        shared_cache.set("shared-key", sample_prompt_commit)
 
-        # Both clients should see it (if they used the cache)
-        assert prompt_cache_singleton.get("shared-key") is not None
+        # Both clients should see it
+        assert shared_cache.get("shared-key") is not None
 
     def test_configure_after_clients_created(self, sample_prompt_commit):
-        """Test configuring singleton after clients are already created."""
+        """Test that shared cache can be configured."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import (
-            configure_global_prompt_cache,
-            prompt_cache_singleton,
-        )
+        from langsmith.prompt_cache import PromptCache
 
-        # Get initial config
-        initial_max_size = prompt_cache_singleton._max_size
-        initial_ttl = prompt_cache_singleton._ttl_seconds
+        shared_cache = PromptCache(max_size=100, ttl_seconds=300)
 
-        try:
-            # Create clients before configure
-            client1 = Client(api_key="test-key-1")
-            client2 = Client(api_key="test-key-2")
+        # Create clients with shared cache
+        client1 = Client(api_key="test-key-1", cache=shared_cache)
+        client2 = Client(api_key="test-key-2", cache=shared_cache)
 
-            # Configure singleton
-            configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+        # Configure cache
+        shared_cache.configure(max_size=200, ttl_seconds=7200)
 
-            # Both clients should see new config (same singleton)
-            assert client1._cache._max_size == 200
-            assert client1._cache._ttl_seconds == 7200
-            assert client2._cache._max_size == 200
-            assert client2._cache._ttl_seconds == 7200
+        # Both clients should see new config (same cache instance)
+        assert client1._cache._max_size == 200
+        assert client1._cache._ttl_seconds == 7200
+        assert client2._cache._max_size == 200
+        assert client2._cache._ttl_seconds == 7200
 
-            # Verify it's the same object
-            assert client1._cache is client2._cache
-            assert client1._cache is prompt_cache_singleton
-
-        finally:
-            # Restore original values
-            configure_global_prompt_cache(
-                max_size=initial_max_size, ttl_seconds=initial_ttl
-            )
+        # Verify it's the same object
+        assert client1._cache is client2._cache
+        assert client1._cache is shared_cache
 
     def test_shared_metrics_across_clients(self, sample_prompt_commit):
-        """Test that metrics are shared across all clients using singleton."""
+        """Test that metrics are shared across clients using same cache."""
         from langsmith.client import Client
-        from langsmith.prompt_cache import prompt_cache_singleton
+        from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 
-        # Clean up singleton state
-        prompt_cache_singleton.clear()
-        prompt_cache_singleton.reset_metrics()
+        shared_cache = PromptCache()
+        shared_cache.clear()
+        shared_cache.reset_metrics()
 
         try:
-            client1 = Client(api_key="test-key-1")
-            client2 = Client(api_key="test-key-2")
+            client1 = Client(api_key="test-key-1", cache=shared_cache)
+            client2 = Client(api_key="test-key-2", cache=shared_cache)
 
             # Client 1 sets a value
             client1._cache.set("key1", sample_prompt_commit)

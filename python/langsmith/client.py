@@ -34,7 +34,7 @@ import uuid
 import warnings
 import weakref
 from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
-from functools import lru_cache
+from functools import lru_cache, partial
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
@@ -8206,20 +8206,25 @@ class Client:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Create refresh function bound to this specific prompt
+        refresh_func = partial(
+            self._fetch_prompt_from_api, prompt_identifier, include_model
+        )
+
         # Try cache first if enabled
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, refresh_func)
             if cached is not None:
                 return cached
 
         # Cache miss or cache skipped - fetch from API
-        result = self._fetch_prompt_from_api(prompt_identifier, include_model)
+        result = refresh_func()
 
         # Store in cache (background thread will handle refresh when stale)
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            self._cache.set(cache_key, result, refresh_func)
 
         return result
 

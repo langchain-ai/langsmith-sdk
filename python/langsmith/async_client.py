@@ -8,6 +8,7 @@ import json
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from functools import partial
 from typing import (
     Any,
     Literal,
@@ -1706,20 +1707,25 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Create refresh function bound to this specific prompt
+        refresh_func = partial(
+            self._afetch_prompt_from_api, prompt_identifier, include_model
+        )
+
         # Try cache first if enabled
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, refresh_func)
             if cached is not None:
                 return cached
 
         # Cache miss or cache disabled - fetch from API
-        result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
+        result = await refresh_func()
 
         # Store in cache
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            await self._cache.aset(cache_key, result)
+            await self._cache.aset(cache_key, result, refresh_func)
 
         return result
 
