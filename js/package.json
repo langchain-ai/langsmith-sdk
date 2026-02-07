@@ -444,6 +444,9 @@
     },
     "./package.json": "./package.json"
   },
+  "resolutions": {
+    "rimraf/**/glob": "10.5.0"
+  },
   "browser": {
     "./dist/utils/prompts_cache_fs.js": "./dist/utils/prompts_cache_fs.browser.js"
   }
