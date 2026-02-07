@@ -104,7 +104,7 @@ class _Matcher:
         self.value = value
         self._executor = _executor or ls_utils.ContextThreadPoolExecutor(max_workers=3)
         self._rt = rh.get_current_run_tree()
-        self._run_id = rt.trace_id if rt.is_recording() else run_id
+        self._run_id = self._rt.trace_id if self._rt.is_recording() else run_id
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
@@ -452,7 +452,7 @@ class _Expect:
     def _submit_feedback(self, key: str, results: dict):
         current_run = rh.get_current_run_tree()
         run_id = current_run.trace_id if current_run.is_recording() else None
-        if not ls_utils.test_tracking_is_disabled():
+        if not ls_utils.test_tracking_is_disabled() and run_id is not None:
             if not self._client:
                 self._client = rt.get_cached_client()
             self.executor.submit(
