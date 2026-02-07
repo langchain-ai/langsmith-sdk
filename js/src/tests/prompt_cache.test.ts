@@ -27,31 +27,37 @@ describe("Cache", () => {
   describe("basic operations", () => {
     test("should return undefined for missing keys", () => {
       const cache = new PromptCache();
-      expect(cache.get("missing-key")).toBeUndefined();
+      expect(
+        cache.get("missing-key", async () => createMockPromptCommit("missing"))
+      ).toBeUndefined();
       cache.stop();
     });
 
     test("should get and set values", () => {
       const cache = new PromptCache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
-      cache.set("test-key", prompt);
-      expect(cache.get("test-key")).toEqual(prompt);
+      cache.set("test-key", prompt, async () => prompt);
+      expect(cache.get("test-key", async () => prompt)).toEqual(prompt);
       cache.stop();
     });
 
     test("should invalidate entries", () => {
       const cache = new PromptCache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
-      cache.set("test-key", prompt);
+      cache.set("test-key", prompt, async () => prompt);
       cache.invalidate("test-key");
-      expect(cache.get("test-key")).toBeUndefined();
+      expect(cache.get("test-key", async () => prompt)).toBeUndefined();
       cache.stop();
     });
 
     test("should clear all entries", () => {
       const cache = new PromptCache({ ttlSeconds: null });
-      cache.set("key1", createMockPromptCommit("test1"));
-      cache.set("key2", createMockPromptCommit("test2"));
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
+      cache.set("key2", createMockPromptCommit("test2"), async () =>
+        createMockPromptCommit("test2")
+      );
       expect(cache.size).toBe(2);
       cache.clear();
       expect(cache.size).toBe(0);
@@ -66,14 +72,26 @@ describe("Cache", () => {
         ttlSeconds: null,
       });
 
-      cache.set("key1", createMockPromptCommit("test1"));
-      cache.set("key2", createMockPromptCommit("test2"));
-      cache.set("key3", createMockPromptCommit("test3"));
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
+      cache.set("key2", createMockPromptCommit("test2"), async () =>
+        createMockPromptCommit("test2")
+      );
+      cache.set("key3", createMockPromptCommit("test3"), async () =>
+        createMockPromptCommit("test3")
+      );
 
       expect(cache.size).toBe(2);
-      expect(cache.get("key1")).toBeUndefined(); // Evicted
-      expect(cache.get("key2")).toBeDefined();
-      expect(cache.get("key3")).toBeDefined();
+      expect(
+        cache.get("key1", async () => createMockPromptCommit("test1"))
+      ).toBeUndefined(); // Evicted
+      expect(
+        cache.get("key2", async () => createMockPromptCommit("test2"))
+      ).toBeDefined();
+      expect(
+        cache.get("key3", async () => createMockPromptCommit("test3"))
+      ).toBeDefined();
       cache.stop();
     });
 
@@ -83,18 +101,30 @@ describe("Cache", () => {
         ttlSeconds: null,
       });
 
-      cache.set("key1", createMockPromptCommit("test1"));
-      cache.set("key2", createMockPromptCommit("test2"));
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
+      cache.set("key2", createMockPromptCommit("test2"), async () =>
+        createMockPromptCommit("test2")
+      );
 
       // Access key1 to make it recently used
-      cache.get("key1");
+      cache.get("key1", async () => createMockPromptCommit("test1"));
 
       // Add key3 - should evict key2 (least recently used)
-      cache.set("key3", createMockPromptCommit("test3"));
+      cache.set("key3", createMockPromptCommit("test3"), async () =>
+        createMockPromptCommit("test3")
+      );
 
-      expect(cache.get("key1")).toBeDefined();
-      expect(cache.get("key2")).toBeUndefined(); // Evicted
-      expect(cache.get("key3")).toBeDefined();
+      expect(
+        cache.get("key1", async () => createMockPromptCommit("test1"))
+      ).toBeDefined();
+      expect(
+        cache.get("key2", async () => createMockPromptCommit("test2"))
+      ).toBeUndefined(); // Evicted
+      expect(
+        cache.get("key3", async () => createMockPromptCommit("test3"))
+      ).toBeDefined();
       cache.stop();
     });
   });
@@ -102,11 +132,13 @@ describe("Cache", () => {
   describe("metrics", () => {
     test("should track hits and misses", () => {
       const cache = new PromptCache({ ttlSeconds: null });
-      cache.set("key1", createMockPromptCommit("test1"));
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
 
-      cache.get("key1"); // Hit
-      cache.get("key1"); // Hit
-      cache.get("missing"); // Miss
+      cache.get("key1", async () => createMockPromptCommit("test1")); // Hit
+      cache.get("key1", async () => createMockPromptCommit("test1")); // Hit
+      cache.get("missing", async () => createMockPromptCommit("missing")); // Miss
 
       expect(cache.metrics.hits).toBe(2);
       expect(cache.metrics.misses).toBe(1);
@@ -117,9 +149,11 @@ describe("Cache", () => {
 
     test("should reset metrics", () => {
       const cache = new PromptCache({ ttlSeconds: null });
-      cache.set("key1", createMockPromptCommit("test1"));
-      cache.get("key1");
-      cache.get("missing");
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
+      cache.get("key1", async () => createMockPromptCommit("test1"));
+      cache.get("missing", async () => createMockPromptCommit("missing"));
 
       cache.resetMetrics();
 
@@ -146,8 +180,12 @@ describe("Cache", () => {
       const cachePath = path.join(tempDir, "cache.json");
       const cache1 = new PromptCache({ ttlSeconds: null });
 
-      cache1.set("key1", createMockPromptCommit("test1"));
-      cache1.set("key2", createMockPromptCommit("test2"));
+      cache1.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
+      cache1.set("key2", createMockPromptCommit("test2"), async () =>
+        createMockPromptCommit("test2")
+      );
       cache1.dump(cachePath);
       cache1.stop();
 
@@ -155,8 +193,12 @@ describe("Cache", () => {
       const loaded = cache2.load(cachePath);
 
       expect(loaded).toBe(2);
-      expect(cache2!.get("key1")).toBeDefined();
-      expect(cache2!.get("key2")).toBeDefined();
+      expect(
+        cache2!.get("key1", async () => createMockPromptCommit("test1"))
+      ).toBeDefined();
+      expect(
+        cache2!.get("key2", async () => createMockPromptCommit("test2"))
+      ).toBeDefined();
       cache2.stop();
     });
 
@@ -185,7 +227,9 @@ describe("Cache", () => {
       });
 
       for (let i = 0; i < 5; i++) {
-        cache1.set(`key${i}`, createMockPromptCommit(`test${i}`));
+        cache1.set(`key${i}`, createMockPromptCommit(`test${i}`), async () =>
+          createMockPromptCommit(`test${i}`)
+        );
       }
       cache1.dump(cachePath);
       cache1.stop();
@@ -205,7 +249,9 @@ describe("Cache", () => {
       const cachePath = path.join(tempDir, "nested", "dir", "cache.json");
       const cache = new PromptCache({ ttlSeconds: null });
 
-      cache.set("key1", createMockPromptCommit("test1"));
+      cache.set("key1", createMockPromptCommit("test1"), async () =>
+        createMockPromptCommit("test1")
+      );
       cache.dump(cachePath);
 
       expect(fs.existsSync(cachePath)).toBe(true);
@@ -226,10 +272,13 @@ describe("Cache", () => {
       const fetchFunc = jest.fn();
       const cache = new PromptCache({
         ttlSeconds: null, // Infinite TTL
-        fetchFunc: fetchFunc as (key: string) => Promise<PromptCommit>,
       });
 
-      cache.set("key1", createMockPromptCommit("test1"));
+      cache.set(
+        "key1",
+        createMockPromptCommit("test1"),
+        fetchFunc as () => Promise<PromptCommit>
+      );
 
       // Advance time significantly
       jest.advanceTimersByTime(120_000);
@@ -241,16 +290,15 @@ describe("Cache", () => {
     test("should refresh stale entries", async () => {
       const refreshedPrompt = createMockPromptCommit("refreshed");
       const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
+        .fn<() => Promise<PromptCommit>>()
         .mockResolvedValue(refreshedPrompt);
 
       const cache = new PromptCache({
         ttlSeconds: 1, // 1 second TTL
         refreshIntervalSeconds: 1, // Check every second
-        fetchFunc,
       });
 
-      cache.set("key1", createMockPromptCommit("original"));
+      cache.set("key1", createMockPromptCommit("original"), fetchFunc);
 
       // Advance past TTL and refresh interval
       jest.advanceTimersByTime(2000);
@@ -258,22 +306,21 @@ describe("Cache", () => {
       // Allow the async refresh to complete
       await Promise.resolve();
 
-      expect(fetchFunc).toHaveBeenCalledWith("key1");
+      expect(fetchFunc).toHaveBeenCalledWith();
       cache.stop();
     });
 
     test("should track refresh errors", async () => {
       const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
+        .fn<() => Promise<PromptCommit>>()
         .mockRejectedValue(new Error("Network error"));
 
       const cache = new PromptCache({
         ttlSeconds: 1,
         refreshIntervalSeconds: 1,
-        fetchFunc,
       });
 
-      cache.set("key1", createMockPromptCommit("test1"));
+      cache.set("key1", createMockPromptCommit("test1"), fetchFunc);
 
       // Advance past TTL and refresh interval
       jest.advanceTimersByTime(2000);
@@ -287,16 +334,15 @@ describe("Cache", () => {
 
     test("should stop refresh on stop()", () => {
       const fetchFunc = jest
-        .fn<(key: string) => Promise<PromptCommit>>()
+        .fn<() => Promise<PromptCommit>>()
         .mockResolvedValue(createMockPromptCommit("test"));
 
       const cache = new PromptCache({
         ttlSeconds: 1,
         refreshIntervalSeconds: 1,
-        fetchFunc,
       });
 
-      cache.set("key1", createMockPromptCommit("test1"));
+      cache.set("key1", createMockPromptCommit("test1"), fetchFunc);
       cache.stop();
 
       // Advance time after stopping
@@ -325,21 +371,22 @@ describe("Cache", () => {
       const onlineCache = new PromptCache({
         ttlSeconds: 3600,
       });
-      onlineCache.set("prompt1", createMockPromptCommit("test1"));
-      onlineCache.set("prompt2", createMockPromptCommit("test2"));
+      const prompt1 = createMockPromptCommit("test1");
+      const prompt2 = createMockPromptCommit("test2");
+      onlineCache.set("prompt1", prompt1, async () => prompt1);
+      onlineCache.set("prompt2", prompt2, async () => prompt2);
       onlineCache.dump(cachePath);
       onlineCache.stop();
 
       // Step 2: Offline - load from file with infinite TTL
       const offlineCache = new PromptCache({
         ttlSeconds: null, // Never expire
-        fetchFunc: undefined, // No network access
       });
       const loaded = offlineCache.load(cachePath);
 
       expect(loaded).toBe(2);
-      expect(offlineCache.get("prompt1")).toBeDefined();
-      expect(offlineCache.get("prompt2")).toBeDefined();
+      expect(offlineCache.get("prompt1", async () => prompt1)).toBeDefined();
+      expect(offlineCache.get("prompt2", async () => prompt2)).toBeDefined();
 
       // Verify no refresh happens
       expect(offlineCache.metrics.refreshes).toBe(0);
@@ -372,7 +419,7 @@ describe("Global Singleton", () => {
   describe("Client integration", () => {
     test("Client should use singleton by default", () => {
       const client = new Client({ apiKey: "test-key" });
-      expect(client.cache).toBe(promptCacheSingleton);
+      expect((client as any)._promptCache).toBe(promptCacheSingleton);
     });
 
     test("Client can disable caching", () => {
@@ -380,15 +427,15 @@ describe("Global Singleton", () => {
         apiKey: "test-key",
         disablePromptCache: true,
       });
-      expect(client.cache).toBeUndefined();
+      expect((client as any)._promptCache).toBeUndefined();
     });
 
     test("Multiple clients share the same cache", () => {
       const client1 = new Client({ apiKey: "test-key-1" });
       const client2 = new Client({ apiKey: "test-key-2" });
 
-      expect(client1.cache).toBe(client2.cache);
-      expect(client1.cache).toBe(promptCacheSingleton);
+      expect((client1 as any)._promptCache).toBe((client2 as any)._promptCache);
+      expect((client1 as any)._promptCache).toBe(promptCacheSingleton);
     });
 
     test("Clients share cached values", () => {
@@ -396,11 +443,11 @@ describe("Global Singleton", () => {
       const client2 = new Client({ apiKey: "test-key-2" });
 
       const prompt = createMockPromptCommit("shared-prompt");
-      promptCacheSingleton.set("shared-key", prompt);
+      promptCacheSingleton.set("shared-key", prompt, async () => prompt);
 
       // Both clients should see the cached value
-      expect(client1.cache?.get("shared-key")).toEqual(prompt);
-      expect(client2.cache?.get("shared-key")).toEqual(prompt);
+      expect((client1 as any)._promptCache?.get("shared-key")).toEqual(prompt);
+      expect((client2 as any)._promptCache?.get("shared-key")).toEqual(prompt);
     });
   });
 });
@@ -419,14 +466,14 @@ describe("additional singleton tests", () => {
       configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
 
       // Both clients should see new config (same singleton)
-      expect((client1.cache as any).maxSize).toBe(200);
-      expect((client1.cache as any).ttlSeconds).toBe(7200);
-      expect((client2.cache as any).maxSize).toBe(200);
-      expect((client2.cache as any).ttlSeconds).toBe(7200);
+      expect(((client1 as any)._promptCache as any).maxSize).toBe(200);
+      expect(((client1 as any)._promptCache as any).ttlSeconds).toBe(7200);
+      expect(((client2 as any)._promptCache as any).maxSize).toBe(200);
+      expect(((client2 as any)._promptCache as any).ttlSeconds).toBe(7200);
 
       // Verify it's the same object
-      expect(client1.cache).toBe(client2.cache);
-      expect(client1.cache).toBe(promptCacheSingleton);
+      expect((client1 as any)._promptCache).toBe((client2 as any)._promptCache);
+      expect((client1 as any)._promptCache).toBe(promptCacheSingleton);
     } finally {
       // Restore
       configureGlobalPromptCache({
@@ -446,21 +493,21 @@ describe("additional singleton tests", () => {
     const prompt = createMockPromptCommit("test");
 
     // Client 1 sets a value
-    client1.cache!.set("key1", prompt);
+    (client1 as any)._promptCache!.set("key1", prompt);
 
     // Client 2 gets the value (hit)
-    const result = client2.cache!.get("key1");
+    const result = (client2 as any)._promptCache!.get("key1");
     expect(result).toBeDefined();
 
     // Metrics should be shared
-    expect(client1.cache!.metrics.hits).toBe(1);
-    expect(client2.cache!.metrics.hits).toBe(1); // Same metrics object
+    expect((client1 as any)._promptCache!.metrics.hits).toBe(1);
+    expect((client2 as any)._promptCache!.metrics.hits).toBe(1); // Same metrics object
 
     // Client 1 misses
-    client1.cache!.get("missing-key");
+    (client1 as any)._promptCache!.get("missing-key");
 
     // Client 2 should see the miss
-    expect(client2.cache!.metrics.misses).toBe(1);
+    expect((client2 as any)._promptCache!.metrics.misses).toBe(1);
   });
 
   test("should share refresh timer across clients", async () => {
@@ -483,12 +530,12 @@ describe("additional singleton tests", () => {
 
       // Trigger timer start via any client
       const prompt = createMockPromptCommit("test");
-      client1.cache!.set("key1", prompt);
+      (client1 as any)._promptCache!.set("key1", prompt);
 
       // All should share the same timer (hard to check directly, but we can verify behavior)
-      expect(client1.cache).toBe(client2.cache);
-      expect(client2.cache).toBe(client3.cache);
-      expect((client1.cache as any).refreshTimer).toBeDefined();
+      expect((client1 as any)._promptCache).toBe((client2 as any)._promptCache);
+      expect((client2 as any)._promptCache).toBe((client3 as any)._promptCache);
+      expect(((client1 as any)._promptCache as any).refreshTimer).toBeDefined();
     } finally {
       (promptCacheSingleton as any).fetchFunc = undefined;
       promptCacheSingleton.stop();
@@ -507,8 +554,14 @@ describe("additional singleton tests", () => {
       const client1 = new Client({ apiKey: "test-key-1" });
 
       // Client sets some values
-      client1.cache!.set("prompt1", createMockPromptCommit("test1"));
-      client1.cache!.set("prompt2", createMockPromptCommit("test2"));
+      (client1 as any)._promptCache!.set(
+        "prompt1",
+        createMockPromptCommit("test1")
+      );
+      (client1 as any)._promptCache!.set(
+        "prompt2",
+        createMockPromptCommit("test2")
+      );
 
       // Dump via singleton
       promptCacheSingleton.dump(cachePath);
@@ -521,8 +574,8 @@ describe("additional singleton tests", () => {
 
       // New client should see loaded values
       const client2 = new Client({ apiKey: "test-key-2" });
-      expect(client2.cache!.get("prompt1")).toBeDefined();
-      expect(client2.cache!.get("prompt2")).toBeDefined();
+      expect((client2 as any)._promptCache!.get("prompt1")).toBeDefined();
+      expect((client2 as any)._promptCache!.get("prompt2")).toBeDefined();
     } finally {
       if (fs.existsSync(cachePath)) {
         fs.unlinkSync(cachePath);
@@ -545,7 +598,7 @@ describe("additional singleton tests", () => {
     (promptCacheSingleton as any).ttlSeconds = 10;
 
     const prompt = createMockPromptCommit("test");
-    promptCacheSingleton.set("key1", prompt);
+    promptCacheSingleton.set("key1", prompt, async () => prompt);
 
     // Timer should be running
     expect((promptCacheSingleton as any).refreshTimer).toBeDefined();
@@ -558,7 +611,7 @@ describe("additional singleton tests", () => {
     expect((promptCacheSingleton as any).refreshTimer).toBeUndefined();
 
     // Set again to restart timer with new config
-    promptCacheSingleton.set("key2", prompt);
+    promptCacheSingleton.set("key2", prompt, async () => prompt);
 
     // New timer should be started
     expect((promptCacheSingleton as any).refreshTimer).toBeDefined();
