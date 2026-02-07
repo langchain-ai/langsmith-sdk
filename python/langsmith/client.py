@@ -3283,7 +3283,7 @@ class Client:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
-            "limit": limit,
+            "limit": min(limit, 100) if limit is not None else 100,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
