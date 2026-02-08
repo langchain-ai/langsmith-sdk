@@ -139,6 +139,11 @@ export class PromptCache {
     key: string,
     refreshFunc: () => Promise<PromptCommit>
   ): PromptCommit | undefined {
+    // If max_size is 0, cache is disabled
+    if (this.maxSize === 0) {
+      return undefined;
+    }
+
     const entry = this.cache.get(key);
     if (!entry) {
       this._metrics.misses += 1;
@@ -161,6 +166,11 @@ export class PromptCache {
     value: PromptCommit,
     refreshFunc: () => Promise<PromptCommit>
   ): void {
+    // If max_size is 0, cache is disabled - do nothing
+    if (this.maxSize === 0) {
+      return;
+    }
+
     if (this.refreshTimer === undefined) {
       this.startRefreshLoop();
     }

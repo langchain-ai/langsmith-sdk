@@ -124,6 +124,10 @@ class _BasePromptCache(ABC):
             The cached value or None if not found.
             Stale entries are still returned (background refresh handles updates).
         """
+        # If max_size is 0, cache is disabled
+        if self._max_size == 0:
+            return None
+
         with self._lock:
             if key not in self._cache:
                 self._metrics.misses += 1
@@ -148,6 +152,10 @@ class _BasePromptCache(ABC):
             value: The value to cache.
             refresh_func: Function to refresh this cache entry when stale.
         """
+        # If max_size is 0, cache is disabled - do nothing
+        if self._max_size == 0:
+            return
+
         with self._lock:
             now = time.time()
             entry = CacheEntry(value=value, created_at=now, refresh_func=refresh_func)

@@ -452,6 +452,140 @@ describe("Global Singleton", () => {
   });
 });
 
+describe("cache disabled with maxSize: 0", () => {
+  test("should not cache when maxSize is 0", () => {
+    const cache = new PromptCache({ maxSize: 0 });
+    const prompt = createMockPromptCommit("test");
+    const refreshFunc = async () => prompt;
+
+    // Set should do nothing
+    cache.set("key1", prompt, refreshFunc);
+
+    // Get should always return undefined
+    const result = cache.get("key1", refreshFunc);
+    expect(result).toBeUndefined();
+
+    // No metrics should be tracked when disabled
+    expect(cache.metrics.hits).toBe(0);
+    expect(cache.metrics.misses).toBe(0);
+
+    // Cache should be empty
+    expect(cache.size).toBe(0);
+
+    cache.stop();
+  });
+
+  test("should not track metrics when cache is disabled", () => {
+    const cache = new PromptCache({ maxSize: 0 });
+    const prompt = createMockPromptCommit("test");
+    const refreshFunc = async () => prompt;
+
+    // Multiple operations
+    cache.set("key1", prompt, refreshFunc);
+    cache.get("key1", refreshFunc);
+    cache.get("key2", refreshFunc);
+    cache.set("key2", prompt, refreshFunc);
+    cache.get("key1", refreshFunc);
+
+    // No metrics should be tracked
+    expect(cache.metrics.hits).toBe(0);
+    expect(cache.metrics.misses).toBe(0);
+    expect(cache.totalRequests).toBe(0);
+
+    cache.stop();
+  });
+
+  test("should disable cache when reconfigured to maxSize: 0", () => {
+    const cache = new PromptCache({ maxSize: 10 });
+    const prompt = createMockPromptCommit("test");
+    const refreshFunc = async () => prompt;
+
+    // Add entries
+    cache.set("key1", prompt, refreshFunc);
+    cache.set("key2", prompt, refreshFunc);
+
+    // Verify they exist
+    expect(cache.get("key1", refreshFunc)).toBeDefined();
+    expect(cache.get("key2", refreshFunc)).toBeDefined();
+    expect(cache.size).toBe(2);
+
+    // Reconfigure to disable cache
+    cache.configure({ maxSize: 0 });
+
+    // Now all gets should return undefined
+    expect(cache.get("key1", refreshFunc)).toBeUndefined();
+    expect(cache.get("key2", refreshFunc)).toBeUndefined();
+
+    // Sets should do nothing
+    cache.set("key3", prompt, refreshFunc);
+    expect(cache.get("key3", refreshFunc)).toBeUndefined();
+    expect(cache.size).toBe(2); // Size unchanged (entries still in Map, but not accessible)
+
+    cache.stop();
+  });
+
+  test("should allow disabling cache globally with configureGlobalPromptCache", () => {
+    const initialMaxSize = (promptCacheSingleton as any).maxSize;
+
+    try {
+      // Configure global cache to be disabled
+      configureGlobalPromptCache({ maxSize: 0 });
+
+      // Create clients
+      const client1 = new Client({ apiKey: "test-key-1" });
+      const client2 = new Client({ apiKey: "test-key-2" });
+
+      const prompt = createMockPromptCommit("test");
+      const refreshFunc = async () => prompt;
+
+      // Set via client1's cache
+      (client1 as any)._promptCache!.set("key1", prompt, refreshFunc);
+
+      // Get via client2's cache - should return undefined (disabled)
+      const result = (client2 as any)._promptCache!.get("key1", refreshFunc);
+      expect(result).toBeUndefined();
+
+      // Verify it's the same singleton
+      expect((client1 as any)._promptCache).toBe((client2 as any)._promptCache);
+      expect((client1 as any)._promptCache).toBe(promptCacheSingleton);
+    } finally {
+      // Restore original maxSize
+      configureGlobalPromptCache({ maxSize: initialMaxSize });
+      promptCacheSingleton.clear();
+    }
+  });
+
+  test("should not start refresh timer when maxSize is 0", () => {
+    jest.useFakeTimers();
+
+    try {
+      const cache = new PromptCache({
+        maxSize: 0,
+        ttlSeconds: 1,
+        refreshIntervalSeconds: 1,
+      });
+
+      const fetchFunc = jest
+        .fn<() => Promise<PromptCommit>>()
+        .mockResolvedValue(createMockPromptCommit("test"));
+
+      // Set with disabled cache
+      cache.set("key1", createMockPromptCommit("test"), fetchFunc);
+
+      // Advance time
+      jest.advanceTimersByTime(10000);
+
+      // Refresh should never be called since cache is disabled
+      expect(fetchFunc).not.toHaveBeenCalled();
+      expect((cache as any).refreshTimer).toBeUndefined();
+
+      cache.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe("additional singleton tests", () => {
   test("should configure singleton after clients created", () => {
     const client1 = new Client({ apiKey: "test-key-1" });

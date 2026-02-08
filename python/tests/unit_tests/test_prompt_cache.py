@@ -1416,3 +1416,89 @@ class TestAsyncLazyInitialization:
         except:
             await cache.stop()
             raise
+
+
+class TestCacheDisabled:
+    """Tests for disabled cache (max_size=0)."""
+
+    def test_cache_disabled_with_max_size_zero(self, sample_prompt_commit):
+        """Test that cache is disabled when max_size is 0."""
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
+        cache = PromptCache(max_size=0)
+
+        try:
+            # Set should do nothing
+            cache.set("test-key", sample_prompt_commit, mock_refresh)
+
+            # Get should always return None (disabled cache doesn't track misses)
+            result = cache.get("test-key", mock_refresh)
+            assert result is None
+            assert cache.metrics.misses == 0
+            assert cache.metrics.hits == 0
+
+            # Multiple gets should always return None with no metrics
+            cache.get("test-key", mock_refresh)
+            assert cache.metrics.misses == 0
+            assert cache.metrics.hits == 0
+
+            # Cache should be empty
+            assert len(cache._cache) == 0
+        finally:
+            cache.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_async_cache_disabled_with_max_size_zero(self, sample_prompt_commit):
+        """Test that async cache is disabled when max_size is 0."""
+        mock_refresh = AsyncMock(return_value=sample_prompt_commit)
+        cache = AsyncPromptCache(max_size=0)
+
+        try:
+            # Set should do nothing
+            await cache.aset("test-key", sample_prompt_commit, mock_refresh)
+
+            # Get should always return None (disabled cache doesn't track misses)
+            result = cache.get("test-key", mock_refresh)
+            assert result is None
+            assert cache.metrics.misses == 0
+            assert cache.metrics.hits == 0
+
+            # Multiple gets should always return None with no metrics
+            cache.get("test-key", mock_refresh)
+            assert cache.metrics.misses == 0
+            assert cache.metrics.hits == 0
+
+            # Cache should be empty
+            assert len(cache._cache) == 0
+        finally:
+            await cache.stop()
+
+    def test_configure_to_zero_disables_cache(self, sample_prompt_commit):
+        """Test that configuring max_size to 0 disables the cache."""
+        mock_refresh = MagicMock(return_value=sample_prompt_commit)
+        cache = PromptCache(max_size=10)
+
+        try:
+            # Add some entries
+            cache.set("key1", sample_prompt_commit, mock_refresh)
+            cache.set("key2", sample_prompt_commit, mock_refresh)
+
+            # Verify entries exist
+            assert cache.get("key1", mock_refresh) is not None
+            assert cache.get("key2", mock_refresh) is not None
+
+            # Reconfigure to 0 (disable cache)
+            cache.configure(max_size=0)
+
+            # Now all gets should miss
+            result = cache.get("key1", mock_refresh)
+            assert result is None
+
+            result = cache.get("key2", mock_refresh)
+            assert result is None
+
+            # Sets should do nothing
+            cache.set("key3", sample_prompt_commit, mock_refresh)
+            result = cache.get("key3", mock_refresh)
+            assert result is None
+        finally:
+            cache.shutdown()
