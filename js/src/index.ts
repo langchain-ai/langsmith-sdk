@@ -26,6 +26,7 @@ export {
   type CacheConfig,
   type CacheMetrics,
   configureGlobalPromptCache,
+  promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
 
 // Update using yarn bump-version
