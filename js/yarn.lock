@@ -3,17 +3,17 @@
 
 
 "@ai-sdk/anthropic@^3.0.0":
-  version "3.0.38"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-3.0.38.tgz#81b1440c1f3e4d324b24ef5afe6f015e6b057288"
-  integrity sha512-9MchyPRPni0WzrFeIGNevZpQVfWxaS+MQFupIXYQo9VgHnuO1Vyrp9SBmjkkuoAdBs7GomsWqLZCcNMJAVbdFA==
+  version "3.0.39"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-3.0.39.tgz#7b7141e0a53cf4bfd2f5b0dd5521e3789fcbbcff"
+  integrity sha512-OZXS78H3hgJ31YVlNCLQcM67D7hP5vQyDBGVwBuE20FopQqTRSAQY1nMBPe6aUzuoNthTfROIXtIqqX9Fv65Ww==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
     "@ai-sdk/provider-utils" "4.0.14"
 
-"@ai-sdk/gateway@3.0.37":
-  version "3.0.37"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/gateway/-/gateway-3.0.37.tgz#02108ffaafc5e78ef7041af00be245358fd8ea87"
-  integrity sha512-w7rxPd2WOuSr4he2ALvtCAM/W1/33rGdv3kkU52tCGj/bJSYJnJDpnTvoWRLNESp9HEkkiNFfBLFZY0PB9n4aQ==
+"@ai-sdk/gateway@3.0.39":
+  version "3.0.39"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/gateway/-/gateway-3.0.39.tgz#59c86bd2d6b470342425097aa6556d9a7eacbf5d"
+  integrity sha512-SeCZBAdDNbWpVUXiYgOAqis22p5MEYfrjRw0hiBa5hM+7sDGYQpMinUjkM8kbPXMkY+AhKLrHleBl+SuqpzlgA==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
     "@ai-sdk/provider-utils" "4.0.14"
@@ -52,9 +52,9 @@
     "@jridgewell/trace-mapping" "^0.3.24"
 
 "@anthropic-ai/claude-agent-sdk@^0.2.34":
-  version "0.2.34"
-  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.34.tgz#be83fa9bdbd9e1981c115f2a3ee19bedd7a70036"
-  integrity sha512-QLHd3Nt7bGU7/YH71fXFaztM9fNxGGruzTMrTYJkbm5gYJl5ZyU2zGyoE5VpWC0e1QU0yYdNdBVgqSYDcJGufg==
+  version "0.2.37"
+  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.37.tgz#40866d6fce18246c50672abee8d7f85b24d9f95a"
+  integrity sha512-0TCAUuGXiWYV2JK+j2SiakGzPA7aoR5DNRxZ0EA571loGIqN3FRfiO1kipeBpEc+cRQ03a/4Kt5YAjMx0KBW+A==
   optionalDependencies:
     "@img/sharp-darwin-arm64" "^0.33.5"
     "@img/sharp-darwin-x64" "^0.33.5"
@@ -65,10 +65,10 @@
     "@img/sharp-linuxmusl-x64" "^0.33.5"
     "@img/sharp-win32-x64" "^0.33.5"
 
-"@anthropic-ai/sdk@^0.73.0":
-  version "0.73.0"
-  resolved "https://registry.yarnpkg.com/@anthropic-ai/sdk/-/sdk-0.73.0.tgz#ee4d744f3e0fbce3111edf3e8e67c6613fc6929f"
-  integrity sha512-URURVzhxXGJDGUGFunIOtBlSl7KWvZiAAKY/ttTkZAkXT9bTPqdk2eK0b8qqSxXpikh3QKPnPYpiyX98zf5ebw==
+"@anthropic-ai/sdk@^0.74.0":
+  version "0.74.0"
+  resolved "https://registry.yarnpkg.com/@anthropic-ai/sdk/-/sdk-0.74.0.tgz#e06e6e5495c1551a70bc04004884e031828dd8ae"
+  integrity sha512-srbJV7JKsc5cQ6eVuFzjZO7UR3xEPJqPamHFIe29bs38Ij2IripoAhC0S5NslNbaFUYqBKypmmpzMTpqfHEUDw==
   dependencies:
     json-schema-to-ts "^3.1.1"
 
@@ -3341,11 +3341,11 @@ agent-base@^7.1.2:
   integrity sha512-jRR5wdylq8CkOe6hei19GGZnxM6rBGwFl3Bg0YItGDimvjGtAvdZk4Pu6Cl4u4Igsws4a1fd1Vq3ezrhn4KmFw==
 
 ai@^6.0.1:
-  version "6.0.75"
-  resolved "https://registry.yarnpkg.com/ai/-/ai-6.0.75.tgz#ec30e3278ca4905efe86cf842a31d2a83061c842"
-  integrity sha512-pT1xtwaE5Un261GO9Mt9DZ2rv26v+gQZNRXo433CNAMo0JDYs2ef+5MvcNkBe1jXCY9XrXxUG/VT6Y6/9S2SWg==
+  version "6.0.77"
+  resolved "https://registry.yarnpkg.com/ai/-/ai-6.0.77.tgz#08fd62c00ca7fb134b9bf42b2ec58444fddc9c15"
+  integrity sha512-tyyhrRpCRFVlivdNIFLK8cexSBB2jwTqO0z1qJQagk+UxZ+MW8h5V8xsvvb+xdKDY482Y8KAm0mr7TDnPKvvlw==
   dependencies:
-    "@ai-sdk/gateway" "3.0.37"
+    "@ai-sdk/gateway" "3.0.39"
     "@ai-sdk/provider" "3.0.8"
     "@ai-sdk/provider-utils" "4.0.14"
     "@opentelemetry/api" "1.9.0"
