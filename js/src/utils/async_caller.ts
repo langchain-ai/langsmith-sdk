@@ -117,70 +117,69 @@ export class AsyncCaller {
     }
 
     const onFailedResponseHook = this.onFailedResponseHook;
-    let promise = this.queue.add(
-      () =>
-        pRetry(
-          () =>
-            callable(...(args as Parameters<T>)).catch((error) => {
-              // eslint-disable-next-line no-instanceof/no-instanceof
-              if (error instanceof Error) {
-                throw error;
-              } else {
-                throw new Error(error);
-              }
-            }),
-          {
-            async onFailedAttempt({ error }: { error: unknown }) {
-              // Rethrow the value if it's not an object
-              if (typeof error !== "object" || error == null) throw error;
+    let promise = this.queue.add(() =>
+      pRetry(
+        () =>
+          callable(...(args as Parameters<T>)).catch((error) => {
+            // eslint-disable-next-line no-instanceof/no-instanceof
+            if (error instanceof Error) {
+              throw error;
+            } else {
+              throw new Error(error);
+            }
+          }),
+        {
+          async onFailedAttempt({ error }: { error: unknown }) {
+            // Rethrow the value if it's not an object
+            if (typeof error !== "object" || error == null) throw error;
 
-              const errorMessage =
-                "message" in error && typeof error.message === "string"
-                  ? error.message
-                  : undefined;
+            const errorMessage =
+              "message" in error && typeof error.message === "string"
+                ? error.message
+                : undefined;
 
-              if (
-                errorMessage?.startsWith("Cancel") ||
-                errorMessage?.startsWith("TimeoutError") ||
-                errorMessage?.startsWith("AbortError")
-              ) {
-                throw error;
-              }
+            if (
+              errorMessage?.startsWith("Cancel") ||
+              errorMessage?.startsWith("TimeoutError") ||
+              errorMessage?.startsWith("AbortError")
+            ) {
+              throw error;
+            }
 
-              if ("name" in error && error.name === "TimeoutError") {
-                throw error;
-              }
+            if ("name" in error && error.name === "TimeoutError") {
+              throw error;
+            }
 
-              if ("code" in error && error.code === "ECONNABORTED") {
-                throw error;
-              }
+            if ("code" in error && error.code === "ECONNABORTED") {
+              throw error;
+            }
 
-              const response =
-                "response" in error
-                  ? (error.response as Response | undefined)
-                  : undefined;
+            const response =
+              "response" in error
+                ? (error.response as Response | undefined)
+                : undefined;
 
-              if (onFailedResponseHook) {
-                const handled = await onFailedResponseHook(response);
-                if (handled) return;
-              }
+            if (onFailedResponseHook) {
+              const handled = await onFailedResponseHook(response);
+              if (handled) return;
+            }
 
-              const status =
-                response?.status ??
-                ("status" in error ? error.status : undefined);
+            const status =
+              response?.status ??
+              ("status" in error ? error.status : undefined);
 
-              if (
-                status != null &&
-                (typeof status === "number" || typeof status === "string") &&
-                !STATUS_RETRYABLE.includes(+status)
-              ) {
-                throw error;
-              }
-            },
-            retries: this.maxRetries,
-            randomize: true,
-          }
-        ),
+            if (
+              status != null &&
+              (typeof status === "number" || typeof status === "string") &&
+              !STATUS_RETRYABLE.includes(+status)
+            ) {
+              throw error;
+            }
+          },
+          retries: this.maxRetries,
+          randomize: true,
+        }
+      )
     );
 
     // Decrement queue size when the call completes (success or failure)
