@@ -671,6 +671,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             threading.Thread(
                 target=tracing_control_thread_func_compress_parallel,
                 args=(weakref.ref(client),),
+                daemon=client._use_daemon_threads,
             ).start()
 
             num_known_refs += 1
@@ -716,6 +717,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
                 args=(weakref.ref(client), use_multipart),
+                daemon=client._use_daemon_threads,
             )
             sub_threads.append(new_thread)
             new_thread.start()

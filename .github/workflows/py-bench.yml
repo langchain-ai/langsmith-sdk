@@ -5,6 +5,9 @@ on:
     paths:
       - "python/langsmith/**"
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -12,7 +15,7 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: files
         name: Get changed files
         uses: Ana06/get-changed-files@v2.3.0
@@ -20,7 +23,7 @@ jobs:
           format: json
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: 3.11
           enable-cache: true
@@ -29,7 +32,7 @@ jobs:
         run: uv sync --group dev
 
       - name: Download baseline
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           key: ${{ runner.os }}-benchmark-baseline
           restore-keys: |
@@ -56,7 +59,7 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
       - name: Annotation
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const file = JSON.parse(`${{ steps.files.outputs.added_modified_renamed }}`)[0]

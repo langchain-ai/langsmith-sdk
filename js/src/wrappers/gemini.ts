@@ -456,7 +456,8 @@ function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
   return result;
 }
 
-function getInvocationParams(
+function _getGeminiInvocationParams(
+  prepopulatedInvocationParams: Record<string, unknown>,
   payload: Record<string, unknown>
 ): InvocationParamsSchema {
   const config = (payload?.[0] || payload) as
@@ -469,6 +470,7 @@ function getInvocationParams(
     ls_model_name: config?.model || "unknown",
     ls_temperature: config?.config?.temperature,
     ls_max_tokens: config?.config?.maxOutputTokens,
+    ls_invocation_params: prepopulatedInvocationParams,
   };
 }
 
@@ -520,15 +522,29 @@ export function wrapGemini<T extends GoogleGenAIType>(
 
   const tracedGeminiClient = { ...gemini } as PatchedGeminiClient<T>;
 
+  // Extract ls_invocation_params from metadata
+  const prepopulatedInvocationParams =
+    typeof options?.metadata?.ls_invocation_params === "object"
+      ? options.metadata.ls_invocation_params
+      : {};
+
+  // Remove ls_invocation_params from metadata to avoid duplication
+  const { ls_invocation_params, ...restMetadata } = options?.metadata ?? {};
+  const cleanedOptions = {
+    ...options,
+    metadata: restMetadata,
+  };
+
   const geminiTraceConfig: TraceableConfig<
     typeof gemini.models.generateContent
   > = {
     name: "ChatGoogleGenerativeAI",
     run_type: "llm",
-    getInvocationParams,
+    getInvocationParams: (payload: Record<string, unknown>) =>
+      _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...options,
+    ...cleanedOptions,
   };
 
   const geminiStreamTraceConfig: TraceableConfig<
@@ -537,10 +553,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
     name: "ChatGoogleGenerativeAI",
     run_type: "llm",
     aggregator: chatAggregator,
-    getInvocationParams,
+    getInvocationParams: (payload: Record<string, unknown>) =>
+      _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...options,
+    ...cleanedOptions,
   };
 
   tracedGeminiClient.models = {

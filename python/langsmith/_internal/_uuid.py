@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
+import time
 import uuid
 import warnings
 from typing import Final
 
+import xxhash
 from uuid_utils.compat import uuid7 as _uuid_utils_uuid7
 
 _NANOS_PER_SECOND: Final = 1_000_000_000
@@ -90,7 +91,7 @@ def uuid7_deterministic(original_id: uuid.UUID, key: str) -> uuid.UUID:
     This function creates a new UUID that:
     - Preserves the timestamp from the original UUID if it's UUID v7
     - Uses current time if the original is not UUID v7
-    - Uses deterministic "random" bits derived from hashing the original + key
+    - Uses deterministic bits derived from hashing the original + key with XXH3-128
     - Is valid UUID v7 format
 
     This is used for creating replica IDs that maintain time-ordering properties
@@ -110,11 +111,9 @@ def uuid7_deterministic(original_id: uuid.UUID, key: str) -> uuid.UUID:
         >>> # Same inputs always produce same output
         >>> assert uuid7_deterministic(original, "replica-project") == replica_id
     """
-    import time
-
-    # Generate deterministic bytes from hash of original + key
+    # Generate deterministic bytes from XXH3-128 hash of original + key
     hash_input = f"{original_id}:{key}".encode()
-    h = hashlib.sha256(hash_input).digest()
+    h = xxhash.xxh3_128(hash_input).digest()
 
     # Build new UUID7:
     # UUID7 structure (RFC 9562):

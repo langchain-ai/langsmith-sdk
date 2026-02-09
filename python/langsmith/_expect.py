@@ -103,8 +103,8 @@ class _Matcher:
         self.key = key
         self.value = value
         self._executor = _executor or ls_utils.ContextThreadPoolExecutor(max_workers=3)
-        rt = rh.get_current_run_tree()
-        self._run_id = rt.trace_id if rt else run_id
+        self._rt = rh.get_current_run_tree()
+        self._run_id = self._rt.trace_id if self._rt else run_id
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
@@ -116,6 +116,8 @@ class _Matcher:
                 key="expectation",
                 score=score,
                 comment=message,
+                session_id=self._rt.session_id if self._rt else None,
+                start_time=self._rt.start_time if self._rt else None,
             )
 
     def _assert(self, condition: bool, message: str, method_name: str) -> None:

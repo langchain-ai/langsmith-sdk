@@ -172,7 +172,9 @@ def _process_gemini_inputs(inputs: dict) -> dict:
     return inputs
 
 
-def _infer_invocation_params(kwargs: dict) -> dict:
+def _infer_invocation_params(
+    prepopulated_invocation_params: dict, kwargs: dict
+) -> dict:
     """Extract invocation parameters for tracing."""
     stripped = _strip_none(kwargs)
     config = stripped.get("config", {})
@@ -194,6 +196,7 @@ def _infer_invocation_params(kwargs: dict) -> dict:
         "ls_temperature": temperature,
         "ls_max_tokens": max_tokens,
         "ls_stop": stop,
+        "ls_invocation_params": prepopulated_invocation_params,
     }
 
 
@@ -456,6 +459,7 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
 def _get_wrapper(
     original_generate: Callable,
     name: str,
+    prepopulated_invocation_params: dict,
     tracing_extra: Optional[TracingExtra] = None,
     is_streaming: bool = False,
 ) -> Callable:
@@ -475,7 +479,9 @@ def _get_wrapper(
             process_outputs=(
                 _process_generate_content_response if not is_streaming else None
             ),
-            _invocation_params_fn=_infer_invocation_params,
+            _invocation_params_fn=functools.partial(
+                _infer_invocation_params, prepopulated_invocation_params
+            ),
             **textra,
         )
 
@@ -494,7 +500,9 @@ def _get_wrapper(
             process_outputs=(
                 _process_generate_content_response if not is_streaming else None
             ),
-            _invocation_params_fn=_infer_invocation_params,
+            _invocation_params_fn=functools.partial(
+                _infer_invocation_params, prepopulated_invocation_params
+            ),
             **textra,
         )
 
@@ -610,6 +618,17 @@ def wrap_gemini(
     """
     tracing_extra = tracing_extra or {}
 
+    # Extract ls_invocation_params from metadata
+    metadata = dict(tracing_extra.get("metadata") or {})
+    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})
+
+    # Create new tracing_extra without ls_invocation_params in metadata
+    tracing_extra_rest: TracingExtra = {  # type: ignore[assignment]
+        k: v for k, v in tracing_extra.items() if k != "metadata"
+    }
+    if metadata:
+        tracing_extra_rest["metadata"] = metadata  # type: ignore[typeddict-item]
+
     # Check if already wrapped to prevent double-wrapping
     if (
         hasattr(client, "models")
@@ -626,7 +645,8 @@ def wrap_gemini(
         client.models.generate_content = _get_wrapper(  # type: ignore[method-assign]
             client.models.generate_content,
             chat_name,
-            tracing_extra=tracing_extra,
+            prepopulated_invocation_params,
+            tracing_extra=tracing_extra_rest,
             is_streaming=False,
         )
 
@@ -634,7 +654,8 @@ def wrap_gemini(
         client.models.generate_content_stream = _get_wrapper(  # type: ignore[method-assign]
             client.models.generate_content_stream,
             chat_name,
-            tracing_extra=tracing_extra,
+            prepopulated_invocation_params,
+            tracing_extra=tracing_extra_rest,
             is_streaming=True,
         )
 
@@ -647,7 +668,8 @@ def wrap_gemini(
         client.aio.models.generate_content = _get_wrapper(  # type: ignore[method-assign]
             client.aio.models.generate_content,
             chat_name,
-            tracing_extra=tracing_extra,
+            prepopulated_invocation_params,
+            tracing_extra=tracing_extra_rest,
             is_streaming=False,
         )
 
@@ -659,7 +681,8 @@ def wrap_gemini(
         client.aio.models.generate_content_stream = _get_wrapper(  # type: ignore[method-assign]
             client.aio.models.generate_content_stream,
             chat_name,
-            tracing_extra=tracing_extra,
+            prepopulated_invocation_params,
+            tracing_extra=tracing_extra_rest,
             is_streaming=True,
         )
 
