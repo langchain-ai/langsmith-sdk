@@ -198,6 +198,86 @@ class TestCacheBackgroundRefresh:
         finally:
             cache.shutdown()
 
+    def test_keeps_serving_stale_on_500_errors(self, sample_prompt_commit):
+        """Test that cache keeps serving stale data when refresh
+        fails with 500 errors."""
+        call_count = [0]
+
+        def fetch_with_500():
+            call_count[0] += 1
+            raise Exception("500 Internal Server Error")
+
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+        )
+        try:
+            # Set initial value
+            cache.set("test-key", sample_prompt_commit, fetch_with_500)
+
+            # Get before it's stale
+            result_before = cache.get("test-key", fetch_with_500)
+            assert result_before is not None
+            assert result_before.owner == "test-owner"
+
+            # Wait for it to become stale and refresh to fail
+            time.sleep(0.5)
+
+            # Fetch should have been attempted
+            assert call_count[0] > 0
+            assert cache.metrics.refresh_errors > 0
+
+            # Should still serve stale data
+            result_after = cache.get("test-key", fetch_with_500)
+            assert result_after is not None
+            assert result_after.owner == "test-owner"
+            assert cache.metrics.hits > 0
+        finally:
+            cache.shutdown()
+
+    def test_refresh_loop_continues_after_500_errors(self, sample_prompt_commit):
+        """Test that refresh loop continues after 500 errors and can recover."""
+        call_count = [0]
+        updated_commit = ls_schemas.PromptCommit(
+            owner="updated", repo="test", commit_hash="def456", manifest={}, examples=[]
+        )
+
+        def fetch_fail_then_succeed():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("500 Internal Server Error")
+            return updated_commit
+
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.3,  # Longer interval for more control
+        )
+        try:
+            # Set initial value
+            cache.set("test-key", sample_prompt_commit, fetch_fail_then_succeed)
+
+            # Wait for first refresh attempt (will fail)
+            time.sleep(0.4)
+
+            assert call_count[0] == 1  # Only first call so far
+            assert cache.metrics.refresh_errors == 1
+
+            # Should still have original data
+            result = cache.get("test-key", fetch_fail_then_succeed)
+            assert result.owner == "test-owner"
+
+            # Wait for second refresh attempt (will succeed)
+            time.sleep(0.4)
+
+            assert call_count[0] == 2  # Second call completed
+            assert cache.metrics.refreshes == 1
+
+            # Should now have updated data
+            result = cache.get("test-key", fetch_fail_then_succeed)
+            assert result.owner == "updated"
+        finally:
+            cache.shutdown()
+
     def test_no_refresh_without_fetch_func(self, sample_prompt_commit):
         """Test that no background refresh happens without refresh_func on entry."""
         cache = PromptCache(
@@ -351,6 +431,89 @@ class TestAsyncCache:
             result = cache.get("test-key", failing_fetch)
             assert result is not None
             assert result.owner == "test-owner"
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_async_keeps_serving_stale_on_500_errors(self, sample_prompt_commit):
+        """Test that async cache keeps serving stale data on 500 errors."""
+        call_count = [0]
+
+        async def fetch_with_500():
+            call_count[0] += 1
+            raise Exception("500 Internal Server Error")
+
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+        )
+        try:
+            # Set initial value
+            await cache.aset("test-key", sample_prompt_commit, fetch_with_500)
+
+            # Get before it's stale
+            result_before = cache.get("test-key", fetch_with_500)
+            assert result_before is not None
+            assert result_before.owner == "test-owner"
+
+            # Wait for it to become stale and refresh to fail
+            await asyncio.sleep(0.5)
+
+            # Fetch should have been attempted
+            assert call_count[0] > 0
+            assert cache.metrics.refresh_errors > 0
+
+            # Should still serve stale data
+            result_after = cache.get("test-key", fetch_with_500)
+            assert result_after is not None
+            assert result_after.owner == "test-owner"
+            assert cache.metrics.hits > 0
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_async_refresh_loop_continues_after_500_errors(
+        self, sample_prompt_commit
+    ):
+        """Test that async refresh loop continues after 500 errors and can recover."""
+        call_count = [0]
+        updated_commit = ls_schemas.PromptCommit(
+            owner="updated", repo="test", commit_hash="def456", manifest={}, examples=[]
+        )
+
+        async def fetch_fail_then_succeed():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("500 Internal Server Error")
+            return updated_commit
+
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.3,  # Longer interval for more control
+        )
+        try:
+            # Set initial value
+            await cache.aset("test-key", sample_prompt_commit, fetch_fail_then_succeed)
+
+            # Wait for first refresh attempt (will fail)
+            await asyncio.sleep(0.4)
+
+            assert call_count[0] == 1  # Only first call so far
+            assert cache.metrics.refresh_errors == 1
+
+            # Should still have original data
+            result = cache.get("test-key", fetch_fail_then_succeed)
+            assert result.owner == "test-owner"
+
+            # Wait for second refresh attempt (will succeed)
+            await asyncio.sleep(0.4)
+
+            assert call_count[0] == 2  # Second call completed
+            assert cache.metrics.refreshes == 1
+
+            # Should now have updated data
+            result = cache.get("test-key", fetch_fail_then_succeed)
+            assert result.owner == "updated"
         finally:
             await cache.stop()
 

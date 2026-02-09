@@ -332,6 +332,81 @@ describe("Cache", () => {
       cache.stop();
     });
 
+    test("should keep serving stale data on 500 errors", async () => {
+      const originalPrompt = createMockPromptCommit("original");
+      const error = new Error("500 Internal Server Error");
+      const fetchFunc = jest
+        .fn<() => Promise<PromptCommit>>()
+        .mockRejectedValue(error);
+
+      const cache = new PromptCache({
+        ttlSeconds: 1,
+        refreshIntervalSeconds: 1,
+      });
+
+      // Set initial value
+      cache.set("key1", originalPrompt, fetchFunc);
+
+      // Get it before it's stale
+      const beforeStale = cache.get("key1", fetchFunc);
+      expect(beforeStale).toEqual(originalPrompt);
+
+      // Advance past TTL to make it stale
+      jest.advanceTimersByTime(2000);
+      await Promise.resolve();
+
+      // Fetch should have been attempted and failed
+      expect(fetchFunc).toHaveBeenCalled();
+      expect(cache.metrics.refreshErrors).toBeGreaterThan(0);
+
+      // Should still serve the stale data
+      const afterError = cache.get("key1", fetchFunc);
+      expect(afterError).toEqual(originalPrompt);
+      expect(cache.metrics.hits).toBeGreaterThan(0);
+
+      cache.stop();
+    });
+
+    test("should continue refresh loop after 500 errors", async () => {
+      const originalPrompt = createMockPromptCommit("original");
+      const updatedPrompt = createMockPromptCommit("updated");
+
+      // First call fails with 500, second call succeeds
+      const fetchFunc = jest
+        .fn<() => Promise<PromptCommit>>()
+        .mockRejectedValueOnce(new Error("500 Internal Server Error"))
+        .mockResolvedValueOnce(updatedPrompt);
+
+      const cache = new PromptCache({
+        ttlSeconds: 1,
+        refreshIntervalSeconds: 1,
+      });
+
+      cache.set("key1", originalPrompt, fetchFunc);
+
+      // First refresh attempt (will fail)
+      jest.advanceTimersByTime(2000);
+      await Promise.resolve();
+
+      expect(fetchFunc).toHaveBeenCalledTimes(1);
+      expect(cache.metrics.refreshErrors).toBe(1);
+
+      // Should still have original data
+      expect(cache.get("key1", fetchFunc)).toEqual(originalPrompt);
+
+      // Second refresh attempt (will succeed)
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+
+      expect(fetchFunc).toHaveBeenCalledTimes(2);
+      expect(cache.metrics.refreshes).toBe(1);
+
+      // Should now have updated data
+      expect(cache.get("key1", fetchFunc)).toEqual(updatedPrompt);
+
+      cache.stop();
+    });
+
     test("should stop refresh on stop()", () => {
       const fetchFunc = jest
         .fn<() => Promise<PromptCommit>>()

@@ -307,7 +307,6 @@ export class PromptCache {
    */
   private async refreshStaleEntries(): Promise<void> {
     const staleEntries = this.getStaleEntries();
-    console.log("Refreshing stale entries", staleEntries);
     if (staleEntries.length === 0) {
       return;
     }
