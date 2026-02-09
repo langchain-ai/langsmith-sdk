@@ -123,6 +123,7 @@ export type EvaluatorT =
 interface _ForwardResults {
   run: Run;
   example: Example;
+  exampleIndex: number;
 }
 
 interface _ExperimentManagerArgs {
@@ -140,6 +141,7 @@ interface _ExperimentManagerArgs {
   examples?: Example[];
   numRepetitions?: number;
   _runsArray?: Run[];
+  resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
   includeAttachments?: boolean;
 }
 
@@ -254,6 +256,10 @@ export interface ExperimentResultRow {
   evaluationResults: EvaluationResults;
 }
 
+interface _ExperimentResultRowWithIndex extends ExperimentResultRow {
+  exampleIndex: number;
+}
+
 /**
  * Manage the execution of experiments.
  *
@@ -272,6 +278,8 @@ export class _ExperimentManager {
     any,
     unknown
   >;
+
+  _resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
 
   _examples?: Example[];
 
@@ -405,6 +413,7 @@ export class _ExperimentManager {
 
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
+    this._resultRows = args.resultRows;
     this._numRepetitions = args.numRepetitions;
     this._includeAttachments = args.includeAttachments;
   }
@@ -514,13 +523,26 @@ export class _ExperimentManager {
     }
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
+    const [rowsForResults, rowsForRuns] =
+      atee<_ForwardResults>(experimentResults);
     return new _ExperimentManager({
       examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
+      resultRows:
+        (async function* (): AsyncGenerator<_ExperimentResultRowWithIndex> {
+          for await (const pred of rowsForResults) {
+            yield {
+              run: pred.run,
+              example: pred.example,
+              evaluationResults: { results: [] },
+              exampleIndex: pred.exampleIndex,
+            };
+          }
+        })(),
       runs: (async function* (): AsyncGenerator<Run> {
-        for await (const pred of experimentResults) {
+        for await (const pred of rowsForRuns) {
           yield pred.run;
         }
       })(),
@@ -536,21 +558,23 @@ export class _ExperimentManager {
   ): Promise<_ExperimentManager> {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
     const experimentResults = this._score(resolvedEvaluators, options);
-    const [r1, r2] = atee<ExperimentResultRow>(experimentResults);
+    const [rowsForResults, rowsForRuns, rowsForEvaluations] =
+      atee<_ExperimentResultRowWithIndex>(experimentResults, 3);
 
     return new _ExperimentManager({
       examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
+      resultRows: rowsForResults,
       runs: (async function* (): AsyncGenerator<Run> {
-        for await (const result of r1) {
+        for await (const result of rowsForRuns) {
           yield result.run;
         }
       })(),
       evaluationResults:
         (async function* (): AsyncGenerator<EvaluationResults> {
-          for await (const result of r2) {
+          for await (const result of rowsForEvaluations) {
             yield result.evaluationResults;
           }
         })(),
@@ -569,22 +593,31 @@ export class _ExperimentManager {
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
-      runs: this.runs,
+      runs: this._runs,
       _runsArray: this._runsArray,
       evaluationResults: this._evaluationResults,
+      resultRows: this._resultRows,
       summaryResults: aggregateFeedbackGen,
       includeAttachments: this._includeAttachments,
     });
   }
 
-  async *getResults(): AsyncGenerator<ExperimentResultRow> {
-    const examples = await this.getExamples();
-    const runsIterator = this.runs[Symbol.asyncIterator]();
-    const evaluationIterator = this.evaluationResults[Symbol.asyncIterator]();
-
+  async *getResults(): AsyncGenerator<_ExperimentResultRowWithIndex> {
     if (!this._runsArray) {
       this._runsArray = [];
     }
+
+    if (this._resultRows) {
+      for await (const result of this._resultRows) {
+        this._runsArray.push(result.run);
+        yield result;
+      }
+      return;
+    }
+
+    const examples = await this.getExamples();
+    const runsIterator = this.runs[Symbol.asyncIterator]();
+    const evaluationIterator = this.evaluationResults[Symbol.asyncIterator]();
 
     for (let i = 0; i < examples.length; i++) {
       const runResult = await runsIterator.next();
@@ -602,6 +635,7 @@ export class _ExperimentManager {
         run: runResult.value,
         example: examples[i],
         evaluationResults,
+        exampleIndex: i,
       };
     }
   }
@@ -645,15 +679,16 @@ export class _ExperimentManager {
     const examples = await this.getExamples();
 
     if (maxConcurrency === 0) {
-      for (const example of examples) {
-        yield await _forward(
+      for (let i = 0; i < examples.length; i++) {
+        const result = await _forward(
           target,
-          example,
+          examples[i],
           this.experimentName,
           this._metadata,
           this.client,
           this._includeAttachments
         );
+        yield { ...result, exampleIndex: i };
       }
     } else {
       const caller = new AsyncCaller({
@@ -662,24 +697,29 @@ export class _ExperimentManager {
       });
 
       const exampleStream = (async function* () {
-        for (const example of examples) {
-          yield example;
+        for (let i = 0; i < examples.length; i++) {
+          yield { example: examples[i], exampleIndex: i };
         }
       })();
 
       for await (const result of _mapWithConcurrency(
         exampleStream,
         maxConcurrency,
-        (example) =>
-          caller.call(
-            _forward,
-            target,
-            example,
-            this.experimentName,
-            this._metadata,
-            this.client,
-            this._includeAttachments
-          )
+        (item) =>
+          caller
+            .call(
+              _forward,
+              target,
+              item.example,
+              this.experimentName,
+              this._metadata,
+              this.client,
+              this._includeAttachments
+            )
+            .then((forwardResult) => ({
+              ...forwardResult,
+              exampleIndex: item.exampleIndex,
+            }))
       )) {
         yield result;
       }
@@ -691,12 +731,12 @@ export class _ExperimentManager {
 
   async _runEvaluators(
     evaluators: Array<RunEvaluator>,
-    currentResults: ExperimentResultRow,
+    currentResults: _ExperimentResultRowWithIndex,
     fields: {
       client: Client;
     }
-  ): Promise<ExperimentResultRow> {
-    const { run, example, evaluationResults } = currentResults;
+  ): Promise<_ExperimentResultRowWithIndex> {
+    const { run, example, evaluationResults, exampleIndex } = currentResults;
     for (const evaluator of evaluators) {
       try {
         const options = {
@@ -730,6 +770,7 @@ export class _ExperimentManager {
       run,
       example,
       evaluationResults,
+      exampleIndex,
     };
   }
 
@@ -745,7 +786,7 @@ export class _ExperimentManager {
     options?: {
       maxConcurrency?: number;
     }
-  ): AsyncGenerator<ExperimentResultRow> {
+  ): AsyncGenerator<_ExperimentResultRowWithIndex> {
     const { maxConcurrency = 0 } = options || {};
 
     if (maxConcurrency === 0) {
@@ -940,10 +981,20 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   }
 
   async processData(manager: _ExperimentManager): Promise<void> {
+    const unorderedResults: _ExperimentResultRowWithIndex[] = [];
     for await (const item of manager.getResults()) {
-      this.results.push(item);
-      this.processedCount++;
+      unorderedResults.push(item);
     }
+
+    unorderedResults.sort((a, b) => a.exampleIndex - b.exampleIndex);
+    manager._runsArray = unorderedResults.map((item) => item.run);
+    this.results = unorderedResults.map((item) => ({
+      run: item.run,
+      example: item.example,
+      evaluationResults: item.evaluationResults,
+    }));
+    this.processedCount = this.results.length;
+
     this.summaryResults = await manager.getSummaryScores();
   }
 
@@ -1034,7 +1085,7 @@ async function _forward(
   metadata: KVMap,
   client: Client,
   includeAttachments?: boolean
-): Promise<_ForwardResults> {
+): Promise<Omit<_ForwardResults, "exampleIndex">> {
   let run: BaseRun | null = null;
 
   const _getRun = (r: RunTree): void => {
