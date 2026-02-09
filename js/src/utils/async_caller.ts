@@ -1,5 +1,5 @@
 import pRetry from "../utils/p-retry/index.js";
-import PQueueMod from "p-queue";
+import { PQueue, PQueueType } from "./p-queue.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
 const STATUS_RETRYABLE = [
@@ -66,7 +66,7 @@ export class AsyncCaller {
 
   protected maxQueueSizeBytes: AsyncCallerParams["maxQueueSizeBytes"];
 
-  queue: typeof import("p-queue")["default"]["prototype"];
+  queue: PQueueType;
 
   private onFailedResponseHook?: ResponseCallback;
 
@@ -77,15 +77,7 @@ export class AsyncCaller {
     this.maxRetries = params.maxRetries ?? 6;
     this.maxQueueSizeBytes = params.maxQueueSizeBytes;
 
-    if ("default" in PQueueMod) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.queue = new (PQueueMod.default as any)({
-        concurrency: this.maxConcurrency,
-      });
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.queue = new (PQueueMod as any)({ concurrency: this.maxConcurrency });
-    }
+    this.queue = new PQueue({ concurrency: this.maxConcurrency });
     this.onFailedResponseHook = params?.onFailedResponseHook;
   }
 

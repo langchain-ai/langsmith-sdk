@@ -1,4 +1,8 @@
-import { __private } from "../evaluation/_runner.js";
+import {
+  _mapWithConcurrency,
+  _reorderResultRowsByExampleIndex,
+} from "../evaluation/_runner.js";
+import { PQueue } from "../utils/p-queue.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -19,11 +23,32 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("evaluation runner internals", () => {
-  test("mapWithConcurrency runs sequentially when maxConcurrency <= 0", async () => {
+  test("mapWithConcurrency with concurrency Infinity runs all tasks at once", async () => {
     let active = 0;
     let maxActive = 0;
+    const queue = new PQueue({ concurrency: Infinity });
+
     const output = await collect(
-      __private.mapWithConcurrency(fromArray([1, 2, 3]), 0, async (value) => {
+      _mapWithConcurrency(fromArray([1, 2, 3, 4, 5]), queue, async (value) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await sleep(10);
+        active -= 1;
+        return value;
+      })
+    );
+
+    expect(output).toHaveLength(5);
+    expect(maxActive).toBe(5); // All 5 should run concurrently
+  });
+
+  test("mapWithConcurrency with concurrency 1 runs tasks one at a time", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const queue = new PQueue({ concurrency: 1 });
+
+    const output = await collect(
+      _mapWithConcurrency(fromArray([1, 2, 3]), queue, async (value) => {
         active += 1;
         maxActive = Math.max(maxActive, active);
         await sleep(10);
@@ -45,8 +70,9 @@ describe("evaluation runner internals", () => {
       3: 10,
     };
 
+    const queue = new PQueue({ concurrency: 2 });
     const output = await collect(
-      __private.mapWithConcurrency(fromArray([1, 2, 3]), 2, async (value) => {
+      _mapWithConcurrency(fromArray([1, 2, 3]), queue, async (value) => {
         active += 1;
         maxActive = Math.max(maxActive, active);
         await sleep(delays[value]);
@@ -61,9 +87,10 @@ describe("evaluation runner internals", () => {
   });
 
   test("mapWithConcurrency propagates mapper errors", async () => {
+    const queue = new PQueue({ concurrency: 2 });
     await expect(
       collect(
-        __private.mapWithConcurrency(fromArray([1, 2, 3]), 2, async (value) => {
+        _mapWithConcurrency(fromArray([1, 2, 3]), queue, async (value) => {
           if (value === 2) {
             throw new Error("mapper boom");
           }
@@ -80,8 +107,9 @@ describe("evaluation runner internals", () => {
       throw new Error("source boom");
     }
 
+    const queue = new PQueue({ concurrency: 2 });
     await expect(
-      collect(__private.mapWithConcurrency(source(), 2, async (value) => value))
+      collect(_mapWithConcurrency(source(), queue, async (value) => value))
     ).rejects.toThrow("source boom");
   });
 
@@ -105,12 +133,10 @@ describe("evaluation runner internals", () => {
         example: { id: "example-1" },
         evaluationResults: { results: [{ key: "key-1" }] },
       },
-    ] as unknown as Parameters<
-      typeof __private.reorderResultRowsByExampleIndex
-    >[0];
+    ] as unknown as Parameters<typeof _reorderResultRowsByExampleIndex>[0];
 
     const { orderedRows, orderedRuns } =
-      __private.reorderResultRowsByExampleIndex(inputRows);
+      _reorderResultRowsByExampleIndex(inputRows);
 
     expect(orderedRows.map((row) => row.example.id)).toEqual([
       "example-0",
@@ -148,12 +174,9 @@ describe("evaluation runner internals", () => {
         example: { id: "example-c" },
         evaluationResults: { results: [] },
       },
-    ] as unknown as Parameters<
-      typeof __private.reorderResultRowsByExampleIndex
-    >[0];
+    ] as unknown as Parameters<typeof _reorderResultRowsByExampleIndex>[0];
 
-    const { orderedRuns } =
-      __private.reorderResultRowsByExampleIndex(inputRows);
+    const { orderedRuns } = _reorderResultRowsByExampleIndex(inputRows);
     expect(orderedRuns.map((run) => run.id)).toEqual([
       "run-c",
       "run-a",

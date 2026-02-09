@@ -10,7 +10,6 @@ import {
 import { isTraceableFunction, traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
-import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
 import { getLangSmithEnvVarsMetadata } from "../utils/env.js";
 import { printErrorStackTrace } from "../utils/error.js";
@@ -28,6 +27,7 @@ import {
   ComparisonEvaluationResults,
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
+import { PQueue, PQueueType } from "../utils/p-queue.js";
 
 export type TargetConfigT = KVMap & {
   attachments?: Record<string, AttachmentInfo>;
@@ -185,7 +185,7 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * If not provided, defaults to `maxConcurrency` when set.
    * @default undefined
    */
-  predictionConcurrency?: number;
+  targetConcurrency?: number;
   /**
    * The maximum number of concurrent evaluators to run.
    * If not provided, defaults to `maxConcurrency` when set.
@@ -260,7 +260,7 @@ interface _ExperimentResultRowWithIndex extends ExperimentResultRow {
   exampleIndex: number;
 }
 
-function _reorderResultRowsByExampleIndex(
+export function _reorderResultRowsByExampleIndex(
   rows: _ExperimentResultRowWithIndex[]
 ): {
   orderedRows: ExperimentResultRow[];
@@ -537,6 +537,7 @@ export class _ExperimentManager {
     target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
+      queue?: PQueueType;
     }
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
@@ -571,6 +572,7 @@ export class _ExperimentManager {
     evaluators: Array<EvaluatorT | RunEvaluator>,
     options?: {
       maxConcurrency?: number;
+      queue?: PQueueType;
     }
   ): Promise<_ExperimentManager> {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
@@ -690,6 +692,7 @@ export class _ExperimentManager {
     target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
+      queue?: PQueueType;
     }
   ): AsyncGenerator<_ForwardResults> {
     const maxConcurrency = options?.maxConcurrency ?? 0;
@@ -698,51 +701,35 @@ export class _ExperimentManager {
     let shouldThrowEndError = false;
     let endErrorToThrow: unknown;
     try {
-      if (maxConcurrency === 0) {
-        for (let i = 0; i < examples.length; i++) {
-          const result = await _forward(
+      // maxConcurrency: 0 means unlimited (Infinity)
+      const queue =
+        options?.queue ??
+        new PQueue({
+          concurrency: maxConcurrency === 0 ? Infinity : maxConcurrency,
+        });
+
+      const examplesWithIndex = examples.map((example, i) => ({
+        example,
+        exampleIndex: i,
+      }));
+
+      for await (const result of _mapWithConcurrency(
+        examplesWithIndex,
+        queue,
+        (item) =>
+          _forward(
             target,
-            examples[i],
+            item.example,
             this.experimentName,
             this._metadata,
             this.client,
             this._includeAttachments
-          );
-          yield { ...result, exampleIndex: i };
-        }
-      } else {
-        const caller = new AsyncCaller({
-          maxConcurrency,
-          debug: this.client.debug,
-        });
-
-        const exampleStream = (async function* () {
-          for (let i = 0; i < examples.length; i++) {
-            yield { example: examples[i], exampleIndex: i };
-          }
-        })();
-
-        for await (const result of _mapWithConcurrency(
-          exampleStream,
-          maxConcurrency,
-          (item) =>
-            caller
-              .call(
-                _forward,
-                target,
-                item.example,
-                this.experimentName,
-                this._metadata,
-                this.client,
-                this._includeAttachments
-              )
-              .then((forwardResult) => ({
-                ...forwardResult,
-                exampleIndex: item.exampleIndex,
-              }))
-        )) {
-          yield result;
-        }
+          ).then((forwardResult) => ({
+            ...forwardResult,
+            exampleIndex: item.exampleIndex,
+          }))
+      )) {
+        yield result;
       }
     } catch (error) {
       hadPredictionError = true;
@@ -822,32 +809,27 @@ export class _ExperimentManager {
     evaluators: Array<RunEvaluator>,
     options?: {
       maxConcurrency?: number;
+      queue?: PQueueType;
     }
   ): AsyncGenerator<_ExperimentResultRowWithIndex> {
-    const { maxConcurrency = 0 } = options || {};
+    const { maxConcurrency = 0, queue: providedQueue } = options || {};
 
-    if (maxConcurrency === 0) {
-      for await (const currentResults of this.getResults()) {
-        yield this._runEvaluators(evaluators, currentResults, {
-          client: this.client,
-        });
-      }
-    } else {
-      const caller = new AsyncCaller({
-        maxConcurrency,
-        debug: this.client.debug,
+    // maxConcurrency: 0 means unlimited (Infinity)
+    const queue =
+      providedQueue ??
+      new PQueue({
+        concurrency: maxConcurrency === 0 ? Infinity : maxConcurrency,
       });
 
-      for await (const result of _mapWithConcurrency(
-        this.getResults(),
-        maxConcurrency,
-        (currentResults) =>
-          caller.call(this._runEvaluators, evaluators, currentResults, {
-            client: this.client,
-          })
-      )) {
-        yield result;
-      }
+    for await (const result of _mapWithConcurrency(
+      this.getResults(),
+      queue,
+      (currentResults) =>
+        this._runEvaluators(evaluators, currentResults, {
+          client: this.client,
+        })
+    )) {
+      yield result;
     }
   }
 
@@ -1084,20 +1066,47 @@ async function _evaluate(
     includeAttachments: standardFields.includeAttachments,
   }).start();
 
-  const predictionConcurrency =
-    standardFields.predictionConcurrency ?? standardFields.maxConcurrency ?? 0;
+  const targetConcurrency =
+    standardFields.targetConcurrency ?? standardFields.maxConcurrency ?? 0;
   const evaluationConcurrency =
     standardFields.evaluationConcurrency ?? standardFields.maxConcurrency ?? 0;
 
+  // Determine if we should use separate queues or a shared queue
+  const useSeparateQueues =
+    standardFields.targetConcurrency !== undefined &&
+    standardFields.evaluationConcurrency !== undefined;
+
+  let sharedQueue: PQueueType | undefined;
+  let targetQueue: PQueueType | undefined;
+  let evaluationQueue: PQueueType | undefined;
+
+  if (useSeparateQueues) {
+    // Create separate queues for target and evaluation
+    if (targetConcurrency > 0) {
+      targetQueue = new PQueue({ concurrency: targetConcurrency });
+    }
+    if (evaluationConcurrency > 0) {
+      evaluationQueue = new PQueue({ concurrency: evaluationConcurrency });
+    }
+  } else {
+    // Use a shared queue
+    const sharedConcurrency = standardFields.maxConcurrency ?? 0;
+    if (sharedConcurrency > 0) {
+      sharedQueue = new PQueue({ concurrency: sharedConcurrency });
+    }
+  }
+
   if (_isCallable(target)) {
     manager = await manager.withPredictions(target, {
-      maxConcurrency: predictionConcurrency,
+      maxConcurrency: targetConcurrency,
+      queue: useSeparateQueues ? targetQueue : sharedQueue,
     });
   }
 
   if (standardFields.evaluators) {
     manager = await manager.withEvaluators(standardFields.evaluators, {
       maxConcurrency: evaluationConcurrency,
+      queue: useSeparateQueues ? evaluationQueue : sharedQueue,
     });
   }
   if (standardFields.summaryEvaluators) {
@@ -1354,83 +1363,37 @@ async function _resolveExperiment(
 }
 
 /**
- * Map over an async iterable with bounded concurrency.
+ * Map over an iterable with bounded concurrency using p-queue.
  * Results are yielded as soon as they resolve (input order is not preserved).
- * When `maxConcurrency <= 0`, mapping runs sequentially.
- * Errors from the source iterable or mapper propagate to the consumer.
+ * The queue handles concurrency limits internally.
  */
-async function* _mapWithConcurrency<TInput, TOutput>(
-  iterable: AsyncIterable<TInput>,
-  maxConcurrency: number,
+export async function* _mapWithConcurrency<TInput, TOutput>(
+  iterable: Iterable<TInput> | AsyncIterable<TInput>,
+  queue: PQueueType,
   mapper: (value: TInput) => Promise<TOutput>
 ): AsyncGenerator<TOutput> {
-  if (maxConcurrency <= 0) {
-    for await (const value of iterable) {
-      yield await mapper(value);
-    }
-    return;
-  }
-
   type PendingTask = Promise<{ value: TOutput; self: PendingTask }>;
 
-  const iterator = iterable[Symbol.asyncIterator]();
-  let nextInput: Promise<IteratorResult<TInput>> | null = iterator.next();
   const pending = new Set<PendingTask>();
 
-  const schedule = (input: TInput) => {
-    const task: PendingTask = mapper(input).then((value) => ({
-      value,
-      self: task,
-    }));
+  // Add all tasks to p-queue immediately (p-queue handles concurrency)
+  for await (const input of iterable) {
+    const task: PendingTask = queue
+      .add(() => mapper(input))
+      .then((value) => ({
+        value,
+        self: task,
+      }));
     pending.add(task);
-  };
+  }
 
-  while (pending.size > 0 || nextInput) {
-    const racers: Array<
-      Promise<
-        | { type: "input"; res: IteratorResult<TInput> }
-        | { type: "output"; res: { value: TOutput; self: PendingTask } }
-      >
-    > = [];
-
-    if (nextInput && pending.size < maxConcurrency) {
-      racers.push(nextInput.then((res) => ({ type: "input" as const, res })));
-    }
-
-    if (pending.size) {
-      racers.push(
-        Promise.race(
-          Array.from(pending).map((task) =>
-            task.then((res) => ({ type: "output" as const, res }))
-          )
-        )
-      );
-    }
-
-    if (racers.length === 0) {
-      break;
-    }
-
-    const winner = await Promise.race(racers);
-    if (winner.type === "input") {
-      const { res } = winner;
-      if (res.done) {
-        nextInput = null;
-      } else {
-        schedule(res.value);
-        nextInput = iterator.next();
-      }
-    } else {
-      pending.delete(winner.res.self);
-      yield winner.res.value;
-    }
+  // Yield results as they complete
+  while (pending.size > 0) {
+    const { value, self } = await Promise.race(pending);
+    pending.delete(self);
+    yield value;
   }
 }
-
-export const __private = {
-  mapWithConcurrency: _mapWithConcurrency,
-  reorderResultRowsByExampleIndex: _reorderResultRowsByExampleIndex,
-};
 
 function _isCallable(
   target: StandardTargetT | AsyncGenerator<Run>
