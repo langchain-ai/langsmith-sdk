@@ -189,7 +189,7 @@
     "langchain": "^0.3.29",
     "msw": "^2.11.2",
     "node-fetch": "^2.7.0",
-    "openai": "^5.8.2",
+    "openai": "^6.18.0",
     "prettier": "^2.8.8",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
