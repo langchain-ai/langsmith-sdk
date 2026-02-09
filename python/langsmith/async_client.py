@@ -8,6 +8,7 @@ import json
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from functools import partial
 from typing import (
     Any,
     Literal,
@@ -22,7 +23,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncCache
+from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -43,7 +44,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        cache: Union[AsyncCache, bool] = False,
+        disable_prompt_cache: bool = False,
     ):
         """Initialize the async client.
 
@@ -83,11 +84,10 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[AsyncCache] = AsyncCache()
-        elif isinstance(cache, AsyncCache):
-            self._cache = cache
+        # Initialize prompt cache
+        if not disable_prompt_cache:
+            # Use the global singleton instance
+            self._cache: Optional[AsyncPromptCache] = async_prompt_cache_singleton
         else:
             self._cache = None
 
@@ -1707,20 +1707,25 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Create refresh function bound to this specific prompt
+        refresh_func = partial(
+            self._afetch_prompt_from_api, prompt_identifier, include_model
+        )
+
         # Try cache first if enabled
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, refresh_func)
             if cached is not None:
                 return cached
 
         # Cache miss or cache disabled - fetch from API
-        result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
+        result = await refresh_func()
 
         # Store in cache
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            await self._cache.aset(cache_key, result, refresh_func)
 
         return result
 

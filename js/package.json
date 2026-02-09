@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.4.12",
+  "version": "0.5.0",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -449,6 +449,6 @@
     "rimraf/**/glob": "10.5.0"
   },
   "browser": {
-    "./dist/utils/prompts_cache_fs.js": "./dist/utils/prompts_cache_fs.browser.js"
+    "./dist/utils/prompt_cache/fs.js": "./dist/utils/prompt_cache/fs.browser.js"
   }
 }
