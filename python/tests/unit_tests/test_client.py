@@ -4450,6 +4450,8 @@ def test_process_buffered_run_ops_advanced_behavior():
                         "api_key": None,
                         "service_key": None,
                         "tenant_id": None,
+                        "authorization": None,
+                        "cookie": None,
                     },
                 )
             ]
@@ -4469,7 +4471,14 @@ def test_process_buffered_run_ops_advanced_behavior():
         (
             "post",
             {"id": "run1", "name": "test"},
-            {"api_url": None, "api_key": None, "service_key": None, "tenant_id": None},
+            {
+                "api_url": None,
+                "api_key": None,
+                "service_key": None,
+                "tenant_id": None,
+                "authorization": None,
+                "cookie": None,
+            },
         )
     )
     client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
@@ -4492,6 +4501,8 @@ def test_process_buffered_run_ops_advanced_behavior():
                     "api_key": None,
                     "service_key": None,
                     "tenant_id": None,
+                    "authorization": None,
+                    "cookie": None,
                 },
             )
         )
@@ -4629,6 +4640,8 @@ def test_process_buffered_run_ops_end_to_end_integration():
                                     "api_key": None,
                                     "service_key": None,
                                     "tenant_id": None,
+                                    "authorization": None,
+                                    "cookie": None,
                                 },
                             )
                         )

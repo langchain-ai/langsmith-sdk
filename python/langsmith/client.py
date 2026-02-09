@@ -1830,11 +1830,6 @@ class Client:
             )
             ```
         """
-        # This is an alternative to API key auth. API key auth takes precedence.
-        # service_key: Optional[str] = None,
-        # tenant_id: Optional[str] = None,
-        # authorization: Optional[str] = None,
-        # cookie: Optional[str] = None,
         service_key: str | None = kwargs.pop("service_key", None)
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
@@ -2419,10 +2414,6 @@ class Client:
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
     ):
-        headers_base = {**self._headers}
-        if tenant_id is not None:
-            headers_base["X-Tenant-Id"] = tenant_id
-
         # Use provided endpoint/auth override or fall back to all configured endpoints
         endpoints: list[tuple[str, dict[str, str]]]
         use_override = any([api_url, api_key, service_key, authorization, cookie])
@@ -2432,7 +2423,7 @@ class Client:
                 (
                     target_api_url,
                     _apply_auth_overrides(
-                        {**headers_base},
+                        {**self._headers},
                         api_key=api_key,
                         service_key=service_key,
                         tenant_id=tenant_id,
@@ -2447,7 +2438,7 @@ class Client:
                 (
                     target_api_url,
                     _apply_auth_overrides(
-                        {**headers_base},
+                        {**self._headers},
                         api_key=target_api_key,
                         service_key=None,
                         tenant_id=None,
@@ -2726,10 +2717,6 @@ class Client:
         parts = acc.parts
         _context = acc.context
 
-        headers_base = {**self._headers}
-        if tenant_id is not None:
-            headers_base["X-Tenant-Id"] = tenant_id
-
         # Use provided endpoint/auth override or fall back to all configured endpoints
         endpoints: list[tuple[str, dict[str, str]]]
         use_override = any([api_url, api_key, service_key, authorization, cookie])
@@ -2739,7 +2726,7 @@ class Client:
                 (
                     target_api_url,
                     _apply_auth_overrides(
-                        {**headers_base},
+                        {**self._headers},
                         api_key=api_key,
                         service_key=service_key,
                         tenant_id=tenant_id,
@@ -2754,7 +2741,7 @@ class Client:
                 (
                     target_api_url,
                     _apply_auth_overrides(
-                        {**headers_base},
+                        {**self._headers},
                         api_key=target_api_key,
                         service_key=None,
                         tenant_id=None,
