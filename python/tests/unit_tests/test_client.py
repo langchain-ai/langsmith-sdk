@@ -39,6 +39,8 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _apply_auth_overrides,
+    _apply_optional_api_key,
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
@@ -205,6 +207,56 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 
         client_no_key = Client(api_url="http://localhost:1984")
         assert "x-api-key" not in client_no_key._headers
+
+
+def test_apply_optional_api_key() -> None:
+    headers = {
+        "x-api-key": "old",
+        "X-API-KEY": "old-upper",
+        "other": "value",
+    }
+
+    updated = _apply_optional_api_key(headers, None)
+    assert "x-api-key" not in updated
+    assert "X-API-KEY" not in updated
+    assert updated["other"] == "value"
+
+    updated = _apply_optional_api_key({"other": "value"}, "new-key")
+    assert updated["x-api-key"] == "new-key"
+
+
+def test_apply_auth_overrides() -> None:
+    headers = {
+        "x-api-key": "old",
+        "other": "value",
+    }
+
+    updated = _apply_auth_overrides(
+        headers,
+        api_key=None,
+        service_key=None,
+        tenant_id=None,
+        authorization="Bearer abc",
+        cookie="session=xyz",
+        fallback_api_key="fallback",
+    )
+    assert "x-api-key" not in updated
+    assert updated["Authorization"] == "Bearer abc"
+    assert updated["Cookie"] == "session=xyz"
+    assert updated["other"] == "value"
+
+    updated = _apply_auth_overrides(
+        {"other": "value"},
+        api_key="explicit",
+        service_key="svc",
+        tenant_id="tenant",
+        authorization=None,
+        cookie=None,
+        fallback_api_key="fallback",
+    )
+    assert updated["x-api-key"] == "explicit"
+    assert updated["X-Service-Key"] == "svc"
+    assert updated["X-Tenant-Id"] == "tenant"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -4391,7 +4443,20 @@ def test_process_buffered_run_ops_advanced_behavior():
             )
 
             # Test fallback behavior
-            client._run_ops_buffer = [("post", {"id": "test", "name": "test_run"})]
+            client._run_ops_buffer = [
+                (
+                    "post",
+                    {"id": "test", "name": "test_run"},
+                    {
+                        "api_url": None,
+                        "api_key": None,
+                        "service_key": None,
+                        "tenant_id": None,
+                        "authorization": None,
+                        "cookie": None,
+                    },
+                )
+            ]
             client._flush_run_ops_buffer()
             mock_process.assert_called_once()
 
@@ -4404,7 +4469,20 @@ def test_process_buffered_run_ops_advanced_behavior():
     )
 
     # Should not flush yet (time not reached)
-    client._run_ops_buffer.append(("post", {"id": "run1", "name": "test"}))
+    client._run_ops_buffer.append(
+        (
+            "post",
+            {"id": "run1", "name": "test"},
+            {
+                "api_url": None,
+                "api_key": None,
+                "service_key": None,
+                "tenant_id": None,
+                "authorization": None,
+                "cookie": None,
+            },
+        )
+    )
     client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
     assert not client._should_flush_run_ops_buffer()
 
@@ -4416,7 +4494,20 @@ def test_process_buffered_run_ops_advanced_behavior():
     client._run_ops_buffer.clear()
     client._run_ops_buffer_last_flush_time = time.time()  # Recent flush
     for i in range(10):  # Fill to buffer size
-        client._run_ops_buffer.append(("post", {"id": f"run_{i}", "name": "test"}))
+        client._run_ops_buffer.append(
+            (
+                "post",
+                {"id": f"run_{i}", "name": "test"},
+                {
+                    "api_url": None,
+                    "api_key": None,
+                    "service_key": None,
+                    "tenant_id": None,
+                    "authorization": None,
+                    "cookie": None,
+                },
+            )
+        )
     assert client._should_flush_run_ops_buffer()
 
 
@@ -4542,7 +4633,20 @@ def test_process_buffered_run_ops_end_to_end_integration():
                     test_runs.append(run_data)
 
                     with client._run_ops_buffer_lock:
-                        client._run_ops_buffer.append(("post", run_data))
+                        client._run_ops_buffer.append(
+                            (
+                                "post",
+                                run_data,
+                                {
+                                    "api_url": None,
+                                    "api_key": None,
+                                    "service_key": None,
+                                    "tenant_id": None,
+                                    "authorization": None,
+                                    "cookie": None,
+                                },
+                            )
+                        )
                         if client._should_flush_run_ops_buffer():
                             client._flush_run_ops_buffer()
 
@@ -4564,6 +4668,52 @@ def test_process_buffered_run_ops_end_to_end_integration():
                         assert "name" in run
 
                 client.cleanup()
+
+
+def test_run_ops_buffer_preserves_service_auth_overrides():
+    """Buffered run ops must preserve per-op service auth overrides."""
+    import uuid
+
+    def noop(runs):
+        return runs
+
+    client = Client(
+        api_url="https://default.example.com",
+        api_key="default-key",
+        info={"version": "0.0.0"},
+        process_buffered_run_ops=noop,
+        run_ops_buffer_size=100,
+    )
+
+    run_id = uuid.uuid4()
+    client.create_run(
+        id=run_id,
+        name="test",
+        run_type="chain",
+        inputs={"x": 1},
+        trace_id=run_id,
+        dotted_order="20240101T000000000000Z00000000000000000000000000000000",
+        service_key="jwt-token-123",
+        tenant_id="tenant-abc",
+    )
+    assert client._run_ops_buffer, "expected buffered run op"
+    op, _, write_ctx = client._run_ops_buffer[-1]
+    assert op == "post"
+    assert write_ctx["service_key"] == "jwt-token-123"
+    assert write_ctx["tenant_id"] == "tenant-abc"
+
+    client.update_run(
+        run_id,
+        outputs={"y": 2},
+        trace_id=run_id,
+        dotted_order="20240101T000000000000Z00000000000000000000000000000001",
+        service_key="jwt-token-456",
+        tenant_id="tenant-def",
+    )
+    op, _, write_ctx = client._run_ops_buffer[-1]
+    assert op == "patch"
+    assert write_ctx["service_key"] == "jwt-token-456"
+    assert write_ctx["tenant_id"] == "tenant-def"
 
     # Test file closing logic
     files_closed = []
