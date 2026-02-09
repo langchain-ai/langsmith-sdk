@@ -1535,7 +1535,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async _postBatchIngestRuns(
-    body: Uint8Array,
+    body: Uint8Array<ArrayBuffer>,
     options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
   ) {
     const headers: Record<string, string> = {
@@ -1735,7 +1735,7 @@ export class Client implements LangSmithTracingClientInterface {
               }
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
-                payload: new Blob([content], {
+                payload: new Blob([content as BlobPart], {
                   type: `${contentType}; length=${content.byteLength}`,
                 }),
               });
@@ -5163,7 +5163,7 @@ export class Client implements LangSmithTracingClientInterface {
             mimeType = attachment.mimeType;
             data = attachment.data;
           }
-          const attachmentBlob = new Blob([data], {
+          const attachmentBlob = new Blob([data as BlobPart], {
             type: `${mimeType}; length=${data.byteLength}`,
           });
           formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
@@ -5295,7 +5295,7 @@ export class Client implements LangSmithTracingClientInterface {
             mimeType = attachment.mimeType;
             data = attachment.data;
           }
-          const attachmentBlob = new Blob([data], {
+          const attachmentBlob = new Blob([data as BlobPart], {
             type: `${mimeType}; length=${data.byteLength}`,
           });
           formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);

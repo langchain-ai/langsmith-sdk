@@ -389,7 +389,7 @@ test("image and file data normalization", async () => {
   const imgArrayBuffer = imgBuffer.buffer.slice(
     imgBuffer.byteOffset,
     imgBuffer.byteOffset + imgBuffer.byteLength
-  );
+  ) as ArrayBuffer;
   const imgBase64 = imgBuffer.toString("base64");
   const imgUrl = "https://smith.langchain.com/og_image.png";
   const imgDataUrl = `data:image/png;base64,${imgBase64}`;

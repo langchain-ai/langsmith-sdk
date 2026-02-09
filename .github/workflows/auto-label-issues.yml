@@ -4,6 +4,8 @@ on:
   issues:
     types: [opened]
 
+permissions: {}
+
 jobs:
   auto-label:
     runs-on: ubuntu-latest
@@ -11,7 +13,7 @@ jobs:
       issues: write
     steps:
       - name: Add SDK label
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         with:
           script: |
             github.rest.issues.addLabels({

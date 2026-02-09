@@ -17,7 +17,7 @@ function defaultOptions() {
   };
 }
 
-function encodeString(str: string): Uint8Array {
+function encodeString(str: string): Uint8Array<ArrayBuffer> {
   return encoder.encode(str);
 }
 
@@ -62,7 +62,13 @@ function createDefaultReplacer(userReplacer?) {
 }
 
 // Regular stringify
-export function serialize(obj, errorContext?, replacer?, spacer?, options?) {
+export function serialize(
+  obj,
+  errorContext?,
+  replacer?,
+  spacer?,
+  options?
+): Uint8Array<ArrayBuffer> {
   try {
     const str = JSON.stringify(obj, createDefaultReplacer(replacer), spacer);
     return encodeString(str);

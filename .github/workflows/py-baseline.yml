@@ -8,6 +8,9 @@ on:
       - "python/langsmith/**"
       - "python/bench/**"
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -15,10 +18,10 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: SHA=$(git rev-parse HEAD) && echo "SHA=$SHA" >> $GITHUB_ENV
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: 3.11
           enable-cache: true
@@ -27,7 +30,7 @@ jobs:
       - name: Run benchmarks
         run: OUTPUT=out/benchmark-baseline.json make -s benchmark
       - name: Save outputs
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           key: ${{ runner.os }}-benchmark-baseline-${{ env.SHA }}
           path: |
