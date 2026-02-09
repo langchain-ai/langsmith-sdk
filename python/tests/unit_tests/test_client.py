@@ -45,6 +45,7 @@ from langsmith.client import (
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
+    _prepare_list_feedback_params,
 )
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
@@ -1175,6 +1176,107 @@ def test_create_feedback_string_source_type(source_type: str) -> None:
         key="Foo",
         feedback_source_type=source_type,
     )
+
+
+def test_prepare_list_feedback_params() -> None:
+    uid1, uid2 = uuid.uuid4(), uuid.uuid4()
+
+    # Named params map to correct query-param keys
+    result = _prepare_list_feedback_params(
+        run_ids=[uid1], project_id=uid2, feedback_key=["k"], feedback_source_type=None
+    )
+    assert result["run"] == [uid1]
+    assert result["session"] == [uid2]
+    assert result["key"] == ["k"]
+
+    # Single project_id gets wrapped in a list
+    result = _prepare_list_feedback_params(
+        run_ids=None, project_id=uid1, feedback_key=None, feedback_source_type=None
+    )
+    assert result["session"] == [uid1]
+
+    # Single string key via kwarg gets wrapped in a list
+    result = _prepare_list_feedback_params(
+        run_ids=None,
+        project_id=None,
+        feedback_key=None,
+        feedback_source_type=None,
+        key="correctness",
+    )
+    assert result["key"] == ["correctness"]
+
+    # Raw kwargs accepted when named params are None
+    result = _prepare_list_feedback_params(
+        run_ids=None,
+        project_id=None,
+        feedback_key=None,
+        feedback_source_type=None,
+        run=[uid1],
+    )
+    assert result["run"] == [uid1]
+
+    # Extra kwargs pass through
+    result = _prepare_list_feedback_params(
+        run_ids=[uid1],
+        project_id=None,
+        feedback_key=None,
+        feedback_source_type=None,
+        has_comment=True,
+    )
+    assert result["has_comment"] is True
+
+    # Conflicts raise ValueError
+    with pytest.raises(ValueError, match="run.*run_ids"):
+        _prepare_list_feedback_params(
+            run_ids=[uid1],
+            project_id=None,
+            feedback_key=None,
+            feedback_source_type=None,
+            run=[uid2],
+        )
+    with pytest.raises(ValueError, match="project_id.*session"):
+        _prepare_list_feedback_params(
+            run_ids=None,
+            project_id=uid1,
+            feedback_key=None,
+            feedback_source_type=None,
+            session=[uid2],
+        )
+    with pytest.raises(ValueError, match="key.*feedback_key"):
+        _prepare_list_feedback_params(
+            run_ids=None,
+            project_id=None,
+            feedback_key=["a"],
+            feedback_source_type=None,
+            key=["b"],
+        )
+    with pytest.raises(ValueError, match="source.*feedback_source_type"):
+        _prepare_list_feedback_params(
+            run_ids=None,
+            project_id=None,
+            feedback_key=None,
+            feedback_source_type=["model"],
+            run=[uid1],
+            source=["api"],
+        )
+
+    # No filters raises
+    with pytest.raises(ValueError, match="At least one"):
+        _prepare_list_feedback_params(
+            run_ids=None,
+            project_id=None,
+            feedback_key=None,
+            feedback_source_type=None,
+        )
+
+    # Empty lists count as no filter
+    with pytest.raises(ValueError, match="At least one"):
+        _prepare_list_feedback_params(
+            run_ids=[],
+            project_id=None,
+            feedback_key=[],
+            feedback_source_type=None,
+        )
 
 
 def test_pydantic_serialize() -> None:

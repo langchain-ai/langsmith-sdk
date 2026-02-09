@@ -826,6 +826,7 @@ class AsyncClient:
         self,
         *,
         run_ids: Optional[Sequence[ls_client.ID_TYPE]] = None,
+        project_id: Union[ls_client.ID_TYPE, Sequence[ls_client.ID_TYPE], None] = None,
         feedback_key: Optional[Sequence[str]] = None,
         feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
         limit: Optional[int] = None,
@@ -833,16 +834,15 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Feedback]:
         """List feedback."""
         params = {
-            "run": (
-                [str(ls_client._as_uuid(id_)) for id_ in run_ids] if run_ids else None
+            **ls_client._prepare_list_feedback_params(
+                run_ids=run_ids,
+                project_id=project_id,
+                feedback_key=feedback_key,
+                feedback_source_type=feedback_source_type,
+                **kwargs,
             ),
             "limit": min(limit, 100) if limit is not None else 100,
-            **kwargs,
         }
-        if feedback_key is not None:
-            params["key"] = feedback_key
-        if feedback_source_type is not None:
-            params["source"] = feedback_source_type
         ix = 0
         async for feedback in self._aget_paginated_list("/feedback", params=params):
             yield ls_schemas.Feedback(**feedback)
