@@ -260,6 +260,23 @@ interface _ExperimentResultRowWithIndex extends ExperimentResultRow {
   exampleIndex: number;
 }
 
+function _reorderResultRowsByExampleIndex(
+  rows: _ExperimentResultRowWithIndex[]
+): {
+  orderedRows: ExperimentResultRow[];
+  orderedRuns: Run[];
+} {
+  const sortedRows = [...rows].sort((a, b) => a.exampleIndex - b.exampleIndex);
+  return {
+    orderedRows: sortedRows.map(({ run, example, evaluationResults }) => ({
+      run,
+      example,
+      evaluationResults,
+    })),
+    orderedRuns: sortedRows.map((row) => row.run),
+  };
+}
+
 /**
  * Manage the execution of experiments.
  *
@@ -1006,13 +1023,10 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
       unorderedResults.push(item);
     }
 
-    unorderedResults.sort((a, b) => a.exampleIndex - b.exampleIndex);
-    manager._runsArray = unorderedResults.map((item) => item.run);
-    this.results = unorderedResults.map((item) => ({
-      run: item.run,
-      example: item.example,
-      evaluationResults: item.evaluationResults,
-    }));
+    const { orderedRows, orderedRuns } =
+      _reorderResultRowsByExampleIndex(unorderedResults);
+    manager._runsArray = orderedRuns;
+    this.results = orderedRows;
     this.processedCount = this.results.length;
 
     this.summaryResults = await manager.getSummaryScores();
@@ -1412,6 +1426,11 @@ async function* _mapWithConcurrency<TInput, TOutput>(
     }
   }
 }
+
+export const __private = {
+  mapWithConcurrency: _mapWithConcurrency,
+  reorderResultRowsByExampleIndex: _reorderResultRowsByExampleIndex,
+};
 
 function _isCallable(
   target: StandardTargetT | AsyncGenerator<Run>
