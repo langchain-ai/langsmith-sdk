@@ -2059,7 +2059,7 @@ class Client:
                         self._headers,
                         api_key=write_api_key,
                         service_key=None,
-                        tenant_id=tenant_id,
+                        tenant_id=None,
                         authorization=None,
                         cookie=None,
                         fallback_api_key=None,
@@ -2450,7 +2450,7 @@ class Client:
                         {**headers_base},
                         api_key=target_api_key,
                         service_key=None,
-                        tenant_id=tenant_id,
+                        tenant_id=None,
                         authorization=None,
                         cookie=None,
                         fallback_api_key=None,
@@ -2757,7 +2757,7 @@ class Client:
                         {**headers_base},
                         api_key=target_api_key,
                         service_key=None,
-                        tenant_id=tenant_id,
+                        tenant_id=None,
                         authorization=None,
                         cookie=None,
                         fallback_api_key=None,
@@ -2971,8 +2971,6 @@ class Client:
             client.update_run(run["id"], **run)
             ```
         """
-        authorization = kwargs.pop("authorization", authorization)
-        cookie = kwargs.pop("cookie", cookie)
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3201,7 +3199,7 @@ class Client:
                     self._headers,
                     api_key=write_api_key,
                     service_key=None,
-                    tenant_id=tenant_id,
+                    tenant_id=None,
                     authorization=None,
                     cookie=None,
                     fallback_api_key=None,

@@ -11,7 +11,7 @@ import threading
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, Optional, Union, cast
+from typing import Any, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, model_validator
@@ -1201,19 +1201,43 @@ def _create_current_dotted_order(
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
 
+class ReplicaAuth(NamedTuple):
+    api_url: str | None
+    api_key: str | None
+    service_key: str | None
+    tenant_id: str | None
+    authorization: str | None
+    cookie: str | None
+
+
 def _extract_replica_auth(
     replica: WriteReplica,
-) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None]:
-    # api_url, api_key, service_key, tenant_id, authorization, cookie
+) -> ReplicaAuth:
     api_url = replica.get("api_url")
     if "auth" in replica:
         auth = cast(AuthHeaders, replica["auth"])
-        api_key = auth.get("api_key")
-        service_key = auth.get("service_key")
-        tenant_id = auth.get("tenant_id")
-        authorization = auth.get("authorization")
-        cookie = auth.get("cookie")
-        return api_url, api_key, service_key, tenant_id, authorization, cookie
+        return ReplicaAuth(
+            api_url=api_url,
+            api_key=auth.get("api_key"),
+            service_key=auth.get("service_key"),
+            tenant_id=auth.get("tenant_id"),
+            authorization=auth.get("authorization"),
+            cookie=auth.get("cookie"),
+        )
     if "api_key" in replica:
-        return api_url, replica["api_key"], None, None, None, None
-    return api_url, None, None, None, None, None
+        return ReplicaAuth(
+            api_url=api_url,
+            api_key=replica["api_key"],
+            service_key=None,
+            tenant_id=None,
+            authorization=None,
+            cookie=None,
+        )
+    return ReplicaAuth(
+        api_url=api_url,
+        api_key=None,
+        service_key=None,
+        tenant_id=None,
+        authorization=None,
+        cookie=None,
+    )
