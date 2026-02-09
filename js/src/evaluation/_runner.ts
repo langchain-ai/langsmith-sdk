@@ -677,56 +677,76 @@ export class _ExperimentManager {
   ): AsyncGenerator<_ForwardResults> {
     const maxConcurrency = options?.maxConcurrency ?? 0;
     const examples = await this.getExamples();
-
-    if (maxConcurrency === 0) {
-      for (let i = 0; i < examples.length; i++) {
-        const result = await _forward(
-          target,
-          examples[i],
-          this.experimentName,
-          this._metadata,
-          this.client,
-          this._includeAttachments
-        );
-        yield { ...result, exampleIndex: i };
-      }
-    } else {
-      const caller = new AsyncCaller({
-        maxConcurrency,
-        debug: this.client.debug,
-      });
-
-      const exampleStream = (async function* () {
+    let hadPredictionError = false;
+    let shouldThrowEndError = false;
+    let endErrorToThrow: unknown;
+    try {
+      if (maxConcurrency === 0) {
         for (let i = 0; i < examples.length; i++) {
-          yield { example: examples[i], exampleIndex: i };
+          const result = await _forward(
+            target,
+            examples[i],
+            this.experimentName,
+            this._metadata,
+            this.client,
+            this._includeAttachments
+          );
+          yield { ...result, exampleIndex: i };
         }
-      })();
+      } else {
+        const caller = new AsyncCaller({
+          maxConcurrency,
+          debug: this.client.debug,
+        });
 
-      for await (const result of _mapWithConcurrency(
-        exampleStream,
-        maxConcurrency,
-        (item) =>
-          caller
-            .call(
-              _forward,
-              target,
-              item.example,
-              this.experimentName,
-              this._metadata,
-              this.client,
-              this._includeAttachments
-            )
-            .then((forwardResult) => ({
-              ...forwardResult,
-              exampleIndex: item.exampleIndex,
-            }))
-      )) {
-        yield result;
+        const exampleStream = (async function* () {
+          for (let i = 0; i < examples.length; i++) {
+            yield { example: examples[i], exampleIndex: i };
+          }
+        })();
+
+        for await (const result of _mapWithConcurrency(
+          exampleStream,
+          maxConcurrency,
+          (item) =>
+            caller
+              .call(
+                _forward,
+                target,
+                item.example,
+                this.experimentName,
+                this._metadata,
+                this.client,
+                this._includeAttachments
+              )
+              .then((forwardResult) => ({
+                ...forwardResult,
+                exampleIndex: item.exampleIndex,
+              }))
+        )) {
+          yield result;
+        }
+      }
+    } catch (error) {
+      hadPredictionError = true;
+      throw error;
+    } finally {
+      try {
+        // Always attempt to close out the project metadata, even on prediction errors.
+        await this._end();
+      } catch (endError) {
+        if (hadPredictionError) {
+          console.error(`Error finalizing experiment: ${endError}`);
+          printErrorStackTrace(endError);
+        } else {
+          shouldThrowEndError = true;
+          endErrorToThrow = endError;
+        }
       }
     }
-
-    // Close out the project.
-    await this._end();
+    if (shouldThrowEndError) {
+      throw endErrorToThrow;
+    }
   }
 
   async _runEvaluators(
