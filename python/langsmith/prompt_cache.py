@@ -11,6 +11,7 @@ import json
 import logging
 import threading
 import time
+import warnings
 from abc import ABC
 from collections import OrderedDict
 from collections.abc import Awaitable
@@ -666,3 +667,65 @@ async def configure_global_async_prompt_cache(
         ttl_seconds=ttl_seconds,
         refresh_interval_seconds=refresh_interval_seconds,
     )
+
+
+# Deprecated alias for backwards compatibility
+
+
+def _deprecated_cache_class_warning() -> None:
+    warnings.warn(
+        "The 'Cache' class is deprecated and will be removed in a future version. "
+        "Use 'PromptCache' instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+class Cache(PromptCache):
+    """Deprecated alias for PromptCache. Use PromptCache instead."""
+
+    def __init__(
+        self,
+        *,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
+    ) -> None:
+        """Initialize the deprecated Cache class.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale.
+            refresh_interval_seconds: How often to check for stale entries.
+        """
+        _deprecated_cache_class_warning()
+        super().__init__(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )
+
+
+class AsyncCache(AsyncPromptCache):
+    """Deprecated alias for AsyncPromptCache. Use AsyncPromptCache instead."""
+
+    def __init__(
+        self,
+        *,
+        max_size: int = DEFAULT_PROMPT_CACHE_MAX_SIZE,
+        ttl_seconds: Optional[float] = DEFAULT_PROMPT_CACHE_TTL_SECONDS,
+        refresh_interval_seconds: float = DEFAULT_PROMPT_CACHE_REFRESH_INTERVAL_SECONDS,
+    ) -> None:
+        """Initialize the deprecated AsyncCache class.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale.
+            refresh_interval_seconds: How often to check for stale entries.
+        """
+        _deprecated_cache_class_warning()
+        super().__init__(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )

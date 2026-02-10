@@ -703,6 +703,7 @@ class Client:
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
         disable_prompt_cache: bool = False,
+        cache: Optional[Union[bool, PromptCache]] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -830,6 +831,37 @@ class Client:
 
                     # Configure global cache settings
                     configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+                    ```
+            cache: **[Deprecated]** Control prompt caching behavior.
+
+                This parameter is deprecated. Use `configure_global_prompt_cache()` to
+                configure caching, or `disable_prompt_cache=True` to disable it.
+
+                - `True`: Enable caching with the global singleton (default behavior)
+                - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
+                - `Cache(...)`/`PromptCache(...)`: Use a custom cache instance
+
+                !!! example
+
+                    ```python
+                    from langsmith import Client, Cache, configure_global_prompt_cache
+
+                    # Old API (deprecated but still supported)
+                    client = Client(cache=True)  # Use global cache
+                    client = Client(cache=False)  # Disable cache
+
+                    # Use custom cache instance
+                    my_cache = Cache(max_size=100, ttl_seconds=3600)
+                    client = Client(cache=my_cache)
+
+                    # New API (recommended)
+                    client = Client()  # Use global cache (default)
+
+                    # Configure global cache for all clients
+                    configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+
+                    # Or disable for a specific client
+                    client = Client(disable_prompt_cache=True)
                     ```
 
         Raises:
@@ -1042,9 +1074,39 @@ class Client:
         self._tracing_error_callback = tracing_error_callback
 
         # Initialize prompt cache
-        if not disable_prompt_cache:
+        # Handle backwards compatibility for deprecated `cache` parameter
+        if cache is not None and disable_prompt_cache:
+            import warnings
+
+            warnings.warn(
+                "Both 'cache' and 'disable_prompt_cache' were provided. "
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Using 'cache' parameter value.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if cache is not None:
+            import warnings
+
+            warnings.warn(
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Use 'configure_global_prompt_cache()' to configure the global cache, or "
+                "'disable_prompt_cache=True' to disable caching for this client.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Handle old cache parameter
+            if cache is False:
+                self._cache: Optional[PromptCache] = None
+            elif cache is True:
+                self._cache = prompt_cache_singleton
+            else:
+                # Custom PromptCache instance provided
+                self._cache = cache
+        elif not disable_prompt_cache:
             # Use the global singleton instance
-            self._cache: Optional[PromptCache] = prompt_cache_singleton
+            self._cache = prompt_cache_singleton
         else:
             self._cache = None
 

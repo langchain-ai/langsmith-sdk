@@ -358,3 +358,18 @@ export const promptCacheSingleton = new PromptCache();
 export function configureGlobalPromptCache(config: CacheConfig): void {
   promptCacheSingleton.configure(config);
 }
+
+/**
+ * @deprecated Use `PromptCache` instead. This is a deprecated alias.
+ *
+ * Deprecated alias for PromptCache. Use PromptCache instead.
+ */
+export class Cache extends PromptCache {
+  constructor(config: CacheConfig = {}) {
+    console.warn(
+      "The 'Cache' class is deprecated and will be removed in a future version. " +
+        "Use 'PromptCache' instead."
+    );
+    super(config);
+  }
+}

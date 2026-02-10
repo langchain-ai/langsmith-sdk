@@ -45,6 +45,7 @@ class AsyncClient:
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
         disable_prompt_cache: bool = False,
+        cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
         """Initialize the async client.
 
@@ -54,13 +55,15 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
-            cache: Configuration for caching.
+            disable_prompt_cache: Disable prompt caching for this client.
+            cache: **[Deprecated]** Control prompt caching behavior.
 
-                Can be:
+                This parameter is deprecated. Use `configure_global_async_prompt_cache()` to
+                configure caching, or `disable_prompt_cache=True` to disable it.
 
-                - `True`: Enable caching with default settings
-                - `AsyncCache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                - `True`: Enable caching with the global singleton
+                - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
+                - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -85,9 +88,39 @@ class AsyncClient:
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
         # Initialize prompt cache
-        if not disable_prompt_cache:
+        # Handle backwards compatibility for deprecated `cache` parameter
+        if cache is not None and disable_prompt_cache:
+            import warnings
+
+            warnings.warn(
+                "Both 'cache' and 'disable_prompt_cache' were provided. "
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Using 'cache' parameter value.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if cache is not None:
+            import warnings
+
+            warnings.warn(
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Use 'configure_global_async_prompt_cache()' to configure the global cache, or "
+                "'disable_prompt_cache=True' to disable caching for this client.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Handle old cache parameter
+            if cache is False:
+                self._cache: Optional[AsyncPromptCache] = None
+            elif cache is True:
+                self._cache = async_prompt_cache_singleton
+            else:
+                # Custom AsyncPromptCache instance provided
+                self._cache = cache
+        elif not disable_prompt_cache:
             # Use the global singleton instance
-            self._cache: Optional[AsyncPromptCache] = async_prompt_cache_singleton
+            self._cache = async_prompt_cache_singleton
         else:
             self._cache = None
 
