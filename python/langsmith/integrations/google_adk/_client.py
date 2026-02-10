@@ -9,13 +9,14 @@ from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from langsmith.run_helpers import get_current_run_tree, trace
+from langsmith.run_helpers import get_current_run_tree, get_tracing_context, trace
 from langsmith.run_trees import RunTree
 
 from ._config import get_tracing_config
-from ._hooks import clear_active_runs
+from ._hooks import _agent_instructions, clear_active_runs
 from ._messages import convert_llm_request_to_messages, has_function_calls
 from ._recursive import RecursiveCallbackInjector, get_callbacks
+from ._tools import extract_tools_from_llm_request
 from ._usage import extract_model_name, extract_usage_from_response
 
 _LS_PROVIDER_VERTEXAI = "google_vertexai"
@@ -201,21 +202,39 @@ async def wrap_flow_call_llm_async(
     llm_request = args[1] if len(args) > 1 else kwargs.get("llm_request")
     model_name = extract_model_name(llm_request) if llm_request else None
     messages = convert_llm_request_to_messages(llm_request) if llm_request else None
+    tools = extract_tools_from_llm_request(llm_request) if llm_request else []
+
+    # Get agent instruction from parent run
+    agent_instruction = None
+    if parent:
+        agent_instruction = _agent_instructions.get(str(parent.id))
 
     inputs: dict[str, Any] = {}
     if messages:
+        # Prepend system message if instruction exists
+        if agent_instruction and isinstance(agent_instruction, str):
+            # Check if there's already a system message
+            has_system = any(msg.get("role") == "system" for msg in messages)
+            if not has_system:
+                # Prepend system message to the beginning
+                messages = [{"role": "system", "content": agent_instruction}] + messages
         inputs["messages"] = messages
 
     metadata: dict[str, Any] = {"ls_provider": _get_ls_provider()}
     if model_name:
         metadata["ls_model_name"] = model_name
 
+    # Build extra dict with invocation_params if tools exist
+    extra: dict[str, Any] = {"metadata": metadata}
+    if tools:
+        extra["invocation_params"] = {"tools": tools}
+
     start_time = time.time()
     llm_run = parent.create_child(
         name=model_name or "google_adk_llm",
         run_type="llm",
         inputs=inputs,
-        extra={"metadata": metadata},
+        extra=extra,
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
     )
 

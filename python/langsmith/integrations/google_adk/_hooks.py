@@ -2,33 +2,66 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from langsmith.run_helpers import get_current_run_tree
+from langsmith.run_helpers import get_current_run_tree, get_tracing_context
+from langsmith.run_helpers import _set_tracing_context
 from langsmith.run_trees import RunTree
 
 from ._messages import convert_adk_content_to_langsmith
 
 logger = logging.getLogger(__name__)
 
-_active_agent_runs: dict[str, tuple[RunTree, float]] = {}
+_active_agent_runs: dict[str, tuple[RunTree, float, dict[str, Any]]] = {}
 _active_tool_runs: dict[str, tuple[RunTree, float]] = {}
+_agent_instructions: dict[str, str] = {}
 
 
 def _get_parent_run() -> Optional[RunTree]:
     return get_current_run_tree()
 
 
-def before_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> None:
+async def before_agent_callback(
+    callback_context: Any, *args: Any, **kwargs: Any
+) -> None:
     """Create chain run for agent invocation."""
     invocation_id = getattr(callback_context, "invocation_id", None)
     if not invocation_id:
         return
 
     agent_name = getattr(callback_context, "agent_name", None) or "google_adk_agent"
+
+    # Extract agent and resolve instruction
+    agent = getattr(
+        getattr(callback_context, "_invocation_context", None), "agent", None
+    )
+
+    instruction = None
+    if agent:
+        raw_instruction = getattr(agent, "instruction", None)
+        if raw_instruction:
+            if isinstance(raw_instruction, str):
+                instruction = raw_instruction
+            elif callable(raw_instruction):
+                # InstructionProvider - call it to get the string
+                try:
+                    readonly_ctx = getattr(
+                        callback_context._invocation_context, "readonly_context", None
+                    )
+                    if readonly_ctx:
+                        result = raw_instruction(readonly_ctx)
+                        # Handle both sync and async callables
+                        if inspect.iscoroutine(result) or inspect.isawaitable(result):
+                            instruction = await result
+                        else:
+                            instruction = result
+                except Exception as e:
+                    logger.warning(f"Failed to resolve instruction: {e}")
+
     parent = _get_parent_run()
     if not parent:
         return
@@ -50,7 +83,18 @@ def before_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> N
             start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
         )
         agent_run.post()
-        _active_agent_runs[invocation_id] = (agent_run, start_time)
+
+        # Store instruction for LLM spans to access
+        if instruction:
+            _agent_instructions[str(agent_run.id)] = instruction
+
+        # Set agent span as current parent for nested operations
+        old_context = get_tracing_context()
+        new_context = {**old_context, "parent": agent_run}
+        _set_tracing_context(new_context)
+
+        # Store agent span with the old context for restoration
+        _active_agent_runs[invocation_id] = (agent_run, start_time, old_context)
     except Exception as e:
         logger.warning(f"Error in before_agent_callback: {e}")
 
@@ -65,8 +109,9 @@ def after_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> No
     if not run_info:
         return
 
+    agent_run, _, old_context = run_info
+
     try:
-        agent_run, _ = run_info
         outputs: dict[str, Any] = {}
         if final_response := getattr(callback_context, "final_response", None):
             outputs["output"] = convert_adk_content_to_langsmith(final_response)
@@ -75,6 +120,15 @@ def after_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> No
         agent_run.patch()
     except Exception as e:
         logger.warning(f"Error in after_agent_callback: {e}")
+    finally:
+        # Clean up stored instruction
+        _agent_instructions.pop(str(agent_run.id), None)
+
+        # Always restore context, even if patching fails
+        try:
+            _set_tracing_context(old_context)
+        except Exception as e:
+            logger.warning(f"Error restoring context in after_agent_callback: {e}")
 
 
 def before_tool_callback(
@@ -150,9 +204,9 @@ def after_tool_callback(
 
 def clear_active_runs() -> None:
     """Clear all active runs (call when session ends)."""
-    global _active_agent_runs, _active_tool_runs
+    global _active_agent_runs, _active_tool_runs, _agent_instructions
 
-    for _, (run, _) in _active_agent_runs.items():
+    for _, (run, _, old_context) in _active_agent_runs.items():
         try:
             run.end(error="Session ended")
             run.patch()
@@ -168,3 +222,4 @@ def clear_active_runs() -> None:
 
     _active_agent_runs.clear()
     _active_tool_runs.clear()
+    _agent_instructions.clear()
