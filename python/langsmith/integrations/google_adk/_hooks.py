@@ -168,7 +168,6 @@ def clear_active_runs() -> None:
         try:
             run.end(error="Session ended")
             run.patch()
-            _context._PARENT_RUN_TREE.reset(token)
         except Exception:
             pass
 

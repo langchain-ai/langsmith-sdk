@@ -9,7 +9,7 @@ from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from langsmith.run_helpers import get_current_run_tree, get_tracing_context, trace
+from langsmith.run_helpers import get_current_run_tree, trace
 from langsmith.run_trees import RunTree
 
 from ._config import get_tracing_config
