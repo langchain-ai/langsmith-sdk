@@ -314,6 +314,41 @@ export const wrapAnthropic = <T extends AnthropicType>(
     metadata: restMetadata,
   };
 
+  /**
+   * Transform system parameter into visible message for playground editability.
+   * This provides parity with the Python SDK behavior and enables system prompts
+   * to be viewed and edited in the LangSmith playground.
+   */
+  function processSystemMessage(
+    params: Record<string, unknown>
+  ): Record<string, unknown> {
+    if (!params.system) {
+      return params;
+    }
+
+    const processed = { ...params };
+
+    // Handle both string and ContentBlock[] formats
+    const systemContent = Array.isArray(params.system)
+      ? params.system
+          .map((block: string | { text: string; type?: string }) =>
+            typeof block === "string" ? block : block.text
+          )
+          .join("\n")
+      : params.system;
+
+    // Transform into first message
+    processed.messages = [
+      { role: "system" as const, content: systemContent },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...((params as any).messages || []),
+    ];
+
+    delete processed.system;
+
+    return processed;
+  }
+
   // Common configuration for messages.create
   const messagesCreateConfig: TraceableConfig<
     typeof anthropic.messages.create
@@ -322,6 +357,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     run_type: "llm",
     aggregator: messageAggregator,
     argsConfigPath: [1, "langsmithExtra"],
+    processInputs: processSystemMessage,
     getInvocationParams: (payload: unknown) => {
       if (typeof payload !== "object" || payload == null) return undefined;
       const params = payload as Anthropic.MessageCreateParams;
@@ -405,6 +441,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
       run_type: "llm",
       aggregator: messageAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      processInputs: processSystemMessage,
       getInvocationParams: messagesCreateConfig.getInvocationParams,
       processOutputs: processMessageOutput,
       ...cleanedOptions,
@@ -441,6 +478,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
           run_type: "llm",
           aggregator: messageAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processSystemMessage,
           getInvocationParams: messagesCreateConfig.getInvocationParams,
           processOutputs: processMessageOutput,
           ...cleanedOptions,
