@@ -130,31 +130,40 @@ export interface ClientConfig {
    */
   fetchImplementation?: typeof fetch;
   /**
-   * Configuration for caching. Can be:
-   * - `true`: Enable caching with default settings
-   * - `Cache` instance: Use custom cache configuration
-   * - `undefined` or `false`: Disable caching (default)
-   *
-   * @example
-   * ```typescript
-   * import { Client, Cache } from "langsmith";
-   *
-   * // Enable with defaults
-   * const client1 = new Client({ cache: true });
-   *
-   * // Or use custom configuration
-   * const myCache = new Cache({
-   *   maxSize: 100,
-   *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
-   * });
-   * const client2 = new Client({ cache: myCache });
-   * ```
-   */
-  /**
    * Disable prompt caching for this client.
    * By default, prompt caching is enabled globally.
    */
   disablePromptCache?: boolean;
+
+  /**
+   * @deprecated Use `configureGlobalPromptCache()` to configure caching, or
+   * `disablePromptCache: true` to disable it. This parameter is deprecated.
+   *
+   * Configuration for caching. Can be:
+   * - `true`: Enable caching with default settings (uses global singleton)
+   * - `Cache`/`PromptCache` instance: Use custom cache configuration
+   * - `false`: Disable caching (equivalent to `disablePromptCache: true`)
+   *
+   * @example
+   * ```typescript
+   * import { Client, Cache, configureGlobalPromptCache } from "langsmith";
+   *
+   * // Enable with defaults
+   * const client1 = new Client({});
+   *
+   * // Or use custom configuration
+   * import { configureGlobalPromptCache } from "langsmith";
+   * configureGlobalPromptCache({
+   *   maxSize: 100,
+   *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
+   * });
+   * const client2 = new Client({});
+   *
+   * // Or disable for a specific client
+   * const client3 = new Client({ disablePromptCache: true });
+   * ```
+   */
+  cache?: boolean | PromptCache;
 }
 
 /**
@@ -824,7 +833,31 @@ export class Client implements LangSmithTracingClientInterface {
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
     // Initialize prompt cache
-    if (!config.disablePromptCache) {
+    // Handle backwards compatibility for deprecated `cache` parameter
+    if (config.cache !== undefined && config.disablePromptCache) {
+      warnOnce(
+        "Both 'cache' and 'disablePromptCache' were provided. " +
+          "The 'cache' parameter is deprecated and will be removed in a future version. " +
+          "Using 'cache' parameter value."
+      );
+    }
+
+    if (config.cache !== undefined) {
+      warnOnce(
+        "The 'cache' parameter is deprecated and will be removed in a future version. " +
+          "Use 'configureGlobalPromptCache()' to configure the global cache, or " +
+          "'disablePromptCache: true' to disable caching for this client."
+      );
+      // Handle old cache parameter
+      if (config.cache === false) {
+        this._promptCache = undefined;
+      } else if (config.cache === true) {
+        this._promptCache = promptCacheSingleton;
+      } else {
+        // Custom PromptCache instance provided
+        this._promptCache = config.cache;
+      }
+    } else if (!config.disablePromptCache) {
       // Use the global singleton instance
       this._promptCache = promptCacheSingleton;
     }
