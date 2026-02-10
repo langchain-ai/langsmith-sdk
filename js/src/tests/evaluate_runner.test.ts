@@ -222,6 +222,91 @@ describe("evaluation runner internals", () => {
     expect(resultsOrder[3]).toBe(1); // Slow task completes last
   });
 
+  test("separate queues allow independent concurrency control", async () => {
+    let maxTargetActive = 0;
+    let currentTargetActive = 0;
+    let maxEvalActive = 0;
+    let currentEvalActive = 0;
+
+    const now = new Date().toISOString();
+    const examples: Example[] = [
+      {
+        id: "1",
+        inputs: { value: 1 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "2",
+        inputs: { value: 2 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "3",
+        inputs: { value: 3 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+    ];
+
+    const target = async (input: { value: number }) => {
+      currentTargetActive++;
+      maxTargetActive = Math.max(maxTargetActive, currentTargetActive);
+      await sleep(10);
+      currentTargetActive--;
+      return { result: input.value };
+    };
+
+    const evaluator = async () => {
+      currentEvalActive++;
+      maxEvalActive = Math.max(maxEvalActive, currentEvalActive);
+      await sleep(10);
+      currentEvalActive--;
+      return { key: "test", score: 1 };
+    };
+
+    const mockClient = {
+      createProject: async () => ({
+        id: "test",
+        name: "test",
+        reference_dataset_id: "test",
+      }),
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(target, {
+      data: examples,
+      evaluators: [evaluator],
+      targetConcurrency: 1,
+      evaluationConcurrency: 2,
+      client: mockClient,
+    });
+
+    const allResults = [];
+    for await (const result of results) {
+      allResults.push(result);
+    }
+
+    // Target should have max concurrency of 1
+    expect(maxTargetActive).toBe(1);
+    // Evaluator should have max concurrency of 2
+    expect(maxEvalActive).toBe(2);
+  }, 10000);
+
   test("end-to-end: evaluations run on fast predictions before slow predictions finish", async () => {
     const delays: Record<number, number> = {
       0: 100, // slow prediction
@@ -316,5 +401,79 @@ describe("evaluation runner internals", () => {
 
     // All evaluations should have run
     expect(Object.keys(evaluationTimes)).toHaveLength(3);
+  }, 10000);
+
+  test("maxConcurrency=0 runs tasks sequentially (matching Python behavior)", async () => {
+    const executionOrder: number[] = [];
+    let currentlyExecuting: number | null = null;
+
+    const now = new Date().toISOString();
+    const examples: Example[] = [
+      {
+        id: "1",
+        inputs: { value: 1 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "2",
+        inputs: { value: 2 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "3",
+        inputs: { value: 3 },
+        outputs: {},
+        dataset_id: "test",
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+    ];
+
+    const target = async (input: { value: number }) => {
+      // Verify no other task is executing
+      expect(currentlyExecuting).toBeNull();
+      currentlyExecuting = input.value;
+      executionOrder.push(input.value);
+      await sleep(10);
+      currentlyExecuting = null;
+      return { result: input.value };
+    };
+
+    const mockClient = {
+      createProject: async () => ({
+        id: "test",
+        name: "test",
+        reference_dataset_id: "test",
+      }),
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(target, {
+      data: examples,
+      evaluators: [],
+      maxConcurrency: 0, // Sequential execution
+      client: mockClient,
+    });
+
+    const allResults = [];
+    for await (const result of results) {
+      allResults.push(result);
+    }
+
+    // Verify sequential execution - order should match input order
+    expect(executionOrder).toEqual([1, 2, 3]);
   }, 10000);
 });

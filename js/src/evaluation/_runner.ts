@@ -701,11 +701,11 @@ export class _ExperimentManager {
     let shouldThrowEndError = false;
     let endErrorToThrow: unknown;
     try {
-      // maxConcurrency: 0 means unlimited (Infinity)
+      // maxConcurrency: 0 means sequential execution (matching Python behavior)
       const queue =
         options?.queue ??
         new PQueue({
-          concurrency: maxConcurrency === 0 ? Infinity : maxConcurrency,
+          concurrency: maxConcurrency === 0 ? 1 : maxConcurrency,
         });
 
       const examplesWithIndex = examples.map((example, i) => ({
@@ -814,11 +814,11 @@ export class _ExperimentManager {
   ): AsyncGenerator<_ExperimentResultRowWithIndex> {
     const { maxConcurrency = 0, queue: providedQueue } = options || {};
 
-    // maxConcurrency: 0 means unlimited (Infinity)
+    // maxConcurrency: 0 means sequential execution (matching Python behavior)
     const queue =
       providedQueue ??
       new PQueue({
-        concurrency: maxConcurrency === 0 ? Infinity : maxConcurrency,
+        concurrency: maxConcurrency === 0 ? 1 : maxConcurrency,
       });
 
     for await (const result of _mapWithConcurrency(
