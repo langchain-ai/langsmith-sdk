@@ -643,7 +643,7 @@ test("concurrent evaluate restores dataset order before summary", async () => {
     data: orderedExamples,
     evaluators: [customEvaluator],
     summaryEvaluators: [inputOrderSummaryEvaluator],
-    predictionConcurrency: 2,
+    targetConcurrency: 2,
     evaluationConcurrency: 2,
     description:
       "concurrent evaluate restores dataset order before summary integration test",

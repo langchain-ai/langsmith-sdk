@@ -1,8 +1,10 @@
 import {
   _mapWithConcurrency,
   _reorderResultRowsByExampleIndex,
+  evaluate,
 } from "../evaluation/_runner.js";
 import { PQueue } from "../utils/p-queue.js";
+import { Example } from "../schemas.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -183,4 +185,136 @@ describe("evaluation runner internals", () => {
       "run-b",
     ]);
   });
+
+  test("fast results can be processed while slow tasks are still running", async () => {
+    const queue = new PQueue({ concurrency: 3 });
+    const delays: Record<number, number> = {
+      1: 100, // slow
+      2: 10, // fast
+      3: 10, // fast
+      4: 10, // fast
+    };
+
+    const resultsOrder: number[] = [];
+    const startTime = Date.now();
+
+    for await (const value of _mapWithConcurrency(
+      fromArray([1, 2, 3, 4]),
+      queue,
+      async (value) => {
+        await sleep(delays[value]);
+        return value;
+      }
+    )) {
+      resultsOrder.push(value);
+      const elapsed = Date.now() - startTime;
+
+      // If we got value 2, 3, or 4, task 1 (100ms) should still be running
+      if ([2, 3, 4].includes(value)) {
+        expect(elapsed).toBeLessThan(100);
+      }
+    }
+
+    // Fast tasks (2, 3, 4) should complete before slow task (1)
+    expect(resultsOrder.slice(0, 3)).toContain(2);
+    expect(resultsOrder.slice(0, 3)).toContain(3);
+    expect(resultsOrder.slice(0, 3)).toContain(4);
+    expect(resultsOrder[3]).toBe(1); // Slow task completes last
+  });
+
+  test("end-to-end: evaluations run on fast predictions before slow predictions finish", async () => {
+    const delays: Record<number, number> = {
+      0: 100, // slow prediction
+      1: 10, // fast prediction
+      2: 10, // fast prediction
+    };
+
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const now = new Date().toISOString();
+    const examples: Example[] = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        inputs: { value: 0 },
+        outputs: {},
+        dataset_id: datasetId,
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000002",
+        inputs: { value: 1 },
+        outputs: {},
+        dataset_id: datasetId,
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000003",
+        inputs: { value: 2 },
+        outputs: {},
+        dataset_id: datasetId,
+        created_at: now,
+        modified_at: now,
+        runs: [],
+      },
+    ];
+
+    const predictionTimes: Record<number, number> = {};
+    const evaluationTimes: Record<number, number> = {};
+    const startTime = Date.now();
+
+    // Target function with varying delays
+    const target = async (input: { value: number }) => {
+      await sleep(delays[input.value]);
+      predictionTimes[input.value] = Date.now() - startTime;
+      return { result: input.value };
+    };
+
+    // Evaluator that records when it runs
+    const evaluator = async ({ example }: any) => {
+      evaluationTimes[example.inputs.value] = Date.now() - startTime;
+      return { key: "test", score: 1 };
+    };
+
+    // Mock client to avoid real API calls
+    const mockClient = {
+      createProject: async () => ({
+        id: "00000000-0000-0000-0000-000000000004",
+        name: "test-project",
+        reference_dataset_id: datasetId,
+      }),
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(target, {
+      data: examples,
+      evaluators: [evaluator],
+      targetConcurrency: 3,
+      evaluationConcurrency: 3,
+      client: mockClient,
+    });
+
+    // Wait for all results to be processed
+    const allResults = [];
+    for await (const result of results) {
+      allResults.push(result);
+    }
+
+    // Fast predictions (1, 2) should complete and be evaluated before slow prediction (0) finishes
+    expect(predictionTimes[1]).toBeLessThan(predictionTimes[0]);
+    expect(predictionTimes[2]).toBeLessThan(predictionTimes[0]);
+
+    // Fast predictions should be evaluated before slow prediction finishes
+    expect(evaluationTimes[1]).toBeLessThan(predictionTimes[0]);
+    expect(evaluationTimes[2]).toBeLessThan(predictionTimes[0]);
+
+    // All evaluations should have run
+    expect(Object.keys(evaluationTimes)).toHaveLength(3);
+  }, 10000);
 });
