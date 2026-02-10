@@ -137,6 +137,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import AsyncPromptCache
 
         return AsyncPromptCache
+    elif name == "Cache":
+        from langsmith.prompt_cache import Cache
+
+        return Cache
+    elif name == "AsyncCache":
+        from langsmith.prompt_cache import AsyncCache
+
+        return AsyncCache
 
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
@@ -156,6 +164,8 @@ __all__ = [
     "AsyncClient",
     "PromptCache",
     "AsyncPromptCache",
+    "Cache",
+    "AsyncCache",
     "configure_global_prompt_cache",
     "configure_global_async_prompt_cache",
     "RunTree",
