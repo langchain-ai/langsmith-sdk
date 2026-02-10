@@ -71,7 +71,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
-import { Cache } from "./utils/prompts_cache.js";
+import {
+  PromptCache,
+  promptCacheSingleton,
+} from "./utils/prompt_cache/index.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -127,27 +130,40 @@ export interface ClientConfig {
    */
   fetchImplementation?: typeof fetch;
   /**
+   * Disable prompt caching for this client.
+   * By default, prompt caching is enabled globally.
+   */
+  disablePromptCache?: boolean;
+
+  /**
+   * @deprecated Use `configureGlobalPromptCache()` to configure caching, or
+   * `disablePromptCache: true` to disable it. This parameter is deprecated.
+   *
    * Configuration for caching. Can be:
-   * - `true`: Enable caching with default settings
-   * - `Cache` instance: Use custom cache configuration
-   * - `undefined` or `false`: Disable caching (default)
+   * - `true`: Enable caching with default settings (uses global singleton)
+   * - `Cache`/`PromptCache` instance: Use custom cache configuration
+   * - `false`: Disable caching (equivalent to `disablePromptCache: true`)
    *
    * @example
    * ```typescript
-   * import { Client, Cache } from "langsmith";
+   * import { Client, Cache, configureGlobalPromptCache } from "langsmith";
    *
    * // Enable with defaults
-   * const client1 = new Client({ cache: true });
+   * const client1 = new Client({});
    *
    * // Or use custom configuration
-   * const myCache = new Cache({
+   * import { configureGlobalPromptCache } from "langsmith";
+   * configureGlobalPromptCache({
    *   maxSize: 100,
    *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
    * });
-   * const client2 = new Client({ cache: myCache });
+   * const client2 = new Client({});
+   *
+   * // Or disable for a specific client
+   * const client3 = new Client({ disablePromptCache: true });
    * ```
    */
-  cache?: Cache | boolean;
+  cache?: boolean | PromptCache;
 }
 
 /**
@@ -738,7 +754,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _cache?: Cache;
+  private _promptCache?: PromptCache;
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -816,13 +832,34 @@ export class Client implements LangSmithTracingClientInterface {
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
-    // Initialize cache
-    if (config.cache === true) {
-      this._cache = new Cache();
-    } else if (config.cache && typeof config.cache === "object") {
-      this._cache = config.cache;
-    } else {
-      this._cache = undefined;
+    // Initialize prompt cache
+    // Handle backwards compatibility for deprecated `cache` parameter
+    if (config.cache !== undefined && config.disablePromptCache) {
+      warnOnce(
+        "Both 'cache' and 'disablePromptCache' were provided. " +
+          "The 'cache' parameter is deprecated and will be removed in a future version. " +
+          "Using 'cache' parameter value."
+      );
+    }
+
+    if (config.cache !== undefined) {
+      warnOnce(
+        "The 'cache' parameter is deprecated and will be removed in a future version. " +
+          "Use 'configureGlobalPromptCache()' to configure the global cache, or " +
+          "'disablePromptCache: true' to disable caching for this client."
+      );
+      // Handle old cache parameter
+      if (config.cache === false) {
+        this._promptCache = undefined;
+      } else if (config.cache === true) {
+        this._promptCache = promptCacheSingleton;
+      } else {
+        // Custom PromptCache instance provided
+        this._promptCache = config.cache;
+      }
+    } else if (!config.disablePromptCache) {
+      // Use the global singleton instance
+      this._promptCache = promptCacheSingleton;
     }
   }
 
@@ -5460,19 +5497,24 @@ export class Client implements LangSmithTracingClientInterface {
     }
   ): Promise<PromptCommit> {
     // Check cache first if not skipped
-    if (!options?.skipCache && this._cache) {
+    const refreshFunc = this._fetchPromptFromApi.bind(
+      this,
+      promptIdentifier,
+      options
+    );
+    if (!options?.skipCache && this._promptCache) {
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
         options?.includeModel
       );
-      const cached = this._cache.get(cacheKey);
+      const cached = this._promptCache.get(cacheKey, refreshFunc);
       if (cached) {
         return cached;
       }
 
       // Cache miss - fetch from API and cache it
-      const result = await this._fetchPromptFromApi(promptIdentifier, options);
-      this._cache.set(cacheKey, result);
+      const result = await refreshFunc();
+      this._promptCache.set(cacheKey, result, refreshFunc);
       return result;
     }
 
@@ -5643,20 +5685,12 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Get the cache instance, if caching is enabled.
-   * Useful for accessing cache metrics or manually managing the cache.
-   */
-  get cache(): Cache | undefined {
-    return this._cache;
-  }
-
-  /**
    * Cleanup resources held by the client.
    * Stops the cache's background refresh timer.
    */
   public cleanup(): void {
-    if (this._cache) {
-      this._cache.stop();
+    if (this._promptCache) {
+      this._promptCache.stop();
     }
   }
 

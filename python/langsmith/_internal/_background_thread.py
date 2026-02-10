@@ -40,13 +40,30 @@ LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
 def _group_batch_by_api_endpoint(
     batch: list[TracingQueueItem],
-) -> dict[tuple[Optional[str], Optional[str]], list[TracingQueueItem]]:
-    """Group batch items by (api_url, api_key) combination."""
+) -> dict[
+    tuple[
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+    ],
+    list[TracingQueueItem],
+]:
+    """Group batch items by endpoint and auth combination."""
     from collections import defaultdict
 
     grouped = defaultdict(list)
     for item in batch:
-        key = (item.api_url, item.api_key)
+        key = (
+            item.api_url,
+            item.api_key,
+            item.service_key,
+            item.tenant_id,
+            item.authorization,
+            item.cookie,
+        )
         grouped[key].append(item)
     return grouped
 
@@ -65,9 +82,23 @@ class TracingQueueItem:
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
     api_url: Optional[str]
     api_key: Optional[str]
+    service_key: Optional[str]
+    tenant_id: Optional[str]
+    authorization: Optional[str]
+    cookie: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
+    __slots__ = (
+        "priority",
+        "item",
+        "api_key",
+        "api_url",
+        "service_key",
+        "tenant_id",
+        "authorization",
+        "cookie",
+        "otel_context",
+    )
 
     def __init__(
         self,
@@ -75,12 +106,20 @@ class TracingQueueItem:
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
         self.api_key = api_key
         self.api_url = api_url
+        self.service_key = service_key
+        self.tenant_id = tenant_id
+        self.authorization = authorization
+        self.cookie = cookie
         self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
@@ -200,12 +239,13 @@ def _tracing_thread_drain_compressed_buffer(
 
 
 def _process_buffered_run_ops_batch(
-    client: Client, batch_to_process: list[tuple[str, dict]]
+    client: Client,
+    batch_to_process: list[tuple[str, dict, dict[str, Optional[str]]]],
 ) -> None:
     """Process a batch of run operations asynchronously."""
     try:
         # Extract just the run dictionaries for process_buffered_run_ops
-        run_dicts = [run_data for _, run_data in batch_to_process]
+        run_dicts = [run_data for _, run_data, _ in batch_to_process]
         original_ids = [run.get("id") for run in run_dicts]
 
         # Apply process_buffered_run_ops transformation
@@ -230,11 +270,13 @@ def _process_buffered_run_ops_batch(
             )
 
         # Process each run and add to compressed traces
-        for (operation, _), processed_run in zip(batch_to_process, processed_runs):
+        for (operation, _, write_ctx), processed_run in zip(
+            batch_to_process, processed_runs
+        ):
             if operation == "post":
-                client._create_run(processed_run)
+                client._create_run(processed_run, **write_ctx)
             elif operation == "patch":
-                client._update_run(processed_run)
+                client._update_run(processed_run, **write_ctx)
 
         # Trigger data available event
         if client._data_available_event:
@@ -272,10 +314,17 @@ def _tracing_thread_handle_batch(
             If None, operations will be combined from the batch items.
     """
     try:
-        # Group batch items by (api_url, api_key) combination
+        # Group batch items by (api_url, auth) combination
         grouped_batches = _group_batch_by_api_endpoint(batch)
 
-        for (api_url, api_key), group_batch in grouped_batches.items():
+        for (
+            api_url,
+            api_key,
+            service_key,
+            tenant_id,
+            authorization,
+            cookie,
+        ), group_batch in grouped_batches.items():
             if not ops:
                 group_ops = combine_serialized_queue_operations(
                     [item.item for item in group_batch]
@@ -286,7 +335,13 @@ def _tracing_thread_handle_batch(
 
             if use_multipart:
                 client._multipart_ingest_ops(
-                    group_ops, api_url=api_url, api_key=api_key
+                    group_ops,
+                    api_url=api_url,
+                    api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
             else:
                 if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
@@ -302,6 +357,10 @@ def _tracing_thread_handle_batch(
                     cast(list[SerializedRunOperation], group_ops),
                     api_url=api_url,
                     api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
 
     except Exception as e:
@@ -471,45 +530,6 @@ def _hybrid_tracing_thread_handle_batch(
                     )
                 else:
                     raise
-
-
-def _is_using_internal_otlp_provider(client: Client) -> bool:
-    """Check if client is using LangSmith's internal OTLP provider.
-
-    Returns True if using LangSmith's internal provider, False if user
-    provided their own.
-    """
-    if not hasattr(client, "otel_exporter") or client.otel_exporter is None:
-        return False
-
-    try:
-        # Use OpenTelemetry's standard API to get the global TracerProvider
-        # Check if OTEL is available
-        if not ls_utils.is_env_var_truish("OTEL_ENABLED"):
-            return False
-
-        # Get the global TracerProvider and check its resource attributes
-        from opentelemetry import trace  # type: ignore[import]
-
-        tracer_provider = trace.get_tracer_provider()
-        if hasattr(tracer_provider, "resource") and hasattr(
-            tracer_provider.resource, "attributes"
-        ):
-            is_internal = tracer_provider.resource.attributes.get(
-                "langsmith.internal_provider", False
-            )
-            logger.debug(
-                f"TracerProvider resource check: "
-                f"langsmith.internal_provider={is_internal}"
-            )
-            return is_internal
-
-        return False
-    except Exception as e:
-        logger.debug(
-            f"Could not determine TracerProvider type: {e}, assuming user-provided"
-        )
-        return False
 
 
 def get_size_limit_from_env() -> Optional[int]:

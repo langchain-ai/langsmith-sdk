@@ -8,8 +8,8 @@
  * that are swapped for browser builds via package.json browser field.
  */
 
-import type { PromptCommit } from "../schemas.js";
-import { dumpCache, loadCache } from "./prompts_cache_fs.js";
+import type { PromptCommit } from "../../schemas.js";
+import { dumpCache, loadCache } from "./fs.js";
 
 /**
  * A single cache entry with metadata for TTL tracking.
@@ -17,6 +17,7 @@ import { dumpCache, loadCache } from "./prompts_cache_fs.js";
 export interface CacheEntry<T = unknown> {
   value: T;
   createdAt: number; // Date.now() when entry was created/refreshed
+  refreshFunc?: () => Promise<T>;
 }
 
 /**
@@ -39,8 +40,6 @@ export interface CacheConfig {
   ttlSeconds?: number | null;
   /** How often to check for stale entries in seconds. Default: 60 */
   refreshIntervalSeconds?: number;
-  /** Callback to fetch fresh data for a cache key */
-  fetchFunc?: (key: string) => Promise<PromptCommit>;
 }
 
 /**
@@ -61,6 +60,7 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  * - In-memory LRU cache with configurable max size
  * - Background refresh using setInterval
  * - Stale-while-revalidate: returns stale data while refresh happens
+ * - Uses the most recently used client for a key for refreshes
  * - JSON dump/load for offline use
  *
  * @example
@@ -68,7 +68,6 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  * const cache = new Cache({
  *   maxSize: 100,
  *   ttlSeconds: 3600,
- *   fetchFunc: async (key) => client.pullPromptCommit(key),
  * });
  *
  * // Use the cache
@@ -79,12 +78,11 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  * cache.stop();
  * ```
  */
-export class Cache {
+export class PromptCache {
   private cache: Map<string, CacheEntry<PromptCommit>> = new Map();
   private maxSize: number;
   private ttlSeconds: number | null;
   private refreshIntervalSeconds: number;
-  private fetchFunc?: (key: string) => Promise<PromptCommit>;
   private refreshTimer?: ReturnType<typeof setInterval>;
   private _metrics: CacheMetrics = {
     hits: 0,
@@ -94,15 +92,7 @@ export class Cache {
   };
 
   constructor(config: CacheConfig = {}) {
-    this.maxSize = config.maxSize ?? 100;
-    this.ttlSeconds = config.ttlSeconds ?? 3600;
-    this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
-    this.fetchFunc = config.fetchFunc;
-
-    // Start background refresh if fetch function provided and TTL is set
-    if (this.fetchFunc && this.ttlSeconds !== null) {
-      this.startRefreshLoop();
-    }
+    this.configure(config);
   }
 
   /**
@@ -145,7 +135,15 @@ export class Cache {
    * Returns the cached value or undefined if not found.
    * Stale entries are still returned (background refresh handles updates).
    */
-  get(key: string): PromptCommit | undefined {
+  get(
+    key: string,
+    refreshFunc: () => Promise<PromptCommit>
+  ): PromptCommit | undefined {
+    // If max_size is 0, cache is disabled
+    if (this.maxSize === 0) {
+      return undefined;
+    }
+
     const entry = this.cache.get(key);
     if (!entry) {
       this._metrics.misses += 1;
@@ -154,7 +152,7 @@ export class Cache {
 
     // Move to end for LRU (delete and re-add)
     this.cache.delete(key);
-    this.cache.set(key, entry);
+    this.cache.set(key, { ...entry, refreshFunc });
 
     this._metrics.hits += 1;
     return entry.value;
@@ -163,7 +161,19 @@ export class Cache {
   /**
    * Set a value in the cache.
    */
-  set(key: string, value: PromptCommit): void {
+  set(
+    key: string,
+    value: PromptCommit,
+    refreshFunc: () => Promise<PromptCommit>
+  ): void {
+    // If max_size is 0, cache is disabled - do nothing
+    if (this.maxSize === 0) {
+      return;
+    }
+
+    if (this.refreshTimer === undefined) {
+      this.startRefreshLoop();
+    }
     // Check if we need to evict (and key is new)
     if (!this.cache.has(key) && this.cache.size >= this.maxSize) {
       // Evict oldest (first item in Map)
@@ -176,6 +186,7 @@ export class Cache {
     const entry: CacheEntry<PromptCommit> = {
       value,
       createdAt: Date.now(),
+      refreshFunc,
     };
 
     // Delete first to ensure it's at the end
@@ -261,56 +272,104 @@ export class Cache {
   /**
    * Start the background refresh loop.
    */
-  private startRefreshLoop(): void {
-    this.refreshTimer = setInterval(() => {
-      this.refreshStaleEntries().catch((e) => {
-        // Log but don't die - keep the refresh loop running
-        console.warn("Unexpected error in cache refresh loop:", e);
-      });
-    }, this.refreshIntervalSeconds * 1000);
+  startRefreshLoop(): void {
+    this.stop();
+    if (this.ttlSeconds !== null) {
+      this.refreshTimer = setInterval(() => {
+        this.refreshStaleEntries().catch((e) => {
+          // Log but don't die - keep the refresh loop running
+          console.warn("Unexpected error in cache refresh loop:", e);
+        });
+      }, this.refreshIntervalSeconds * 1000);
 
-    // Don't block Node.js from exiting
-    if (this.refreshTimer.unref) {
-      this.refreshTimer.unref();
+      // Don't block Node.js from exiting
+      if (this.refreshTimer.unref) {
+        this.refreshTimer.unref();
+      }
     }
   }
 
   /**
    * Get list of stale cache keys.
    */
-  private getStaleKeys(): string[] {
-    const staleKeys: string[] = [];
-    for (const [key, entry] of this.cache.entries()) {
-      if (isStale(entry, this.ttlSeconds)) {
-        staleKeys.push(key);
+  private getStaleEntries(): [string, CacheEntry<PromptCommit>][] {
+    const staleEntries: [string, CacheEntry<PromptCommit>][] = [];
+    for (const [key, value] of this.cache.entries()) {
+      if (isStale(value, this.ttlSeconds)) {
+        staleEntries.push([key, value]);
       }
     }
-    return staleKeys;
+    return staleEntries;
   }
 
   /**
    * Check for stale entries and refresh them.
    */
   private async refreshStaleEntries(): Promise<void> {
-    if (!this.fetchFunc) {
+    const staleEntries = this.getStaleEntries();
+    if (staleEntries.length === 0) {
       return;
     }
 
-    const staleKeys = this.getStaleKeys();
-    if (staleKeys.length === 0) {
-      return;
-    }
-
-    for (const key of staleKeys) {
-      try {
-        const newValue = await this.fetchFunc(key);
-        this.set(key, newValue);
-        this._metrics.refreshes += 1;
-      } catch (e) {
-        // Keep stale data on refresh failure
-        this._metrics.refreshErrors += 1;
-        console.warn(`Failed to refresh cache entry ${key}:`, e);
+    for (const [key, value] of staleEntries) {
+      if (value.refreshFunc !== undefined) {
+        try {
+          const newValue = await value.refreshFunc();
+          this.set(key, newValue, value.refreshFunc);
+          this._metrics.refreshes += 1;
+        } catch (e) {
+          // Keep stale data on refresh failure
+          this._metrics.refreshErrors += 1;
+          console.warn(`Failed to refresh cache entry ${key}:`, e);
+        }
       }
     }
+  }
+
+  configure(config: CacheConfig): void {
+    this.stop();
+    this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
+    this.maxSize = config.maxSize ?? 100;
+    this.ttlSeconds = config.ttlSeconds ?? 5 * 60;
+  }
+}
+
+/**
+ * @internal
+ * Global singleton instance of PromptCache.
+ * Use configureGlobalPromptCache(), enableGlobalPromptCache(), or disableGlobalPromptCache() instead.
+ */
+export const promptCacheSingleton = new PromptCache();
+
+/**
+ * Configure the global prompt cache.
+ *
+ * This should be called before any cache instances are created.
+ *
+ * @param config - Cache configuration options
+ *
+ * @example
+ * ```typescript
+ * import { configureGlobalPromptCache } from 'langsmith';
+ *
+ * configureGlobalPromptCache({ maxSize: 200, ttlSeconds: 7200 });
+ * ```
+ */
+export function configureGlobalPromptCache(config: CacheConfig): void {
+  promptCacheSingleton.configure(config);
+}
+
+/**
+ * @deprecated Use `PromptCache` instead. This is a deprecated alias.
+ *
+ * Deprecated alias for PromptCache. Use PromptCache instead.
+ */
+export class Cache extends PromptCache {
+  constructor(config: CacheConfig = {}) {
+    console.warn(
+      "The 'Cache' class is deprecated and will be removed in a future version. " +
+        "Use 'PromptCache' instead."
+    );
+    super(config);
   }
 }

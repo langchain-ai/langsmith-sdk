@@ -8,6 +8,7 @@ import json
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from functools import partial
 from typing import (
     Any,
     Literal,
@@ -22,7 +23,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncCache
+from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -43,7 +44,8 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        cache: Union[AsyncCache, bool] = False,
+        disable_prompt_cache: bool = False,
+        cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
         """Initialize the async client.
 
@@ -53,13 +55,15 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
-            cache: Configuration for caching.
+            disable_prompt_cache: Disable prompt caching for this client.
+            cache: **[Deprecated]** Control prompt caching behavior.
 
-                Can be:
+                This parameter is deprecated. Use `configure_global_async_prompt_cache()` to
+                configure caching, or `disable_prompt_cache=True` to disable it.
 
-                - `True`: Enable caching with default settings
-                - `AsyncCache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                - `True`: Enable caching with the global singleton
+                - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
+                - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -83,11 +87,40 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[AsyncCache] = AsyncCache()
-        elif isinstance(cache, AsyncCache):
-            self._cache = cache
+        # Initialize prompt cache
+        # Handle backwards compatibility for deprecated `cache` parameter
+        if cache is not None and disable_prompt_cache:
+            import warnings
+
+            warnings.warn(
+                "Both 'cache' and 'disable_prompt_cache' were provided. "
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Using 'cache' parameter value.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if cache is not None:
+            import warnings
+
+            warnings.warn(
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Use 'configure_global_async_prompt_cache()' to configure the global cache, or "
+                "'disable_prompt_cache=True' to disable caching for this client.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Handle old cache parameter
+            if cache is False:
+                self._cache: Optional[AsyncPromptCache] = None
+            elif cache is True:
+                self._cache = async_prompt_cache_singleton
+            else:
+                # Custom AsyncPromptCache instance provided
+                self._cache = cache
+        elif not disable_prompt_cache:
+            # Use the global singleton instance
+            self._cache = async_prompt_cache_singleton
         else:
             self._cache = None
 
@@ -1707,20 +1740,25 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Create refresh function bound to this specific prompt
+        refresh_func = partial(
+            self._afetch_prompt_from_api, prompt_identifier, include_model
+        )
+
         # Try cache first if enabled
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, refresh_func)
             if cached is not None:
                 return cached
 
         # Cache miss or cache disabled - fetch from API
-        result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
+        result = await refresh_func()
 
         # Store in cache
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            await self._cache.aset(cache_key, result, refresh_func)
 
         return result
 

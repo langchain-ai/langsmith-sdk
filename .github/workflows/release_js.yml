@@ -14,7 +14,9 @@ on:
         default: false
         description: "Release from a non-main branch (danger!)"
 
-permissions: {}
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
 
 jobs:
   if_release:
@@ -30,12 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # JS Build
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
+          registry-url: "https://registry.npmjs.org"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build
@@ -53,5 +56,4 @@ jobs:
       - name: Publish package to NPM
         if: steps.check_npm_version.outputs.should_publish == 'true'
         run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          yarn publish --non-interactive
+          npm publish

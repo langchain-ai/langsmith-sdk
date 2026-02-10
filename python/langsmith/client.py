@@ -34,7 +34,7 @@ import uuid
 import warnings
 import weakref
 from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
-from functools import lru_cache
+from functools import lru_cache, partial
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
@@ -97,7 +97,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith.cache import Cache
+from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)
@@ -702,7 +702,8 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        cache: Union[Cache, bool] = False,
+        disable_prompt_cache: bool = False,
+        cache: Optional[Union[bool, PromptCache]] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -810,28 +811,57 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            cache: Configuration for caching.
+            disable_prompt_cache: Disable prompt caching for this client.
 
-                Can be:
+                By default, prompt caching is enabled globally using a singleton cache.
+                Set this to `True` to disable caching for this specific client instance.
 
-                - `True`: Enable caching with default settings
-                - `Cache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                To configure the global cache, use `configure_global_prompt_cache()`.
 
                 !!! example
 
                     ```python
-                    from langsmith import Client, Cache
+                    from langsmith import Client, configure_global_prompt_cache
 
-                    # Enable with defaults
-                    client = Client(cache=True)
+                    # Use default global cache
+                    client = Client()
 
-                    # Or use custom configuration
-                    my_cache = Cache(
-                        max_size=100,
-                        ttl_seconds=3600,  # 1 hour, or None for infinite TTL
-                    )
+                    # Disable caching for this client
+                    client_no_cache = Client(disable_prompt_cache=True)
+
+                    # Configure global cache settings
+                    configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+                    ```
+            cache: **[Deprecated]** Control prompt caching behavior.
+
+                This parameter is deprecated. Use `configure_global_prompt_cache()` to
+                configure caching, or `disable_prompt_cache=True` to disable it.
+
+                - `True`: Enable caching with the global singleton (default behavior)
+                - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
+                - `Cache(...)`/`PromptCache(...)`: Use a custom cache instance
+
+                !!! example
+
+                    ```python
+                    from langsmith import Client, Cache, configure_global_prompt_cache
+
+                    # Old API (deprecated but still supported)
+                    client = Client(cache=True)  # Use global cache
+                    client = Client(cache=False)  # Disable cache
+
+                    # Use custom cache instance
+                    my_cache = Cache(max_size=100, ttl_seconds=3600)
                     client = Client(cache=my_cache)
+
+                    # New API (recommended)
+                    client = Client()  # Use global cache (default)
+
+                    # Configure global cache for all clients
+                    configure_global_prompt_cache(max_size=200, ttl_seconds=7200)
+
+                    # Or disable for a specific client
+                    client = Client(disable_prompt_cache=True)
                     ```
 
         Raises:
@@ -891,7 +921,7 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
-        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer: list[tuple[str, dict, dict[str, Optional[str]]]] = []
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
@@ -1043,11 +1073,40 @@ class Client:
 
         self._tracing_error_callback = tracing_error_callback
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[Cache] = Cache()
-        elif isinstance(cache, Cache):
-            self._cache = cache
+        # Initialize prompt cache
+        # Handle backwards compatibility for deprecated `cache` parameter
+        if cache is not None and disable_prompt_cache:
+            import warnings
+
+            warnings.warn(
+                "Both 'cache' and 'disable_prompt_cache' were provided. "
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Using 'cache' parameter value.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if cache is not None:
+            import warnings
+
+            warnings.warn(
+                "The 'cache' parameter is deprecated and will be removed in a future version. "
+                "Use 'configure_global_prompt_cache()' to configure the global cache, or "
+                "'disable_prompt_cache=True' to disable caching for this client.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Handle old cache parameter
+            if cache is False:
+                self._cache: Optional[PromptCache] = None
+            elif cache is True:
+                self._cache = prompt_cache_singleton
+            else:
+                # Custom PromptCache instance provided
+                self._cache = cache
+        elif not disable_prompt_cache:
+            # Use the global singleton instance
+            self._cache = prompt_cache_singleton
         else:
             self._cache = None
 
@@ -1795,6 +1854,10 @@ class Client:
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
+            service_key (Optional[str]): The service JWT key for service-to-service auth.
+            tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
+            authorization (Optional[str]): The Authorization header value.
+            cookie (Optional[str]): The Cookie header value.
             **kwargs (Any): Additional keyword arguments.
 
         Returns:
@@ -1826,6 +1889,10 @@ class Client:
             )
             ```
         """
+        service_key: str | None = kwargs.pop("service_key", None)
+        tenant_id: str | None = kwargs.pop("tenant_id", None)
+        authorization: str | None = kwargs.pop("authorization", None)
+        cookie: str | None = kwargs.pop("cookie", None)
         project_name = project_name or kwargs.pop(
             "session_name",
             # if the project is not provided, use the environment's project
@@ -1858,13 +1925,34 @@ class Client:
         # before batching
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
             with self._run_ops_buffer_lock:
-                self._run_ops_buffer.append(("post", run_create))
+                self._run_ops_buffer.append(
+                    (
+                        "post",
+                        run_create,
+                        {
+                            "api_url": api_url,
+                            "api_key": api_key,
+                            "service_key": service_key,
+                            "tenant_id": tenant_id,
+                            "authorization": authorization,
+                            "cookie": cookie,
+                        },
+                    )
+                )
                 # Process batch when we have enough runs or enough time has passed
                 if self._should_flush_run_ops_buffer():
                     self._flush_run_ops_buffer()
                 return
         else:
-            self._create_run(run_create, api_key=api_key, api_url=api_url)
+            self._create_run(
+                run_create,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
 
     def _create_run(
         self,
@@ -1872,6 +1960,10 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -1884,6 +1976,10 @@ class Client:
                 self.compressed_traces is not None
                 and api_key is None
                 and api_url is None
+                and service_key is None
+                and tenant_id is None
+                and authorization is None
+                and cookie is None
             ):
                 if self._data_available_event is None:
                     raise ValueError(
@@ -1927,6 +2023,10 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -1939,14 +2039,34 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                         )
                     )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
+                self._create_run_non_batch(
+                    run_create,
+                    api_key=api_key,
+                    api_url=api_url,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
+                )
         else:
-            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
+            self._create_run_non_batch(
+                run_create,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
 
     def _create_run_non_batch(
         self,
@@ -1954,13 +2074,25 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         errors = []
-        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None:
+        # If specific auth/url provided, use those; otherwise use all configured endpoints
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            headers = {**self._headers, X_API_KEY: target_api_key}
+            headers = _apply_auth_overrides(
+                self._headers,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+                fallback_api_key=self.api_key,
+            )
             try:
                 self.request_with_retries(
                     "POST",
@@ -1976,8 +2108,16 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {**self._headers, X_API_KEY: write_api_key}
                 try:
+                    headers = _apply_auth_overrides(
+                        self._headers,
+                        api_key=write_api_key,
+                        service_key=None,
+                        tenant_id=None,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{write_api_url}/runs",
@@ -2079,6 +2219,10 @@ class Client:
         *,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -2141,6 +2285,10 @@ class Client:
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
                         api_url=api_url,
                         api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -2156,6 +2304,10 @@ class Client:
                 _context="\n" + context,
                 api_url=api_url,
                 api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def batch_ingest_runs(
@@ -2316,28 +2468,55 @@ class Client:
         _context: str,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
-        # Use provided endpoint or fall back to all configured endpoints
-        endpoints: Mapping[str, Optional[str]]
-        if api_url is not None and api_key is not None:
-            endpoints = {api_url: api_key}
-        else:
-            endpoints = self._write_api_urls
-
-        for target_api_url, target_api_key in endpoints.items():
-            try:
-                logger.debug(
-                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
+        # Use provided endpoint/auth override or fall back to all configured endpoints
+        endpoints: list[tuple[str, dict[str, str]]]
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
+            target_api_url = api_url or self.api_url
+            endpoints = [
+                (
+                    target_api_url,
+                    _apply_auth_overrides(
+                        {**self._headers},
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                        fallback_api_key=self.api_key,
+                    ),
                 )
+            ]
+        else:
+            endpoints = [
+                (
+                    target_api_url,
+                    _apply_auth_overrides(
+                        {**self._headers},
+                        api_key=target_api_key,
+                        service_key=None,
+                        tenant_id=None,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    ),
+                )
+                for target_api_url, target_api_key in self._write_api_urls.items()
+            ]
+
+        for target_api_url, headers in endpoints:
+            try:
                 self.request_with_retries(
                     "POST",
                     f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: target_api_key,
-                        },
+                        "headers": headers,
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
@@ -2358,6 +2537,10 @@ class Client:
         *,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
@@ -2379,7 +2562,13 @@ class Client:
         if acc_multipart:
             try:
                 self._send_multipart_req(
-                    acc_multipart, api_url=api_url, api_key=api_key
+                    acc_multipart,
+                    api_url=api_url,
+                    api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
             except ls_utils.LangSmithNotFoundError:
                 # Fallback to batch ingest if multipart endpoint returns 404
@@ -2388,7 +2577,15 @@ class Client:
                 # Filter out feedback operations as they're not supported in non-multipart mode
                 run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
                 if run_ops:
-                    self._batch_ingest_run_ops(run_ops)
+                    self._batch_ingest_run_ops(
+                        run_ops,
+                        api_url=api_url,
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                    )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -2571,17 +2768,51 @@ class Client:
         attempts: int = 3,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         parts = acc.parts
         _context = acc.context
 
-        # Use provided endpoint or fall back to all configured endpoints
-        if api_url is not None and api_key is not None:
-            endpoints: Mapping[str, str | None] = {api_url: api_key}
+        # Use provided endpoint/auth override or fall back to all configured endpoints
+        endpoints: list[tuple[str, dict[str, str]]]
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
+            target_api_url = api_url or self.api_url
+            endpoints = [
+                (
+                    target_api_url,
+                    _apply_auth_overrides(
+                        {**self._headers},
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                        fallback_api_key=self.api_key,
+                    ),
+                )
+            ]
         else:
-            endpoints = self._write_api_urls
+            endpoints = [
+                (
+                    target_api_url,
+                    _apply_auth_overrides(
+                        {**self._headers},
+                        api_key=target_api_key,
+                        service_key=None,
+                        tenant_id=None,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    ),
+                )
+                for target_api_url, target_api_key in self._write_api_urls.items()
+            ]
 
-        for target_api_url, target_api_key in endpoints.items():
+        for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
@@ -2589,17 +2820,13 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    logger.debug(
-                        f"Sending multipart request to {target_api_url} with context: {_context}"
-                    )
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
-                                **self._headers,
-                                X_API_KEY: target_api_key,
+                                **headers_for_endpoint,
                                 "Content-Type": encoder.content_type,
                             },
                         },
@@ -2723,6 +2950,10 @@ class Client:
         reference_example_id: str | uuid.UUID | None = None,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2746,6 +2977,10 @@ class Client:
                 an experiment.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
+            service_key (Optional[str]): The service JWT key for service-to-service auth.
+            tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
+            authorization (Optional[str]): The Authorization header value.
+            cookie (Optional[str]): The Cookie header value.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2839,13 +3074,34 @@ class Client:
         # If process_buffered_run_ops is enabled, collect runs in batches
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
             with self._run_ops_buffer_lock:
-                self._run_ops_buffer.append(("patch", data))
+                self._run_ops_buffer.append(
+                    (
+                        "patch",
+                        data,
+                        {
+                            "api_url": api_url,
+                            "api_key": api_key,
+                            "service_key": service_key,
+                            "tenant_id": tenant_id,
+                            "authorization": authorization,
+                            "cookie": cookie,
+                        },
+                    )
+                )
                 # Process batch when we have enough runs or enough time has passed
                 if self._should_flush_run_ops_buffer():
                     self._flush_run_ops_buffer()
                 return
         else:
-            self._update_run(data, api_key=api_key, api_url=api_url)
+            self._update_run(
+                data,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
 
     def _update_run(
         self,
@@ -2853,6 +3109,10 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
@@ -2868,6 +3128,10 @@ class Client:
                 self.compressed_traces is not None
                 and api_key is None
                 and api_url is None
+                and service_key is None
+                and tenant_id is None
+                and authorization is None
+                and cookie is None
             ):
                 (
                     multipart_form,
@@ -2908,6 +3172,10 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -2920,10 +3188,22 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                         )
                     )
         else:
-            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
+            self._update_run_non_batch(
+                run_update,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
 
     def _update_run_non_batch(
         self,
@@ -2931,15 +3211,24 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
-        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None:
+        # If specific auth/url provided, use those; otherwise use all configured endpoints
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            headers = {
-                **self._headers,
-                X_API_KEY: target_api_key,
-            }
+            headers = _apply_auth_overrides(
+                self._headers,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+                fallback_api_key=self.api_key,
+            )
 
             self.request_with_retries(
                 "PATCH",
@@ -2952,10 +3241,15 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {
-                    **self._headers,
-                    X_API_KEY: write_api_key,
-                }
+                headers = _apply_auth_overrides(
+                    self._headers,
+                    api_key=write_api_key,
+                    service_key=None,
+                    tenant_id=None,
+                    authorization=None,
+                    cookie=None,
+                    fallback_api_key=None,
+                )
 
                 self.request_with_retries(
                     "PATCH",
@@ -8209,20 +8503,25 @@ class Client:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Create refresh function bound to this specific prompt
+        refresh_func = partial(
+            self._fetch_prompt_from_api, prompt_identifier, include_model
+        )
+
         # Try cache first if enabled
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get(cache_key, refresh_func)
             if cached is not None:
                 return cached
 
         # Cache miss or cache skipped - fetch from API
-        result = self._fetch_prompt_from_api(prompt_identifier, include_model)
+        result = refresh_func()
 
         # Store in cache (background thread will handle refresh when stale)
         if not skip_cache and self._cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            self._cache.set(cache_key, result, refresh_func)
 
         return result
 
@@ -9551,3 +9850,43 @@ def prep_obj_for_push(obj: Any) -> Any:
             # called.
             chain_to_push = RunnableSequence(prompt, bound_model)
     return chain_to_push
+
+
+def _apply_auth_overrides(
+    headers: Mapping[str, str],
+    *,
+    api_key: Optional[str],
+    service_key: Optional[str],
+    tenant_id: Optional[str],
+    authorization: Optional[str],
+    cookie: Optional[str],
+    fallback_api_key: Optional[str],
+) -> dict[str, str]:
+    headers = {**headers}
+    has_non_api_key = any([service_key, authorization, cookie])
+    if has_non_api_key:
+        headers = _apply_optional_api_key(headers, None)
+    if api_key is not None:
+        headers[X_API_KEY] = api_key
+    elif not has_non_api_key:
+        headers = _apply_optional_api_key(headers, fallback_api_key)
+    if service_key is not None:
+        headers["X-Service-Key"] = service_key
+    if tenant_id is not None:
+        headers["X-Tenant-Id"] = tenant_id
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    if cookie is not None:
+        headers["Cookie"] = cookie
+    return headers
+
+
+def _apply_optional_api_key(
+    headers: dict[str, str], api_key: Optional[str]
+) -> dict[str, str]:
+    if api_key:
+        headers[X_API_KEY] = api_key
+    else:
+        headers.pop(X_API_KEY, None)
+        headers.pop(X_API_KEY.upper(), None)
+    return headers
