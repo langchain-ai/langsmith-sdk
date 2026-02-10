@@ -13,14 +13,40 @@ from langsmith.run_helpers import get_current_run_tree, get_tracing_context, tra
 from langsmith.run_trees import RunTree
 
 from ._config import get_tracing_config
-from ._hooks import _agent_instructions, clear_active_runs
+from ._hooks import clear_active_runs
 from ._messages import convert_llm_request_to_messages, has_function_calls
 from ._recursive import RecursiveCallbackInjector, get_callbacks
-from ._tools import extract_tools_from_llm_request
 from ._usage import extract_model_name, extract_usage_from_response
 
 _LS_PROVIDER_VERTEXAI = "google_vertexai"
 _LS_PROVIDER_GOOGLE_AI = "google_ai"
+
+
+def extract_tools_from_llm_request(llm_request: Any) -> list[dict[str, Any]]:
+    """Extract tool definitions from LlmRequest and convert to OpenAI format."""
+    config = getattr(llm_request, "config", None)
+    if not config:
+        return []
+
+    tools_list = getattr(config, "tools", None)
+    if not tools_list:
+        return []
+
+    result = []
+    for tool in tools_list:
+        for func_decl in getattr(tool, "function_declarations", None) or []:
+            try:
+                dumped = func_decl.model_dump(exclude_none=True)
+                result.append(
+                    {
+                        "type": "function",
+                        "function": dumped,
+                    }
+                )
+            except Exception:
+                pass
+
+    return result
 
 
 def _get_ls_provider() -> str:
@@ -204,20 +230,8 @@ async def wrap_flow_call_llm_async(
     messages = convert_llm_request_to_messages(llm_request) if llm_request else None
     tools = extract_tools_from_llm_request(llm_request) if llm_request else []
 
-    # Get agent instruction from parent run
-    agent_instruction = None
-    if parent:
-        agent_instruction = _agent_instructions.get(str(parent.id))
-
     inputs: dict[str, Any] = {}
     if messages:
-        # Prepend system message if instruction exists
-        if agent_instruction and isinstance(agent_instruction, str):
-            # Check if there's already a system message
-            has_system = any(msg.get("role") == "system" for msg in messages)
-            if not has_system:
-                # Prepend system message to the beginning
-                messages = [{"role": "system", "content": agent_instruction}] + messages
         inputs["messages"] = messages
 
     metadata: dict[str, Any] = {"ls_provider": _get_ls_provider()}
