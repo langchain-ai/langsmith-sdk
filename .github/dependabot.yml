@@ -5,6 +5,7 @@ updates:
     directory: "/js"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "javascript"
@@ -18,10 +19,11 @@ updates:
           - "patch"
 
   # Python dependencies (python/)
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/python"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "python"
@@ -39,6 +41,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "github-actions"
