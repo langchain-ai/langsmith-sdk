@@ -320,7 +320,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
    * to be viewed and edited in the LangSmith playground.
    */
   function processSystemMessage(
-    params: Anthropic.MessageCreateParams
+    params: Record<string, unknown>
   ): Record<string, unknown> {
     if (!params.system) {
       return params;
@@ -340,7 +340,8 @@ export const wrapAnthropic = <T extends AnthropicType>(
     // Transform into first message
     processed.messages = [
       { role: "system" as const, content: systemContent },
-      ...(params.messages || []),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...((params as any).messages || []),
     ];
 
     delete processed.system;
