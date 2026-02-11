@@ -1,0 +1,16 @@
+{
+  "name": "test-tsc-import",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests that TypeScript can compile 'import * as langsmith from langsmith'",
+  "scripts": {
+    "test": "tsc --noEmit"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

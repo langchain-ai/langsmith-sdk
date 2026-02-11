@@ -366,6 +366,28 @@ jobs:
       - name: Test Metro exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
 
+  js-tsc-import:
+    name: "JS TSC Import Test"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test TypeScript namespace import compilation
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-tsc-import
+
   # ============================================================================
   # Integration Tests
   # ============================================================================
@@ -418,7 +440,7 @@ jobs:
             shard_total: 6
             shard_index: 2
           - test-type: integration
-            shard_total: 6 
+            shard_total: 6
             shard_index: 3
           - test-type: integration
             shard_total: 6
@@ -558,6 +580,7 @@ jobs:
       - js-exports-webpack
       - js-exports-esbuild
       - js-exports-metro
+      - js-tsc-import
       # Integration
       - integration-changes
       - python-integration
