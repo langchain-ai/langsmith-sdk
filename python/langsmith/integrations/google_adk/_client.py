@@ -22,6 +22,33 @@ _LS_PROVIDER_VERTEXAI = "google_vertexai"
 _LS_PROVIDER_GOOGLE_AI = "google_ai"
 
 
+def extract_tools_from_llm_request(llm_request: Any) -> list[dict[str, Any]]:
+    """Extract tool definitions from LlmRequest and convert to OpenAI format."""
+    config = getattr(llm_request, "config", None)
+    if not config:
+        return []
+
+    tools_list = getattr(config, "tools", None)
+    if not tools_list:
+        return []
+
+    result = []
+    for tool in tools_list:
+        for func_decl in getattr(tool, "function_declarations", None) or []:
+            try:
+                dumped = func_decl.model_dump(exclude_none=True)
+                result.append(
+                    {
+                        "type": "function",
+                        "function": dumped,
+                    }
+                )
+            except Exception:
+                pass
+
+    return result
+
+
 def _get_ls_provider() -> str:
     """Detect provider based on GOOGLE_GENAI_USE_VERTEXAI env var."""
     import os
@@ -201,6 +228,7 @@ async def wrap_flow_call_llm_async(
     llm_request = args[1] if len(args) > 1 else kwargs.get("llm_request")
     model_name = extract_model_name(llm_request) if llm_request else None
     messages = convert_llm_request_to_messages(llm_request) if llm_request else None
+    tools = extract_tools_from_llm_request(llm_request) if llm_request else []
 
     inputs: dict[str, Any] = {}
     if messages:
@@ -210,12 +238,17 @@ async def wrap_flow_call_llm_async(
     if model_name:
         metadata["ls_model_name"] = model_name
 
+    # Build extra dict with invocation_params if tools exist
+    extra: dict[str, Any] = {"metadata": metadata}
+    if tools:
+        extra["invocation_params"] = {"tools": tools}
+
     start_time = time.time()
     llm_run = parent.create_child(
         name=model_name or "google_adk_llm",
         run_type="llm",
         inputs=inputs,
-        extra={"metadata": metadata},
+        extra=extra,
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
     )
 

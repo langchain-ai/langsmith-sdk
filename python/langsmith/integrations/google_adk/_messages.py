@@ -110,6 +110,14 @@ def _safe_serialize(obj: Any) -> Any:
 def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
     """Convert LlmRequest to OpenAI-compatible message format."""
     messages: list[dict[str, Any]] = []
+
+    # Extract system instruction from config
+    config = getattr(llm_request, "config", None)
+    if config:
+        sys_inst = getattr(config, "system_instruction", None)
+        if sys_inst:
+            messages.append({"role": "system", "content": str(sys_inst)})
+
     contents = getattr(llm_request, "contents", None)
     if not contents:
         return messages
@@ -158,9 +166,9 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
                     {
                         "role": "tool",
                         "name": tr.get("name", ""),
-                        "content": json.dumps(c)
-                        if isinstance(c, dict)
-                        else str(c or ""),
+                        "content": (
+                            json.dumps(c) if isinstance(c, dict) else str(c or "")
+                        ),
                     }
                 )
         else:

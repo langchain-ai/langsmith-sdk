@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
+from contextvars import Token
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from langsmith._internal import _context
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
@@ -14,7 +16,7 @@ from ._messages import convert_adk_content_to_langsmith
 
 logger = logging.getLogger(__name__)
 
-_active_agent_runs: dict[str, tuple[RunTree, float]] = {}
+_active_agent_runs: dict[str, tuple[RunTree, float, Token[Optional[RunTree]]]] = {}
 _active_tool_runs: dict[str, tuple[RunTree, float]] = {}
 
 
@@ -29,6 +31,7 @@ def before_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> N
         return
 
     agent_name = getattr(callback_context, "agent_name", None) or "google_adk_agent"
+
     parent = _get_parent_run()
     if not parent:
         return
@@ -50,7 +53,12 @@ def before_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> N
             start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
         )
         agent_run.post()
-        _active_agent_runs[invocation_id] = (agent_run, start_time)
+
+        # Set agent span as current parent for nested operations
+        token = _context._PARENT_RUN_TREE.set(agent_run)
+
+        # Store agent span with token for restoration
+        _active_agent_runs[invocation_id] = (agent_run, start_time, token)
     except Exception as e:
         logger.warning(f"Error in before_agent_callback: {e}")
 
@@ -65,8 +73,9 @@ def after_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> No
     if not run_info:
         return
 
+    agent_run, _, token = run_info
+
     try:
-        agent_run, _ = run_info
         outputs: dict[str, Any] = {}
         if final_response := getattr(callback_context, "final_response", None):
             outputs["output"] = convert_adk_content_to_langsmith(final_response)
@@ -75,6 +84,9 @@ def after_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> No
         agent_run.patch()
     except Exception as e:
         logger.warning(f"Error in after_agent_callback: {e}")
+    finally:
+        # Always restore context, even if patching fails
+        _context._PARENT_RUN_TREE.reset(token)
 
 
 def before_tool_callback(
@@ -152,7 +164,7 @@ def clear_active_runs() -> None:
     """Clear all active runs (call when session ends)."""
     global _active_agent_runs, _active_tool_runs
 
-    for _, (run, _) in _active_agent_runs.items():
+    for _, (run, _, token) in _active_agent_runs.items():
         try:
             run.end(error="Session ended")
             run.patch()
