@@ -3943,13 +3943,15 @@ def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
         feedback_formula_id = None
 
         wait_for(
-            lambda: deleted_formula_id
-            not in {
-                formula.id
-                for formula in langchain_client.list_feedback_formulas(
-                    dataset_id=dataset.id
-                )
-            },
+            lambda: (
+                deleted_formula_id
+                not in {
+                    formula.id
+                    for formula in langchain_client.list_feedback_formulas(
+                        dataset_id=dataset.id
+                    )
+                }
+            ),
             max_sleep_time=30,
             sleep_time=1,
         )
