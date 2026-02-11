@@ -10,7 +10,7 @@ import {
 import { traceable } from "../traceable.js";
 import { overrideFetchImplementation } from "../singletons/fetch.js";
 
-test.only("multipart should work with overridden node-fetch", async () => {
+test("multipart should work with overridden node-fetch", async () => {
   await skipOnRateLimit(async () => {
     overrideFetchImplementation(nodeFetch);
 
