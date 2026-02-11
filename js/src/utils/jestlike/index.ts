@@ -632,6 +632,9 @@ export function generateWrapperFromJestlikeMethods(
                       strippedErrorMessage
                     );
                     (langsmithFriendlyError as any).rawJestError = rawError;
+                    if (testContext.testRootRunTree) {
+                      testContext.testRootRunTree.outputs = loggedOutput;
+                    }
                     throw langsmithFriendlyError;
                   }
                 }
