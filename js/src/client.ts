@@ -1911,6 +1911,17 @@ export class Client implements LangSmithTracingClientInterface {
             transformedBody = body.pipeThrough(new CompressionStream("gzip"));
             headers["Content-Encoding"] = "gzip";
           }
+          const { "x-api-key": apiKey, ...rest } = headers;
+          console.log(
+            "IS NODE FETCH",
+            isNodeFetch,
+            "pipeThrough",
+            typeof body === "object" && "pipeThrough" in body,
+            "useGzip",
+            options?.useGzip,
+            "headers",
+            rest
+          );
 
           const response = await this._fetch(
             `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
