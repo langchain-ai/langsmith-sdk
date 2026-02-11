@@ -7,9 +7,9 @@ import { printVitestTestModulesReporterTable } from "./utils/reporter.js";
 
 class LangSmithEvalReporter extends DefaultReporter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async onTestRunEnd(...args: any[]) {
-    super.onTestRunEnd();
-    await printVitestTestModulesReporterTable(args[0]);
+  onTestRunEnd(...args: any[]): any {
+    super.onTestRunEnd(...(args as [any, any, any]));
+    return printVitestTestModulesReporterTable(args[0]);
   }
 }
 
