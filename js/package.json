@@ -196,7 +196,7 @@
     "typedoc": "^0.28.16",
     "typedoc-plugin-expand-object-like-types": "^0.1.2",
     "typescript": "^5.4.5",
-    "vitest": "^3.1.3",
+    "vitest": "^4.0.18",
     "zod": "^3.25.76"
   },
   "peerDependencies": {
