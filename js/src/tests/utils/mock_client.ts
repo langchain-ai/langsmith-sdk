@@ -5,7 +5,13 @@ import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { Client } from "../../index.js";
 
 type ClientParams = Exclude<ConstructorParameters<typeof Client>[0], undefined>;
-export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
+export const mockClient = (
+  config?: Omit<ClientParams, "autoBatchTracing">
+): {
+  client: Client;
+  callSpy: jest.Mock<typeof fetch>;
+  langChainTracer: LangChainTracer;
+} => {
   const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
     ok: true,
     status: 200,
