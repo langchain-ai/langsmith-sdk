@@ -7,27 +7,10 @@ const vitestReporters = await importVitestModule("reporters");
 const DefaultReporter = vitestReporters.DefaultReporter;
 
 class LangSmithEvalReporter extends DefaultReporter {
-  async onTestRunEnd(
-    testModules: ReadonlyArray<unknown>,
-    _unhandledErrors: ReadonlyArray<unknown>,
-    _reason: "passed" | "interrupted" | "failed"
-  ) {
-    super.onTestRunEnd();
-    await printVitestTestModulesReporterTable(
-      testModules as ReadonlyArray<{
-        children: {
-          allTests: () => Iterable<{
-            name: string;
-            result: () => {
-              state: "pending" | "passed" | "failed" | "skipped";
-            };
-            diagnostic: () => { duration: number } | undefined;
-          }>;
-        };
-        state: () => "skipped" | "passed" | "failed" | "pending" | "queued";
-        moduleId: string;
-      }>
-    );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async onTestRunEnd(testModules: any, unhandledErrors: any, reason: any) {
+    super.onTestRunEnd(testModules, unhandledErrors, reason);
+    await printVitestTestModulesReporterTable(testModules);
   }
 }
 

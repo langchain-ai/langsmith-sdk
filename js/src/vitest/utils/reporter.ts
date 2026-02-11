@@ -45,7 +45,9 @@ export const printVitestTestModulesReporterTable = async (
 
     const moduleState = testModule.state();
     const testStatus =
-      moduleState === "passed" || moduleState === "failed" || moduleState === "skipped"
+      moduleState === "passed" ||
+      moduleState === "failed" ||
+      moduleState === "skipped"
         ? moduleState
         : "skip";
 
