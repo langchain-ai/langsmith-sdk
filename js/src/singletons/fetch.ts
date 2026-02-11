@@ -6,6 +6,8 @@ import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 // @ts-expect-error Broad typing to support a range of fetch implementations
 const DEFAULT_FETCH_IMPLEMENTATION = (...args: any[]) => fetch(...args);
 
+let globalFetchSupportsWebStreaming: boolean | undefined = undefined;
+
 const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
   "ls:fetch_implementation"
 );
@@ -14,27 +16,31 @@ const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
  * Overrides the fetch implementation used for LangSmith calls.
  * You should use this if you need to use an implementation of fetch
  * other than the default global (e.g. for dealing with proxies).
- * @param fetch The new fetch functino to use.
+ * @param fetch The new fetch function to use.
  */
-export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
+export const overrideFetchImplementation = (
+  fetch: (...args: any[]) => any,
+  supportsWebStreaming?: boolean
+) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
+  globalFetchSupportsWebStreaming = supportsWebStreaming;
 };
 
 export const clearFetchImplementation = () => {
   delete (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
+  globalFetchSupportsWebStreaming = undefined;
 };
 
-export const _globalFetchImplementationIsNodeFetch = () => {
-  const fetchImpl = (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
-  if (!fetchImpl) return false;
+export const _shouldStreamForGlobalFetchImplementation = async () => {
+  const overriddenFetchImpl = (globalThis as any)[
+    LANGSMITH_FETCH_IMPLEMENTATION_KEY
+  ];
 
-  // Check if the implementation has node-fetch specific properties
-  return (
-    typeof fetchImpl === "function" &&
-    "Headers" in fetchImpl &&
-    "Request" in fetchImpl &&
-    "Response" in fetchImpl
-  );
+  if (overriddenFetchImpl === undefined) {
+    return true;
+  }
+
+  return globalFetchSupportsWebStreaming;
 };
 
 /**

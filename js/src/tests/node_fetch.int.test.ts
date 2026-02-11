@@ -8,10 +8,7 @@ import {
   skipOnRateLimit,
 } from "./utils.js";
 import { traceable } from "../traceable.js";
-import {
-  _globalFetchImplementationIsNodeFetch,
-  overrideFetchImplementation,
-} from "../singletons/fetch.js";
+import { overrideFetchImplementation } from "../singletons/fetch.js";
 
 test.only("multipart should work with overridden node-fetch", async () => {
   await skipOnRateLimit(async () => {
