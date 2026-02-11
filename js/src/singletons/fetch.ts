@@ -28,13 +28,26 @@ export const _globalFetchImplementationIsNodeFetch = () => {
   const fetchImpl = (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
   if (!fetchImpl) return false;
 
-  // Check if the implementation has node-fetch specific properties
-  return (
+  // Check if the implementation has node-fetch v2 specific properties
+  if (
     typeof fetchImpl === "function" &&
     "Headers" in fetchImpl &&
     "Request" in fetchImpl &&
     "Response" in fetchImpl
-  );
+  ) {
+    return true;
+  }
+
+  // For node-fetch v3+ and other custom fetch implementations,
+  // check if it differs from the native globalThis.fetch.
+  // Custom implementations may not support ReadableStream bodies
+  // or CompressionStream properly, so we treat them like node-fetch
+  // (use buffered mode instead of streaming).
+  if (typeof fetchImpl === "function" && fetchImpl !== globalThis.fetch) {
+    return true;
+  }
+
+  return false;
 };
 
 /**

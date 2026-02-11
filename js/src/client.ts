@@ -1952,11 +1952,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
 
       // if stream fails, fallback to buffered body
-      if (
-        (!this.multipartStreamingDisabled || streamedAttempt) &&
-        res.status === 422 &&
-        (options?.apiUrl ?? this.apiUrl) !== DEFAULT_API_URL
-      ) {
+      if (streamedAttempt && res.status === 422) {
         console.warn(
           `Streaming multipart upload to ${
             options?.apiUrl ?? this.apiUrl

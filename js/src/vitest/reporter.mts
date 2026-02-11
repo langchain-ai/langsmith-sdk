@@ -8,9 +8,9 @@ const DefaultReporter = vitestReporters.DefaultReporter;
 
 class LangSmithEvalReporter extends DefaultReporter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async onTestRunEnd(testModules: any, unhandledErrors: any, reason: any) {
-    super.onTestRunEnd(testModules, unhandledErrors, reason);
-    await printVitestTestModulesReporterTable(testModules);
+  async onTestRunEnd(...args: any[]) {
+    super.onTestRunEnd();
+    await printVitestTestModulesReporterTable(args[0]);
   }
 }
 

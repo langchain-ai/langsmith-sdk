@@ -566,7 +566,7 @@ test.skip("no tracing with env var unset", async () => {
 
 test("wrapping same instance", async () => {
   const wrapped = wrapOpenAI(new OpenAI());
-  expect(() => wrapOpenAI(wrapped)).toThrowError(
+  expect(() => wrapOpenAI(wrapped)).toThrow(
     "This instance of OpenAI client has been already wrapped once."
   );
 });

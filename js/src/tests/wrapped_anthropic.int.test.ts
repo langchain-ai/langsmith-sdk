@@ -546,7 +546,7 @@ describe.skip("Requires Anthropic API key", () => {
 
   test("wrapping same instance", async () => {
     const wrapped = wrapAnthropic(new Anthropic());
-    expect(() => wrapAnthropic(wrapped)).toThrowError(
+    expect(() => wrapAnthropic(wrapped)).toThrow(
       "This instance of Anthropic client has been already wrapped once."
     );
   });
