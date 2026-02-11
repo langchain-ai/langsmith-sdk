@@ -21,31 +21,18 @@ export const printVitestReporterTable = async (files: any, ctx: any) => {
   }
 };
 
-// Plucked from Vitest 4.x internal types
-export interface VitestTestModule {
-  children: {
-    allTests: () => {
-      name: string;
-      result: () => { state: "pending" | "passed" | "failed" | "skipped" };
-      diagnostic: () => { duration: number };
-    }[];
-  };
-  state: () => "skipped" | "passed" | "failed";
-  relativeModuleId: string;
-}
-
 export const printVitestTestModulesReporterTable = async (
-  testModules: {
+  testModules: ReadonlyArray<{
     children: {
-      allTests: () => {
+      allTests: () => Iterable<{
         name: string;
         result: () => { state: "pending" | "passed" | "failed" | "skipped" };
-        diagnostic: () => { duration: number };
-      }[];
+        diagnostic: () => { duration: number } | undefined;
+      }>;
     };
-    state: () => "skipped" | "passed" | "failed";
-    relativeModuleId: string;
-  }[]
+    state: () => string;
+    moduleId: string;
+  }>
 ) => {
   for (const testModule of testModules) {
     const tests = [...testModule.children.allTests()].map((test) => {
@@ -56,10 +43,12 @@ export const printVitestTestModulesReporterTable = async (
       };
     });
 
-    await printReporterTable(
-      testModule.relativeModuleId,
-      tests,
-      testModule.state()
-    );
+    const moduleState = testModule.state();
+    const testStatus =
+      moduleState === "passed" || moduleState === "failed" || moduleState === "skipped"
+        ? moduleState
+        : "skip";
+
+    await printReporterTable(testModule.moduleId, tests, testStatus);
   }
 };
