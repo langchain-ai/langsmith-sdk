@@ -76,7 +76,7 @@ import {
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
 import {
-  _globalFetchImplementationIsNodeFetch,
+  _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
 
@@ -1883,7 +1883,6 @@ export class Client implements LangSmithTracingClientInterface {
     const boundary =
       "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
 
-    const isNodeFetch = _globalFetchImplementationIsNodeFetch();
     const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
     const buildStream = () => this._createMultipartStream(parts, boundary);
 
@@ -1939,9 +1938,11 @@ export class Client implements LangSmithTracingClientInterface {
       let res: Response;
       let streamedAttempt = false;
 
-      // attempt stream only if not disabled and not using node-fetch or Bun
+      const shouldStream = await _shouldStreamForGlobalFetchImplementation();
+
+      // attempt stream only if not disabled and not using node-fetch or Bun;
       if (
-        !isNodeFetch &&
+        shouldStream &&
         !this.multipartStreamingDisabled &&
         getEnv() !== "bun"
       ) {
