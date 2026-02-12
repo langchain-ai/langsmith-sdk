@@ -573,9 +573,46 @@ export interface AnnotationQueue {
   tenant_id: string;
 }
 
+export interface AnnotationQueueRubricItem {
+  /** The feedback key this rubric item is associated with. */
+  feedback_key: string;
+
+  /** An optional description of the rubric item. */
+  description?: string | null;
+
+  /** Descriptions for categorical values. */
+  value_descriptions?: Record<string, string> | null;
+
+  /** Descriptions for continuous score values. */
+  score_descriptions?: Record<string, string> | null;
+
+  /** Whether this rubric item is required. */
+  is_required?: boolean | null;
+}
+
 export interface AnnotationQueueWithDetails extends AnnotationQueue {
   /** The rubric instructions for the annotation queue. */
   rubric_instructions?: string;
+
+  /** The rubric items for the annotation queue. */
+  rubric_items?: AnnotationQueueRubricItem[];
+}
+
+export interface FeedbackConfigSchema {
+  /** The unique key identifying this feedback configuration. */
+  feedback_key: string;
+
+  /** The configuration specifying the type, bounds, and categories. */
+  feedback_config: FeedbackConfig;
+
+  /** The ID of the tenant that owns this feedback configuration. */
+  tenant_id: string;
+
+  /** When this feedback configuration was last modified. */
+  modified_at: string;
+
+  /** Whether a lower score is considered better for this feedback key. */
+  is_lower_score_better?: boolean | null;
 }
 
 export interface RunWithAnnotationQueueInfo extends BaseRun {
