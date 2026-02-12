@@ -1938,7 +1938,7 @@ export class Client implements LangSmithTracingClientInterface {
       let res: Response;
       let streamedAttempt = false;
 
-      const shouldStream = await _shouldStreamForGlobalFetchImplementation();
+      const shouldStream = _shouldStreamForGlobalFetchImplementation();
 
       // attempt stream only if not disabled and not using node-fetch or Bun;
       if (
