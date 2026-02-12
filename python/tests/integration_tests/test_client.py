@@ -3342,6 +3342,55 @@ def test_annotation_queue_crud(langchain_client: Client):
     assert len(queues) == 0
 
 
+def test_feedback_config_crud(langchain_client: Client):
+    """Test basic CRUD operations for feedback configurations."""
+    feedback_key = f"test_config_{uuid7().hex[:8]}"
+
+    # Test creation
+    config = langchain_client.create_feedback_config(
+        feedback_key=feedback_key,
+        feedback_config={
+            "type": "continuous",
+            "min": 0.0,
+            "max": 1.0,
+        },
+        is_lower_score_better=False,
+    )
+    assert config.feedback_key == feedback_key
+    assert config.feedback_config["type"] == "continuous"
+    assert config.is_lower_score_better is False
+
+    # Test listing with filter
+    configs = list(langchain_client.list_feedback_configs(feedback_key=[feedback_key]))
+    assert len(configs) == 1
+    assert configs[0].feedback_key == feedback_key
+
+    # Test update
+    updated = langchain_client.update_feedback_config(
+        feedback_key,
+        is_lower_score_better=True,
+    )
+    assert updated.is_lower_score_better is True
+
+    # Test upsert behavior (identical config returns existing)
+    duplicate = langchain_client.create_feedback_config(
+        feedback_key=feedback_key,
+        feedback_config={
+            "type": "continuous",
+            "min": 0.0,
+            "max": 1.0,
+        },
+    )
+    assert duplicate.feedback_key == feedback_key
+
+    # Test deletion
+    langchain_client.delete_feedback_config(feedback_key)
+
+    # Verify deletion
+    configs = list(langchain_client.list_feedback_configs(feedback_key=[feedback_key]))
+    assert len(configs) == 0
+
+
 def test_list_annotation_queues(langchain_client: Client):
     """Test listing and filtering annotation queues."""
     queue_names = [f"test_queue_{i}_{uuid7().hex[:8]}" for i in range(3)]
