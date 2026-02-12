@@ -31,7 +31,7 @@ export const clearFetchImplementation = () => {
   globalFetchSupportsWebStreaming = undefined;
 };
 
-export const _shouldStreamForGlobalFetchImplementation = async () => {
+export const _shouldStreamForGlobalFetchImplementation = () => {
   const overriddenFetchImpl = (globalThis as any)[
     LANGSMITH_FETCH_IMPLEMENTATION_KEY
   ];
@@ -40,7 +40,7 @@ export const _shouldStreamForGlobalFetchImplementation = async () => {
     return true;
   }
 
-  return globalFetchSupportsWebStreaming;
+  return globalFetchSupportsWebStreaming ?? false;
 };
 
 /**
