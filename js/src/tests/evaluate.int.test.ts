@@ -6,7 +6,6 @@ import { evaluate } from "../evaluation/_runner.js";
 import { waitUntilRunFound } from "./utils.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
-import { traceable } from "../traceable.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import { v4 as uuidv4 } from "uuid";
