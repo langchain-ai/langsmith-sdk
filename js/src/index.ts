@@ -10,6 +10,7 @@ export type {
   TracerSession,
   Run,
   Feedback,
+  FeedbackConfigSchema,
   RetrieverOutput,
 } from "./schemas.js";
 
