@@ -241,9 +241,7 @@ if HAVE_AGENTS:
 
                 if trace.trace_id in self._unposted_traces:
                     # No response/generation spans ended, post now
-                    run.inputs = self._first_response_inputs.pop(
-                        trace.trace_id, {}
-                    )
+                    run.inputs = self._first_response_inputs.pop(trace.trace_id, {})
                     self._unposted_traces.discard(trace.trace_id)
                     run.post()
                 else:
