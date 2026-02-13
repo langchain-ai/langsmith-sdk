@@ -184,7 +184,10 @@ async function handleEnd(params: {
   }
 }
 
-const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
+const _populateUsageMetadataAndOutputs = (
+  processedOutputs: KVMap,
+  runTree?: RunTree
+) => {
   if (runTree !== undefined) {
     let usageMetadata: ExtractedUsageMetadata | undefined;
     try {
@@ -199,6 +202,8 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
       };
       processedOutputs.usage_metadata = usageMetadata;
     }
+    // Set outputs on run tree as soon as available
+    runTree.outputs = processedOutputs;
   }
 };
 
@@ -257,7 +262,7 @@ async function handleRunOutputs<Return>(params: {
     if (isAsyncFn(processOutputsFn)) {
       void outputs
         .then(async (processedOutputs: KVMap) => {
-          _populateUsageMetadata(processedOutputs, runTree);
+          _populateUsageMetadataAndOutputs(processedOutputs, runTree);
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
@@ -293,7 +298,7 @@ async function handleRunOutputs<Return>(params: {
       e
     );
   }
-  _populateUsageMetadata(outputs, runTree);
+  _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
     .then(async () => {
       try {

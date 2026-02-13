@@ -1322,14 +1322,19 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
 
 test("evaluate succeeds with child runs that take a while to resolve", async () => {
   const target = async () => {
-    await traceable(async () => {
-      void generateText({
-        prompt: "Hello world",
-        model: openai("gpt-5-nano"),
-      });
-    })();
+    void generateText({
+      prompt: "Hello world",
+      model: openai("gpt-5-nano"),
+    });
+    return { foo: "foo" };
   };
-  await evaluate(target, {
+  const res = await evaluate(target, {
     data: TESTING_DATASET_NAME,
   });
+  expect(res.results.length).toEqual(2);
+  for (const result of res.results) {
+    // This check is important to ensure the output is set before child promises resolve
+    // for AI SDK
+    expect(result.run.outputs).toEqual({ foo: "foo" });
+  }
 });
