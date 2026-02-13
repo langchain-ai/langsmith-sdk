@@ -1440,6 +1440,70 @@ test("annotationqueue crud with rubric instructions 2", async () => {
   }
 });
 
+test("feedback config crud", async () => {
+  const client = new Client({ callerOptions: { maxRetries: 6 } });
+  const feedbackKey = `test-feedback-config-${uuidv4().substring(0, 8)}`;
+
+  try {
+    // 1. Create a continuous feedback config
+    const config = await client.createFeedbackConfig({
+      feedbackKey,
+      feedbackConfig: { type: "continuous", min: 0, max: 1 },
+      isLowerScoreBetter: false,
+    });
+    expect(config).toBeDefined();
+    expect(config.feedback_key).toBe(feedbackKey);
+    expect(config.feedback_config.type).toBe("continuous");
+    expect(config.feedback_config.min).toBe(0);
+    expect(config.feedback_config.max).toBe(1);
+    expect(config.is_lower_score_better).toBe(false);
+
+    // 2. List and verify
+    const configs: any[] = [];
+    for await (const c of client.listFeedbackConfigs({
+      feedbackKeys: [feedbackKey],
+    })) {
+      configs.push(c);
+    }
+    expect(configs.length).toBe(1);
+    expect(configs[0].feedback_key).toBe(feedbackKey);
+
+    // 3. Update is_lower_score_better
+    const updated = await client.updateFeedbackConfig(feedbackKey, {
+      isLowerScoreBetter: true,
+    });
+    expect(updated.is_lower_score_better).toBe(true);
+
+    // 4. Upsert (create with same config should return existing)
+    const upserted = await client.createFeedbackConfig({
+      feedbackKey,
+      feedbackConfig: { type: "continuous", min: 0, max: 1 },
+      isLowerScoreBetter: true,
+    });
+    expect(upserted.feedback_key).toBe(feedbackKey);
+
+    // 5. Delete
+    await client.deleteFeedbackConfig(feedbackKey);
+
+    // 6. Verify deleted
+    const remaining: any[] = [];
+    for await (const c of client.listFeedbackConfigs({
+      feedbackKeys: [feedbackKey],
+    })) {
+      remaining.push(c);
+    }
+    expect(remaining.length).toBe(0);
+  } catch (e) {
+    // Clean up on failure
+    try {
+      await client.deleteFeedbackConfig(feedbackKey);
+    } catch {
+      // ignore cleanup errors
+    }
+    throw e;
+  }
+}, 180_000);
+
 test("upload examples multipart", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;

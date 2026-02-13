@@ -5,12 +5,15 @@ updates:
     directory: "/js"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "javascript"
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      - dependency-name: "p-queue"
     groups:
       js-minor-and-patch:
         update-types:
@@ -18,10 +21,11 @@ updates:
           - "patch"
 
   # Python dependencies (python/)
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/python"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "python"
@@ -39,6 +43,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "github-actions"

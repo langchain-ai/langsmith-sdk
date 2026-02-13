@@ -1129,15 +1129,15 @@ async function _forward(
   client: Client,
   includeAttachments?: boolean
 ): Promise<Omit<_ForwardResults, "exampleIndex">> {
-  let run: BaseRun | null = null;
+  let run: BaseRun | undefined = undefined;
 
-  const _getRun = (r: RunTree): void => {
+  const _getRun = (r?: RunTree): void => {
     run = r;
   };
 
   const defaultOptions = {
     reference_example_id: example.id,
-    on_end: _getRun,
+    on_start: _getRun,
     project_name: experimentName,
     metadata: {
       ...metadata,
