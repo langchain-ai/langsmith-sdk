@@ -6,9 +6,17 @@ import { evaluate } from "../evaluation/_runner.js";
 import { waitUntilRunFound } from "./utils.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
+import { traceable } from "../traceable.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import { v4 as uuidv4 } from "uuid";
+
+import * as ai from "ai";
+import { openai } from "@ai-sdk/openai";
+import { wrapAISDK } from "../experimental/vercel/index.js";
+
+const { generateText } = wrapAISDK(ai);
+
 const TESTING_DATASET_NAME = `test_dataset_js_evaluate_${uuidv4()}`;
 const TESTING_DATASET_NAME2 = `my_splits_ds_${uuidv4()}`;
 
@@ -1310,4 +1318,18 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
       description: "Should fail at runtime",
     })
   ).rejects.toThrow(); // You might want to be more specific about the error message
+});
+
+test("evaluate succeeds with child runs that take a while to resolve", async () => {
+  const target = async () => {
+    await traceable(async () => {
+      void generateText({
+        prompt: "Hello world",
+        model: openai("gpt-5-nano"),
+      });
+    })();
+  };
+  await evaluate(target, {
+    data: TESTING_DATASET_NAME,
+  });
 });

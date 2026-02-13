@@ -628,6 +628,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
   aggregator?: (args: any[]) => any;
   argsConfigPath?: [number] | [number, string];
   tracer?: OTELTracer;
+  on_start?: (runTree: RunTree | undefined) => void;
   __finalTracedIteratorKey?: string;
   __deferredSerializableArgOptions?: {
     depth?: number;
@@ -719,6 +720,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     processInputs,
     processOutputs,
     extractAttachments,
+    on_start,
     ...runTreeConfig
   } = config ?? {};
 
@@ -915,6 +917,8 @@ export function traceable<Func extends (...args: any[]) => any>(
     const currentRunTree = isRunTree(currentContext)
       ? currentContext
       : undefined;
+
+    on_start?.(currentRunTree);
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
