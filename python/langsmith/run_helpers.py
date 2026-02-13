@@ -1383,7 +1383,7 @@ class _ContainerInput(TypedDict, total=False):
 
 
 def _format_error_with_exceptions_to_handle(
-    error: BaseException,
+    error: BaseException | None,
     exceptions_to_handle: Optional[tuple[type[BaseException], ...]],
 ) -> Optional[str]:
     """Format error for logging, suppressing traceback for handled exceptions."""
