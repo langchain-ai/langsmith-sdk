@@ -2285,7 +2285,7 @@ class TestTraceableExceptionsToHandle:
         "func_type", ["sync", "async", "generator", "async_generator"]
     )
     def test_handled_exceptions(self, auto_batch_tracing: bool, func_type: str):
-        """Test that exceptions_to_handle suppresses tracebacks for specified exceptions."""
+        """exceptions_to_handle should suppress tracebacks for specified exceptions."""
         mock_client = _get_mock_client(
             auto_batch_tracing=auto_batch_tracing,
             info=ls_schemas.LangSmithInfo(
@@ -2426,6 +2426,7 @@ class TestTraceableExceptionsToHandle:
         for _, payload in datas:
             # All handled exceptions should not have error field with traceback
             if payload.get("error") is not None:
+                err = payload.get("error")
                 pytest.fail(
-                    f"Expected error to be None for handled exception, got: {payload.get('error')}"
+                    f"Expected error to be None for handled exception, got: {err}"
                 )
