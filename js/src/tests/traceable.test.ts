@@ -3289,3 +3289,69 @@ test("type test: RunTree overload works correctly", async () => {
   // @ts-expect-error Typing should not permit additional args
   await wrapped("ROOT", "foo");
 });
+
+describe("tracingEnabled: false propagation to nested traceables", () => {
+  test("nested traceable traces normally when parent has tracingEnabled: true", async () => {
+    const { client, callSpy } = mockClient();
+
+    const child = traceable(
+      async function child(input: string) {
+        return `child: ${input}`;
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const parent = traceable(
+      async function parent(input: string) {
+        return child(input);
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const result = await parent("hello");
+    expect(result).toBe("child: hello");
+
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
+      nodes: ["parent:0", "child:1"],
+      edges: [["parent:0", "child:1"]],
+    });
+  });
+
+  test("nested traceable without explicit tracingEnabled inherits false from parent", async () => {
+    const { client } = mockClient();
+
+    let childStoreValue: unknown;
+
+    const child = traceable(
+      async function child(input: string) {
+        // Inspect the ALS store inside the child's execution context
+        // to verify the parent's tracingEnabled: false was propagated
+        childStoreValue =
+          AsyncLocalStorageProviderSingleton.getInstance().getStore();
+        return `child: ${input}`;
+      },
+      // no explicit tracingEnabled — should inherit false from parent
+      { client }
+    );
+
+    const parent = traceable(
+      async function parent(input: string) {
+        return child(input);
+      },
+      { tracingEnabled: false }
+    );
+
+    const result = await parent("hello");
+    expect(result).toBe("child: hello");
+
+    // The child's store should be a ContextPlaceholder (not a RunTree)
+    // with tracingEnabled: false propagated from the parent
+    expect(childStoreValue).toBeDefined();
+    expect(childStoreValue).not.toBeInstanceOf(RunTree);
+    expect((childStoreValue as Record<string, unknown>).tracingEnabled).toBe(
+      false
+    );
+  });
+});

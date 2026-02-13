@@ -51,6 +51,8 @@ import {
   AttachmentData,
   DatasetVersion,
   AnnotationQueueWithDetails,
+  AnnotationQueueRubricItem,
+  FeedbackConfigSchema,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -76,7 +78,7 @@ import {
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
 import {
-  _globalFetchImplementationIsNodeFetch,
+  _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
 
@@ -1883,7 +1885,6 @@ export class Client implements LangSmithTracingClientInterface {
     const boundary =
       "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
 
-    const isNodeFetch = _globalFetchImplementationIsNodeFetch();
     const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
     const buildStream = () => this._createMultipartStream(parts, boundary);
 
@@ -1939,9 +1940,11 @@ export class Client implements LangSmithTracingClientInterface {
       let res: Response;
       let streamedAttempt = false;
 
-      // attempt stream only if not disabled and not using node-fetch or Bun
+      const shouldStream = _shouldStreamForGlobalFetchImplementation();
+
+      // attempt stream only if not disabled and not using node-fetch or Bun;
       if (
-        !isNodeFetch &&
+        shouldStream &&
         !this.multipartStreamingDisabled &&
         getEnv() !== "bun"
       ) {
@@ -4572,6 +4575,146 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * API for managing feedback configs
+   */
+
+  /**
+   * Create a feedback configuration on the LangSmith API.
+   *
+   * This upserts: if an identical config already exists, it returns it.
+   * If a conflicting config exists for the same key, a 400 error is raised.
+   *
+   * @param options - The options for creating a feedback config
+   * @param options.feedbackKey - The unique key for this feedback config
+   * @param options.feedbackConfig - The config specifying type, bounds, and categories
+   * @param options.isLowerScoreBetter - Whether a lower score is better
+   * @returns The created FeedbackConfigSchema object
+   */
+  public async createFeedbackConfig(options: {
+    feedbackKey: string;
+    feedbackConfig: FeedbackConfig;
+    isLowerScoreBetter?: boolean;
+  }): Promise<FeedbackConfigSchema> {
+    const { feedbackKey, feedbackConfig, isLowerScoreBetter = false } = options;
+    const body = {
+      feedback_key: feedbackKey,
+      feedback_config: feedbackConfig,
+      is_lower_score_better: isLowerScoreBetter,
+    };
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: JSON.stringify(body),
+      });
+      await raiseForStatus(res, "create feedback config");
+      return res;
+    });
+    return response.json();
+  }
+
+  /**
+   * List feedback configurations on the LangSmith API.
+   * @param options - The options for listing feedback configs
+   * @param options.feedbackKeys - Filter by specific feedback keys
+   * @param options.nameContains - Filter by name substring
+   * @param options.limit - The maximum number of configs to return
+   * @returns An async iterator of FeedbackConfigSchema objects
+   */
+  public async *listFeedbackConfigs(
+    options: {
+      feedbackKeys?: string[];
+      nameContains?: string;
+      limit?: number;
+    } = {}
+  ): AsyncIterableIterator<FeedbackConfigSchema> {
+    const { feedbackKeys, nameContains, limit } = options;
+    const params = new URLSearchParams();
+    if (feedbackKeys) {
+      feedbackKeys.forEach((key) => {
+        params.append("key", key);
+      });
+    }
+    if (nameContains) params.append("name_contains", nameContains);
+    params.append(
+      "limit",
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString()
+    );
+
+    let count = 0;
+    for await (const configs of this._getPaginated<FeedbackConfigSchema>(
+      "/feedback-configs",
+      params
+    )) {
+      yield* configs;
+      count += configs.length;
+      if (limit !== undefined && count >= limit) break;
+    }
+  }
+
+  /**
+   * Update a feedback configuration on the LangSmith API.
+   * @param feedbackKey - The key of the feedback config to update
+   * @param options - The options for updating the feedback config
+   * @param options.feedbackConfig - The new feedback config
+   * @param options.isLowerScoreBetter - Whether a lower score is better
+   * @returns The updated FeedbackConfigSchema object
+   */
+  public async updateFeedbackConfig(
+    feedbackKey: string,
+    options: {
+      feedbackConfig?: FeedbackConfig;
+      isLowerScoreBetter?: boolean;
+    } = {}
+  ): Promise<FeedbackConfigSchema> {
+    const { feedbackConfig, isLowerScoreBetter } = options;
+    const body: Record<string, unknown> = { feedback_key: feedbackKey };
+    if (feedbackConfig !== undefined) {
+      body.feedback_config = feedbackConfig;
+    }
+    if (isLowerScoreBetter !== undefined) {
+      body.is_lower_score_better = isLowerScoreBetter;
+    }
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: JSON.stringify(body),
+      });
+      await raiseForStatus(res, "update feedback config");
+      return res;
+    });
+    return response.json();
+  }
+
+  /**
+   * Delete a feedback configuration on the LangSmith API.
+   * @param feedbackKey - The key of the feedback config to delete
+   */
+  public async deleteFeedbackConfig(feedbackKey: string): Promise<void> {
+    const params = new URLSearchParams({ feedback_key: feedbackKey });
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/feedback-configs?${params}`,
+        {
+          method: "DELETE",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete feedback config", true);
+      return res;
+    });
+  }
+
+  /**
    * API for managing annotation queues
    */
 
@@ -4631,13 +4774,16 @@ export class Client implements LangSmithTracingClientInterface {
     description?: string;
     queueId?: string;
     rubricInstructions?: string;
+    rubricItems?: AnnotationQueueRubricItem[];
   }): Promise<AnnotationQueueWithDetails> {
-    const { name, description, queueId, rubricInstructions } = options;
-    const body = {
+    const { name, description, queueId, rubricInstructions, rubricItems } =
+      options;
+    const body: Record<string, unknown> = {
       name,
       description,
       id: queueId || uuid.v4(),
       rubric_instructions: rubricInstructions,
+      rubric_items: rubricItems,
     };
 
     const serializedBody = JSON.stringify(
@@ -4693,17 +4839,20 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateAnnotationQueue(
     queueId: string,
     options: {
-      name: string;
+      name?: string;
       description?: string;
       rubricInstructions?: string;
+      rubricItems?: AnnotationQueueRubricItem[];
     }
   ): Promise<void> {
-    const { name, description, rubricInstructions } = options;
-    const body = JSON.stringify({
-      name,
-      description,
-      rubric_instructions: rubricInstructions,
-    });
+    const { name, description, rubricInstructions, rubricItems } = options;
+    const bodyObj: Record<string, unknown> = {};
+    if (name !== undefined) bodyObj.name = name;
+    if (description !== undefined) bodyObj.description = description;
+    if (rubricInstructions !== undefined)
+      bodyObj.rubric_instructions = rubricInstructions;
+    if (rubricItems !== undefined) bodyObj.rubric_items = rubricItems;
+    const body = JSON.stringify(bodyObj);
     await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,

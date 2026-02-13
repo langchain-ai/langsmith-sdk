@@ -157,7 +157,7 @@ export async function waitUntilProjectFound(
         return false;
       }
     },
-    10_000,
+    15_000,
     5_000,
     `Waiting for project "${projectName}"`
   );

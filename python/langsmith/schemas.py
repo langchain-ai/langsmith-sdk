@@ -819,6 +819,24 @@ class DatasetShareSchema(TypedDict, total=False):
     """The URL of the shared dataset."""
 
 
+class AnnotationQueueRubricItem(TypedDict, total=False):
+    """Represents a rubric item assigned to an annotation queue.
+
+    Links a feedback config to a queue with optional per-queue customization.
+    """
+
+    feedback_key: str
+    """The feedback key to include in this queue's rubric."""
+    description: Optional[str]
+    """Instructions for annotators on how to evaluate this item."""
+    value_descriptions: Optional[dict[str, str]]
+    """Display text for categorical feedback values."""
+    score_descriptions: Optional[dict[str, str]]
+    """Display text for score ranges."""
+    is_required: Optional[bool]
+    """Whether feedback for this rubric item is required before submission."""
+
+
 class AnnotationQueue(BaseModel):
     """Represents an annotation queue."""
 
@@ -1357,3 +1375,23 @@ class FeedbackFormula(FeedbackFormulaCreate):
     id: UUID
     created_at: datetime
     modified_at: datetime
+
+
+class FeedbackConfigSchema(BaseModel):
+    """Represents a feedback configuration for a tenant's feedback key.
+
+    Feedback configurations define how feedback with a given key should be
+    interpreted, including its type (continuous, categorical, or freeform),
+    scoring bounds, and valid categories.
+    """
+
+    feedback_key: str
+    """The unique key identifying this feedback configuration."""
+    feedback_config: FeedbackConfig
+    """The configuration specifying the type, bounds, and categories."""
+    tenant_id: UUID
+    """The ID of the tenant that owns this feedback configuration."""
+    modified_at: datetime
+    """When this feedback configuration was last modified."""
+    is_lower_score_better: Optional[bool] = None
+    """Whether a lower score is considered better for this feedback key."""

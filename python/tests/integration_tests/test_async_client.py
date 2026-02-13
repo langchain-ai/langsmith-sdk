@@ -417,6 +417,49 @@ async def test_annotation_queue_crud(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_feedback_config_crud(async_client: AsyncClient):
+    """Test basic CRUD operations for feedback configurations."""
+    feedback_key = f"test_config_{uuid.uuid4().hex[:8]}"
+
+    # Test creation
+    config = await async_client.create_feedback_config(
+        feedback_key=feedback_key,
+        feedback_config={
+            "type": "continuous",
+            "min": 0.0,
+            "max": 1.0,
+        },
+        is_lower_score_better=False,
+    )
+    assert config.feedback_key == feedback_key
+    assert config.feedback_config["type"] == "continuous"
+    assert config.is_lower_score_better is False
+
+    # Test listing with filter
+    configs = [
+        c async for c in async_client.list_feedback_configs(feedback_key=[feedback_key])
+    ]
+    assert len(configs) == 1
+    assert configs[0].feedback_key == feedback_key
+
+    # Test update
+    updated = await async_client.update_feedback_config(
+        feedback_key,
+        is_lower_score_better=True,
+    )
+    assert updated.is_lower_score_better is True
+
+    # Test deletion
+    await async_client.delete_feedback_config(feedback_key)
+
+    # Verify deletion
+    configs = [
+        c async for c in async_client.list_feedback_configs(feedback_key=[feedback_key])
+    ]
+    assert len(configs) == 0
+
+
+@pytest.mark.asyncio
 async def test_list_annotation_queues(async_client: AsyncClient):
     """Test listing and filtering annotation queues."""
     queue_names = [f"test_queue_{i}_{uuid.uuid4().hex[:8]}" for i in range(3)]

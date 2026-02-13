@@ -184,7 +184,10 @@ async function handleEnd(params: {
   }
 }
 
-const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
+const _populateUsageMetadataAndOutputs = (
+  processedOutputs: KVMap,
+  runTree?: RunTree
+) => {
   if (runTree !== undefined) {
     let usageMetadata: ExtractedUsageMetadata | undefined;
     try {
@@ -199,6 +202,8 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
       };
       processedOutputs.usage_metadata = usageMetadata;
     }
+    // Set outputs on run tree as soon as available
+    runTree.outputs = processedOutputs;
   }
 };
 
@@ -257,7 +262,7 @@ async function handleRunOutputs<Return>(params: {
     if (isAsyncFn(processOutputsFn)) {
       void outputs
         .then(async (processedOutputs: KVMap) => {
-          _populateUsageMetadata(processedOutputs, runTree);
+          _populateUsageMetadataAndOutputs(processedOutputs, runTree);
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
@@ -293,7 +298,7 @@ async function handleRunOutputs<Return>(params: {
       e
     );
   }
-  _populateUsageMetadata(outputs, runTree);
+  _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
     .then(async () => {
       try {
@@ -345,7 +350,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | undefined
 ): RunTree | ContextPlaceholder => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
-    return {};
+    return { tracingEnabled: runTree.tracingEnabled };
   }
 
   const [attached, args] = handleRunAttachments(
@@ -628,6 +633,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
   aggregator?: (args: any[]) => any;
   argsConfigPath?: [number] | [number, string];
   tracer?: OTELTracer;
+  on_start?: (runTree: RunTree | undefined) => void;
   __finalTracedIteratorKey?: string;
   __deferredSerializableArgOptions?: {
     depth?: number;
@@ -719,6 +725,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     processInputs,
     processOutputs,
     extractAttachments,
+    on_start,
     ...runTreeConfig
   } = config ?? {};
 
@@ -897,8 +904,21 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [currentRunTree, processedArgs as Inputs];
       }
 
+      // If the parent context explicitly disabled tracing and the child
+      // didn't override it, propagate the tracingEnabled setting so that
+      // child runs inside a traceable({ tracingEnabled: false }) wrapper
+      // also have tracing disabled.
+      const childConfig =
+        ensuredConfig.tracingEnabled === undefined &&
+        prevRunFromStore?.tracingEnabled !== undefined
+          ? {
+              ...ensuredConfig,
+              tracingEnabled: prevRunFromStore.tracingEnabled,
+            }
+          : ensuredConfig;
+
       const currentRunTree = getTracingRunTree(
-        new RunTree(ensuredConfig),
+        new RunTree(childConfig),
         processedArgs,
         config?.getInvocationParams,
         processInputsFn,
@@ -915,6 +935,8 @@ export function traceable<Func extends (...args: any[]) => any>(
     const currentRunTree = isRunTree(currentContext)
       ? currentContext
       : undefined;
+
+    on_start?.(currentRunTree);
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
