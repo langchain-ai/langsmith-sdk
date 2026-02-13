@@ -313,6 +313,7 @@ def traceable(
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
     enabled: Optional[bool] = None,
+    exceptions_to_handle: Optional[tuple[type[BaseException], ...]] = None,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
@@ -362,6 +363,12 @@ def traceable(
         enabled: Whether tracing is enabled for this function.
 
             Defaults to `None`, which will use the default value from the current context.
+        exceptions_to_handle: Exception types to ignore when logging errors.
+
+            If an exception of one of these types is raised, the run will still be recorded
+            but the error field will be `None` instead of containing the full traceback.
+
+            Defaults to `None`.
 
     Returns:
         The decorated function.
@@ -478,6 +485,19 @@ def traceable(
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
             ```
+
+        !!! example "Handling specific exceptions"
+
+            ```python
+            @traceable(exceptions_to_handle=(ValueError, TypeError))
+            def function_with_handled_exceptions(x):
+                if x < 0:
+                    raise ValueError("Negative value")  # Won't send error in the trace
+                return x**2
+
+
+            function_with_handled_exceptions(-5)
+            ```
     """
     run_type = cast(
         ls_client.RUN_TYPE_T,
@@ -520,6 +540,7 @@ def traceable(
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
         enabled=enabled,
+        exceptions_to_handle=kwargs.pop("exceptions_to_handle", None),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
@@ -1109,13 +1130,9 @@ class trace:
         if self.new_run is None:
             return
         if exc_type is not None:
-            if self.exceptions_to_handle and issubclass(
-                exc_type, self.exceptions_to_handle
-            ):
-                tb = None
-            else:
-                tb = utils._format_exc()
-                tb = f"{exc_type.__name__}: {exc_value}\n\n{tb}"
+            tb = _format_error_with_exceptions_to_handle(
+                exc_value, self.exceptions_to_handle
+            )
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
@@ -1343,6 +1360,7 @@ class _TraceableContainer(TypedDict, total=False):
     context: contextvars.Context
     _token_event_logged: Optional[bool]
     enabled: Optional[bool]
+    exceptions_to_handle: Optional[tuple[type[BaseException], ...]]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -1361,6 +1379,19 @@ class _ContainerInput(TypedDict, total=False):
     invocation_params_fn: Optional[Callable[[dict], dict]]
     dangerously_allow_filesystem: Optional[bool]
     enabled: Optional[bool]
+    exceptions_to_handle: Optional[tuple[type[BaseException], ...]]
+
+
+def _format_error_with_exceptions_to_handle(
+    error: BaseException,
+    exceptions_to_handle: Optional[tuple[type[BaseException], ...]],
+) -> Optional[str]:
+    """Format error for logging, suppressing traceback for handled exceptions."""
+    if exceptions_to_handle and isinstance(error, exceptions_to_handle):
+        return None
+
+    stacktrace = utils._format_exc()
+    return f"{repr(error)}\n\n{stacktrace}"
 
 
 def _container_end(
@@ -1393,8 +1424,9 @@ def _container_end(
     if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
         run_tree.metadata["usage_metadata"] = usage
     if error:
-        stacktrace = utils._format_exc()
-        error_repr = f"{repr(error)}\n\n{stacktrace}"
+        error_repr = _format_error_with_exceptions_to_handle(
+            error, container.get("exceptions_to_handle")
+        )
     else:
         error_repr = None
         if (_on_success := container.get("_on_success")) and callable(_on_success):
@@ -1534,6 +1566,7 @@ def _setup_run(
             on_end=langsmith_extra.get("on_end"),
             context=copy_context(),
             _token_event_logged=False,
+            exceptions_to_handle=container_input.get("exceptions_to_handle"),
         )
     signature = inspect.signature(func)
     name_ = name or utils._get_function_name(func)
@@ -1619,6 +1652,7 @@ def _setup_run(
         context=context,
         _token_event_logged=False,
         enabled=enabled,
+        exceptions_to_handle=container_input.get("exceptions_to_handle"),
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])
     context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
