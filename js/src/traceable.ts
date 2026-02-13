@@ -350,7 +350,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | undefined
 ): RunTree | ContextPlaceholder => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
-    return {};
+    return { tracingEnabled: runTree.tracingEnabled };
   }
 
   const [attached, args] = handleRunAttachments(
@@ -904,8 +904,21 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [currentRunTree, processedArgs as Inputs];
       }
 
+      // If the parent context explicitly disabled tracing and the child
+      // didn't override it, propagate the tracingEnabled setting so that
+      // child runs inside a traceable({ tracingEnabled: false }) wrapper
+      // also have tracing disabled.
+      const childConfig =
+        ensuredConfig.tracingEnabled === undefined &&
+        prevRunFromStore?.tracingEnabled !== undefined
+          ? {
+              ...ensuredConfig,
+              tracingEnabled: prevRunFromStore.tracingEnabled,
+            }
+          : ensuredConfig;
+
       const currentRunTree = getTracingRunTree(
-        new RunTree(ensuredConfig),
+        new RunTree(childConfig),
         processedArgs,
         config?.getInvocationParams,
         processInputsFn,
