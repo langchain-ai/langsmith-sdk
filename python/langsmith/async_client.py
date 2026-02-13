@@ -944,6 +944,8 @@ class AsyncClient:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
+        rubric_instructions: Optional[str] = None,
+        rubric_items: Optional[list[ls_schemas.AnnotationQueueRubricItem]] = None,
     ) -> ls_schemas.AnnotationQueue:
         """Create an annotation queue on the LangSmith API.
 
@@ -951,15 +953,20 @@ class AsyncClient:
             name: The name of the annotation queue.
             description: The description of the annotation queue.
             queue_id (Optional[Union[UUID, str]]): The ID of the annotation queue.
+            rubric_instructions: The rubric instructions for the annotation queue.
+            rubric_items: The feedback configs to assign to this queue's rubric.
 
         Returns:
             The created annotation queue object.
         """
-        body = {
+        body: dict[str, Any] = {
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "rubric_instructions": rubric_instructions,
         }
+        if rubric_items is not None:
+            body["rubric_items"] = rubric_items
         response = await self._arequest_with_retries(
             "POST",
             "/annotation-queues",
@@ -985,7 +992,13 @@ class AsyncClient:
         return await self.list_annotation_queues(queue_ids=[queue_id]).__anext__()
 
     async def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        rubric_instructions: Optional[str] = None,
+        rubric_items: Optional[list[ls_schemas.AnnotationQueueRubricItem]] = None,
     ) -> None:
         """Update an annotation queue with the specified `queue_id`.
 
@@ -993,14 +1006,22 @@ class AsyncClient:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
             name: The new name for the annotation queue.
             description: The new description for the annotation queue.
+            rubric_instructions: The new rubric instructions for the queue.
+            rubric_items: The feedback configs to assign to this queue's rubric.
         """
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        if rubric_instructions is not None:
+            body["rubric_instructions"] = rubric_instructions
+        if rubric_items is not None:
+            body["rubric_items"] = rubric_items
         response = await self._arequest_with_retries(
             "PATCH",
             f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}",
-            json={
-                "name": name,
-                "description": description,
-            },
+            json=body,
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -1073,6 +1094,132 @@ class AsyncClient:
         response = await self._arequest_with_retries("GET", f"{base_url}/{index}")
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
+
+    # Feedback Config API
+
+    async def create_feedback_config(
+        self,
+        feedback_key: str,
+        *,
+        feedback_config: ls_schemas.FeedbackConfig,
+        is_lower_score_better: Optional[bool] = False,
+    ) -> ls_schemas.FeedbackConfigSchema:
+        """Create a feedback configuration.
+
+        Defines how feedback with a given key should be interpreted.
+        If an identical configuration already exists for the key, it is
+        returned unchanged. If a different configuration already exists
+        for the key, an error is raised.
+
+        Args:
+            feedback_key: The feedback key to configure.
+            feedback_config: The configuration defining type, bounds,
+                and categories.
+            is_lower_score_better: Whether a lower score is considered
+                better. Defaults to False.
+
+        Returns:
+            The created or existing feedback configuration.
+        """
+        body: dict[str, Any] = {
+            "feedback_key": feedback_key,
+            "feedback_config": feedback_config,
+            "is_lower_score_better": is_lower_score_better,
+        }
+        response = await self._arequest_with_retries(
+            "POST",
+            "/feedback-configs",
+            json=body,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.FeedbackConfigSchema(**response.json())
+
+    async def list_feedback_configs(
+        self,
+        *,
+        feedback_key: Optional[Sequence[str]] = None,
+        name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> AsyncIterator[ls_schemas.FeedbackConfigSchema]:
+        """List feedback configurations.
+
+        Args:
+            feedback_key: Filter by specific feedback keys.
+            name_contains: Filter by substring match on the feedback key.
+            limit: The maximum number of configurations to return.
+            offset: The number of configurations to skip. Defaults to 0.
+
+        Yields:
+            The feedback configurations.
+        """
+        params: dict[str, Any] = {
+            "limit": min(limit, 100) if limit is not None else 100,
+            "offset": offset,
+        }
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        ix = 0
+        async for config in self._aget_paginated_list(
+            "/feedback-configs", params=params
+        ):
+            yield ls_schemas.FeedbackConfigSchema(**config)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
+
+    async def update_feedback_config(
+        self,
+        feedback_key: str,
+        *,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        is_lower_score_better: Optional[bool] = None,
+    ) -> ls_schemas.FeedbackConfigSchema:
+        """Update a feedback configuration.
+
+        Only the provided fields will be updated; others remain unchanged.
+
+        Args:
+            feedback_key: The feedback key of the configuration to update.
+            feedback_config: The new configuration values.
+            is_lower_score_better: Whether a lower score is considered
+                better.
+
+        Returns:
+            The updated feedback configuration.
+        """
+        body: dict[str, Any] = {
+            "feedback_key": feedback_key,
+        }
+        if feedback_config is not None:
+            body["feedback_config"] = feedback_config
+        if is_lower_score_better is not None:
+            body["is_lower_score_better"] = is_lower_score_better
+        response = await self._arequest_with_retries(
+            "PATCH",
+            "/feedback-configs",
+            json=body,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.FeedbackConfigSchema(**response.json())
+
+    async def delete_feedback_config(self, feedback_key: str) -> None:
+        """Delete a feedback configuration.
+
+        This performs a soft delete. The configuration can be recreated
+        later with the same key.
+
+        Args:
+            feedback_key: The feedback key of the configuration to delete.
+        """
+        response = await self._arequest_with_retries(
+            "DELETE",
+            "/feedback-configs",
+            params={"feedback_key": feedback_key},
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     @ls_beta.warn_beta
     async def index_dataset(
