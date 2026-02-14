@@ -264,7 +264,7 @@ describe("wrapAISDK", () => {
       }
 
       // Add a small delay to allow async operations to complete
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify error was captured and sent to LangSmith
       expect(mockHttpRequests.length).toBeGreaterThan(0);
@@ -391,7 +391,7 @@ describe("wrapAISDK", () => {
                 },
               },
             ],
-            chunkDelayInMs: 100,
+            chunkDelayInMs: 10,
           }),
         }),
       });
@@ -420,7 +420,7 @@ describe("wrapAISDK", () => {
       }
 
       expect(new Date().getTime() - start.getTime()).toBeGreaterThanOrEqual(
-        500
+        50
       );
 
       expect(fullText).toBe("Hello world");
@@ -500,7 +500,7 @@ describe("wrapAISDK", () => {
       }
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify error was captured in LangSmith traces
       const updateRunCall = mockHttpRequests.find(
@@ -605,7 +605,7 @@ describe("wrapAISDK", () => {
       }
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify error was captured in LangSmith
       const updateRunCall = mockHttpRequests.find(
@@ -722,7 +722,7 @@ describe("wrapAISDK", () => {
         name: "John",
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       expect(mockHttpRequests.length).toEqual(4);
 
@@ -777,7 +777,7 @@ describe("wrapAISDK", () => {
       }
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify error was captured in LangSmith traces
       const updateRunCall = mockHttpRequests.find(
@@ -809,7 +809,7 @@ describe("wrapAISDK", () => {
           callCount++;
           if (callCount <= 2) {
             // First two calls hit rate limit
-            const delaySeconds = 1;
+            const delaySeconds = 0;
             throw new APICallError({
               message: "Rate limit reached for requests",
               url: "https://api.openai.com/v1/chat/completions",
@@ -872,7 +872,7 @@ describe("wrapAISDK", () => {
       expect(callCount).toBe(3); // Should have retried twice
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify HTTP request patterns for streaming retries
       expect(mockHttpRequests.length).toBeGreaterThan(0);
@@ -921,7 +921,7 @@ describe("wrapAISDK", () => {
           callCount++;
           if (callCount <= 2) {
             // First two calls hit rate limit
-            const delaySeconds = 1;
+            const delaySeconds = 0;
             throw new APICallError({
               message: "Rate limit reached for requests",
               url: "https://api.openai.com/v1/chat/completions",
@@ -968,7 +968,7 @@ describe("wrapAISDK", () => {
       expect(callCount).toBe(3); // Should have retried twice
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify HTTP request patterns for retries
       expect(mockHttpRequests.length).toBeGreaterThan(0);
@@ -1082,7 +1082,7 @@ describe("wrapAISDK", () => {
       expect(fullText).toBeTruthy();
 
       // Add delay for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify HTTP requests were made even with cancellation
       expect(mockHttpRequests.length).toBeGreaterThan(0);
@@ -1475,7 +1475,7 @@ describe("wrapAISDK", () => {
 
       await result.consumeStream();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Find the updateRun call for streamText (parent run)
       const updateStreamTextCall = mockHttpRequests.find(
