@@ -925,6 +925,9 @@ dependencies = [
 claude-agent-sdk = [
     { name = "claude-agent-sdk" },
 ]
+google-adk = [
+    { name = "wrapt" },
+]
 langsmith-pyo3 = [
     { name = "langsmith-pyo3" },
 ]
@@ -989,6 +992,7 @@ dev = [
     { name = "types-tqdm" },
     { name = "uvicorn" },
     { name = "vcrpy" },
+    { name = "wrapt" },
 ]
 lint = [
     { name = "openai" },
@@ -1017,10 +1021,11 @@ requires-dist = [
     { name = "uuid-utils", specifier = ">=0.12.0,<1.0" },
     { name = "vcrpy", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
     { name = "vcrpy", marker = "extra == 'vcr'", specifier = ">=7.0.0" },
+    { name = "wrapt", marker = "extra == 'google-adk'", specifier = ">=1.16.0" },
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "langsmith-pyo3", "openai-agents", "otel", "pytest", "vcr"]
+provides-extras = ["claude-agent-sdk", "google-adk", "langsmith-pyo3", "openai-agents", "otel", "pytest", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1066,6 +1071,7 @@ dev = [
     { name = "types-tqdm", specifier = ">=4.66.0.20240106" },
     { name = "uvicorn", specifier = ">=0.29.0" },
     { name = "vcrpy", specifier = ">=7.0.0" },
+    { name = "wrapt", specifier = ">=1.16.0" },
 ]
 lint = [{ name = "openai", specifier = ">=2.6.0" }]
 test = [
