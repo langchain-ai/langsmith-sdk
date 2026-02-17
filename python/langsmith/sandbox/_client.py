@@ -79,6 +79,7 @@ class SandboxClient:
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
+        self._api_key = resolved_api_key
         headers: dict[str, str] = {}
         if resolved_api_key:
             headers["X-Api-Key"] = resolved_api_key
@@ -87,6 +88,14 @@ class SandboxClient:
     def close(self) -> None:
         """Close the HTTP client."""
         self._http.close()
+
+    def __del__(self) -> None:
+        """Close the HTTP client on garbage collection."""
+        try:
+            if not self._http.is_closed:
+                self._http.close()
+        except Exception:
+            pass
 
     def __enter__(self) -> SandboxClient:
         """Enter context manager."""
