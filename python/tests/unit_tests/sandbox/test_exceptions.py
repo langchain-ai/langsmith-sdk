@@ -10,6 +10,11 @@ from langsmith.sandbox import (
     SandboxOperationError,
     ValidationError,
 )
+from langsmith.sandbox._exceptions import (
+    CommandTimeoutError,
+    SandboxConnectionError,
+    SandboxServerReloadError,
+)
 from langsmith.utils import LangSmithError
 
 
@@ -155,3 +160,28 @@ class TestResourceNameConflictError:
         """Test error with resource_type."""
         error = ResourceNameConflictError("Name already exists", resource_type="volume")
         assert error.resource_type == "volume"
+
+
+class TestCommandTimeoutError:
+    """Tests for CommandTimeoutError."""
+
+    def test_is_sandbox_operation_error(self):
+        assert issubclass(CommandTimeoutError, SandboxOperationError)
+
+    def test_attributes(self):
+        err = CommandTimeoutError("timed out", timeout=60)
+        assert err.timeout == 60
+        assert err.operation == "command"
+        assert err.error_type == "CommandTimeout"
+
+
+class TestSandboxServerReloadError:
+    """Tests for SandboxServerReloadError."""
+
+    def test_is_connection_error(self):
+        assert issubclass(SandboxServerReloadError, SandboxConnectionError)
+
+    def test_isinstance_check(self):
+        """SandboxServerReloadError is caught by except SandboxConnectionError."""
+        err = SandboxServerReloadError("reloading")
+        assert isinstance(err, SandboxConnectionError)
