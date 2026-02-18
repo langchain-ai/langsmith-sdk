@@ -26,6 +26,7 @@ from langsmith.sandbox._async_client import AsyncSandboxClient
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import SandboxClient
 from langsmith.sandbox._exceptions import (
+    CommandTimeoutError,
     DataplaneNotConfiguredError,
     QuotaExceededError,
     ResourceAlreadyExistsError,
@@ -40,6 +41,7 @@ from langsmith.sandbox._exceptions import (
     SandboxCreationError,
     SandboxNotReadyError,
     SandboxOperationError,
+    SandboxServerReloadError,
     ValidationError,
 )
 from langsmith.sandbox._models import (
@@ -70,6 +72,7 @@ __all__ = [
     "SandboxAPIError",
     "SandboxAuthenticationError",
     "SandboxConnectionError",
+    "SandboxServerReloadError",
     # Resource errors (type-based with resource_type attribute)
     "ResourceNotFoundError",
     "ResourceTimeoutError",
@@ -83,6 +86,7 @@ __all__ = [
     "SandboxCreationError",
     "SandboxNotReadyError",
     "SandboxOperationError",
+    "CommandTimeoutError",
     "DataplaneNotConfiguredError",
 ]
 
