@@ -167,6 +167,8 @@ if HAVE_AGENTS:
             self._last_response_outputs: dict = {}
 
             self._runs: dict[str, rt.RunTree] = {}
+            self._unposted_traces: set[str] = set()
+            self._unposted_spans: set[str] = set()
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             current_run_tree = get_current_run_tree()
@@ -209,7 +211,9 @@ if HAVE_AGENTS:
                         run_kwargs["project_name"] = self._project_name
                     new_run = rt.RunTree(**run_kwargs)  # type: ignore[arg-type]
 
-                new_run.post()
+                # Delay posting until first response/generation span ends
+                # so inputs can be included in the POST.
+                self._unposted_traces.add(trace.trace_id)
                 _context._PARENT_RUN_TREE.set(new_run)
                 self._runs[trace.trace_id] = new_run
             except Exception as e:
@@ -225,7 +229,6 @@ if HAVE_AGENTS:
 
             try:
                 # Update run with final inputs/outputs
-                run.inputs = self._first_response_inputs.pop(trace.trace_id, {})
                 run.outputs = self._last_response_outputs.pop(trace.trace_id, {})
 
                 # Update metadata
@@ -235,7 +238,15 @@ if HAVE_AGENTS:
 
                 # End and patch
                 run.end()
-                run.patch()
+
+                if trace.trace_id in self._unposted_traces:
+                    # No response/generation spans ended, post now
+                    run.inputs = self._first_response_inputs.pop(trace.trace_id, {})
+                    self._unposted_traces.discard(trace.trace_id)
+                    run.post()
+                else:
+                    self._first_response_inputs.pop(trace.trace_id, None)
+                    run.patch(exclude_inputs=True)
 
                 _context._PARENT_RUN_TREE.set(run.parent_run)
             except Exception as e:
@@ -283,7 +294,18 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                child_run.post()
+                # Delay posting for spans whose inputs aren't available at start
+                if isinstance(
+                    span.span_data,
+                    (
+                        tracing.GenerationSpanData,
+                        tracing.ResponseSpanData,
+                        tracing.FunctionSpanData,
+                    ),
+                ):
+                    self._unposted_spans.add(span.span_id)
+                else:
+                    child_run.post()
                 self._runs[span.span_id] = child_run
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
@@ -316,35 +338,45 @@ if HAVE_AGENTS:
                         "openai_span_id": span.span_id,
                     }
                 )
-                # Merge any additional metadata from extracted
                 if metadata := extracted.get("metadata"):
                     run.extra["metadata"].update(metadata)
-                # Merge invocation_params
                 if invocation_params := extracted.get("invocation_params"):
                     run.extra["invocation_params"] = invocation_params
 
-                # Track first/last response inputs/outputs for trace
                 if isinstance(span.span_data, tracing.ResponseSpanData):
                     self._first_response_inputs[span.trace_id] = (
                         self._first_response_inputs.get(span.trace_id) or inputs
                     )
                     self._last_response_outputs[span.trace_id] = outputs
+                    self._maybe_post_trace(span.trace_id, inputs)
                 elif isinstance(span.span_data, tracing.GenerationSpanData):
-                    # Use generation spans as fallback if no response spans exist
                     self._first_response_inputs[span.trace_id] = (
                         self._first_response_inputs.get(span.trace_id) or inputs
                     )
                     self._last_response_outputs[span.trace_id] = outputs
+                    self._maybe_post_trace(span.trace_id, inputs)
 
-                # End and patch
                 if span.ended_at:
                     run.end_time = datetime.fromisoformat(span.ended_at)
                 else:
                     run.end()
 
-                run.patch()
+                if span.span_id in self._unposted_spans:
+                    self._unposted_spans.discard(span.span_id)
+                    run.post()
+                else:
+                    run.patch(exclude_inputs=True)
             except Exception as e:
                 logger.exception(f"Error updating span run: {e}")
+
+        def _maybe_post_trace(self, trace_id: str, inputs: dict) -> None:
+            """Post the trace if it hasn't been posted yet."""
+            if trace_id in self._unposted_traces:
+                trace_run = self._runs.get(trace_id)
+                if trace_run:
+                    trace_run.inputs = inputs
+                    trace_run.post()
+                    self._unposted_traces.discard(trace_id)
 
         def shutdown(self) -> None:
             self.client.flush()

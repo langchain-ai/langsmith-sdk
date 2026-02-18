@@ -7751,6 +7751,191 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    # Feedback Config API
+
+    def create_feedback_config(
+        self,
+        feedback_key: str,
+        *,
+        feedback_config: ls_schemas.FeedbackConfig,
+        is_lower_score_better: Optional[bool] = False,
+    ) -> ls_schemas.FeedbackConfigSchema:
+        """Create a feedback configuration.
+
+        Defines how feedback with a given key should be interpreted.
+        If an identical configuration already exists for the key, it is
+        returned unchanged. If a different configuration already exists
+        for the key, an error is raised.
+
+        Args:
+            feedback_key (str):
+                The feedback key to configure.
+            feedback_config (FeedbackConfig):
+                The configuration defining type, bounds, and categories.
+            is_lower_score_better (Optional[bool]):
+                Whether a lower score is considered better.
+                Defaults to False.
+
+        Returns:
+            FeedbackConfigSchema: The created or existing feedback
+                configuration.
+
+        Raises:
+            requests.HTTPError: If a conflicting configuration already
+                exists for the given key (HTTP 400).
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                config = client.create_feedback_config(
+                    feedback_key="user-rating",
+                    feedback_config={
+                        "type": "continuous",
+                        "min": 0.0,
+                        "max": 5.0,
+                    },
+                )
+        """
+        body: dict[str, Any] = {
+            "feedback_key": feedback_key,
+            "feedback_config": feedback_config,
+            "is_lower_score_better": is_lower_score_better,
+        }
+        response = self.request_with_retries(
+            "POST",
+            "/feedback-configs",
+            json=body,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.FeedbackConfigSchema(**response.json())
+
+    def list_feedback_configs(
+        self,
+        *,
+        feedback_key: Optional[Sequence[str]] = None,
+        name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> Iterator[ls_schemas.FeedbackConfigSchema]:
+        """List feedback configurations.
+
+        Args:
+            feedback_key (Optional[Sequence[str]]):
+                Filter by specific feedback keys.
+            name_contains (Optional[str]):
+                Filter by substring match on the feedback key.
+            limit (Optional[int]):
+                The maximum number of configurations to return.
+            offset (int):
+                The number of configurations to skip. Defaults to 0.
+
+        Yields:
+            FeedbackConfigSchema: The feedback configurations.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                for config in client.list_feedback_configs():
+                    print(f"{config.feedback_key}: {config.feedback_config}")
+        """
+        params: dict[str, Any] = {
+            "limit": min(limit, 100) if limit is not None else 100,
+            "offset": offset,
+        }
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        for i, config in enumerate(
+            self._get_paginated_list("/feedback-configs", params=params)
+        ):
+            yield ls_schemas.FeedbackConfigSchema(**config)
+            if limit is not None and i + 1 >= limit:
+                break
+
+    def update_feedback_config(
+        self,
+        feedback_key: str,
+        *,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        is_lower_score_better: Optional[bool] = None,
+    ) -> ls_schemas.FeedbackConfigSchema:
+        """Update a feedback configuration.
+
+        Only the provided fields will be updated; others remain unchanged.
+
+        Args:
+            feedback_key (str):
+                The feedback key of the configuration to update.
+            feedback_config (Optional[FeedbackConfig]):
+                The new configuration values.
+            is_lower_score_better (Optional[bool]):
+                Whether a lower score is considered better.
+
+        Returns:
+            FeedbackConfigSchema: The updated feedback configuration.
+
+        Raises:
+            LangSmithNotFoundError: If no configuration exists for the
+                given feedback key (HTTP 404).
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                config = client.update_feedback_config(
+                    "user-rating",
+                    is_lower_score_better=True,
+                )
+        """
+        body: dict[str, Any] = {
+            "feedback_key": feedback_key,
+        }
+        if feedback_config is not None:
+            body["feedback_config"] = feedback_config
+        if is_lower_score_better is not None:
+            body["is_lower_score_better"] = is_lower_score_better
+        response = self.request_with_retries(
+            "PATCH",
+            "/feedback-configs",
+            json=body,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.FeedbackConfigSchema(**response.json())
+
+    def delete_feedback_config(self, feedback_key: str) -> None:
+        """Delete a feedback configuration.
+
+        This performs a soft delete. The configuration can be recreated
+        later with the same key.
+
+        Args:
+            feedback_key (str):
+                The feedback key of the configuration to delete.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                client.delete_feedback_config("user-rating")
+        """
+        response = self.request_with_retries(
+            "DELETE",
+            "/feedback-configs",
+            params={"feedback_key": feedback_key},
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     # Annotation Queue API
 
     def list_annotation_queues(
@@ -7802,6 +7987,7 @@ class Client:
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
         rubric_instructions: Optional[str] = None,
+        rubric_items: Optional[list[ls_schemas.AnnotationQueueRubricItem]] = None,
     ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
@@ -7814,16 +8000,22 @@ class Client:
                 The ID of the annotation queue.
             rubric_instructions (Optional[str]):
                 The rubric instructions for the annotation queue.
+            rubric_items (Optional[list[AnnotationQueueRubricItem]]):
+                The feedback configs to assign to this queue's rubric.
+                Each item specifies a feedback_key and optional per-queue
+                customization like description and value_descriptions.
 
         Returns:
             AnnotationQueue: The created annotation queue object.
         """
-        body = {
+        body: dict[str, Any] = {
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
             "rubric_instructions": rubric_instructions,
         }
+        if rubric_items is not None:
+            body["rubric_items"] = rubric_items
         response = self.request_with_retries(
             "POST",
             "/annotation-queues",
@@ -7856,31 +8048,39 @@ class Client:
         self,
         queue_id: ID_TYPE,
         *,
-        name: str,
+        name: Optional[str] = None,
         description: Optional[str] = None,
         rubric_instructions: Optional[str] = None,
+        rubric_items: Optional[list[ls_schemas.AnnotationQueueRubricItem]] = None,
     ) -> None:
         """Update an annotation queue with the specified `queue_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
-            name (str): The new name for the annotation queue.
+            name (Optional[str]): The new name for the annotation queue.
             description (Optional[str]): The new description for the
                 annotation queue.
             rubric_instructions (Optional[str]): The new rubric instructions for the
                 annotation queue.
+            rubric_items (Optional[list[AnnotationQueueRubricItem]]):
+                The feedback configs to assign to this queue's rubric.
 
         Returns:
             None
         """
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        if rubric_instructions is not None:
+            body["rubric_instructions"] = rubric_instructions
+        if rubric_items is not None:
+            body["rubric_items"] = rubric_items
         response = self.request_with_retries(
             "PATCH",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
-            json={
-                "name": name,
-                "description": description,
-                "rubric_instructions": rubric_instructions,
-            },
+            json=body,
         )
         ls_utils.raise_for_status_with_text(response)
 

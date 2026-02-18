@@ -82,4 +82,5 @@ export type RunTreeLike = RunTree;
 
 export type ContextPlaceholder = {
   [_LC_CONTEXT_VARIABLES_KEY]?: Record<string, unknown>;
+  tracingEnabled?: boolean;
 };

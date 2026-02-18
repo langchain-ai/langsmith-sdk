@@ -12,6 +12,8 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      - dependency-name: "p-queue"
     groups:
       js-minor-and-patch:
         update-types:
