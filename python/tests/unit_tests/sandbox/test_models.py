@@ -2,12 +2,24 @@
 
 from langsmith.sandbox import (
     ExecutionResult,
+    OutputChunk,
     Pool,
     ResourceSpec,
     SandboxTemplate,
     Volume,
     VolumeMountSpec,
 )
+
+
+class TestOutputChunk:
+    """Tests for OutputChunk."""
+
+    def test_dataclass(self):
+        """Test OutputChunk fields."""
+        chunk = OutputChunk(stream="stdout", data="hello", offset=0)
+        assert chunk.stream == "stdout"
+        assert chunk.data == "hello"
+        assert chunk.offset == 0
 
 
 class TestExecutionResult:
