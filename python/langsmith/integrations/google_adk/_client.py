@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -13,7 +14,12 @@ from langsmith.run_helpers import get_current_run_tree, trace
 from langsmith.run_trees import RunTree
 
 from ._config import get_tracing_config
-from ._hooks import clear_active_runs
+from ._hooks import (
+    clear_active_runs,
+    get_sync_root_run,
+    register_sync_root_run,
+    unregister_sync_root_run,
+)
 from ._messages import convert_llm_request_to_messages, has_function_calls
 from ._recursive import RecursiveCallbackInjector, get_callbacks
 from ._usage import extract_model_name, extract_usage_from_response
@@ -64,6 +70,7 @@ def _get_ls_provider() -> str:
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "google_adk.session"
+_SYNC_RUN_DEPTH_ATTR = "_langsmith_sync_run_depth"
 
 
 def _extract_text_from_content(content: Any) -> Optional[str]:
@@ -76,6 +83,73 @@ def _extract_text_from_content(content: Any) -> Optional[str]:
     return " ".join(text_parts) if text_parts else None
 
 
+def _enter_sync_run_bridge(instance: Any) -> None:
+    """Mark that Runner.run (sync) is active.
+
+    ADK's sync Runner.run internally calls Runner.run_async. We wrap both
+    methods, so this depth marker lets run_async know it should not open a
+    second root trace for the same invocation.
+    """
+    current = getattr(instance, _SYNC_RUN_DEPTH_ATTR, 0)
+    setattr(instance, _SYNC_RUN_DEPTH_ATTR, current + 1)
+
+
+def _exit_sync_run_bridge(instance: Any) -> None:
+    """Undo _enter_sync_run_bridge, removing the attribute when depth reaches 0."""
+    current = getattr(instance, _SYNC_RUN_DEPTH_ATTR, 0)
+    if current <= 1:
+        if hasattr(instance, _SYNC_RUN_DEPTH_ATTR):
+            delattr(instance, _SYNC_RUN_DEPTH_ATTR)
+        return
+    setattr(instance, _SYNC_RUN_DEPTH_ATTR, current - 1)
+
+
+def _is_sync_run_bridge_active(instance: Any) -> bool:
+    """Whether current run_async call came from wrapped Runner.run (sync)."""
+    return getattr(instance, _SYNC_RUN_DEPTH_ATTR, 0) > 0
+
+
+def _build_runner_trace_params(
+    instance: Any, kwargs: Any
+) -> tuple[dict[str, Any], str, dict[str, Any], dict[str, Any]]:
+    """Build common root trace config/inputs/metadata for Runner.run and run_async."""
+    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
+    trace_name = config.get("name") or TRACE_CHAIN_NAME
+
+    trace_inputs: dict[str, Any] = {}
+    if new_message := kwargs.get("new_message"):
+        if text := _extract_text_from_content(new_message):
+            trace_inputs["input"] = text
+
+    trace_metadata = {
+        "ls_provider": _get_ls_provider(),
+        **(config.get("metadata") or {}),
+    }
+    if app_name := getattr(instance, "app_name", None):
+        trace_metadata["app_name"] = app_name
+    if user_id := kwargs.get("user_id"):
+        trace_metadata["user_id"] = user_id
+    if session_id := kwargs.get("session_id"):
+        trace_metadata["session_id"] = session_id
+
+    return config, trace_name, trace_inputs, trace_metadata
+
+
+def _end_root_run(
+    run: Optional[RunTree],
+    *,
+    final_output: Optional[str] = None,
+    error: Optional[Exception] = None,
+) -> None:
+    """End a root run with standard output/error shape used by this integration."""
+    if run is None:
+        return
+    if error is not None:
+        run.end(error=str(error))
+        return
+    run.end(outputs={"output": final_output} if final_output else None)
+
+
 def _inject_tracing_callbacks(agent: Any) -> None:
     try:
         injector = RecursiveCallbackInjector(get_callbacks())
@@ -84,8 +158,22 @@ def _inject_tracing_callbacks(agent: Any) -> None:
         logger.warning(f"Failed to inject tracing callbacks: {e}")
 
 
-def _get_parent_run() -> Optional[RunTree]:
-    return get_current_run_tree()
+def _get_parent_run(invocation_context: Optional[Any] = None) -> Optional[RunTree]:
+    parent = get_current_run_tree()
+    if parent is not None:
+        return parent
+    if invocation_context is None:
+        return None
+
+    session = getattr(invocation_context, "session", None)
+    app_name = getattr(invocation_context, "app_name", None) or getattr(
+        session, "app_name", None
+    )
+    user_id = getattr(invocation_context, "user_id", None) or getattr(
+        session, "user_id", None
+    )
+    session_id = getattr(session, "id", None)
+    return get_sync_root_run(app_name=app_name, user_id=user_id, session_id=session_id)
 
 
 def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
@@ -100,26 +188,15 @@ def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any
 
 def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
     """Wrap Runner.run to create a traced session for synchronous execution."""
-    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
-    trace_name = config.get("name") or TRACE_CHAIN_NAME
-
-    trace_inputs: dict[str, Any] = {}
-    if new_message := kwargs.get("new_message"):
-        if text := _extract_text_from_content(new_message):
-            trace_inputs["input"] = text
-
-    trace_metadata = {
-        "ls_provider": _get_ls_provider(),
-        **(config.get("metadata") or {}),
-    }
-    if app_name := getattr(instance, "app_name", None):
-        trace_metadata["app_name"] = app_name
-    if user_id := kwargs.get("user_id"):
-        trace_metadata["user_id"] = user_id
-    if session_id := kwargs.get("session_id"):
-        trace_metadata["session_id"] = session_id
+    config, trace_name, trace_inputs, trace_metadata = _build_runner_trace_params(
+        instance, kwargs
+    )
 
     def _trace_run():
+        app_name = getattr(instance, "app_name", None)
+        user_id = kwargs.get("user_id")
+        session_id = kwargs.get("session_id")
+
         with trace(
             name=trace_name,
             run_type="chain",
@@ -127,7 +204,15 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
             project_name=config.get("project_name"),
             tags=config.get("tags"),
             metadata=trace_metadata,
-        ):
+        ) as root_run:
+            _enter_sync_run_bridge(instance)
+            if root_run is not None:
+                register_sync_root_run(
+                    app_name=app_name,
+                    user_id=user_id,
+                    session_id=session_id,
+                    run=root_run,
+                )
             try:
                 events = list(wrapped(*args, **kwargs))
                 final_output = None
@@ -136,16 +221,22 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
                         if text := _extract_text_from_content(content):
                             final_output = text
                             break
-                run = get_current_run_tree()
-                if run:
-                    run.end(outputs={"output": final_output} if final_output else None)
+                _end_root_run(
+                    get_current_run_tree() or root_run, final_output=final_output
+                )
                 yield from events
             except Exception as e:
-                run = get_current_run_tree()
-                if run:
-                    run.end(error=str(e))
+                _end_root_run(get_current_run_tree() or root_run, error=e)
                 raise
             finally:
+                _exit_sync_run_bridge(instance)
+                if root_run is not None:
+                    unregister_sync_root_run(
+                        app_name=app_name,
+                        user_id=user_id,
+                        session_id=session_id,
+                        run=root_run,
+                    )
                 clear_active_runs()
 
     return _trace_run()
@@ -155,26 +246,17 @@ async def wrap_runner_run_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
     """Wrap Runner.run_async to create a traced session for asynchronous execution."""
-    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
-    trace_name = config.get("name") or TRACE_CHAIN_NAME
+    if _is_sync_run_bridge_active(instance):
+        async with aclosing(wrapped(*args, **kwargs)) as agen:
+            async for event in agen:
+                yield event
+        return
 
-    trace_inputs: dict[str, Any] = {}
-    if new_message := kwargs.get("new_message"):
-        if text := _extract_text_from_content(new_message):
-            trace_inputs["input"] = text
+    config, trace_name, trace_inputs, trace_metadata = _build_runner_trace_params(
+        instance, kwargs
+    )
 
-    trace_metadata = {
-        "ls_provider": _get_ls_provider(),
-        **(config.get("metadata") or {}),
-    }
-    if app_name := getattr(instance, "app_name", None):
-        trace_metadata["app_name"] = app_name
-    if user_id := kwargs.get("user_id"):
-        trace_metadata["user_id"] = user_id
-    if session_id := kwargs.get("session_id"):
-        trace_metadata["session_id"] = session_id
-
-    async def _trace_run_async():
+    async def _trace_run_async() -> AsyncGenerator[Any, None]:
         async with trace(
             name=trace_name,
             run_type="chain",
@@ -191,9 +273,9 @@ async def wrap_runner_run_async(
                             if text := _extract_text_from_content(content):
                                 final_output = text
                         yield event
-                run.end(outputs={"output": final_output} if final_output else None)
+                _end_root_run(run, final_output=final_output)
             except Exception as e:
-                run.end(error=str(e))
+                _end_root_run(run, error=e)
                 raise
             finally:
                 clear_active_runs()
@@ -219,7 +301,8 @@ async def wrap_flow_call_llm_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
     """Wrap BaseLlmFlow._call_llm_async to capture LLM calls with TTFT tracking."""
-    parent = _get_parent_run()
+    invocation_context = args[0] if args else kwargs.get("invocation_context")
+    parent = _get_parent_run(invocation_context)
     if not parent:
         async for event in wrapped(*args, **kwargs):
             yield event
