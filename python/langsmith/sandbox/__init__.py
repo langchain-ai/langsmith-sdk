@@ -45,7 +45,10 @@ from langsmith.sandbox._exceptions import (
     ValidationError,
 )
 from langsmith.sandbox._models import (
+    AsyncCommandHandle,
+    CommandHandle,
     ExecutionResult,
+    OutputChunk,
     Pool,
     ResourceSpec,
     SandboxTemplate,
@@ -67,6 +70,10 @@ __all__ = [
     "Volume",
     "VolumeMountSpec",
     "Pool",
+    # WebSocket streaming models
+    "CommandHandle",
+    "AsyncCommandHandle",
+    "OutputChunk",
     # Base and connection errors
     "SandboxClientError",
     "SandboxAPIError",
