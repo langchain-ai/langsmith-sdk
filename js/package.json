@@ -115,7 +115,7 @@
     "build:esm": "rm -f src/package.json && tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
     "build:cjs": "echo '{}' > src/package.json && tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs src/package.json",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
-    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=\\.int\\.test.ts --testTimeout 100000",
     "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
     "watch:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --watch --config jest.config.cjs --testTimeout 100000",
     "test:vitest": "vitest run --config vitest.config.ts",
