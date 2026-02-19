@@ -235,7 +235,7 @@ async def wrap_agent_run_async(
                 yield event
         return
 
-    ctx = args[0] if args else kwargs.get("invocation_context")
+    ctx = args[0] if args else kwargs.get("parent_context")
     agent_name = getattr(instance, "name", None) or type(instance).__name__
 
     inputs: dict[str, Any] = {}
