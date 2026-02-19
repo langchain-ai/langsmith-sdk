@@ -189,12 +189,3 @@ def has_function_calls(llm_response: Any) -> bool:
         return False
     parts = convert_adk_content_to_langsmith(content)
     return any(p.get("type") == "tool_use" for p in parts)
-
-
-def has_function_response_in_request(llm_request: Any) -> bool:
-    """Check if LlmRequest contains function responses (tool results)."""
-    for content in getattr(llm_request, "contents", None) or []:
-        parts = convert_adk_content_to_langsmith(content)
-        if any(p.get("type") == "tool_result" for p in parts):
-            return True
-    return False

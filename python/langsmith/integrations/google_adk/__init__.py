@@ -53,16 +53,56 @@ def configure_google_adk(
     )
 
     from ._client import (
+        wrap_agent_run_async,
         wrap_flow_call_llm_async,
-        wrap_runner_init,
         wrap_runner_run,
         wrap_runner_run_async,
+        wrap_tool_run_async,
     )
 
-    wrap_function_wrapper(runners, "Runner.__init__", wrap_runner_init)
+    # Runner wrappers
     wrap_function_wrapper(runners, "Runner.run", wrap_runner_run)
     wrap_function_wrapper(runners, "Runner.run_async", wrap_runner_run_async)
 
+    # Agent wrapper — BaseAgent.run_async is @final, catches all subclasses
+    try:
+        from google.adk.agents import base_agent  # type: ignore[import-untyped]
+
+        wrap_function_wrapper(
+            base_agent, "BaseAgent.run_async", wrap_agent_run_async
+        )
+    except ImportError:
+        pass
+
+    # Tool wrappers — subclasses override run_async, so wrap each
+    try:
+        from google.adk.tools import base_tool  # type: ignore[import-untyped]
+
+        wrap_function_wrapper(
+            base_tool, "BaseTool.run_async", wrap_tool_run_async
+        )
+    except ImportError:
+        pass
+
+    try:
+        from google.adk.tools import function_tool  # type: ignore[import-untyped]
+
+        wrap_function_wrapper(
+            function_tool, "FunctionTool.run_async", wrap_tool_run_async
+        )
+    except ImportError:
+        pass
+
+    try:
+        from google.adk.tools.mcp_tool import mcp_tool  # type: ignore[import-untyped]
+
+        wrap_function_wrapper(
+            mcp_tool, "McpTool.run_async", wrap_tool_run_async
+        )
+    except ImportError:
+        pass
+
+    # LLM flow wrapper
     try:
         from google.adk.flows.llm_flows import (  # type: ignore[import-untyped]
             base_llm_flow,
@@ -71,15 +111,6 @@ def configure_google_adk(
         wrap_function_wrapper(
             base_llm_flow, "BaseLlmFlow._call_llm_async", wrap_flow_call_llm_async
         )
-    except ImportError:
-        pass
-
-    try:
-        from google.adk.tools.mcp_tool import mcp_tool  # type: ignore[import-untyped]
-
-        from ._client import wrap_mcp_tool_run_async
-
-        wrap_function_wrapper(mcp_tool, "McpTool.run_async", wrap_mcp_tool_run_async)
     except ImportError:
         pass
 
