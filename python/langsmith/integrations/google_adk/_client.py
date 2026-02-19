@@ -5,17 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from langsmith.run_helpers import get_current_run_tree, trace
-from langsmith.run_trees import RunTree
+from langsmith.run_helpers import get_current_run_tree, set_tracing_parent, trace
 
 from ._config import get_tracing_config
-from ._hooks import clear_active_runs
 from ._messages import convert_llm_request_to_messages, has_function_calls
-from ._recursive import RecursiveCallbackInjector, get_callbacks
 from ._usage import extract_model_name, extract_usage_from_response
 
 _LS_PROVIDER_VERTEXAI = "google_vertexai"
@@ -65,6 +63,14 @@ logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "google_adk.session"
 
+# Attribute name used to bridge the root run from Runner.run (sync) into the
+# background thread where Runner.run_async executes. Runner.run spins up a
+# new thread for its internal asyncio event loop, so context vars don't
+# propagate automatically. Storing the run on the instance (a plain object
+# attribute) crosses the thread boundary, and wrap_runner_run_async picks it
+# up and re-establishes it as a context var.
+_SYNC_ROOT_RUN_ATTR = "_langsmith_root_run"
+
 
 def _extract_text_from_content(content: Any) -> Optional[str]:
     if content is None:
@@ -76,31 +82,37 @@ def _extract_text_from_content(content: Any) -> Optional[str]:
     return " ".join(text_parts) if text_parts else None
 
 
-def _inject_tracing_callbacks(agent: Any) -> None:
-    try:
-        injector = RecursiveCallbackInjector(get_callbacks())
-        injector.inject(agent)
-    except Exception as e:
-        logger.warning(f"Failed to inject tracing callbacks: {e}")
+def _iter_invocation_events(ctx: Any) -> list[Any]:
+    """Get session events for the current invocation."""
+    session = getattr(ctx, "session", None)
+    if session is None:
+        return []
+    invocation_id = getattr(ctx, "invocation_id", None)
+    events = getattr(session, "events", None) or []
+    if invocation_id is None:
+        return list(events)
+    return [e for e in events if getattr(e, "invocation_id", None) == invocation_id]
 
 
-def _get_parent_run() -> Optional[RunTree]:
-    return get_current_run_tree()
-
-
-def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
-    """Wrap Runner.__init__ to inject tracing callbacks into the agent hierarchy."""
-    agent = kwargs.get("agent") or (args[0] if args else None)
-    if agent:
-        _inject_tracing_callbacks(agent)
-    result = wrapped(*args, **kwargs)
-    instance._langsmith_config = get_tracing_config()
-    return result
+def _extract_latest_invocation_text(ctx: Any) -> Optional[str]:
+    """Get the latest text from session events for the current invocation."""
+    for event in reversed(_iter_invocation_events(ctx)):
+        text = _extract_text_from_content(getattr(event, "content", None))
+        if text:
+            return text
+    return None
 
 
 def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
-    """Wrap Runner.run to create a traced session for synchronous execution."""
-    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
+    """Wrap Runner.run to create a root trace for synchronous execution.
+
+    Runner.run internally starts a new thread to run its async event loop, so
+    context vars set here would not be visible to code running in that thread.
+    We bridge the gap by storing the root run on the instance (a plain object
+    attribute that IS visible across threads) so that wrap_runner_run_async can
+    re-establish it as a context var inside the async event loop.
+    """
+    config = get_tracing_config()
     trace_name = config.get("name") or TRACE_CHAIN_NAME
 
     trace_inputs: dict[str, Any] = {}
@@ -108,7 +120,7 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
         if text := _extract_text_from_content(new_message):
             trace_inputs["input"] = text
 
-    trace_metadata = {
+    trace_metadata: dict[str, Any] = {
         "ls_provider": _get_ls_provider(),
         **(config.get("metadata") or {}),
     }
@@ -127,7 +139,8 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
             project_name=config.get("project_name"),
             tags=config.get("tags"),
             metadata=trace_metadata,
-        ):
+        ) as root_run:
+            setattr(instance, _SYNC_ROOT_RUN_ATTR, root_run)
             try:
                 events = list(wrapped(*args, **kwargs))
                 final_output = None
@@ -136,17 +149,13 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
                         if text := _extract_text_from_content(content):
                             final_output = text
                             break
-                run = get_current_run_tree()
-                if run:
-                    run.end(outputs={"output": final_output} if final_output else None)
+                root_run.end(outputs={"output": final_output} if final_output else None)
                 yield from events
             except Exception as e:
-                run = get_current_run_tree()
-                if run:
-                    run.end(error=str(e))
+                root_run.end(error=str(e))
                 raise
             finally:
-                clear_active_runs()
+                setattr(instance, _SYNC_ROOT_RUN_ATTR, None)
 
     return _trace_run()
 
@@ -154,8 +163,23 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
 async def wrap_runner_run_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
-    """Wrap Runner.run_async to create a traced session for asynchronous execution."""
-    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
+    """Wrap Runner.run_async to create a root trace for asynchronous execution.
+
+    When called from the background thread spawned by Runner.run, the root run
+    stored on the instance is re-established as a context var so that
+    wrap_agent_run_async and wrap_flow_call_llm_async can find the parent via
+    get_current_run_tree().
+    """
+    root_run = getattr(instance, _SYNC_ROOT_RUN_ATTR, None)
+    if root_run is not None:
+        # sync bridge: re-establish root run as context var in this thread
+        with set_tracing_parent(root_run):
+            async with aclosing(wrapped(*args, **kwargs)) as agen:
+                async for event in agen:
+                    yield event
+        return
+
+    config = get_tracing_config()
     trace_name = config.get("name") or TRACE_CHAIN_NAME
 
     trace_inputs: dict[str, Any] = {}
@@ -163,7 +187,7 @@ async def wrap_runner_run_async(
         if text := _extract_text_from_content(new_message):
             trace_inputs["input"] = text
 
-    trace_metadata = {
+    trace_metadata: dict[str, Any] = {
         "ls_provider": _get_ls_provider(),
         **(config.get("metadata") or {}),
     }
@@ -174,7 +198,7 @@ async def wrap_runner_run_async(
     if session_id := kwargs.get("session_id"):
         trace_metadata["session_id"] = session_id
 
-    async def _trace_run_async():
+    async def _trace_run_async() -> AsyncGenerator[Any, None]:
         async with trace(
             name=trace_name,
             run_type="chain",
@@ -195,11 +219,94 @@ async def wrap_runner_run_async(
             except Exception as e:
                 run.end(error=str(e))
                 raise
-            finally:
-                clear_active_runs()
 
     async for event in _trace_run_async():
         yield event
+
+
+async def wrap_agent_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
+    """Wrap BaseAgent.run_async to create a chain span for each agent invocation."""
+    parent = get_current_run_tree()
+    if not parent:
+        async with aclosing(wrapped(*args, **kwargs)) as agen:
+            async for event in agen:
+                yield event
+        return
+
+    ctx = args[0] if args else kwargs.get("parent_context")
+    agent_name = getattr(instance, "name", None) or type(instance).__name__
+
+    inputs: dict[str, Any] = {}
+    if ctx is not None:
+        if latest := _extract_latest_invocation_text(ctx):
+            inputs["input"] = latest
+
+    async with trace(name=agent_name, run_type="chain", inputs=inputs) as agent_run:
+        try:
+            final_output: Optional[str] = None
+            async with aclosing(wrapped(*args, **kwargs)) as agen:
+                async for event in agen:
+                    if content := getattr(event, "content", None):
+                        if text := _extract_text_from_content(content):
+                            final_output = text
+                    yield event
+            agent_run.end(outputs={"output": final_output} if final_output else None)
+        except Exception as e:
+            agent_run.end(error=str(e))
+            raise
+
+
+async def wrap_tool_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
+    """Wrap BaseTool.run_async (all tool subclasses) to trace tool invocations."""
+    parent = get_current_run_tree()
+    if not parent:
+        return await wrapped(*args, **kwargs)
+
+    tool_name = getattr(instance, "name", None) or type(instance).__name__
+    tool_args = kwargs.get("args") or (args[0] if args else {})
+    inputs = tool_args if isinstance(tool_args, dict) else {"args": tool_args}
+
+    start_time = time.time()
+    tool_run = parent.create_child(
+        name=tool_name,
+        run_type="tool",
+        inputs=inputs,
+        extra={"metadata": {"ls_provider": _get_ls_provider()}},
+        start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+    )
+
+    try:
+        tool_run.post()
+    except Exception as e:
+        logger.debug(f"Failed to post tool run: {e}")
+
+    try:
+        result = await wrapped(*args, **kwargs)
+        if isinstance(result, dict):
+            outputs = result
+        elif isinstance(result, list):
+            outputs = {"content": result}
+        elif result is not None:
+            outputs = {"output": str(result)}
+        else:
+            outputs = {}
+        tool_run.end(outputs=outputs)
+        try:
+            tool_run.patch()
+        except Exception as e:
+            logger.debug(f"Failed to patch tool run: {e}")
+        return result
+    except Exception as e:
+        tool_run.end(error=str(e))
+        try:
+            tool_run.patch()
+        except Exception as patch_e:
+            logger.debug(f"Failed to patch tool run on error: {patch_e}")
+        raise
 
 
 def _determine_llm_call_type(llm_request: Any, llm_response: Any) -> str:
@@ -219,7 +326,7 @@ async def wrap_flow_call_llm_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
     """Wrap BaseLlmFlow._call_llm_async to capture LLM calls with TTFT tracking."""
-    parent = _get_parent_run()
+    parent = get_current_run_tree()
     if not parent:
         async for event in wrapped(*args, **kwargs):
             yield event
@@ -344,48 +451,6 @@ async def wrap_flow_call_llm_async(
             llm_run.patch()
         except Exception as patch_e:
             logger.debug(f"Failed to patch LLM run on error: {patch_e}")
-        raise
-
-
-async def wrap_mcp_tool_run_async(
-    wrapped: Any, instance: Any, args: Any, kwargs: Any
-) -> Any:
-    """Wrap McpTool.run_async to trace MCP tool invocations."""
-    parent = _get_parent_run()
-    if not parent:
-        return await wrapped(*args, **kwargs)
-
-    tool_name = getattr(instance, "name", "mcp_tool")
-    tool_args = kwargs.get("args", {})
-
-    start_time = time.time()
-    tool_run = parent.create_child(
-        name=f"mcp_tool [{tool_name}]",
-        run_type="tool",
-        inputs={"tool_name": tool_name, "arguments": tool_args},
-        extra={"metadata": {"ls_provider": _get_ls_provider()}},
-        start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
-    )
-
-    try:
-        tool_run.post()
-    except Exception as e:
-        logger.debug(f"Failed to post MCP tool run: {e}")
-
-    try:
-        result = await wrapped(*args, **kwargs)
-        tool_run.end(outputs=result or {})
-        try:
-            tool_run.patch()
-        except Exception as e:
-            logger.debug(f"Failed to patch MCP tool run: {e}")
-        return result
-    except Exception as e:
-        tool_run.end(error=str(e))
-        try:
-            tool_run.patch()
-        except Exception as patch_e:
-            logger.debug(f"Failed to patch MCP tool run on error: {patch_e}")
         raise
 
 
