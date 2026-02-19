@@ -31,7 +31,7 @@ export const printVitestTestModulesReporterTable = async (
       }>;
     };
     state: () => string;
-    moduleId: string;
+    relativeModuleId: string;
   }>
 ) => {
   for (const testModule of testModules) {
@@ -51,6 +51,6 @@ export const printVitestTestModulesReporterTable = async (
         ? moduleState
         : "skip";
 
-    await printReporterTable(testModule.moduleId, tests, testStatus);
+    await printReporterTable(testModule.relativeModuleId, tests, testStatus);
   }
 };
