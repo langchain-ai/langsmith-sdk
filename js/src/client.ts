@@ -359,7 +359,6 @@ export interface ListThreadsParams {
   filter?: string;
   startTime?: Date;
   isRoot?: boolean;
-  runLimit?: number;
 }
 
 interface UploadCSVParams {
@@ -2485,7 +2484,6 @@ export class Client implements LangSmithTracingClientInterface {
       filter,
       startTime,
       isRoot = true,
-      runLimit,
     } = props;
 
     if (!projectId && !projectName) {
@@ -2498,71 +2496,111 @@ export class Client implements LangSmithTracingClientInterface {
     const sessionId =
       projectId ?? (await this.readProject({ projectName: projectName! })).id;
     const startTimeResolved =
-      startTime ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      startTime ?? new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
 
-    const baseBody: Record<string, unknown> = {
-      session_id: sessionId,
-      group_by: "conversation",
+    const runSelect = [
+      "id",
+      "name",
+      "status",
+      "start_time",
+      "end_time",
+      "thread_id",
+      "trace_id",
+      "run_type",
+      "error",
+      "tags",
+      "session_id",
+      "parent_run_id",
+      "total_tokens",
+      "total_cost",
+      "dotted_order",
+      "reference_example_id",
+      "feedback_stats",
+      "app_path",
+      "completion_cost",
+      "completion_tokens",
+      "prompt_cost",
+      "prompt_tokens",
+      "first_token_time",
+    ];
+    const bodyQuery: Record<string, unknown> = {
+      session: [sessionId],
+      is_root: isRoot,
       limit: 100,
-      offset,
+      order: "desc",
+      select: runSelect,
       start_time: startTimeResolved.toISOString(),
     };
     if (filter != null) {
-      baseBody.filter = filter;
+      bodyQuery.filter = filter;
     }
 
-    const path = "/runs/group";
-    const url = `${this.apiUrl}${path}`;
-    const threads: Array<Thread & { runs: Run[] }> = [];
-    let currentOffset = offset;
-
-    while (limit === undefined || threads.length < limit) {
-      const body = JSON.stringify({
-        ...baseBody,
-        offset: currentOffset,
-        limit:
-          limit === undefined ? 100 : Math.min(100, limit - threads.length),
-      });
-
-      const response = await this.caller.call(async () => {
-        const res = await this._fetch(url, {
-          method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        });
-        await raiseForStatus(res, `Failed to fetch ${path}`);
-        return res;
-      });
-
-      const items: { groups: Thread[]; total: number } = await response.json();
-      const { groups } = items;
-
-      if (groups.length === 0) {
-        break;
-      }
-
-      for (const group of groups) {
-        if (limit !== undefined && threads.length >= limit) break;
-        const groupKey = group.group_key;
-        const runs: Run[] = [];
-        const runLimitOpt = runLimit ?? undefined;
-        for await (const run of this.readThread({
-          threadId: groupKey,
-          projectId: sessionId,
-          isRoot,
-          limit: runLimitOpt,
-        })) {
-          runs.push(run);
+    const threadsMap = new Map<string, Run[]>();
+    for await (const runs of this._getCursorPaginatedList<Run>(
+      "/runs/query",
+      bodyQuery as RecordStringAny
+    )) {
+      for (const run of runs) {
+        const tid = (run as unknown as Record<string, unknown>).thread_id as
+          | string
+          | undefined;
+        if (tid) {
+          const list = threadsMap.get(tid) ?? [];
+          list.push(run);
+          threadsMap.set(tid, list);
         }
-        threads.push({ ...group, runs });
       }
-      currentOffset += groups.length;
-      if (groups.length < 100) break;
     }
 
-    return threads;
+    const result: Array<Thread & { runs: Run[] }> = [];
+    for (const [groupKey, runs] of threadsMap.entries()) {
+      runs.sort((a, b) => {
+        const aRun = a as unknown as Record<string, unknown>;
+        const bRun = b as unknown as Record<string, unknown>;
+        const aStart = (aRun.start_time as string) ?? "";
+        const bStart = (bRun.start_time as string) ?? "";
+        if (aStart !== bStart) return aStart.localeCompare(bStart);
+        const aOrder = (aRun.dotted_order as string) ?? "";
+        const bOrder = (bRun.dotted_order as string) ?? "";
+        return aOrder.localeCompare(bOrder);
+      });
+      const startTimes = runs
+        .map(
+          (r) => (r as unknown as Record<string, unknown>).start_time as string
+        )
+        .filter(Boolean);
+      const sortedTimes = [...startTimes].sort();
+      const minStart = sortedTimes.length ? sortedTimes[0] : "";
+      const maxStart = sortedTimes.length
+        ? sortedTimes[sortedTimes.length - 1]
+        : "";
+      result.push({
+        group_key: groupKey,
+        runs,
+        count: runs.length,
+        filter: "",
+        total_tokens: 0,
+        total_cost: null,
+        min_start_time: minStart,
+        max_start_time: maxStart,
+        latency_p50: 0,
+        latency_p99: 0,
+        feedback_stats: null,
+        first_inputs: "",
+        last_outputs: "",
+        last_error: null,
+      } as Thread & { runs: Run[] });
+    }
+
+    result.sort((a, b) => {
+      const aMax = a.max_start_time ?? "";
+      const bMax = b.max_start_time ?? "";
+      return bMax.localeCompare(aMax);
+    });
+    const withOffset = offset > 0 ? result.slice(offset) : result;
+    const withLimit =
+      limit !== undefined ? withOffset.slice(0, limit) : withOffset;
+    return withLimit;
   }
 
   public async getRunStats({

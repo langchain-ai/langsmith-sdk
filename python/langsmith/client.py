@@ -3697,7 +3697,6 @@ class Client:
         offset: int = 0,
         filter: Optional[str] = None,
         start_time: Optional[datetime.datetime] = None,
-        run_limit: Optional[int] = None,
     ) -> list[dict]:
         """List threads and fetch the runs for each thread.
 
@@ -3708,7 +3707,6 @@ class Client:
             offset: Pagination offset for threads. Default 0.
             filter: Optional filter for threads and runs.
             start_time: Only include runs from this time. Default: 1 day ago.
-            run_limit: Max runs to fetch per thread (default no limit).
 
         Returns:
             List of thread dicts, each with "runs" (list of Run objects) and group metadata.
@@ -3720,6 +3718,7 @@ class Client:
 
         if project_name is not None:
             project_id = self.read_project(project_name=project_name).id
+        assert project_id is not None  # one of project_id or project_name was required
         session_id = str(_as_uuid(project_id, "project_id"))
 
         if start_time is None:
@@ -3729,40 +3728,93 @@ class Client:
         if start_time.tzinfo is None:
             start_time = start_time.replace(tzinfo=datetime.timezone.utc)
 
-        body: dict[str, Any] = {
-            "session_id": session_id,
-            "group_by": "conversation",
+        run_select = [
+            "id",
+            "name",
+            "status",
+            "start_time",
+            "end_time",
+            "thread_id",
+            "trace_id",
+            "run_type",
+            "error",
+            "tags",
+            "session_id",
+            "parent_run_id",
+            "total_tokens",
+            "total_cost",
+            "dotted_order",
+            "reference_example_id",
+            "feedback_stats",
+            "app_path",
+            "completion_cost",
+            "completion_tokens",
+            "prompt_cost",
+            "prompt_tokens",
+            "first_token_time",
+        ]
+        body_query: dict[str, Any] = {
+            "session": [session_id],
+            "is_root": True,
             "limit": 100,
-            "offset": offset,
+            "order": "desc",
+            "select": run_select,
             "start_time": start_time.isoformat(),
         }
         if filter is not None:
-            body["filter"] = filter
-        threads = list(
-            self._get_offset_paginated_list_post(
-                "/runs/group",
-                body=body,
-                data_key="groups",
-                page_size=100,
-                max_items=limit,
-            )
-        )
+            body_query["filter"] = filter
+        body_query = {k: v for k, v in body_query.items() if v is not None}
 
-        for thread in threads:
-            group_key = thread.get("group_key")
-            if group_key is None:
-                thread["runs"] = []
-                continue
-            thread["runs"] = list(
-                self.read_thread(
-                    thread_id=group_key,
-                    project_id=project_id,
-                    project_name=project_name,
-                    is_root=True,
-                    limit=run_limit,
+        threads_map: dict[str, list[dict]] = collections.defaultdict(list)
+        for run_dict in self._get_cursor_paginated_list("/runs/query", body=body_query):
+            tid = run_dict.get("thread_id")
+            if tid:
+                threads_map[tid].append(run_dict)
+
+        result: list[dict] = []
+        for group_key, run_dicts in threads_map.items():
+            run_dicts.sort(
+                key=lambda r: (
+                    r.get("start_time") or "",
+                    r.get("dotted_order") or "",
                 )
             )
-        return threads
+            runs = []
+            for run_dict in run_dicts:
+                attachments = _convert_stored_attachments_to_attachments_dict(
+                    run_dict, attachments_key="s3_urls", api_url=self.api_url
+                )
+                runs.append(
+                    ls_schemas.Run(
+                        attachments=attachments,
+                        **run_dict,
+                        _host_url=self._host_url,
+                    )
+                )
+            start_times: list[str] = [
+                str(r["start_time"])
+                for r in run_dicts
+                if r.get("start_time") is not None
+            ]
+            result.append(
+                {
+                    "group_key": group_key,
+                    "runs": runs,
+                    "count": len(runs),
+                    "min_start_time": min(start_times) if start_times else None,
+                    "max_start_time": max(start_times) if start_times else None,
+                }
+            )
+
+        result.sort(
+            key=lambda t: t.get("max_start_time") or "",
+            reverse=True,
+        )
+        if offset > 0:
+            result = result[offset:]
+        if limit is not None:
+            result = result[:limit]
+        return result
 
     def get_run_stats(
         self,
