@@ -15,8 +15,6 @@ from langsmith.integrations.google_adk import configure_google_adk
 from langsmith.run_helpers import tracing_context
 from tests.unit_tests.test_run_helpers import _get_calls
 
-pytest.importorskip("google.adk", reason="google-adk not installed")
-
 APP_NAME = "test_app"
 USER_ID = "test_user"
 SESSION_ID = "test_session_123"
@@ -173,6 +171,8 @@ def _assert_required_ls_fields(run: dict[str, Any]) -> None:
     assert run.get("run_type"), run
     assert run.get("trace_id"), run
     assert run.get("dotted_order"), run
+    assert run.get("start_time"), run
+    assert run.get("end_time"), run
     metadata = (run.get("extra") or {}).get("metadata") or {}
     for key in ("ls_provider", "app_name", "user_id", "session_id"):
         assert metadata.get(key), (key, run)
@@ -303,13 +303,4 @@ def test_error_agent_sync_async_records_errors(mode: str, mock_ls_client: Client
 
     runs = _collect_runs(mock_ls_client)
     assert any(run.get("error") for run in runs), runs
-
-    root_run = _find_run(runs, ROOT_TRACE_NAME)
-    if mode == "async":
-        assert "boom" in (root_run.get("error") or "")
-    else:
-        assert any(
-            "Session ended" in (run.get("error") or "")
-            or "boom" in (run.get("error") or "")
-            for run in runs
-        )
+    assert any("boom" in (run.get("error") or "") for run in runs), runs

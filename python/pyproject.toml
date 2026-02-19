@@ -112,6 +112,7 @@ dev = [
     "ty==0.0.17",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
+    "google-adk>=1.0.0",
 ]
 
 # Linting dependencies
