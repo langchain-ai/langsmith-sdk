@@ -341,6 +341,27 @@ interface GroupRunsParams {
   offset?: number;
 }
 
+export interface ReadThreadParams {
+  threadId: string;
+  projectId?: string;
+  projectName?: string;
+  isRoot?: boolean;
+  limit?: number;
+  filter?: string;
+  order?: "asc" | "desc";
+}
+
+export interface ListThreadsParams {
+  projectId?: string;
+  projectName?: string;
+  limit?: number;
+  offset?: number;
+  filter?: string;
+  startTime?: Date;
+  isRoot?: boolean;
+  runLimit?: number;
+}
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -2421,6 +2442,127 @@ export class Client implements LangSmithTracingClientInterface {
         break;
       }
     }
+  }
+
+  public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    const {
+      threadId,
+      projectId,
+      projectName,
+      isRoot = true,
+      limit,
+      filter: userFilter,
+      order = "asc",
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("threadId requires projectId or projectName");
+    }
+
+    const threadFilter = `eq(thread_id, ${JSON.stringify(threadId)})`;
+    const combinedFilter = userFilter
+      ? `and(${threadFilter}, ${userFilter})`
+      : threadFilter;
+
+    yield* this.listRuns({
+      projectId: projectId ?? undefined,
+      projectName: projectName ?? undefined,
+      isRoot,
+      limit,
+      filter: combinedFilter,
+      order,
+    });
+  }
+
+  public async listThreads(
+    props: ListThreadsParams
+  ): Promise<Array<Thread & { runs: Run[] }>> {
+    const {
+      projectId,
+      projectName,
+      limit,
+      offset = 0,
+      filter,
+      startTime,
+      isRoot = true,
+      runLimit,
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("Either projectId or projectName must be provided");
+    }
+    if (projectId && projectName) {
+      throw new Error("Provide exactly one of projectId or projectName");
+    }
+
+    const sessionId =
+      projectId ?? (await this.readProject({ projectName: projectName! })).id;
+    const startTimeResolved =
+      startTime ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const baseBody: Record<string, unknown> = {
+      session_id: sessionId,
+      group_by: "conversation",
+      limit: 100,
+      offset,
+      start_time: startTimeResolved.toISOString(),
+    };
+    if (filter != null) {
+      baseBody.filter = filter;
+    }
+
+    const path = "/runs/group";
+    const url = `${this.apiUrl}${path}`;
+    const threads: Array<Thread & { runs: Run[] }> = [];
+    let currentOffset = offset;
+
+    while (limit === undefined || threads.length < limit) {
+      const body = JSON.stringify({
+        ...baseBody,
+        offset: currentOffset,
+        limit:
+          limit === undefined ? 100 : Math.min(100, limit - threads.length),
+      });
+
+      const response = await this.caller.call(async () => {
+        const res = await this._fetch(url, {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        });
+        await raiseForStatus(res, `Failed to fetch ${path}`);
+        return res;
+      });
+
+      const items: { groups: Thread[]; total: number } = await response.json();
+      const { groups } = items;
+
+      if (groups.length === 0) {
+        break;
+      }
+
+      for (const group of groups) {
+        if (limit !== undefined && threads.length >= limit) break;
+        const groupKey = group.group_key;
+        const runs: Run[] = [];
+        const runLimitOpt = runLimit ?? undefined;
+        for await (const run of this.readThread({
+          threadId: groupKey,
+          projectId: sessionId,
+          isRoot,
+          limit: runLimitOpt,
+        })) {
+          runs.push(run);
+        }
+        threads.push({ ...group, runs });
+      }
+      currentOffset += groups.length;
+      if (groups.length < 100) break;
+    }
+
+    return threads;
   }
 
   public async getRunStats({

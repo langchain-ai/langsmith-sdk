@@ -260,6 +260,44 @@ class AsyncClient:
                 break
             params_["cursor"] = cursors["next"]
 
+    async def _aget_offset_paginated_list_post(
+        self,
+        path: str,
+        *,
+        body: dict[str, Any],
+        data_key: str = "groups",
+        page_size: int = 100,
+        max_items: Optional[int] = None,
+    ) -> AsyncIterator[dict]:
+        """Get an offset-paginated list of items via POST."""
+        request_body = body.copy()
+        current_offset = request_body.get("offset", 0)
+        yielded = 0
+        while True:
+            to_fetch = min(
+                page_size,
+                (max_items - yielded) if max_items is not None else page_size,
+            )
+            if to_fetch < 1:
+                break
+            request_body["offset"] = current_offset
+            request_body["limit"] = to_fetch
+            response = await self._arequest_with_retries(
+                "POST",
+                path,
+                content=ls_client._dumps_json(request_body),
+            )
+            data = response.json()
+            items = data.get(data_key) or []
+            for item in items:
+                yield item
+                yielded += 1
+                if max_items is not None and yielded >= max_items:
+                    return
+            if len(items) < to_fetch:
+                break
+            current_offset += len(items)
+
     async def create_run(
         self,
         name: str,
@@ -304,6 +342,56 @@ class AsyncClient:
             f"/runs/{ls_client._as_uuid(run_id)}",
         )
         return ls_schemas.Run(**response.json())
+
+    async def read_thread(
+        self,
+        *,
+        thread_id: str,
+        project_id: Optional[
+            Union[ls_client.ID_TYPE, Sequence[ls_client.ID_TYPE]]
+        ] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
+        is_root: bool = True,
+        limit: Optional[int] = None,
+        select: Optional[Sequence[str]] = None,
+        filter: Optional[str] = None,
+        order: Literal["asc", "desc"] = "asc",
+        **kwargs: Any,
+    ) -> AsyncIterator[ls_schemas.Run]:
+        """Read runs for a single thread.
+
+        Args:
+            thread_id: Thread id (required).
+            project_id: Project id(s) (required when not using project_name).
+            project_name: Project name(s) (required when not using project_id).
+            is_root: If True, return only root runs. Default True.
+            limit: Maximum number of runs to return.
+            select: Fields to select.
+            filter: Additional filter expression.
+            order: Sort order for runs. Default "asc".
+            **kwargs: Additional arguments passed to the runs query.
+
+        Yields:
+            Runs in the thread.
+        """
+        if not (project_id or project_name):
+            raise ValueError("thread_id requires project_id or project_name")
+
+        # thread_id: use API filter eq(thread_id, "...") and order asc by default
+        thread_id_escaped = json.dumps(str(thread_id))
+        thread_filter = f"eq(thread_id, {thread_id_escaped})"
+        combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
+        async for run in self.list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            is_root=is_root,
+            limit=limit,
+            select=select,
+            filter=combined_filter,
+            order=order,
+            **kwargs,
+        ):
+            yield run
 
     async def list_runs(
         self,
@@ -468,6 +556,88 @@ class AsyncClient:
             ix += 1
             if limit is not None and ix >= limit:
                 break
+
+    async def list_threads(
+        self,
+        *,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        filter: Optional[str] = None,
+        start_time: Optional[datetime.datetime] = None,
+        run_limit: Optional[int] = None,
+    ) -> list[dict]:
+        """List threads (conversation groups) and fetch the runs for each thread.
+
+        Args:
+            project_id: The project (session) id.
+            project_name: The project name (alternative to project_id).
+            limit: Maximum number of threads to return. Default None (no limit).
+            offset: Pagination offset for threads. Default 0.
+            filter: Optional filter for threads and runs.
+            start_time: Only include runs from this time. Default: 1 day ago.
+            run_limit: Max runs to fetch per thread (default no limit).
+
+        Returns:
+            List of thread dicts, each with "runs" (list of Run objects) and group metadata.
+        """
+        if project_id is None and project_name is None:
+            raise ValueError("Either project_id or project_name must be provided")
+        if project_id is not None and project_name is not None:
+            raise ValueError("Provide exactly one of project_id or project_name")
+
+        if project_name is not None:
+            project = await self.read_project(project_name=project_name)
+            project_id = project.id
+        session_id = str(ls_client._as_uuid(project_id, "project_id"))
+
+        if start_time is None:
+            start_time = datetime.datetime.now(
+                datetime.timezone.utc
+            ) - datetime.timedelta(days=1)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=datetime.timezone.utc)
+
+        body: dict[str, Any] = {
+            "session_id": session_id,
+            "group_by": "conversation",
+            "limit": 100,
+            "offset": offset,
+            "start_time": start_time.isoformat(),
+        }
+        if filter is not None:
+            body["filter"] = filter
+        threads = [
+            t
+            async for t in self._aget_offset_paginated_list_post(
+                "/runs/group",
+                body=body,
+                data_key="groups",
+                page_size=100,
+                max_items=limit,
+            )
+        ]
+
+        async def fetch_runs_for_thread(thread: dict) -> list:
+            group_key = thread.get("group_key")
+            if group_key is None:
+                return []
+            return [
+                run
+                async for run in self.read_thread(
+                    thread_id=group_key,
+                    project_id=project_id,
+                    project_name=project_name,
+                    is_root=True,
+                    limit=run_limit,
+                )
+            ]
+
+        run_lists = await asyncio.gather(*[fetch_runs_for_thread(t) for t in threads])
+        for thread, runs in zip(threads, run_lists):
+            thread["runs"] = runs
+        return threads
 
     async def share_run(
         self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
