@@ -1,8 +1,4 @@
-"""Hook-based tool tracing for Claude Agent SDK.
-
-This module provides hook handlers that traces tool calls by intercepting
-`PreToolUse`, `PostToolUse`, and `PostToolUseFailure` events.
-"""
+"""Hook-based tool tracing for Claude Agent SDK."""
 
 import logging
 import time
@@ -23,7 +19,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Storage for correlating PreToolUse with PostToolUse/PostToolUseFailure events
 # Key: tool_use_id, Value: (run_tree, start_time)
 _active_tool_runs: dict[str, tuple[Any, float]] = {}
 

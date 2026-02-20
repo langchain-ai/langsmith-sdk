@@ -126,17 +126,7 @@ def begin_llm_run_from_assistant_messages(
 
 
 def _inject_tracing_hooks(options: Any) -> None:
-    """Inject LangSmith tracing hooks into ClaudeAgentOptions.
-
-    This adds PreToolUse, PostToolUse, and PostToolUseFailure hooks to capture
-    ALL tool calls (built-in, external MCP, and SDK MCP). The hooks work across
-    all LLM providers (Anthropic, Vertex AI, Kimi, etc.) because they use
-    explicit tool_use_id correlation instead of relying on async context
-    propagation.
-
-    Args:
-        options: ClaudeAgentOptions instance to modify
-    """
+    """Inject LangSmith tracing hooks into ClaudeAgentOptions."""
     if not hasattr(options, "hooks"):
         return
 
