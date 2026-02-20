@@ -14,7 +14,7 @@ from ._messages import (
     extract_usage_from_result_message,
     flatten_content_blocks,
 )
-from ._tools import clear_parent_run_tree, set_parent_run_tree
+from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_tree
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def begin_llm_run_from_assistant_messages(
     last_msg = messages[-1]
     model = getattr(last_msg, "model", None)
     if parent is None:
-        parent = get_current_run_tree()
+        parent = get_parent_run_tree() or get_current_run_tree()
     if not parent:
         return None, None
 
