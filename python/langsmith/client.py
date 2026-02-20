@@ -37,7 +37,7 @@ from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from functools import lru_cache, partial
 from inspect import signature
 from pathlib import Path
-from queue import PriorityQueue
+from queue import Full, PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -79,6 +79,7 @@ from langsmith._internal._constants import (
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
     _SIZE_LIMIT_BYTES,
+    _TRACING_QUEUE_MAX_SIZE,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
@@ -101,6 +102,40 @@ from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)
+
+_TRACING_DROP_LOG_INTERVAL_S = 60
+_tracing_drops_count = 0
+_tracing_drops_last_log_time = 0.0
+_tracing_drops_lock = threading.Lock()
+
+
+def _log_tracing_drop(reason: str) -> None:
+    """Rate-limited logging for dropped trace data (once per 60s)."""
+    global _tracing_drops_count, _tracing_drops_last_log_time
+    with _tracing_drops_lock:
+        _tracing_drops_count += 1
+        now = time.time()
+        if now - _tracing_drops_last_log_time >= _TRACING_DROP_LOG_INTERVAL_S:
+            count = _tracing_drops_count
+            _tracing_drops_count = 0
+            _tracing_drops_last_log_time = now
+            logger.warning(
+                "Dropped %d trace data item(s) in the last %ds: %s",
+                count,
+                _TRACING_DROP_LOG_INTERVAL_S,
+                reason,
+            )
+
+
+def _reset_tracing_drop_log() -> None:
+    """Reset rate-limit state for drop logging. Used in tests."""
+    global _tracing_drops_count, _tracing_drops_last_log_time
+    with _tracing_drops_lock:
+        _tracing_drops_count = 0
+        _tracing_drops_last_log_time = 0.0
+
+
+_TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
 
 _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
@@ -903,7 +938,7 @@ class Client:
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
             if isinstance(timeout_ms, int)
-            else (timeout_ms or (10_000, 90_001))
+            else (timeout_ms or (10_000, 60_000))
         )
         self._timeout = (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000)
         self._web_url = web_url
@@ -930,7 +965,15 @@ class Client:
 
         # Initialize auto batching
         if auto_batch_tracing:
-            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+            queue_maxsize_str = ls_utils.get_env_var("TRACING_QUEUE_MAX_SIZE")
+            queue_maxsize = (
+                int(queue_maxsize_str)
+                if queue_maxsize_str is not None
+                else _TRACING_QUEUE_MAX_SIZE
+            )
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue(
+                maxsize=queue_maxsize
+            )
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1830,6 +1873,16 @@ class Client:
                     sampled.append(run)
             return sampled
 
+    def _put_tracing_queue(self, item: TracingQueueItem) -> None:
+        """Put an item on the tracing queue, dropping if full."""
+        assert self.tracing_queue is not None
+        try:
+            self.tracing_queue.put_nowait(item)
+        except Full:
+            _log_tracing_drop(
+                f"tracing queue full (maxsize={self.tracing_queue.maxsize})"
+            )
+
     def create_run(
         self,
         name: str,
@@ -2017,7 +2070,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -2033,7 +2086,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -2829,6 +2882,7 @@ class Client:
                                 **headers_for_endpoint,
                                 "Content-Type": encoder.content_type,
                             },
+                            "timeout": _TRACING_SEND_TIMEOUT,
                         },
                         stop_after_attempt=1,
                         _context=_context,
@@ -2897,6 +2951,7 @@ class Client:
                         request_kwargs={
                             "data": data_stream,
                             "headers": headers,
+                            "timeout": _TRACING_SEND_TIMEOUT,
                         },
                         stop_after_attempt=1,
                         _context=_context,
@@ -3166,7 +3221,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -3182,7 +3237,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -7197,7 +7252,7 @@ class Client:
                             if self._data_available_event:
                                 self._data_available_event.set()
                 elif self.tracing_queue is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:
