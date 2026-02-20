@@ -45,7 +45,7 @@ class TestToolUseSuccessFlow:
         _tools.clear_parent_run_tree()
 
     def test_success_flow(self):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             pre_tool_use_hook(
                 {"tool_name": "Bash", "tool_input": {"command": "echo hi"}},
                 "tu_1",
@@ -59,7 +59,7 @@ class TestToolUseSuccessFlow:
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             post_tool_use_hook(
                 {
                     "tool_name": "Bash",
@@ -87,7 +87,7 @@ class TestToolUseFailureFlow:
         _tools.clear_parent_run_tree()
 
     def test_failure_flow(self):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             pre_tool_use_hook(
                 {
                     "tool_name": "Bash",
@@ -100,7 +100,7 @@ class TestToolUseFailureFlow:
 
         tool_run, _ = _active_tool_runs["tu_2"]
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             post_tool_use_failure_hook(
                 {
                     "tool_name": "Bash",
