@@ -3737,8 +3737,7 @@ def test_tracing_queue_limit_drops_when_full(
 
     assert client.tracing_queue.qsize() == 3
     assert any(
-        "Dropped" in record.getMessage()
-        and "tracing queue full" in record.getMessage()
+        "Dropped" in record.getMessage() and "tracing queue full" in record.getMessage()
         for record in caplog.records
     )
     client.cleanup()

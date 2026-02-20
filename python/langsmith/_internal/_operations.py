@@ -432,8 +432,7 @@ def compress_multipart_parts_and_context(
             from langsmith.client import _log_tracing_drop
 
             _log_tracing_drop(
-                f"compressed traces buffer full "
-                f"({current_size}/{max_bytes} bytes)"
+                f"compressed traces buffer full ({current_size}/{max_bytes} bytes)"
             )
             return False
 
