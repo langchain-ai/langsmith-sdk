@@ -8,7 +8,12 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
-from ._hooks import clear_active_tool_runs, post_tool_use_hook, pre_tool_use_hook
+from ._hooks import (
+    clear_active_tool_runs,
+    post_tool_use_failure_hook,
+    post_tool_use_hook,
+    pre_tool_use_hook,
+)
 from ._messages import (
     build_llm_input,
     extract_usage_from_result_message,
@@ -123,10 +128,11 @@ def begin_llm_run_from_assistant_messages(
 def _inject_tracing_hooks(options: Any) -> None:
     """Inject LangSmith tracing hooks into ClaudeAgentOptions.
 
-    This adds PreToolUse and PostToolUse hooks to capture ALL tool calls
-    (built-in, external MCP, and SDK MCP). The hooks work across all LLM
-    providers (Anthropic, Vertex AI, Kimi, etc.) because they use explicit
-    tool_use_id correlation instead of relying on async context propagation.
+    This adds PreToolUse, PostToolUse, and PostToolUseFailure hooks to capture
+    ALL tool calls (built-in, external MCP, and SDK MCP). The hooks work across
+    all LLM providers (Anthropic, Vertex AI, Kimi, etc.) because they use
+    explicit tool_use_id correlation instead of relying on async context
+    propagation.
 
     Args:
         options: ClaudeAgentOptions instance to modify
@@ -138,22 +144,22 @@ def _inject_tracing_hooks(options: Any) -> None:
     if options.hooks is None:
         options.hooks = {}
 
-    # Add PreToolUse hook if not already set
-    if "PreToolUse" not in options.hooks:
-        options.hooks["PreToolUse"] = []
-
-    # Add PostToolUse hook if not already set
-    if "PostToolUse" not in options.hooks:
-        options.hooks["PostToolUse"] = []
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        if event not in options.hooks:
+            options.hooks[event] = []
 
     try:
         from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
 
         langsmith_pre_matcher = HookMatcher(matcher=None, hooks=[pre_tool_use_hook])
         langsmith_post_matcher = HookMatcher(matcher=None, hooks=[post_tool_use_hook])
+        langsmith_failure_matcher = HookMatcher(
+            matcher=None, hooks=[post_tool_use_failure_hook]
+        )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
         options.hooks["PostToolUse"].insert(0, langsmith_post_matcher)
+        options.hooks["PostToolUseFailure"].insert(0, langsmith_failure_matcher)
 
         logger.debug("Injected LangSmith tracing hooks into ClaudeAgentOptions")
     except ImportError:

@@ -1,7 +1,7 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
 This module provides hook handlers that traces tool calls by intercepting
-`PreToolUse` and `PostToolUse` events.
+`PreToolUse`, `PostToolUse`, and `PostToolUseFailure` events.
 """
 
 import logging
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Storage for correlating PreToolUse and PostToolUse events
+# Storage for correlating PreToolUse with PostToolUse/PostToolUseFailure events
 # Key: tool_use_id, Value: (run_tree, start_time)
 _active_tool_runs: dict[str, tuple[Any, float]] = {}
 
@@ -173,6 +173,83 @@ async def post_tool_use_hook(
 
     except Exception as e:
         logger.warning(f"Error in PostToolUse hook for {tool_name}: {e}", exc_info=True)
+
+    return {}
+
+
+async def post_tool_use_failure_hook(
+    input_data: "HookInput",
+    tool_use_id: Optional[str],
+    context: "HookContext",
+) -> "HookJSONOutput":
+    """Trace tool execution when it fails.
+
+    This hook fires for built-in tool failures (Bash, Read, Write, etc.)
+    and is mutually exclusive with :func:`post_tool_use_hook` — when a
+    built-in tool fails, only ``PostToolUseFailure`` fires.
+
+    Args:
+        input_data: Contains ``tool_name``, ``tool_input``, ``error``,
+            and optionally ``is_interrupt``.
+        tool_use_id: Unique identifier for this tool invocation
+        context: Hook context (currently contains only signal)
+
+    Returns:
+        Hook output (empty dict)
+    """
+    if not tool_use_id:
+        logger.debug(
+            "PostToolUseFailure hook called without tool_use_id, skipping trace"
+        )
+        return {}
+
+    tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
+    error: str = str(input_data.get("error", "Unknown error"))
+
+    # Check if this is a client-managed run (subagent or its tools)
+    run_tree = _client_managed_runs.pop(tool_use_id, None)
+    if run_tree:
+        try:
+            run_tree.end(
+                outputs={"error": error},
+                error=error,
+            )
+            run_tree.patch()
+        except Exception as e:
+            logger.warning(f"Failed to update client-managed run on failure: {e}")
+        return {}
+
+    try:
+        run_info = _active_tool_runs.pop(tool_use_id, None)
+        if not run_info:
+            logger.debug(
+                f"No matching PreToolUse found for failed {tool_name} "
+                f"(id={tool_use_id})"
+            )
+            return {}
+
+        tool_run, start_time = run_info
+
+        tool_run.end(
+            outputs={"error": error},
+            error=error,
+        )
+
+        try:
+            tool_run.patch()
+        except Exception as e:
+            logger.warning(f"Failed to patch failed tool run for {tool_name}: {e}")
+
+        duration_ms = (time.time() - start_time) * 1000
+        logger.debug(
+            f"Completed failed tool trace for {tool_name} "
+            f"(id={tool_use_id}, duration={duration_ms:.2f}ms, error={error!r})"
+        )
+
+    except Exception as e:
+        logger.warning(
+            f"Error in PostToolUseFailure hook for {tool_name}: {e}", exc_info=True
+        )
 
     return {}
 
