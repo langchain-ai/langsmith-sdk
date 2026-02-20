@@ -105,7 +105,6 @@ def begin_llm_run_from_assistant_messages(
         name=LLM_RUN_NAME,
         run_type="llm",
         inputs={"messages": inputs} if inputs else {},
-        outputs=outputs[-1] if len(outputs) == 1 else {"content": outputs},
         extra={"metadata": {"ls_model_name": model}} if model else {},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc)
         if start_time
@@ -116,6 +115,9 @@ def begin_llm_run_from_assistant_messages(
         llm_run.post()
     except Exception as e:
         logger.warning(f"Failed to post LLM run: {e}")
+
+    # Set outputs after posting so they are sent with end_time on the patch.
+    llm_run.outputs = outputs[-1] if len(outputs) == 1 else {"content": outputs}
 
     final_content = (
         {"content": flatten_content_blocks(last_msg.content), "role": "assistant"}
