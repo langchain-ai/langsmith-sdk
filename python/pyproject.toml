@@ -66,6 +66,9 @@ pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 # VCR support
 vcr = ["vcrpy>=7.0.0"]
 
+# Enabled via `pip install langsmith[sandbox]`
+sandbox = ["websockets>=15.0"]
+
 [dependency-groups]
 # Development dependencies
 dev = [
