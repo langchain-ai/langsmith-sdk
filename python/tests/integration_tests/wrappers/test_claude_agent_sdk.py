@@ -32,8 +32,7 @@ async def test_tool_failure_creates_error_trace():
     tool_result_blocks = []
     async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
         await client.query(
-            "Run this exact bash command: "
-            "cat /tmp/__langsmith_test_nonexistent.txt"
+            "Run this exact bash command: cat /tmp/__langsmith_test_nonexistent.txt"
         )
         async for msg in client.receive_response():
             if type(msg).__name__ == "UserMessage" and hasattr(msg, "content"):
