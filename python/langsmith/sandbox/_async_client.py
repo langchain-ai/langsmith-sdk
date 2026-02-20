@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 import httpx
@@ -91,8 +92,6 @@ class AsyncSandboxClient:
         """
         try:
             if not self._http.is_closed:
-                import asyncio
-
                 try:
                     loop = asyncio.get_running_loop()
                     if not loop.is_closed():
