@@ -335,6 +335,7 @@ export class PromptCache {
 }
 
 /**
+ * @internal
  * Global singleton instance of PromptCache.
  * Use configureGlobalPromptCache(), enableGlobalPromptCache(), or disableGlobalPromptCache() instead.
  */
