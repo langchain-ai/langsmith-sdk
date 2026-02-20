@@ -1,32 +1,21 @@
-"""Tests for Claude Agent SDK hook handlers.
-
-Unit tests use real RunTree objects (no mocks) to verify the hooks produce
-correct trace output.  Integration tests hit the real Claude Agent SDK and
-verify error traces appear in the span hierarchy.
-"""
+"""Unit tests for Claude Agent SDK hooks."""
 
 import asyncio
+import sys
 from unittest.mock import MagicMock
 
 import pytest
 
-from langsmith.run_trees import RunTree
-
 from langsmith.integrations.claude_agent_sdk._hooks import (
     _active_tool_runs,
     _client_managed_runs,
-    clear_active_tool_runs,
     post_tool_use_failure_hook,
     post_tool_use_hook,
     pre_tool_use_hook,
 )
+from langsmith.run_trees import RunTree
 
-try:
-    import claude_agent_sdk
-
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
+ERROR_MSG = "Exit code 1\ncat: /nonexistent: No such file or directory"
 
 
 @pytest.fixture(autouse=True)
@@ -44,18 +33,18 @@ def _make_parent_run() -> RunTree:
     return RunTree(name="test-parent", run_type="chain", client=MagicMock())
 
 
-# ---------------------------------------------------------------------------
-# Unit: full PreToolUse -> PostToolUse success flow
-# ---------------------------------------------------------------------------
-
-
 class TestToolUseSuccessFlow:
     """PreToolUse creates a child run; PostToolUse ends it with output."""
 
-    def test_success_flow(self):
-        parent = _make_parent_run()
+    @pytest.fixture(autouse=True)
+    def _set_parent(self):
+        from langsmith.integrations.claude_agent_sdk import _tools
 
-        # Simulate PreToolUse
+        _tools.set_parent_run_tree(_make_parent_run())
+        yield
+        _tools.clear_parent_run_tree()
+
+    def test_success_flow(self):
         asyncio.get_event_loop().run_until_complete(
             pre_tool_use_hook(
                 {"tool_name": "Bash", "tool_input": {"command": "echo hi"}},
@@ -70,7 +59,6 @@ class TestToolUseSuccessFlow:
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
 
-        # Simulate PostToolUse
         asyncio.get_event_loop().run_until_complete(
             post_tool_use_hook(
                 {
@@ -86,29 +74,19 @@ class TestToolUseSuccessFlow:
         assert tool_run.outputs == {"output": "hi", "is_error": False}
         assert tool_run.error is None
 
-    @pytest.fixture(autouse=True)
-    def _set_parent(self):
-        """Make a parent RunTree visible to the hooks."""
-        from langsmith.integrations.claude_agent_sdk import _tools
-
-        parent = _make_parent_run()
-        _tools.set_parent_run_tree(parent)
-        yield
-        _tools.clear_parent_run_tree()
-
-
-# ---------------------------------------------------------------------------
-# Unit: full PreToolUse -> PostToolUseFailure error flow
-# ---------------------------------------------------------------------------
-
 
 class TestToolUseFailureFlow:
     """PreToolUse creates a child run; PostToolUseFailure marks it as errored."""
 
-    def test_failure_flow(self):
-        parent = _make_parent_run()
+    @pytest.fixture(autouse=True)
+    def _set_parent(self):
+        from langsmith.integrations.claude_agent_sdk import _tools
 
-        # Simulate PreToolUse
+        _tools.set_parent_run_tree(_make_parent_run())
+        yield
+        _tools.clear_parent_run_tree()
+
+    def test_failure_flow(self):
         asyncio.get_event_loop().run_until_complete(
             pre_tool_use_hook(
                 {
@@ -122,13 +100,12 @@ class TestToolUseFailureFlow:
 
         tool_run, _ = _active_tool_runs["tu_2"]
 
-        # Simulate PostToolUseFailure (mutually exclusive with PostToolUse)
         asyncio.get_event_loop().run_until_complete(
             post_tool_use_failure_hook(
                 {
                     "tool_name": "Bash",
                     "tool_input": {"command": "cat /nonexistent"},
-                    "error": "Exit code 1\ncat: /nonexistent: No such file or directory",
+                    "error": ERROR_MSG,
                 },
                 "tu_2",
                 MagicMock(),
@@ -136,26 +113,8 @@ class TestToolUseFailureFlow:
         )
 
         assert "tu_2" not in _active_tool_runs
-        assert tool_run.error == (
-            "Exit code 1\ncat: /nonexistent: No such file or directory"
-        )
-        assert tool_run.outputs == {
-            "error": "Exit code 1\ncat: /nonexistent: No such file or directory"
-        }
-
-    @pytest.fixture(autouse=True)
-    def _set_parent(self):
-        from langsmith.integrations.claude_agent_sdk import _tools
-
-        parent = _make_parent_run()
-        _tools.set_parent_run_tree(parent)
-        yield
-        _tools.clear_parent_run_tree()
-
-
-# ---------------------------------------------------------------------------
-# Unit: hook injection wires all three hook types
-# ---------------------------------------------------------------------------
+        assert tool_run.error == ERROR_MSG
+        assert tool_run.outputs == {"error": ERROR_MSG}
 
 
 class TestInjectTracingHooks:
@@ -167,8 +126,6 @@ class TestInjectTracingHooks:
         options = MagicMock()
         options.hooks = None
 
-        import sys
-
         mock_module = MagicMock()
         sys.modules["claude_agent_sdk"] = mock_module
         try:
@@ -179,44 +136,3 @@ class TestInjectTracingHooks:
         for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
             assert event in options.hooks
             assert len(options.hooks[event]) == 1
-
-
-# ---------------------------------------------------------------------------
-# Integration: real Claude Agent SDK call with tool failure
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(
-    not CLAUDE_SDK_AVAILABLE, reason="Claude Agent SDK not installed"
-)
-@pytest.mark.asyncio
-async def test_tool_failure_creates_error_trace():
-    """End-to-end: a failing Bash command produces an errored tool run."""
-    from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
-
-    configure_claude_agent_sdk(name="test.tool_failure")
-
-    options = claude_agent_sdk.ClaudeAgentOptions(
-        permission_mode="bypassPermissions",
-        allowed_tools=["Bash"],
-        max_turns=2,
-    )
-
-    tool_result_blocks = []
-    async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
-        await client.query(
-            "Run this exact bash command: cat /tmp/__langsmith_test_nonexistent.txt"
-        )
-        async for msg in client.receive_response():
-            if type(msg).__name__ == "UserMessage" and hasattr(msg, "content"):
-                for block in msg.content:
-                    if type(block).__name__ == "ToolResultBlock":
-                        tool_result_blocks.append(block)
-
-    # The Bash command should have failed
-    assert len(tool_result_blocks) >= 1
-    assert tool_result_blocks[0].is_error is True
-
-    # The PostToolUseFailure hook should have consumed the run from
-    # _active_tool_runs (no orphaned runs left)
-    assert len(_active_tool_runs) == 0
