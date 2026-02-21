@@ -153,29 +153,47 @@ export class StreamManager {
     }
 
     if (message.type === "user") {
-      if (message.tool_use_result) {
-        const toolResult = Array.isArray(message.message.content)
-          ? message.message.content.find((block) => "tool_use_id" in block)
-          : undefined;
+      const toolResultBlocks = Array.isArray(message.message.content)
+        ? message.message.content.filter((block) => "tool_use_id" in block)
+        : [];
 
+      const getToolOutput = (result: unknown) => {
         if (
-          toolResult?.tool_use_id &&
-          this.tools[toolResult.tool_use_id] != null
+          typeof result === "object" &&
+          result != null &&
+          !Array.isArray(result)
         ) {
-          const toolOutput = Array.isArray(message.tool_use_result)
-            ? { content: message.tool_use_result }
-            : message.tool_use_result;
+          return result;
+        }
+
+        return { content: result };
+      };
+
+      const getToolError = (result: unknown) => {
+        if (["string", "number", "boolean"].includes(typeof result)) {
+          return String(result);
+        }
+        return JSON.stringify(result);
+      };
+
+      for (const block of toolResultBlocks) {
+        if (this.tools[block.tool_use_id] != null) {
+          // Previous versions of @anthropic-ai/claude-agent-sdk did provide
+          // tool result in `message.tool_use_result`, but at least since 0.2.50 it disappeared,
+          // so we rely on the last tool result block instead.
+          const result =
+            message.tool_use_result != null && toolResultBlocks.length === 1
+              ? message.tool_use_result
+              : block.content;
+
+          const toolOutput = getToolOutput(result);
 
           const toolError =
-            "is_error" in toolResult && toolResult.is_error === true
-              ? ["string", "number", "boolean"].includes(
-                  typeof message.tool_use_result
-                )
-                ? String(message.tool_use_result)
-                : JSON.stringify(message.tool_use_result)
+            "is_error" in block && block.is_error === true
+              ? getToolError(result)
               : undefined;
 
-          void this.tools[toolResult.tool_use_id].end(toolOutput, toolError);
+          void this.tools[block.tool_use_id].end(toolOutput, toolError);
         }
       }
     }
