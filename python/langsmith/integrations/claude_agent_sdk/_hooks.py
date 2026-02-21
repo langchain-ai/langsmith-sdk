@@ -43,7 +43,6 @@ async def pre_tool_use_hook(
         Hook output (empty dict allows execution to proceed)
     """
     if not tool_use_id:
-        logger.debug("PreToolUse hook called without tool_use_id, skipping trace")
         return {}
 
     # Skip if this tool run is already managed by the client
@@ -56,7 +55,6 @@ async def pre_tool_use_hook(
     try:
         parent = get_parent_run_tree() or get_current_run_tree()
         if not parent:
-            logger.debug(f"No parent run tree found for tool {tool_name}")
             return {}
 
         start_time = time.time()
@@ -73,7 +71,6 @@ async def pre_tool_use_hook(
             logger.warning(f"Failed to post tool run for {tool_name}: {e}")
 
         _active_tool_runs[tool_use_id] = (tool_run, start_time)
-        logger.debug(f"Started tool trace for {tool_name} (id={tool_use_id})")
 
     except Exception as e:
         logger.warning(f"Error in PreToolUse hook for {tool_name}: {e}", exc_info=True)
@@ -97,7 +94,6 @@ async def post_tool_use_hook(
         Hook output (empty `dict` by default)
     """  # noqa: E501
     if not tool_use_id:
-        logger.debug("PostToolUse hook called without tool_use_id, skipping trace")
         return {}
 
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
@@ -131,9 +127,6 @@ async def post_tool_use_hook(
     try:
         run_info = _active_tool_runs.pop(tool_use_id, None)
         if not run_info:
-            logger.debug(
-                f"No matching PreToolUse found for {tool_name} (id={tool_use_id})"
-            )
             return {}
 
         tool_run, start_time = run_info
@@ -159,12 +152,6 @@ async def post_tool_use_hook(
             tool_run.patch()
         except Exception as e:
             logger.warning(f"Failed to patch tool run for {tool_name}: {e}")
-
-        duration_ms = (time.time() - start_time) * 1000
-        logger.debug(
-            f"Completed tool trace for {tool_name} "
-            f"(id={tool_use_id}, duration={duration_ms:.2f}ms)"
-        )
 
     except Exception as e:
         logger.warning(f"Error in PostToolUse hook for {tool_name}: {e}", exc_info=True)
@@ -193,9 +180,6 @@ async def post_tool_use_failure_hook(
         Hook output (empty dict)
     """
     if not tool_use_id:
-        logger.debug(
-            "PostToolUseFailure hook called without tool_use_id, skipping trace"
-        )
         return {}
 
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
@@ -217,10 +201,6 @@ async def post_tool_use_failure_hook(
     try:
         run_info = _active_tool_runs.pop(tool_use_id, None)
         if not run_info:
-            logger.debug(
-                f"No matching PreToolUse found for failed {tool_name} "
-                f"(id={tool_use_id})"
-            )
             return {}
 
         tool_run, start_time = run_info
@@ -234,12 +214,6 @@ async def post_tool_use_failure_hook(
             tool_run.patch()
         except Exception as e:
             logger.warning(f"Failed to patch failed tool run for {tool_name}: {e}")
-
-        duration_ms = (time.time() - start_time) * 1000
-        logger.debug(
-            f"Completed failed tool trace for {tool_name} "
-            f"(id={tool_use_id}, duration={duration_ms:.2f}ms, error={error!r})"
-        )
 
     except Exception as e:
         logger.warning(
