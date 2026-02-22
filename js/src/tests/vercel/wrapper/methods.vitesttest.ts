@@ -603,7 +603,7 @@ describe("wrapAISDK", () => {
       );
     });
 
-    it.only("should respect traceRawHttp for streamText", async () => {
+    it("should respect traceRawHttp for streamText", async () => {
       const wrappedWithRawHttp = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
