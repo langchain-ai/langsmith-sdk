@@ -370,6 +370,8 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-test-model",
         doStream: async () => ({
+          response: {},
+          request: {},
           stream: simulateReadableStream({
             chunks: [
               { type: "text-start", id: "text-1" },
@@ -430,6 +432,16 @@ describe("wrapAISDK", () => {
           text: "Hello world",
         },
       ]);
+
+      // Verify that by default (traceRawHttp not set), request/response are excluded
+      const doStreamUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
+      );
+      expect(doStreamUpdateRun).toBeDefined();
+      expect(doStreamUpdateRun.body.outputs.request).toBeUndefined();
+      expect(doStreamUpdateRun.body.outputs.response).toBeUndefined();
     });
 
     it("should delay a parent traceable's end time until the child traceable ends", async () => {
@@ -589,6 +601,82 @@ describe("wrapAISDK", () => {
       expect(updateRunCall.body.error).toContain(
         "TOTALLY EXPECTED MOCK DOSTREAM ERROR"
       );
+    });
+
+    it.only("should respect traceRawHttp for streamText", async () => {
+      const wrappedWithRawHttp = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        {
+          name: "raw-http-tracer",
+          traceRawHttp: true,
+          client: mockClient as any,
+        }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "raw-http-test-model",
+        doStream: async () => ({
+          response: {},
+          request: {},
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Hello world" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop" as const, raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 5,
+                    noCache: 5,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 2, text: 2, reasoning: 0 },
+                  totalTokens: 7,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedWithRawHttp.streamText({
+        model: mockLangModel,
+        prompt: "Say hello",
+        providerOptions: {
+          langsmith: createLangSmithProviderOptions({}),
+        },
+      });
+
+      // Consume the stream
+      let fullText = "";
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+      }
+
+      expect(fullText).toBe("Hello world");
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the doStream child run update
+      const doStreamUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
+      );
+
+      expect(doStreamUpdateRun).toBeDefined();
+      // When traceRawHttp is true, request and response should be in the outputs
+      expect(doStreamUpdateRun.body.outputs.request).toBeDefined();
+      expect(doStreamUpdateRun.body.outputs.response).toBeDefined();
     });
 
     it("should handle generateObject with proper output processing", async () => {
