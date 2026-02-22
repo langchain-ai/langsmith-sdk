@@ -348,9 +348,23 @@ export function LangSmithMiddleware(config?: {
                   tool_calls: [],
                 }
               );
-              const outputFormatter =
-                lsConfig?.processOutputs ?? convertMessageToTracedFormat;
-              const formattedOutputs = await outputFormatter(output);
+              // Add raw request/response for tracing only (not part of aggregated output)
+              const outputForTracing = {
+                ...output,
+                request: rest.request,
+                response: rest.response,
+              };
+              let formattedOutputs: Record<string, unknown>;
+              if (lsConfig?.processOutputs) {
+                formattedOutputs = await lsConfig.processOutputs(
+                  outputForTracing
+                );
+              } else {
+                formattedOutputs = _formatTracedOutputs(
+                  outputForTracing,
+                  lsConfig?.traceRawHttp
+                );
+              }
               await runTree?.end(formattedOutputs);
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));
