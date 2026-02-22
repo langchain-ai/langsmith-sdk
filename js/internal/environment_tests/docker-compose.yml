@@ -50,6 +50,13 @@ services:
       - ../../..:/app
     command: bash -c "yarn install && yarn test"
 
+  test-tsc-import:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-tsc-import
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
   success:
     image: alpine:3.14
     depends_on:
@@ -66,5 +73,7 @@ services:
       test-exports-esbuild:
         condition: service_completed_successfully
       test-exports-metro:
+        condition: service_completed_successfully
+      test-tsc-import:
         condition: service_completed_successfully
     command: echo "All export tests passed!"
