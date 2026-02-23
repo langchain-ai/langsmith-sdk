@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 import httpx
@@ -72,6 +73,7 @@ class AsyncSandboxClient:
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
+        self._api_key = resolved_api_key
         headers: dict[str, str] = {}
         if resolved_api_key:
             headers["X-Api-Key"] = resolved_api_key
@@ -80,6 +82,24 @@ class AsyncSandboxClient:
     async def aclose(self) -> None:
         """Close the async HTTP client."""
         await self._http.aclose()
+
+    def __del__(self) -> None:
+        """Best-effort cleanup of the async HTTP client on garbage collection.
+
+        If an event loop is running, schedules ``aclose()`` as a task.
+        Otherwise the underlying sockets will be closed by the GC.
+        For deterministic cleanup, use ``async with`` or ``await aclose()``.
+        """
+        try:
+            if not self._http.is_closed:
+                try:
+                    loop = asyncio.get_running_loop()
+                    if not loop.is_closed():
+                        loop.create_task(self.aclose())
+                except RuntimeError:
+                    pass
+        except Exception:
+            pass
 
     async def __aenter__(self) -> AsyncSandboxClient:
         """Enter async context manager."""

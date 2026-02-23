@@ -42,7 +42,7 @@ def configure_google_adk(
         return True
 
     try:
-        from google.adk import runners  # type: ignore[import-untyped]
+        import google.adk  # noqa: F401
         from wrapt import wrap_function_wrapper
     except ImportError as e:
         logger.warning(f"Missing dependency: {e}")
@@ -53,35 +53,56 @@ def configure_google_adk(
     )
 
     from ._client import (
+        wrap_agent_run_async,
         wrap_flow_call_llm_async,
-        wrap_runner_init,
         wrap_runner_run,
         wrap_runner_run_async,
+        wrap_tool_run_async,
     )
 
-    wrap_function_wrapper(runners, "Runner.__init__", wrap_runner_init)
-    wrap_function_wrapper(runners, "Runner.run", wrap_runner_run)
-    wrap_function_wrapper(runners, "Runner.run_async", wrap_runner_run_async)
+    _wraps = [
+        (
+            "google.adk.runners",
+            "Runner.run",
+            wrap_runner_run,
+        ),
+        (
+            "google.adk.runners",
+            "Runner.run_async",
+            wrap_runner_run_async,
+        ),
+        (
+            "google.adk.agents.base_agent",
+            "BaseAgent.run_async",
+            wrap_agent_run_async,
+        ),
+        (
+            "google.adk.flows.llm_flows.base_llm_flow",
+            "BaseLlmFlow._call_llm_async",
+            wrap_flow_call_llm_async,
+        ),
+        (
+            "google.adk.tools.base_tool",
+            "BaseTool.run_async",
+            wrap_tool_run_async,
+        ),
+        (
+            "google.adk.tools.function_tool",
+            "FunctionTool.run_async",
+            wrap_tool_run_async,
+        ),
+        (
+            "google.adk.tools.mcp_tool.mcp_tool",
+            "McpTool.run_async",
+            wrap_tool_run_async,
+        ),
+    ]
 
-    try:
-        from google.adk.flows.llm_flows import (  # type: ignore[import-untyped]
-            base_llm_flow,
-        )
-
-        wrap_function_wrapper(
-            base_llm_flow, "BaseLlmFlow._call_llm_async", wrap_flow_call_llm_async
-        )
-    except ImportError:
-        pass
-
-    try:
-        from google.adk.tools.mcp_tool import mcp_tool  # type: ignore[import-untyped]
-
-        from ._client import wrap_mcp_tool_run_async
-
-        wrap_function_wrapper(mcp_tool, "McpTool.run_async", wrap_mcp_tool_run_async)
-    except ImportError:
-        pass
+    for module, name, wrapper in _wraps:
+        try:
+            wrap_function_wrapper(module, name, wrapper)
+        except Exception as e:
+            logger.warning(f"Failed to wrap {name}: {e}")
 
     _patched = True
     return True

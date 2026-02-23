@@ -429,14 +429,10 @@ def compress_multipart_parts_and_context(
     if max_bytes is not None and max_bytes > 0:
         current_size = compressed_traces.uncompressed_size
         if current_size > 0 and current_size + op_uncompressed_size > max_bytes:
-            logger.warning(
-                "Compressed traces queue size limit (%s bytes) exceeded. "
-                "Dropping trace data with context: %s. "
-                "Current queue size: %s bytes, attempted addition: %s bytes.",
-                max_bytes,
-                parts_and_context.context,
-                current_size,
-                op_uncompressed_size,
+            from langsmith.client import _log_tracing_drop
+
+            _log_tracing_drop(
+                f"compressed traces buffer full ({current_size}/{max_bytes} bytes)"
             )
             return False
 
