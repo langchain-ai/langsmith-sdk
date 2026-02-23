@@ -143,6 +143,79 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        self._require_dataplane_url()
+
+        try:
+            return self._run_ws(
+                command,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+                shell=shell,
+            )
+        except (SandboxConnectionError, ImportError, OSError, TypeError):
+            return self._run_http(
+                command,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+                shell=shell,
+            )
+
+    def _run_ws(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        env: Optional[dict[str, str]],
+        cwd: Optional[str],
+        shell: str,
+    ) -> ExecutionResult:
+        """Execute via WebSocket /execute/ws."""
+        from langsmith.sandbox._ws_execute import run_ws_stream
+
+        dataplane_url = self._require_dataplane_url()
+        api_key = self._client._api_key
+
+        msg_stream, _control = run_ws_stream(
+            dataplane_url,
+            api_key,
+            command,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            shell=shell,
+        )
+
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        exit_code = -1
+
+        for msg in msg_stream:
+            msg_type = msg.get("type")
+            if msg_type == "stdout":
+                stdout_parts.append(msg["data"])
+            elif msg_type == "stderr":
+                stderr_parts.append(msg["data"])
+            elif msg_type == "exit":
+                exit_code = msg["exit_code"]
+
+        return ExecutionResult(
+            stdout="".join(stdout_parts),
+            stderr="".join(stderr_parts),
+            exit_code=exit_code,
+        )
+
+    def _run_http(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        env: Optional[dict[str, str]],
+        cwd: Optional[str],
+        shell: str,
+    ) -> ExecutionResult:
+        """Execute via HTTP POST /execute."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/execute"
         payload: dict[str, Any] = {
