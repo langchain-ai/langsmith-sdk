@@ -150,7 +150,7 @@
     "console-table-printer": "^2.12.1",
     "p-queue": "^6.6.2",
     "semver": "^7.6.3",
-    "uuid": "^10.0.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
