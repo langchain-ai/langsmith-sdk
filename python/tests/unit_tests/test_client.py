@@ -3616,6 +3616,10 @@ def test_compressed_traces_queue_limit_drops_new_items(
     caplog: pytest.LogCaptureFixture,
 ):
     """Ensure compressed traces queue enforces a max in-memory size and logs drops."""
+    from langsmith.client import _reset_tracing_drop_log
+
+    _reset_tracing_drop_log()
+
     from langsmith._internal._compressed_traces import CompressedTraces
     from langsmith._internal._multipart import MultipartPartsAndContext
     from langsmith._internal._operations import compress_multipart_parts_and_context
@@ -3685,10 +3689,75 @@ def test_compressed_traces_queue_limit_drops_new_items(
 
     # Verify we logged a clear warning about dropping the trace.
     assert any(
-        "Compressed traces queue size limit" in record.getMessage()
-        and "trace=trace2,id=run2" in record.getMessage()
+        "Dropped" in record.getMessage()
+        and "compressed traces buffer full" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_tracing_queue_limit_drops_when_full(
+    caplog: pytest.LogCaptureFixture,
+):
+    """Ensure the uncompressed tracing queue drops items when full."""
+    from langsmith._internal._background_thread import TracingQueueItem
+    from langsmith._internal._operations import SerializedFeedbackOperation
+    from langsmith.client import _reset_tracing_drop_log
+
+    _reset_tracing_drop_log()
+
+    _clear_env_cache()
+    with patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "test-key",
+            "LANGSMITH_TRACING_QUEUE_MAX_SIZE": "3",
+        },
+        clear=False,
+    ):
+        client = Client(auto_batch_tracing=True)
+
+    assert client.tracing_queue is not None
+    assert client.tracing_queue.maxsize == 3
+
+    def _make_item(priority: str) -> TracingQueueItem:
+        op = SerializedFeedbackOperation(
+            id=uuid.uuid4(), trace_id=uuid.uuid4(), feedback=b"test"
+        )
+        return TracingQueueItem(priority, op)
+
+    # Fill the queue to capacity.
+    client._put_tracing_queue(_make_item("a"))
+    client._put_tracing_queue(_make_item("b"))
+    client._put_tracing_queue(_make_item("c"))
+    assert client.tracing_queue.qsize() == 3
+
+    # This should be dropped with a warning.
+    with caplog.at_level(logging.WARNING):
+        client._put_tracing_queue(_make_item("d"))
+
+    assert client.tracing_queue.qsize() == 3
+    assert any(
+        "Dropped" in record.getMessage() and "tracing queue full" in record.getMessage()
+        for record in caplog.records
+    )
+    client.cleanup()
+
+
+def test_tracing_queue_default_maxsize():
+    """Ensure the default maxsize is applied."""
+    from langsmith._internal._constants import _TRACING_QUEUE_MAX_SIZE
+
+    _clear_env_cache()
+    with patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "test-key"},
+        clear=False,
+    ):
+        client = Client(auto_batch_tracing=True)
+
+    assert client.tracing_queue is not None
+    assert client.tracing_queue.maxsize == _TRACING_QUEUE_MAX_SIZE
+    client.cleanup()
 
 
 @mock.patch("langsmith.client.requests.Session")
