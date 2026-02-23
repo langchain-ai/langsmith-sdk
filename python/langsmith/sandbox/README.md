@@ -34,6 +34,19 @@ sb = client.get_sandbox(name="your-sandbox")
 result = sb.run("python -c 'print(2 + 2)'")
 ```
 
+## Installation
+
+The sandbox module works out of the box for basic command execution (HTTP). For
+**real-time output** (streaming, callbacks, and `timeout=0`), install the
+optional dependency:
+
+```bash
+pip install 'langsmith[sandbox]'
+```
+
+This pulls in the `websockets` package. Without it, `sb.run()` falls back to
+HTTP automatically.
+
 ## Configuration
 
 The client automatically uses LangSmith environment variables:
@@ -70,6 +83,143 @@ with client.sandbox(template_name="my-sandbox") as sb:
     print(result.success)    # False
     print(result.exit_code)  # 1
 ```
+
+## Streaming Output
+
+For long-running commands, you can stream output in real time. This requires
+the `websockets` package (`pip install 'langsmith[sandbox]'`).
+
+### Callbacks
+
+The simplest way to get real-time output. Blocks until the command completes.
+
+```python
+import sys
+
+with client.sandbox(template_name="my-sandbox") as sb:
+    result = sb.run(
+        "make build",
+        timeout=600,
+        on_stdout=lambda s: print(s, end=""),
+        on_stderr=lambda s: print(s, end="", file=sys.stderr),
+    )
+    print(f"\nBuild {'succeeded' if result.success else 'failed'}")
+```
+
+### Streaming with CommandHandle
+
+For full control — access to the process handle, stream identity, kill, and
+reconnection.
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", timeout=600, wait=False)
+
+    print(f"Command ID: {handle.command_id}")
+
+    for chunk in handle:
+        prefix = "OUT" if chunk.stream == "stdout" else "ERR"
+        print(f"[{prefix}] {chunk.data}", end="")
+
+    result = handle.result
+    print(f"\nExit code: {result.exit_code}")
+```
+
+### Killing a Running Command
+
+```python
+import threading
+import time
+
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("sleep 3600", timeout=7200, wait=False)
+
+    # Kill after 10 seconds from another thread
+    def kill_after(h, seconds):
+        time.sleep(seconds)
+        h.kill()
+
+    threading.Thread(target=kill_after, args=(handle, 10)).start()
+
+    for chunk in handle:
+        print(chunk.data, end="")
+
+    result = handle.result
+    print(f"Exit code: {result.exit_code}")  # non-zero (killed)
+```
+
+### Sending Stdin Input
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run(
+        "python -c 'name = input(\"Name: \"); print(f\"Hello {name}\")'",
+        timeout=30,
+        wait=False,
+    )
+
+    for chunk in handle:
+        if "Name:" in chunk.data:
+            handle.send_input("World\n")
+        print(chunk.data, end="")
+
+    result = handle.result
+```
+
+### Auto-Reconnect
+
+`CommandHandle` (returned by `sb.run(wait=False)`) automatically
+reconnects on transient disconnects — hot-reloads, network blips, etc. No user
+code needed:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", timeout=600, wait=False)
+
+    # Auto-reconnects on transient errors (hot-reload, network blips)
+    for chunk in handle:
+        print(chunk.data, end="")
+
+    result = handle.result
+```
+
+For manual reconnection across process restarts:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", timeout=600, wait=False)
+    command_id = handle.command_id
+
+    # ... later, possibly in a different process ...
+
+    handle = sb.reconnect(command_id)
+    for chunk in handle:
+        print(chunk.data, end="")
+    result = handle.result
+```
+
+### No Timeout (`timeout=0`)
+
+With WebSocket enabled, you can set `timeout=0` to let a command run
+indefinitely with no server-side deadline. This works with both `wait=False`
+and callbacks. Useful for long-lived processes like dev servers, file watchers,
+or background tasks that you control via `kill()`.
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("python server.py", timeout=0, wait=False)
+
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break  # server is up, do other work
+
+    handle.kill()  # stop when done
+```
+
+> **Note:** `timeout=0` requires WebSocket support
+> (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
+> back to HTTP which has its own request-level timeout.
 
 ## File Operations
 
@@ -232,6 +382,18 @@ async def main():
             print(content.decode())
 ```
 
+### Async Streaming
+
+```python
+async with await client.sandbox(template_name="async-python") as sb:
+    handle = await sb.run("make build", timeout=600, wait=False)
+
+    async for chunk in handle:
+        print(chunk.data, end="")
+
+    result = await handle.result
+```
+
 ## Error Handling
 
 The module provides type-based exceptions with a `resource_type` attribute for specific handling:
@@ -241,19 +403,22 @@ from langsmith.sandbox import (
     SandboxClientError,       # Base exception for all sandbox errors
     ResourceNotFoundError,    # Resource doesn't exist (check resource_type)
     ResourceTimeoutError,     # Operation timed out (check resource_type)
-    SandboxConnectionError,   # Network error
+    SandboxConnectionError,   # Network/WebSocket error
+    CommandTimeoutError,      # Command exceeded its timeout (extends SandboxOperationError)
     QuotaExceededError,       # Quota limit reached
 )
 
 try:
-    # This will fail if "nonexistent" template doesn't exist
-    with client.sandbox(template_name="nonexistent") as sb:
-        pass
+    with client.sandbox(template_name="my-sandbox") as sb:
+        result = sb.run("sleep 999", timeout=10)
+except CommandTimeoutError as e:
+    print(f"Command timed out: {e}")
 except ResourceNotFoundError as e:
-    # e.resource_type tells you what wasn't found: "sandbox", "template", "volume", etc.
     print(f"{e.resource_type} not found: {e}")
 except ResourceTimeoutError as e:
     print(f"Timeout waiting for {e.resource_type}: {e}")
+except SandboxConnectionError as e:
+    print(f"Connection error: {e}")
 except SandboxClientError as e:
     print(f"Error: {e}")
 ```
@@ -285,7 +450,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `run(command, timeout=60)` | Execute a shell command |
+| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
+| `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
 
@@ -297,3 +463,24 @@ except SandboxClientError as e:
 | `stderr` | Standard error (str) |
 | `exit_code` | Exit code (int) |
 | `success` | True if exit_code == 0 |
+
+### CommandHandle
+
+Returned by `sb.run(wait=False)`. Iterable, yielding `OutputChunk` objects.
+
+| Property / Method | Description |
+|-------------------|-------------|
+| `command_id` | Server-assigned command ID |
+| `pid` | Process ID on the sandbox |
+| `result` | Final `ExecutionResult` (blocks until complete) |
+| `kill()` | Send SIGKILL to the running command |
+| `send_input(data)` | Write string data to the command's stdin |
+| `reconnect()` | Reconnect from last known offsets |
+
+### OutputChunk
+
+| Property | Description |
+|----------|-------------|
+| `stream` | `"stdout"` or `"stderr"` |
+| `data` | Text content of this chunk (str) |
+| `offset` | Byte offset within the stream (int) |
