@@ -9,7 +9,6 @@ import pytest
 
 from langsmith.sandbox._ws_execute import _AsyncWSStreamControl
 
-
 # =============================================================================
 # Tests: _AsyncWSStreamControl
 # =============================================================================
