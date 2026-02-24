@@ -3776,11 +3776,6 @@ class Client:
             "reference_example_id",
             "feedback_stats",
             "app_path",
-            "completion_cost",
-            "completion_tokens",
-            "prompt_cost",
-            "prompt_tokens",
-            "first_token_time",
         ]
         body_query: dict[str, Any] = {
             "session": [session_id],

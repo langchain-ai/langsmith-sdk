@@ -3566,6 +3566,131 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.slow
+def test_list_threads(langchain_client: Client) -> None:
+    """Test list_threads returns threads grouped by thread_id."""
+    project_name = f"test-list-threads-{uuid7().hex[:12]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        base = uuid7().hex[:8]
+        thread_a = f"thread-{base}-a"
+        thread_b = f"thread-{base}-b"
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # Backend derives thread_id from extra.metadata (session_id or conversation_id or thread_id).
+        # Set session_id/conversation_id to None so our thread_id is used for grouping.
+        def thread_meta(tid: str) -> dict:
+            return {"metadata": {"thread_id": tid, "session_id": None, "conversation_id": None}}
+
+        langchain_client.create_run(
+            name="run_a1",
+            inputs={"x": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now,
+            extra=thread_meta(thread_a),
+        )
+        langchain_client.create_run(
+            name="run_a2",
+            inputs={"x": 2},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=1),
+            extra=thread_meta(thread_a),
+        )
+        langchain_client.create_run(
+            name="run_b1",
+            inputs={"y": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=2),
+            extra=thread_meta(thread_b),
+        )
+        wait_for(
+            lambda: next(
+                langchain_client.list_runs(project_name=project_name, limit=1),
+                None,
+            )
+            is not None,
+            max_sleep_time=30,
+            sleep_time=2,
+        )
+        threads = langchain_client.list_threads(project_name=project_name, limit=10)
+        assert isinstance(threads, list)
+        assert len(threads) >= 2
+        for item in threads:
+            assert isinstance(item, dict)
+            assert "group_key" in item
+            assert "runs" in item
+            assert "count" in item
+            assert "min_start_time" in item
+            assert "max_start_time" in item
+            assert isinstance(item["runs"], list)
+            assert item["count"] == len(item["runs"])
+        group_keys = {t["group_key"] for t in threads}
+        assert thread_a in group_keys
+        assert thread_b in group_keys
+        thread_a_item = next(t for t in threads if t["group_key"] == thread_a)
+        thread_b_item = next(t for t in threads if t["group_key"] == thread_b)
+        assert thread_a_item["count"] == 2
+        assert thread_b_item["count"] == 1
+    finally:
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+@pytest.mark.slow
+def test_read_thread(langchain_client: Client) -> None:
+    """Test read_thread yields runs for a single thread_id."""
+    project_name = f"test-read-thread-{uuid7().hex[:12]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        thread_id = f"thread-{uuid7().hex[:8]}"
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # Backend derives thread_id from extra.metadata; set session_id/conversation_id to None so thread_id is used
+        meta = {"metadata": {"thread_id": thread_id, "session_id": None, "conversation_id": None}}
+        langchain_client.create_run(
+            name="run_1",
+            inputs={"i": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now,
+            extra=meta,
+        )
+        langchain_client.create_run(
+            name="run_2",
+            inputs={"i": 2},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=1),
+            extra=meta,
+        )
+        wait_for(
+            lambda: next(
+                langchain_client.list_runs(project_name=project_name, limit=1),
+                None,
+            )
+            is not None,
+            max_sleep_time=30,
+            sleep_time=2,
+        )
+        runs = list(
+            langchain_client.read_thread(
+                thread_id=thread_id,
+                project_name=project_name,
+                limit=10,
+            )
+        )
+        assert len(runs) == 2
+        assert all(isinstance(r, Run) for r in runs)
+        names = {r.name for r in runs}
+        assert names == {"run_1", "run_2"}
+    finally:
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
 @pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
