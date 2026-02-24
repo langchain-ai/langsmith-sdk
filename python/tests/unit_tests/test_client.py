@@ -5182,17 +5182,10 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
             assert body[field] == value
 
 
-# ---------------------------------------------------------------------------
-# Tests: LANGSMITH_FAILED_TRACES_DIR fallback
-# ---------------------------------------------------------------------------
-
-
 _MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}
 
 
 class TestWriteTraceToFallbackDir:
-    """Unit tests for Client._write_trace_to_fallback_dir."""
-
     def test_creates_file_with_correct_envelope(self, tmp_path):
         body = b'--boundary\r\nContent-Disposition: form-data; name="post.abc"\r\n\r\n{}\r\n--boundary--\r\n'
         Client._write_trace_to_fallback_dir(
@@ -5217,7 +5210,6 @@ class TestWriteTraceToFallbackDir:
     def test_write_error_is_swallowed(self, tmp_path):
         blocker = tmp_path / "blocker"
         blocker.write_text("not a dir")
-        # Should not raise
         Client._write_trace_to_fallback_dir(
             str(blocker / "sub"),
             b"{}",

@@ -221,8 +221,6 @@ EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
-# Tracks which fallback directories have already been created so we skip the
-# mkdir syscall on subsequent writes to the same directory.
 _fallback_dirs_created: set[str] = set()
 
 

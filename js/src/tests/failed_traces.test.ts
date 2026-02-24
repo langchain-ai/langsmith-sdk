@@ -14,10 +14,6 @@ import * as os from "node:os";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 async function makeTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "ls-failed-traces-test-"));
 }
@@ -47,10 +43,6 @@ function makeRunCreate() {
     dotted_order: id,
   };
 }
-
-// ---------------------------------------------------------------------------
-// _writeTraceToFallbackDir  (static method)
-// ---------------------------------------------------------------------------
 
 describe("Client._writeTraceToFallbackDir", () => {
   let tmpDir: string;
@@ -119,10 +111,6 @@ describe("Client._writeTraceToFallbackDir", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// _sendMultipartRequest: primary failure path
-// ---------------------------------------------------------------------------
-
 describe("Client multipart failure → fallback dir", () => {
   let tmpDir: string;
 
@@ -178,7 +166,6 @@ describe("Client multipart failure → fallback dir", () => {
     expect(envelope.headers["Content-Type"]).toMatch(
       /^multipart\/form-data; boundary=/
     );
-    // body decodes to actual multipart bytes
     const decoded = Buffer.from(envelope.body_base64, "base64").toString();
     expect(decoded).toContain(run.id);
   });
@@ -218,10 +205,6 @@ describe("Client multipart failure → fallback dir", () => {
     expect(await listDir(tmpDir)).toHaveLength(0);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Environment variable wiring
-// ---------------------------------------------------------------------------
 
 describe("LANGSMITH_FAILED_TRACES_DIR environment variable", () => {
   it("sets failedTracesDir from the env var", () => {

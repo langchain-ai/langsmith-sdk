@@ -1247,9 +1247,6 @@ export class Client implements LangSmithTracingClientInterface {
    *   Content-Type: <value from saved headers>
    *   [Content-Encoding: <value from saved headers>]
    *   <decoded body>
-   *
-   * Only operates in Node/Bun/Deno — silently skips in browser/webworker
-   * environments where the file system is not accessible.
    */
   private static async _writeTraceToFallbackDir(
     directory: string,
@@ -1299,7 +1296,9 @@ export class Client implements LangSmithTracingClientInterface {
         try {
           const entries = await fs.readdir(directory);
           const traceFiles = entries
-            .filter((f: string) => f.startsWith("trace_") && f.endsWith(".json"))
+            .filter(
+              (f: string) => f.startsWith("trace_") && f.endsWith(".json")
+            )
             .sort()
             .reverse(); // newest first
           let kept = 0;
