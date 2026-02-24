@@ -74,6 +74,27 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
     return _context._PARENT_RUN_TREE.get()
 
 
+@contextlib.contextmanager
+def set_tracing_parent(
+    run_tree: run_trees.RunTree,
+) -> Generator[None, None, None]:
+    """Set a RunTree as the active tracing parent within this block.
+
+    Unlike `tracing_context`, this only sets `_PARENT_RUN_TREE` and nothing
+    else, making it safe to use in isolated threads where you want precise
+    control over which run acts as the parent without inheriting or overwriting
+    other context variables.
+
+    Args:
+        run_tree: The RunTree to use as the active parent.
+    """
+    token = _context._PARENT_RUN_TREE.set(run_tree)
+    try:
+        yield
+    finally:
+        _context._PARENT_RUN_TREE.reset(token)
+
+
 def set_run_metadata(**metadata: Any) -> None:
     """Update metadata on the current run tree."""
     run_tree = get_current_run_tree()

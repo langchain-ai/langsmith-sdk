@@ -207,4 +207,4 @@ def test_sequential_agent(mock_ls_client: Client):
 
     time.sleep(0.2)
     calls = _get_calls(mock_ls_client, minimum=1)
-    assert len(calls) > 0
+    assert len(calls) == 3

@@ -8,13 +8,18 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
-from ._hooks import clear_active_tool_runs, post_tool_use_hook, pre_tool_use_hook
+from ._hooks import (
+    clear_active_tool_runs,
+    post_tool_use_failure_hook,
+    post_tool_use_hook,
+    pre_tool_use_hook,
+)
 from ._messages import (
     build_llm_input,
     extract_usage_from_result_message,
     flatten_content_blocks,
 )
-from ._tools import clear_parent_run_tree, set_parent_run_tree
+from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_tree
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +90,7 @@ def begin_llm_run_from_assistant_messages(
     last_msg = messages[-1]
     model = getattr(last_msg, "model", None)
     if parent is None:
-        parent = get_current_run_tree()
+        parent = get_parent_run_tree() or get_current_run_tree()
     if not parent:
         return None, None
 
@@ -100,7 +105,6 @@ def begin_llm_run_from_assistant_messages(
         name=LLM_RUN_NAME,
         run_type="llm",
         inputs={"messages": inputs} if inputs else {},
-        outputs=outputs[-1] if len(outputs) == 1 else {"content": outputs},
         extra={"metadata": {"ls_model_name": model}} if model else {},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc)
         if start_time
@@ -112,6 +116,9 @@ def begin_llm_run_from_assistant_messages(
     except Exception as e:
         logger.warning(f"Failed to post LLM run: {e}")
 
+    # Set outputs after posting so they are sent with end_time on the patch.
+    llm_run.outputs = outputs[-1] if len(outputs) == 1 else {"content": outputs}
+
     final_content = (
         {"content": flatten_content_blocks(last_msg.content), "role": "assistant"}
         if hasattr(last_msg, "content")
@@ -121,16 +128,7 @@ def begin_llm_run_from_assistant_messages(
 
 
 def _inject_tracing_hooks(options: Any) -> None:
-    """Inject LangSmith tracing hooks into ClaudeAgentOptions.
-
-    This adds PreToolUse and PostToolUse hooks to capture ALL tool calls
-    (built-in, external MCP, and SDK MCP). The hooks work across all LLM
-    providers (Anthropic, Vertex AI, Kimi, etc.) because they use explicit
-    tool_use_id correlation instead of relying on async context propagation.
-
-    Args:
-        options: ClaudeAgentOptions instance to modify
-    """
+    """Inject LangSmith tracing hooks into ClaudeAgentOptions."""
     if not hasattr(options, "hooks"):
         return
 
@@ -138,22 +136,22 @@ def _inject_tracing_hooks(options: Any) -> None:
     if options.hooks is None:
         options.hooks = {}
 
-    # Add PreToolUse hook if not already set
-    if "PreToolUse" not in options.hooks:
-        options.hooks["PreToolUse"] = []
-
-    # Add PostToolUse hook if not already set
-    if "PostToolUse" not in options.hooks:
-        options.hooks["PostToolUse"] = []
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        if event not in options.hooks:
+            options.hooks[event] = []
 
     try:
         from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
 
         langsmith_pre_matcher = HookMatcher(matcher=None, hooks=[pre_tool_use_hook])
         langsmith_post_matcher = HookMatcher(matcher=None, hooks=[post_tool_use_hook])
+        langsmith_failure_matcher = HookMatcher(
+            matcher=None, hooks=[post_tool_use_failure_hook]
+        )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
         options.hooks["PostToolUse"].insert(0, langsmith_post_matcher)
+        options.hooks["PostToolUseFailure"].insert(0, langsmith_failure_matcher)
 
         logger.debug("Injected LangSmith tracing hooks into ClaudeAgentOptions")
     except ImportError:

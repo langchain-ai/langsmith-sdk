@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal._compressed_traces import CompressedTraces
+from langsmith._internal._compressed_traces import ZSTD_AVAILABLE, CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -612,10 +612,16 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 
-    # Disable compression if explicitly set or if using OpenTelemetry
+    # Disable compression if explicitly set, using OpenTelemetry, or zstd unavailable
+    if not ZSTD_AVAILABLE:
+        logger.debug(
+            "zstandard package is not installed. "
+            "Falling back to uncompressed multipart ingestion."
+        )
     disable_compression = (
         ls_utils.is_env_var_truish("DISABLE_RUN_COMPRESSION")
         or client.otel_exporter is not None
+        or not ZSTD_AVAILABLE
     )
     if not disable_compression and use_multipart:
         if not (client.info.instance_flags or {}).get(

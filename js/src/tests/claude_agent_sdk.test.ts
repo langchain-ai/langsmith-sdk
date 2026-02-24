@@ -1361,6 +1361,645 @@ describe("wrapClaudeAgentSDK", () => {
     );
   });
 
+  test("subagent tool calling snapshot", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield {
+          type: "system",
+          model: "claude-sonnet-4-6",
+          claude_code_version: "2.1.50",
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "cb58646c-20e1-4d23-9a5e-4a0424ce9cdc",
+        };
+
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01R2VbKy9UktL9xxDUybWSdi",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "thinking",
+                thinking:
+                  "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 16021,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 0,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 0,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "38dad3e7-43c3-4d5d-8712-b5e6e891b723",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01R2VbKy9UktL9xxDUybWSdi",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                name: "Task",
+                input: {
+                  description: "Tell a joke about today's date",
+                  subagent_type: "joke-agent",
+                  prompt:
+                    "Tell me a funny joke about today's date: February 21, 2026.",
+                },
+                caller: { type: "direct" },
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 16021,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 0,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 0,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "708d075a-c43c-44f2-988d-f8d99361e143",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Tell me a funny joke about today's date: February 21, 2026.",
+              },
+            ],
+          },
+          parent_tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "ece31846-d44f-4fa7-8746-a9f8cda2a538",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01N5XS2zZLpyHfN7kVtNQ9wL",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_01PWkmKr2GaPemM7CLBLaxd2",
+                name: "Bash",
+                input: {
+                  command: "date",
+                  description: "Get current date and time",
+                },
+                caller: { type: "direct" },
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 416,
+              cache_read_input_tokens: 4814,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 416,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 1,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "fca6d684-6471-4832-bfad-50709af185ab",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                tool_use_id: "toolu_01PWkmKr2GaPemM7CLBLaxd2",
+                type: "tool_result",
+                content: "Sat Feb 21 20:13:00 CET 2026",
+                is_error: false,
+              },
+            ],
+          },
+          parent_tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "33e50d92-5d44-4b1c-a41d-11e0834261e8",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                type: "tool_result",
+                content: [
+                  {
+                    type: "text",
+                    text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
+                  },
+                  {
+                    type: "text",
+                    text: "agentId: a7bf945f9f2425f6f (for resuming to continue this agent's work if needed)\n<usage>total_tokens: 5501\ntool_uses: 1\nduration_ms: 8420</usage>",
+                  },
+                ],
+              },
+            ],
+          },
+          parent_tool_use_id: null,
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "25155ced-34a0-44aa-87c9-48660e801147",
+          tool_use_result: {
+            status: "completed",
+            prompt:
+              "Tell me a funny joke about today's date: February 21, 2026.",
+            agentId: "a7bf945f9f2425f6f",
+            content: [
+              {
+                type: "text",
+                text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
+              },
+            ],
+            totalDurationMs: 8420,
+            totalTokens: 5501,
+            totalToolUseCount: 1,
+            usage: {
+              input_tokens: 1,
+              cache_creation_input_tokens: 117,
+              cache_read_input_tokens: 5230,
+              output_tokens: 153,
+              server_tool_use: {
+                web_search_requests: 0,
+                web_fetch_requests: 0,
+              },
+              service_tier: "standard",
+              cache_creation: {
+                ephemeral_1h_input_tokens: 0,
+                ephemeral_5m_input_tokens: 117,
+              },
+              inference_geo: "",
+              iterations: [],
+              speed: "standard",
+            },
+          },
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01JRsr4U5QfWhSkNoErECJqQ",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "text",
+                text: 'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              cache_creation_input_tokens: 390,
+              cache_read_input_tokens: 16021,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 390,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 1,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          uuid: "15f0964b-4f58-43d7-a828-0a282c7d62bb",
+        };
+        yield {
+          type: "system",
+          subtype: "task_started",
+          task_id: "a7bf945f9f2425f6f",
+          tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+          description: "Tell a joke about today's date",
+          task_type: "local_agent",
+          uuid: "d878891c-1aab-4ce1-8b63-a13a2651ddb6",
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          num_turns: 2,
+          result:
+            'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
+          stop_reason: null,
+          session_id: "f8df5951-2251-47b9-a335-6d307c5223d6",
+          total_cost_usd: 0.041286750000000004,
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 390,
+            cache_read_input_tokens: 32042,
+            output_tokens: 319,
+            server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+            service_tier: "standard",
+            cache_creation: {
+              ephemeral_1h_input_tokens: 0,
+              ephemeral_5m_input_tokens: 390,
+            },
+            inference_geo: "",
+            iterations: [],
+            speed: "standard",
+          },
+          modelUsage: {
+            "claude-sonnet-4-6": {
+              inputTokens: 8,
+              outputTokens: 558,
+              cacheReadInputTokens: 42086,
+              cacheCreationInputTokens: 923,
+              webSearchRequests: 0,
+              costUSD: 0.040801750000000005,
+              contextWindow: 200000,
+              maxOutputTokens: 32000,
+            },
+            "claude-haiku-4-5-20251001": {
+              inputTokens: 325,
+              outputTokens: 32,
+              cacheReadInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              webSearchRequests: 0,
+              costUSD: 0.00048499999999999997,
+              contextWindow: 200000,
+              maxOutputTokens: 32000,
+            },
+          },
+          uuid: "bfa7563d-e3c9-4a60-955d-d770ce56d024",
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    const result: unknown[] = [];
+    for await (const message of wrapped.query({
+      prompt: "List available files in the current directory",
+      options: {
+        maxTurns: 10,
+        allowedTools: ["Read", "Grep"],
+      },
+    })) {
+      result.push(message);
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(res).toMatchObject({
+      nodes: [
+        "claude.conversation:0",
+        "claude.assistant.turn:1",
+        "joke-agent:2",
+        "Bash:3",
+        "claude.assistant.turn:4",
+        "claude.assistant.turn:5",
+      ],
+      edges: [
+        ["claude.conversation:0", "claude.assistant.turn:1"],
+        ["claude.conversation:0", "joke-agent:2"],
+        ["joke-agent:2", "Bash:3"],
+        ["joke-agent:2", "claude.assistant.turn:4"],
+        ["claude.conversation:0", "claude.assistant.turn:5"],
+      ],
+      data: {
+        "claude.conversation:0": {
+          run_type: "chain",
+          inputs: {
+            messages: [
+              {
+                content: "List available files in the current directory",
+                role: "user",
+              },
+            ],
+            options: {
+              maxTurns: 10,
+              allowedTools: ["Read", "Grep"],
+            },
+          },
+          outputs: {
+            output: {
+              messages: [
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "thinking",
+                      thinking:
+                        "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
+                      signature: "",
+                    },
+                  ],
+                },
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                      name: "Task",
+                      input: {
+                        description: "Tell a joke about today's date",
+                        subagent_type: "joke-agent",
+                        prompt:
+                          "Tell me a funny joke about today's date: February 21, 2026.",
+                      },
+                    },
+                  ],
+                },
+                {
+                  type: "tool_result",
+                  tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                  content: [
+                    {
+                      type: "text",
+                      text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
+                    },
+                    {
+                      type: "text",
+                      text: "agentId: a7bf945f9f2425f6f (for resuming to continue this agent's work if needed)\n<usage>total_tokens: 5501\ntool_uses: 1\nduration_ms: 8420</usage>",
+                    },
+                  ],
+                  is_error: false,
+                  role: "tool",
+                },
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "text",
+                      text: 'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        "claude.assistant.turn:1": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              {
+                content: "List available files in the current directory",
+                role: "user",
+              },
+            ],
+          },
+          outputs: {
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "thinking",
+                      thinking:
+                        "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
+                      signature: "",
+                    },
+                  ],
+                  role: "assistant",
+                },
+                {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                      name: "Task",
+                      input: {
+                        description: "Tell a joke about today's date",
+                        subagent_type: "joke-agent",
+                        prompt:
+                          "Tell me a funny joke about today's date: February 21, 2026.",
+                      },
+                    },
+                  ],
+                  role: "assistant",
+                },
+              ],
+            },
+          },
+        },
+        "joke-agent:2": {
+          run_type: "chain",
+          inputs: {
+            description: "Tell a joke about today's date",
+            subagent_type: "joke-agent",
+            prompt:
+              "Tell me a funny joke about today's date: February 21, 2026.",
+          },
+          outputs: {
+            status: "completed",
+            prompt:
+              "Tell me a funny joke about today's date: February 21, 2026.",
+            agentId: "a7bf945f9f2425f6f",
+            content: [
+              {
+                type: "text",
+                text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
+              },
+            ],
+            totalDurationMs: 8420,
+            totalTokens: 5501,
+            totalToolUseCount: 1,
+          },
+        },
+        "Bash:3": {
+          run_type: "tool",
+          inputs: {
+            input: {
+              command: "date",
+              description: "Get current date and time",
+            },
+          },
+          outputs: {
+            content: "Sat Feb 21 20:13:00 CET 2026",
+          },
+        },
+        "claude.assistant.turn:4": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              {
+                content: "List available files in the current directory",
+                role: "user",
+              },
+              {
+                content: [
+                  {
+                    type: "thinking",
+                    thinking:
+                      "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
+                    signature: "",
+                  },
+                ],
+                role: "assistant",
+              },
+              {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                    name: "Task",
+                    input: {
+                      description: "Tell a joke about today's date",
+                      subagent_type: "joke-agent",
+                      prompt:
+                        "Tell me a funny joke about today's date: February 21, 2026.",
+                    },
+                  },
+                ],
+                role: "assistant",
+              },
+              {
+                content: [
+                  {
+                    type: "text",
+                    text: "Tell me a funny joke about today's date: February 21, 2026.",
+                  },
+                ],
+                role: "user",
+              },
+            ],
+          },
+          outputs: {
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu_01PWkmKr2GaPemM7CLBLaxd2",
+                      name: "Bash",
+                      input: {
+                        command: "date",
+                        description: "Get current date and time",
+                      },
+                    },
+                  ],
+                  role: "assistant",
+                },
+              ],
+            },
+          },
+        },
+        "claude.assistant.turn:5": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              {
+                content: "List available files in the current directory",
+                role: "user",
+              },
+              {
+                content: [
+                  {
+                    type: "thinking",
+                    thinking:
+                      "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
+                    signature: "",
+                  },
+                ],
+                role: "assistant",
+              },
+              {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                    name: "Task",
+                    input: {
+                      description: "Tell a joke about today's date",
+                      subagent_type: "joke-agent",
+                      prompt:
+                        "Tell me a funny joke about today's date: February 21, 2026.",
+                    },
+                  },
+                ],
+                role: "assistant",
+              },
+              {
+                type: "tool_result",
+                tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
+                content: [
+                  {
+                    type: "text",
+                    text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
+                  },
+                  {
+                    type: "text",
+                    text: "agentId: a7bf945f9f2425f6f (for resuming to continue this agent's work if needed)\n<usage>total_tokens: 5501\ntool_uses: 1\nduration_ms: 8420</usage>",
+                  },
+                ],
+                is_error: false,
+                role: "tool",
+              },
+            ],
+          },
+          outputs: {
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "text",
+                      text: 'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
+                    },
+                  ],
+                  role: "assistant",
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+  });
+
   test("tool calling snapshot", async () => {
     const { client, callSpy } = mockClient();
     const mockSDK = {
