@@ -478,7 +478,9 @@ def instrument_claude_client(original_class: Any) -> Any:
                             ),
                             None,
                         )
-                        outputs: dict[str, Any] = {"messages": full_messages}
+                        outputs: dict[str, Any] = {
+                            "__LS_INTERNAL_UNSTABLE_MESSAGES": full_messages
+                        }
                         if last_assistant:
                             outputs["content"] = last_assistant.get("content")
                             outputs["role"] = "assistant"
