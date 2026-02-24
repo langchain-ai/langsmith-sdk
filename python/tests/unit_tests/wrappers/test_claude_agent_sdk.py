@@ -238,8 +238,8 @@ async def _run_conversation(
 # ---------------------------------------------------------------------------
 
 
-def test_root_run_inputs_contain_prompt(mock_ls_client: Client) -> None:
-    """Root run inputs should record the user's prompt string."""
+def test_root_run_inputs_contain_messages(mock_ls_client: Client) -> None:
+    """Root run inputs.messages should contain the full conversation minus the last message."""
     runs = asyncio.run(
         _run_conversation(
             WEATHER_CONVERSATION,
@@ -249,7 +249,16 @@ def test_root_run_inputs_contain_prompt(mock_ls_client: Client) -> None:
     )
     root_run = _find_run(runs, TRACE_CHAIN_NAME)
     inputs = root_run.get("inputs") or {}
-    assert inputs.get("prompt") == "What's the weather in NYC?"
+    messages = inputs.get("messages")
+    assert messages is not None, f"Root run inputs must have 'messages': {inputs}"
+    assert isinstance(messages, list)
+    # user prompt + assistant (tool_use) + tool result = 3 messages (not the final assistant)
+    assert len(messages) == 3, (
+        f"Expected 3 messages (user + assistant tool_use + tool result), got {len(messages)}: {messages}"
+    )
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "What's the weather in NYC?"
+    assert messages[-1]["role"] == "tool"
 
 
 def test_root_run_has_no_error(mock_ls_client: Client) -> None:
@@ -269,52 +278,28 @@ def test_llm_child_run_has_inputs_messages(mock_ls_client: Client) -> None:
         assert "messages" in inputs, f"LLM child run missing inputs.messages: {llm_run}"
 
 
-def test_root_run_outputs_messages_contains_full_conversation(
+def test_root_run_outputs_contain_last_assistant_message(
     mock_ls_client: Client,
 ) -> None:
-    """Root run outputs.__LS_INTERNAL_UNSTABLE_MESSAGES must contain the full
-    conversation history. For backwards compatibility, the last assistant turn's content
-    and role are also available at the top level of outputs.
-    """
+    """Root run outputs should contain only the final assistant message."""
     runs = asyncio.run(_run_conversation(WEATHER_CONVERSATION, mock_ls_client))
     root_run = _find_run(runs, TRACE_CHAIN_NAME)
     outputs = root_run.get("outputs") or {}
 
-    messages = outputs.get("__LS_INTERNAL_UNSTABLE_MESSAGES")
-    assert messages is not None, (
-        "Root run outputs must have a 'messages' key with the full conversation. "
-        f"Actual outputs: {outputs}"
-    )
-    assert isinstance(messages, list), (
-        f"outputs.messages must be a list, got {type(messages)}"
-    )
-
-    # user prompt + assistant (tool_use) + tool result + assistant (final answer)
-    assert len(messages) == 4, (
-        f"Expected 4 messages (user + assistant tool_use + tool + assistant final), "
-        f"got {len(messages)}: {messages}"
-    )
-    assert messages[0]["role"] == "user", f"First message should be user: {messages[0]}"
-    assert messages[0]["content"] == "What's the weather in NYC?"
-    assert messages[-1]["role"] == "assistant", (
-        f"Last message should be assistant: {messages[-1]}"
-    )
-
-    # Backwards compat: last assistant turn exposed at top level.
     assert outputs.get("role") == "assistant", (
-        f"outputs.role must be 'assistant' for backwards compat: {outputs}"
+        f"outputs.role must be 'assistant': {outputs}"
     )
-    assert "content" in outputs, (
-        f"outputs.content must be present for backwards compat: {outputs}"
+    assert "content" in outputs, f"outputs.content must be present: {outputs}"
+    assert "__LS_INTERNAL_UNSTABLE_MESSAGES" not in outputs, (
+        f"outputs must not contain __LS_INTERNAL_UNSTABLE_MESSAGES: {outputs}"
     )
 
 
 def test_messages_have_run_id_linking_to_child_runs(
     mock_ls_client: Client,
 ) -> None:
-    """Assistant and tool messages in outputs.__LS_INTERNAL_UNSTABLE_MESSAGES
-    must carry a 'run_id' equal to their corresponding child run's id.
-    User prompt messages must not have 'run_id'.
+    """Assistant and tool messages in inputs.messages must carry a 'run_id' equal
+    to their corresponding child run's id. User prompt messages must not have 'run_id'.
     """
     runs = asyncio.run(_run_conversation(WEATHER_CONVERSATION, mock_ls_client))
 
@@ -327,9 +312,7 @@ def test_messages_have_run_id_linking_to_child_runs(
     assert tool_run_ids, "Expected at least one tool run with an id"
 
     root_run = _find_run(runs, TRACE_CHAIN_NAME)
-    messages = (root_run.get("outputs") or {}).get(
-        "__LS_INTERNAL_UNSTABLE_MESSAGES", []
-    )
+    messages = (root_run.get("inputs") or {}).get("messages", [])
 
     for msg in messages:
         role = msg.get("role")
@@ -351,19 +334,21 @@ def test_messages_have_run_id_linking_to_child_runs(
             )
 
 
-def test_llm_child_runs_do_not_have_messages_in_outputs(
+def test_root_run_inputs_messages_not_present_in_llm_child_runs(
     mock_ls_client: Client,
 ) -> None:
-    """LLM child runs must NOT have '__LS_INTERNAL_UNSTABLE_MESSAGES' in their outputs.
-
-    Only the root claude.conversation run should expose
-    outputs.__LS_INTERNAL_UNSTABLE_MESSAGES.
+    """The root run's inputs.messages (full conversation) must not bleed into
+    LLM child run inputs — each LLM child run should only have the messages
+    up to that turn.
     """
     runs = asyncio.run(_run_conversation(WEATHER_CONVERSATION, mock_ls_client))
+    root_run = _find_run(runs, TRACE_CHAIN_NAME)
+    root_messages = (root_run.get("inputs") or {}).get("messages", [])
+
     llm_runs = _find_all_runs(runs, LLM_RUN_NAME)
     assert llm_runs, "At least one claude.assistant.turn LLM run must exist"
     for llm_run in llm_runs:
-        outputs = llm_run.get("outputs") or {}
-        assert "__LS_INTERNAL_UNSTABLE_MESSAGES" not in outputs, (
-            f"LLM child run must NOT have __LS_INTERNAL_UNSTABLE_MESSAGES: {llm_run}"
+        llm_messages = (llm_run.get("inputs") or {}).get("messages", [])
+        assert len(llm_messages) <= len(root_messages), (
+            f"LLM child run has more messages than root: {len(llm_messages)} > {len(root_messages)}"
         )
