@@ -1233,8 +1233,10 @@ class Client:
             if directory not in _fallback_dirs_created:
                 filepath.parent.mkdir(parents=True, exist_ok=True)
                 _fallback_dirs_created.add(directory)
-            filepath.write_text(json.dumps(envelope))
-            filepath.chmod(0o600)  # owner-only: payload may contain sensitive data
+            temp_path = filepath.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(envelope))
+            temp_path.chmod(0o600)  # owner-only: payload may contain sensitive data
+            temp_path.rename(filepath)
             logger.warning(
                 "LangSmith trace upload failed; data saved to %s for later replay.",
                 filepath,
@@ -1244,9 +1246,7 @@ class Client:
                 # Iterate newest-first: stat only the files we keep, skip stat for
                 # files we'll delete (saves a syscall per deleted file in large dirs).
                 dir_path = Path(directory)
-                files_newest_first = sorted(
-                    dir_path.glob("trace_*.json"), reverse=True
-                )
+                files_newest_first = sorted(dir_path.glob("trace_*.json"), reverse=True)
                 kept = 0
                 budget_full = False
                 to_delete: list[Path] = []
@@ -3020,8 +3020,16 @@ class Client:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
                         self._dump_failed_trace(
-                            lambda: data if isinstance(data, bytes) else encoder.to_string(),
-                            {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                            lambda: (
+                                data
+                                if isinstance(data, bytes)
+                                else rqtb_multipart.MultipartEncoder(
+                                    parts, boundary=_BOUNDARY
+                                ).to_string()
+                            ),
+                            {
+                                "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"
+                            },
                         )
                         self._invoke_tracing_error_callback(exc)
                     else:
@@ -3034,7 +3042,13 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     self._dump_failed_trace(
-                        lambda: data if isinstance(data, bytes) else encoder.to_string(),
+                        lambda: (
+                            data
+                            if isinstance(data, bytes)
+                            else rqtb_multipart.MultipartEncoder(
+                                parts, boundary=_BOUNDARY
+                            ).to_string()
+                        ),
                         {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
                     )
                     self._invoke_tracing_error_callback(e)

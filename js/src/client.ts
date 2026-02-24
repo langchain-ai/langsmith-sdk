@@ -1265,7 +1265,9 @@ export class Client implements LangSmithTracingClientInterface {
       const fs = await import("node:fs/promises");
       const path = await import("node:path");
       const bodyBuffer =
-        typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body);
+        typeof body === "string"
+          ? Buffer.from(body, "utf8")
+          : Buffer.from(body);
       const envelope = JSON.stringify({
         version: 1,
         endpoint,
@@ -1279,7 +1281,9 @@ export class Client implements LangSmithTracingClientInterface {
         await fs.mkdir(directory, { recursive: true });
         Client._fallbackDirsCreated.add(directory);
       }
-      await fs.writeFile(filepath, envelope, { encoding: "utf8", mode: 0o600 }); // owner-only: payload may contain sensitive data
+      const tempPath = filepath + ".tmp";
+      await fs.writeFile(tempPath, envelope, { encoding: "utf8", mode: 0o600 }); // owner-only: payload may contain sensitive data
+      await fs.rename(tempPath, filepath);
       console.warn(
         `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
       );
@@ -2091,9 +2095,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
       if (this.failedTracesDir) {
-        const bodyBuffer = await this._createNodeFetchBody(parts, boundary).catch(
-          () => null
-        );
+        const bodyBuffer = await this._createNodeFetchBody(
+          parts,
+          boundary
+        ).catch(() => null);
         if (bodyBuffer) {
           await Client._writeTraceToFallbackDir(
             this.failedTracesDir,

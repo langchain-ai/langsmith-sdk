@@ -5187,6 +5187,8 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
 
 
 _MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}
+
+
 class TestWriteTraceToFallbackDir:
     """Unit tests for Client._write_trace_to_fallback_dir."""
 
@@ -5208,6 +5210,7 @@ class TestWriteTraceToFallbackDir:
         assert envelope["endpoint"] == "runs/multipart"
         assert envelope["headers"] == _MULTIPART_HEADERS
         import base64
+
         assert base64.b64decode(envelope["body_base64"]) == body
 
     def test_filename_uses_trace_prefix(self, tmp_path):
@@ -5230,7 +5233,10 @@ class TestWriteTraceToFallbackDir:
     def test_multiple_writes_produce_unique_files(self, tmp_path):
         for _ in range(5):
             Client._write_trace_to_fallback_dir(
-                str(tmp_path), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+                str(tmp_path),
+                b"{}",
+                endpoint="runs/multipart",
+                headers=_MULTIPART_HEADERS,
             )
 
         assert len(list(tmp_path.iterdir())) == 5
@@ -5240,7 +5246,10 @@ class TestWriteTraceToFallbackDir:
         blocker.write_text("not a dir")
         # Should not raise
         Client._write_trace_to_fallback_dir(
-            str(blocker / "sub"), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+            str(blocker / "sub"),
+            b"{}",
+            endpoint="runs/multipart",
+            headers=_MULTIPART_HEADERS,
         )
 
     def test_zstd_headers_preserved(self, tmp_path):
@@ -5249,7 +5258,10 @@ class TestWriteTraceToFallbackDir:
             "Content-Encoding": "zstd",
         }
         Client._write_trace_to_fallback_dir(
-            str(tmp_path), b"\x28\xb5\x2f\xfd", endpoint="runs/multipart", headers=headers
+            str(tmp_path),
+            b"\x28\xb5\x2f\xfd",
+            endpoint="runs/multipart",
+            headers=headers,
         )
 
         envelope = json.loads(list(tmp_path.iterdir())[0].read_text())
@@ -5262,7 +5274,10 @@ class TestWriteTraceToFallbackDir:
         body = b"x" * 80
         for _ in range(3):
             Client._write_trace_to_fallback_dir(
-                str(tmp_path), body, endpoint="runs/multipart", headers=_MULTIPART_HEADERS,
+                str(tmp_path),
+                body,
+                endpoint="runs/multipart",
+                headers=_MULTIPART_HEADERS,
                 max_bytes=600,
             )
 
@@ -5274,7 +5289,10 @@ class TestWriteTraceToFallbackDir:
         body = b"x" * 10
         for _ in range(5):
             Client._write_trace_to_fallback_dir(
-                str(tmp_path), body, endpoint="runs/multipart", headers=_MULTIPART_HEADERS,
+                str(tmp_path),
+                body,
+                endpoint="runs/multipart",
+                headers=_MULTIPART_HEADERS,
                 max_bytes=10 * 1024 * 1024,  # 10 MB — well above 5 tiny files
             )
 
