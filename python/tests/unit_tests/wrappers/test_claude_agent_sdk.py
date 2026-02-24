@@ -239,7 +239,8 @@ async def _run_conversation(
 
 
 def test_root_run_inputs_contain_messages(mock_ls_client: Client) -> None:
-    """Root run inputs.messages should contain the full conversation minus the last message."""
+    """Root run inputs.messages should contain the full conversation minus the last
+    message."""
     runs = asyncio.run(
         _run_conversation(
             WEATHER_CONVERSATION,
@@ -252,9 +253,10 @@ def test_root_run_inputs_contain_messages(mock_ls_client: Client) -> None:
     messages = inputs.get("messages")
     assert messages is not None, f"Root run inputs must have 'messages': {inputs}"
     assert isinstance(messages, list)
-    # user prompt + assistant (tool_use) + tool result = 3 messages (not the final assistant)
+    # user prompt + assistant (tool_use) + tool result = 3 (not the final assistant)
     assert len(messages) == 3, (
-        f"Expected 3 messages (user + assistant tool_use + tool result), got {len(messages)}: {messages}"
+        f"Expected 3 messages (user + assistant tool_use + tool result), "
+        f"got {len(messages)}: {messages}"
     )
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "What's the weather in NYC?"
@@ -350,5 +352,6 @@ def test_root_run_inputs_messages_not_present_in_llm_child_runs(
     for llm_run in llm_runs:
         llm_messages = (llm_run.get("inputs") or {}).get("messages", [])
         assert len(llm_messages) <= len(root_messages), (
-            f"LLM child run has more messages than root: {len(llm_messages)} > {len(root_messages)}"
+            f"LLM child run has more messages than root: "
+            f"{len(llm_messages)} > {len(root_messages)}"
         )
