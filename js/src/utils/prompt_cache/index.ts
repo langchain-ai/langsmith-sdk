@@ -4,12 +4,21 @@
  * Provides an LRU cache with background refresh for prompt caching.
  * Uses stale-while-revalidate pattern for optimal performance.
  *
- * Works in all environments. File operations (dump/load) use helpers
- * that are swapped for browser builds via package.json browser field.
+ * Works in all environments. File operations (dump/load) use the shared
+ * fs abstraction which is swapped for browser builds via package.json
+ * browser field (no-ops in browser — cache just doesn't persist).
  */
 
 import type { PromptCommit } from "../../schemas.js";
-import { dumpCache, loadCache } from "./fs.js";
+import {
+  path,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  renameSync,
+  unlinkSync,
+  readFileSync,
+} from "../fs.js";
 
 /**
  * A single cache entry with metadata for TTL tracking.
@@ -234,7 +243,21 @@ export class PromptCache {
     for (const [key, entry] of this.cache.entries()) {
       entries[key] = entry.value;
     }
-    dumpCache(filePath, entries);
+
+    const dir = path.dirname(filePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir);
+    }
+    const tempPath = `${filePath}.tmp`;
+    try {
+      writeFileSync(tempPath, JSON.stringify({ entries }, null, 2));
+      renameSync(tempPath, filePath);
+    } catch (e) {
+      if (existsSync(tempPath)) {
+        unlinkSync(tempPath);
+      }
+      throw e;
+    }
   }
 
   /**
@@ -245,7 +268,17 @@ export class PromptCache {
    * @returns Number of entries loaded.
    */
   load(filePath: string): number {
-    const entries = loadCache(filePath);
+    if (!existsSync(filePath)) {
+      return 0;
+    }
+    let entries: Record<string, unknown> | null;
+    try {
+      const content = readFileSync(filePath);
+      const data = JSON.parse(content);
+      entries = data.entries ?? null;
+    } catch {
+      return 0;
+    }
     if (!entries) {
       return 0;
     }
