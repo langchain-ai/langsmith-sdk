@@ -2461,9 +2461,7 @@ test("readThread yields runs for a single thread_id", async () => {
     });
     await waitUntil(
       async () => {
-        const runs = await toArray(
-          client.listRuns({ projectName, limit: 1 })
-        );
+        const runs = await toArray(client.listRuns({ projectName, limit: 1 }));
         return runs.length > 0;
       },
       30_000,

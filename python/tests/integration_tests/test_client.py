@@ -3577,10 +3577,18 @@ def test_list_threads(langchain_client: Client) -> None:
         thread_a = f"thread-{base}-a"
         thread_b = f"thread-{base}-b"
         now = datetime.datetime.now(datetime.timezone.utc)
-        # Backend derives thread_id from extra.metadata (session_id or conversation_id or thread_id).
-        # Set session_id/conversation_id to None so our thread_id is used for grouping.
+
+        # Backend derives thread_id from extra.metadata
+        # (session_id or conversation_id or thread_id). Set session_id/conversation_id
+        # to None so our thread_id is used for grouping.
         def thread_meta(tid: str) -> dict:
-            return {"metadata": {"thread_id": tid, "session_id": None, "conversation_id": None}}
+            return {
+                "metadata": {
+                    "thread_id": tid,
+                    "session_id": None,
+                    "conversation_id": None,
+                }
+            }
 
         langchain_client.create_run(
             name="run_a1",
@@ -3607,11 +3615,13 @@ def test_list_threads(langchain_client: Client) -> None:
             extra=thread_meta(thread_b),
         )
         wait_for(
-            lambda: next(
-                langchain_client.list_runs(project_name=project_name, limit=1),
-                None,
-            )
-            is not None,
+            lambda: (
+                next(
+                    langchain_client.list_runs(project_name=project_name, limit=1),
+                    None,
+                )
+                is not None
+            ),
             max_sleep_time=30,
             sleep_time=2,
         )
@@ -3648,8 +3658,15 @@ def test_read_thread(langchain_client: Client) -> None:
     try:
         thread_id = f"thread-{uuid7().hex[:8]}"
         now = datetime.datetime.now(datetime.timezone.utc)
-        # Backend derives thread_id from extra.metadata; set session_id/conversation_id to None so thread_id is used
-        meta = {"metadata": {"thread_id": thread_id, "session_id": None, "conversation_id": None}}
+        # Backend derives thread_id from extra.metadata; set session_id/conversation_id
+        # to None so thread_id is used.
+        meta = {
+            "metadata": {
+                "thread_id": thread_id,
+                "session_id": None,
+                "conversation_id": None,
+            }
+        }
         langchain_client.create_run(
             name="run_1",
             inputs={"i": 1},
@@ -3667,11 +3684,13 @@ def test_read_thread(langchain_client: Client) -> None:
             extra=meta,
         )
         wait_for(
-            lambda: next(
-                langchain_client.list_runs(project_name=project_name, limit=1),
-                None,
-            )
-            is not None,
+            lambda: (
+                next(
+                    langchain_client.list_runs(project_name=project_name, limit=1),
+                    None,
+                )
+                is not None
+            ),
             max_sleep_time=30,
             sleep_time=2,
         )
