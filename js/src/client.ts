@@ -816,7 +816,7 @@ export class Client implements LangSmithTracingClientInterface {
       "FAILED_TRACES_MAX_MB"
     );
     if (failedTracesMb) {
-      const n = Number(failedTracesMb);
+      const n = parseInt(failedTracesMb, 10);
       if (Number.isFinite(n) && n > 0) {
         this.failedTracesMaxBytes = n * 1024 * 1024;
       }

@@ -1163,7 +1163,7 @@ class Client:
         )
         _max_mb_str = ls_utils.get_env_var("FAILED_TRACES_MAX_MB")
         try:
-            _max_mb = float(_max_mb_str) if _max_mb_str else 0.0
+            _max_mb = int(_max_mb_str) if _max_mb_str else 0
             self._failed_traces_max_bytes: int = (
                 int(_max_mb * 1024 * 1024) if _max_mb > 0 else 100 * 1024 * 1024
             )
