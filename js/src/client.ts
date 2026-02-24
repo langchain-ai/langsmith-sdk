@@ -77,6 +77,7 @@ import {
   PromptCache,
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
+import * as fsUtils from "./utils/fs.js";
 import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
@@ -769,6 +770,12 @@ export class Client implements LangSmithTracingClientInterface {
   private _runCompressionDisabled =
     getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
 
+  private failedTracesDir: string | undefined;
+
+  private failedTracesMaxBytes: number = 100 * 1024 * 1024;
+
+  private static _fallbackDirsCreated = new Set<string>();
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -801,6 +808,19 @@ export class Client implements LangSmithTracingClientInterface {
     }
     this.debug = config.debug ?? this.debug;
     this.fetchImplementation = config.fetchImplementation;
+
+    // Failed trace dump configuration
+    this.failedTracesDir =
+      getLangSmithEnvironmentVariable("FAILED_TRACES_DIR") || undefined;
+    const failedTracesMb = getLangSmithEnvironmentVariable(
+      "FAILED_TRACES_MAX_MB"
+    );
+    if (failedTracesMb) {
+      const n = parseInt(failedTracesMb, 10);
+      if (Number.isFinite(n) && n > 0) {
+        this.failedTracesMaxBytes = n * 1024 * 1024;
+      }
+    }
 
     // Use maxIngestMemoryBytes for both queues
     const maxMemory = config.maxIngestMemoryBytes ?? DEFAULT_MAX_SIZE_BYTES;
@@ -1212,6 +1232,80 @@ export class Client implements LangSmithTracingClientInterface {
       promises.push(allBatchesPromise);
     }
     return Promise.all(promises);
+  }
+
+  /**
+   * Persist a failed trace payload to a local fallback directory.
+   *
+   * Saves a self-contained JSON file containing the endpoint path, the HTTP
+   * headers required for replay, and the base64-encoded request body.
+   * Can be replayed later with a simple POST:
+   *
+   *   POST /<endpoint>
+   *   Content-Type: <value from saved headers>
+   *   [Content-Encoding: <value from saved headers>]
+   *   <decoded body>
+   */
+  private static async _writeTraceToFallbackDir(
+    directory: string,
+    body: ArrayBuffer | string,
+    replayHeaders: Record<string, string>,
+    endpoint: string,
+    maxBytes?: number
+  ): Promise<void> {
+    try {
+      const bodyBuffer =
+        typeof body === "string"
+          ? Buffer.from(body, "utf8")
+          : Buffer.from(body);
+      const envelope = JSON.stringify({
+        version: 1,
+        endpoint,
+        headers: replayHeaders,
+        body_base64: bodyBuffer.toString("base64"),
+      });
+      const filename = `trace_${Date.now()}_${uuid.v4().slice(0, 8)}.json`;
+      const filepath = fsUtils.path.join(directory, filename);
+      if (!Client._fallbackDirsCreated.has(directory)) {
+        await fsUtils.mkdir(directory);
+        Client._fallbackDirsCreated.add(directory);
+      }
+      // Check budget before writing — drop new traces if over limit.
+      if (maxBytes !== undefined && maxBytes > 0) {
+        try {
+          const entries = await fsUtils.readdir(directory);
+          const traceFiles = entries.filter(
+            (f) => f.startsWith("trace_") && f.endsWith(".json")
+          );
+          let total = 0;
+          for (const name of traceFiles) {
+            const { size } = await fsUtils.stat(
+              fsUtils.path.join(directory, name)
+            );
+            total += size;
+          }
+          if (total >= maxBytes) {
+            console.warn(
+              `Could not write trace to fallback dir ${directory} as it's ` +
+                `already over size limit (${total} bytes >= ${maxBytes} bytes). ` +
+                `Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.`
+            );
+            return;
+          }
+        } catch {
+          // budget check errors must never prevent writing
+        }
+      }
+      await fsUtils.writeFileAtomic(filepath, envelope);
+      console.warn(
+        `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
+      );
+    } catch (writeErr) {
+      console.error(
+        `LangSmith tracing error: could not write trace to fallback dir ${directory}:`,
+        writeErr
+      );
+    }
   }
 
   private async _processBatch(
@@ -1979,6 +2073,21 @@ export class Client implements LangSmithTracingClientInterface {
         throw e;
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
+      if (this.failedTracesDir) {
+        const bodyBuffer = await this._createNodeFetchBody(
+          parts,
+          boundary
+        ).catch(() => null);
+        if (bodyBuffer) {
+          await Client._writeTraceToFallbackDir(
+            this.failedTracesDir,
+            bodyBuffer,
+            { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+            "runs/multipart",
+            this.failedTracesMaxBytes
+          );
+        }
+      }
     }
   }
 
