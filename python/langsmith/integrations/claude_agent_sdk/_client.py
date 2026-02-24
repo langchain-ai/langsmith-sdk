@@ -325,10 +325,6 @@ def instrument_claude_client(original_class: Any) -> Any:
             # Track if we need to update input from captured streaming messages
             awaiting_streamed_input = self._streamed_input is not None
 
-            # Add prompt to inputs (for string prompts)
-            if self._prompt:
-                trace_inputs["prompt"] = self._prompt
-
             # Add system_prompt to inputs if available
             if hasattr(self, "options") and self.options:
                 if (
@@ -470,21 +466,14 @@ def instrument_claude_client(original_class: Any) -> Any:
                         yield msg
                     full_messages = build_llm_input(prompt_for_llm, collected)
                     if full_messages:
-                        last_assistant = next(
-                            (
-                                m
-                                for m in reversed(collected)
-                                if m.get("role") == "assistant"
-                            ),
-                            None,
+                        run.inputs["messages"] = full_messages[:-1]
+                        last = full_messages[-1]
+                        run.end(
+                            outputs={
+                                "content": last.get("content"),
+                                "role": last.get("role", "assistant"),
+                            }
                         )
-                        outputs: dict[str, Any] = {
-                            "__LS_INTERNAL_UNSTABLE_MESSAGES": full_messages
-                        }
-                        if last_assistant:
-                            outputs["content"] = last_assistant.get("content")
-                            outputs["role"] = "assistant"
-                        run.end(outputs=outputs)
                     else:
                         run.end()
                 except Exception:
