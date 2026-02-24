@@ -657,7 +657,7 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
 class ListThreadsItem(TypedDict):
     """Item returned by :meth:`Client.list_threads`."""
 
-    group_key: str
+    thread_id: str
     runs: list[ls_schemas.Run]
     count: int
     min_start_time: Optional[str]
@@ -3737,7 +3737,7 @@ class Client:
             start_time: Only include runs from this time. Default: 1 day ago.
 
         Returns:
-            List of thread items, each with "group_key", "runs", "count",
+            List of thread items, each with "thread_id", "runs", "count",
             "min_start_time", and "max_start_time".
         """
         if project_id is None and project_name is None:
@@ -3796,7 +3796,7 @@ class Client:
                 threads_map[tid].append(run_dict)
 
         result: list[ListThreadsItem] = []
-        for group_key, run_dicts in threads_map.items():
+        for thread_id, run_dicts in threads_map.items():
             run_dicts.sort(
                 key=lambda r: (
                     r.get("start_time") or "",
@@ -3822,7 +3822,7 @@ class Client:
             ]
             result.append(
                 {
-                    "group_key": group_key,
+                    "thread_id": thread_id,
                     "runs": runs,
                     "count": len(runs),
                     "min_start_time": min(start_times) if start_times else None,

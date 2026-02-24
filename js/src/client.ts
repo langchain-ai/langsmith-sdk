@@ -489,7 +489,7 @@ type Thread = {
   latency_p50: number;
   latency_p99: number;
   feedback_stats: any | null;
-  group_key: string;
+  thread_id: string;
   first_inputs: string;
   last_outputs: string;
   last_error: string | null;
@@ -2558,7 +2558,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const result: ListThreadsItem[] = [];
-    for (const [groupKey, runs] of threadsMap.entries()) {
+    for (const [threadId, runs] of threadsMap.entries()) {
       runs.sort((a, b) => {
         const aRun = a as unknown as Record<string, unknown>;
         const bRun = b as unknown as Record<string, unknown>;
@@ -2580,7 +2580,7 @@ export class Client implements LangSmithTracingClientInterface {
         ? sortedTimes[sortedTimes.length - 1]
         : "";
       result.push({
-        group_key: groupKey,
+        thread_id: threadId,
         runs,
         count: runs.length,
         filter: "",

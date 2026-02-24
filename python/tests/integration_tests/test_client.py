@@ -3630,18 +3630,18 @@ def test_list_threads(langchain_client: Client) -> None:
         assert len(threads) >= 2
         for item in threads:
             assert isinstance(item, dict)
-            assert "group_key" in item
+            assert "thread_id" in item
             assert "runs" in item
             assert "count" in item
             assert "min_start_time" in item
             assert "max_start_time" in item
             assert isinstance(item["runs"], list)
             assert item["count"] == len(item["runs"])
-        group_keys = {t["group_key"] for t in threads}
-        assert thread_a in group_keys
-        assert thread_b in group_keys
-        thread_a_item = next(t for t in threads if t["group_key"] == thread_a)
-        thread_b_item = next(t for t in threads if t["group_key"] == thread_b)
+        thread_ids = {t["thread_id"] for t in threads}
+        assert thread_a in thread_ids
+        assert thread_b in thread_ids
+        thread_a_item = next(t for t in threads if t["thread_id"] == thread_a)
+        thread_b_item = next(t for t in threads if t["thread_id"] == thread_b)
         assert thread_a_item["count"] == 2
         assert thread_b_item["count"] == 1
     finally:

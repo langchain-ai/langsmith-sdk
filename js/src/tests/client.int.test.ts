@@ -2400,7 +2400,7 @@ test("listThreads returns threads grouped by thread_id", async () => {
     expect(Array.isArray(threads)).toBe(true);
     expect(threads.length).toBeGreaterThanOrEqual(2);
     for (const item of threads) {
-      expect(item).toHaveProperty("group_key");
+      expect(item).toHaveProperty("thread_id");
       expect(item).toHaveProperty("runs");
       expect(item).toHaveProperty("count");
       expect(item).toHaveProperty("min_start_time");
@@ -2408,11 +2408,11 @@ test("listThreads returns threads grouped by thread_id", async () => {
       expect(Array.isArray(item.runs)).toBe(true);
       expect(item.count).toEqual(item.runs.length);
     }
-    const groupKeys = new Set(threads.map((t) => t.group_key));
-    expect(groupKeys.has(threadA)).toBe(true);
-    expect(groupKeys.has(threadB)).toBe(true);
-    const threadAItem = threads.find((t) => t.group_key === threadA);
-    const threadBItem = threads.find((t) => t.group_key === threadB);
+    const threadIds = new Set(threads.map((t) => t.thread_id));
+    expect(threadIds.has(threadA)).toBe(true);
+    expect(threadIds.has(threadB)).toBe(true);
+    const threadAItem = threads.find((t) => t.thread_id === threadA);
+    const threadBItem = threads.find((t) => t.thread_id === threadB);
     expect(threadAItem).toBeDefined();
     expect(threadBItem).toBeDefined();
     expect(threadAItem!.count).toEqual(2);
