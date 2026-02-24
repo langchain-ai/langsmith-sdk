@@ -260,44 +260,6 @@ class AsyncClient:
                 break
             params_["cursor"] = cursors["next"]
 
-    async def _aget_offset_paginated_list_post(
-        self,
-        path: str,
-        *,
-        body: dict[str, Any],
-        data_key: str = "groups",
-        page_size: int = 100,
-        max_items: Optional[int] = None,
-    ) -> AsyncIterator[dict]:
-        """Get an offset-paginated list of items via POST."""
-        request_body = body.copy()
-        current_offset = request_body.get("offset", 0)
-        yielded = 0
-        while True:
-            to_fetch = min(
-                page_size,
-                (max_items - yielded) if max_items is not None else page_size,
-            )
-            if to_fetch < 1:
-                break
-            request_body["offset"] = current_offset
-            request_body["limit"] = to_fetch
-            response = await self._arequest_with_retries(
-                "POST",
-                path,
-                content=ls_client._dumps_json(request_body),
-            )
-            data = response.json()
-            items = data.get(data_key) or []
-            for item in items:
-                yield item
-                yielded += 1
-                if max_items is not None and yielded >= max_items:
-                    return
-            if len(items) < to_fetch:
-                break
-            current_offset += len(items)
-
     async def create_run(
         self,
         name: str,
