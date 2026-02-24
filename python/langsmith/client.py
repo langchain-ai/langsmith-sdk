@@ -13,6 +13,7 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 from __future__ import annotations
 
 import atexit
+import base64
 import collections
 import concurrent.futures as cf
 import contextlib
@@ -219,6 +220,10 @@ X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
+
+# Tracks which fallback directories have already been created so we skip the
+# mkdir syscall on subsequent writes to the same directory.
+_fallback_dirs_created: set[str] = set()
 
 
 @lru_cache(maxsize=1)
@@ -700,6 +705,8 @@ class Client:
         "_tracing_error_callback",
         "_multipart_disabled",
         "_cache",
+        "_failed_traces_dir",
+        "_failed_traces_max_bytes",
     ]
 
     _api_key: Optional[str]
@@ -1152,6 +1159,121 @@ class Client:
             self._cache = prompt_cache_singleton
         else:
             self._cache = None
+
+        self._failed_traces_dir: Optional[str] = ls_utils.get_env_var(
+            "FAILED_TRACES_DIR"
+        )
+        _max_mb_str = ls_utils.get_env_var("FAILED_TRACES_MAX_MB")
+        try:
+            _max_mb = float(_max_mb_str) if _max_mb_str else 0.0
+            self._failed_traces_max_bytes: int = (
+                int(_max_mb * 1024 * 1024) if _max_mb > 0 else 100 * 1024 * 1024
+            )
+        except (ValueError, OverflowError):
+            self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+    def _dump_failed_trace(
+        self,
+        body_fn: Callable[[], bytes],
+        headers: dict,
+    ) -> None:
+        """Dump a failed trace payload to disk if a fallback directory is configured.
+
+        *body_fn* is called lazily inside a try/except so that any serialization
+        errors are silently swallowed — we must never raise from a failure path.
+        """
+        if not self._failed_traces_dir:
+            return
+        try:
+            body = body_fn()
+            if isinstance(body, str):
+                body = body.encode("utf-8")
+            self._write_trace_to_fallback_dir(
+                self._failed_traces_dir,
+                body,
+                endpoint="runs/multipart",
+                headers=headers,
+                max_bytes=self._failed_traces_max_bytes,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _write_trace_to_fallback_dir(
+        directory: str,
+        body: bytes,
+        *,
+        endpoint: str,
+        headers: dict,
+        max_bytes: Optional[int] = None,
+    ) -> None:
+        """Persist a failed trace payload to a local fallback directory.
+
+        Saves a self-contained JSON file with the endpoint, the HTTP headers
+        required for replay, and the base64-encoded request body.  Can be
+        replayed later with ``langsmith traces replay`` or a simple POST:
+
+            POST /<endpoint>
+            Content-Type: <value from saved headers>
+            [Content-Encoding: <value from saved headers>]
+            <decoded body>
+
+        If *max_bytes* is set, the oldest trace files are deleted (FIFO) after
+        writing so the directory stays within the budget.
+        """
+        envelope = {
+            "version": 1,
+            "endpoint": endpoint,
+            "headers": headers,
+            "body_base64": base64.b64encode(body).decode(),
+        }
+        filename = f"trace_{time.time():.6f}_{uuid.uuid4().hex[:8]}.json"
+        filepath = Path(directory) / filename
+        try:
+            if directory not in _fallback_dirs_created:
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                _fallback_dirs_created.add(directory)
+            filepath.write_text(json.dumps(envelope))
+            filepath.chmod(0o600)  # owner-only: payload may contain sensitive data
+            logger.warning(
+                "LangSmith trace upload failed; data saved to %s for later replay.",
+                filepath,
+            )
+            if max_bytes is not None and max_bytes > 0:
+                # Evict oldest trace files to stay within budget.
+                # Iterate newest-first: stat only the files we keep, skip stat for
+                # files we'll delete (saves a syscall per deleted file in large dirs).
+                dir_path = Path(directory)
+                files_newest_first = sorted(
+                    dir_path.glob("trace_*.json"), reverse=True
+                )
+                kept = 0
+                budget_full = False
+                to_delete: list[Path] = []
+                for f in files_newest_first:
+                    if budget_full:
+                        to_delete.append(f)
+                    else:
+                        try:
+                            size = f.stat().st_size
+                        except Exception:
+                            continue
+                        if kept + size <= max_bytes:
+                            kept += size
+                        else:
+                            budget_full = True
+                            to_delete.append(f)
+                for f in to_delete:
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        except Exception as write_exc:
+            logger.error(
+                "LangSmith tracing error: could not write trace to fallback dir %s: %s",
+                directory,
+                write_exc,
+            )
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -2897,6 +3019,10 @@ class Client:
                 ) as exc:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
+                        self._dump_failed_trace(
+                            lambda: data if isinstance(data, bytes) else encoder.to_string(),
+                            {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                        )
                         self._invoke_tracing_error_callback(exc)
                     else:
                         continue
@@ -2907,6 +3033,10 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    self._dump_failed_trace(
+                        lambda: data if isinstance(data, bytes) else encoder.to_string(),
+                        {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                    )
                     self._invoke_tracing_error_callback(e)
                     # do not retry by default
                     break
@@ -2968,8 +3098,17 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {exc}"
                         )
+                        data_stream.seek(0)
+                        self._dump_failed_trace(
+                            data_stream.read,
+                            {
+                                "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+                                "Content-Encoding": "zstd",
+                            },
+                        )
                         self._invoke_tracing_error_callback(exc)
                     else:
+                        data_stream.seek(0)
                         continue
                 except Exception as e:
                     try:
@@ -2982,6 +3121,14 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
+                    data_stream.seek(0)
+                    self._dump_failed_trace(
+                        data_stream.read,
+                        {
+                            "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+                            "Content-Encoding": "zstd",
+                        },
+                    )
                     self._invoke_tracing_error_callback(e)
                     # Do not retry by default after unknown exceptions
                     break

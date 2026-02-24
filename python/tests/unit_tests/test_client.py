@@ -5179,3 +5179,126 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
         assert "id" in body
         for field, value in expected_body_fields.items():
             assert body[field] == value
+
+
+# ---------------------------------------------------------------------------
+# Tests: LANGSMITH_FAILED_TRACES_DIR fallback
+# ---------------------------------------------------------------------------
+
+
+_MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}
+class TestWriteTraceToFallbackDir:
+    """Unit tests for Client._write_trace_to_fallback_dir."""
+
+    def test_creates_file_with_correct_envelope(self, tmp_path):
+        body = b'--boundary\r\nContent-Disposition: form-data; name="post.abc"\r\n\r\n{}\r\n--boundary--\r\n'
+        Client._write_trace_to_fallback_dir(
+            str(tmp_path),
+            body,
+            endpoint="runs/multipart",
+            headers=_MULTIPART_HEADERS,
+        )
+
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1
+        assert files[0].suffix == ".json"
+
+        envelope = json.loads(files[0].read_text())
+        assert envelope["version"] == 1
+        assert envelope["endpoint"] == "runs/multipart"
+        assert envelope["headers"] == _MULTIPART_HEADERS
+        import base64
+        assert base64.b64decode(envelope["body_base64"]) == body
+
+    def test_filename_uses_trace_prefix(self, tmp_path):
+        Client._write_trace_to_fallback_dir(
+            str(tmp_path), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+        )
+
+        filename = list(tmp_path.iterdir())[0].name
+        assert filename.startswith("trace_")
+
+    def test_creates_directory_if_missing(self, tmp_path):
+        nested = tmp_path / "a" / "b" / "c"
+        Client._write_trace_to_fallback_dir(
+            str(nested), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+        )
+
+        assert nested.is_dir()
+        assert len(list(nested.iterdir())) == 1
+
+    def test_multiple_writes_produce_unique_files(self, tmp_path):
+        for _ in range(5):
+            Client._write_trace_to_fallback_dir(
+                str(tmp_path), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+            )
+
+        assert len(list(tmp_path.iterdir())) == 5
+
+    def test_write_error_is_swallowed(self, tmp_path):
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a dir")
+        # Should not raise
+        Client._write_trace_to_fallback_dir(
+            str(blocker / "sub"), b"{}", endpoint="runs/multipart", headers=_MULTIPART_HEADERS
+        )
+
+    def test_zstd_headers_preserved(self, tmp_path):
+        headers = {
+            "Content-Type": "multipart/form-data; boundary=langsmith-boundary",
+            "Content-Encoding": "zstd",
+        }
+        Client._write_trace_to_fallback_dir(
+            str(tmp_path), b"\x28\xb5\x2f\xfd", endpoint="runs/multipart", headers=headers
+        )
+
+        envelope = json.loads(list(tmp_path.iterdir())[0].read_text())
+        assert envelope["headers"]["Content-Encoding"] == "zstd"
+
+    def test_fifo_eviction_removes_oldest_when_over_limit(self, tmp_path):
+        # Each envelope is ~252 bytes on disk.  A budget of 600 bytes allows 2
+        # files (504 bytes) but not 3 (756 bytes), so the 3rd write evicts the
+        # oldest and we end up with exactly 2 files (the 2 newest).
+        body = b"x" * 80
+        for _ in range(3):
+            Client._write_trace_to_fallback_dir(
+                str(tmp_path), body, endpoint="runs/multipart", headers=_MULTIPART_HEADERS,
+                max_bytes=600,
+            )
+
+        files = sorted(tmp_path.iterdir())
+        # Only the 2 newest files should remain.
+        assert len(files) == 2
+
+    def test_no_eviction_when_under_limit(self, tmp_path):
+        body = b"x" * 10
+        for _ in range(5):
+            Client._write_trace_to_fallback_dir(
+                str(tmp_path), body, endpoint="runs/multipart", headers=_MULTIPART_HEADERS,
+                max_bytes=10 * 1024 * 1024,  # 10 MB — well above 5 tiny files
+            )
+
+        assert len(list(tmp_path.iterdir())) == 5
+
+    def test_env_var_sets_failed_traces_dir(self, tmp_path, monkeypatch):
+        _clear_env_cache()
+        monkeypatch.setenv("LANGSMITH_FAILED_TRACES_DIR", str(tmp_path))
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            auto_batch_tracing=False,
+        )
+        assert client._failed_traces_dir == str(tmp_path)
+        _clear_env_cache()
+
+    def test_env_var_not_set_leaves_dir_none(self, monkeypatch):
+        _clear_env_cache()
+        monkeypatch.delenv("LANGSMITH_FAILED_TRACES_DIR", raising=False)
+        monkeypatch.delenv("LANGCHAIN_FAILED_TRACES_DIR", raising=False)
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            auto_batch_tracing=False,
+        )
+        assert client._failed_traces_dir is None
+        _clear_env_cache()

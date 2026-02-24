@@ -769,6 +769,28 @@ export class Client implements LangSmithTracingClientInterface {
   private _runCompressionDisabled =
     getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
 
+  private failedTracesDir: string | undefined = (() => {
+    const dir = getLangSmithEnvironmentVariable("FAILED_TRACES_DIR");
+    if (!dir) return undefined;
+    const env = getEnv();
+    if (env !== "node" && env !== "bun" && env !== "deno") {
+      console.warn(
+        `LANGSMITH_FAILED_TRACES_DIR is set but file system access is not ` +
+          `available in this environment (${env}). Failed trace data will not be written to disk.`
+      );
+      return undefined;
+    }
+    return dir;
+  })();
+
+  private failedTracesMaxBytes: number = (() => {
+    const mb = getLangSmithEnvironmentVariable("FAILED_TRACES_MAX_MB");
+    const n = mb ? Number(mb) : NaN;
+    return Number.isFinite(n) && n > 0 ? n * 1024 * 1024 : 100 * 1024 * 1024;
+  })();
+
+  private static _fallbackDirsCreated = new Set<string>();
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -1212,6 +1234,95 @@ export class Client implements LangSmithTracingClientInterface {
       promises.push(allBatchesPromise);
     }
     return Promise.all(promises);
+  }
+
+  /**
+   * Persist a failed trace payload to a local fallback directory.
+   *
+   * Saves a self-contained JSON file containing the endpoint path, the HTTP
+   * headers required for replay, and the base64-encoded request body.
+   * Can be replayed later with `langsmith traces replay` or a simple POST:
+   *
+   *   POST /<endpoint>
+   *   Content-Type: <value from saved headers>
+   *   [Content-Encoding: <value from saved headers>]
+   *   <decoded body>
+   *
+   * Only operates in Node/Bun/Deno — silently skips in browser/webworker
+   * environments where the file system is not accessible.
+   */
+  private static async _writeTraceToFallbackDir(
+    directory: string,
+    body: ArrayBuffer | string,
+    replayHeaders: Record<string, string>,
+    endpoint: string,
+    maxBytes?: number
+  ): Promise<void> {
+    try {
+      // Dynamic import keeps browser/edge bundles free of Node built-ins.
+      // (failedTracesDir is cleared at construction time for non-fs environments,
+      // so this method is only ever reached in node/bun/deno.)
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const bodyBuffer =
+        typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body);
+      const envelope = JSON.stringify({
+        version: 1,
+        endpoint,
+        headers: replayHeaders,
+        body_base64: bodyBuffer.toString("base64"),
+      });
+      const { randomUUID } = await import("node:crypto");
+      const filename = `trace_${Date.now()}_${randomUUID().slice(0, 8)}.json`;
+      const filepath = path.join(directory, filename);
+      if (!Client._fallbackDirsCreated.has(directory)) {
+        await fs.mkdir(directory, { recursive: true });
+        Client._fallbackDirsCreated.add(directory);
+      }
+      await fs.writeFile(filepath, envelope, { encoding: "utf8", mode: 0o600 }); // owner-only: payload may contain sensitive data
+      console.warn(
+        `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
+      );
+      // FIFO eviction: iterate newest-first, stat only files we keep, skip stat
+      // for files we'll delete, then remove all deletions in parallel.
+      if (maxBytes !== undefined && maxBytes > 0) {
+        try {
+          const entries = await fs.readdir(directory);
+          const traceFiles = entries
+            .filter((f) => f.startsWith("trace_") && f.endsWith(".json"))
+            .sort()
+            .reverse(); // newest first
+          let kept = 0;
+          let budgetFull = false;
+          const toDelete: string[] = [];
+          for (const name of traceFiles) {
+            if (budgetFull) {
+              toDelete.push(name);
+            } else {
+              const { size } = await fs.stat(path.join(directory, name));
+              if (kept + size <= maxBytes) {
+                kept += size;
+              } else {
+                budgetFull = true;
+                toDelete.push(name);
+              }
+            }
+          }
+          await Promise.all(
+            toDelete.map((name) =>
+              fs.unlink(path.join(directory, name)).catch(() => {})
+            )
+          );
+        } catch {
+          // eviction errors must never surface to the caller
+        }
+      }
+    } catch (writeErr) {
+      console.error(
+        `LangSmith tracing error: could not write trace to fallback dir ${directory}:`,
+        writeErr
+      );
+    }
   }
 
   private async _processBatch(
@@ -1979,6 +2090,20 @@ export class Client implements LangSmithTracingClientInterface {
         throw e;
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
+      if (this.failedTracesDir) {
+        const bodyBuffer = await this._createNodeFetchBody(parts, boundary).catch(
+          () => null
+        );
+        if (bodyBuffer) {
+          await Client._writeTraceToFallbackDir(
+            this.failedTracesDir,
+            bodyBuffer,
+            { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+            "runs/multipart",
+            this.failedTracesMaxBytes
+          );
+        }
+      }
     }
   }
 
