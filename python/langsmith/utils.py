@@ -86,6 +86,27 @@ class LangSmithExceptionGroup(LangSmithError):
         self.exceptions = exceptions
 
 
+def get_invalid_prompt_identifier_msg(identifier: str) -> str:
+    """Get the error message for an invalid prompt identifier.
+
+    Used consistently across the codebase when parsing prompt identifiers fails.
+
+    Args:
+        identifier: The invalid identifier that was provided.
+
+    Returns:
+        A formatted error message explaining the valid formats.
+    """
+    return (
+        f'Invalid prompt identifier format: "{identifier}". '
+        f"Expected one of:\n"
+        f'  - "prompt-name" (for private prompts)\n'
+        f'  - "owner/prompt-name" (for prompts with explicit owner)\n'
+        f'  - "prompt-name:commit-hash" (with commit reference)\n'
+        f'  - "owner/prompt-name:commit-hash" (with owner and commit)'
+    )
+
+
 ## Warning classes
 
 
@@ -699,7 +720,7 @@ def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
         or identifier.startswith("/")
         or identifier.endswith("/")
     ):
-        raise ValueError(f"Invalid identifier format: {identifier}")
+        raise ValueError(get_invalid_prompt_identifier_msg(identifier))
 
     parts = identifier.split(":", 1)
     owner_name = parts[0]
@@ -708,11 +729,11 @@ def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
     if "/" in owner_name:
         owner, name = owner_name.split("/", 1)
         if not owner or not name:
-            raise ValueError(f"Invalid identifier format: {identifier}")
+            raise ValueError(get_invalid_prompt_identifier_msg(identifier))
         return owner, name, commit
     else:
         if not owner_name:
-            raise ValueError(f"Invalid identifier format: {identifier}")
+            raise ValueError(get_invalid_prompt_identifier_msg(identifier))
         return "-", owner_name, commit
 
 

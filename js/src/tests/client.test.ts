@@ -253,7 +253,7 @@ describe("Client", () => {
 
       invalidIdentifiers.forEach((identifier) => {
         expect(() => parsePromptIdentifier(identifier)).toThrowError(
-          `Invalid identifier format: ${identifier}`
+          /Invalid prompt identifier format/
         );
       });
     });
