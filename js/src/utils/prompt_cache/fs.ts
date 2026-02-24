@@ -1,12 +1,19 @@
 /**
  * File system operations for prompt cache (Node.js version).
  *
- * This file is swapped with prompts_cache_fs.browser.ts for browser builds
+ * This file is swapped with fs.browser.ts for browser builds
  * via the package.json browser field.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
+import {
+  path,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  renameSync,
+  unlinkSync,
+  readFileSync,
+} from "../fs.js";
 
 /**
  * Dump cache entries to a JSON file.
@@ -16,8 +23,8 @@ export function dumpCache(
   entries: Record<string, unknown>
 ): void {
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir);
   }
 
   const data = { entries };
@@ -25,12 +32,12 @@ export function dumpCache(
   // Atomic write: write to temp file then rename
   const tempPath = `${filePath}.tmp`;
   try {
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2));
-    fs.renameSync(tempPath, filePath);
+    writeFileSync(tempPath, JSON.stringify(data, null, 2));
+    renameSync(tempPath, filePath);
   } catch (e) {
     // Clean up temp file on failure
-    if (fs.existsSync(tempPath)) {
-      fs.unlinkSync(tempPath);
+    if (existsSync(tempPath)) {
+      unlinkSync(tempPath);
     }
     throw e;
   }
@@ -42,12 +49,12 @@ export function dumpCache(
  * @returns The entries object, or null if file doesn't exist or is invalid.
  */
 export function loadCache(filePath: string): Record<string, unknown> | null {
-  if (!fs.existsSync(filePath)) {
+  if (!existsSync(filePath)) {
     return null;
   }
 
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
+    const content = readFileSync(filePath);
     const data = JSON.parse(content);
     return data.entries ?? null;
   } catch {

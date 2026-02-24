@@ -77,7 +77,7 @@ import {
   PromptCache,
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
-import * as traceDumpFs from "./utils/trace_dump/fs.js";
+import * as fsUtils from "./utils/fs.js";
 import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
@@ -770,25 +770,9 @@ export class Client implements LangSmithTracingClientInterface {
   private _runCompressionDisabled =
     getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
 
-  private failedTracesDir: string | undefined = (() => {
-    const dir = getLangSmithEnvironmentVariable("FAILED_TRACES_DIR");
-    if (!dir) return undefined;
-    const env = getEnv();
-    if (env !== "node" && env !== "bun" && env !== "deno") {
-      console.warn(
-        `LANGSMITH_FAILED_TRACES_DIR is set but file system access is not ` +
-          `available in this environment (${env}). Failed trace data will not be written to disk.`
-      );
-      return undefined;
-    }
-    return dir;
-  })();
+  private failedTracesDir: string | undefined;
 
-  private failedTracesMaxBytes: number = (() => {
-    const mb = getLangSmithEnvironmentVariable("FAILED_TRACES_MAX_MB");
-    const n = mb ? Number(mb) : NaN;
-    return Number.isFinite(n) && n > 0 ? n * 1024 * 1024 : 100 * 1024 * 1024;
-  })();
+  private failedTracesMaxBytes: number = 100 * 1024 * 1024;
 
   private static _fallbackDirsCreated = new Set<string>();
 
@@ -824,6 +808,19 @@ export class Client implements LangSmithTracingClientInterface {
     }
     this.debug = config.debug ?? this.debug;
     this.fetchImplementation = config.fetchImplementation;
+
+    // Failed trace dump configuration
+    this.failedTracesDir =
+      getLangSmithEnvironmentVariable("FAILED_TRACES_DIR") || undefined;
+    const failedTracesMb = getLangSmithEnvironmentVariable(
+      "FAILED_TRACES_MAX_MB"
+    );
+    if (failedTracesMb) {
+      const n = Number(failedTracesMb);
+      if (Number.isFinite(n) && n > 0) {
+        this.failedTracesMaxBytes = n * 1024 * 1024;
+      }
+    }
 
     // Use maxIngestMemoryBytes for both queues
     const maxMemory = config.maxIngestMemoryBytes ?? DEFAULT_MAX_SIZE_BYTES;
@@ -1267,25 +1264,23 @@ export class Client implements LangSmithTracingClientInterface {
         headers: replayHeaders,
         body_base64: bodyBuffer.toString("base64"),
       });
-      const filename = `trace_${Date.now()}_${traceDumpFs
-        .randomUUID()
-        .slice(0, 8)}.json`;
-      const filepath = traceDumpFs.path.join(directory, filename);
+      const filename = `trace_${Date.now()}_${uuid.v4().slice(0, 8)}.json`;
+      const filepath = fsUtils.path.join(directory, filename);
       if (!Client._fallbackDirsCreated.has(directory)) {
-        await traceDumpFs.mkdir(directory);
+        await fsUtils.mkdir(directory);
         Client._fallbackDirsCreated.add(directory);
       }
       // Check budget before writing — drop new traces if over limit.
       if (maxBytes !== undefined && maxBytes > 0) {
         try {
-          const entries = await traceDumpFs.readdir(directory);
+          const entries = await fsUtils.readdir(directory);
           const traceFiles = entries.filter(
             (f) => f.startsWith("trace_") && f.endsWith(".json")
           );
           let total = 0;
           for (const name of traceFiles) {
-            const { size } = await traceDumpFs.stat(
-              traceDumpFs.path.join(directory, name)
+            const { size } = await fsUtils.stat(
+              fsUtils.path.join(directory, name)
             );
             total += size;
           }
@@ -1301,7 +1296,7 @@ export class Client implements LangSmithTracingClientInterface {
           // budget check errors must never prevent writing
         }
       }
-      await traceDumpFs.writeFileAtomic(filepath, envelope);
+      await fsUtils.writeFileAtomic(filepath, envelope);
       console.warn(
         `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
       );
