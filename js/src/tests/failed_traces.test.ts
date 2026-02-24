@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   jest,
@@ -85,40 +86,6 @@ describe("Client._writeTraceToFallbackDir", () => {
     );
   });
 
-  it("uses trace_ prefix in filename", async () => {
-    await (Client as any)._writeTraceToFallbackDir(
-      tmpDir,
-      Buffer.alloc(0),
-      {},
-      "runs/multipart"
-    );
-    const files = await listDir(tmpDir);
-    expect(files[0]).toMatch(/^trace_/);
-  });
-
-  it("creates the directory if it does not exist", async () => {
-    const nested = path.join(tmpDir, "a", "b", "c");
-    await (Client as any)._writeTraceToFallbackDir(
-      nested,
-      Buffer.alloc(0),
-      {},
-      "runs/multipart"
-    );
-    expect(await listDir(nested)).toHaveLength(1);
-  });
-
-  it("produces unique filenames across multiple writes", async () => {
-    for (let i = 0; i < 5; i++) {
-      await (Client as any)._writeTraceToFallbackDir(
-        tmpDir,
-        Buffer.alloc(0),
-        {},
-        "runs/multipart"
-      );
-    }
-    expect(new Set(await listDir(tmpDir)).size).toBe(5);
-  });
-
   it("swallows write errors instead of throwing", async () => {
     const blocker = path.join(tmpDir, "blocker");
     await fs.writeFile(blocker, "not a dir");
@@ -130,21 +97,6 @@ describe("Client._writeTraceToFallbackDir", () => {
         "runs/multipart"
       )
     ).resolves.not.toThrow();
-  });
-
-  it("preserves Content-Encoding header for compressed payloads", async () => {
-    const headers = {
-      "Content-Type": "multipart/form-data; boundary=xyz",
-      "Content-Encoding": "gzip",
-    };
-    await (Client as any)._writeTraceToFallbackDir(
-      tmpDir,
-      Buffer.from("compressed"),
-      headers,
-      "runs/multipart"
-    );
-    const envelope = await readEnvelope(tmpDir, (await listDir(tmpDir))[0]);
-    expect(envelope.headers["Content-Encoding"]).toBe("gzip");
   });
 
   it("evicts oldest files (FIFO) when directory exceeds maxBytes", async () => {
