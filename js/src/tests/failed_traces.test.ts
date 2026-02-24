@@ -91,9 +91,9 @@ describe("Client._writeTraceToFallbackDir", () => {
     ).resolves.not.toThrow();
   });
 
-  it("evicts oldest files (FIFO) when directory exceeds maxBytes", async () => {
-    // Each envelope is ~149 bytes. Budget of 350 allows 2 (298 bytes) but not
-    // 3 (447 bytes), so the 3rd write evicts the oldest → 2 files remain.
+  it("drops new traces when directory exceeds maxBytes", async () => {
+    // Each envelope is ~149 bytes. Budget of 250 allows the first 2 files
+    // (~298 bytes total exceeds 250), so the 3rd write is dropped.
     const body = Buffer.from("x".repeat(20));
     const headers = { "Content-Type": "multipart/form-data; boundary=abc" };
     for (let i = 0; i < 3; i++) {
@@ -102,12 +102,11 @@ describe("Client._writeTraceToFallbackDir", () => {
         body,
         headers,
         "runs/multipart",
-        350
+        250
       );
     }
     const files = await listDir(tmpDir);
-    expect(files.length).toBeLessThan(3);
-    expect(files.length).toBeGreaterThan(0);
+    expect(files).toHaveLength(2);
   });
 });
 

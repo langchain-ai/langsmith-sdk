@@ -1242,7 +1242,7 @@ export class Client implements LangSmithTracingClientInterface {
    *
    * Saves a self-contained JSON file containing the endpoint path, the HTTP
    * headers required for replay, and the base64-encoded request body.
-   * Can be replayed later with `langsmith traces replay` or a simple POST:
+   * Can be replayed later with a simple POST:
    *
    *   POST /<endpoint>
    *   Content-Type: <value from saved headers>
@@ -1275,48 +1275,36 @@ export class Client implements LangSmithTracingClientInterface {
         await traceDumpFs.mkdir(directory);
         Client._fallbackDirsCreated.add(directory);
       }
+      // Check budget before writing — drop new traces if over limit.
+      if (maxBytes !== undefined && maxBytes > 0) {
+        try {
+          const entries = await traceDumpFs.readdir(directory);
+          const traceFiles = entries.filter(
+            (f) => f.startsWith("trace_") && f.endsWith(".json")
+          );
+          let total = 0;
+          for (const name of traceFiles) {
+            const { size } = await traceDumpFs.stat(
+              traceDumpFs.path.join(directory, name)
+            );
+            total += size;
+          }
+          if (total >= maxBytes) {
+            console.warn(
+              `Could not write trace to fallback dir ${directory} as it's ` +
+                `already over size limit (${total} bytes >= ${maxBytes} bytes). ` +
+                `Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.`
+            );
+            return;
+          }
+        } catch {
+          // budget check errors must never prevent writing
+        }
+      }
       await traceDumpFs.writeFileAtomic(filepath, envelope);
       console.warn(
         `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
       );
-      // FIFO eviction: iterate newest-first, stat only files we keep, skip stat
-      // for files we'll delete, then remove all deletions in parallel.
-      if (maxBytes !== undefined && maxBytes > 0) {
-        try {
-          const entries = await traceDumpFs.readdir(directory);
-          const traceFiles = entries
-            .filter((f) => f.startsWith("trace_") && f.endsWith(".json"))
-            .sort()
-            .reverse(); // newest first
-          let kept = 0;
-          let budgetFull = false;
-          const toDelete: string[] = [];
-          for (const name of traceFiles) {
-            if (budgetFull) {
-              toDelete.push(name);
-            } else {
-              const { size } = await traceDumpFs.stat(
-                traceDumpFs.path.join(directory, name)
-              );
-              if (kept + size <= maxBytes) {
-                kept += size;
-              } else {
-                budgetFull = true;
-                toDelete.push(name);
-              }
-            }
-          }
-          await Promise.all(
-            toDelete.map((name) =>
-              traceDumpFs
-                .unlink(traceDumpFs.path.join(directory, name))
-                .catch(() => {})
-            )
-          );
-        } catch {
-          // eviction errors must never surface to the caller
-        }
-      }
     } catch (writeErr) {
       console.error(
         `LangSmith tracing error: could not write trace to fallback dir ${directory}:`,

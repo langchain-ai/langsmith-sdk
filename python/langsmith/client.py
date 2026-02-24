@@ -1168,6 +1168,11 @@ class Client:
                 int(_max_mb * 1024 * 1024) if _max_mb > 0 else 100 * 1024 * 1024
             )
         except (ValueError, OverflowError):
+            logger.warning(
+                "Invalid value for LANGSMITH_FAILED_TRACES_MAX_MB: %r, "
+                "using default 100 MB",
+                _max_mb_str,
+            )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
     def _dump_failed_trace(
@@ -1209,15 +1214,15 @@ class Client:
 
         Saves a self-contained JSON file with the endpoint, the HTTP headers
         required for replay, and the base64-encoded request body.  Can be
-        replayed later with ``langsmith traces replay`` or a simple POST:
+        replayed later with a simple POST:
 
             POST /<endpoint>
             Content-Type: <value from saved headers>
             [Content-Encoding: <value from saved headers>]
             <decoded body>
 
-        If *max_bytes* is set, the oldest trace files are deleted (FIFO) after
-        writing so the directory stays within the budget.
+        If *max_bytes* is set, new traces are dropped when the directory is
+        already at or over the budget.
         """
         envelope = {
             "version": 1,
@@ -1231,6 +1236,24 @@ class Client:
             if directory not in _fallback_dirs_created:
                 filepath.parent.mkdir(parents=True, exist_ok=True)
                 _fallback_dirs_created.add(directory)
+            if max_bytes is not None and max_bytes > 0:
+                # Check budget before writing — drop new traces if over limit.
+                dir_path = Path(directory)
+                total = sum(
+                    f.stat().st_size
+                    for f in dir_path.glob("trace_*.json")
+                    if f.is_file()
+                )
+                if total >= max_bytes:
+                    logger.warning(
+                        "Could not write trace to fallback dir %s as it's "
+                        "already over size limit (%d bytes >= %d bytes). "
+                        "Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.",
+                        directory,
+                        total,
+                        max_bytes,
+                    )
+                    return
             temp_path = filepath.with_suffix(".tmp")
             temp_path.write_text(json.dumps(envelope))
             temp_path.chmod(0o600)  # owner-only: payload may contain sensitive data
@@ -1239,33 +1262,6 @@ class Client:
                 "LangSmith trace upload failed; data saved to %s for later replay.",
                 filepath,
             )
-            if max_bytes is not None and max_bytes > 0:
-                # Evict oldest trace files to stay within budget.
-                # Iterate newest-first: stat only the files we keep, skip stat for
-                # files we'll delete (saves a syscall per deleted file in large dirs).
-                dir_path = Path(directory)
-                files_newest_first = sorted(dir_path.glob("trace_*.json"), reverse=True)
-                kept = 0
-                budget_full = False
-                to_delete: list[Path] = []
-                for f in files_newest_first:
-                    if budget_full:
-                        to_delete.append(f)
-                    else:
-                        try:
-                            size = f.stat().st_size
-                        except Exception:
-                            continue
-                        if kept + size <= max_bytes:
-                            kept += size
-                        else:
-                            budget_full = True
-                            to_delete.append(f)
-                for f in to_delete:
-                    try:
-                        f.unlink()
-                    except Exception:
-                        pass
         except Exception as write_exc:
             logger.error(
                 "LangSmith tracing error: could not write trace to fallback dir %s: %s",
@@ -3017,19 +3013,7 @@ class Client:
                 ) as exc:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
-                        self._dump_failed_trace(
-                            lambda: (
-                                data
-                                if isinstance(data, bytes)
-                                else rqtb_multipart.MultipartEncoder(
-                                    parts, boundary=_BOUNDARY
-                                ).to_string()
-                            ),
-                            {
-                                "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"
-                            },
-                        )
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
                         continue
                 except Exception as e:
@@ -3039,19 +3023,20 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
-                    self._dump_failed_trace(
-                        lambda: (
-                            data
-                            if isinstance(data, bytes)
-                            else rqtb_multipart.MultipartEncoder(
-                                parts, boundary=_BOUNDARY
-                            ).to_string()
-                        ),
-                        {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
-                    )
-                    self._invoke_tracing_error_callback(e)
-                    # do not retry by default
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                self._dump_failed_trace(
+                    lambda: (
+                        data
+                        if isinstance(data, bytes)
+                        else rqtb_multipart.MultipartEncoder(
+                            parts, boundary=_BOUNDARY
+                        ).to_string()
+                    ),
+                    {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def _send_compressed_multipart_req(
         self,
@@ -3110,15 +3095,7 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {exc}"
                         )
-                        data_stream.seek(0)
-                        self._dump_failed_trace(
-                            data_stream.read,
-                            {
-                                "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-                                "Content-Encoding": "zstd",
-                            },
-                        )
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
                         data_stream.seek(0)
                         continue
@@ -3133,17 +3110,18 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
-                    data_stream.seek(0)
-                    self._dump_failed_trace(
-                        data_stream.read,
-                        {
-                            "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-                            "Content-Encoding": "zstd",
-                        },
-                    )
-                    self._invoke_tracing_error_callback(e)
-                    # Do not retry by default after unknown exceptions
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                data_stream.seek(0)
+                self._dump_failed_trace(
+                    data_stream.read,
+                    {
+                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+                        "Content-Encoding": "zstd",
+                    },
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def update_run(
         self,

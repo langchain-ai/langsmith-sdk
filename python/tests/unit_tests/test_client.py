@@ -5217,10 +5217,10 @@ class TestWriteTraceToFallbackDir:
             headers=_MULTIPART_HEADERS,
         )
 
-    def test_fifo_eviction_removes_oldest_when_over_limit(self, tmp_path):
-        # Each envelope is ~252 bytes on disk.  A budget of 600 bytes allows 2
-        # files (504 bytes) but not 3 (756 bytes), so the 3rd write evicts the
-        # oldest and we end up with exactly 2 files (the 2 newest).
+    def test_drops_new_traces_when_over_limit(self, tmp_path):
+        # Each envelope is ~252 bytes on disk.  A budget of 400 bytes allows
+        # the first 2 files (~504 bytes total exceeds 400), so the 3rd write
+        # is dropped because the directory is already over the limit.
         body = b"x" * 80
         for _ in range(3):
             Client._write_trace_to_fallback_dir(
@@ -5228,11 +5228,11 @@ class TestWriteTraceToFallbackDir:
                 body,
                 endpoint="runs/multipart",
                 headers=_MULTIPART_HEADERS,
-                max_bytes=600,
+                max_bytes=400,
             )
 
         files = sorted(tmp_path.iterdir())
-        # Only the 2 newest files should remain.
+        # Only the first 2 files should exist; the 3rd was dropped.
         assert len(files) == 2
 
     def test_multipart_failure_writes_envelope(self, tmp_path, monkeypatch):
