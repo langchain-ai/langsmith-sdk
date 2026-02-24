@@ -77,6 +77,7 @@ import {
   PromptCache,
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
+import * as traceDumpFs from "./utils/trace_dump/fs.js";
 import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
@@ -1256,15 +1257,6 @@ export class Client implements LangSmithTracingClientInterface {
     maxBytes?: number
   ): Promise<void> {
     try {
-      // Dynamic import keeps browser/edge bundles free of Node built-ins.
-      // (failedTracesDir is cleared at construction time for non-fs environments,
-      // so this method is only ever reached in node/bun/deno.)
-      // String indirection prevents webpack/metro from statically resolving these.
-      const _fsModule = "node:fs/promises";
-      const _pathModule = "node:path";
-      const _cryptoModule = "node:crypto";
-      const fs = await import(/* webpackIgnore: true */ _fsModule);
-      const path = await import(/* webpackIgnore: true */ _pathModule);
       const bodyBuffer =
         typeof body === "string"
           ? Buffer.from(body, "utf8")
@@ -1275,18 +1267,15 @@ export class Client implements LangSmithTracingClientInterface {
         headers: replayHeaders,
         body_base64: bodyBuffer.toString("base64"),
       });
-      const { randomUUID } = await import(
-        /* webpackIgnore: true */ _cryptoModule
-      );
-      const filename = `trace_${Date.now()}_${randomUUID().slice(0, 8)}.json`;
-      const filepath = path.join(directory, filename);
+      const filename = `trace_${Date.now()}_${traceDumpFs
+        .randomUUID()
+        .slice(0, 8)}.json`;
+      const filepath = traceDumpFs.path.join(directory, filename);
       if (!Client._fallbackDirsCreated.has(directory)) {
-        await fs.mkdir(directory, { recursive: true });
+        await traceDumpFs.mkdir(directory);
         Client._fallbackDirsCreated.add(directory);
       }
-      const tempPath = filepath + ".tmp";
-      await fs.writeFile(tempPath, envelope, { encoding: "utf8", mode: 0o600 }); // owner-only: payload may contain sensitive data
-      await fs.rename(tempPath, filepath);
+      await traceDumpFs.writeFileAtomic(filepath, envelope);
       console.warn(
         `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
       );
@@ -1294,11 +1283,9 @@ export class Client implements LangSmithTracingClientInterface {
       // for files we'll delete, then remove all deletions in parallel.
       if (maxBytes !== undefined && maxBytes > 0) {
         try {
-          const entries = await fs.readdir(directory);
+          const entries = await traceDumpFs.readdir(directory);
           const traceFiles = entries
-            .filter(
-              (f: string) => f.startsWith("trace_") && f.endsWith(".json")
-            )
+            .filter((f) => f.startsWith("trace_") && f.endsWith(".json"))
             .sort()
             .reverse(); // newest first
           let kept = 0;
@@ -1308,7 +1295,9 @@ export class Client implements LangSmithTracingClientInterface {
             if (budgetFull) {
               toDelete.push(name);
             } else {
-              const { size } = await fs.stat(path.join(directory, name));
+              const { size } = await traceDumpFs.stat(
+                traceDumpFs.path.join(directory, name)
+              );
               if (kept + size <= maxBytes) {
                 kept += size;
               } else {
@@ -1319,7 +1308,9 @@ export class Client implements LangSmithTracingClientInterface {
           }
           await Promise.all(
             toDelete.map((name) =>
-              fs.unlink(path.join(directory, name)).catch(() => {})
+              traceDumpFs
+                .unlink(traceDumpFs.path.join(directory, name))
+                .catch(() => {})
             )
           );
         } catch {

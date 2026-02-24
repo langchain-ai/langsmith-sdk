@@ -449,6 +449,7 @@
     "rimraf/**/glob": "10.5.0"
   },
   "browser": {
-    "./dist/utils/prompt_cache/fs.js": "./dist/utils/prompt_cache/fs.browser.js"
+    "./dist/utils/prompt_cache/fs.js": "./dist/utils/prompt_cache/fs.browser.js",
+    "./dist/utils/trace_dump/fs.js": "./dist/utils/trace_dump/fs.browser.js"
   }
 }
