@@ -945,6 +945,14 @@ def _create_test_case(
             func, inputs, test_suite.id
         )
         example_id = example_id or legacy_example_id
+    # Ensure example_id is always generated during test case creation.
+    # This allows reference_example_id to be available in tracing context
+    # metadata for use cases like passing to subprocess traces.
+    if not example_id:
+        example_id = _get_example_id(
+            dataset_id=str(test_suite.id),
+            inputs=inputs or {},
+        )
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -1035,6 +1043,7 @@ def _run_test(
         **(current_context["metadata"] or {}),
         **{
             "experiment": test_case.test_suite.experiment.name,
+            "reference_example_id": str(test_case.example_id),
         },
     }
     # Handle cached_hosts parameter
