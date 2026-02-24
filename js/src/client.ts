@@ -5108,13 +5108,14 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public async *listCommits(
-    promptOwnerAndName: string
+    promptIdentifier: string
   ): AsyncIterableIterator<PromptCommit> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     for await (const commits of this._getPaginated<
       PromptCommit,
       ListCommitsResponse
     >(
-      `/commits/${promptOwnerAndName}/`,
+      `/commits/${owner}/${promptName}/`,
       new URLSearchParams(),
       (res) => res.commits
     )) {
