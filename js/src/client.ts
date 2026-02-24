@@ -1262,8 +1262,12 @@ export class Client implements LangSmithTracingClientInterface {
       // Dynamic import keeps browser/edge bundles free of Node built-ins.
       // (failedTracesDir is cleared at construction time for non-fs environments,
       // so this method is only ever reached in node/bun/deno.)
-      const fs = await import("node:fs/promises");
-      const path = await import("node:path");
+      // String indirection prevents webpack/metro from statically resolving these.
+      const _fsModule = "node:fs/promises";
+      const _pathModule = "node:path";
+      const _cryptoModule = "node:crypto";
+      const fs = await import(/* webpackIgnore: true */ _fsModule);
+      const path = await import(/* webpackIgnore: true */ _pathModule);
       const bodyBuffer =
         typeof body === "string"
           ? Buffer.from(body, "utf8")
@@ -1274,7 +1278,9 @@ export class Client implements LangSmithTracingClientInterface {
         headers: replayHeaders,
         body_base64: bodyBuffer.toString("base64"),
       });
-      const { randomUUID } = await import("node:crypto");
+      const { randomUUID } = await import(
+        /* webpackIgnore: true */ _cryptoModule
+      );
       const filename = `trace_${Date.now()}_${randomUUID().slice(0, 8)}.json`;
       const filepath = path.join(directory, filename);
       if (!Client._fallbackDirsCreated.has(directory)) {
@@ -1293,7 +1299,7 @@ export class Client implements LangSmithTracingClientInterface {
         try {
           const entries = await fs.readdir(directory);
           const traceFiles = entries
-            .filter((f) => f.startsWith("trace_") && f.endsWith(".json"))
+            .filter((f: string) => f.startsWith("trace_") && f.endsWith(".json"))
             .sort()
             .reverse(); // newest first
           let kept = 0;
