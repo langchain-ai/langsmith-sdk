@@ -495,6 +495,11 @@ type Thread = {
   last_error: string | null;
 };
 
+/** Item returned by {@link Client.listThreads}. */
+export interface ListThreadsItem extends Thread {
+  runs: Run[];
+}
+
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
   cachedEnvVars?: Record<string, string>,
@@ -2475,7 +2480,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async listThreads(
     props: ListThreadsParams
-  ): Promise<Array<Thread & { runs: Run[] }>> {
+  ): Promise<ListThreadsItem[]> {
     const {
       projectId,
       projectName,
@@ -2552,7 +2557,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
 
-    const result: Array<Thread & { runs: Run[] }> = [];
+    const result: ListThreadsItem[] = [];
     for (const [groupKey, runs] of threadsMap.entries()) {
       runs.sort((a, b) => {
         const aRun = a as unknown as Record<string, unknown>;
@@ -2589,7 +2594,7 @@ export class Client implements LangSmithTracingClientInterface {
         first_inputs: "",
         last_outputs: "",
         last_error: null,
-      } as Thread & { runs: Run[] });
+      } as ListThreadsItem);
     }
 
     result.sort((a, b) => {

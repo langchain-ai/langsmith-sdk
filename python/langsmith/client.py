@@ -45,6 +45,7 @@ from typing import (
     Callable,
     Literal,
     Optional,
+    TypedDict,
     Union,
     cast,
 )
@@ -651,6 +652,16 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
             # urllib3 before 2.0 doesn't support blocksize
             pool_kwargs["blocksize"] = self._blocksize
         return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
+class ListThreadsItem(TypedDict):
+    """Item returned by :meth:`Client.list_threads`."""
+
+    group_key: str
+    runs: list[ls_schemas.Run]
+    count: int
+    min_start_time: Optional[str]
+    max_start_time: Optional[str]
 
 
 class Client:
@@ -1606,44 +1617,6 @@ class Client:
             if not cursors.get("next"):
                 break
             params_["cursor"] = cursors["next"]
-
-    def _get_offset_paginated_list_post(
-        self,
-        path: str,
-        *,
-        body: dict[str, Any],
-        data_key: str = "groups",
-        page_size: int = 100,
-        max_items: Optional[int] = None,
-    ) -> Iterator[dict]:
-        """Get an offset-paginated list of items via POST."""
-        request_body = body.copy()
-        current_offset = request_body.get("offset", 0)
-        yielded = 0
-        while True:
-            to_fetch = min(
-                page_size,
-                (max_items - yielded) if max_items is not None else page_size,
-            )
-            if to_fetch < 1:
-                break
-            request_body["offset"] = current_offset
-            request_body["limit"] = to_fetch
-            response = self.request_with_retries(
-                "POST",
-                path,
-                request_kwargs={"data": _dumps_json(request_body)},
-            )
-            data = response.json()
-            items = data.get(data_key) or []
-            for item in items:
-                yield item
-                yielded += 1
-                if max_items is not None and yielded >= max_items:
-                    return
-            if len(items) < to_fetch:
-                break
-            current_offset += len(items)
 
     def upload_dataframe(
         self,
@@ -3752,7 +3725,7 @@ class Client:
         offset: int = 0,
         filter: Optional[str] = None,
         start_time: Optional[datetime.datetime] = None,
-    ) -> list[dict]:
+    ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
 
         Args:
@@ -3764,7 +3737,8 @@ class Client:
             start_time: Only include runs from this time. Default: 1 day ago.
 
         Returns:
-            List of thread dicts, each with "runs" (list of Run objects) and group metadata.
+            List of thread items, each with "group_key", "runs", "count",
+            "min_start_time", and "max_start_time".
         """
         if project_id is None and project_name is None:
             raise ValueError("Either project_id or project_name must be provided")
@@ -3826,7 +3800,7 @@ class Client:
             if tid:
                 threads_map[tid].append(run_dict)
 
-        result: list[dict] = []
+        result: list[ListThreadsItem] = []
         for group_key, run_dicts in threads_map.items():
             run_dicts.sort(
                 key=lambda r: (
