@@ -32,4 +32,4 @@ export {
 } from "./utils/prompt_cache/index.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.5.6";
+export const __version__ = "0.5.7";
