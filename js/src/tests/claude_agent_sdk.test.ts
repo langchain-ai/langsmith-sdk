@@ -349,6 +349,11 @@ describe("wrapClaudeAgentSDK", () => {
       data: {
         "claude.conversation:2": {
           run_type: "chain",
+          extra: {
+            metadata: {
+              ls_integration: "claude-agent-sdk",
+            },
+          },
           inputs: {
             messages: [
               { content: "Hello", role: "user" },
