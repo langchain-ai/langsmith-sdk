@@ -162,7 +162,13 @@ function wrapClaudeAgentQuery<
       name: "claude.conversation",
       run_type: "chain",
       ...baseConfig,
-      metadata: { ls_integration: "claude-agent-sdk", ls_integration_version: _getPackageVersion("@anthropic-ai/claude-agent-sdk"), ...baseConfig?.metadata },
+      metadata: {
+        ls_integration: "claude-agent-sdk",
+        ls_integration_version: _getPackageVersion(
+          "@anthropic-ai/claude-agent-sdk"
+        ),
+        ...baseConfig?.metadata,
+      },
       __deferredSerializableArgOptions: { maxDepth: 1 },
       processInputs,
       processOutputs,

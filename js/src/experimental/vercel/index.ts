@@ -663,7 +663,11 @@ const wrapAISDK = <
 ) => {
   const _baseLsConfig: WrapAISDKConfig = {
     ...baseLsConfig,
-    metadata: { ls_integration: "vercel-ai-sdk", ls_integration_version: _getPackageVersion("ai"), ...baseLsConfig?.metadata },
+    metadata: {
+      ls_integration: "vercel-ai-sdk",
+      ls_integration_version: _getPackageVersion("ai"),
+      ...baseLsConfig?.metadata,
+    },
   };
   /**
    * Wrapped version of AI SDK's generateText with LangSmith tracing.
