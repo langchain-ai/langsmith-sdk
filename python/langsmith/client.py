@@ -46,6 +46,7 @@ from typing import (
     Callable,
     Literal,
     Optional,
+    TypedDict,
     Union,
     cast,
 )
@@ -654,6 +655,16 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
             # urllib3 before 2.0 doesn't support blocksize
             pool_kwargs["blocksize"] = self._blocksize
         return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
+class ListThreadsItem(TypedDict):
+    """Item returned by :meth:`Client.list_threads`."""
+
+    thread_id: str
+    runs: list[ls_schemas.Run]
+    count: int
+    min_start_time: Optional[str]
+    max_start_time: Optional[str]
 
 
 class Client:
@@ -3592,6 +3603,62 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    def read_thread(
+        self,
+        *,
+        thread_id: str,
+        project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
+        is_root: bool = True,
+        limit: Optional[int] = None,
+        select: Optional[Sequence[str]] = None,
+        filter: Optional[str] = None,
+        order: Literal["asc", "desc"] = "asc",
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.Run]:
+        """Read runs for a single thread.
+
+        Args:
+            thread_id: Thread id (required).
+            project_id: Project id(s) (required when not using project_name).
+            project_name: Project name(s) (required when not using project_id).
+            is_root: If True, return only root runs. Default True.
+            limit: Maximum number of runs to return.
+            select: Fields to select.
+            filter: Additional filter expression.
+            order: Sort order for runs (e.g. "asc" for chronological). Default "asc".
+            **kwargs: Additional arguments passed to the runs query.
+
+        Yields:
+            Runs in the thread.
+
+        Examples:
+            ```python
+            for run in client.read_thread(
+                thread_id="thread_abc123",
+                project_name="My Project",
+                limit=50,
+            ):
+                print(run.id)
+            ```
+        """
+        if not (project_id or project_name):
+            raise ValueError("thread_id requires project_id or project_name")
+
+        thread_id_escaped = json.dumps(str(thread_id))
+        thread_filter = f"eq(thread_id, {thread_id_escaped})"
+        combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
+        return self.list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            is_root=is_root,
+            limit=limit,
+            select=select,
+            filter=combined_filter,
+            order=order,
+            **kwargs,
+        )
+
     def list_runs(
         self,
         *,
@@ -3785,6 +3852,130 @@ class Client:
             )
             if limit is not None and i + 1 >= limit:
                 break
+
+    def list_threads(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        filter: Optional[str] = None,
+        start_time: Optional[datetime.datetime] = None,
+    ) -> list[ListThreadsItem]:
+        """List threads and fetch the runs for each thread.
+
+        Args:
+            project_id: The project (session) id.
+            project_name: The project name (alternative to project_id).
+            limit: Maximum number of threads to return. Default None (no limit).
+            offset: Pagination offset for threads. Default 0.
+            filter: Optional filter for threads and runs.
+            start_time: Only include runs from this time. Default: 1 day ago.
+
+        Returns:
+            List of thread items, each with "thread_id", "runs", "count",
+            "min_start_time", and "max_start_time".
+        """
+        if project_id is None and project_name is None:
+            raise ValueError("Either project_id or project_name must be provided")
+        if project_id is not None and project_name is not None:
+            raise ValueError("Provide exactly one of project_id or project_name")
+
+        if project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        assert project_id is not None  # one of project_id or project_name was required
+        session_id = str(_as_uuid(project_id, "project_id"))
+
+        if start_time is None:
+            start_time = datetime.datetime.now(
+                datetime.timezone.utc
+            ) - datetime.timedelta(days=1)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=datetime.timezone.utc)
+
+        run_select = [
+            "id",
+            "name",
+            "status",
+            "start_time",
+            "end_time",
+            "thread_id",
+            "trace_id",
+            "run_type",
+            "error",
+            "tags",
+            "session_id",
+            "parent_run_id",
+            "total_tokens",
+            "total_cost",
+            "dotted_order",
+            "reference_example_id",
+            "feedback_stats",
+            "app_path",
+        ]
+        body_query: dict[str, Any] = {
+            "session": [session_id],
+            "is_root": True,
+            "limit": 100,
+            "order": "desc",
+            "select": run_select,
+            "start_time": start_time.isoformat(),
+        }
+        if filter is not None:
+            body_query["filter"] = filter
+        body_query = {k: v for k, v in body_query.items() if v is not None}
+
+        threads_map: dict[str, list[dict]] = collections.defaultdict(list)
+        for run_dict in self._get_cursor_paginated_list("/runs/query", body=body_query):
+            tid = run_dict.get("thread_id")
+            if tid:
+                threads_map[tid].append(run_dict)
+
+        result: list[ListThreadsItem] = []
+        for thread_id, run_dicts in threads_map.items():
+            run_dicts.sort(
+                key=lambda r: (
+                    r.get("start_time") or "",
+                    r.get("dotted_order") or "",
+                )
+            )
+            runs = []
+            for run_dict in run_dicts:
+                attachments = _convert_stored_attachments_to_attachments_dict(
+                    run_dict, attachments_key="s3_urls", api_url=self.api_url
+                )
+                runs.append(
+                    ls_schemas.Run(
+                        attachments=attachments,
+                        **run_dict,
+                        _host_url=self._host_url,
+                    )
+                )
+            start_times: list[str] = [
+                str(r["start_time"])
+                for r in run_dicts
+                if r.get("start_time") is not None
+            ]
+            result.append(
+                {
+                    "thread_id": thread_id,
+                    "runs": runs,
+                    "count": len(runs),
+                    "min_start_time": min(start_times) if start_times else None,
+                    "max_start_time": max(start_times) if start_times else None,
+                }
+            )
+
+        result.sort(
+            key=lambda t: t.get("max_start_time") or "",
+            reverse=True,
+        )
+        if offset > 0:
+            result = result[offset:]
+        if limit is not None:
+            result = result[:limit]
+        return result
 
     def get_run_stats(
         self,

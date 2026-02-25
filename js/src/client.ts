@@ -342,6 +342,26 @@ interface GroupRunsParams {
   offset?: number;
 }
 
+export interface ReadThreadParams {
+  threadId: string;
+  projectId?: string;
+  projectName?: string;
+  isRoot?: boolean;
+  limit?: number;
+  filter?: string;
+  order?: "asc" | "desc";
+}
+
+export interface ListThreadsParams {
+  projectId?: string;
+  projectName?: string;
+  limit?: number;
+  offset?: number;
+  filter?: string;
+  startTime?: Date;
+  isRoot?: boolean;
+}
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -470,11 +490,16 @@ type Thread = {
   latency_p50: number;
   latency_p99: number;
   feedback_stats: any | null;
-  group_key: string;
+  thread_id: string;
   first_inputs: string;
   last_outputs: string;
   last_error: string | null;
 };
+
+/** Item returned by {@link Client.listThreads}. */
+export interface ListThreadsItem extends Thread {
+  runs: Run[];
+}
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
@@ -2530,6 +2555,166 @@ export class Client implements LangSmithTracingClientInterface {
         break;
       }
     }
+  }
+
+  public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    const {
+      threadId,
+      projectId,
+      projectName,
+      isRoot = true,
+      limit,
+      filter: userFilter,
+      order = "asc",
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("threadId requires projectId or projectName");
+    }
+
+    const threadFilter = `eq(thread_id, ${JSON.stringify(threadId)})`;
+    const combinedFilter = userFilter
+      ? `and(${threadFilter}, ${userFilter})`
+      : threadFilter;
+
+    yield* this.listRuns({
+      projectId: projectId ?? undefined,
+      projectName: projectName ?? undefined,
+      isRoot,
+      limit,
+      filter: combinedFilter,
+      order,
+    });
+  }
+
+  public async listThreads(
+    props: ListThreadsParams
+  ): Promise<ListThreadsItem[]> {
+    const {
+      projectId,
+      projectName,
+      limit,
+      offset = 0,
+      filter,
+      startTime,
+      isRoot = true,
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("Either projectId or projectName must be provided");
+    }
+    if (projectId && projectName) {
+      throw new Error("Provide exactly one of projectId or projectName");
+    }
+
+    const sessionId =
+      projectId ?? (await this.readProject({ projectName: projectName! })).id;
+    const startTimeResolved =
+      startTime ?? new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+
+    const runSelect = [
+      "id",
+      "name",
+      "status",
+      "start_time",
+      "end_time",
+      "thread_id",
+      "trace_id",
+      "run_type",
+      "error",
+      "tags",
+      "session_id",
+      "parent_run_id",
+      "total_tokens",
+      "total_cost",
+      "dotted_order",
+      "reference_example_id",
+      "feedback_stats",
+      "app_path",
+      "completion_cost",
+      "completion_tokens",
+      "prompt_cost",
+      "prompt_tokens",
+      "first_token_time",
+    ];
+    const bodyQuery: Record<string, unknown> = {
+      session: [sessionId],
+      is_root: isRoot,
+      limit: 100,
+      order: "desc",
+      select: runSelect,
+      start_time: startTimeResolved.toISOString(),
+    };
+    if (filter != null) {
+      bodyQuery.filter = filter;
+    }
+
+    const threadsMap = new Map<string, Run[]>();
+    for await (const runs of this._getCursorPaginatedList<Run>(
+      "/runs/query",
+      bodyQuery as RecordStringAny
+    )) {
+      for (const run of runs) {
+        const tid = (run as unknown as Record<string, unknown>).thread_id as
+          | string
+          | undefined;
+        if (tid) {
+          const list = threadsMap.get(tid) ?? [];
+          list.push(run);
+          threadsMap.set(tid, list);
+        }
+      }
+    }
+
+    const result: ListThreadsItem[] = [];
+    for (const [threadId, runs] of threadsMap.entries()) {
+      runs.sort((a, b) => {
+        const aRun = a as unknown as Record<string, unknown>;
+        const bRun = b as unknown as Record<string, unknown>;
+        const aStart = (aRun.start_time as string) ?? "";
+        const bStart = (bRun.start_time as string) ?? "";
+        if (aStart !== bStart) return aStart.localeCompare(bStart);
+        const aOrder = (aRun.dotted_order as string) ?? "";
+        const bOrder = (bRun.dotted_order as string) ?? "";
+        return aOrder.localeCompare(bOrder);
+      });
+      const startTimes = runs
+        .map(
+          (r) => (r as unknown as Record<string, unknown>).start_time as string
+        )
+        .filter(Boolean);
+      const sortedTimes = [...startTimes].sort();
+      const minStart = sortedTimes.length ? sortedTimes[0] : "";
+      const maxStart = sortedTimes.length
+        ? sortedTimes[sortedTimes.length - 1]
+        : "";
+      result.push({
+        thread_id: threadId,
+        runs,
+        count: runs.length,
+        filter: "",
+        total_tokens: 0,
+        total_cost: null,
+        min_start_time: minStart,
+        max_start_time: maxStart,
+        latency_p50: 0,
+        latency_p99: 0,
+        feedback_stats: null,
+        first_inputs: "",
+        last_outputs: "",
+        last_error: null,
+      } as ListThreadsItem);
+    }
+
+    result.sort((a, b) => {
+      const aMax = a.max_start_time ?? "";
+      const bMax = b.max_start_time ?? "";
+      return bMax.localeCompare(aMax);
+    });
+    const withOffset = offset > 0 ? result.slice(offset) : result;
+    const withLimit =
+      limit !== undefined ? withOffset.slice(0, limit) : withOffset;
+    return withLimit;
   }
 
   public async getRunStats({

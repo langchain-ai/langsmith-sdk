@@ -22,6 +22,7 @@ import {
   createRunsFactory,
   deleteDataset,
   deleteProject,
+  pollRunsUntilCount,
   toArray,
   waitUntil,
   skipIfTransientError,
@@ -2345,3 +2346,145 @@ test("fetch child runs", async () => {
     await deleteProject(client, projectName);
   }
 });
+
+test("listThreads returns threads grouped by thread_id", async () => {
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 6 },
+  });
+  const projectName = `test-list-threads-${uuidv4().slice(0, 12)}`;
+  if (await client.hasProject({ projectName })) {
+    await deleteProject(client, projectName);
+  }
+  try {
+    const base = uuidv4().slice(0, 8);
+    const threadA = `thread-${base}-a`;
+    const threadB = `thread-${base}-b`;
+    const now = new Date();
+    const threadMeta = (tid: string) => ({
+      metadata: {
+        thread_id: tid,
+        session_id: null,
+        conversation_id: null,
+      },
+    });
+    await client.createRun({
+      name: "run_a1",
+      inputs: { x: 1 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime(),
+      extra: threadMeta(threadA),
+    });
+    await client.createRun({
+      name: "run_a2",
+      inputs: { x: 2 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime() + 1000,
+      extra: threadMeta(threadA),
+    });
+    await client.createRun({
+      name: "run_b1",
+      inputs: { y: 1 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime() + 2000,
+      extra: threadMeta(threadB),
+    });
+    await pollRunsUntilCount(client, projectName, 3, 30_000);
+    const threads = await client.listThreads({
+      projectName,
+      limit: 10,
+    });
+    expect(Array.isArray(threads)).toBe(true);
+    expect(threads.length).toBeGreaterThanOrEqual(2);
+    for (const item of threads) {
+      expect(item).toHaveProperty("thread_id");
+      expect(item).toHaveProperty("runs");
+      expect(item).toHaveProperty("count");
+      expect(item).toHaveProperty("min_start_time");
+      expect(item).toHaveProperty("max_start_time");
+      expect(Array.isArray(item.runs)).toBe(true);
+      expect(item.count).toEqual(item.runs.length);
+    }
+    const threadIds = new Set(threads.map((t) => t.thread_id));
+    expect(threadIds.has(threadA)).toBe(true);
+    expect(threadIds.has(threadB)).toBe(true);
+    const threadAItem = threads.find((t) => t.thread_id === threadA);
+    const threadBItem = threads.find((t) => t.thread_id === threadB);
+    expect(threadAItem).toBeDefined();
+    expect(threadBItem).toBeDefined();
+    expect(threadAItem!.count).toEqual(2);
+    expect(threadBItem!.count).toEqual(1);
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await deleteProject(client, projectName);
+    }
+  }
+}, 60_000);
+
+test("readThread yields runs for a single thread_id", async () => {
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 6 },
+  });
+  const projectName = `test-read-thread-${uuidv4().slice(0, 12)}`;
+  if (await client.hasProject({ projectName })) {
+    await deleteProject(client, projectName);
+  }
+  try {
+    const threadId = `thread-${uuidv4().slice(0, 8)}`;
+    const now = new Date();
+    const meta = {
+      metadata: {
+        thread_id: threadId,
+        session_id: null,
+        conversation_id: null,
+      },
+    };
+    await client.createRun({
+      name: "run_1",
+      inputs: { i: 1 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime(),
+      extra: meta,
+    });
+    await client.createRun({
+      name: "run_2",
+      inputs: { i: 2 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime() + 1000,
+      extra: meta,
+    });
+    await waitUntil(
+      async () => {
+        const runs = await toArray(client.listRuns({ projectName, limit: 1 }));
+        return runs.length > 0;
+      },
+      30_000,
+      2_000
+    );
+    const runs: Run[] = [];
+    for await (const run of client.readThread({
+      threadId,
+      projectName,
+      limit: 10,
+    })) {
+      runs.push(run);
+    }
+    expect(runs.length).toEqual(2);
+    expect(runs.every((r) => r.name === "run_1" || r.name === "run_2")).toBe(
+      true
+    );
+    const names = new Set(runs.map((r) => r.name));
+    expect(names.has("run_1")).toBe(true);
+    expect(names.has("run_2")).toBe(true);
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await deleteProject(client, projectName);
+    }
+  }
+}, 60_000);
