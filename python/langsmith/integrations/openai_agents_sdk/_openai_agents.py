@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from functools import lru_cache
 from typing import Optional
 
 from langsmith import run_trees as rt
@@ -91,6 +92,7 @@ from langsmith import client as ls_client
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=None)
 def _get_package_version(package_name: str) -> str | None:
     try:
         from importlib.metadata import version

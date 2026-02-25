@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, set_tracing_parent, trace
@@ -64,6 +65,7 @@ logger = logging.getLogger(__name__)
 TRACE_CHAIN_NAME = "google_adk.session"
 
 
+@lru_cache(maxsize=None)
 def _get_package_version(package_name: str) -> str | None:
     try:
         from importlib.metadata import version
