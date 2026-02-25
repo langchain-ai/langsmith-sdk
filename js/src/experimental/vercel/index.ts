@@ -1,4 +1,14 @@
+import { createRequire } from "module";
 import type { JSONValue } from "ai";
+
+function _getPackageVersion(packageName: string): string | undefined {
+  try {
+    const req = createRequire(process.cwd() + "/package.json");
+    return (req(`${packageName}/package.json`) as { version?: string }).version;
+  } catch {
+    return undefined;
+  }
+}
 import type {
   LanguageModelV2,
   LanguageModelV2CallOptions,
@@ -651,6 +661,10 @@ const wrapAISDK = <
   ai: T,
   baseLsConfig?: WrapAISDKConfig
 ) => {
+  const _baseLsConfig: WrapAISDKConfig = {
+    ...baseLsConfig,
+    metadata: { ls_integration: "vercel-ai-sdk", ls_integration_version: _getPackageVersion("ai"), ...baseLsConfig?.metadata },
+  };
   /**
    * Wrapped version of AI SDK's generateText with LangSmith tracing.
    *
@@ -676,7 +690,7 @@ const wrapAISDK = <
     const { langsmith: runtimeLsConfig, ...providerOptions } =
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
-      _resolveConfigs(baseLsConfig, runtimeLsConfig);
+      _resolveConfigs(_baseLsConfig, runtimeLsConfig);
     const hasExplicitOutput = "output" in params;
     const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
@@ -743,7 +757,7 @@ const wrapAISDK = <
       const { langsmith: runtimeLsConfig, ...providerOptions } =
         params.providerOptions ?? {};
       const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
-        baseLsConfig,
+        _baseLsConfig,
         runtimeLsConfig
       );
       const traceableFunc = traceable(
@@ -830,7 +844,7 @@ const wrapAISDK = <
     const { langsmith: runtimeLsConfig, ...providerOptions } =
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
-      _resolveConfigs(baseLsConfig, runtimeLsConfig);
+      _resolveConfigs(_baseLsConfig, runtimeLsConfig);
     const hasExplicitOutput = "output" in params;
     const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
@@ -896,7 +910,7 @@ const wrapAISDK = <
       const { langsmith: runtimeLsConfig, ...providerOptions } =
         params.providerOptions ?? {};
       const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
-        baseLsConfig,
+        _baseLsConfig,
         runtimeLsConfig
       );
       const traceableFunc = traceable(
@@ -980,7 +994,7 @@ const wrapAISDK = <
               resolvedLsConfig,
               resolvedChildLLMRunConfig,
               resolvedToolConfig,
-            } = _resolveConfigs(baseLsConfig, runtimeLsConfig);
+            } = _resolveConfigs(_baseLsConfig, runtimeLsConfig);
             let wrappedModel = params.model;
             if (wrappedModel != null) {
               wrappedModel = ai.wrapLanguageModel({
