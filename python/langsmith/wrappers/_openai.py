@@ -630,6 +630,13 @@ def wrap_openai(
 def _process_responses_api_output(response: Any) -> dict:
     if response:
         try:
+            # Unwrap APIResponse from with_raw_response for tracing
+            if hasattr(response, "parse") and callable(response.parse):
+                try:
+                    response = response.parse()
+                except Exception:
+                    pass
+
             output = response.model_dump(exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
                 output["usage_metadata"] = _create_usage_metadata(
