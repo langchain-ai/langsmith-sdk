@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from datetime import datetime, timezone
+from functools import cache
 from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, set_tracing_parent, trace
@@ -62,6 +63,17 @@ def _get_ls_provider() -> str:
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "google_adk.session"
+
+
+@cache
+def _get_package_version(package_name: str) -> str | None:
+    try:
+        from importlib.metadata import version
+
+        return version(package_name)
+    except Exception:
+        return None
+
 
 # Attribute name used to bridge the root run from Runner.run (sync) into the
 # background thread where Runner.run_async executes. Runner.run spins up a
@@ -122,6 +134,8 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
 
     trace_metadata: dict[str, Any] = {
         "ls_provider": _get_ls_provider(),
+        "ls_integration": "google-adk",
+        "ls_integration_version": _get_package_version("google-adk"),
         **(config.get("metadata") or {}),
     }
     if app_name := getattr(instance, "app_name", None):
@@ -189,6 +203,8 @@ async def wrap_runner_run_async(
 
     trace_metadata: dict[str, Any] = {
         "ls_provider": _get_ls_provider(),
+        "ls_integration": "google-adk",
+        "ls_integration_version": _get_package_version("google-adk"),
         **(config.get("metadata") or {}),
     }
     if app_name := getattr(instance, "app_name", None):
