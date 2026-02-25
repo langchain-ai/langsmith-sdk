@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import cache
 from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 TRACE_CHAIN_NAME = "claude.conversation"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _get_package_version(package_name: str) -> str | None:
     try:
         from importlib.metadata import version
