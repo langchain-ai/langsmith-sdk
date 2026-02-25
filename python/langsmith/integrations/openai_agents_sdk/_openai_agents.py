@@ -90,6 +90,15 @@ from langsmith import client as ls_client
 
 logger = logging.getLogger(__name__)
 
+
+def _get_package_version(package_name: str) -> str | None:
+    try:
+        from importlib.metadata import version
+
+        return version(package_name)
+    except Exception:
+        return None
+
 if HAVE_AGENTS:
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
@@ -182,7 +191,13 @@ if HAVE_AGENTS:
                 run_name = "Agent workflow"
 
             # Build metadata
-            run_extra = {"metadata": self._metadata or {}}
+            run_extra = {
+                "metadata": {
+                    **(self._metadata or {}),
+                    "ls_integration": "openai-agents-sdk",
+                    "ls_integration_version": _get_package_version("openai-agents"),
+                }
+            }
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]

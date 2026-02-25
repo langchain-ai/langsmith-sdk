@@ -24,6 +24,15 @@ from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_t
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "claude.conversation"
+
+
+def _get_package_version(package_name: str) -> str | None:
+    try:
+        from importlib.metadata import version
+
+        return version(package_name)
+    except Exception:
+        return None
 LLM_RUN_NAME = "claude.assistant.turn"
 
 
@@ -317,7 +326,10 @@ def instrument_claude_client(original_class: Any) -> Any:
 
             # Capture configuration in inputs and metadata
             trace_inputs: dict[str, Any] = {}
-            trace_metadata = {}
+            trace_metadata: dict[str, Any] = {
+                "ls_integration": "claude-agent-sdk",
+                "ls_integration_version": _get_package_version("claude_agent_sdk"),
+            }
 
             # Track if we need to update input from captured streaming messages
             awaiting_streamed_input = self._streamed_input is not None
