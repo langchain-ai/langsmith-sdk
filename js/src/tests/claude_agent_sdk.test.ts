@@ -352,6 +352,7 @@ describe("wrapClaudeAgentSDK", () => {
           extra: {
             metadata: {
               ls_integration: "claude-agent-sdk",
+              ls_integration_version: expect.any(String),
             },
           },
           inputs: {

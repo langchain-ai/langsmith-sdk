@@ -162,6 +162,9 @@ describe("wrapAISDK", () => {
         "ls_integration",
         "vercel-ai-sdk"
       );
+      expect(generateTextRun.body.extra.metadata).toHaveProperty(
+        "ls_integration_version"
+      );
 
       // The second createRun should be the low-level doGenerate call
       const doGenerateRun = mockHttpRequests[1];
