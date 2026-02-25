@@ -99,6 +99,7 @@ def _get_package_version(package_name: str) -> str | None:
     except Exception:
         return None
 
+
 if HAVE_AGENTS:
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]

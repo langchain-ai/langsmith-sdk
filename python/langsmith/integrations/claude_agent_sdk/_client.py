@@ -33,6 +33,8 @@ def _get_package_version(package_name: str) -> str | None:
         return version(package_name)
     except Exception:
         return None
+
+
 LLM_RUN_NAME = "claude.assistant.turn"
 
 

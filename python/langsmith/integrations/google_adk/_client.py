@@ -72,6 +72,7 @@ def _get_package_version(package_name: str) -> str | None:
     except Exception:
         return None
 
+
 # Attribute name used to bridge the root run from Runner.run (sync) into the
 # background thread where Runner.run_async executes. Runner.run spins up a
 # new thread for its internal asyncio event loop, so context vars don't
