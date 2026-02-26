@@ -77,6 +77,7 @@ import {
   PromptCache,
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
+import * as fsUtils from "./utils/fs.js";
 import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
@@ -341,6 +342,26 @@ interface GroupRunsParams {
   offset?: number;
 }
 
+export interface ReadThreadParams {
+  threadId: string;
+  projectId?: string;
+  projectName?: string;
+  isRoot?: boolean;
+  limit?: number;
+  filter?: string;
+  order?: "asc" | "desc";
+}
+
+export interface ListThreadsParams {
+  projectId?: string;
+  projectName?: string;
+  limit?: number;
+  offset?: number;
+  filter?: string;
+  startTime?: Date;
+  isRoot?: boolean;
+}
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -469,11 +490,16 @@ type Thread = {
   latency_p50: number;
   latency_p99: number;
   feedback_stats: any | null;
-  group_key: string;
+  thread_id: string;
   first_inputs: string;
   last_outputs: string;
   last_error: string | null;
 };
+
+/** Item returned by {@link Client.listThreads}. */
+export interface ListThreadsItem extends Thread {
+  runs: Run[];
+}
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
@@ -769,6 +795,12 @@ export class Client implements LangSmithTracingClientInterface {
   private _runCompressionDisabled =
     getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
 
+  private failedTracesDir: string | undefined;
+
+  private failedTracesMaxBytes: number = 100 * 1024 * 1024;
+
+  private static _fallbackDirsCreated = new Set<string>();
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -801,6 +833,19 @@ export class Client implements LangSmithTracingClientInterface {
     }
     this.debug = config.debug ?? this.debug;
     this.fetchImplementation = config.fetchImplementation;
+
+    // Failed trace dump configuration
+    this.failedTracesDir =
+      getLangSmithEnvironmentVariable("FAILED_TRACES_DIR") || undefined;
+    const failedTracesMb = getLangSmithEnvironmentVariable(
+      "FAILED_TRACES_MAX_MB"
+    );
+    if (failedTracesMb) {
+      const n = parseInt(failedTracesMb, 10);
+      if (Number.isFinite(n) && n > 0) {
+        this.failedTracesMaxBytes = n * 1024 * 1024;
+      }
+    }
 
     // Use maxIngestMemoryBytes for both queues
     const maxMemory = config.maxIngestMemoryBytes ?? DEFAULT_MAX_SIZE_BYTES;
@@ -1212,6 +1257,80 @@ export class Client implements LangSmithTracingClientInterface {
       promises.push(allBatchesPromise);
     }
     return Promise.all(promises);
+  }
+
+  /**
+   * Persist a failed trace payload to a local fallback directory.
+   *
+   * Saves a self-contained JSON file containing the endpoint path, the HTTP
+   * headers required for replay, and the base64-encoded request body.
+   * Can be replayed later with a simple POST:
+   *
+   *   POST /<endpoint>
+   *   Content-Type: <value from saved headers>
+   *   [Content-Encoding: <value from saved headers>]
+   *   <decoded body>
+   */
+  private static async _writeTraceToFallbackDir(
+    directory: string,
+    body: ArrayBuffer | string,
+    replayHeaders: Record<string, string>,
+    endpoint: string,
+    maxBytes?: number
+  ): Promise<void> {
+    try {
+      const bodyBuffer =
+        typeof body === "string"
+          ? Buffer.from(body, "utf8")
+          : Buffer.from(body);
+      const envelope = JSON.stringify({
+        version: 1,
+        endpoint,
+        headers: replayHeaders,
+        body_base64: bodyBuffer.toString("base64"),
+      });
+      const filename = `trace_${Date.now()}_${uuid.v4().slice(0, 8)}.json`;
+      const filepath = fsUtils.path.join(directory, filename);
+      if (!Client._fallbackDirsCreated.has(directory)) {
+        await fsUtils.mkdir(directory);
+        Client._fallbackDirsCreated.add(directory);
+      }
+      // Check budget before writing — drop new traces if over limit.
+      if (maxBytes !== undefined && maxBytes > 0) {
+        try {
+          const entries = await fsUtils.readdir(directory);
+          const traceFiles = entries.filter(
+            (f) => f.startsWith("trace_") && f.endsWith(".json")
+          );
+          let total = 0;
+          for (const name of traceFiles) {
+            const { size } = await fsUtils.stat(
+              fsUtils.path.join(directory, name)
+            );
+            total += size;
+          }
+          if (total >= maxBytes) {
+            console.warn(
+              `Could not write trace to fallback dir ${directory} as it's ` +
+                `already over size limit (${total} bytes >= ${maxBytes} bytes). ` +
+                `Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.`
+            );
+            return;
+          }
+        } catch {
+          // budget check errors must never prevent writing
+        }
+      }
+      await fsUtils.writeFileAtomic(filepath, envelope);
+      console.warn(
+        `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
+      );
+    } catch (writeErr) {
+      console.error(
+        `LangSmith tracing error: could not write trace to fallback dir ${directory}:`,
+        writeErr
+      );
+    }
   }
 
   private async _processBatch(
@@ -1979,6 +2098,21 @@ export class Client implements LangSmithTracingClientInterface {
         throw e;
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
+      if (this.failedTracesDir) {
+        const bodyBuffer = await this._createNodeFetchBody(
+          parts,
+          boundary
+        ).catch(() => null);
+        if (bodyBuffer) {
+          await Client._writeTraceToFallbackDir(
+            this.failedTracesDir,
+            bodyBuffer,
+            { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+            "runs/multipart",
+            this.failedTracesMaxBytes
+          );
+        }
+      }
     }
   }
 
@@ -2421,6 +2555,166 @@ export class Client implements LangSmithTracingClientInterface {
         break;
       }
     }
+  }
+
+  public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    const {
+      threadId,
+      projectId,
+      projectName,
+      isRoot = true,
+      limit,
+      filter: userFilter,
+      order = "asc",
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("threadId requires projectId or projectName");
+    }
+
+    const threadFilter = `eq(thread_id, ${JSON.stringify(threadId)})`;
+    const combinedFilter = userFilter
+      ? `and(${threadFilter}, ${userFilter})`
+      : threadFilter;
+
+    yield* this.listRuns({
+      projectId: projectId ?? undefined,
+      projectName: projectName ?? undefined,
+      isRoot,
+      limit,
+      filter: combinedFilter,
+      order,
+    });
+  }
+
+  public async listThreads(
+    props: ListThreadsParams
+  ): Promise<ListThreadsItem[]> {
+    const {
+      projectId,
+      projectName,
+      limit,
+      offset = 0,
+      filter,
+      startTime,
+      isRoot = true,
+    } = props;
+
+    if (!projectId && !projectName) {
+      throw new Error("Either projectId or projectName must be provided");
+    }
+    if (projectId && projectName) {
+      throw new Error("Provide exactly one of projectId or projectName");
+    }
+
+    const sessionId =
+      projectId ?? (await this.readProject({ projectName: projectName! })).id;
+    const startTimeResolved =
+      startTime ?? new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+
+    const runSelect = [
+      "id",
+      "name",
+      "status",
+      "start_time",
+      "end_time",
+      "thread_id",
+      "trace_id",
+      "run_type",
+      "error",
+      "tags",
+      "session_id",
+      "parent_run_id",
+      "total_tokens",
+      "total_cost",
+      "dotted_order",
+      "reference_example_id",
+      "feedback_stats",
+      "app_path",
+      "completion_cost",
+      "completion_tokens",
+      "prompt_cost",
+      "prompt_tokens",
+      "first_token_time",
+    ];
+    const bodyQuery: Record<string, unknown> = {
+      session: [sessionId],
+      is_root: isRoot,
+      limit: 100,
+      order: "desc",
+      select: runSelect,
+      start_time: startTimeResolved.toISOString(),
+    };
+    if (filter != null) {
+      bodyQuery.filter = filter;
+    }
+
+    const threadsMap = new Map<string, Run[]>();
+    for await (const runs of this._getCursorPaginatedList<Run>(
+      "/runs/query",
+      bodyQuery as RecordStringAny
+    )) {
+      for (const run of runs) {
+        const tid = (run as unknown as Record<string, unknown>).thread_id as
+          | string
+          | undefined;
+        if (tid) {
+          const list = threadsMap.get(tid) ?? [];
+          list.push(run);
+          threadsMap.set(tid, list);
+        }
+      }
+    }
+
+    const result: ListThreadsItem[] = [];
+    for (const [threadId, runs] of threadsMap.entries()) {
+      runs.sort((a, b) => {
+        const aRun = a as unknown as Record<string, unknown>;
+        const bRun = b as unknown as Record<string, unknown>;
+        const aStart = (aRun.start_time as string) ?? "";
+        const bStart = (bRun.start_time as string) ?? "";
+        if (aStart !== bStart) return aStart.localeCompare(bStart);
+        const aOrder = (aRun.dotted_order as string) ?? "";
+        const bOrder = (bRun.dotted_order as string) ?? "";
+        return aOrder.localeCompare(bOrder);
+      });
+      const startTimes = runs
+        .map(
+          (r) => (r as unknown as Record<string, unknown>).start_time as string
+        )
+        .filter(Boolean);
+      const sortedTimes = [...startTimes].sort();
+      const minStart = sortedTimes.length ? sortedTimes[0] : "";
+      const maxStart = sortedTimes.length
+        ? sortedTimes[sortedTimes.length - 1]
+        : "";
+      result.push({
+        thread_id: threadId,
+        runs,
+        count: runs.length,
+        filter: "",
+        total_tokens: 0,
+        total_cost: null,
+        min_start_time: minStart,
+        max_start_time: maxStart,
+        latency_p50: 0,
+        latency_p99: 0,
+        feedback_stats: null,
+        first_inputs: "",
+        last_outputs: "",
+        last_error: null,
+      } as ListThreadsItem);
+    }
+
+    result.sort((a, b) => {
+      const aMax = a.max_start_time ?? "";
+      const bMax = b.max_start_time ?? "";
+      return bMax.localeCompare(aMax);
+    });
+    const withOffset = offset > 0 ? result.slice(offset) : result;
+    const withLimit =
+      limit !== undefined ? withOffset.slice(0, limit) : withOffset;
+    return withLimit;
   }
 
   public async getRunStats({
@@ -5090,31 +5384,94 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /**
+   * Check if a prompt exists.
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   * @returns A Promise that resolves to true if the prompt exists, false otherwise
+   * @example
+   * ```typescript
+   * // Check if a prompt exists before creating a commit
+   * if (await client.promptExists("my-prompt")) {
+   *   await client.createCommit("my-prompt", template);
+   * } else {
+   *   await client.createPrompt("my-prompt");
+   * }
+   * ```
+   */
   public async promptExists(promptIdentifier: string): Promise<boolean> {
     const prompt = await this.getPrompt(promptIdentifier);
     return !!prompt;
   }
 
+  /**
+   * Like a prompt.
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   * @returns A Promise that resolves to the like response containing the updated like count
+   * @example
+   * ```typescript
+   * // Like a prompt
+   * const response = await client.likePrompt("owner/useful-prompt");
+   * console.log(`Prompt now has ${response.likes} likes`);
+   * ```
+   */
   public async likePrompt(
     promptIdentifier: string
   ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, true);
   }
 
+  /**
+   * Unlike a prompt (remove a previously added like).
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   * @returns A Promise that resolves to the like response containing the updated like count
+   * @example
+   * ```typescript
+   * // Unlike a prompt
+   * const response = await client.unlikePrompt("owner/useful-prompt");
+   * console.log(`Prompt now has ${response.likes} likes`);
+   * ```
+   */
   public async unlikePrompt(
     promptIdentifier: string
   ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, false);
   }
 
+  /**
+   * List all commits for a prompt.
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   *   - "promptName:commitHash" (commit hash is ignored, all commits are returned)
+   * @returns An async iterable iterator of PromptCommit objects
+   * @example
+   * ```typescript
+   * // List commits for a private prompt
+   * for await (const commit of client.listCommits("my-prompt")) {
+   *   console.log(commit);
+   * }
+   *
+   * // List commits for a prompt with explicit owner
+   * for await (const commit of client.listCommits("owner/my-prompt")) {
+   *   console.log(commit);
+   * }
+   * ```
+   */
   public async *listCommits(
-    promptOwnerAndName: string
+    promptIdentifier: string
   ): AsyncIterableIterator<PromptCommit> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     for await (const commits of this._getPaginated<
       PromptCommit,
       ListCommitsResponse
     >(
-      `/commits/${promptOwnerAndName}/`,
+      `/commits/${owner}/${promptName}/`,
       new URLSearchParams(),
       (res) => res.commits
     )) {
@@ -5122,6 +5479,32 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /**
+   * List prompts by filter.
+   * @param options - Optional filters for listing prompts
+   * @param options.isPublic - Filter by public/private prompts. If undefined, returns all prompts.
+   * @param options.isArchived - Filter by archived status. Defaults to false (non-archived prompts only).
+   * @param options.sortField - Field to sort by. Defaults to "updated_at".
+   * @param options.query - Search query to filter prompts by name or description.
+   * @returns An async iterable iterator of Prompt objects
+   * @example
+   * ```typescript
+   * // List all prompts
+   * for await (const prompt of client.listPrompts()) {
+   *   console.log(prompt);
+   * }
+   *
+   * // List only public prompts
+   * for await (const prompt of client.listPrompts({ isPublic: true })) {
+   *   console.log(prompt);
+   * }
+   *
+   * // Search for prompts
+   * for await (const prompt of client.listPrompts({ query: "translation" })) {
+   *   console.log(prompt);
+   * }
+   * ```
+   */
   public async *listPrompts(options?: {
     isPublic?: boolean;
     isArchived?: boolean;
@@ -5150,6 +5533,22 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /**
+   * Get a prompt by its identifier.
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   *   - "promptName:commitHash" (commit hash is ignored, latest version is returned)
+   * @returns A Promise that resolves to the Prompt object, or null if not found
+   * @example
+   * ```typescript
+   * // Get a private prompt
+   * const prompt = await client.getPrompt("my-prompt");
+   *
+   * // Get a public prompt
+   * const publicPrompt = await client.getPrompt("owner/public-prompt");
+   * ```
+   */
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(async () => {
@@ -5177,6 +5576,33 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /**
+   * Create a new prompt.
+   * @param promptIdentifier - The identifier for the new prompt. Can be in the format:
+   *   - "promptName" (creates a private prompt)
+   *   - "owner/promptName" (creates a prompt under a specific owner, must match your tenant)
+   * @param options - Optional configuration for the prompt
+   * @param options.description - A description of the prompt
+   * @param options.readme - Markdown content for the prompt's README
+   * @param options.tags - Array of tags to categorize the prompt
+   * @param options.isPublic - Whether the prompt should be public. Requires a LangChain Hub handle.
+   * @returns A Promise that resolves to the created Prompt object
+   * @throws {Error} If creating a public prompt without a LangChain Hub handle, or if owner doesn't match current tenant
+   * @example
+   * ```typescript
+   * // Create a private prompt
+   * const prompt = await client.createPrompt("my-new-prompt", {
+   *   description: "A prompt for translations",
+   *   tags: ["translation", "language"]
+   * });
+   *
+   * // Create a public prompt
+   * const publicPrompt = await client.createPrompt("my-public-prompt", {
+   *   description: "A public translation prompt",
+   *   isPublic: true
+   * });
+   * ```
+   */
   public async createPrompt(
     promptIdentifier: string,
     options?: {
@@ -5225,6 +5651,35 @@ export class Client implements LangSmithTracingClientInterface {
     return repo as Prompt;
   }
 
+  /**
+   * Create a new commit for an existing prompt.
+   * @param promptIdentifier - The identifier of the prompt. Can be in the format:
+   *   - "promptName" (for private prompts, owner defaults to "-")
+   *   - "owner/promptName" (for prompts with explicit owner)
+   * @param object - The prompt object/manifest to commit (e.g., ChatPromptTemplate, messages array, etc.)
+   * @param options - Optional configuration for the commit
+   * @param options.parentCommitHash - The parent commit hash. Defaults to "latest" (the most recent commit).
+   * @returns A Promise that resolves to the URL of the newly created commit
+   * @throws {Error} If the prompt does not exist
+   * @example
+   * ```typescript
+   * import { ChatPromptTemplate } from "@langchain/core/prompts";
+   *
+   * // Create a commit with a new version of the prompt
+   * const template = ChatPromptTemplate.fromMessages([
+   *   ["system", "You are a helpful assistant."],
+   *   ["human", "{input}"]
+   * ]);
+   *
+   * const commitUrl = await client.createCommit("my-prompt", template);
+   * console.log(`Commit created: ${commitUrl}`);
+   *
+   * // Create a commit based on a specific parent commit
+   * const commitUrl2 = await client.createCommit("my-prompt", template, {
+   *   parentCommitHash: "abc123def456"
+   * });
+   * ```
+   */
   public async createCommit(
     promptIdentifier: string,
     object: any,

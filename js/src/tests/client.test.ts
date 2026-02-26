@@ -253,9 +253,75 @@ describe("Client", () => {
 
       invalidIdentifiers.forEach((identifier) => {
         expect(() => parsePromptIdentifier(identifier)).toThrowError(
-          `Invalid identifier format: ${identifier}`
+          /Invalid prompt identifier format/
         );
       });
+    });
+  });
+
+  describe("listCommits", () => {
+    it("should handle private prompts without explicit owner", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      // Mock the _getPaginated method to capture the URL being called
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with just the prompt name (no owner)
+      const commits = [];
+      for await (const commit of client.listCommits("my-prompt")) {
+        commits.push(commit);
+      }
+
+      // Verify that the URL uses "-" as the owner for private prompts
+      expect(capturedUrl).toBe("/commits/-/my-prompt/");
+    });
+
+    it("should handle prompts with explicit owner", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with owner/name format
+      const commits = [];
+      for await (const commit of client.listCommits("owner/my-prompt")) {
+        commits.push(commit);
+      }
+
+      // Verify that the URL uses the provided owner
+      expect(capturedUrl).toBe("/commits/owner/my-prompt/");
+    });
+
+    it("should handle prompts with commit specifier", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with prompt:commit format (commit part should be ignored for listCommits)
+      const commits = [];
+      for await (const commit of client.listCommits("my-prompt:abc123")) {
+        commits.push(commit);
+      }
+
+      // The commit identifier is parsed but not used in the URL (listCommits lists all commits)
+      expect(capturedUrl).toBe("/commits/-/my-prompt/");
     });
   });
 

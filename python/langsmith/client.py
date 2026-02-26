@@ -13,6 +13,7 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 from __future__ import annotations
 
 import atexit
+import base64
 import collections
 import concurrent.futures as cf
 import contextlib
@@ -45,6 +46,7 @@ from typing import (
     Callable,
     Literal,
     Optional,
+    TypedDict,
     Union,
     cast,
 )
@@ -219,6 +221,8 @@ X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
+
+_fallback_dirs_created: set[str] = set()
 
 
 @lru_cache(maxsize=1)
@@ -653,6 +657,16 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
         return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
 
 
+class ListThreadsItem(TypedDict):
+    """Item returned by :meth:`Client.list_threads`."""
+
+    thread_id: str
+    runs: list[ls_schemas.Run]
+    count: int
+    min_start_time: Optional[str]
+    max_start_time: Optional[str]
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -700,6 +714,8 @@ class Client:
         "_tracing_error_callback",
         "_multipart_disabled",
         "_cache",
+        "_failed_traces_dir",
+        "_failed_traces_max_bytes",
     ]
 
     _api_key: Optional[str]
@@ -1152,6 +1168,117 @@ class Client:
             self._cache = prompt_cache_singleton
         else:
             self._cache = None
+
+        self._failed_traces_dir: Optional[str] = ls_utils.get_env_var(
+            "FAILED_TRACES_DIR"
+        )
+        _max_mb_str = ls_utils.get_env_var("FAILED_TRACES_MAX_MB")
+        try:
+            _max_mb = int(_max_mb_str) if _max_mb_str else 0
+            self._failed_traces_max_bytes: int = (
+                int(_max_mb * 1024 * 1024) if _max_mb > 0 else 100 * 1024 * 1024
+            )
+        except (ValueError, OverflowError):
+            logger.warning(
+                "Invalid value for LANGSMITH_FAILED_TRACES_MAX_MB: %r, "
+                "using default 100 MB",
+                _max_mb_str,
+            )
+            self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+    def _dump_failed_trace(
+        self,
+        body_fn: Callable[[], bytes],
+        headers: dict,
+    ) -> None:
+        """Dump a failed trace payload to disk if a fallback directory is configured.
+
+        *body_fn* is called lazily inside a try/except so that any serialization
+        errors are silently swallowed — we must never raise from a failure path.
+        """
+        if not self._failed_traces_dir:
+            return
+        try:
+            body = body_fn()
+            if isinstance(body, str):
+                body = body.encode("utf-8")
+            self._write_trace_to_fallback_dir(
+                self._failed_traces_dir,
+                body,
+                endpoint="runs/multipart",
+                headers=headers,
+                max_bytes=self._failed_traces_max_bytes,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _write_trace_to_fallback_dir(
+        directory: str,
+        body: bytes,
+        *,
+        endpoint: str,
+        headers: dict,
+        max_bytes: Optional[int] = None,
+    ) -> None:
+        """Persist a failed trace payload to a local fallback directory.
+
+        Saves a self-contained JSON file with the endpoint, the HTTP headers
+        required for replay, and the base64-encoded request body.  Can be
+        replayed later with a simple POST:
+
+            POST /<endpoint>
+            Content-Type: <value from saved headers>
+            [Content-Encoding: <value from saved headers>]
+            <decoded body>
+
+        If *max_bytes* is set, new traces are dropped when the directory is
+        already at or over the budget.
+        """
+        envelope = {
+            "version": 1,
+            "endpoint": endpoint,
+            "headers": headers,
+            "body_base64": base64.b64encode(body).decode(),
+        }
+        filename = f"trace_{time.time():.6f}_{uuid.uuid4().hex[:8]}.json"
+        filepath = Path(directory) / filename
+        try:
+            if directory not in _fallback_dirs_created:
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                _fallback_dirs_created.add(directory)
+            if max_bytes is not None and max_bytes > 0:
+                # Check budget before writing — drop new traces if over limit.
+                dir_path = Path(directory)
+                total = sum(
+                    f.stat().st_size
+                    for f in dir_path.glob("trace_*.json")
+                    if f.is_file()
+                )
+                if total >= max_bytes:
+                    logger.warning(
+                        "Could not write trace to fallback dir %s as it's "
+                        "already over size limit (%d bytes >= %d bytes). "
+                        "Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.",
+                        directory,
+                        total,
+                        max_bytes,
+                    )
+                    return
+            temp_path = filepath.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(envelope))
+            temp_path.chmod(0o600)  # owner-only: payload may contain sensitive data
+            temp_path.rename(filepath)
+            logger.warning(
+                "LangSmith trace upload failed; data saved to %s for later replay.",
+                filepath,
+            )
+        except Exception as write_exc:
+            logger.error(
+                "LangSmith tracing error: could not write trace to fallback dir %s: %s",
+                directory,
+                write_exc,
+            )
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -2897,7 +3024,7 @@ class Client:
                 ) as exc:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
                         continue
                 except Exception as e:
@@ -2907,9 +3034,20 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
-                    self._invoke_tracing_error_callback(e)
-                    # do not retry by default
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                self._dump_failed_trace(
+                    lambda: (
+                        data
+                        if isinstance(data, bytes)
+                        else rqtb_multipart.MultipartEncoder(
+                            parts, boundary=_BOUNDARY
+                        ).to_string()
+                    ),
+                    {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def _send_compressed_multipart_req(
         self,
@@ -2968,8 +3106,9 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {exc}"
                         )
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
+                        data_stream.seek(0)
                         continue
                 except Exception as e:
                     try:
@@ -2982,9 +3121,18 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
-                    self._invoke_tracing_error_callback(e)
-                    # Do not retry by default after unknown exceptions
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                data_stream.seek(0)
+                self._dump_failed_trace(
+                    data_stream.read,
+                    {
+                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+                        "Content-Encoding": "zstd",
+                    },
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def update_run(
         self,
@@ -3455,6 +3603,62 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    def read_thread(
+        self,
+        *,
+        thread_id: str,
+        project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
+        is_root: bool = True,
+        limit: Optional[int] = None,
+        select: Optional[Sequence[str]] = None,
+        filter: Optional[str] = None,
+        order: Literal["asc", "desc"] = "asc",
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.Run]:
+        """Read runs for a single thread.
+
+        Args:
+            thread_id: Thread id (required).
+            project_id: Project id(s) (required when not using project_name).
+            project_name: Project name(s) (required when not using project_id).
+            is_root: If True, return only root runs. Default True.
+            limit: Maximum number of runs to return.
+            select: Fields to select.
+            filter: Additional filter expression.
+            order: Sort order for runs (e.g. "asc" for chronological). Default "asc".
+            **kwargs: Additional arguments passed to the runs query.
+
+        Yields:
+            Runs in the thread.
+
+        Examples:
+            ```python
+            for run in client.read_thread(
+                thread_id="thread_abc123",
+                project_name="My Project",
+                limit=50,
+            ):
+                print(run.id)
+            ```
+        """
+        if not (project_id or project_name):
+            raise ValueError("thread_id requires project_id or project_name")
+
+        thread_id_escaped = json.dumps(str(thread_id))
+        thread_filter = f"eq(thread_id, {thread_id_escaped})"
+        combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
+        return self.list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            is_root=is_root,
+            limit=limit,
+            select=select,
+            filter=combined_filter,
+            order=order,
+            **kwargs,
+        )
+
     def list_runs(
         self,
         *,
@@ -3648,6 +3852,130 @@ class Client:
             )
             if limit is not None and i + 1 >= limit:
                 break
+
+    def list_threads(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        filter: Optional[str] = None,
+        start_time: Optional[datetime.datetime] = None,
+    ) -> list[ListThreadsItem]:
+        """List threads and fetch the runs for each thread.
+
+        Args:
+            project_id: The project (session) id.
+            project_name: The project name (alternative to project_id).
+            limit: Maximum number of threads to return. Default None (no limit).
+            offset: Pagination offset for threads. Default 0.
+            filter: Optional filter for threads and runs.
+            start_time: Only include runs from this time. Default: 1 day ago.
+
+        Returns:
+            List of thread items, each with "thread_id", "runs", "count",
+            "min_start_time", and "max_start_time".
+        """
+        if project_id is None and project_name is None:
+            raise ValueError("Either project_id or project_name must be provided")
+        if project_id is not None and project_name is not None:
+            raise ValueError("Provide exactly one of project_id or project_name")
+
+        if project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        assert project_id is not None  # one of project_id or project_name was required
+        session_id = str(_as_uuid(project_id, "project_id"))
+
+        if start_time is None:
+            start_time = datetime.datetime.now(
+                datetime.timezone.utc
+            ) - datetime.timedelta(days=1)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=datetime.timezone.utc)
+
+        run_select = [
+            "id",
+            "name",
+            "status",
+            "start_time",
+            "end_time",
+            "thread_id",
+            "trace_id",
+            "run_type",
+            "error",
+            "tags",
+            "session_id",
+            "parent_run_id",
+            "total_tokens",
+            "total_cost",
+            "dotted_order",
+            "reference_example_id",
+            "feedback_stats",
+            "app_path",
+        ]
+        body_query: dict[str, Any] = {
+            "session": [session_id],
+            "is_root": True,
+            "limit": 100,
+            "order": "desc",
+            "select": run_select,
+            "start_time": start_time.isoformat(),
+        }
+        if filter is not None:
+            body_query["filter"] = filter
+        body_query = {k: v for k, v in body_query.items() if v is not None}
+
+        threads_map: dict[str, list[dict]] = collections.defaultdict(list)
+        for run_dict in self._get_cursor_paginated_list("/runs/query", body=body_query):
+            tid = run_dict.get("thread_id")
+            if tid:
+                threads_map[tid].append(run_dict)
+
+        result: list[ListThreadsItem] = []
+        for thread_id, run_dicts in threads_map.items():
+            run_dicts.sort(
+                key=lambda r: (
+                    r.get("start_time") or "",
+                    r.get("dotted_order") or "",
+                )
+            )
+            runs = []
+            for run_dict in run_dicts:
+                attachments = _convert_stored_attachments_to_attachments_dict(
+                    run_dict, attachments_key="s3_urls", api_url=self.api_url
+                )
+                runs.append(
+                    ls_schemas.Run(
+                        attachments=attachments,
+                        **run_dict,
+                        _host_url=self._host_url,
+                    )
+                )
+            start_times: list[str] = [
+                str(r["start_time"])
+                for r in run_dicts
+                if r.get("start_time") is not None
+            ]
+            result.append(
+                {
+                    "thread_id": thread_id,
+                    "runs": runs,
+                    "count": len(runs),
+                    "min_start_time": min(start_times) if start_times else None,
+                    "max_start_time": max(start_times) if start_times else None,
+                }
+            )
+
+        result.sort(
+            key=lambda t: t.get("max_start_time") or "",
+            reverse=True,
+        )
+        if offset > 0:
+            result = result[offset:]
+        if limit is not None:
+            result = result[:limit]
+        return result
 
     def get_run_stats(
         self,

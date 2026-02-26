@@ -1,7 +1,17 @@
+import { createRequire } from "module";
 import { traceable, isTraceableFunction } from "../../traceable.js";
 import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
 import { convertFromAnthropicMessage } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
+
+function _getPackageVersion(packageName: string): string | undefined {
+  try {
+    const req = createRequire(process.cwd() + "/package.json");
+    return (req(`${packageName}/package.json`) as { version?: string }).version;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Wraps the Claude Agent SDK's query function to add LangSmith tracing.
@@ -152,7 +162,13 @@ function wrapClaudeAgentQuery<
       name: "claude.conversation",
       run_type: "chain",
       ...baseConfig,
-      metadata: { ...baseConfig?.metadata },
+      metadata: {
+        ls_integration: "claude-agent-sdk",
+        ls_integration_version: _getPackageVersion(
+          "@anthropic-ai/claude-agent-sdk"
+        ),
+        ...baseConfig?.metadata,
+      },
       __deferredSerializableArgOptions: { maxDepth: 1 },
       processInputs,
       processOutputs,

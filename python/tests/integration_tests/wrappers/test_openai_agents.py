@@ -96,6 +96,11 @@ async def test_openai_agents_tracing_processor():
     ]
     assert len(agent_runs) > 0, "No agent workflow runs found in trace"
 
+    agent_run = agent_runs[0]
+    metadata = (agent_run.get("extra") or {}).get("metadata") or {}
+    assert metadata.get("ls_integration") == "openai-agents-sdk", agent_run
+    assert "ls_integration_version" in metadata, agent_run
+
 
 @pytest.mark.xfail(reason="Flaky test - may fail intermittently")
 async def test_openai_agents_with_evaluate():

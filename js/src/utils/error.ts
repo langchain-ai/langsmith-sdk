@@ -1,3 +1,21 @@
+/**
+ * Get the error message for an invalid prompt identifier.
+ * Used consistently across the codebase when parsing prompt identifiers fails.
+ *
+ * @param identifier - The invalid identifier that was provided
+ * @returns A formatted error message explaining the valid formats
+ */
+export function getInvalidPromptIdentifierMsg(identifier: string): string {
+  return (
+    `Invalid prompt identifier format: "${identifier}". ` +
+    `Expected one of:\n` +
+    `  - "prompt-name" (for private prompts)\n` +
+    `  - "owner/prompt-name" (for prompts with explicit owner)\n` +
+    `  - "prompt-name:commit-hash" (with commit reference)\n` +
+    `  - "owner/prompt-name:commit-hash" (with owner and commit)`
+  );
+}
+
 function getErrorStackTrace(e: unknown) {
   if (typeof e !== "object" || e == null) return undefined;
   if (!("stack" in e) || typeof e.stack !== "string") return undefined;

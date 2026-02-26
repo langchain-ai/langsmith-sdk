@@ -176,6 +176,8 @@ def _assert_required_ls_fields(run: dict[str, Any]) -> None:
     metadata = (run.get("extra") or {}).get("metadata") or {}
     for key in ("ls_provider", "app_name", "user_id", "session_id"):
         assert metadata.get(key), (key, run)
+    assert metadata.get("ls_integration") == "google-adk", run
+    assert "ls_integration_version" in metadata, run
 
 
 def _run_agent(mode: str, agent, mock_ls_client: Client, input_text: str = "hello"):

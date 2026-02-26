@@ -1,4 +1,5 @@
 import { parse as parseVersion } from "semver";
+import { getInvalidPromptIdentifierMsg } from "./error.js";
 
 export function isVersionGreaterOrEqual(
   current_version: string,
@@ -24,7 +25,7 @@ export function parsePromptIdentifier(
     identifier.endsWith("/") ||
     identifier.split(":").length > 2
   ) {
-    throw new Error(`Invalid identifier format: ${identifier}`);
+    throw new Error(getInvalidPromptIdentifierMsg(identifier));
   }
 
   const [ownerNamePart, commitPart] = identifier.split(":");
@@ -33,12 +34,12 @@ export function parsePromptIdentifier(
   if (ownerNamePart.includes("/")) {
     const [owner, name] = ownerNamePart.split("/", 2);
     if (!owner || !name) {
-      throw new Error(`Invalid identifier format: ${identifier}`);
+      throw new Error(getInvalidPromptIdentifierMsg(identifier));
     }
     return [owner, name, commit];
   } else {
     if (!ownerNamePart) {
-      throw new Error(`Invalid identifier format: ${identifier}`);
+      throw new Error(getInvalidPromptIdentifierMsg(identifier));
     }
     return ["-", ownerNamePart, commit];
   }
