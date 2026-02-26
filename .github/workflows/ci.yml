@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "22.x"
+  NODE_VERSION: "24.x"
 
 jobs:
   # ============================================================================
@@ -120,10 +120,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -141,10 +141,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -162,10 +162,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -180,12 +180,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [20.x, "22.x"]
+        node-version: ["22.x", "24.x"]
         include:
           - os: windows-latest
-            node-version: 20.x
+            node-version: 24.x
           - os: macos-latest
-            node-version: 20.x
+            node-version: 24.x
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -499,10 +499,10 @@ jobs:
         working-directory: js
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -510,7 +510,7 @@ jobs:
       - name: Run JS Vitest eval runner test
         uses: ./.github/actions/js-vitest-eval-test
         with:
-          node-version: 20.x
+          node-version: 24.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
