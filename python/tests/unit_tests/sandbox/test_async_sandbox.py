@@ -14,8 +14,10 @@ from langsmith.sandbox._async_sandbox import AsyncSandbox
 
 @pytest.fixture
 async def client():
-    """Create an AsyncSandboxClient."""
-    async with AsyncSandboxClient(api_endpoint="http://test-server:8080") as c:
+    """Create an AsyncSandboxClient with retries disabled for test isolation."""
+    async with AsyncSandboxClient(
+        api_endpoint="http://test-server:8080", max_retries=0
+    ) as c:
         yield c
 
 

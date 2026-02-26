@@ -20,8 +20,10 @@ from langsmith.sandbox import (
 
 @pytest.fixture
 async def client():
-    """Create an AsyncSandboxClient."""
-    async with AsyncSandboxClient(api_endpoint="http://test-server:8080") as c:
+    """Create an AsyncSandboxClient with retries disabled for test isolation."""
+    async with AsyncSandboxClient(
+        api_endpoint="http://test-server:8080", max_retries=0
+    ) as c:
         yield c
 
 
@@ -96,6 +98,36 @@ class TestAsyncSandboxClientInit:
             )
             assert client._http.headers.get("X-Api-Key") == "explicit-key"
             await client.aclose()
+
+    async def test_max_retries_default(self):
+        """Test default max_retries is 3."""
+        from langsmith.sandbox._transport import AsyncRetryTransport
+
+        client = AsyncSandboxClient(api_endpoint="http://localhost:8080")
+        transport = client._http._transport
+        assert isinstance(transport, AsyncRetryTransport)
+        assert transport._max_retries == 3
+        await client.aclose()
+
+    async def test_max_retries_custom(self):
+        """Test custom max_retries value."""
+        from langsmith.sandbox._transport import AsyncRetryTransport
+
+        client = AsyncSandboxClient(api_endpoint="http://localhost:8080", max_retries=5)
+        transport = client._http._transport
+        assert isinstance(transport, AsyncRetryTransport)
+        assert transport._max_retries == 5
+        await client.aclose()
+
+    async def test_max_retries_zero_disables(self):
+        """Test max_retries=0 disables retries."""
+        from langsmith.sandbox._transport import AsyncRetryTransport
+
+        client = AsyncSandboxClient(api_endpoint="http://localhost:8080", max_retries=0)
+        transport = client._http._transport
+        assert isinstance(transport, AsyncRetryTransport)
+        assert transport._max_retries == 0
+        await client.aclose()
 
 
 class TestAsyncTemplateOperations:
