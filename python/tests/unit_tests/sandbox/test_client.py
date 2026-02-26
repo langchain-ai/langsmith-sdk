@@ -20,8 +20,8 @@ from langsmith.sandbox import (
 
 @pytest.fixture
 def client():
-    """Create a SandboxClient."""
-    return SandboxClient(api_endpoint="http://test-server:8080")
+    """Create a SandboxClient with retries disabled for test isolation."""
+    return SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
 
 
 class TestSandboxClientInit:
@@ -105,6 +105,36 @@ class TestSandboxClientInit:
             )
             assert client._http.headers.get("X-Api-Key") == "explicit-key"
             client.close()
+
+    def test_max_retries_default(self):
+        """Test default max_retries is 3."""
+        from langsmith.sandbox._transport import RetryTransport
+
+        client = SandboxClient(api_endpoint="http://localhost:8080")
+        transport = client._http._transport
+        assert isinstance(transport, RetryTransport)
+        assert transport._max_retries == 3
+        client.close()
+
+    def test_max_retries_custom(self):
+        """Test custom max_retries value."""
+        from langsmith.sandbox._transport import RetryTransport
+
+        client = SandboxClient(api_endpoint="http://localhost:8080", max_retries=5)
+        transport = client._http._transport
+        assert isinstance(transport, RetryTransport)
+        assert transport._max_retries == 5
+        client.close()
+
+    def test_max_retries_zero_disables(self):
+        """Test max_retries=0 disables retries."""
+        from langsmith.sandbox._transport import RetryTransport
+
+        client = SandboxClient(api_endpoint="http://localhost:8080", max_retries=0)
+        transport = client._http._transport
+        assert isinstance(transport, RetryTransport)
+        assert transport._max_retries == 0
+        client.close()
 
 
 class TestTemplateOperations:

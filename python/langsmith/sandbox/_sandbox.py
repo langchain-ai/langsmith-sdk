@@ -187,7 +187,7 @@ class Sandbox:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxOperationError: If command execution fails.
             CommandTimeoutError: If command exceeds its timeout.
-            SandboxConnectionError: If connection to sandbox fails.
+            SandboxConnectionError: If connection to sandbox fails after retries.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
@@ -304,13 +304,8 @@ class Sandbox:
                 stderr=data.get("stderr", ""),
                 exit_code=data.get("exit_code", -1),
             )
-        except httpx.ConnectError as e:
-            raise SandboxConnectionError(
-                f"Failed to connect to sandbox '{self.name}': {e}"
-            ) from e
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
-            # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
 
     def reconnect(
@@ -335,7 +330,7 @@ class Sandbox:
 
         Raises:
             SandboxOperationError: If command_id is not found or session expired.
-            SandboxConnectionError: If connection to sandbox fails.
+            SandboxConnectionError: If connection to sandbox fails after retries.
         """
         from langsmith.sandbox._ws_execute import reconnect_ws_stream
 
@@ -376,7 +371,7 @@ class Sandbox:
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxOperationError: If file write fails.
-            SandboxConnectionError: If connection to sandbox fails.
+            SandboxConnectionError: If connection to sandbox fails after retries.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
@@ -394,10 +389,6 @@ class Sandbox:
                 url, params={"path": path}, files=files, timeout=timeout
             )
             response.raise_for_status()
-        except httpx.ConnectError as e:
-            raise SandboxConnectionError(
-                f"Failed to connect to sandbox '{self.name}': {e}"
-            ) from e
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
@@ -416,7 +407,7 @@ class Sandbox:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             ResourceNotFoundError: If the file doesn't exist.
             SandboxOperationError: If file read fails.
-            SandboxConnectionError: If connection to sandbox fails.
+            SandboxConnectionError: If connection to sandbox fails after retries.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
@@ -429,10 +420,6 @@ class Sandbox:
             )
             response.raise_for_status()
             return response.content
-        except httpx.ConnectError as e:
-            raise SandboxConnectionError(
-                f"Failed to connect to sandbox '{self.name}': {e}"
-            ) from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
