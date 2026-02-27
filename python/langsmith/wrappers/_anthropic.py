@@ -133,6 +133,38 @@ def _accumulate_event(
     return current_snapshot
 
 
+def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
+    input_tokens = anthropic_token_usage.get("input_tokens") or 0
+    output_tokens = anthropic_token_usage.get("output_tokens") or 0
+    cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
+    cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
+    # Anthropic doesn't include cache tokens in input_tokens, so add them
+    total_tokens = input_tokens + output_tokens + cache_read + cache_creation
+    input_token_details: dict = {}
+    if cache_read:
+        input_token_details["cache_read"] = cache_read
+    if cache_creation:
+        input_token_details["cache_creation"] = cache_creation
+    result = UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+    if input_token_details:
+        result["input_token_details"] = InputTokenDetails(**input_token_details)
+    return result
+
+
+def _message_to_outputs(message: Any) -> dict:
+    """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
+    rdict = message.model_dump()
+    anthropic_token_usage = rdict.pop("usage", None)
+    if anthropic_token_usage:
+        rdict["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
+    rdict.pop("type", None)
+    return rdict
+
+
 def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
     full_message = None
     for chunk in all_chunks:
@@ -143,28 +175,7 @@ def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
             return {"output": all_chunks}
     if full_message is None:
         return {"output": all_chunks}
-    d = full_message.model_dump()
-    d["usage_metadata"] = _create_usage_metadata(d.pop("usage", {}))
-    d.pop("type", None)
-    return d
-
-
-def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
-    input_tokens = anthropic_token_usage.get("input_tokens") or 0
-    output_tokens = anthropic_token_usage.get("output_tokens") or 0
-    total_tokens = input_tokens + output_tokens
-    input_token_details: dict = {
-        "cache_read": anthropic_token_usage.get("cache_creation_input_tokens", 0)
-        + anthropic_token_usage.get("cache_read_input_tokens", 0)
-    }
-    return UsageMetadata(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        input_token_details=InputTokenDetails(
-            **{k: v for k, v in input_token_details.items() if v is not None}
-        ),
-    )
+    return _message_to_outputs(full_message)
 
 
 def _reduce_completions(all_chunks: list[Completion]) -> dict:
@@ -194,16 +205,7 @@ def _process_chat_completion(outputs: Any):
                 outputs = outputs.parse()
             except Exception:
                 pass
-
-        rdict = outputs.model_dump()
-        anthropic_token_usage = rdict.pop("usage", None)
-        rdict["usage_metadata"] = (
-            _create_usage_metadata(anthropic_token_usage)
-            if anthropic_token_usage
-            else None
-        )
-        rdict.pop("type", None)
-        return rdict
+        return _message_to_outputs(outputs)
     except BaseException as e:
         logger.debug(f"Error processing chat completion: {e}")
         return {"output": outputs}
@@ -302,7 +304,10 @@ def _get_stream_wrapper(
                         yield chunk
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = await self._wrapped.get_final_message()
-                    run_tree.outputs = _process_chat_completion(final_message)
+                    outputs = _message_to_outputs(final_message)
+                    run_tree.outputs = outputs
+                    if usage := outputs.get("usage_metadata"):
+                        run_tree.metadata["usage_metadata"] = usage
 
                 return _text_stream(**self._kwargs)
 
@@ -388,7 +393,10 @@ def _get_stream_wrapper(
                     yield from self._wrapped.text_stream
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = self._wrapped.get_final_message()
-                    run_tree.outputs = _process_chat_completion(final_message)
+                    outputs = _message_to_outputs(final_message)
+                    run_tree.outputs = outputs
+                    if usage := outputs.get("usage_metadata"):
+                        run_tree.metadata["usage_metadata"] = usage
 
                 return _text_stream(**self._kwargs)
 
