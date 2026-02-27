@@ -154,7 +154,7 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     else:
         cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
         if cache_creation:
-            input_token_details["ephemeral_5m_input_tokens"] = cache_creation
+            input_token_details["cache_creation"] = cache_creation
 
     result = UsageMetadata(
         input_tokens=input_tokens,
