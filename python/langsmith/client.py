@@ -654,7 +654,19 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
         if URLLIB3_SUPPORTS_BLOCKSIZE:
             # urllib3 before 2.0 doesn't support blocksize
             pool_kwargs["blocksize"] = self._blocksize
-        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+        try:
+            return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+        except TypeError:
+            if "blocksize" in pool_kwargs:
+                logger.warning(
+                    "An intermediate HTTPAdapter does not accept the 'blocksize' "
+                    "kwarg. Retrying without it."
+                )
+                pool_kwargs.pop("blocksize")
+                return super().init_poolmanager(
+                    connections, maxsize, block, **pool_kwargs
+                )
+            raise
 
 
 class ListThreadsItem(TypedDict):
