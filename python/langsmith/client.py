@@ -5242,7 +5242,7 @@ class Client:
     ) -> ls_schemas.DatasetVersion:
         """Get dataset version by `as_of` or exact tag.
 
-        Ues this to resolve the nearest version to a given timestamp or for a given tag.
+        Use this to retrieve the dataset version to a timestamp or for a given tag.
 
         Args:
             dataset_id (Optional[ID_TYPE]): The ID of the dataset.
