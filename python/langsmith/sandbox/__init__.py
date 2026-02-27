@@ -30,6 +30,7 @@ from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     QuotaExceededError,
     ResourceAlreadyExistsError,
+    ResourceCreationError,
     ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
@@ -38,7 +39,6 @@ from langsmith.sandbox._exceptions import (
     SandboxAuthenticationError,
     SandboxClientError,
     SandboxConnectionError,
-    SandboxCreationError,
     SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
@@ -51,6 +51,7 @@ from langsmith.sandbox._models import (
     OutputChunk,
     Pool,
     ResourceSpec,
+    ResourceStatus,
     SandboxTemplate,
     Volume,
     VolumeMountSpec,
@@ -65,6 +66,7 @@ __all__ = [
     "AsyncSandbox",
     # Models
     "SandboxTemplate",
+    "ResourceStatus",
     "ResourceSpec",
     "ExecutionResult",
     "Volume",
@@ -81,6 +83,7 @@ __all__ = [
     "SandboxConnectionError",
     "SandboxServerReloadError",
     # Resource errors (type-based with resource_type attribute)
+    "ResourceCreationError",
     "ResourceNotFoundError",
     "ResourceTimeoutError",
     "ResourceInUseError",
@@ -90,7 +93,6 @@ __all__ = [
     "ValidationError",
     "QuotaExceededError",
     # Sandbox-specific errors
-    "SandboxCreationError",
     "SandboxNotReadyError",
     "SandboxOperationError",
     "CommandTimeoutError",

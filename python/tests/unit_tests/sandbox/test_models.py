@@ -5,6 +5,7 @@ from langsmith.sandbox import (
     OutputChunk,
     Pool,
     ResourceSpec,
+    ResourceStatus,
     SandboxTemplate,
     Volume,
     VolumeMountSpec,
@@ -187,6 +188,40 @@ class TestSandboxTemplate:
         template = SandboxTemplate.from_dict(data)
 
         assert template.volume_mounts == []
+
+
+class TestResourceStatus:
+    """Tests for ResourceStatus."""
+
+    def test_from_dict_provisioning(self):
+        """Test creating from provisioning response."""
+        data = {"status": "provisioning", "status_message": None}
+        status = ResourceStatus.from_dict(data)
+        assert status.status == "provisioning"
+        assert status.status_message is None
+
+    def test_from_dict_ready(self):
+        """Test creating from ready response."""
+        data = {"status": "ready", "status_message": None}
+        status = ResourceStatus.from_dict(data)
+        assert status.status == "ready"
+        assert status.status_message is None
+
+    def test_from_dict_failed(self):
+        """Test creating from failed response with message."""
+        data = {
+            "status": "failed",
+            "status_message": "No capacity available",
+        }
+        status = ResourceStatus.from_dict(data)
+        assert status.status == "failed"
+        assert status.status_message == "No capacity available"
+
+    def test_from_dict_defaults(self):
+        """Test defaults when keys are missing."""
+        status = ResourceStatus.from_dict({})
+        assert status.status == "provisioning"
+        assert status.status_message is None
 
 
 class TestPool:

@@ -132,6 +132,27 @@ class SandboxTemplate:
 
 
 @dataclass
+class ResourceStatus:
+    """Lightweight provisioning status for any async-created resource.
+
+    Attributes:
+        status: Resource lifecycle status. One of "provisioning", "ready", "failed".
+        status_message: Human-readable details when status is "failed", None otherwise.
+    """
+
+    status: str
+    status_message: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ResourceStatus:
+        """Create a ResourceStatus from API response dict."""
+        return cls(
+            status=data.get("status", "provisioning"),
+            status_message=data.get("status_message"),
+        )
+
+
+@dataclass
 class Pool:
     """Represents a Sandbox Pool for pre-provisioned sandboxes.
 

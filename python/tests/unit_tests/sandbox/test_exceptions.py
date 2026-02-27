@@ -2,11 +2,11 @@
 
 from langsmith.sandbox import (
     QuotaExceededError,
+    ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxClientError,
-    SandboxCreationError,
     SandboxOperationError,
     ValidationError,
 )
@@ -108,20 +108,31 @@ class TestQuotaExceededError:
         assert error.quota_type == "sandbox_count"
 
 
-class TestSandboxCreationError:
-    """Tests for SandboxCreationError."""
+class TestResourceCreationError:
+    """Tests for ResourceCreationError."""
 
     def test_basic_message(self):
         """Test basic error message."""
-        error = SandboxCreationError("Failed to create sandbox")
+        error = ResourceCreationError("Failed to create sandbox")
         assert str(error) == "Failed to create sandbox"
         assert error.error_type is None
+        assert error.resource_type is None
 
     def test_with_error_type(self):
         """Test error with error_type."""
-        error = SandboxCreationError("Image pull failed", error_type="ImagePull")
+        error = ResourceCreationError("Image pull failed", error_type="ImagePull")
         assert "[ImagePull]" in str(error)
         assert error.error_type == "ImagePull"
+
+    def test_with_resource_type(self):
+        """Test error with resource_type."""
+        error = ResourceCreationError(
+            "Provisioning failed",
+            resource_type="volume",
+            error_type="VolumeProvisioning",
+        )
+        assert error.resource_type == "volume"
+        assert error.error_type == "VolumeProvisioning"
 
 
 class TestSandboxOperationError:

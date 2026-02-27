@@ -10,9 +10,11 @@ import httpx
 from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._exceptions import (
+    ResourceCreationError,
     ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
+    ResourceTimeoutError,
     SandboxAPIError,
     ValidationError,
 )
@@ -23,7 +25,13 @@ from langsmith.sandbox._helpers import (
     handle_volume_creation_error,
     parse_error_response,
 )
-from langsmith.sandbox._models import Pool, SandboxTemplate, Volume, VolumeMountSpec
+from langsmith.sandbox._models import (
+    Pool,
+    ResourceStatus,
+    SandboxTemplate,
+    Volume,
+    VolumeMountSpec,
+)
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 
@@ -683,7 +691,7 @@ class AsyncSandboxClient:
 
         Raises:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
-            SandboxCreationError: If sandbox creation fails.
+            ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
         """
         sb = await self.create_sandbox(
@@ -700,6 +708,7 @@ class AsyncSandboxClient:
         *,
         name: Optional[str] = None,
         timeout: int = 30,
+        wait_for_ready: bool = True,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
 
@@ -709,28 +718,36 @@ class AsyncSandboxClient:
         Args:
             template_name: Name of the SandboxTemplate to use.
             name: Optional sandbox name (auto-generated if not provided).
-            timeout: Timeout in seconds when waiting for ready.
+            timeout: Timeout in seconds when waiting for ready (only used when
+                wait_for_ready=True).
+            wait_for_ready: If True (default), block until sandbox is ready.
+                If False, return immediately with status "provisioning". Use
+                get_sandbox_status() or wait_for_sandbox() to poll for readiness.
 
         Returns:
-            Created AsyncSandbox.
+            Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
+            status="provisioning" and cannot be used for operations until ready.
 
         Raises:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
-            SandboxCreationError: If sandbox creation fails.
+            ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/boxes"
 
         payload: dict[str, Any] = {
             "template_name": template_name,
-            "wait_for_ready": True,
-            "timeout": timeout,
+            "wait_for_ready": wait_for_ready,
         }
+        if wait_for_ready:
+            payload["timeout"] = timeout
         if name:
             payload["name"] = name
 
+        http_timeout = (timeout + 30) if wait_for_ready else 30
+
         try:
-            response = await self._http.post(url, json=payload, timeout=timeout + 30)
+            response = await self._http.post(url, json=payload, timeout=http_timeout)
             response.raise_for_status()
             return AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
@@ -853,3 +870,81 @@ class AsyncSandboxClient:
                     f"Sandbox '{name}' not found", resource_type="sandbox"
                 ) from e
             handle_client_http_error(e)
+
+    async def get_sandbox_status(self, name: str) -> ResourceStatus:
+        """Get the provisioning status of a sandbox.
+
+        This is a lightweight endpoint designed for high-frequency polling
+        during sandbox provisioning. It returns only the status fields
+        without full sandbox data.
+
+        Args:
+            name: Sandbox name.
+
+        Returns:
+            ResourceStatus with status and status_message.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{name}/status"
+
+        try:
+            response = await self._http.get(url)
+            response.raise_for_status()
+            return ResourceStatus.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    async def wait_for_sandbox(
+        self,
+        name: str,
+        *,
+        timeout: int = 120,
+        poll_interval: float = 1.0,
+    ) -> AsyncSandbox:
+        """Poll until a sandbox reaches "ready" or "failed" status.
+
+        Uses the lightweight status endpoint for polling, then fetches the
+        full sandbox data once ready.
+
+        Args:
+            name: Sandbox name.
+            timeout: Maximum time to wait in seconds.
+            poll_interval: Time between status checks in seconds.
+
+        Returns:
+            AsyncSandbox in "ready" status.
+
+        Raises:
+            ResourceCreationError: If sandbox status becomes "failed".
+            ResourceTimeoutError: If timeout expires while still "provisioning".
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while True:
+            status = await self.get_sandbox_status(name)
+            if status.status == "ready":
+                return await self.get_sandbox(name)
+            if status.status == "failed":
+                raise ResourceCreationError(
+                    status.status_message or "Sandbox provisioning failed",
+                    resource_type="sandbox",
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResourceTimeoutError(
+                    f"Sandbox '{name}' not ready after {timeout}s",
+                    resource_type="sandbox",
+                    last_status=status.status,
+                )
+            await asyncio.sleep(min(poll_interval, remaining))

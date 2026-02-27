@@ -360,6 +360,43 @@ result = sb.run("echo 'Still running!'")
 client.delete_sandbox("sandbox-abc123")
 ```
 
+## Async Sandbox Creation
+
+By default, `create_sandbox()` blocks until the sandbox is ready. For
+non-blocking creation, pass `wait_for_ready=False`:
+
+```python
+# Returns immediately with status="provisioning"
+sb = client.create_sandbox(template_name="my-template", wait_for_ready=False)
+print(sb.status)  # "provisioning"
+
+# Poll until ready using the lightweight status endpoint
+sb = client.wait_for_sandbox(sb.name, timeout=120, poll_interval=1.0)
+print(sb.status)  # "ready"
+
+# Now the sandbox is usable
+result = sb.run("echo hello")
+```
+
+You can also poll manually for more control:
+
+```python
+sb = client.create_sandbox(template_name="my-template", wait_for_ready=False)
+
+while True:
+    status = client.get_sandbox_status(sb.name)
+    if status.status == "ready":
+        sb = client.get_sandbox(sb.name)
+        break
+    if status.status == "failed":
+        print(f"Failed: {status.status_message}")
+        break
+    time.sleep(1)
+```
+
+> **Note:** Operations like `run()`, `write()`, and `read()` will raise
+> `SandboxNotReadyError` if called on a sandbox that isn't ready yet.
+
 ## Async Support
 
 Full async support for all operations:
@@ -401,8 +438,10 @@ The module provides type-based exceptions with a `resource_type` attribute for s
 ```python
 from langsmith.sandbox import (
     SandboxClientError,       # Base exception for all sandbox errors
+    ResourceCreationError,    # Resource provisioning failed (check resource_type, error_type)
     ResourceNotFoundError,    # Resource doesn't exist (check resource_type)
     ResourceTimeoutError,     # Operation timed out (check resource_type)
+    SandboxNotReadyError,     # Sandbox not ready for operations yet
     SandboxConnectionError,   # Network/WebSocket error
     CommandTimeoutError,      # Command exceeded its timeout (extends SandboxOperationError)
     QuotaExceededError,       # Quota limit reached
@@ -413,6 +452,8 @@ try:
         result = sb.run("sleep 999", timeout=10)
 except CommandTimeoutError as e:
     print(f"Command timed out: {e}")
+except ResourceCreationError as e:
+    print(f"{e.resource_type} creation failed: {e}")
 except ResourceNotFoundError as e:
     print(f"{e.resource_type} not found: {e}")
 except ResourceTimeoutError as e:
@@ -430,23 +471,37 @@ except SandboxClientError as e:
 | Method | Description |
 |--------|-------------|
 | `sandbox(template_name, ...)` | Create a sandbox (auto-deleted on context exit) |
-| `create_sandbox(template_name, ...)` | Create a sandbox (requires explicit delete) |
+| `create_sandbox(template_name, *, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Pass `wait_for_ready=False` for async creation. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
+| `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
+| `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
 | `list_sandboxes()` | List all sandboxes |
+| `update_sandbox(name, *, new_name)` | Update a sandbox's display name |
 | `delete_sandbox(name)` | Delete a sandbox |
 | `create_template(name, image, ...)` | Create a template |
 | `list_templates()` | List all templates |
 | `get_template(name)` | Get template by name |
+| `update_template(name, *, new_name)` | Update a template's display name |
 | `delete_template(name)` | Delete a template |
 | `create_volume(name, size)` | Create a persistent volume |
 | `list_volumes()` | List all volumes |
+| `update_volume(name, *, new_name, size)` | Update a volume's name or size |
 | `delete_volume(name)` | Delete a volume |
 | `create_pool(name, template_name, replicas)` | Create a pool |
 | `list_pools()` | List all pools |
-| `update_pool(name, replicas=...)` | Update pool replicas |
+| `update_pool(name, *, replicas, new_name)` | Update pool replicas or name |
 | `delete_pool(name)` | Delete a pool |
 
 ### Sandbox
+
+| Property | Description |
+|----------|-------------|
+| `name` | Display name |
+| `template_name` | Template used to create this sandbox |
+| `status` | Lifecycle status: `"provisioning"`, `"ready"`, or `"failed"` |
+| `status_message` | Human-readable details when status is `"failed"`, `None` otherwise |
+| `dataplane_url` | URL for runtime operations (only functional when status is `"ready"`) |
+| `id` | Unique identifier (UUID) |
 
 | Method | Description |
 |--------|-------------|
@@ -463,6 +518,15 @@ except SandboxClientError as e:
 | `stderr` | Standard error (str) |
 | `exit_code` | Exit code (int) |
 | `success` | True if exit_code == 0 |
+
+### ResourceStatus
+
+Returned by `client.get_sandbox_status()`.
+
+| Property | Description |
+|----------|-------------|
+| `status` | Lifecycle status: `"provisioning"`, `"ready"`, or `"failed"` |
+| `status_message` | Human-readable details when `"failed"`, `None` otherwise |
 
 ### CommandHandle
 
