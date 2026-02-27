@@ -925,7 +925,8 @@ class SandboxClient:
                 return self.get_sandbox(name)
             if status.status == "failed":
                 raise ResourceCreationError(
-                    status.status_message or "Sandbox provisioning failed"
+                    status.status_message or "Sandbox provisioning failed",
+                    resource_type="sandbox",
                 )
             remaining = deadline - time.monotonic()
             if remaining <= 0:

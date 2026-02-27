@@ -616,8 +616,12 @@ class TestSandboxOperations:
             },
         )
 
-        with pytest.raises(ResourceCreationError, match="No capacity available"):
+        with pytest.raises(
+            ResourceCreationError, match="No capacity available"
+        ) as exc_info:
             client.wait_for_sandbox("my-sandbox", poll_interval=0.01)
+
+        assert exc_info.value.resource_type == "sandbox"
 
     def test_wait_for_sandbox_timeout(
         self, client: SandboxClient, httpx_mock: HTTPXMock
