@@ -1052,7 +1052,7 @@ class Client:
         if ls_utils.get_env_var("USE_PYO3_CLIENT") is not None:
             langsmith_pyo3 = None
             try:
-                import langsmith_pyo3  # type: ignore[import-not-found, no-redef]
+                import langsmith_pyo3  # type: ignore[import-not-found, no-redef, import-untyped]
             except ImportError as e:
                 logger.warning(
                     "Failed to import `langsmith_pyo3` when PyO3 client was requested, "

@@ -10,6 +10,7 @@ from typing import Any, Optional
 from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._hooks import (
+    _completed_tool_run_ids,
     clear_active_tool_runs,
     post_tool_use_failure_hook,
     post_tool_use_hook,
@@ -132,11 +133,13 @@ def begin_llm_run_from_assistant_messages(
     # Set outputs after posting so they are sent with end_time on the patch.
     llm_run.outputs = outputs[-1] if len(outputs) == 1 else {"content": outputs}
 
-    final_content = (
-        {"content": flatten_content_blocks(last_msg.content), "role": "assistant"}
-        if hasattr(last_msg, "content")
-        else None
-    )
+    final_content = None
+    if hasattr(last_msg, "content"):
+        final_content = {
+            "content": flatten_content_blocks(last_msg.content),
+            "role": "assistant",
+            "run_id": str(llm_run.id),
+        }
     return final_content, llm_run
 
 
@@ -338,10 +341,6 @@ def instrument_claude_client(original_class: Any) -> Any:
             # Track if we need to update input from captured streaming messages
             awaiting_streamed_input = self._streamed_input is not None
 
-            # Add prompt to inputs (for string prompts)
-            if self._prompt:
-                trace_inputs["prompt"] = self._prompt
-
             # Add system_prompt to inputs if available
             if hasattr(self, "options") and self.options:
                 if (
@@ -432,15 +431,17 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 ):
                                     # Format each tool result as a separate message
                                     for block in flattened:
-                                        collected.append(
-                                            {
-                                                "role": "tool",
-                                                "content": block.get("content", ""),
-                                                "tool_call_id": block.get(
-                                                    "tool_use_id"
-                                                ),
-                                            }
-                                        )
+                                        tid = block.get("tool_use_id")
+                                        tool_msg: dict[str, Any] = {
+                                            "role": "tool",
+                                            "content": block.get("content", ""),
+                                            "tool_call_id": tid,
+                                        }
+                                        if tid and tid in _completed_tool_run_ids:
+                                            tool_msg["run_id"] = (
+                                                _completed_tool_run_ids[tid]
+                                            )
+                                        collected.append(tool_msg)
                                 else:
                                     collected.append(
                                         {
@@ -479,7 +480,18 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 run.metadata.update(meta)
 
                         yield msg
-                    run.end(outputs=collected[-1] if collected else None)
+                    full_messages = build_llm_input(prompt_for_llm, collected)
+                    if full_messages:
+                        run.inputs["messages"] = full_messages[:-1]
+                        last = full_messages[-1]
+                        run.end(
+                            outputs={
+                                "content": last.get("content"),
+                                "role": last.get("role", "assistant"),
+                            }
+                        )
+                    else:
+                        run.end()
                 except Exception:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
