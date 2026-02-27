@@ -146,7 +146,7 @@ def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
     d = full_message.model_dump()
     d["usage_metadata"] = _create_usage_metadata(d.pop("usage", {}))
     d.pop("type", None)
-    return {"message": d}
+    return d
 
 
 def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
@@ -203,7 +203,7 @@ def _process_chat_completion(outputs: Any):
             else None
         )
         rdict.pop("type", None)
-        return {"message": rdict}
+        return rdict
     except BaseException as e:
         logger.debug(f"Error processing chat completion: {e}")
         return {"output": outputs}
