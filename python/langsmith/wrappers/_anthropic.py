@@ -136,20 +136,26 @@ def _accumulate_event(
 def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     input_tokens = anthropic_token_usage.get("input_tokens") or 0
     output_tokens = anthropic_token_usage.get("output_tokens") or 0
-    cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
-    cache_creation_obj = anthropic_token_usage.get("cache_creation") or {}
-    if cache_creation_obj:
-        cache_creation = (cache_creation_obj.get("ephemeral_5m_input_tokens") or 0) + (
-            cache_creation_obj.get("ephemeral_1h_input_tokens") or 0
-        )
-    else:
-        cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
     total_tokens = input_tokens + output_tokens
+
     input_token_details: dict = {}
+    cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
     if cache_read:
         input_token_details["cache_read"] = cache_read
-    if cache_creation:
-        input_token_details["cache_creation"] = cache_creation
+
+    cache_creation_obj = anthropic_token_usage.get("cache_creation") or {}
+    if cache_creation_obj:
+        ephemeral_5m = cache_creation_obj.get("ephemeral_5m_input_tokens") or 0
+        ephemeral_1h = cache_creation_obj.get("ephemeral_1h_input_tokens") or 0
+        if ephemeral_5m:
+            input_token_details["ephemeral_5m_input_tokens"] = ephemeral_5m
+        if ephemeral_1h:
+            input_token_details["ephemeral_1h_input_tokens"] = ephemeral_1h
+    else:
+        cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
+        if cache_creation:
+            input_token_details["ephemeral_5m_input_tokens"] = cache_creation
+
     result = UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
