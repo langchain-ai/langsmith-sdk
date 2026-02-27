@@ -137,7 +137,13 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     input_tokens = anthropic_token_usage.get("input_tokens") or 0
     output_tokens = anthropic_token_usage.get("output_tokens") or 0
     cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
-    cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
+    cache_creation_obj = anthropic_token_usage.get("cache_creation") or {}
+    if cache_creation_obj:
+        cache_creation = (cache_creation_obj.get("ephemeral_5m_input_tokens") or 0) + (
+            cache_creation_obj.get("ephemeral_1h_input_tokens") or 0
+        )
+    else:
+        cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
     total_tokens = input_tokens + output_tokens
     input_token_details: dict = {}
     if cache_read:
