@@ -2510,8 +2510,6 @@ class Client:
         update: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
-        *,
-        pre_sampled: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
@@ -2522,8 +2520,6 @@ class Client:
             update (Optional[Sequence[Union[Run, RunLikeDict]]]):
                 A sequence of `Run` objects or equivalent dictionaries representing
                 runs that have already been created and should be updated / patched.
-            pre_sampled (bool, default=False): Whether the runs have already been subject
-                to sampling, and therefore should not be sampled again.
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -2604,18 +2600,14 @@ class Client:
         if not create and not update:
             return
         # filter out runs that are not sampled
-        if not pre_sampled:
-            create = self._filter_for_sampling(create or EMPTY_SEQ)
-            update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        create = self._filter_for_sampling(create or EMPTY_SEQ)
+        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [
-            self._run_transform(run, copy=False) for run in create
-        ]
+        create_dicts = [self._run_transform(run, copy=False) for run in create]
         update_dicts = [
-            self._run_transform(run, update=True, copy=False)
-            for run in update
+            self._run_transform(run, update=True, copy=False) for run in update
         ]
         for run in create_dicts:
             if not run.get("trace_id") or not run.get("dotted_order"):
@@ -2789,7 +2781,6 @@ class Client:
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
-        pre_sampled: bool = False,
         dangerously_allow_filesystem: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
@@ -2801,8 +2792,6 @@ class Client:
             update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
                 A sequence of `Run` objects or equivalent dictionaries representing
                 runs that have already been created and should be updated / patched.
-            pre_sampled (bool, default=False): Whether the runs have already been subject
-                to sampling, and therefore should not be sampled again.
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -2880,16 +2869,13 @@ class Client:
         if not (create or update):
             return
         # filter out runs that are not sampled
-        if not pre_sampled:
-            create = self._filter_for_sampling(create or EMPTY_SEQ)
-            update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        create = self._filter_for_sampling(create or EMPTY_SEQ)
+        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
         if not create and not update:
             return
         # transform and convert to dicts
         create_dicts = [self._run_transform(run) for run in create]
-        update_dicts = [
-            self._run_transform(run, update=True) for run in update
-        ]
+        update_dicts = [self._run_transform(run, update=True) for run in update]
         # require trace_id and dotted_order
         if create_dicts:
             for run in create_dicts:

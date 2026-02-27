@@ -2005,6 +2005,96 @@ def test_original_sampling_and_batching():
                 assert i % 2 == 0
 
 
+@pytest.mark.parametrize("method", ["batch_ingest_runs", "multipart_ingest"])
+def test_sampling_before_transform_in_batch_and_multipart(method: str):
+    """Verify that _run_transform is only called for runs that survive sampling.
+
+    When sampling is enabled, runs filtered out should never be transformed
+    (i.e., _run_transform should not be called for them).
+    """
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    sample_count = 0
+
+    def mock_should_sample():
+        nonlocal sample_count
+        sample_count += 1
+        return sample_count % 2 == 1  # Accept 1st, reject 2nd
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        sampled_trace_id = uuid.uuid4()
+        filtered_trace_id = uuid.uuid4()
+
+        creates = [
+            {
+                "id": sampled_trace_id,
+                "trace_id": sampled_trace_id,
+                "dotted_order": f"20210101T000000000000Z{sampled_trace_id}",
+                "name": "sampled_root",
+                "run_type": "llm",
+                "inputs": {"text": "sampled"},
+                "start_time": "2021-01-01T00:00:00Z",
+            },
+            {
+                "id": filtered_trace_id,
+                "trace_id": filtered_trace_id,
+                "dotted_order": f"20210101T000000000000Z{filtered_trace_id}",
+                "name": "filtered_root",
+                "run_type": "llm",
+                "inputs": {"text": "filtered"},
+                "start_time": "2021-01-01T00:00:00Z",
+            },
+        ]
+
+        updates = [
+            {
+                "id": sampled_trace_id,
+                "trace_id": sampled_trace_id,
+                "dotted_order": f"20210101T000000000000Z{sampled_trace_id}",
+                "outputs": {"result": "sampled output"},
+                "end_time": "2021-01-01T00:00:01Z",
+            },
+            {
+                "id": filtered_trace_id,
+                "trace_id": filtered_trace_id,
+                "dotted_order": f"20210101T000000000000Z{filtered_trace_id}",
+                "outputs": {"result": "filtered output"},
+                "end_time": "2021-01-01T00:00:01Z",
+            },
+        ]
+
+        original_run_transform = Client._run_transform
+        transformed_ids: list[uuid.UUID] = []
+
+        def tracking_transform(self, run, **kwargs):
+            result = original_run_transform(self, run, **kwargs)
+            transformed_ids.append(result["id"])
+            return result
+
+        with patch.object(Client, "_run_transform", tracking_transform):
+            fn = getattr(client, method)
+            fn(create=creates, update=updates)
+
+        # Only the sampled trace should have been transformed
+        assert sampled_trace_id in transformed_ids
+        assert filtered_trace_id not in transformed_ids, (
+            f"{method} called _run_transform on a filtered-out run"
+        )
+        # The sampled trace should appear twice (once for create, once for update)
+        assert transformed_ids.count(sampled_trace_id) == 2
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_select_eval_results(mock_session_cls: mock.Mock):
     expected = EvaluationResult(
