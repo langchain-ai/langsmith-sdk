@@ -8,6 +8,7 @@ from langsmith.sandbox import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
     SandboxConnectionError,
+    SandboxNotReadyError,
 )
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 
@@ -49,6 +50,84 @@ class TestAsyncSandboxProperties:
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
+
+
+class TestAsyncSandboxStatusFields:
+    """Tests for status fields on AsyncSandbox."""
+
+    def test_from_dict_with_status(self, client):
+        """Test from_dict parses status fields."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "status_message": None,
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.status == "provisioning"
+        assert sb.status_message is None
+
+    def test_from_dict_defaults_to_ready(self, client):
+        """Test from_dict defaults status to 'ready' when absent."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.status == "ready"
+        assert sb.status_message is None
+
+    async def test_provisioning_sandbox_blocks_run(self, client):
+        """Test that run() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError, match="not ready"):
+            await sb.run("echo hello")
+
+    async def test_provisioning_sandbox_blocks_write(self, client):
+        """Test that write() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError):
+            await sb.write("/tmp/test.txt", "hello")
+
+    async def test_provisioning_sandbox_blocks_read(self, client):
+        """Test that read() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError):
+            await sb.read("/tmp/test.txt")
 
 
 class TestAsyncSandboxRun:

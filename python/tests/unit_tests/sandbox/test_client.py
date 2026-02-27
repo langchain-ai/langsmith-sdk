@@ -8,9 +8,11 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     QuotaExceededError,
     ResourceAlreadyExistsError,
+    ResourceCreationError,
     ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
+    ResourceStatus,
     ResourceTimeoutError,
     SandboxClient,
     SandboxConnectionError,
@@ -470,6 +472,196 @@ class TestSandboxOperations:
             client.update_sandbox("my-sandbox", new_name="existing-sandbox")
 
         assert exc_info.value.resource_type == "sandbox"
+
+    def test_create_sandbox_async_returns_provisioning(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test async sandbox creation returns provisioning status."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "id": "550e8400-e29b-41d4-a716-446655440003",
+                "name": "test-sandbox",
+                "template_name": "python-sandbox",
+                "status": "provisioning",
+                "status_message": None,
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(
+            template_name="python-sandbox", wait_for_ready=False
+        )
+
+        assert sandbox.name == "test-sandbox"
+        assert sandbox.status == "provisioning"
+        assert sandbox.status_message is None
+
+        request = httpx_mock.get_requests()[0]
+        body = request.read()
+        import json
+
+        payload = json.loads(body)
+        assert payload["wait_for_ready"] is False
+        assert "timeout" not in payload
+
+    def test_create_sandbox_status_fields_parsed(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test that status fields are parsed from create response."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+                "template_name": "python-sandbox",
+                "status": "ready",
+                "status_message": None,
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(template_name="python-sandbox")
+
+        assert sandbox.status == "ready"
+        assert sandbox.status_message is None
+
+    def test_get_sandbox_status(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test getting sandbox status."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={"status": "provisioning", "status_message": None},
+        )
+
+        status = client.get_sandbox_status("my-sandbox")
+
+        assert isinstance(status, ResourceStatus)
+        assert status.status == "provisioning"
+        assert status.status_message is None
+
+    def test_get_sandbox_status_failed(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test getting failed sandbox status."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={
+                "status": "failed",
+                "status_message": "No capacity available",
+            },
+        )
+
+        status = client.get_sandbox_status("my-sandbox")
+
+        assert status.status == "failed"
+        assert status.status_message == "No capacity available"
+
+    def test_get_sandbox_status_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test getting status of non-existent sandbox."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/nonexistent/status",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.get_sandbox_status("nonexistent")
+
+    def test_wait_for_sandbox_ready(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test polling until sandbox is ready."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={"status": "provisioning", "status_message": None},
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={"status": "ready", "status_message": None},
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox",
+            json={
+                "name": "my-sandbox",
+                "template_name": "python-sandbox",
+                "status": "ready",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+        )
+
+        sandbox = client.wait_for_sandbox("my-sandbox", poll_interval=0.01)
+
+        assert sandbox.name == "my-sandbox"
+        assert sandbox.status == "ready"
+
+    def test_wait_for_sandbox_failed(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test polling detects failure."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={
+                "status": "failed",
+                "status_message": "No capacity available",
+            },
+        )
+
+        with pytest.raises(ResourceCreationError, match="No capacity available"):
+            client.wait_for_sandbox("my-sandbox", poll_interval=0.01)
+
+    def test_wait_for_sandbox_timeout(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test polling timeout."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-sandbox/status",
+            json={"status": "provisioning", "status_message": None},
+        )
+
+        with pytest.raises(ResourceTimeoutError) as exc_info:
+            client.wait_for_sandbox("my-sandbox", timeout=0, poll_interval=0.01)
+
+        assert exc_info.value.last_status == "provisioning"
+
+    def test_list_sandboxes_includes_status(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test that list_sandboxes parses status fields."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes",
+            json={
+                "sandboxes": [
+                    {
+                        "name": "sandbox-ready",
+                        "template_name": "template-1",
+                        "status": "ready",
+                    },
+                    {
+                        "name": "sandbox-provisioning",
+                        "template_name": "template-1",
+                        "status": "provisioning",
+                    },
+                ]
+            },
+        )
+
+        sandboxes = client.list_sandboxes()
+
+        assert len(sandboxes) == 2
+        assert sandboxes[0].status == "ready"
+        assert sandboxes[1].status == "provisioning"
 
 
 class TestPoolOperations:
