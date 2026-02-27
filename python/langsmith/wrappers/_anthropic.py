@@ -138,8 +138,7 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     output_tokens = anthropic_token_usage.get("output_tokens") or 0
     cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
     cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
-    # Anthropic doesn't include cache tokens in input_tokens, so add them
-    total_tokens = input_tokens + output_tokens + cache_read + cache_creation
+    total_tokens = input_tokens + output_tokens
     input_token_details: dict = {}
     if cache_read:
         input_token_details["cache_read"] = cache_read
