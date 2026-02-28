@@ -1,1331 +1,5 @@
 interactions:
 - request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.107.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYOlSBXxuIyG7cuhn9Gx7nS1ZaX2\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757584855,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d65220fa959926-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:00:55 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=G0b9Tbadg4IcMMomy8StDVJJXIZR1d9wIzC5XIrkPd8-1757584855-1.0.1.1-NHC4o4E1LM8Z1bk3sMn_pbrRPqFDy19v3ULdc9Cf01wDTBsahpFjK0uNIHtvCxX9h2oRWSIVpegEil9REHnchjGnJEN1tIyo9HEmnb3A3Xs;
-        path=/; expires=Thu, 11-Sep-25 10:30:55 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=8jjfkNpICj01gXGJD19N6g_gZdLwNzqlprqiU5qML1M-1757584855572-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '187'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '219'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_8a185b98c48444809a6e7f1912de2fdb
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.107.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYOleuuEKcdXPFJbBel4xG8zDTeE\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757584855,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d65224cde22df7-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:00:56 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=EsqJvtp52wGQIqvyA0wT9VBpkDNp9jk04qzEixqMg5c-1757584856-1.0.1.1-xwYR2MMn7zqcsvjZO.Kn8HRKRWCTvAxkMEbPC.3LgKFoXsO49yn_jVpFIc43.edluf6MXsWt.uGlr17uCzfi1u3ryW8j5qbbYy3_lckIROM;
-        path=/; expires=Thu, 11-Sep-25 10:30:56 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=HFBIVhunczuDi1ALLTMKUVhG.2K3xlOg6cCvW2kG1fk-1757584856233-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '220'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '264'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_26a1acb2514143a5acdbb44c63b6189e
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      cookie:
-      - __cf_bm=G0b9Tbadg4IcMMomy8StDVJJXIZR1d9wIzC5XIrkPd8-1757584855-1.0.1.1-NHC4o4E1LM8Z1bk3sMn_pbrRPqFDy19v3ULdc9Cf01wDTBsahpFjK0uNIHtvCxX9h2oRWSIVpegEil9REHnchjGnJEN1tIyo9HEmnb3A3Xs;
-        _cfuvid=8jjfkNpICj01gXGJD19N6g_gZdLwNzqlprqiU5qML1M-1757584855572-0.0.1.1-604800000
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.107.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYOmGUQe4wegk3Q6cPnaZmlazfX8\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757584856,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d65227be379926-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:00:56 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '260'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '293'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_d9d74cf7411e4775b2c8b99151fd556b
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      cookie:
-      - __cf_bm=EsqJvtp52wGQIqvyA0wT9VBpkDNp9jk04qzEixqMg5c-1757584856-1.0.1.1-xwYR2MMn7zqcsvjZO.Kn8HRKRWCTvAxkMEbPC.3LgKFoXsO49yn_jVpFIc43.edluf6MXsWt.uGlr17uCzfi1u3ryW8j5qbbYy3_lckIROM;
-        _cfuvid=HFBIVhunczuDi1ALLTMKUVhG.2K3xlOg6cCvW2kG1fk-1757584856233-0.0.1.1-604800000
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.107.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYOmhfGps3lP0l6xnr4Nuf8AzILP\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757584856,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d6522abb0c2df7-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:00:57 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '326'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '352'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_b5762c78169041379a76a76dce27ceb2
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.106.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYS5xwVlxf5m19mfb8YnmPcN4IJa\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757585061,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d657297f33370a-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:04:21 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=RI_qFcu7S2NTgm0nUp3I297gYRhfmec1isVnAEIjNWA-1757585061-1.0.1.1-9HYT4D0PE.RDvsu2HofBkrqvethijnmAlFJ9hZo5Hpzp09h5oexBWlQh8rgJYFNoj0cab0RP0xCYMvykKuTsBJeSO5X5IpFob6YhdgN_QTs;
-        path=/; expires=Thu, 11-Sep-25 10:34:21 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=mzs2L3hyUym33MXZPyk6nnw0C2v4pDS5ZzF7mkvAb6U-1757585061747-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '196'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '243'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_b90e9fdc052944a99d9b9b550f3cd43c
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.106.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYS65SfTKmKBtHglU7yzN6yjXV8p\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757585062,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d6572d5a172d6e-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:04:22 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=eaxNmSj_DDHHk296cC3CK9n_QEzqCo6xdKXMUuHGi_I-1757585062-1.0.1.1-osQ18epwdQN2r29Qh8s5hHeJdruHWayCC33X._5Urs2BUi5qSuCU15FcrlZsrxeES3mZ0wnRe6WIdClX.zpSItDGxN_5__fq.ScSW08G2Vg;
-        path=/; expires=Thu, 11-Sep-25 10:34:22 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=.upyp6pA55BVmeGN3OaL4Stq0hOooGaoHSaCaublSYY-1757585062404-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '238'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '269'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_baabc428b0ba4eb4ad0f263ab698133e
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      cookie:
-      - __cf_bm=RI_qFcu7S2NTgm0nUp3I297gYRhfmec1isVnAEIjNWA-1757585061-1.0.1.1-9HYT4D0PE.RDvsu2HofBkrqvethijnmAlFJ9hZo5Hpzp09h5oexBWlQh8rgJYFNoj0cab0RP0xCYMvykKuTsBJeSO5X5IpFob6YhdgN_QTs;
-        _cfuvid=mzs2L3hyUym33MXZPyk6nnw0C2v4pDS5ZzF7mkvAb6U-1757585061747-0.0.1.1-604800000
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.106.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYS696JxvmutccPwQCh3E92XYP3d\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757585062,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d65730ba56370a-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:04:23 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '692'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '720'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_571173a79c9043608540f1758cc9b672
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '157'
-      content-type:
-      - application/json
-      cookie:
-      - __cf_bm=eaxNmSj_DDHHk296cC3CK9n_QEzqCo6xdKXMUuHGi_I-1757585062-1.0.1.1-osQ18epwdQN2r29Qh8s5hHeJdruHWayCC33X._5Urs2BUi5qSuCU15FcrlZsrxeES3mZ0wnRe6WIdClX.zpSItDGxN_5__fq.ScSW08G2Vg;
-        _cfuvid=.upyp6pA55BVmeGN3OaL4Stq0hOooGaoHSaCaublSYY-1757585062404-0.0.1.1-604800000
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.106.1
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.12.6
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CEYS7x4xGrZ8fqAgPinfkjUJiQJLZ\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1757585063,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 97d657367c142d6e-ARN
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 11 Sep 2025 10:04:23 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - klarna-org
-      openai-processing-ms:
-      - '343'
-      openai-project:
-      - proj_IXUoVPyLINE1vNMgmQsrigqY
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '377'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_e8c0143dc7514fde8d14f1a1b4cbbb75
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '157'
-      Content-Type:
-      - application/json
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.11.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.13.3
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-Cvbd564SFAAs7VYe3p6Y19Rn6Vd3z\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1767845379,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9ba8d732efaf0dfd-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 08 Jan 2026 04:09:39 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=li0Mv8u5jWWgtPyC2UOm9xaNoqAS1Y0jSeRC9RPPEqo-1767845379-1.0.1.1-MuiW0UCsR7ohGzkaz9PxqCim2BuTyOy8uOYp460gzVsPdvhlTE09Gc2d3wpGixaEnenbhgr_TKDISccv.6Lc52VRRd84aR4k4u5z7g2xVnE;
-        path=/; expires=Thu, 08-Jan-26 04:39:39 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=quci4Pdu54zTUAtqIO1VBkS5tbg19LynyguFP3DY9cg-1767845379261-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '165'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '184'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_dea9eac6eb6c4f2fac24577d0aab6567
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '157'
-      Content-Type:
-      - application/json
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.11.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.13.3
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-Cvbd5ikSm6pAn7tfRVE5IoStnN8Y6\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1767845379,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9ba8d734ad52fb48-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 08 Jan 2026 04:09:39 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=jP176eHProqa8A_E626g9eVtXDZO3ybfK1MxCQEoiVU-1767845379-1.0.1.1-A1kxxN9yCI6UVToxT8_mZqQNR5UzG63wYmVRDMVFOtfjqb3huxZvsoOGH9PuhpMb8MHDQE.L4DMPQLzbMSSEZRgZqNLH.t1ZzVFgKINF7Ro;
-        path=/; expires=Thu, 08-Jan-26 04:39:39 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=3eTUp2ZFdcCOMDypep8wnH3okc3UWNCLw9WdOfXMdx8-1767845379662-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '258'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '292'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_d44f6104348d4b1186a1f2b94b25a460
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '157'
-      Content-Type:
-      - application/json
-      Cookie:
-      - __cf_bm=li0Mv8u5jWWgtPyC2UOm9xaNoqAS1Y0jSeRC9RPPEqo-1767845379-1.0.1.1-MuiW0UCsR7ohGzkaz9PxqCim2BuTyOy8uOYp460gzVsPdvhlTE09Gc2d3wpGixaEnenbhgr_TKDISccv.6Lc52VRRd84aR4k4u5z7g2xVnE;
-        _cfuvid=quci4Pdu54zTUAtqIO1VBkS5tbg19LynyguFP3DY9cg-1767845379261-0.0.1.1-604800000
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.11.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.13.3
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-Cvbd5ehdOawpieLkO0CbirqhIFimM\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1767845379,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9ba8d737191b8fc5-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 08 Jan 2026 04:09:39 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '144'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '175'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_e1b019a2de4b41678c0d94d4c4e43652
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Say ''foo'' then stop."}], "model":
-      "gpt-3.5-turbo", "max_tokens": 3, "seed": 42, "stream": false, "temperature":
-      0}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '157'
-      Content-Type:
-      - application/json
-      Cookie:
-      - __cf_bm=jP176eHProqa8A_E626g9eVtXDZO3ybfK1MxCQEoiVU-1767845379-1.0.1.1-A1kxxN9yCI6UVToxT8_mZqQNR5UzG63wYmVRDMVFOtfjqb3huxZvsoOGH9PuhpMb8MHDQE.L4DMPQLzbMSSEZRgZqNLH.t1ZzVFgKINF7Ro;
-        _cfuvid=3eTUp2ZFdcCOMDypep8wnH3okc3UWNCLw9WdOfXMdx8-1767845379662-0.0.1.1-604800000
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.11.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.13.3
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-Cvbd68yDfOojn1Aq8Cqh58080nKd0\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1767845380,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9ba8d738ce97b873-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 08 Jan 2026 04:09:40 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '245'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '270'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999992'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_5cb1da94add9446e97d8e6762bb09fb2
-    status:
-      code: 200
-      message: OK
-- request:
     body: '{"messages":[{"role":"user","content":"Say ''foo'' then stop."}],"model":"gpt-3.5-turbo","max_tokens":3,"seed":42,"stream":false,"temperature":0}'
     headers:
       Accept:
@@ -1364,8 +38,8 @@ interactions:
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: "{\n  \"id\": \"chatcmpl-DEKwvyGmEecLxr0FX9lQTPz3p908X\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1772309493,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+      string: "{\n  \"id\": \"chatcmpl-DELD7FcYoYbH4wlKwSEhmRz6POI7Q\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310497,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
         \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
         \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
         \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
@@ -1377,13 +51,13 @@ interactions:
         \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
-      - 9d529260bb272ed1-SJC
+      - 9d52aae34b47d5f2-SJC
       Connection:
       - keep-alive
       Content-Type:
       - application/json
       Date:
-      - Sat, 28 Feb 2026 20:11:34 GMT
+      - Sat, 28 Feb 2026 20:28:18 GMT
       Server:
       - cloudflare
       Strict-Transport-Security:
@@ -1403,15 +77,15 @@ interactions:
       openai-organization:
       - langchain
       openai-processing-ms:
-      - '139'
+      - '147'
       openai-project:
       - proj_IfpviNC2vx5jMiYFE4hbElsy
       openai-version:
       - '2020-10-01'
       set-cookie:
-      - __cf_bm=z01oPMWWNZsCVDicSJEo.nqGO76zDB8kaYVqUxA1Vco-1772309493.8718264-1.0.1.1-_6nxdg4l_ySx0F7Ec8ccSOrChxNf.rTYGAn6wWRGcJY8SoRmWsw2lA0DvcWrBfsBNAycra6fiKdaDTiyFyLy32aOT.Z6bgPx_HDEN7renpk287H0TIXIws_WpA9C3usx;
+      - __cf_bm=9LsaY.86v2pXfISwQB1DGsdwxivRwfZqjF9wxc9rIzE-1772310497.809965-1.0.1.1-OAxgJCmlkndjMOB9qN3Mg.nzvhxx.yOk2oAzLsbR6dx2uS3HRjy3aLWgVI7GSe5ymVjXyUw8HOZr7GbQzspikQ9U6C_IEOV4VSwy0QN02LNm19MC_bCLwE4Rdcmvcrp7;
         HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Sat, 28 Feb 2026
-        20:41:34 GMT
+        20:58:18 GMT
       x-openai-proxy-wasm:
       - v0.1
       x-ratelimit-limit-requests:
@@ -1421,13 +95,13 @@ interactions:
       x-ratelimit-remaining-requests:
       - '9999'
       x-ratelimit-remaining-tokens:
-      - '49999993'
+      - '49999992'
       x-ratelimit-reset-requests:
       - 6ms
       x-ratelimit-reset-tokens:
       - 0s
       x-request-id:
-      - req_681bea76a6b2484e992477b21413b382
+      - req_b9932a775fa645e6b195cceeb1e262aa
     status:
       code: 200
       message: OK
@@ -1470,8 +144,8 @@ interactions:
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: "{\n  \"id\": \"chatcmpl-DEKwwf0hPBDfBGiOCVxOXyVvHBQvF\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1772309494,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+      string: "{\n  \"id\": \"chatcmpl-DELD8EY8agCBKMqY8WWbsnqfb5IRw\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310498,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
         \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
         \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
         \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
@@ -1483,13 +157,13 @@ interactions:
         \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
-      - 9d5292631ccbc236-SJC
+      - 9d52aae53ba4fa2e-SJC
       Connection:
       - keep-alive
       Content-Type:
       - application/json
       Date:
-      - Sat, 28 Feb 2026 20:11:34 GMT
+      - Sat, 28 Feb 2026 20:28:18 GMT
       Server:
       - cloudflare
       Strict-Transport-Security:
@@ -1509,15 +183,15 @@ interactions:
       openai-organization:
       - langchain
       openai-processing-ms:
-      - '140'
+      - '204'
       openai-project:
       - proj_IfpviNC2vx5jMiYFE4hbElsy
       openai-version:
       - '2020-10-01'
       set-cookie:
-      - __cf_bm=fuFs8m1TPRs0TDtmfR5bf9HptAnvyUgH_Add0UntvhY-1772309494.2581232-1.0.1.1-9ug0QkltCbzyvT_RXN_JpdRq26zPgVHVbYMzcezkdHHJHCeQBY_DFM1kPQdmYPf.YRawOZekvvcRWgR5Vk5Gk.baN39WGx5PvoGX2q1dM4Oeu9VR5pzTJ_cRlAMAqbF8;
+      - __cf_bm=D7X_3YW8Dhc9cWVmNlmqpUiE.HMYnUmE5PAzZsLlMZA-1772310498.119864-1.0.1.1-qLz3NJZfKDb2O1ko8OYM_MLmB28KZaZxOoI1s7KnOlKhBdEv2iwepuq0XL2nobakMN7ROMRtwJXl1WKb9WD8JxH4USdfGFt2Gj7WmDE6mqToeHaE45C9ID72LUEIIQ5P;
         HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Sat, 28 Feb 2026
-        20:41:34 GMT
+        20:58:18 GMT
       x-openai-proxy-wasm:
       - v0.1
       x-ratelimit-limit-requests:
@@ -1527,13 +201,13 @@ interactions:
       x-ratelimit-remaining-requests:
       - '9999'
       x-ratelimit-remaining-tokens:
-      - '49999993'
+      - '49999992'
       x-ratelimit-reset-requests:
       - 6ms
       x-ratelimit-reset-tokens:
       - 0s
       x-request-id:
-      - req_fb6cde1ae00e42f79d36acde77157877
+      - req_249cef4b8ab9442db2c7e78b1903ebee
     status:
       code: 200
       message: OK
@@ -1551,7 +225,7 @@ interactions:
       Content-Type:
       - application/json
       Cookie:
-      - __cf_bm=z01oPMWWNZsCVDicSJEo.nqGO76zDB8kaYVqUxA1Vco-1772309493.8718264-1.0.1.1-_6nxdg4l_ySx0F7Ec8ccSOrChxNf.rTYGAn6wWRGcJY8SoRmWsw2lA0DvcWrBfsBNAycra6fiKdaDTiyFyLy32aOT.Z6bgPx_HDEN7renpk287H0TIXIws_WpA9C3usx
+      - __cf_bm=9LsaY.86v2pXfISwQB1DGsdwxivRwfZqjF9wxc9rIzE-1772310497.809965-1.0.1.1-OAxgJCmlkndjMOB9qN3Mg.nzvhxx.yOk2oAzLsbR6dx2uS3HRjy3aLWgVI7GSe5ymVjXyUw8HOZr7GbQzspikQ9U6C_IEOV4VSwy0QN02LNm19MC_bCLwE4Rdcmvcrp7
       Host:
       - api.openai.com
       X-Stainless-Arch:
@@ -1578,8 +252,8 @@ interactions:
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: "{\n  \"id\": \"chatcmpl-DEKwwKHUnjmbKuMBCVvBshrIsfk1o\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1772309494,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+      string: "{\n  \"id\": \"chatcmpl-DELD8z8qWdJeGZuPl3azxKim9uLpo\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310498,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
         \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
         \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
         \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
@@ -1591,13 +265,13 @@ interactions:
         \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
-      - 9d529264bca9ebf3-SJC
+      - 9d52aae75bbcde51-SJC
       Connection:
       - keep-alive
       Content-Type:
       - application/json
       Date:
-      - Sat, 28 Feb 2026 20:11:34 GMT
+      - Sat, 28 Feb 2026 20:28:18 GMT
       Server:
       - cloudflare
       Strict-Transport-Security:
@@ -1617,111 +291,7 @@ interactions:
       openai-organization:
       - langchain
       openai-processing-ms:
-      - '234'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999993'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_dfc6dad535ff439ca5123c5cf36a99bd
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages":[{"role":"user","content":"Say ''foo'' then stop."}],"model":"gpt-3.5-turbo","max_tokens":3,"seed":42,"stream":false,"temperature":0}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '143'
-      Content-Type:
-      - application/json
-      Cookie:
-      - __cf_bm=fuFs8m1TPRs0TDtmfR5bf9HptAnvyUgH_Add0UntvhY-1772309494.2581232-1.0.1.1-9ug0QkltCbzyvT_RXN_JpdRq26zPgVHVbYMzcezkdHHJHCeQBY_DFM1kPQdmYPf.YRawOZekvvcRWgR5Vk5Gk.baN39WGx5PvoGX2q1dM4Oeu9VR5pzTJ_cRlAMAqbF8
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.22.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.12.2
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-DEKwwQFxv7jiE5myBV55DMUpO9v5F\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1772309494,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
-        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
-        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
-        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9d529266db93cfbc-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Sat, 28 Feb 2026 20:11:35 GMT
-      Server:
-      - cloudflare
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '794'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '163'
+      - '239'
       openai-project:
       - proj_IfpviNC2vx5jMiYFE4hbElsy
       openai-version:
@@ -1741,7 +311,111 @@ interactions:
       x-ratelimit-reset-tokens:
       - 0s
       x-request-id:
-      - req_da3e88ecf9024401ae78899cd87518dc
+      - req_f9ca5919b55b49cb911f6cb504bf1081
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"user","content":"Say ''foo'' then stop."}],"model":"gpt-3.5-turbo","max_tokens":3,"seed":42,"stream":false,"temperature":0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '143'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=D7X_3YW8Dhc9cWVmNlmqpUiE.HMYnUmE5PAzZsLlMZA-1772310498.119864-1.0.1.1-qLz3NJZfKDb2O1ko8OYM_MLmB28KZaZxOoI1s7KnOlKhBdEv2iwepuq0XL2nobakMN7ROMRtwJXl1WKb9WD8JxH4USdfGFt2Gj7WmDE6mqToeHaE45C9ID72LUEIIQ5P
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - 'false'
+      X-Stainless-Helper-Method:
+      - chat.completions.parse
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.22.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.12.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-DELD8N1br3UyIafCgJY3s5RjpV0mO\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310498,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Foo\",\n        \"refusal\": null,\n
+        \       \"annotations\": []\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
+        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\":
+        1,\n    \"total_tokens\": 15,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 9d52aae98c5c7e56-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sat, 28 Feb 2026 20:28:19 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '794'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '255'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '50000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '49999992'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_f2d312d0933f49199285153c4fefd3eb
     status:
       code: 200
       message: OK

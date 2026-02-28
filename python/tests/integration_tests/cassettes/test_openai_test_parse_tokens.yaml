@@ -1,229 +1,5 @@
 interactions:
 - request:
-    body: '{"messages": [{"role": "user", "content": "Check usage"}], "model": "gpt-3.5-turbo",
-      "stream": false}'
-    headers:
-      accept:
-      - application/json
-      accept-encoding:
-      - gzip, deflate, zstd
-      connection:
-      - keep-alive
-      content-length:
-      - '101'
-      content-type:
-      - application/json
-      host:
-      - api.openai.com
-      x-stainless-arch:
-      - arm64
-      x-stainless-async:
-      - 'false'
-      x-stainless-helper-method:
-      - beta.chat.completions.parse
-      x-stainless-lang:
-      - python
-      x-stainless-os:
-      - MacOS
-      x-stainless-package-version:
-      - 1.63.2
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-      x-stainless-runtime:
-      - CPython
-      x-stainless-runtime-version:
-      - 3.11.3
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-B7RWOTqUNCzKTce2xIFNKegSqd0cn\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1741113788,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Could you please provide more context
-        or clarify what you mean by \\\"check usage\\\"?\",\n        \"refusal\":
-        null\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
-        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 9,\n    \"completion_tokens\":
-        17,\n    \"total_tokens\": 26,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 91b3847afd9041af-EWR
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Tue, 04 Mar 2025 18:43:09 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=jsUmttM7MQ98on792bH2Wox3yknJ4lPDALCnWAeqOq4-1741113789-1.0.1.1-rdlR6sIHYhcejr9AZGwzbVgLaZBDJ842o.DGr.I.Td9QZZCv1yejiI4CEt26pUs5j4AWjsJzQp4IX6PwXr4q1xB_Rh3J3R3NAj5oj7Cg_Ss;
-        path=/; expires=Tue, 04-Mar-25 19:13:09 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=GkEJxws5EAfgP67VCvXVEo6CC_RpKSD4iNJrtyAY2as-1741113789241-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '846'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '435'
-      openai-version:
-      - '2020-10-01'
-      strict-transport-security:
-      - max-age=31536000; includeSubDomains; preload
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999980'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_cff0f4cc7d25a32c5b37089a06e04152
-    status:
-      code: 200
-      message: OK
-- request:
-    body: '{"messages": [{"role": "user", "content": "Check usage"}], "model": "gpt-3.5-turbo",
-      "stream": false}'
-    headers:
-      Accept:
-      - application/json
-      Accept-Encoding:
-      - gzip, deflate, zstd
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '101'
-      Content-Type:
-      - application/json
-      Host:
-      - api.openai.com
-      X-Stainless-Arch:
-      - arm64
-      X-Stainless-Async:
-      - 'false'
-      X-Stainless-Helper-Method:
-      - chat.completions.parse
-      X-Stainless-Lang:
-      - python
-      X-Stainless-OS:
-      - MacOS
-      X-Stainless-Package-Version:
-      - 2.11.0
-      X-Stainless-Runtime:
-      - CPython
-      X-Stainless-Runtime-Version:
-      - 3.13.3
-      x-stainless-read-timeout:
-      - '600'
-      x-stainless-retry-count:
-      - '0'
-    method: POST
-    uri: https://api.openai.com/v1/chat/completions
-  response:
-    body:
-      string: "{\n  \"id\": \"chatcmpl-CvbdAfFAdgJwjgCaFoXA8hvAyD4W3\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1767845384,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Usage of a product or service refers
-        to how it is used or the way in which it is utilized by consumers. It can
-        also refer to the frequency or duration of usage. For example, the usage of
-        a smartphone may include making calls, sending messages, browsing the internet,
-        and using apps. The usage of a credit card may involve making purchases, paying
-        bills, and accessing rewards or benefits. Understanding usage patterns can
-        help businesses improve their products or services and tailor them to better
-        meet the needs of their customers.\",\n        \"refusal\": null,\n        \"annotations\":
-        []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
-        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 9,\n    \"completion_tokens\":
-        102,\n    \"total_tokens\": 111,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-        \"default\",\n  \"system_fingerprint\": null\n}\n"
-    headers:
-      CF-RAY:
-      - 9ba8d7529bc1eb1e-SJC
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Thu, 08 Jan 2026 04:09:45 GMT
-      Server:
-      - cloudflare
-      Set-Cookie:
-      - __cf_bm=X7GeiZZkdO3RF4GWNPu.ZOQFnvteANxWUkBdmGRIN1I-1767845385-1.0.1.1-goZoRFufEGr8Ql0fh7PVAj7_6L7XOlsUdMJehxSWgBvrJSzEBqvDGn8NEhLK1cgoMVrjwm8j4pkzsuXav3KFnxAqjyuFHkJsZEG7B_bQHaQ;
-        path=/; expires=Thu, 08-Jan-26 04:39:45 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=vJcuS0RNWObg9xtvZqnv0FTgvPmPlRV0p7_Ot0JXuAk-1767845385188-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
-      X-Content-Type-Options:
-      - nosniff
-      access-control-expose-headers:
-      - X-Request-ID
-      alt-svc:
-      - h3=":443"; ma=86400
-      cf-cache-status:
-      - DYNAMIC
-      content-length:
-      - '1326'
-      openai-organization:
-      - langchain
-      openai-processing-ms:
-      - '1007'
-      openai-project:
-      - proj_IfpviNC2vx5jMiYFE4hbElsy
-      openai-version:
-      - '2020-10-01'
-      x-envoy-upstream-service-time:
-      - '1027'
-      x-openai-proxy-wasm:
-      - v0.1
-      x-ratelimit-limit-requests:
-      - '10000'
-      x-ratelimit-limit-tokens:
-      - '50000000'
-      x-ratelimit-remaining-requests:
-      - '9999'
-      x-ratelimit-remaining-tokens:
-      - '49999995'
-      x-ratelimit-reset-requests:
-      - 6ms
-      x-ratelimit-reset-tokens:
-      - 0s
-      x-request-id:
-      - req_0ec71609a46741968665e00d676434da
-    status:
-      code: 200
-      message: OK
-- request:
     body: '{"messages":[{"role":"user","content":"Check usage"}],"model":"gpt-3.5-turbo","stream":false}'
     headers:
       Accept:
@@ -262,30 +38,28 @@ interactions:
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: "{\n  \"id\": \"chatcmpl-DEKx0p3tRLP1QNHOPaOcsz6NqtBBt\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1772309498,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+      string: "{\n  \"id\": \"chatcmpl-DELDDK3b053VnwGHQwbA9Uk3bUFma\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310503,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
         \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-        \"assistant\",\n        \"content\": \"Usage can refer to the way something
-        is used or consumed, the practice of using something, or the amount of use
-        something gets. For example, \\\"The usage of smartphones has increased dramatically
-        in recent years\\\" or \\\"The company's new policy limits the usage of company
-        vehicles for personal use.\\\"\",\n        \"refusal\": null,\n        \"annotations\":
-        []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
-        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 9,\n    \"completion_tokens\":
-        58,\n    \"total_tokens\": 67,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        \"assistant\",\n        \"content\": \"Sure, usage refers to the way something
+        is used or the extent to which something is utilized. It can also refer to
+        the customary or recommended way of using something.\",\n        \"refusal\":
+        null,\n        \"annotations\": []\n      },\n      \"logprobs\": null,\n
+        \     \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        9,\n    \"completion_tokens\": 33,\n    \"total_tokens\": 42,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
         {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
         0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
         \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
-      - 9d52927e3da66ce3-SJC
+      - 9d52ab05bf32ae00-SJC
       Connection:
       - keep-alive
       Content-Type:
       - application/json
       Date:
-      - Sat, 28 Feb 2026 20:11:39 GMT
+      - Sat, 28 Feb 2026 20:28:23 GMT
       Server:
       - cloudflare
       Strict-Transport-Security:
@@ -301,19 +75,19 @@ interactions:
       cf-cache-status:
       - DYNAMIC
       content-length:
-      - '1090'
+      - '958'
       openai-organization:
       - langchain
       openai-processing-ms:
-      - '678'
+      - '385'
       openai-project:
       - proj_IfpviNC2vx5jMiYFE4hbElsy
       openai-version:
       - '2020-10-01'
       set-cookie:
-      - __cf_bm=ZRxrkqBAFXXIj9K_hvCs3.4dJgpJY3Mf0xVPSM5ZULw-1772309498.591339-1.0.1.1-1X1FW_w3REQ_6drTP3lfsD2RcSoKiWOC8AxS_8.512_uPwE9l4hAzXvLbqPjyLSjk2QUoEhUbQd4UgrTfUv.FqO41z.AsbguWCNf5Fsg99qbUUO5RiwQvsi1NGIB29fs;
+      - __cf_bm=hoODMnUWrabe8HGEFAqQ1xvzCPkzR6k7UoqH905XNNs-1772310503.3178098-1.0.1.1-6hjGWdhSy1dEpGoili7o21U6LiqulvOuyYCRDSsPq5eCh87Zp5AybwHMAEJN5oCAqTquxkksqcjJj6jQCTAmdbiWZVuYnXkzR6JWaOjuCBhMuBqMlO_AvWryn.UamRLe;
         HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Sat, 28 Feb 2026
-        20:41:39 GMT
+        20:58:23 GMT
       x-openai-proxy-wasm:
       - v0.1
       x-ratelimit-limit-requests:
@@ -329,7 +103,7 @@ interactions:
       x-ratelimit-reset-tokens:
       - 0s
       x-request-id:
-      - req_4de6fd11d5d84bc1b1ea77104eadb8da
+      - req_e1fed16cc2c740d6beab629b1852da9e
     status:
       code: 200
       message: OK
