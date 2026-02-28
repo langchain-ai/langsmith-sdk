@@ -90,3 +90,7 @@ For tutorials on how to get more value out of LangSmith, check out the [Langsmit
 ## Documentation
 
 To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/)
+
+## Releasing
+
+For SDK release instructions, see [RELEASING.md](RELEASING.md).
