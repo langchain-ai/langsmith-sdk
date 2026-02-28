@@ -8,6 +8,7 @@ from langsmith.sandbox import (
     ResourceNotFoundError,
     SandboxClient,
     SandboxConnectionError,
+    SandboxNotReadyError,
 )
 from langsmith.sandbox._sandbox import Sandbox
 
@@ -46,6 +47,115 @@ class TestSandboxProperties:
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
+
+
+class TestSandboxStatusFields:
+    """Tests for status fields on Sandbox."""
+
+    def test_from_dict_with_status(self, client):
+        """Test from_dict parses status fields."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "status_message": None,
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.status == "provisioning"
+        assert sb.status_message is None
+
+    def test_from_dict_failed_status(self, client):
+        """Test from_dict parses failed status with message."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "failed",
+                "status_message": "No capacity available",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.status == "failed"
+        assert sb.status_message == "No capacity available"
+
+    def test_from_dict_defaults_to_ready(self, client):
+        """Test from_dict defaults status to 'ready' when absent."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.status == "ready"
+        assert sb.status_message is None
+
+    def test_provisioning_sandbox_blocks_run(self, client):
+        """Test that run() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError, match="not ready"):
+            sb.run("echo hello")
+
+    def test_failed_sandbox_blocks_run(self, client):
+        """Test that run() raises SandboxNotReadyError for failed sandbox."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "failed",
+                "status_message": "No capacity",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError):
+            sb.run("echo hello")
+
+    def test_provisioning_sandbox_blocks_write(self, client):
+        """Test that write() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError):
+            sb.write("/tmp/test.txt", "hello")
+
+    def test_provisioning_sandbox_blocks_read(self, client):
+        """Test that read() raises SandboxNotReadyError for non-ready sandbox."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "status": "provisioning",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(SandboxNotReadyError):
+            sb.read("/tmp/test.txt")
 
 
 class TestSandboxRun:

@@ -16,7 +16,7 @@ from tests.unit_tests.test_run_helpers import _get_calls
 if TYPE_CHECKING:
     import anthropic
 
-model_name = "claude-3-5-haiku-latest"
+model_name = "claude-haiku-4-5-20251001"
 messages = [{"role": "user", "content": "Say 'foo'"}]
 
 

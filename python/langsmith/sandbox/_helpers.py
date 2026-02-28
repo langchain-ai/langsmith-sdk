@@ -13,13 +13,13 @@ import httpx
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
     ResourceAlreadyExistsError,
+    ResourceCreationError,
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxAPIError,
     SandboxAuthenticationError,
     SandboxClientError,
     SandboxConnectionError,
-    SandboxCreationError,
     SandboxNotReadyError,
     SandboxOperationError,
     ValidationError,
@@ -135,8 +135,12 @@ def extract_quota_type(message: str) -> Optional[str]:
 # =============================================================================
 
 
-def raise_creation_error(data: dict[str, Any], error: httpx.HTTPStatusError) -> None:
-    """Raise SandboxCreationError with the error_type from the API response.
+def raise_creation_error(
+    data: dict[str, Any],
+    error: httpx.HTTPStatusError,
+    resource_type: str = "sandbox",
+) -> None:
+    """Raise ResourceCreationError with the error_type from the API response.
 
     The error_type indicates the specific failure reason:
     - ImagePull: Image pull failed
@@ -144,8 +148,9 @@ def raise_creation_error(data: dict[str, Any], error: httpx.HTTPStatusError) -> 
     - SandboxConfig: Configuration error
     - Unschedulable: Cannot be scheduled
     """
-    raise SandboxCreationError(
-        data.get("message", "Sandbox creation failed"),
+    raise ResourceCreationError(
+        data.get("message", f"{resource_type.title()} creation failed"),
+        resource_type=resource_type,
         error_type=data.get("error_type"),
     ) from error
 
@@ -155,9 +160,9 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
 
     Maps API error responses to specific exception types:
     - 408: ResourceTimeoutError (sandbox didn't become ready in time)
-    - 422: ValidationError (bad input) or SandboxCreationError (runtime)
+    - 422: ValidationError (bad input) or ResourceCreationError (runtime)
     - 429: QuotaExceededError (org limits exceeded)
-    - 503: SandboxCreationError (no resources available)
+    - 503: ResourceCreationError (no resources available)
     - Other: Falls through to generic error handling
     """
     status = error.response.status_code
@@ -189,8 +194,9 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
         ) from error
     elif status == 503:
         # Service Unavailable - scheduling failed
-        raise SandboxCreationError(
+        raise ResourceCreationError(
             data["message"],
+            resource_type="sandbox",
             error_type=data.get("error_type") or "Unschedulable",
         ) from error
     else:
@@ -202,7 +208,7 @@ def handle_volume_creation_error(error: httpx.HTTPStatusError) -> None:
     """Handle HTTP errors specific to volume creation.
 
     Maps API error responses to specific exception types:
-    - 503: SandboxCreationError (provisioning failed)
+    - 503: ResourceCreationError (provisioning failed)
     - 504: ResourceTimeoutError (volume didn't become ready in time)
     - Other: Falls through to generic error handling
     """
@@ -211,8 +217,10 @@ def handle_volume_creation_error(error: httpx.HTTPStatusError) -> None:
 
     if status == 503:
         # Provisioning failed (invalid storage class, quota exceeded)
-        raise SandboxCreationError(
-            data["message"], error_type="VolumeProvisioning"
+        raise ResourceCreationError(
+            data["message"],
+            resource_type="volume",
+            error_type="VolumeProvisioning",
         ) from error
     elif status == 504:
         # Timeout - volume didn't become ready in time

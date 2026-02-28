@@ -196,21 +196,28 @@ class QuotaExceededError(SandboxClientError):
 
 
 # =============================================================================
-# Sandbox Creation Errors
+# Resource Creation Errors
 # =============================================================================
 
 
-class SandboxCreationError(SandboxClientError):
-    """Raised when sandbox creation fails.
+class ResourceCreationError(SandboxClientError):
+    """Raised when resource provisioning fails.
 
     Attributes:
+        resource_type: Type of resource (sandbox, volume, pool).
         error_type: Machine-readable error type (ImagePull, CrashLoop,
-            SandboxConfig, Unschedulable).
+            SandboxConfig, Unschedulable, VolumeProvisioning).
     """
 
-    def __init__(self, message: str, error_type: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        resource_type: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ):
         """Initialize the error."""
         super().__init__(message)
+        self.resource_type = resource_type
         self.error_type = error_type
 
     def __str__(self) -> str:

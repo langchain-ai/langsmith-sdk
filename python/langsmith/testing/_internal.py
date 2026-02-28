@@ -1139,10 +1139,6 @@ unit = test
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
 
-    !!! warning
-
-        This API is in beta and might change in future versions.
-
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
@@ -1179,10 +1175,6 @@ def log_inputs(inputs: dict, /) -> None:
 
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1222,10 +1214,6 @@ def log_outputs(outputs: dict, /) -> None:
 
 def log_reference_outputs(reference_outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1271,10 +1259,6 @@ def log_feedback(
     **kwargs: Any,
 ) -> None:
     """Log run feedback from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1345,10 +1329,6 @@ def trace_feedback(
     *, name: str = "Feedback"
 ) -> Generator[Optional[run_trees.RunTree], None, None]:
     """Trace the computation of a pytest run feedback as its own run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Args:
         name: Feedback run name. Defaults to "Feedback".
