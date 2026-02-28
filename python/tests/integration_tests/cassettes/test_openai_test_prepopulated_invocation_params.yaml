@@ -1,7 +1,6 @@
 interactions:
 - request:
-    body: '{"messages": [{"role": "user", "content": "Say ''hello''"}], "model": "gpt-5-nano",
-      "seed": 42}'
+    body: '{"messages":[{"role":"user","content":"Say ''hello''"}],"model":"gpt-5-nano","seed":42}'
     headers:
       Accept:
       - application/json
@@ -10,7 +9,7 @@ interactions:
       Connection:
       - keep-alive
       Content-Length:
-      - '93'
+      - '85'
       Content-Type:
       - application/json
       Host:
@@ -24,11 +23,11 @@ interactions:
       X-Stainless-OS:
       - MacOS
       X-Stainless-Package-Version:
-      - 2.14.0
+      - 2.22.0
       X-Stainless-Runtime:
       - CPython
       X-Stainless-Runtime-Version:
-      - 3.11.9
+      - 3.12.2
       x-stainless-read-timeout:
       - '600'
       x-stainless-retry-count:
@@ -37,34 +36,28 @@ interactions:
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: "{\n  \"id\": \"chatcmpl-D3u4rxxSeCO6doxdYuqS2KzfoUAWp\",\n  \"object\":
-        \"chat.completion\",\n  \"created\": 1769822917,\n  \"model\": \"gpt-5-nano-2025-08-07\",\n
+      string: "{\n  \"id\": \"chatcmpl-DELDXGGB9TZccULsNvOpHHOg1WRA1\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1772310523,\n  \"model\": \"gpt-5-nano-2025-08-07\",\n
         \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
         \"assistant\",\n        \"content\": \"hello\",\n        \"refusal\": null,\n
         \       \"annotations\": []\n      },\n      \"finish_reason\": \"stop\"\n
         \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 10,\n    \"completion_tokens\":
-        138,\n    \"total_tokens\": 148,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        202,\n    \"total_tokens\": 212,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
         0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
-        {\n      \"reasoning_tokens\": 128,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        {\n      \"reasoning_tokens\": 192,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
         0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
         \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
-      - 9c656ef44e249452-SJC
+      - 9d52ab81b8595e16-SJC
       Connection:
       - keep-alive
       Content-Type:
       - application/json
       Date:
-      - Sat, 31 Jan 2026 01:28:39 GMT
+      - Sat, 28 Feb 2026 20:28:44 GMT
       Server:
       - cloudflare
-      Set-Cookie:
-      - __cf_bm=THSbUdiBD2EdCBidoImdGqWyqnvKR.c2OhIsnLOjbKw-1769822919-1.0.1.1-lQFWHBqyt9WKqe_zbSqCIjcC8R5pXPJ2zOKh1ed5f4qNlmJ84fs9GviRQC7GWzR1vCjtHeN4R6fjWcx5ijnDpbpDGVdPRmm4QHylIY8dtC0;
-        path=/; expires=Sat, 31-Jan-26 01:58:39 GMT; domain=.api.openai.com; HttpOnly;
-        Secure; SameSite=None
-      - _cfuvid=eLDic9Egzj6X_l4O018tbjfAyCaafUCtfOGLm3mTSqU-1769822919083-0.0.1.1-604800000;
-        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
       Transfer-Encoding:
@@ -82,11 +75,15 @@ interactions:
       openai-organization:
       - langchain
       openai-processing-ms:
-      - '1200'
+      - '1418'
       openai-project:
       - proj_IfpviNC2vx5jMiYFE4hbElsy
       openai-version:
       - '2020-10-01'
+      set-cookie:
+      - __cf_bm=ZQjWy2DCE3tM3rYXAhjguvouE2ZQH.pHv4wexbeDaok-1772310523.1548085-1.0.1.1-ekliApUFs73ZzvWb8Xjq15iqYHS94gt4EjGuKZGJhzL720_hXnR_HZXYhjnV55z8XecZoOQg8Orq0XhB9LqU5Fwo8wTC3cgM92cevipjBaDX1vLU5fwXyunHom7yuW6r;
+        HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Sat, 28 Feb 2026
+        20:58:44 GMT
       x-openai-proxy-wasm:
       - v0.1
       x-ratelimit-limit-requests:
@@ -102,7 +99,7 @@ interactions:
       x-ratelimit-reset-tokens:
       - 0s
       x-request-id:
-      - req_07cb513945554f589ab6cf420f682bd8
+      - req_5790d8c0bba64030b94d413f8e6dd6cb
     status:
       code: 200
       message: OK
