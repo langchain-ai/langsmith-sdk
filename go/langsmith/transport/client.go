@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -119,26 +121,96 @@ func (c *Client) Do(ctx context.Context, req Request) (Response, error) {
 		headers.Set("Content-Type", "application/json")
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, endpoint.String(), bytes.NewReader(payload))
-	if err != nil {
-		return Response{}, fmt.Errorf("transport: create request: %w", err)
-	}
-	httpReq.Header = headers
-
-	httpResp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return Response{}, fmt.Errorf("transport: execute request: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	respBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return Response{}, fmt.Errorf("transport: read response body: %w", err)
+	attempts := c.retry.MaxAttempts
+	if attempts <= 0 {
+		attempts = 1
 	}
 
-	return Response{
-		StatusCode: httpResp.StatusCode,
-		Headers:    httpResp.Header.Clone(),
-		Body:       respBody,
-	}, nil
+	for attempt := 1; attempt <= attempts; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, req.Method, endpoint.String(), bytes.NewReader(payload))
+		if err != nil {
+			return Response{}, fmt.Errorf("transport: create request: %w", err)
+		}
+		httpReq.Header = headers.Clone()
+
+		httpResp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			if attempt < attempts && shouldRetryError(err) {
+				if waitErr := waitForRetry(ctx, c.retryDelay(attempt)); waitErr != nil {
+					return Response{}, fmt.Errorf("transport: wait for retry: %w", waitErr)
+				}
+				continue
+			}
+			return Response{}, fmt.Errorf("transport: execute request: %w", err)
+		}
+
+		respBody, readErr := io.ReadAll(httpResp.Body)
+		closeErr := httpResp.Body.Close()
+		if readErr != nil {
+			return Response{}, fmt.Errorf("transport: read response body: %w", readErr)
+		}
+		if closeErr != nil {
+			return Response{}, fmt.Errorf("transport: close response body: %w", closeErr)
+		}
+
+		resp := Response{
+			StatusCode: httpResp.StatusCode,
+			Headers:    httpResp.Header.Clone(),
+			Body:       respBody,
+		}
+
+		if attempt < attempts && shouldRetryStatus(resp.StatusCode) {
+			if waitErr := waitForRetry(ctx, c.retryDelay(attempt)); waitErr != nil {
+				return Response{}, fmt.Errorf("transport: wait for retry: %w", waitErr)
+			}
+			continue
+		}
+
+		return resp, nil
+	}
+
+	return Response{}, fmt.Errorf("transport: exhausted retry attempts")
+}
+
+func shouldRetryStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldRetryError(err error) bool {
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+}
+
+func (c *Client) retryDelay(attempt int) time.Duration {
+	if c.retry.BaseBackoff <= 0 {
+		return 0
+	}
+
+	delay := c.retry.BaseBackoff * time.Duration(1<<(attempt-1))
+	if c.retry.MaxBackoff > 0 && delay > c.retry.MaxBackoff {
+		delay = c.retry.MaxBackoff
+	}
+	if c.retry.Jitter > 0 {
+		delay += time.Duration(rand.Int63n(int64(c.retry.Jitter) + 1))
+	}
+	return delay
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
