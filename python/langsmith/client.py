@@ -540,6 +540,72 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _prepare_list_feedback_params(
+    run_ids: Optional[Sequence[ID_TYPE]],
+    project_id: Union[ID_TYPE, Sequence[ID_TYPE], None],
+    feedback_key: Optional[Sequence[str]],
+    feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]],
+    **kwargs: Any,
+) -> dict:
+    """Validate and normalize parameters for listing feedback.
+
+    Resolves conflicts between named params and their raw query-param equivalents
+    passed via kwargs (``run``, ``session``, ``key``, ``source``).
+
+    Returns a dict ready to be sent as query params.
+    """
+    # -- run / run_ids --------------------------------------------------------
+    kwarg_run = kwargs.pop("run", None)
+    if kwarg_run is not None and run_ids is not None:
+        raise ValueError("Can only specify one of 'run' or 'run_ids', received both.")
+    run_param = kwarg_run if kwarg_run is not None else run_ids
+
+    # -- session / project_id -------------------------------------------------
+    kwarg_session = kwargs.pop("session", None)
+    if kwarg_session is not None and project_id is not None:
+        raise ValueError(
+            "Can only specify one of 'project_id' or 'session', received both."
+        )
+    session_param = kwarg_session if kwarg_session is not None else project_id
+    if isinstance(session_param, (str, uuid.UUID)):
+        session_param = [session_param]
+
+    # -- key / feedback_key ---------------------------------------------------
+    kwarg_key = kwargs.pop("key", None)
+    if kwarg_key is not None and feedback_key is not None:
+        raise ValueError(
+            "Can only specify one of 'key' or 'feedback_key', received both."
+        )
+    feedback_key_param = kwarg_key if kwarg_key is not None else feedback_key
+    if isinstance(feedback_key_param, str):
+        feedback_key_param = [feedback_key_param]
+
+    # -- source / feedback_source_type ----------------------------------------
+    kwarg_source = kwargs.pop("source", None)
+    if kwarg_source is not None and feedback_source_type is not None:
+        raise ValueError(
+            "Can only specify one of 'source' or 'feedback_source_type', received both."
+        )
+    feedback_source_param = (
+        kwarg_source if kwarg_source is not None else feedback_source_type
+    )
+
+    # -- require at least one filter ------------------------------------------
+    if not any([run_param, feedback_key_param, session_param]):
+        raise ValueError(
+            "At least one of 'run_ids', 'feedback_key', or 'project_id'"
+            " must be provided."
+        )
+
+    return {
+        "run": run_param,
+        "session": session_param,
+        "key": feedback_key_param,
+        "source": feedback_source_param,
+        **kwargs,
+    }
+
+
 def _format_feedback_score(score: Union[float, int, bool, None]):
     """Format a feedback score by truncating numerical values to 4 decimal places.
 
@@ -7674,6 +7740,7 @@ class Client:
         self,
         *,
         run_ids: Optional[Sequence[ID_TYPE]] = None,
+        project_id: ID_TYPE | Sequence[ID_TYPE] | None = None,
         feedback_key: Optional[Sequence[str]] = None,
         feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
         limit: Optional[int] = None,
@@ -7698,14 +7765,15 @@ class Client:
             The feedback objects.
         """
         params: dict = {
-            "run": run_ids,
+            **_prepare_list_feedback_params(
+                run_ids=run_ids,
+                project_id=project_id,
+                feedback_key=feedback_key,
+                feedback_source_type=feedback_source_type,
+                **kwargs,
+            ),
             "limit": min(limit, 100) if limit is not None else 100,
-            **kwargs,
         }
-        if feedback_key is not None:
-            params["key"] = feedback_key
-        if feedback_source_type is not None:
-            params["source"] = feedback_source_type
         for i, feedback in enumerate(
             self._get_paginated_list("/feedback", params=params)
         ):
