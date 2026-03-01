@@ -1,3 +1,3 @@
-module github.com/langchain-ai/langsmith-sdk/go
+module github.com/vishnu-ssuresh/langsmith-sdk/go
 
 go 1.22
