@@ -1,6 +1,15 @@
 package transport
 
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
+	"github.com/vishnu-ssuresh/langsmith-sdk/go/langsmith/auth"
+)
 
 // Options configures the shared transport client.
 type Options struct {
@@ -15,7 +24,7 @@ type Options struct {
 // Client owns shared HTTP behavior for LangSmith requests.
 type Client struct {
 	baseURL    *url.URL
-	resolver   auth.Resoer
+	resolver   auth.Resolver
 	httpClient *http.Client
 	retry      RetryPolicy
 	userAgent  string
@@ -56,4 +65,9 @@ func NewClient(opts Options) (*Client, error) {
 		retry:      retry,
 		userAgent:  opts.UserAgent,
 	}, nil
+}
+
+// Do is a placeholder until request execution is implemented.
+func (c *Client) Do(_ context.Context, _ Request) (Response, error) {
+	return Response{}, fmt.Errorf("transport: Do not implemented yet")
 }
