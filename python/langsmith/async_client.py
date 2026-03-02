@@ -693,7 +693,9 @@ class AsyncClient:
         info = await self._aget_info()
         use_new_endpoint = resolved_dataset_id is not None and (
             info.version
-            and ls_utils.is_version_greater_or_equal(info.version, "0.13.18")
+            and ls_utils.is_version_greater_or_equal(
+                info.version, ls_client._MIN_VERSION_DATASET_EXAMPLES_ENDPOINT
+            )
         )
         if use_new_endpoint:
             path = f"/v1/platform/datasets/{resolved_dataset_id}/examples"

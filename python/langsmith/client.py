@@ -218,6 +218,7 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
+_MIN_VERSION_DATASET_EXAMPLES_ENDPOINT = "0.13.18"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
@@ -6470,7 +6471,9 @@ class Client:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
         use_new_endpoint = dataset_id is not None and (
             self.info.version
-            and ls_utils.is_version_greater_or_equal(self.info.version, "0.13.18")
+            and ls_utils.is_version_greater_or_equal(
+                self.info.version, _MIN_VERSION_DATASET_EXAMPLES_ENDPOINT
+            )
         )
         if use_new_endpoint:
             path = f"/v1/platform/datasets/{dataset_id}/examples"
