@@ -6,7 +6,7 @@
 ![NPM Version](https://img.shields.io/npm/v/langsmith?logo=npm)
 [![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
 
-This repository contains the Python and Javascript SDK's for interacting with the [LangSmith platform](https://smith.langchain.com/). Please see [LangSmith Documentation](https://docs.smith.langchain.com/)
+This repository contains the Python and JavaScript SDKs for interacting with the [LangSmith platform](https://smith.langchain.com/). Please see [LangSmith Documentation](https://docs.smith.langchain.com/)
 for documentation about using the LangSmith platform and the client SDK.
 
 LangSmith helps your team debug, evaluate, and monitor your language models and intelligent agents. It works
