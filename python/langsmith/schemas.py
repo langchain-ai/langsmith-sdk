@@ -1339,6 +1339,177 @@ class InsightsReport(BaseModel):
         return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
 
 
+class InsightsHighlightedTrace(BaseModel):
+    """A trace highlighted in an insights report summary."""
+
+    run_id: UUID | str
+    cluster_id: UUID | str | None = None
+    cluster_name: str | None = None
+    rank: int
+    highlight_reason: str
+    summary: str | None = None
+
+
+class InsightsSummaryReport(BaseModel):
+    """High-level summary of an insights job: key points and highlighted traces."""
+
+    key_points: list[str] = Field(default_factory=list)
+    title: str | None = None
+    highlighted_traces: list[InsightsHighlightedTrace] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+class InsightsCluster(BaseModel):
+    """A single cluster of runs in an insights report."""
+
+    id: UUID | str
+    parent_id: UUID | str | None = None
+    level: int
+    name: str
+    description: str
+    parent_name: str | None = None
+    num_runs: int
+    stats: dict[str, Any] | None = None
+
+
+class _ClusterWithTraces:
+    """Cluster wrapper that can load its traces from the API. Returned by report.clusters[name]."""
+
+    __slots__ = ("_cluster", "_report")
+
+    def __init__(self, cluster: InsightsCluster, report: "InsightsReportResult") -> None:
+        self._cluster = cluster
+        self._report = report
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cluster, name)
+
+    def load_traces(self) -> list[dict[str, Any]]:
+        """Fetch run dicts for this cluster from the API."""
+        client = getattr(self._report, "_client", None)
+        if client is None:
+            raise ValueError(
+                "Report not attached to a client; get reports via Client.get_insights_report()"
+            )
+        session_id = getattr(self._report, "_session_id", None)
+        job_id = getattr(self._report, "_job_id", None)
+        if session_id is None or job_id is None:
+            raise ValueError("Report missing session/job ids")
+        from langsmith import utils as ls_utils
+
+        all_runs: list[dict[str, Any]] = []
+        limit = 100
+        next_offset: int | None = 0
+        while next_offset is not None:
+            resp = client.request_with_retries(
+                "GET",
+                f"/sessions/{session_id}/insights/{job_id}/runs",
+                params={
+                    "cluster_id": str(self._cluster.id),
+                    "limit": limit,
+                    "offset": next_offset,
+                },
+            )
+            ls_utils.raise_for_status_with_text(resp)
+            body = resp.json()
+            batch = body.get("runs", []) or []
+            all_runs.extend(batch)
+            returned_offset = body.get("offset")
+            if returned_offset is None:
+                next_offset = None
+            else:
+                next_offset = int(returned_offset)
+                if not batch:
+                    next_offset = None
+        return all_runs
+
+
+class _ClustersMap:
+    """List-like map of clusters by name. Supports report.clusters['name'] and .load_traces()."""
+
+    __slots__ = ("_clusters", "_report")
+
+    def __init__(
+        self,
+        clusters: list[InsightsCluster],
+        report: "InsightsReportResult",
+    ) -> None:
+        self._clusters = list(clusters)
+        self._report = report
+
+    def __getitem__(self, key: str | int) -> _ClusterWithTraces:
+        if isinstance(key, int):
+            cluster = self._clusters[key]
+        else:
+            by_name = {c.name: c for c in self._clusters}
+            if key not in by_name:
+                raise KeyError(f"Cluster {key!r} not found; available: {list(by_name.keys())}")
+            cluster = by_name[key]
+        return _ClusterWithTraces(cluster, self._report)
+
+    def __iter__(self):
+        return (_ClusterWithTraces(c, self._report) for c in self._clusters)
+
+    def __len__(self) -> int:
+        return len(self._clusters)
+
+
+class InsightsReportResult(BaseModel):
+    """Full result of fetching an Insights report (job + clusters + summary + optional runs)."""
+
+    id: UUID | str
+    name: str
+    status: str
+    start_time: datetime | str | None = None
+    end_time: datetime | str | None = None
+    created_at: datetime | str | None = None
+    metadata: dict[str, Any] | None = None
+    shape: dict[str, int] | None = None
+    error: str | None = None
+    config_id: UUID | str | None = None
+    clusters: list[InsightsCluster] = Field(default_factory=list)
+    report: InsightsSummaryReport | None = None
+    runs: list[dict[str, Any]] = Field(default_factory=list)
+    """Run dicts when fetched with include_runs=True."""
+
+    _client: Any = PrivateAttr(default=None)
+    _session_id: Any = PrivateAttr(default=None)
+    _job_id: Any = PrivateAttr(default=None)
+
+    model_config = ConfigDict(extra="allow")
+
+    def _attach_client(
+        self,
+        client: Any,
+        session_id: str | UUID,
+        job_id: str | UUID,
+    ) -> None:
+        """Attach client and ids so clusters can load traces. Called by Client.get_insights_report."""
+        object.__setattr__(self, "_client", client)
+        object.__setattr__(self, "_session_id", str(session_id))
+        object.__setattr__(self, "_job_id", str(job_id))
+        object.__setattr__(
+            self,
+            "clusters",
+            _ClustersMap(self.clusters, self),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dict (raw JSON shape)."""
+        clusters_val = self.clusters
+        if hasattr(clusters_val, "_clusters"):
+            object.__setattr__(self, "clusters", clusters_val._clusters)
+        try:
+            return self.model_dump(mode="json")
+        finally:
+            if hasattr(clusters_val, "_clusters"):
+                object.__setattr__(self, "clusters", clusters_val)
+
+    def model_dump_json_dict(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dict (e.g. for saving to file)."""
+        return self.model_dump(mode="json")
+
+
 class FeedbackFormulaWeightedVariable(BaseModel):
     """A feedback key and weight used when calculating feedback formulas."""
 
