@@ -4161,7 +4161,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     let i = 0;
     for await (const rawExamples of this._getPaginated<RawExample>(
-      `/datasets/${datasetId_}/examples`,
+      `/v1/platform/datasets/${datasetId_}/examples`,
       params
     )) {
       for (const rawExample of rawExamples) {

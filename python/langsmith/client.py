@@ -6469,7 +6469,7 @@ class Client:
         if include_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
         path = (
-            f"/datasets/{dataset_id}/examples"
+            f"/v1/platform/datasets/{dataset_id}/examples"
             if dataset_id is not None
             else "/examples"
         )

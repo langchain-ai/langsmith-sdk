@@ -690,7 +690,7 @@ class AsyncClient:
             resolved_dataset_id = dataset.id
 
         path = (
-            f"/datasets/{resolved_dataset_id}/examples"
+            f"/v1/platform/datasets/{resolved_dataset_id}/examples"
             if resolved_dataset_id is not None
             else "/examples"
         )
