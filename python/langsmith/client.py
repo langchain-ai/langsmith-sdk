@@ -6468,11 +6468,16 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if include_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
-        path = (
-            f"/v1/platform/datasets/{dataset_id}/examples"
-            if dataset_id is not None
-            else "/examples"
+        use_new_endpoint = dataset_id is not None and (
+            self.info.version
+            and ls_utils.is_version_greater_or_equal(self.info.version, "0.13.18")
         )
+        if use_new_endpoint:
+            path = f"/v1/platform/datasets/{dataset_id}/examples"
+        else:
+            path = "/examples"
+            if dataset_id is not None:
+                params["dataset"] = dataset_id
         for i, example in enumerate(self._get_paginated_list(path, params=params)):
             attachments = _convert_stored_attachments_to_attachments_dict(
                 example, attachments_key="attachment_urls", api_url=self.api_url
