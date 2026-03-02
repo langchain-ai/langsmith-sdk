@@ -1874,7 +1874,7 @@ def test_cached_attachment_args_no_leak() -> None:
 
     from langsmith.run_helpers import _attachment_args_cache, _cached_attachment_args
 
-    _attachment_args_cache.clear()
+    _cached_attachment_args.cache_clear()
 
     class Ctx:
         def __init__(self):
@@ -1895,6 +1895,23 @@ def test_cached_attachment_args_no_leak() -> None:
     gc.collect()
     alive = sum(1 for r in refs if r() is not None)
     assert alive == 0, f"{alive}/10 closure contexts still alive"
+    assert len(_attachment_args_cache) == 0
+
+
+def test_cached_attachment_args_non_weakrefable_callable() -> None:
+    from langsmith.run_helpers import _attachment_args_cache, _cached_attachment_args
+
+    _cached_attachment_args.cache_clear()
+
+    class CallableNoWeakref:
+        __slots__ = ()
+
+        def __call__(self, bar: ls_schemas.Attachment) -> ls_schemas.Attachment:
+            return bar
+
+    fn = CallableNoWeakref()
+    signature = inspect.signature(fn)
+    assert _cached_attachment_args(signature, fn) == {"bar"}
     assert len(_attachment_args_cache) == 0
 
 

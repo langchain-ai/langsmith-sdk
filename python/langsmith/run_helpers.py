@@ -9,6 +9,7 @@ import datetime
 import functools
 import inspect
 import logging
+import threading
 import warnings
 import weakref
 from collections.abc import (
@@ -1767,24 +1768,46 @@ def _attachment_args_helper(
     }
 
 
-_attachment_args_cache: dict[tuple, set[str]] = {}
+@functools.lru_cache(maxsize=1000)
+def _cached_attachment_args_by_signature(signature: inspect.Signature) -> set[str]:
+    return _attachment_args_helper(signature, None)
+
+
+_attachment_args_cache: weakref.WeakKeyDictionary[
+    Callable[..., Any], tuple[inspect.Signature, set[str]]
+] = weakref.WeakKeyDictionary()
+_attachment_args_cache_lock = threading.Lock()
 
 
 def _cached_attachment_args(
     signature: inspect.Signature, func: Optional[Callable] = None
 ) -> set[str]:
-    key = (signature, id(func))
-    result = _attachment_args_cache.get(key)
-    if result is not None:
-        return result
+    if func is None:
+        return _cached_attachment_args_by_signature(signature)
+
+    try:
+        with _attachment_args_cache_lock:
+            cached = _attachment_args_cache.get(func)
+    except TypeError:
+        # Some callable objects cannot be weak-referenced.
+        return _attachment_args_helper(signature, func)
+
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
     result = _attachment_args_helper(signature, func)
-    _attachment_args_cache[key] = result
-    if func is not None:
-        try:
-            weakref.finalize(func, _attachment_args_cache.pop, key, None)
-        except TypeError:
-            pass
+    with _attachment_args_cache_lock:
+        _attachment_args_cache[func] = (signature, result)
     return result
+
+
+def _clear_cached_attachment_args() -> None:
+    with _attachment_args_cache_lock:
+        _attachment_args_cache.clear()
+    _cached_attachment_args_by_signature.cache_clear()
+
+
+_cached_attachment_args.cache_clear = _clear_cached_attachment_args  # type: ignore[attr-defined]
 
 
 def _attachment_args(
