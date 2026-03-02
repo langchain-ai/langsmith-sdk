@@ -6473,9 +6473,7 @@ class Client:
             if dataset_id is not None
             else "/examples"
         )
-        for i, example in enumerate(
-            self._get_paginated_list(path, params=params)
-        ):
+        for i, example in enumerate(self._get_paginated_list(path, params=params)):
             attachments = _convert_stored_attachments_to_attachments_dict(
                 example, attachments_key="attachment_urls", api_url=self.api_url
             )
