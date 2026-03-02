@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import gc
 import inspect
 import json
 import os
@@ -1865,6 +1866,36 @@ def test_attachment_detection_with_string_annotations() -> None:
 
     assert inputs == {}
     assert attachments == {"bar": test_attachment}
+
+
+def test_cached_attachment_args_no_leak() -> None:
+    """Closure funcs passed to _cached_attachment_args should not be retained."""
+    import weakref
+
+    from langsmith.run_helpers import _attachment_args_cache, _cached_attachment_args
+
+    _attachment_args_cache.clear()
+
+    class Ctx:
+        def __init__(self):
+            self.buf = "x" * 1_000_000
+
+    refs = []
+    for _ in range(10):
+        ctx = Ctx()
+        ref = weakref.ref(ctx)
+
+        def closure(ctx=ctx):
+            return len(ctx.buf)
+
+        _cached_attachment_args(inspect.signature(closure), closure)
+        refs.append(ref)
+        del ctx, closure
+
+    gc.collect()
+    alive = sum(1 for r in refs if r() is not None)
+    assert alive == 0, f"{alive}/10 closure contexts still alive (memory leak)"
+    assert len(_attachment_args_cache) == 0
 
 
 def test_traceable_iterator_process_chunk(mock_client: Client) -> None:

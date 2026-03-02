@@ -9,6 +9,7 @@ import datetime
 import functools
 import inspect
 import logging
+import weakref
 import warnings
 from collections.abc import (
     AsyncGenerator,
@@ -1766,11 +1767,24 @@ def _attachment_args_helper(
     }
 
 
-@functools.lru_cache(maxsize=1000)
+_attachment_args_cache: dict[tuple, set[str]] = {}
+
+
 def _cached_attachment_args(
     signature: inspect.Signature, func: Optional[Callable] = None
 ) -> set[str]:
-    return _attachment_args_helper(signature, func)
+    key = (signature, id(func))
+    result = _attachment_args_cache.get(key)
+    if result is not None:
+        return result
+    result = _attachment_args_helper(signature, func)
+    _attachment_args_cache[key] = result
+    if func is not None:
+        try:
+            weakref.finalize(func, _attachment_args_cache.pop, key, None)
+        except TypeError:
+            pass
+    return result
 
 
 def _attachment_args(
