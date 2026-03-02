@@ -3,34 +3,34 @@
 
 
 "@ai-sdk/anthropic@^3.0.0":
-  version "3.0.48"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-3.0.48.tgz#5015b7c0f01a9028e548e49f448c5184a9020bee"
-  integrity sha512-QSvz0XumBFaxulalUB+3D2/tLvfsYjIcG3HlqOxmmXIzATIBLInTVEw0Sy3yXJjqhNQZedBokVrN53Bh/V+eWQ==
+  version "3.0.50"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-3.0.50.tgz#5ffdb638ae5418a2bf53d97448346af7ab77e09a"
+  integrity sha512-BkCUgGTp/iZJuuFBF1wv7GGnrEJg7X7hqbaa+/t4HTBt9dZn3e6NFn5NhPUvo2p5SreUeHEl0As0r2uaVn3K9Q==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
-    "@ai-sdk/provider-utils" "4.0.15"
+    "@ai-sdk/provider-utils" "4.0.16"
 
-"@ai-sdk/gateway@3.0.57":
-  version "3.0.57"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/gateway/-/gateway-3.0.57.tgz#0071980e4e9925f388f57f20d193562e378ad5b5"
-  integrity sha512-3MugqOlGfCOjlsBGGARJ5Zrioh78X3+rulHCayCMPySYKY+wc8GGFlFCCh4mleWQFShjMyqWT7eeLTuVSj/WSg==
+"@ai-sdk/gateway@3.0.59":
+  version "3.0.59"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/gateway/-/gateway-3.0.59.tgz#1ce7933878656a74f132eb6230caaf22786fd5d3"
+  integrity sha512-MbtheWHgEFV/8HL1Z6E3hOAsmP73zZlNFg0F0nJAD0Adnjp4J/plqNK00Y896d+dWTw+r0OXzyov9/2wCFjH0Q==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
-    "@ai-sdk/provider-utils" "4.0.15"
+    "@ai-sdk/provider-utils" "4.0.16"
     "@vercel/oidc" "3.1.0"
 
 "@ai-sdk/openai@^3.0.0":
-  version "3.0.36"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/openai/-/openai-3.0.36.tgz#8af89356ded8ce817e35f090368f3025384950de"
-  integrity sha512-foY3onGY8l3q9niMw0Cwe9xrYnm46keIWL57NRw6F3DKzSW9TYTfx0cQJs/j8lXJ8lPzqNxpMO/zXOkqCUt3IQ==
+  version "3.0.37"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/openai/-/openai-3.0.37.tgz#8f5361eba21848b37663cbe113c91c666fe9ed58"
+  integrity sha512-bcYjT3/58i/C0DN3AnrjiGsAb0kYivZLWWUtgTjsBurHSht/LTEy+w3dw5XQe3FmZwX7Z/mUQCiA3wB/5Kf7ow==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
-    "@ai-sdk/provider-utils" "4.0.15"
+    "@ai-sdk/provider-utils" "4.0.16"
 
-"@ai-sdk/provider-utils@4.0.15":
-  version "4.0.15"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/provider-utils/-/provider-utils-4.0.15.tgz#d585c7c89cfdf13697a40be5768ecd907a251585"
-  integrity sha512-8XiKWbemmCbvNN0CLR9u3PQiet4gtEVIrX4zzLxnCj06AwsEDJwJVBbKrEI4t6qE8XRSIvU2irka0dcpziKW6w==
+"@ai-sdk/provider-utils@4.0.16":
+  version "4.0.16"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/provider-utils/-/provider-utils-4.0.16.tgz#24bb427d5ed023ef245f3a7af0e83590c45a74b5"
+  integrity sha512-kBvDqNkt5EwlzF9FujmNhhtl8FYg3e8FO8P5uneKliqfRThWemzBj+wfYr7ZCymAQhTRnwSSz1/SOqhOAwmx9g==
   dependencies:
     "@ai-sdk/provider" "3.0.8"
     "@standard-schema/spec" "^1.1.0"
@@ -52,9 +52,9 @@
     "@jridgewell/trace-mapping" "^0.3.24"
 
 "@anthropic-ai/claude-agent-sdk@^0.2.34":
-  version "0.2.61"
-  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.61.tgz#c21cf267d8ee0d1c09602c1e34522971f3bd4b81"
-  integrity sha512-cFVHPzmOgmUs5IWkXPoAiJBLkuJW/qLGb7NH0llxUF1WEUlEieJYJp+bg8HSdxsdiTM9vuRIkEWfGb0VJ7ZgOg==
+  version "0.2.63"
+  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.63.tgz#5d6bcb3f8f5f3b66ae02dc918eb18ee99a40b6c7"
+  integrity sha512-ZNiaQb/v6xkbrGt3dtq5J0DGY+AaOhoehUyposa3msvlAlkTHWNGR+NhbCcTE0ML1U91xhPqMAAwZIUqrlkKyQ==
   optionalDependencies:
     "@img/sharp-darwin-arm64" "^0.34.2"
     "@img/sharp-darwin-x64" "^0.34.2"
@@ -3440,13 +3440,13 @@ agent-base@^7.1.2:
   integrity sha512-jRR5wdylq8CkOe6hei19GGZnxM6rBGwFl3Bg0YItGDimvjGtAvdZk4Pu6Cl4u4Igsws4a1fd1Vq3ezrhn4KmFw==
 
 ai@^6.0.1:
-  version "6.0.103"
-  resolved "https://registry.yarnpkg.com/ai/-/ai-6.0.103.tgz#bceb1f1ca5bc295ae0fc6a9907dde4446edb8bee"
-  integrity sha512-4eY6Ut4u41zKH+P2S/oLlZrwxeWQh4kIV1FjE34Jhoiwg+v1AyfSYM8FslXk9rTAtIIaOBimrCUqXacC5RBqJw==
+  version "6.0.105"
+  resolved "https://registry.yarnpkg.com/ai/-/ai-6.0.105.tgz#85c38f7d67de571435f480cb5c49201a7207599e"
+  integrity sha512-rp+exWtZS3J0DDvZIfetpKCIg7D3cCsvBPoFN3I67IDTs9aoBZDbpecoIkmNLT+U9RBkoEial3OGHRvme23HCw==
   dependencies:
-    "@ai-sdk/gateway" "3.0.57"
+    "@ai-sdk/gateway" "3.0.59"
     "@ai-sdk/provider" "3.0.8"
-    "@ai-sdk/provider-utils" "4.0.15"
+    "@ai-sdk/provider-utils" "4.0.16"
     "@opentelemetry/api" "1.9.0"
 
 ajv@^6.12.4:
