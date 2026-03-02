@@ -1894,7 +1894,7 @@ def test_cached_attachment_args_no_leak() -> None:
 
     gc.collect()
     alive = sum(1 for r in refs if r() is not None)
-    assert alive == 0, f"{alive}/10 closure contexts still alive (memory leak)"
+    assert alive == 0, f"{alive}/10 closure contexts still alive"
     assert len(_attachment_args_cache) == 0
 
 

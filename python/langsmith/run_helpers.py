@@ -9,8 +9,8 @@ import datetime
 import functools
 import inspect
 import logging
-import weakref
 import warnings
+import weakref
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
