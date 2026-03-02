@@ -6464,17 +6464,17 @@ class Client:
         }
         if metadata is not None:
             params["metadata"] = _dumps_json(metadata)
-        if dataset_id is not None:
-            params["dataset"] = dataset_id
-        elif dataset_name is not None:
+        if dataset_id is None and dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-            params["dataset"] = dataset_id
-        else:
-            pass
         if include_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
+        path = (
+            f"/datasets/{dataset_id}/examples"
+            if dataset_id is not None
+            else "/examples"
+        )
         for i, example in enumerate(
-            self._get_paginated_list("/examples", params=params)
+            self._get_paginated_list(path, params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
                 example, attachments_key="attachment_urls", api_url=self.api_url

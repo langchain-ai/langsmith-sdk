@@ -682,13 +682,19 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Example]:
         """List examples."""
         params = kwargs.copy()
+        resolved_dataset_id = None
         if dataset_id:
-            params["dataset"] = ls_client._as_uuid(dataset_id)
+            resolved_dataset_id = ls_client._as_uuid(dataset_id)
         elif dataset_name:
             dataset = await self.read_dataset(dataset_name=dataset_name)
-            params["dataset"] = dataset.id
+            resolved_dataset_id = dataset.id
 
-        async for example in self._aget_paginated_list("/examples", params=params):
+        path = (
+            f"/datasets/{resolved_dataset_id}/examples"
+            if resolved_dataset_id is not None
+            else "/examples"
+        )
+        async for example in self._aget_paginated_list(path, params=params):
             yield ls_schemas.Example(**example)
 
     async def create_feedback(

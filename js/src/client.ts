@@ -4120,7 +4120,7 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide a datasetName or datasetId");
     }
-    const params = new URLSearchParams({ dataset: datasetId_ });
+    const params = new URLSearchParams();
     const dataset_version = asOf
       ? typeof asOf === "string"
         ? asOf
@@ -4161,7 +4161,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     let i = 0;
     for await (const rawExamples of this._getPaginated<RawExample>(
-      "/examples",
+      `/datasets/${datasetId_}/examples`,
       params
     )) {
       for (const rawExample of rawExamples) {
