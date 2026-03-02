@@ -8,6 +8,7 @@ import sys
 import time
 import uuid
 import warnings
+import weakref
 from typing import (
     Any,
     AsyncGenerator,
@@ -32,6 +33,8 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
+    _attachment_args_cache,
+    _cached_attachment_args,
     _get_inputs,
     _get_inputs_and_attachments_safe,
     as_runnable,
@@ -1870,10 +1873,6 @@ def test_attachment_detection_with_string_annotations() -> None:
 
 def test_cached_attachment_args_no_leak() -> None:
     """Closure funcs passed to _cached_attachment_args should not be retained."""
-    import weakref
-
-    from langsmith.run_helpers import _attachment_args_cache, _cached_attachment_args
-
     _cached_attachment_args.cache_clear()
 
     class Ctx:
@@ -1899,8 +1898,6 @@ def test_cached_attachment_args_no_leak() -> None:
 
 
 def test_cached_attachment_args_non_weakrefable_callable() -> None:
-    from langsmith.run_helpers import _attachment_args_cache, _cached_attachment_args
-
     _cached_attachment_args.cache_clear()
 
     class CallableNoWeakref:
