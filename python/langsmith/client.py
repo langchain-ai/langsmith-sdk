@@ -10147,7 +10147,7 @@ class Client:
         project_id: str | uuid.UUID | None = None,
         include_runs: bool = True,
     ) -> ls_schemas.InsightsReportResult:
-        """Fetch an Insights report as a typed result, optionally including runs.
+        """Fetch an Insights report by ID or from a prior report object.
 
         Args:
             id: The Insights report ID (aka clustering job ID). Provide with
@@ -10160,13 +10160,11 @@ class Client:
 
         Returns:
             An ``InsightsReportResult`` with job metadata, clusters, summary report,
-            and optionally ``runs``. Use ``.model_dump_json_dict()`` for a JSON-serializable
-            dict (e.g. to save to a file).
+            and optionally ``runs``.
 
         Raises:
             ValueError: If the required identifiers are not provided.
         """
-        # Validate mutually exclusive inputs, mirroring poll_insights contract
         if report is not None:
             if id is not None or project_id is not None:
                 raise ValueError(
@@ -10180,7 +10178,6 @@ class Client:
             job_id = id
             session_id = project_id
 
-        # Fetch report JSON
         resp = self.request_with_retries(
             "GET", f"/sessions/{session_id}/insights/{job_id}"
         )
@@ -10192,7 +10189,6 @@ class Client:
             result._attach_client(self, session_id, job_id)
             return result
 
-        # Paginate through runs and include in response
         all_runs: list[dict] = []
         limit = 100
         next_offset: int | None = 0
@@ -10206,12 +10202,10 @@ class Client:
             body = runs_resp.json()
             batch = body.get("runs", []) or []
             all_runs.extend(batch)
-            # Backend returns next offset or None
             returned_offset = body.get("offset")
             if returned_offset is None:
                 next_offset = None
             else:
-                # Fallback: ensure forward progress if unexpected value
                 next_offset = int(returned_offset)
                 if not batch:
                     next_offset = None

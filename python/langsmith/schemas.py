@@ -1384,6 +1384,12 @@ class _ClusterWithTraces:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._cluster, name)
 
+    def __dir__(self) -> list[str]:
+        return list(set(dir(self.__class__) | set(dir(self._cluster))))
+
+    def __repr__(self) -> str:
+        return f"_ClusterWithTraces(name={self._cluster.name!r})"
+
     def load_traces(self) -> list[dict[str, Any]]:
         """Fetch run dicts for this cluster from the API."""
         client = getattr(self._report, "_client", None)
@@ -1452,6 +1458,9 @@ class _ClustersMap:
 
     def __len__(self) -> int:
         return len(self._clusters)
+
+    def __repr__(self) -> str:
+        return f"_ClustersMap(n_clusters={len(self._clusters)})"
 
 
 class InsightsReportResult(BaseModel):
