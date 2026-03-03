@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import gc
 import inspect
 import json
 import os
@@ -7,6 +8,7 @@ import sys
 import time
 import uuid
 import warnings
+import weakref
 from typing import (
     Any,
     AsyncGenerator,
@@ -31,6 +33,8 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
+    _attachment_args_cache,
+    _cached_attachment_args,
     _get_inputs,
     _get_inputs_and_attachments_safe,
     as_runnable,
@@ -1865,6 +1869,47 @@ def test_attachment_detection_with_string_annotations() -> None:
 
     assert inputs == {}
     assert attachments == {"bar": test_attachment}
+
+
+def test_cached_attachment_args_no_leak() -> None:
+    """Closure funcs passed to _cached_attachment_args should not be retained."""
+    _cached_attachment_args.cache_clear()
+
+    class Ctx:
+        def __init__(self):
+            self.buf = "x" * 1_000_000
+
+    refs = []
+    for _ in range(10):
+        ctx = Ctx()
+        ref = weakref.ref(ctx)
+
+        def closure(ctx=ctx):
+            return len(ctx.buf)
+
+        _cached_attachment_args(inspect.signature(closure), closure)
+        refs.append(ref)
+        del ctx, closure
+
+    gc.collect()
+    alive = sum(1 for r in refs if r() is not None)
+    assert alive == 0, f"{alive}/10 closure contexts still alive"
+    assert len(_attachment_args_cache) == 0
+
+
+def test_cached_attachment_args_non_weakrefable_callable() -> None:
+    _cached_attachment_args.cache_clear()
+
+    class CallableNoWeakref:
+        __slots__ = ()
+
+        def __call__(self, bar: ls_schemas.Attachment) -> ls_schemas.Attachment:
+            return bar
+
+    fn = CallableNoWeakref()
+    signature = inspect.signature(fn)
+    assert _cached_attachment_args(signature, fn) == {"bar"}
+    assert len(_attachment_args_cache) == 0
 
 
 def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
