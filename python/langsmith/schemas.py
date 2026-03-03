@@ -1422,7 +1422,7 @@ class _ClusterWithTraces:
         return getattr(self._cluster, name)
 
     def __dir__(self) -> list[str]:
-        return list(set(dir(self.__class__) | set(dir(self._cluster))))
+        return list(set(dir(self.__class__)) | set(dir(self._cluster)))
 
     def __repr__(self) -> str:
         return f"_ClusterWithTraces(name={self._cluster.name!r})"
