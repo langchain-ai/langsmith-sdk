@@ -16,6 +16,10 @@ class _DummyResponse:
     def json(self) -> Dict[str, Any]:
         return self._payload
 
+    def raise_for_status(self) -> None:
+        """Match requests.Response/httpx.Response API used by raise_for_status_with_text."""
+        return None
+
 
 class _DummyClient(Client):
     def __init__(self, responses: List[Dict[str, Any]]) -> None:  # type: ignore[no-untyped-def]
@@ -40,7 +44,13 @@ def _make_report_payload() -> Dict[str, Any]:
         "start_time": "2026-02-12T22:14:48.648851+00:00",
         "end_time": "2026-02-12T23:14:48.648851+00:00",
         "created_at": "2026-02-12T23:14:48.649882+00:00",
-        "metadata": {"report": {"title": "Test title", "key_points": [], "highlighted_traces": []}},
+        "metadata": {
+            "report": {
+                "title": "Test title",
+                "key_points": [],
+                "highlighted_traces": [],
+            }
+        },
         "shape": {"cluster-a": 2},
         "error": None,
         "config_id": "22222222-2222-2222-2222-222222222222",
@@ -80,7 +90,9 @@ def test_get_insights_report_basic_metadata() -> None:
     payload = _make_report_payload()
     client = _DummyClient([payload])
 
-    result = client.get_insights_report(id=UUID(int=1), project_id=UUID(int=2), include_runs=False)
+    result = client.get_insights_report(
+        id=UUID(int=1), project_id=UUID(int=2), include_runs=False
+    )
 
     assert isinstance(result, ls_schemas.InsightsReportResult)
     assert result.id == payload["id"]
@@ -103,7 +115,9 @@ def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
 
     client = _DummyClient([report_payload, runs_page_1, runs_page_2])
 
-    result = client.get_insights_report(id="job-id", project_id="project-id", include_runs=True)
+    result = client.get_insights_report(
+        id="job-id", project_id="project-id", include_runs=True
+    )
 
     assert len(result.runs) == 4
 
@@ -117,4 +131,3 @@ def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     for call in run_calls:
         params = call["kwargs"]["params"]
         assert params["cluster_id"] == str(cluster.id)
-
