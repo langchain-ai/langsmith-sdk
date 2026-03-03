@@ -1372,6 +1372,43 @@ class InsightsCluster(BaseModel):
     stats: dict[str, Any] | None = None
 
 
+def _fetch_insights_runs(
+    client: Any,
+    session_id: str | UUID,
+    job_id: str | UUID,
+    *,
+    cluster_id: str | UUID | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch runs for an Insights job, optionally filtered to a single cluster."""
+    from langsmith import utils as ls_utils  # local import to avoid circular deps
+
+    all_runs: list[dict[str, Any]] = []
+    limit = 100
+    next_offset: int | None = 0
+    while next_offset is not None:
+        params: dict[str, Any] = {"limit": limit, "offset": next_offset}
+        if cluster_id is not None:
+            params["cluster_id"] = str(cluster_id)
+
+        resp = client.request_with_retries(
+            "GET",
+            f"/sessions/{session_id}/insights/{job_id}/runs",
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(resp)
+        body = resp.json()
+        batch = body.get("runs", []) or []
+        all_runs.extend(batch)
+        returned_offset = body.get("offset")
+        if returned_offset is None:
+            next_offset = None
+        else:
+            next_offset = int(returned_offset)
+            if not batch:
+                next_offset = None
+    return all_runs
+
+
 class _ClusterWithTraces:
     """Cluster wrapper that can load its traces from the API. Returned by report.clusters[name]."""
 
@@ -1403,33 +1440,13 @@ class _ClusterWithTraces:
         job_id = getattr(self._report, "_job_id", None)
         if session_id is None or job_id is None:
             raise ValueError("Report missing session/job ids")
-        from langsmith import utils as ls_utils
 
-        all_runs: list[dict[str, Any]] = []
-        limit = 100
-        next_offset: int | None = 0
-        while next_offset is not None:
-            resp = client.request_with_retries(
-                "GET",
-                f"/sessions/{session_id}/insights/{job_id}/runs",
-                params={
-                    "cluster_id": str(self._cluster.id),
-                    "limit": limit,
-                    "offset": next_offset,
-                },
-            )
-            ls_utils.raise_for_status_with_text(resp)
-            body = resp.json()
-            batch = body.get("runs", []) or []
-            all_runs.extend(batch)
-            returned_offset = body.get("offset")
-            if returned_offset is None:
-                next_offset = None
-            else:
-                next_offset = int(returned_offset)
-                if not batch:
-                    next_offset = None
-        return all_runs
+        return _fetch_insights_runs(
+            client=client,
+            session_id=session_id,
+            job_id=job_id,
+            cluster_id=self._cluster.id,
+        )
 
 
 class _ClustersMap:

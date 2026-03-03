@@ -10189,28 +10189,11 @@ class Client:
             result._attach_client(self, session_id, job_id)
             return result
 
-        all_runs: list[dict] = []
-        limit = 100
-        next_offset: int | None = 0
-        while next_offset is not None:
-            runs_resp = self.request_with_retries(
-                "GET",
-                f"/sessions/{session_id}/insights/{job_id}/runs",
-                params={"limit": limit, "offset": next_offset},
-            )
-            ls_utils.raise_for_status_with_text(runs_resp)
-            body = runs_resp.json()
-            batch = body.get("runs", []) or []
-            all_runs.extend(batch)
-            returned_offset = body.get("offset")
-            if returned_offset is None:
-                next_offset = None
-            else:
-                next_offset = int(returned_offset)
-                if not batch:
-                    next_offset = None
-
-        report_json["runs"] = all_runs
+        report_json["runs"] = ls_schemas._fetch_insights_runs(
+            client=self,
+            session_id=session_id,
+            job_id=job_id,
+        )
         result = ls_schemas.InsightsReportResult(**report_json)
         result._attach_client(self, session_id, job_id)
         return result
