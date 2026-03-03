@@ -1133,8 +1133,12 @@ class InputTokenDetails(TypedDict, total=False):
     the model state given these tokens was read from the cache.
     """
     cache_read_over_200k: int
-    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing. 
+    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing.
     """
+    ephemeral_5m_input_tokens: int
+    """Input tokens used to create a 5-minute ephemeral cache entry (Anthropic)."""
+    ephemeral_1h_input_tokens: int
+    """Input tokens used to create a 1-hour ephemeral cache entry (Anthropic)."""
 
 
 class OutputTokenDetails(TypedDict, total=False):
