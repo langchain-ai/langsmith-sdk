@@ -113,7 +113,10 @@ def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     runs_page_1 = _make_runs_page_payload(offset=0, has_next=True)
     runs_page_2 = _make_runs_page_payload(offset=2, has_next=False)
 
-    client = _DummyClient([report_payload, runs_page_1, runs_page_2])
+    # get_insights_report uses: 1 report + 2 runs pages; load_traces() uses 2 more runs pages
+    client = _DummyClient(
+        [report_payload, runs_page_1, runs_page_2, runs_page_1, runs_page_2]
+    )
 
     result = client.get_insights_report(
         id="job-id", project_id="project-id", include_runs=True
@@ -126,8 +129,11 @@ def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     assert len(traces) == 4
 
     assert client._calls[0]["path"] == "/sessions/project-id/insights/job-id"
-    run_calls = client._calls[1:]
-    assert all("/insights/job-id/runs" in c["path"] for c in run_calls)
-    for call in run_calls:
-        params = call["kwargs"]["params"]
-        assert params["cluster_id"] == str(cluster.id)
+    # Calls 1–2: get_insights_report runs (no cluster_id); 3–4: load_traces (with cluster_id)
+    run_calls_with_cluster = [
+        c for c in client._calls[1:] if c["kwargs"].get("params", {}).get("cluster_id")
+    ]
+    assert len(run_calls_with_cluster) == 2
+    for call in run_calls_with_cluster:
+        assert "/insights/job-id/runs" in call["path"]
+        assert call["kwargs"]["params"]["cluster_id"] == str(cluster.id)

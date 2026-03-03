@@ -1377,7 +1377,9 @@ class _ClusterWithTraces:
 
     __slots__ = ("_cluster", "_report")
 
-    def __init__(self, cluster: InsightsCluster, report: "InsightsReportResult") -> None:
+    def __init__(
+        self, cluster: InsightsCluster, report: InsightsReportResult
+    ) -> None:
         self._cluster = cluster
         self._report = report
 
@@ -1438,7 +1440,7 @@ class _ClustersMap:
     def __init__(
         self,
         clusters: list[InsightsCluster],
-        report: "InsightsReportResult",
+        report: InsightsReportResult,
     ) -> None:
         self._clusters = list(clusters)
         self._report = report
@@ -1449,7 +1451,9 @@ class _ClustersMap:
         else:
             by_name = {c.name: c for c in self._clusters}
             if key not in by_name:
-                raise KeyError(f"Cluster {key!r} not found; available: {list(by_name.keys())}")
+                raise KeyError(
+                    f"Cluster {key!r} not found; available: {list(by_name.keys())}"
+                )
             cluster = by_name[key]
         return _ClusterWithTraces(cluster, self._report)
 
