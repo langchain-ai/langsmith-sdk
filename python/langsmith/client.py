@@ -10138,6 +10138,66 @@ class Client:
             time.sleep(rate)
         raise TimeoutError("Insights still pending")
 
+    @warn_beta
+    def get_insights_report(
+        self,
+        *,
+        id: str | uuid.UUID | None = None,
+        report: ls_schemas.InsightsReport | None = None,
+        project_id: str | uuid.UUID | None = None,
+        include_runs: bool = True,
+    ) -> ls_schemas.InsightsReportResult:
+        """Fetch an Insights report by ID or from a prior report object.
+
+        Args:
+            id: The Insights report ID (aka clustering job ID). Provide with
+                ``project_id`` if ``report`` is not provided.
+            report: An ``InsightsReport`` object returned by ``generate_insights`` or
+                ``poll_insights``. If provided, ``id`` and ``project_id`` must be omitted.
+            project_id: The tracing project (session) ID associated with the report.
+                Required if ``report`` is not provided.
+            include_runs: Whether to include all runs for the report.
+
+        Returns:
+            An ``InsightsReportResult`` with job metadata, clusters, summary report,
+            and optionally ``runs``.
+
+        Raises:
+            ValueError: If the required identifiers are not provided.
+        """
+        if report is not None:
+            if id is not None or project_id is not None:
+                raise ValueError(
+                    "Must specify exactly one of ('id' and 'project_id') or 'report'."
+                )
+            job_id = report.id
+            session_id = report.project_id
+        else:
+            if id is None or project_id is None:
+                raise ValueError("Must specify ('id' and 'project_id') or 'report'.")
+            job_id = id
+            session_id = project_id
+
+        resp = self.request_with_retries(
+            "GET", f"/sessions/{session_id}/insights/{job_id}"
+        )
+        ls_utils.raise_for_status_with_text(resp)
+        report_json = resp.json()
+
+        if not include_runs:
+            result = ls_schemas.InsightsReportResult(**report_json)
+            result._attach_client(self, session_id, job_id)
+            return result
+
+        report_json["runs"] = ls_schemas._fetch_insights_runs(
+            client=self,
+            session_id=session_id,
+            job_id=job_id,
+        )
+        result = ls_schemas.InsightsReportResult(**report_json)
+        result._attach_client(self, session_id, job_id)
+        return result
+
     def _ensure_insights_api_key(
         self,
         *,
