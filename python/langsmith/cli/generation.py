@@ -23,7 +23,9 @@ def dict_to_obj(d: dict) -> SimpleNamespace:
     obj = SimpleNamespace(**d)
     if hasattr(obj, "start_time") and isinstance(obj.start_time, str):
         try:
-            obj.start_time = datetime.fromisoformat(obj.start_time.replace("Z", "+00:00"))
+            obj.start_time = datetime.fromisoformat(
+                obj.start_time.replace("Z", "+00:00")
+            )
         except (ValueError, TypeError):
             pass
     if hasattr(obj, "end_time") and isinstance(obj.end_time, str):
@@ -143,6 +145,7 @@ def _sort_traces(traces: list[tuple], sort: str) -> list[tuple]:
 
 # --- Extraction helpers ---
 
+
 def extract_from_messages(messages: list, role: str | None = None) -> str | None:
     """Extract content from a messages array by role."""
     if not messages:
@@ -155,7 +158,11 @@ def extract_from_messages(messages: list, role: str | None = None) -> str | None
                 if msg_type in ("human", "user"):
                     content = msg.get("content", "")
                     if isinstance(content, list):
-                        parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                        parts = [
+                            p.get("text", "")
+                            for p in content
+                            if isinstance(p, dict) and p.get("type") == "text"
+                        ]
                         return " ".join(parts) if parts else str(content)
                     return str(content) if content else None
             elif isinstance(msg, str):
@@ -168,7 +175,11 @@ def extract_from_messages(messages: list, role: str | None = None) -> str | None
                     content = msg.get("content", "")
                     if content and str(content) != "None":
                         if isinstance(content, list):
-                            parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                            parts = [
+                                p.get("text", "")
+                                for p in content
+                                if isinstance(p, dict) and p.get("type") == "text"
+                            ]
                             return " ".join(parts) if parts else str(content)
                         return str(content)
     else:
@@ -181,10 +192,13 @@ def extract_from_messages(messages: list, role: str | None = None) -> str | None
     return None
 
 
-def extract_value(data: dict | None, fields: list[str] | None = None,
-                  common_fields: list[str] | None = None,
-                  message_role: str | None = None,
-                  fallback_to_raw: bool = True) -> str | dict | None:
+def extract_value(
+    data: dict | None,
+    fields: list[str] | None = None,
+    common_fields: list[str] | None = None,
+    message_role: str | None = None,
+    fallback_to_raw: bool = True,
+) -> str | dict | None:
     """Extract a value from a dict using a priority chain."""
     if not data or not isinstance(data, dict):
         return None
@@ -227,8 +241,9 @@ def extract_value(data: dict | None, fields: list[str] | None = None,
     return None
 
 
-def extract_trace_inputs(root, input_fields: list[str] | None = None,
-                         as_dict: bool = False) -> str | dict | None:
+def extract_trace_inputs(
+    root, input_fields: list[str] | None = None, as_dict: bool = False
+) -> str | dict | None:
     """Extract the primary input from a trace's root run."""
     inputs = getattr(root, "inputs", None)
     if not inputs:
@@ -243,15 +258,17 @@ def extract_trace_inputs(root, input_fields: list[str] | None = None,
     return extract_value(inputs, None, COMMON_INPUT_FIELDS, "human")
 
 
-def extract_trace_output(root, output_fields: list[str] | None = None,
-                         messages_only: bool = False) -> str | None:
+def extract_trace_output(
+    root, output_fields: list[str] | None = None, messages_only: bool = False
+) -> str | None:
     """Extract the primary output from a trace's root run."""
     outputs = getattr(root, "outputs", None)
     if not outputs:
         return None
 
     result = extract_value(
-        outputs, output_fields,
+        outputs,
+        output_fields,
         None if messages_only else COMMON_OUTPUT_FIELDS,
         "ai",
         fallback_to_raw=not messages_only,
@@ -262,9 +279,13 @@ def extract_trace_output(root, output_fields: list[str] | None = None,
     return result
 
 
-def extract_final_output(runs: list, output_fields: list[str] | None = None) -> str | None:
+def extract_final_output(
+    runs: list, output_fields: list[str] | None = None
+) -> str | None:
     """Search all runs newest-first for any run with matching outputs."""
-    sorted_runs = sorted(runs, key=lambda r: getattr(r, "start_time", "") or "", reverse=True)
+    sorted_runs = sorted(
+        runs, key=lambda r: getattr(r, "start_time", "") or "", reverse=True
+    )
     for run in sorted_runs:
         outputs = getattr(run, "outputs", None)
         if outputs:
@@ -316,12 +337,14 @@ def get_node_io(runs: list, run_name: str | None = None) -> list[dict]:
 
     results = []
     for r in matching:
-        results.append({
-            "node_name": getattr(r, "name", "unknown"),
-            "inputs": getattr(r, "inputs", None),
-            "outputs": getattr(r, "outputs", None),
-            "run_id": str(getattr(r, "run_id", getattr(r, "id", ""))),
-        })
+        results.append(
+            {
+                "node_name": getattr(r, "name", "unknown"),
+                "inputs": getattr(r, "inputs", None),
+                "outputs": getattr(r, "outputs", None),
+                "run_id": str(getattr(r, "run_id", getattr(r, "id", ""))),
+            }
+        )
     return results
 
 
@@ -383,6 +406,7 @@ def find_retrieval_data(runs: list) -> dict:
 
 # --- Generation ---
 
+
 def generate_dataset(
     traces: list[tuple],
     dataset_type: str,
@@ -405,13 +429,15 @@ def generate_dataset(
                 continue
             chunks_text = "\n\n".join(retrieval["retrieved_chunks"])
             cited = json.dumps(retrieval["retrieved_chunks"][:3], default=str)
-            dataset.append({
-                "trace_id": trace_id,
-                "question": query,
-                "retrieved_chunks": chunks_text,
-                "answer": answer,
-                "cited_chunks": cited,
-            })
+            dataset.append(
+                {
+                    "trace_id": trace_id,
+                    "question": query,
+                    "retrieved_chunks": chunks_text,
+                    "answer": answer,
+                    "cited_chunks": cited,
+                }
+            )
 
         elif dataset_type == "final_response":
             inputs = extract_trace_inputs(root, input_fields, as_dict=not input_fields)
@@ -420,11 +446,13 @@ def generate_dataset(
                 continue
             if isinstance(inputs, str):
                 inputs = {"expected_input": inputs}
-            dataset.append({
-                "trace_id": trace_id,
-                "inputs": inputs,
-                "outputs": {"expected_response": output},
-            })
+            dataset.append(
+                {
+                    "trace_id": trace_id,
+                    "inputs": inputs,
+                    "outputs": {"expected_response": output},
+                }
+            )
 
         elif dataset_type == "single_step":
             node_results = get_node_io(runs, run_name)
@@ -433,30 +461,35 @@ def generate_dataset(
                 node_results = random.sample(node_results, sample_per_trace)
 
             for i, node in enumerate(node_results):
-                dataset.append({
-                    "trace_id": trace_id,
-                    "run_id": node["run_id"],
-                    "node_name": node["node_name"],
-                    "occurrence": i + 1,
-                    "inputs": node["inputs"],
-                    "outputs": {"expected_output": node["outputs"]},
-                })
+                dataset.append(
+                    {
+                        "trace_id": trace_id,
+                        "run_id": node["run_id"],
+                        "node_name": node["node_name"],
+                        "occurrence": i + 1,
+                        "inputs": node["inputs"],
+                        "outputs": {"expected_output": node["outputs"]},
+                    }
+                )
 
         elif dataset_type == "trajectory":
             inputs = extract_trace_inputs(root, input_fields, as_dict=not input_fields)
             tools = extract_tool_sequence(runs, depth)
             if isinstance(inputs, str):
                 inputs = {"expected_input": inputs}
-            dataset.append({
-                "trace_id": trace_id,
-                "inputs": inputs,
-                "outputs": {"expected_trajectory": tools},
-            })
+            dataset.append(
+                {
+                    "trace_id": trace_id,
+                    "inputs": inputs,
+                    "outputs": {"expected_trajectory": tools},
+                }
+            )
 
     return dataset
 
 
 # --- Export ---
+
 
 def export_to_file(dataset: list[dict], output_path: str) -> None:
     """Export a generated dataset to a file."""
@@ -470,15 +503,22 @@ def export_to_file(dataset: list[dict], output_path: str) -> None:
             writer = csv.DictWriter(f, fieldnames=all_keys)
             writer.writeheader()
             for row in dataset:
-                writer.writerow({k: json.dumps(v, default=str) if isinstance(v, (dict, list)) else v
-                                 for k, v in row.items()})
+                writer.writerow(
+                    {
+                        k: json.dumps(v, default=str)
+                        if isinstance(v, (dict, list))
+                        else v
+                        for k, v in row.items()
+                    }
+                )
     else:
         with open(output_path, "w") as f:
             json.dump(dataset, f, indent=2, default=str)
 
 
-def export_to_langsmith(client, dataset: list[dict], dataset_name: str,
-                        dataset_type: str) -> None:
+def export_to_langsmith(
+    client, dataset: list[dict], dataset_name: str, dataset_type: str
+) -> None:
     """Upload a generated dataset to LangSmith."""
     try:
         ds = client.create_dataset(dataset_name=dataset_name)
@@ -491,14 +531,18 @@ def export_to_langsmith(client, dataset: list[dict], dataset_name: str,
 
     for ex in dataset:
         if dataset_type == "rag":
-            inputs_list.append({
-                "question": ex.get("question"),
-                "retrieved_chunks": ex.get("retrieved_chunks"),
-            })
-            outputs_list.append({
-                "answer": ex.get("answer"),
-                "cited_chunks": ex.get("cited_chunks"),
-            })
+            inputs_list.append(
+                {
+                    "question": ex.get("question"),
+                    "retrieved_chunks": ex.get("retrieved_chunks"),
+                }
+            )
+            outputs_list.append(
+                {
+                    "answer": ex.get("answer"),
+                    "cited_chunks": ex.get("cited_chunks"),
+                }
+            )
         else:
             inputs_list.append(ex.get("inputs", {}))
             outputs_list.append(ex.get("outputs", {}))

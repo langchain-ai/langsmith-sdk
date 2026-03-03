@@ -112,7 +112,9 @@ class TestOutputTree:
         root_id = uuid.uuid4()
         child_id = uuid.uuid4()
         root = make_run(run_id=root_id, name="root", run_type="chain")
-        child = make_run(run_id=child_id, name="child", run_type="llm", parent_run_id=root_id)
+        child = make_run(
+            run_id=child_id, name="child", run_type="llm", parent_run_id=root_id
+        )
         output_tree([root, child])
         captured = capsys.readouterr()
         assert "root" in captured.out
@@ -133,8 +135,13 @@ class TestOutputTree:
         root_id = uuid.uuid4()
         child_id = uuid.uuid4()
         root = make_run(run_id=root_id, name="root", run_type="chain")
-        child = make_run(run_id=child_id, name="error-child", run_type="llm",
-                         parent_run_id=root_id, error="something broke")
+        child = make_run(
+            run_id=child_id,
+            name="error-child",
+            run_type="llm",
+            parent_run_id=root_id,
+            error="something broke",
+        )
         output_tree([root, child])
         captured = capsys.readouterr()
         assert "error-child" in captured.out

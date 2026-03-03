@@ -43,10 +43,15 @@ class TestProjectList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -57,10 +62,15 @@ class TestProjectList:
     def test_project_list_passes_reference_free(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert call_kwargs["reference_free"] is True
@@ -68,10 +78,15 @@ class TestProjectList:
     def test_project_list_default_limit(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert call_kwargs["limit"] == 20
@@ -79,11 +94,17 @@ class TestProjectList:
     def test_project_list_custom_limit(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-            "--limit", "50",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+                "--limit",
+                "50",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert call_kwargs["limit"] == 50
@@ -91,22 +112,35 @@ class TestProjectList:
     def test_project_list_name_contains(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-            "--name-contains", "chatbot",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+                "--name-contains",
+                "chatbot",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert call_kwargs["name_contains"] == "chatbot"
 
-    def test_project_list_name_contains_not_passed_when_omitted(self, runner, mock_client):
+    def test_project_list_name_contains_not_passed_when_omitted(
+        self, runner, mock_client
+    ):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert "name_contains" not in call_kwargs
@@ -124,10 +158,15 @@ class TestProjectList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -156,10 +195,15 @@ class TestProjectList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -182,11 +226,17 @@ class TestProjectList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "pretty-app" in result.output
@@ -197,11 +247,17 @@ class TestProjectList:
         mock_client.list_projects.return_value = projects
 
         output_file = str(tmp_path / "projects.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -211,15 +267,21 @@ class TestProjectList:
 
     def test_project_list_total_cost_decimal(self, runner, mock_client):
         from decimal import Decimal
+
         projects = [
             _make_project(name="costly-app", total_cost=Decimal("12.345")),
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -228,10 +290,15 @@ class TestProjectList:
     def test_project_list_empty(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "project", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "project",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)

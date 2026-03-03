@@ -11,12 +11,19 @@ class TestRunList:
         runs = [make_run(name="llm-call", run_type="llm")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "--run-type", "llm",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "--run-type",
+                "llm",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -26,11 +33,17 @@ class TestRunList:
     def test_run_list_default_limit(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.list_runs.call_args[1]
@@ -40,12 +53,18 @@ class TestRunList:
         runs = [make_run(name="llm-call", run_type="llm", total_tokens=200)]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "--include-metadata",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "--include-metadata",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -55,12 +74,18 @@ class TestRunList:
         runs = [make_run(inputs={"q": "hi"}, outputs={"a": "bye"}, total_tokens=50)]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -71,12 +96,19 @@ class TestRunList:
         runs = [make_run(name="pretty-run", run_type="llm")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "run", "list",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "run",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "pretty-run" in result.output
@@ -86,12 +118,19 @@ class TestRunList:
         mock_client.list_runs.return_value = runs
 
         output_file = str(tmp_path / "runs.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -101,12 +140,19 @@ class TestRunList:
     def test_run_list_with_run_type_filter(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "--run-type", "tool",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "--run-type",
+                "tool",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("run_type") == "tool"
@@ -114,13 +160,20 @@ class TestRunList:
     def test_run_list_with_name_and_error(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "list",
-            "--project", "test",
-            "--name", "ChatOpenAI",
-            "--error",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "list",
+                "--project",
+                "test",
+                "--name",
+                "ChatOpenAI",
+                "--error",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("error") is True
@@ -132,10 +185,16 @@ class TestRunGet:
         run = make_run(name="my-run")
         mock_client.read_run.return_value = run
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "get", str(run.id),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "get",
+                str(run.id),
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -145,11 +204,17 @@ class TestRunGet:
         run = make_run(inputs={"q": "hello"}, outputs={"a": "world"})
         mock_client.read_run.return_value = run
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "get", str(run.id),
-            "--include-io",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "get",
+                str(run.id),
+                "--include-io",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -159,11 +224,17 @@ class TestRunGet:
         run = make_run(inputs={"q": "hi"}, outputs={"a": "bye"}, total_tokens=10)
         mock_client.read_run.return_value = run
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "get", str(run.id),
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "get",
+                str(run.id),
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -174,11 +245,18 @@ class TestRunGet:
         run = make_run(name="pretty-run")
         mock_client.read_run.return_value = run
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "run", "get", str(run.id),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "run",
+                "get",
+                str(run.id),
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -187,11 +265,18 @@ class TestRunGet:
         mock_client.read_run.return_value = run
 
         output_file = str(tmp_path / "run.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "get", str(run.id),
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "get",
+                str(run.id),
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -206,12 +291,20 @@ class TestRunExport:
 
         output_file = str(tmp_path / "runs.jsonl")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "export", output_file,
-            "--project", "test",
-            "--limit", "10",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "export",
+                output_file,
+                "--project",
+                "test",
+                "--limit",
+                "10",
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -223,11 +316,18 @@ class TestRunExport:
 
         output_file = str(tmp_path / "runs.jsonl")
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "export", output_file,
-            "--project", "test",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "export",
+                output_file,
+                "--project",
+                "test",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("limit") == 100
@@ -238,12 +338,19 @@ class TestRunExport:
 
         output_file = str(tmp_path / "runs.jsonl")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "run", "export", output_file,
-            "--project", "test",
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "run",
+                "export",
+                output_file,
+                "--project",
+                "test",
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:

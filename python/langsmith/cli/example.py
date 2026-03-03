@@ -28,16 +28,34 @@ def example_group():
 
 
 @example_group.command("list")
-@click.option("--dataset", "dataset_name", required=True,
-              help="Dataset name or UUID to list examples from.")
-@click.option("--limit", "-n", type=int, default=20,
-              help="Maximum number of examples to return. Default: 20.")
-@click.option("--offset", type=int, default=0,
-              help="Number of examples to skip (for pagination).")
-@click.option("--split", default=None,
-              help="Filter to examples in a specific split (e.g. 'train', 'test').")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--dataset",
+    "dataset_name",
+    required=True,
+    help="Dataset name or UUID to list examples from.",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    help="Maximum number of examples to return. Default: 20.",
+)
+@click.option(
+    "--offset", type=int, default=0, help="Number of examples to skip (for pagination)."
+)
+@click.option(
+    "--split",
+    default=None,
+    help="Filter to examples in a specific split (e.g. 'train', 'test').",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def example_list(ctx, dataset_name, limit, offset, split, output_file):
     """List examples in a dataset.
@@ -69,13 +87,17 @@ def example_list(ctx, dataset_name, limit, offset, split, output_file):
         columns = ["ID", "Split", "Created", "Inputs Preview"]
         rows = []
         for ex in examples:
-            inputs_preview = json.dumps(ex.inputs, default=str)[:60] + "..." if ex.inputs else "N/A"
-            rows.append([
-                str(ex.id)[:16] + "...",
-                getattr(ex, "split", None) or "N/A",
-                ex.created_at.strftime("%Y-%m-%d") if ex.created_at else "N/A",
-                inputs_preview,
-            ])
+            inputs_preview = (
+                json.dumps(ex.inputs, default=str)[:60] + "..." if ex.inputs else "N/A"
+            )
+            rows.append(
+                [
+                    str(ex.id)[:16] + "...",
+                    getattr(ex, "split", None) or "N/A",
+                    ex.created_at.strftime("%Y-%m-%d") if ex.created_at else "N/A",
+                    inputs_preview,
+                ]
+            )
         output_table(columns, rows, title=f"Examples in {ds.name}")
     else:
         data = []
@@ -94,16 +116,32 @@ def example_list(ctx, dataset_name, limit, offset, split, output_file):
 
 
 @example_group.command("create")
-@click.option("--dataset", "dataset_name", required=True,
-              help="Dataset name to add the example to.")
-@click.option("--inputs", required=True,
-              help='JSON string of input fields. Example: \'{"question": "What is LangSmith?"}\'')
-@click.option("--outputs", default=None,
-              help='JSON string of expected output fields. Example: \'{"answer": "A platform for..."}\'')
-@click.option("--metadata", default=None,
-              help='JSON string of metadata. Example: \'{"source": "manual"}\'')
-@click.option("--split", default=None,
-              help="Assign to a split (e.g. 'train', 'test', 'validation').")
+@click.option(
+    "--dataset",
+    "dataset_name",
+    required=True,
+    help="Dataset name to add the example to.",
+)
+@click.option(
+    "--inputs",
+    required=True,
+    help='JSON string of input fields. Example: \'{"question": "What is LangSmith?"}\'',
+)
+@click.option(
+    "--outputs",
+    default=None,
+    help='JSON string of expected output fields. Example: \'{"answer": "A platform for..."}\'',
+)
+@click.option(
+    "--metadata",
+    default=None,
+    help='JSON string of metadata. Example: \'{"source": "manual"}\'',
+)
+@click.option(
+    "--split",
+    default=None,
+    help="Assign to a split (e.g. 'train', 'test', 'validation').",
+)
 @click.pass_context
 def example_create(ctx, dataset_name, inputs, outputs, metadata, split):
     """Create a new example in a dataset.
@@ -153,19 +191,25 @@ def example_create(ctx, dataset_name, inputs, outputs, metadata, split):
         split=split,
     )
 
-    output_json({
-        "status": "created",
-        "id": str(ex.id),
-        "dataset_id": str(ex.dataset_id),
-        "inputs": ex.inputs,
-        "outputs": ex.outputs,
-    })
+    output_json(
+        {
+            "status": "created",
+            "id": str(ex.id),
+            "dataset_id": str(ex.dataset_id),
+            "inputs": ex.inputs,
+            "outputs": ex.outputs,
+        }
+    )
 
 
 @example_group.command("delete")
 @click.argument("example_id")
-@click.option("--yes", is_flag=True, default=False,
-              help="Skip confirmation prompt. Required for non-interactive use.")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt. Required for non-interactive use.",
+)
 @click.pass_context
 def example_delete(ctx, example_id, yes):
     """Delete an example by its UUID.

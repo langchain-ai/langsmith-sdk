@@ -27,18 +27,40 @@ def thread_group():
 
 
 @thread_group.command("list")
-@click.option("--project", required=True,
-              help="Project name (required). The project containing the threads.")
-@click.option("--limit", "-n", type=int, default=20,
-              help="Maximum number of threads to return. Default: 20.")
-@click.option("--offset", type=int, default=0,
-              help="Number of threads to skip (for pagination).")
-@click.option("--filter", "raw_filter", default=None,
-              help="Raw LangSmith filter DSL string applied to thread queries.")
-@click.option("--last-n-minutes", type=int, default=None,
-              help="Only include threads with activity in the last N minutes.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--project",
+    required=True,
+    help="Project name (required). The project containing the threads.",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    help="Maximum number of threads to return. Default: 20.",
+)
+@click.option(
+    "--offset", type=int, default=0, help="Number of threads to skip (for pagination)."
+)
+@click.option(
+    "--filter",
+    "raw_filter",
+    default=None,
+    help="Raw LangSmith filter DSL string applied to thread queries.",
+)
+@click.option(
+    "--last-n-minutes",
+    type=int,
+    default=None,
+    help="Only include threads with activity in the last N minutes.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def thread_list(ctx, project, limit, offset, raw_filter, last_n_minutes, output_file):
     """List conversation threads in a project.
@@ -66,7 +88,9 @@ def thread_list(ctx, project, limit, offset, raw_filter, last_n_minutes, output_
     if raw_filter:
         kwargs["filter"] = raw_filter
     if last_n_minutes:
-        kwargs["start_time"] = datetime.now(timezone.utc) - timedelta(minutes=last_n_minutes)
+        kwargs["start_time"] = datetime.now(timezone.utc) - timedelta(
+            minutes=last_n_minutes
+        )
 
     threads = client.list_threads(**kwargs)
     fmt = ctx.obj["output_format"]
@@ -75,12 +99,14 @@ def thread_list(ctx, project, limit, offset, raw_filter, last_n_minutes, output_
         columns = ["Thread ID", "Run Count", "Min Start", "Max Start"]
         rows = []
         for t in threads:
-            rows.append([
-                t["thread_id"],
-                str(t.get("count", len(t.get("runs", [])))),
-                t.get("min_start_time", "N/A"),
-                t.get("max_start_time", "N/A"),
-            ])
+            rows.append(
+                [
+                    t["thread_id"],
+                    str(t.get("count", len(t.get("runs", [])))),
+                    t.get("min_start_time", "N/A"),
+                    t.get("max_start_time", "N/A"),
+                ]
+            )
         output_table(columns, rows, title=f"Threads in {project}")
     else:
         data = []
@@ -97,20 +123,47 @@ def thread_list(ctx, project, limit, offset, raw_filter, last_n_minutes, output_
 
 @thread_group.command("get")
 @click.argument("thread_id")
-@click.option("--project", required=True,
-              help="Project name (required). The project containing the thread.")
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io.")
-@click.option("--limit", "-n", type=int, default=None,
-              help="Maximum number of runs (turns) to return.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--project",
+    required=True,
+    help="Project name (required). The project containing the thread.",
+)
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io.",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=None,
+    help="Maximum number of runs (turns) to return.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
-def thread_get(ctx, thread_id, project, include_metadata, include_io, full, limit, output_file):
+def thread_get(
+    ctx, thread_id, project, include_metadata, include_io, full, limit, output_file
+):
     """Fetch all runs (turns) in a single conversation thread.
 
     \b
@@ -130,15 +183,19 @@ def thread_get(ctx, thread_id, project, include_metadata, include_io, full, limi
         include_io = True
 
     client = get_client(ctx)
-    runs = list(client.read_thread(
-        thread_id=thread_id,
-        project_name=project,
-        limit=limit,
-    ))
+    runs = list(
+        client.read_thread(
+            thread_id=thread_id,
+            project_name=project,
+            limit=limit,
+        )
+    )
     fmt = ctx.obj["output_format"]
 
     if fmt == "pretty":
-        print_runs_table(runs, include_metadata=include_metadata, title=f"Thread {thread_id}")
+        print_runs_table(
+            runs, include_metadata=include_metadata, title=f"Thread {thread_id}"
+        )
     else:
         data = {
             "thread_id": thread_id,

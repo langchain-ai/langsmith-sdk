@@ -41,12 +41,25 @@ def dataset_group():
 
 
 @dataset_group.command("list")
-@click.option("--limit", "-n", type=int, default=100,
-              help="Maximum number of datasets to return. Default: 100.")
-@click.option("--name-contains", default=None,
-              help="Filter to datasets whose name contains this substring.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=100,
+    help="Maximum number of datasets to return. Default: 100.",
+)
+@click.option(
+    "--name-contains",
+    default=None,
+    help="Filter to datasets whose name contains this substring.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def dataset_list(ctx, limit, name_contains, output_file):
     """List all datasets in the workspace.
@@ -75,32 +88,41 @@ def dataset_list(ctx, limit, name_contains, output_file):
         columns = ["Name", "ID", "Description", "Examples", "Created"]
         rows = []
         for ds in datasets:
-            rows.append([
-                ds.name,
-                str(ds.id)[:16] + "...",
-                (ds.description or "")[:50],
-                str(ds.example_count or 0),
-                ds.created_at.strftime("%Y-%m-%d") if ds.created_at else "N/A",
-            ])
+            rows.append(
+                [
+                    ds.name,
+                    str(ds.id)[:16] + "...",
+                    (ds.description or "")[:50],
+                    str(ds.example_count or 0),
+                    ds.created_at.strftime("%Y-%m-%d") if ds.created_at else "N/A",
+                ]
+            )
         output_table(columns, rows, title="Datasets")
     else:
         data = []
         for ds in datasets:
-            data.append({
-                "id": str(ds.id),
-                "name": ds.name,
-                "description": ds.description,
-                "data_type": ds.data_type.value if ds.data_type else None,
-                "example_count": ds.example_count,
-                "created_at": ds.created_at.isoformat() if ds.created_at else None,
-            })
+            data.append(
+                {
+                    "id": str(ds.id),
+                    "name": ds.name,
+                    "description": ds.description,
+                    "data_type": ds.data_type.value if ds.data_type else None,
+                    "example_count": ds.example_count,
+                    "created_at": ds.created_at.isoformat() if ds.created_at else None,
+                }
+            )
         output_json(data, output_file)
 
 
 @dataset_group.command("get")
 @click.argument("name_or_id")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def dataset_get(ctx, name_or_id, output_file):
     """Get dataset details by name or UUID.
@@ -131,14 +153,19 @@ def dataset_get(ctx, name_or_id, output_file):
 
     if fmt == "pretty":
         from langsmith.cli.output import print_output
+
         print_output(data, "pretty", output_file)
     else:
         output_json(data, output_file)
 
 
 @dataset_group.command("create")
-@click.option("--name", required=True, help="Name for the new dataset (must be unique).")
-@click.option("--description", default=None, help="Optional description of the dataset.")
+@click.option(
+    "--name", required=True, help="Name for the new dataset (must be unique)."
+)
+@click.option(
+    "--description", default=None, help="Optional description of the dataset."
+)
 @click.pass_context
 def dataset_create(ctx, name, description):
     """Create a new empty dataset.
@@ -153,19 +180,25 @@ def dataset_create(ctx, name, description):
     """
     client = get_client(ctx)
     ds = client.create_dataset(dataset_name=name, description=description)
-    output_json({
-        "status": "created",
-        "id": str(ds.id),
-        "name": ds.name,
-        "description": ds.description,
-        "created_at": ds.created_at.isoformat() if ds.created_at else None,
-    })
+    output_json(
+        {
+            "status": "created",
+            "id": str(ds.id),
+            "name": ds.name,
+            "description": ds.description,
+            "created_at": ds.created_at.isoformat() if ds.created_at else None,
+        }
+    )
 
 
 @dataset_group.command("delete")
 @click.argument("name_or_id")
-@click.option("--yes", is_flag=True, default=False,
-              help="Skip confirmation prompt. Required for non-interactive use.")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt. Required for non-interactive use.",
+)
 @click.pass_context
 def dataset_delete(ctx, name_or_id, yes):
     """Delete a dataset by name or UUID.
@@ -195,8 +228,13 @@ def dataset_delete(ctx, name_or_id, yes):
 @dataset_group.command("export")
 @click.argument("name_or_id")
 @click.argument("output_file")
-@click.option("--limit", "-n", type=int, default=100,
-              help="Maximum number of examples to export. Default: 100.")
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=100,
+    help="Maximum number of examples to export. Default: 100.",
+)
 @click.pass_context
 def dataset_export(ctx, name_or_id, output_file, limit):
     """Export dataset examples to a JSON file.
@@ -224,20 +262,22 @@ def dataset_export(ctx, name_or_id, output_file, limit):
     with open(output_file, "w") as f:
         json.dump(data, f, indent=2, default=str)
 
-    output_json({
-        "status": "exported",
-        "dataset": ds.name,
-        "count": len(data),
-        "path": output_file,
-    })
+    output_json(
+        {
+            "status": "exported",
+            "dataset": ds.name,
+            "count": len(data),
+            "path": output_file,
+        }
+    )
 
 
 @dataset_group.command("upload")
 @click.argument("file_path", type=click.Path(exists=True))
-@click.option("--name", required=True,
-              help="Name for the new dataset to create.")
-@click.option("--description", default=None,
-              help="Optional description of the dataset.")
+@click.option("--name", required=True, help="Name for the new dataset to create.")
+@click.option(
+    "--description", default=None, help="Optional description of the dataset."
+)
 @click.pass_context
 def dataset_upload(ctx, file_path, name, description):
     """Upload a JSON file as a new dataset.
@@ -284,47 +324,113 @@ def dataset_upload(ctx, file_path, name, description):
         dataset_id=ds.id,
     )
 
-    output_json({
-        "status": "uploaded",
-        "dataset_id": str(ds.id),
-        "dataset_name": name,
-        "example_count": len(inputs_list),
-    })
+    output_json(
+        {
+            "status": "uploaded",
+            "dataset_id": str(ds.id),
+            "dataset_name": name,
+            "example_count": len(inputs_list),
+        }
+    )
 
 
 @dataset_group.command("generate")
-@click.option("--input", "-i", "input_path", required=True, type=click.Path(exists=True),
-              help="Path to a directory of JSONL trace files, or a single JSONL/JSON file.")
-@click.option("--type", "dataset_type", required=True,
-              type=click.Choice(["final_response", "single_step", "trajectory", "rag"]),
-              help="Dataset type: final_response (input->output), single_step (node I/O), trajectory (tool sequence), rag (question->answer with chunks).")
-@click.option("--output", "-o", "output_path", required=True,
-              help="Output file path (.json or .csv).")
-@click.option("--upload", "upload_name", default=None,
-              help="Also upload the generated dataset to LangSmith with this name.")
-@click.option("--run-name", default=None,
-              help="For single_step type: only extract I/O from runs matching this name.")
-@click.option("--depth", type=int, default=None,
-              help="For trajectory type: maximum hierarchy depth for tool sequence extraction.")
-@click.option("--input-fields", default=None,
-              help="Comma-separated field names to extract as inputs (e.g. 'query,question').")
-@click.option("--output-fields", default=None,
-              help="Comma-separated field names to extract as outputs (e.g. 'answer,response').")
-@click.option("--messages-only", is_flag=True, default=False,
-              help="For final_response: only extract from messages arrays, skip common fields.")
-@click.option("--sample-per-trace", type=int, default=None,
-              help="For single_step: max number of examples to sample per trace.")
-@click.option("--sort", type=click.Choice(["newest", "oldest", "alphabetical", "reverse-alphabetical"]),
-              default="newest",
-              help="Sort order for input traces. Default: newest.")
-@click.option("--replace", is_flag=True, default=False,
-              help="Overwrite existing output file and/or LangSmith dataset.")
-@click.option("--yes", is_flag=True, default=False,
-              help="Skip confirmation prompts for destructive operations.")
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to a directory of JSONL trace files, or a single JSONL/JSON file.",
+)
+@click.option(
+    "--type",
+    "dataset_type",
+    required=True,
+    type=click.Choice(["final_response", "single_step", "trajectory", "rag"]),
+    help="Dataset type: final_response (input->output), single_step (node I/O), trajectory (tool sequence), rag (question->answer with chunks).",
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    required=True,
+    help="Output file path (.json or .csv).",
+)
+@click.option(
+    "--upload",
+    "upload_name",
+    default=None,
+    help="Also upload the generated dataset to LangSmith with this name.",
+)
+@click.option(
+    "--run-name",
+    default=None,
+    help="For single_step type: only extract I/O from runs matching this name.",
+)
+@click.option(
+    "--depth",
+    type=int,
+    default=None,
+    help="For trajectory type: maximum hierarchy depth for tool sequence extraction.",
+)
+@click.option(
+    "--input-fields",
+    default=None,
+    help="Comma-separated field names to extract as inputs (e.g. 'query,question').",
+)
+@click.option(
+    "--output-fields",
+    default=None,
+    help="Comma-separated field names to extract as outputs (e.g. 'answer,response').",
+)
+@click.option(
+    "--messages-only",
+    is_flag=True,
+    default=False,
+    help="For final_response: only extract from messages arrays, skip common fields.",
+)
+@click.option(
+    "--sample-per-trace",
+    type=int,
+    default=None,
+    help="For single_step: max number of examples to sample per trace.",
+)
+@click.option(
+    "--sort",
+    type=click.Choice(["newest", "oldest", "alphabetical", "reverse-alphabetical"]),
+    default="newest",
+    help="Sort order for input traces. Default: newest.",
+)
+@click.option(
+    "--replace",
+    is_flag=True,
+    default=False,
+    help="Overwrite existing output file and/or LangSmith dataset.",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompts for destructive operations.",
+)
 @click.pass_context
-def dataset_generate(ctx, input_path, dataset_type, output_path, upload_name,
-                     run_name, depth, input_fields, output_fields, messages_only,
-                     sample_per_trace, sort, replace, yes):
+def dataset_generate(
+    ctx,
+    input_path,
+    dataset_type,
+    output_path,
+    upload_name,
+    run_name,
+    depth,
+    input_fields,
+    output_fields,
+    messages_only,
+    sample_per_trace,
+    sort,
+    replace,
+    yes,
+):
     """Generate evaluation datasets from exported trace files.
 
     \b
@@ -348,13 +454,18 @@ def dataset_generate(ctx, input_path, dataset_type, output_path, upload_name,
     JSON output: {status: "generated", type, count, output, [uploaded_to]}
     """
     from langsmith.cli.generation import (
-        load_traces_from_dir, load_traces_from_file,
-        generate_dataset, export_to_file, export_to_langsmith,
+        load_traces_from_dir,
+        load_traces_from_file,
+        generate_dataset,
+        export_to_file,
+        export_to_langsmith,
     )
 
     # Parse field lists
     in_fields = [f.strip() for f in input_fields.split(",")] if input_fields else None
-    out_fields = [f.strip() for f in output_fields.split(",")] if output_fields else None
+    out_fields = (
+        [f.strip() for f in output_fields.split(",")] if output_fields else None
+    )
 
     # Load traces
     if os.path.isdir(input_path):
@@ -384,7 +495,9 @@ def dataset_generate(ctx, input_path, dataset_type, output_path, upload_name,
 
     # Handle replace for output file
     if os.path.exists(output_path) and not replace:
-        output_json({"error": f"Output file exists: {output_path}. Use --replace to overwrite."})
+        output_json(
+            {"error": f"Output file exists: {output_path}. Use --replace to overwrite."}
+        )
         return
 
     # Export to file
@@ -409,7 +522,9 @@ def dataset_generate(ctx, input_path, dataset_type, output_path, upload_name,
                 existing = None  # Dataset doesn't exist yet, nothing to replace
             if existing is not None:
                 if not yes:
-                    click.confirm(f"Delete existing dataset '{upload_name}'?", abort=True)
+                    click.confirm(
+                        f"Delete existing dataset '{upload_name}'?", abort=True
+                    )
                 client.delete_dataset(dataset_id=existing.id)
 
         export_to_langsmith(client, dataset, upload_name, dataset_type)
@@ -420,8 +535,13 @@ def dataset_generate(ctx, input_path, dataset_type, output_path, upload_name,
 
 @dataset_group.command("view-file")
 @click.argument("file_path", type=click.Path(exists=True))
-@click.option("--limit", "-n", type=int, default=5,
-              help="Number of examples to display. Default: 5.")
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=5,
+    help="Number of examples to display. Default: 5.",
+)
 @click.pass_context
 def dataset_view_file(ctx, file_path, limit):
     """Preview examples from a local dataset file (JSON or CSV).
@@ -526,12 +646,14 @@ def dataset_structure(ctx, file_path):
             for field, count in sorted(all_fields.items())
         }
 
-        output_json({
-            "format": "json",
-            "example_count": total,
-            "first_example_preview": first_preview,
-            "field_coverage": coverage,
-        })
+        output_json(
+            {
+                "format": "json",
+                "example_count": total,
+                "first_example_preview": first_preview,
+                "field_coverage": coverage,
+            }
+        )
 
     elif ext == ".csv":
         with open(file_path) as f:
@@ -550,11 +672,13 @@ def dataset_structure(ctx, file_path):
             for col, count in sorted(col_counts.items())
         }
 
-        output_json({
-            "format": "csv",
-            "row_count": total,
-            "column_coverage": coverage,
-        })
+        output_json(
+            {
+                "format": "csv",
+                "row_count": total,
+                "column_coverage": coverage,
+            }
+        )
 
     else:
         output_json({"error": f"Unsupported file type: {ext}"})
@@ -568,21 +692,27 @@ def _display_examples_pretty(examples: list) -> None:
     for i, ex in enumerate(examples):
         if isinstance(ex, dict) and "inputs" in ex:
             inputs_str = json.dumps(ex["inputs"], indent=2, default=str)
-            console.print(Panel(
-                Syntax(inputs_str, "json", theme="monokai"),
-                title=f"Example {i + 1} - Inputs",
-                border_style="blue",
-            ))
+            console.print(
+                Panel(
+                    Syntax(inputs_str, "json", theme="monokai"),
+                    title=f"Example {i + 1} - Inputs",
+                    border_style="blue",
+                )
+            )
             if "outputs" in ex and ex["outputs"]:
                 outputs_str = json.dumps(ex["outputs"], indent=2, default=str)
-                console.print(Panel(
-                    Syntax(outputs_str, "json", theme="monokai"),
-                    title=f"Example {i + 1} - Outputs",
-                    border_style="green",
-                ))
+                console.print(
+                    Panel(
+                        Syntax(outputs_str, "json", theme="monokai"),
+                        title=f"Example {i + 1} - Outputs",
+                        border_style="green",
+                    )
+                )
         else:
             raw_str = json.dumps(ex, indent=2, default=str)
-            console.print(Panel(
-                Syntax(raw_str, "json", theme="monokai"),
-                title=f"Example {i + 1}",
-            ))
+            console.print(
+                Panel(
+                    Syntax(raw_str, "json", theme="monokai"),
+                    title=f"Example {i + 1}",
+                )
+            )

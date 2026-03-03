@@ -39,8 +39,13 @@ def evaluator_group():
 
 
 @evaluator_group.command("list")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def evaluator_list(ctx, output_file):
     """List all evaluator rules in the workspace.
@@ -91,36 +96,72 @@ def evaluator_list(ctx, output_file):
     else:
         data = []
         for rule in rules:
-            data.append({
-                "id": rule.get("id"),
-                "name": rule.get("display_name"),
-                "sampling_rate": rule.get("sampling_rate"),
-                "is_enabled": rule.get("is_enabled"),
-                "dataset_id": rule.get("dataset_id"),
-                "session_id": rule.get("session_id"),
-            })
+            data.append(
+                {
+                    "id": rule.get("id"),
+                    "name": rule.get("display_name"),
+                    "sampling_rate": rule.get("sampling_rate"),
+                    "is_enabled": rule.get("is_enabled"),
+                    "dataset_id": rule.get("dataset_id"),
+                    "session_id": rule.get("session_id"),
+                }
+            )
         output_json(data, output_file)
 
 
 @evaluator_group.command("upload")
 @click.argument("evaluator_file", type=click.Path(exists=True))
-@click.option("--name", required=True,
-              help="Display name for the evaluator in LangSmith.")
-@click.option("--function", "func_name", required=True,
-              help="Name of the Python function to upload from the file.")
-@click.option("--dataset", "target_dataset", default=None,
-              help="Target dataset name (creates an offline/experiment evaluator).")
-@click.option("--project", "target_project", default=None,
-              help="Target project name (creates an online evaluator).")
-@click.option("--sampling-rate", type=float, default=1.0,
-              help="Fraction of runs to evaluate (0.0-1.0). Default: 1.0 (all runs).")
-@click.option("--replace", is_flag=True, default=False,
-              help="Replace an existing evaluator with the same name and target.")
-@click.option("--yes", is_flag=True, default=False,
-              help="Skip confirmation prompt when replacing.")
+@click.option(
+    "--name", required=True, help="Display name for the evaluator in LangSmith."
+)
+@click.option(
+    "--function",
+    "func_name",
+    required=True,
+    help="Name of the Python function to upload from the file.",
+)
+@click.option(
+    "--dataset",
+    "target_dataset",
+    default=None,
+    help="Target dataset name (creates an offline/experiment evaluator).",
+)
+@click.option(
+    "--project",
+    "target_project",
+    default=None,
+    help="Target project name (creates an online evaluator).",
+)
+@click.option(
+    "--sampling-rate",
+    type=float,
+    default=1.0,
+    help="Fraction of runs to evaluate (0.0-1.0). Default: 1.0 (all runs).",
+)
+@click.option(
+    "--replace",
+    is_flag=True,
+    default=False,
+    help="Replace an existing evaluator with the same name and target.",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt when replacing.",
+)
 @click.pass_context
-def evaluator_upload(ctx, evaluator_file, name, func_name, target_dataset,
-                     target_project, sampling_rate, replace, yes):
+def evaluator_upload(
+    ctx,
+    evaluator_file,
+    name,
+    func_name,
+    target_dataset,
+    target_project,
+    sampling_rate,
+    replace,
+    yes,
+):
     """Upload a Python evaluator function to LangSmith.
 
     \b
@@ -157,7 +198,11 @@ def evaluator_upload(ctx, evaluator_file, name, func_name, target_dataset,
     JSON output: {status: "uploaded", id, name, target}
     """
     if not target_dataset and not target_project:
-        output_json({"error": "Must specify --dataset or --project (global evaluators not supported)"})
+        output_json(
+            {
+                "error": "Must specify --dataset or --project (global evaluators not supported)"
+            }
+        )
         return
 
     headers = get_api_headers(ctx)
@@ -189,10 +234,12 @@ def evaluator_upload(ctx, evaluator_file, name, func_name, target_dataset,
         return
     if existing:
         if not replace:
-            output_json({
-                "error": f"Evaluator '{name}' already exists (use --replace to overwrite)",
-                "id": existing.get("id"),
-            })
+            output_json(
+                {
+                    "error": f"Evaluator '{name}' already exists (use --replace to overwrite)",
+                    "id": existing.get("id"),
+                }
+            )
             return
         if not yes:
             click.confirm(f"Replace existing evaluator '{name}'?", abort=True)
@@ -243,18 +290,24 @@ def evaluator_upload(ctx, evaluator_file, name, func_name, target_dataset,
         return
 
     result = response.json()
-    output_json({
-        "status": "uploaded",
-        "id": result.get("id"),
-        "name": name,
-        "target": "dataset" if dataset_id else "project",
-    })
+    output_json(
+        {
+            "status": "uploaded",
+            "id": result.get("id"),
+            "name": name,
+            "target": "dataset" if dataset_id else "project",
+        }
+    )
 
 
 @evaluator_group.command("delete")
 @click.argument("name")
-@click.option("--yes", is_flag=True, default=False,
-              help="Skip confirmation prompt. Required for non-interactive use.")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt. Required for non-interactive use.",
+)
 @click.pass_context
 def evaluator_delete(ctx, name, yes):
     """Delete an evaluator rule by its display name.
@@ -302,8 +355,13 @@ def evaluator_delete(ctx, name, yes):
     output_json({"status": "deleted", "name": name, "count": deleted})
 
 
-def _find_evaluator(api_url: str, headers: dict, name: str,
-                    dataset_id: str | None, project_id: str | None) -> dict | None:
+def _find_evaluator(
+    api_url: str,
+    headers: dict,
+    name: str,
+    dataset_id: str | None,
+    project_id: str | None,
+) -> dict | None:
     """Find an existing evaluator by name and target."""
     response = requests.get(f"{api_url}/runs/rules", headers=headers)
     response.raise_for_status()  # Let caller handle RequestException

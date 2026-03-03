@@ -12,12 +12,19 @@ class TestTraceList:
         runs = [make_run(name="root-1"), make_run(name="root-2")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test-project",
-            "--limit", "10",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test-project",
+                "--limit",
+                "10",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -29,12 +36,18 @@ class TestTraceList:
         runs = [make_run(name="root", total_tokens=100, status="success")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test-project",
-            "--include-metadata",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test-project",
+                "--include-metadata",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -45,12 +58,18 @@ class TestTraceList:
         runs = [make_run(inputs={"q": "hello"}, outputs={"a": "world"})]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--include-io",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--include-io",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -61,12 +80,18 @@ class TestTraceList:
         runs = [make_run(inputs={"q": "hi"}, outputs={"a": "bye"}, total_tokens=50)]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -76,11 +101,17 @@ class TestTraceList:
     def test_trace_list_default_limit(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.list_runs.call_args[1]
@@ -89,11 +120,17 @@ class TestTraceList:
     def test_trace_list_is_root_true(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("is_root") is True
@@ -106,13 +143,20 @@ class TestTraceList:
             [root, child],  # Full trace query
         ]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--show-hierarchy",
-            "--limit", "1",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--show-hierarchy",
+                "--limit",
+                "1",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -127,14 +171,22 @@ class TestTraceList:
             [root, child],
         ]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "trace", "list",
-            "--project", "test",
-            "--show-hierarchy",
-            "--limit", "1",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--show-hierarchy",
+                "--limit",
+                "1",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -143,12 +195,19 @@ class TestTraceList:
         mock_client.list_runs.return_value = runs
 
         output_file = str(tmp_path / "traces.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -159,12 +218,19 @@ class TestTraceList:
         runs = [make_run(name="my-trace", total_tokens=50)]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "trace", "list",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "trace",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "my-trace" in result.output
@@ -172,12 +238,18 @@ class TestTraceList:
     def test_trace_list_with_error_flag(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--error",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--error",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("error") is True
@@ -185,12 +257,19 @@ class TestTraceList:
     def test_trace_list_with_tags(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--tags", "production,v2",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--tags",
+                "production,v2",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert "filter" in call_kwargs
@@ -199,12 +278,19 @@ class TestTraceList:
     def test_trace_list_with_name_filter(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--name", "agent",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--name",
+                "agent",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert "filter" in call_kwargs
@@ -213,12 +299,19 @@ class TestTraceList:
     def test_trace_list_with_min_latency(self, runner, mock_client):
         mock_client.list_runs.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "list",
-            "--project", "test",
-            "--min-latency", "2.5",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "list",
+                "--project",
+                "test",
+                "--min-latency",
+                "2.5",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert "filter" in call_kwargs
@@ -230,11 +323,18 @@ class TestTraceGet:
         runs = [make_run(name="step-1"), make_run(name="step-2")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "get", "abc-trace-id",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "get",
+                "abc-trace-id",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -245,12 +345,20 @@ class TestTraceGet:
         runs = [make_run(name="root"), make_run(name="child")]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "trace", "get", "abc-trace-id",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "trace",
+                "get",
+                "abc-trace-id",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -258,12 +366,19 @@ class TestTraceGet:
         runs = [make_run(inputs={"q": "hi"}, outputs={"a": "bye"}, total_tokens=10)]
         mock_client.list_runs.return_value = runs
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "get", "abc-trace-id",
-            "--project", "test",
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "get",
+                "abc-trace-id",
+                "--project",
+                "test",
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -275,12 +390,20 @@ class TestTraceGet:
         mock_client.list_runs.return_value = runs
 
         output_file = str(tmp_path / "trace.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "get", "abc-trace-id",
-            "--project", "test",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "get",
+                "abc-trace-id",
+                "--project",
+                "test",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -299,12 +422,20 @@ class TestTraceExport:
 
         output_dir = str(tmp_path / "exports")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "export", output_dir,
-            "--project", "test",
-            "--limit", "1",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "export",
+                output_dir,
+                "--project",
+                "test",
+                "--limit",
+                "1",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -316,11 +447,18 @@ class TestTraceExport:
 
         output_dir = str(tmp_path / "exports")
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "export", output_dir,
-            "--project", "test",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "export",
+                output_dir,
+                "--project",
+                "test",
+            ],
+        )
 
         call_kwargs = mock_client.list_runs.call_args[1]
         assert call_kwargs.get("limit") == 10
@@ -334,13 +472,21 @@ class TestTraceExport:
 
         output_dir = str(tmp_path / "exports")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "export", output_dir,
-            "--project", "test",
-            "--full",
-            "--limit", "1",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "export",
+                output_dir,
+                "--project",
+                "test",
+                "--full",
+                "--limit",
+                "1",
+            ],
+        )
 
         assert result.exit_code == 0
         # Check the exported JSONL file has IO fields
@@ -355,11 +501,18 @@ class TestTraceExport:
 
         output_dir = str(tmp_path / "new" / "nested" / "dir")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "trace", "export", output_dir,
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "trace",
+                "export",
+                output_dir,
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         assert os.path.isdir(output_dir)

@@ -33,6 +33,7 @@ from langsmith.cli.generation import (
 
 # --- dict_to_obj ---
 
+
 class TestDictToObj:
     def test_basic_conversion(self):
         obj = dict_to_obj({"name": "test", "value": 42})
@@ -58,13 +59,35 @@ class TestDictToObj:
 
 # --- File loading ---
 
+
 class TestLoadJsonlFile:
     def test_loads_grouped_by_trace(self, tmp_path):
         filepath = tmp_path / "trace.jsonl"
         lines = [
-            json.dumps({"run_id": "r1", "trace_id": "t1", "name": "root", "parent_run_id": None}),
-            json.dumps({"run_id": "r2", "trace_id": "t1", "name": "child", "parent_run_id": "r1"}),
-            json.dumps({"run_id": "r3", "trace_id": "t2", "name": "root2", "parent_run_id": None}),
+            json.dumps(
+                {
+                    "run_id": "r1",
+                    "trace_id": "t1",
+                    "name": "root",
+                    "parent_run_id": None,
+                }
+            ),
+            json.dumps(
+                {
+                    "run_id": "r2",
+                    "trace_id": "t1",
+                    "name": "child",
+                    "parent_run_id": "r1",
+                }
+            ),
+            json.dumps(
+                {
+                    "run_id": "r3",
+                    "trace_id": "t2",
+                    "name": "root2",
+                    "parent_run_id": None,
+                }
+            ),
         ]
         filepath.write_text("\n".join(lines))
 
@@ -119,13 +142,15 @@ class TestLoadJsonFile:
 
     def test_loads_with_runs_field(self, tmp_path):
         filepath = tmp_path / "data.json"
-        data = [{
-            "trace_id": "t1",
-            "runs": [
-                {"run_id": "r1", "name": "root", "parent_run_id": None},
-                {"run_id": "r2", "name": "child", "parent_run_id": "r1"},
-            ],
-        }]
+        data = [
+            {
+                "trace_id": "t1",
+                "runs": [
+                    {"run_id": "r1", "name": "root", "parent_run_id": None},
+                    {"run_id": "r2", "name": "child", "parent_run_id": "r1"},
+                ],
+            }
+        ]
         filepath.write_text(json.dumps(data))
         traces = _load_json_file(str(filepath))
         assert len(traces) == 1
@@ -142,13 +167,18 @@ class TestLoadTracesFromDir:
     def test_loads_multiple_files(self, tmp_path):
         for i in range(3):
             f = tmp_path / f"trace_{i}.jsonl"
-            f.write_text(json.dumps({"run_id": f"r{i}", "trace_id": f"t{i}", "name": f"run{i}"}) + "\n")
+            f.write_text(
+                json.dumps({"run_id": f"r{i}", "trace_id": f"t{i}", "name": f"run{i}"})
+                + "\n"
+            )
 
         traces = load_traces_from_dir(str(tmp_path))
         assert len(traces) == 3
 
     def test_ignores_non_jsonl_files(self, tmp_path):
-        (tmp_path / "trace.jsonl").write_text(json.dumps({"run_id": "r1", "trace_id": "t1"}) + "\n")
+        (tmp_path / "trace.jsonl").write_text(
+            json.dumps({"run_id": "r1", "trace_id": "t1"}) + "\n"
+        )
         (tmp_path / "readme.txt").write_text("not a trace")
 
         traces = load_traces_from_dir(str(tmp_path))
@@ -177,9 +207,21 @@ class TestLoadTracesFromFile:
 
 class TestSortTraces:
     def _make_traces(self):
-        t1 = ("t1", SimpleNamespace(start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)), [])
-        t2 = ("t2", SimpleNamespace(start_time=datetime(2024, 1, 3, tzinfo=timezone.utc)), [])
-        t3 = ("t3", SimpleNamespace(start_time=datetime(2024, 1, 2, tzinfo=timezone.utc)), [])
+        t1 = (
+            "t1",
+            SimpleNamespace(start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+            [],
+        )
+        t2 = (
+            "t2",
+            SimpleNamespace(start_time=datetime(2024, 1, 3, tzinfo=timezone.utc)),
+            [],
+        )
+        t3 = (
+            "t3",
+            SimpleNamespace(start_time=datetime(2024, 1, 2, tzinfo=timezone.utc)),
+            [],
+        )
         return [t1, t2, t3]
 
     def test_newest_first(self):
@@ -200,6 +242,7 @@ class TestSortTraces:
 
 
 # --- Extraction helpers ---
+
 
 class TestExtractFromMessages:
     def test_extract_human_message(self):
@@ -226,7 +269,13 @@ class TestExtractFromMessages:
 
     def test_multipart_content(self):
         messages = [
-            {"type": "human", "content": [{"type": "text", "text": "Part 1"}, {"type": "text", "text": "Part 2"}]},
+            {
+                "type": "human",
+                "content": [
+                    {"type": "text", "text": "Part 1"},
+                    {"type": "text", "text": "Part 2"},
+                ],
+            },
         ]
         assert extract_from_messages(messages, "human") == "Part 1 Part 2"
 
@@ -247,7 +296,10 @@ class TestExtractFromMessages:
         assert extract_from_messages(messages, "human") == "just a string"
 
     def test_ai_skips_none_content(self):
-        messages = [{"type": "ai", "content": "None"}, {"type": "ai", "content": "real answer"}]
+        messages = [
+            {"type": "ai", "content": "None"},
+            {"type": "ai", "content": "real answer"},
+        ]
         assert extract_from_messages(messages, "ai") == "real answer"
 
 
@@ -287,8 +339,13 @@ class TestExtractValue:
         assert extract_value("not a dict") is None
 
     def test_priority_chain(self):
-        data = {"query": "from_field", "messages": [{"type": "human", "content": "from_msg"}]}
-        assert extract_value(data, fields=["query"], message_role="human") == "from_field"
+        data = {
+            "query": "from_field",
+            "messages": [{"type": "human", "content": "from_msg"}],
+        }
+        assert (
+            extract_value(data, fields=["query"], message_role="human") == "from_field"
+        )
 
 
 class TestExtractTraceInputs:
@@ -325,7 +382,9 @@ class TestExtractTraceOutput:
         assert extract_trace_output(root) is None
 
     def test_messages_only(self):
-        root = SimpleNamespace(outputs={"messages": [{"type": "ai", "content": "AI says hi"}]})
+        root = SimpleNamespace(
+            outputs={"messages": [{"type": "ai", "content": "AI says hi"}]}
+        )
         assert extract_trace_output(root, messages_only=True) == "AI says hi"
 
     def test_dict_output_serialized(self):
@@ -338,32 +397,62 @@ class TestExtractTraceOutput:
 class TestExtractFinalOutput:
     def test_finds_output_from_newest_run(self):
         runs = [
-            SimpleNamespace(outputs={"answer": "old"}, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)),
-            SimpleNamespace(outputs={"answer": "new"}, start_time=datetime(2024, 1, 2, tzinfo=timezone.utc)),
+            SimpleNamespace(
+                outputs={"answer": "old"},
+                start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                outputs={"answer": "new"},
+                start_time=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            ),
         ]
         assert extract_final_output(runs) == "new"
 
     def test_skips_empty_outputs(self):
         runs = [
-            SimpleNamespace(outputs=None, start_time=datetime(2024, 1, 2, tzinfo=timezone.utc)),
-            SimpleNamespace(outputs={"answer": "found"}, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+            SimpleNamespace(
+                outputs=None, start_time=datetime(2024, 1, 2, tzinfo=timezone.utc)
+            ),
+            SimpleNamespace(
+                outputs={"answer": "found"},
+                start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ),
         ]
         assert extract_final_output(runs) == "found"
 
     def test_no_outputs_returns_none(self):
-        runs = [SimpleNamespace(outputs=None, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc))]
+        runs = [
+            SimpleNamespace(
+                outputs=None, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)
+            )
+        ]
         assert extract_final_output(runs) is None
 
 
 class TestExtractToolSequence:
     def test_basic_sequence(self):
         runs = [
-            SimpleNamespace(run_type="tool", name="Search", start_time=datetime(2024, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
-                            run_id="r1", parent_run_id=None),
-            SimpleNamespace(run_type="tool", name="Calculator", start_time=datetime(2024, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
-                            run_id="r2", parent_run_id=None),
-            SimpleNamespace(run_type="llm", name="ChatOpenAI", start_time=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
-                            run_id="r3", parent_run_id=None),
+            SimpleNamespace(
+                run_type="tool",
+                name="Search",
+                start_time=datetime(2024, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+                run_id="r1",
+                parent_run_id=None,
+            ),
+            SimpleNamespace(
+                run_type="tool",
+                name="Calculator",
+                start_time=datetime(2024, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
+                run_id="r2",
+                parent_run_id=None,
+            ),
+            SimpleNamespace(
+                run_type="llm",
+                name="ChatOpenAI",
+                start_time=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+                run_id="r3",
+                parent_run_id=None,
+            ),
         ]
         tools = extract_tool_sequence(runs)
         assert tools == ["search", "calculator"]
@@ -377,12 +466,30 @@ class TestExtractToolSequence:
 
     def test_depth_filter(self):
         runs = [
-            SimpleNamespace(run_type="chain", name="root", start_time="2024-01-01T00:00:00Z",
-                            run_id="r0", id="r0", parent_run_id=None),
-            SimpleNamespace(run_type="tool", name="shallow_tool", start_time="2024-01-01T00:00:01Z",
-                            run_id="r1", id="r1", parent_run_id="r0"),
-            SimpleNamespace(run_type="tool", name="deep_tool", start_time="2024-01-01T00:00:02Z",
-                            run_id="r2", id="r2", parent_run_id="r1"),
+            SimpleNamespace(
+                run_type="chain",
+                name="root",
+                start_time="2024-01-01T00:00:00Z",
+                run_id="r0",
+                id="r0",
+                parent_run_id=None,
+            ),
+            SimpleNamespace(
+                run_type="tool",
+                name="shallow_tool",
+                start_time="2024-01-01T00:00:01Z",
+                run_id="r1",
+                id="r1",
+                parent_run_id="r0",
+            ),
+            SimpleNamespace(
+                run_type="tool",
+                name="deep_tool",
+                start_time="2024-01-01T00:00:02Z",
+                run_id="r2",
+                id="r2",
+                parent_run_id="r1",
+            ),
         ]
         tools = extract_tool_sequence(runs, depth=1)
         assert "shallow_tool" in tools
@@ -391,10 +498,22 @@ class TestExtractToolSequence:
 class TestGetNodeIO:
     def test_gets_all_nodes(self):
         runs = [
-            SimpleNamespace(name="ChatOpenAI", inputs={"q": "hi"}, outputs={"a": "bye"},
-                            start_time="2024-01-01", run_id="r1", id="r1"),
-            SimpleNamespace(name="ChatOpenAI", inputs={"q": "foo"}, outputs={"a": "bar"},
-                            start_time="2024-01-02", run_id="r2", id="r2"),
+            SimpleNamespace(
+                name="ChatOpenAI",
+                inputs={"q": "hi"},
+                outputs={"a": "bye"},
+                start_time="2024-01-01",
+                run_id="r1",
+                id="r1",
+            ),
+            SimpleNamespace(
+                name="ChatOpenAI",
+                inputs={"q": "foo"},
+                outputs={"a": "bar"},
+                start_time="2024-01-02",
+                run_id="r2",
+                id="r2",
+            ),
         ]
         results = get_node_io(runs, "ChatOpenAI")
         assert len(results) == 2
@@ -402,28 +521,58 @@ class TestGetNodeIO:
 
     def test_filters_by_name(self):
         runs = [
-            SimpleNamespace(name="ChatOpenAI", inputs={}, outputs={"a": "1"},
-                            start_time="", run_id="r1", id="r1"),
-            SimpleNamespace(name="OtherModel", inputs={}, outputs={"a": "2"},
-                            start_time="", run_id="r2", id="r2"),
+            SimpleNamespace(
+                name="ChatOpenAI",
+                inputs={},
+                outputs={"a": "1"},
+                start_time="",
+                run_id="r1",
+                id="r1",
+            ),
+            SimpleNamespace(
+                name="OtherModel",
+                inputs={},
+                outputs={"a": "2"},
+                start_time="",
+                run_id="r2",
+                id="r2",
+            ),
         ]
         results = get_node_io(runs, "ChatOpenAI")
         assert len(results) == 1
 
     def test_skips_no_outputs(self):
         runs = [
-            SimpleNamespace(name="ChatOpenAI", inputs={}, outputs=None,
-                            start_time="", run_id="r1", id="r1"),
+            SimpleNamespace(
+                name="ChatOpenAI",
+                inputs={},
+                outputs=None,
+                start_time="",
+                run_id="r1",
+                id="r1",
+            ),
         ]
         results = get_node_io(runs, "ChatOpenAI")
         assert len(results) == 0
 
     def test_no_name_filter(self):
         runs = [
-            SimpleNamespace(name="A", inputs={}, outputs={"x": 1},
-                            start_time="", run_id="r1", id="r1"),
-            SimpleNamespace(name="B", inputs={}, outputs={"x": 2},
-                            start_time="", run_id="r2", id="r2"),
+            SimpleNamespace(
+                name="A",
+                inputs={},
+                outputs={"x": 1},
+                start_time="",
+                run_id="r1",
+                id="r1",
+            ),
+            SimpleNamespace(
+                name="B",
+                inputs={},
+                outputs={"x": 2},
+                start_time="",
+                run_id="r2",
+                id="r2",
+            ),
         ]
         results = get_node_io(runs, None)
         assert len(results) == 2
@@ -487,8 +636,12 @@ class TestFindRetrievalData:
 
     def test_no_retrievers(self):
         runs = [
-            SimpleNamespace(run_type="llm", inputs={}, outputs={"answer": "hi"},
-                            start_time=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+            SimpleNamespace(
+                run_type="llm",
+                inputs={},
+                outputs={"answer": "hi"},
+                start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ),
         ]
         result = find_retrieval_data(runs)
         assert result["query"] is None
@@ -520,10 +673,18 @@ _SENTINEL = object()
 
 
 class TestGenerateDataset:
-    def _make_trace(self, trace_id="t1", root_inputs=_SENTINEL, root_outputs=_SENTINEL,
-                    extra_runs=None):
+    def _make_trace(
+        self,
+        trace_id="t1",
+        root_inputs=_SENTINEL,
+        root_outputs=_SENTINEL,
+        extra_runs=None,
+    ):
         root = SimpleNamespace(
-            run_id="r1", id="r1", name="root", run_type="chain",
+            run_id="r1",
+            id="r1",
+            name="root",
+            run_type="chain",
             parent_run_id=None,
             inputs={"query": "hello"} if root_inputs is _SENTINEL else root_inputs,
             outputs={"answer": "world"} if root_outputs is _SENTINEL else root_outputs,
@@ -552,9 +713,14 @@ class TestGenerateDataset:
 
     def test_single_step(self):
         node = SimpleNamespace(
-            run_id="r2", id="r2", name="ChatOpenAI", run_type="llm",
-            parent_run_id="r1", inputs={"prompt": "hi"},
-            outputs={"text": "bye"}, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            run_id="r2",
+            id="r2",
+            name="ChatOpenAI",
+            run_type="llm",
+            parent_run_id="r1",
+            inputs={"prompt": "hi"},
+            outputs={"text": "bye"},
+            start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
         traces = [self._make_trace(extra_runs=[node])]
         dataset = generate_dataset(traces, "single_step", run_name="ChatOpenAI")
@@ -564,9 +730,14 @@ class TestGenerateDataset:
     def test_single_step_sample_per_trace(self):
         nodes = [
             SimpleNamespace(
-                run_id=f"r{i}", id=f"r{i}", name="Node", run_type="llm",
-                parent_run_id="r1", inputs={"p": f"i{i}"},
-                outputs={"t": f"o{i}"}, start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                run_id=f"r{i}",
+                id=f"r{i}",
+                name="Node",
+                run_type="llm",
+                parent_run_id="r1",
+                inputs={"p": f"i{i}"},
+                outputs={"t": f"o{i}"},
+                start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
             )
             for i in range(10)
         ]
@@ -576,13 +747,23 @@ class TestGenerateDataset:
 
     def test_trajectory(self):
         tool1 = SimpleNamespace(
-            run_id="r2", id="r2", name="Search", run_type="tool",
-            parent_run_id="r1", inputs={}, outputs={},
+            run_id="r2",
+            id="r2",
+            name="Search",
+            run_type="tool",
+            parent_run_id="r1",
+            inputs={},
+            outputs={},
             start_time=datetime(2024, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
         )
         tool2 = SimpleNamespace(
-            run_id="r3", id="r3", name="Calculator", run_type="tool",
-            parent_run_id="r1", inputs={}, outputs={},
+            run_id="r3",
+            id="r3",
+            name="Calculator",
+            run_type="tool",
+            parent_run_id="r1",
+            inputs={},
+            outputs={},
             start_time=datetime(2024, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
         )
         traces = [self._make_trace(extra_runs=[tool1, tool2])]
@@ -592,8 +773,13 @@ class TestGenerateDataset:
 
     def test_trajectory_with_depth(self):
         tool = SimpleNamespace(
-            run_id="r2", id="r2", name="Tool", run_type="tool",
-            parent_run_id="r1", inputs={}, outputs={},
+            run_id="r2",
+            id="r2",
+            name="Tool",
+            run_type="tool",
+            parent_run_id="r1",
+            inputs={},
+            outputs={},
             start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
         traces = [self._make_trace(extra_runs=[tool])]
@@ -602,15 +788,22 @@ class TestGenerateDataset:
 
     def test_rag(self):
         retriever = SimpleNamespace(
-            run_id="r2", id="r2", name="Retriever", run_type="retriever",
+            run_id="r2",
+            id="r2",
+            name="Retriever",
+            run_type="retriever",
             parent_run_id="r1",
             inputs={"query": "What is LangSmith?"},
             outputs={"documents": [{"page_content": "LangSmith is a platform."}]},
             start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
         llm = SimpleNamespace(
-            run_id="r3", id="r3", name="LLM", run_type="llm",
-            parent_run_id="r1", inputs={},
+            run_id="r3",
+            id="r3",
+            name="LLM",
+            run_type="llm",
+            parent_run_id="r1",
+            inputs={},
             outputs={"answer": "LangSmith is a platform for LLM observability."},
             start_time=datetime(2024, 1, 2, tzinfo=timezone.utc),
         )
@@ -628,9 +821,12 @@ class TestGenerateDataset:
 
 # --- Export ---
 
+
 class TestExportToFile:
     def test_export_json(self, tmp_path):
-        dataset = [{"trace_id": "t1", "inputs": {"q": "hello"}, "outputs": {"a": "world"}}]
+        dataset = [
+            {"trace_id": "t1", "inputs": {"q": "hello"}, "outputs": {"a": "world"}}
+        ]
         output_path = str(tmp_path / "output.json")
         export_to_file(dataset, output_path)
 
@@ -704,7 +900,14 @@ class TestExportToLangsmith:
         ds = SimpleNamespace(id="ds-123")
         client.create_dataset.return_value = ds
 
-        dataset = [{"question": "q1", "retrieved_chunks": "chunk1", "answer": "a1", "cited_chunks": "c1"}]
+        dataset = [
+            {
+                "question": "q1",
+                "retrieved_chunks": "chunk1",
+                "answer": "a1",
+                "cited_chunks": "c1",
+            }
+        ]
         export_to_langsmith(client, dataset, "rag-ds", "rag")
 
         call_kwargs = client.create_examples.call_args[1]

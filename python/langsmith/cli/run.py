@@ -32,18 +32,52 @@ def run_group():
 
 @run_group.command("list")
 @common_filter_options(include_run_type=True)
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io. Returns all fields.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io. Returns all fields.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
-def run_list(ctx, trace_ids, limit, project, last_n_minutes, since, run_type,
-             error, name, min_latency, max_latency, min_tokens, tags, raw_filter,
-             include_metadata, include_io, full, output_file):
+def run_list(
+    ctx,
+    trace_ids,
+    limit,
+    project,
+    last_n_minutes,
+    since,
+    run_type,
+    error,
+    name,
+    min_latency,
+    max_latency,
+    min_tokens,
+    tags,
+    raw_filter,
+    include_metadata,
+    include_io,
+    full,
+    output_file,
+):
     """List runs matching filter criteria (any run type at any depth).
 
     \b
@@ -83,10 +117,19 @@ def run_list(ctx, trace_ids, limit, project, last_n_minutes, since, run_type,
 
     client = get_client(ctx)
     params = build_query_params(
-        project=project, trace_ids=trace_ids, limit=limit,
-        last_n_minutes=last_n_minutes, since=since, run_type=run_type,
-        is_root=False, error=error, name=name, raw_filter=raw_filter,
-        min_latency=min_latency, max_latency=max_latency, min_tokens=min_tokens,
+        project=project,
+        trace_ids=trace_ids,
+        limit=limit,
+        last_n_minutes=last_n_minutes,
+        since=since,
+        run_type=run_type,
+        is_root=False,
+        error=error,
+        name=name,
+        raw_filter=raw_filter,
+        min_latency=min_latency,
+        max_latency=max_latency,
+        min_tokens=min_tokens,
         tags=tags,
     )
 
@@ -102,14 +145,31 @@ def run_list(ctx, trace_ids, limit, project, last_n_minutes, since, run_type,
 
 @run_group.command("get")
 @click.argument("run_id")
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def run_get(ctx, run_id, include_metadata, include_io, full, output_file):
     """Fetch a single run by its run ID.
@@ -137,6 +197,7 @@ def run_get(ctx, run_id, include_metadata, include_io, full, output_file):
 
     if fmt == "pretty":
         from langsmith.cli.output import print_output
+
         print_output(data, "pretty", output_file)
     else:
         output_json(data, output_file)
@@ -145,16 +206,45 @@ def run_get(ctx, run_id, include_metadata, include_io, full, output_file):
 @run_group.command("export")
 @click.argument("output_file")
 @common_filter_options(include_run_type=True)
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io.")
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io.",
+)
 @click.pass_context
-def run_export(ctx, output_file, trace_ids, limit, project, last_n_minutes, since,
-               run_type, error, name, min_latency, max_latency, min_tokens, tags,
-               raw_filter, include_metadata, include_io, full):
+def run_export(
+    ctx,
+    output_file,
+    trace_ids,
+    limit,
+    project,
+    last_n_minutes,
+    since,
+    run_type,
+    error,
+    name,
+    min_latency,
+    max_latency,
+    min_tokens,
+    tags,
+    raw_filter,
+    include_metadata,
+    include_io,
+    full,
+):
     """Export runs to a JSONL file (one JSON object per line).
 
     \b
@@ -177,10 +267,19 @@ def run_export(ctx, output_file, trace_ids, limit, project, last_n_minutes, sinc
 
     client = get_client(ctx)
     params = build_query_params(
-        project=project, trace_ids=trace_ids, limit=limit,
-        last_n_minutes=last_n_minutes, since=since, run_type=run_type,
-        is_root=False, error=error, name=name, raw_filter=raw_filter,
-        min_latency=min_latency, max_latency=max_latency, min_tokens=min_tokens,
+        project=project,
+        trace_ids=trace_ids,
+        limit=limit,
+        last_n_minutes=last_n_minutes,
+        since=since,
+        run_type=run_type,
+        is_root=False,
+        error=error,
+        name=name,
+        raw_filter=raw_filter,
+        min_latency=min_latency,
+        max_latency=max_latency,
+        min_tokens=min_tokens,
         tags=tags,
     )
 

@@ -17,11 +17,17 @@ class TestExampleList:
         ]
         mock_client.list_examples.return_value = examples
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-            "--dataset", "test-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+                "--dataset",
+                "test-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -33,12 +39,19 @@ class TestExampleList:
         mock_client.read_dataset.return_value = ds
         mock_client.list_examples.return_value = [make_example(split="train")]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-            "--dataset", "test-ds",
-            "--split", "train",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+                "--dataset",
+                "test-ds",
+                "--split",
+                "train",
+            ],
+        )
 
         assert result.exit_code == 0
         mock_client.list_examples.assert_called_once()
@@ -50,12 +63,19 @@ class TestExampleList:
         mock_client.read_dataset.return_value = ds
         mock_client.list_examples.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-            "--dataset", "test-ds",
-            "--limit", "100",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+                "--dataset",
+                "test-ds",
+                "--limit",
+                "100",
+            ],
+        )
 
         call_kwargs = mock_client.list_examples.call_args[1]
         assert call_kwargs["limit"] == 100
@@ -65,12 +85,19 @@ class TestExampleList:
         mock_client.read_dataset.return_value = ds
         mock_client.list_examples.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-            "--dataset", "test-ds",
-            "--offset", "20",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+                "--dataset",
+                "test-ds",
+                "--offset",
+                "20",
+            ],
+        )
 
         call_kwargs = mock_client.list_examples.call_args[1]
         assert call_kwargs["offset"] == 20
@@ -82,12 +109,19 @@ class TestExampleList:
             make_example(inputs={"q": "hello"}, outputs={"a": "world"}),
         ]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "example", "list",
-            "--dataset", "pretty-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "example",
+                "list",
+                "--dataset",
+                "pretty-ds",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -97,12 +131,19 @@ class TestExampleList:
         mock_client.list_examples.return_value = [make_example()]
 
         output_file = str(tmp_path / "examples.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-            "--dataset", "test-ds",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+                "--dataset",
+                "test-ds",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -110,10 +151,15 @@ class TestExampleList:
         assert len(data) == 1
 
     def test_example_list_dataset_required(self, runner, mock_client):
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "list",
+            ],
+        )
 
         assert result.exit_code != 0
 
@@ -123,13 +169,21 @@ class TestExampleCreate:
         ex = make_example(inputs={"q": "test"}, outputs={"a": "result"})
         mock_client.create_example.return_value = ex
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "create",
-            "--dataset", "test-ds",
-            "--inputs", '{"q": "test"}',
-            "--outputs", '{"a": "result"}',
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "create",
+                "--dataset",
+                "test-ds",
+                "--inputs",
+                '{"q": "test"}',
+                "--outputs",
+                '{"a": "result"}',
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -139,12 +193,19 @@ class TestExampleCreate:
         ex = make_example(inputs={"q": "test"}, outputs=None)
         mock_client.create_example.return_value = ex
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "create",
-            "--dataset", "test-ds",
-            "--inputs", '{"q": "test"}',
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "create",
+                "--dataset",
+                "test-ds",
+                "--inputs",
+                '{"q": "test"}',
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.create_example.call_args[1]
@@ -154,15 +215,25 @@ class TestExampleCreate:
         ex = make_example(inputs={"q": "test"}, outputs={"a": "result"}, split="test")
         mock_client.create_example.return_value = ex
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "create",
-            "--dataset", "test-ds",
-            "--inputs", '{"q": "test"}',
-            "--outputs", '{"a": "result"}',
-            "--metadata", '{"source": "manual"}',
-            "--split", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "create",
+                "--dataset",
+                "test-ds",
+                "--inputs",
+                '{"q": "test"}',
+                "--outputs",
+                '{"a": "result"}',
+                "--metadata",
+                '{"source": "manual"}',
+                "--split",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.create_example.call_args[1]
@@ -174,11 +245,17 @@ class TestExampleDelete:
     def test_example_delete_with_yes(self, runner, mock_client):
         mock_client.delete_example.return_value = None
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "example", "delete", "abc-123",
-            "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "example",
+                "delete",
+                "abc-123",
+                "--yes",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)

@@ -216,7 +216,9 @@ class TestExtractRun:
         assert result["custom_metadata"] == {}
 
     def test_io_serialize_decimal(self):
-        run = make_run(inputs={"cost": Decimal("1.5")}, outputs={"score": Decimal("0.9")})
+        run = make_run(
+            inputs={"cost": Decimal("1.5")}, outputs={"score": Decimal("0.9")}
+        )
         result = extract_run(run, include_io=True)
         assert result["inputs"]["cost"] == 1.5
         assert result["outputs"]["score"] == 0.9

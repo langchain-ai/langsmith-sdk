@@ -51,7 +51,6 @@ else:
       --format pretty  Human-readable tables, trees, and syntax-highlighted JSON.
     """
 
-
     @click.group(help=MAIN_HELP)
     @click.option(
         "--api-key",
@@ -66,7 +65,8 @@ else:
         help="LangSmith API URL. [env: LANGSMITH_ENDPOINT]",
     )
     @click.option(
-        "--format", "output_format",
+        "--format",
+        "output_format",
         type=click.Choice(["json", "pretty"]),
         default="json",
         help="Output format. 'json' for machine-readable, 'pretty' for human-readable.",
@@ -79,7 +79,6 @@ else:
         ctx.obj["api_key"] = api_key
         ctx.obj["api_url"] = api_url
         ctx.obj["output_format"] = output_format
-
 
     cli.add_command(project_group, name="project")
     cli.add_command(trace_group, name="trace")

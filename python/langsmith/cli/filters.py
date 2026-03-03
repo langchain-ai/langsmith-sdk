@@ -19,7 +19,8 @@ def common_filter_options(include_run_type: bool = True):
                 help="Comma-separated trace IDs to filter by. Example: 'abc123,def456'.",
             ),
             click.option(
-                "--limit", "-n",
+                "--limit",
+                "-n",
                 type=int,
                 default=None,
                 help="Maximum number of results to return (command sets its own default).",
@@ -74,7 +75,8 @@ def common_filter_options(include_run_type: bool = True):
                 help="Comma-separated tags (OR logic). Example: 'production,v2'.",
             ),
             click.option(
-                "--filter", "raw_filter",
+                "--filter",
+                "raw_filter",
                 default=None,
                 help="Raw LangSmith filter DSL string. Example: 'and(eq(status, \"error\"), gte(latency, 5))'.",
             ),
@@ -141,7 +143,9 @@ def build_query_params(
 
     # Time filters
     if last_n_minutes is not None:
-        params["start_time"] = datetime.now(timezone.utc) - timedelta(minutes=last_n_minutes)
+        params["start_time"] = datetime.now(timezone.utc) - timedelta(
+            minutes=last_n_minutes
+        )
     elif since:
         params["start_time"] = datetime.fromisoformat(since.replace("Z", "+00:00"))
 

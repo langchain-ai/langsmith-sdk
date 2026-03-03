@@ -31,13 +31,18 @@ def output_jsonl(items: list, file_path: str | None = None) -> None:
         with open(file_path, "w") as f:
             for item in items:
                 f.write(json.dumps(item, default=str) + "\n")
-        click.echo(json.dumps({"status": "written", "path": file_path, "count": len(items)}), err=True)
+        click.echo(
+            json.dumps({"status": "written", "path": file_path, "count": len(items)}),
+            err=True,
+        )
     else:
         for item in items:
             click.echo(json.dumps(item, default=str))
 
 
-def output_table(columns: list[str], rows: list[list], title: str | None = None) -> None:
+def output_table(
+    columns: list[str], rows: list[list], title: str | None = None
+) -> None:
     """Output a Rich table (pretty mode)."""
     table = Table(title=title, show_lines=False)
     for col in columns:
@@ -76,7 +81,11 @@ def output_tree(runs: list, root_id: str | None = None) -> None:
             # Fallback: use first run
             roots = [runs[0]]
     else:
-        roots = [run_map[root_id]] if root_id in run_map else children_map.get(None, runs[:1])
+        roots = (
+            [run_map[root_id]]
+            if root_id in run_map
+            else children_map.get(None, runs[:1])
+        )
 
     for root in roots:
         duration = format_duration(calc_duration(root))
@@ -97,7 +106,9 @@ def _add_children(tree_node: Tree, parent_id: str, children_map: dict) -> None:
         _add_children(child_node, str(child.id), children_map)
 
 
-def print_runs_table(runs: list, include_metadata: bool = False, title: str | None = None) -> None:
+def print_runs_table(
+    runs: list, include_metadata: bool = False, title: str | None = None
+) -> None:
     """Print runs as a Rich table (pretty mode)."""
     columns = ["Time", "Name", "Type", "Trace ID", "Run ID"]
     if include_metadata:
@@ -113,7 +124,11 @@ def print_runs_table(runs: list, include_metadata: bool = False, title: str | No
     for run in sorted_runs:
         time_str = run.start_time.strftime("%H:%M:%S") if run.start_time else "N/A"
         name = run.name[:40] if run.name else "N/A"
-        trace_id = str(run.trace_id)[:16] + "..." if hasattr(run, "trace_id") and run.trace_id else "N/A"
+        trace_id = (
+            str(run.trace_id)[:16] + "..."
+            if hasattr(run, "trace_id") and run.trace_id
+            else "N/A"
+        )
         run_id = str(run.id)[:16] + "..."
 
         row = [time_str, name, run.run_type or "N/A", trace_id, run_id]
@@ -121,7 +136,11 @@ def print_runs_table(runs: list, include_metadata: bool = False, title: str | No
         if include_metadata:
             duration = format_duration(calc_duration(run))
             status = getattr(run, "status", "N/A") or "N/A"
-            tokens = str(run.total_tokens) if hasattr(run, "total_tokens") and run.total_tokens else "N/A"
+            tokens = (
+                str(run.total_tokens)
+                if hasattr(run, "total_tokens") and run.total_tokens
+                else "N/A"
+            )
             row.extend([duration, status, tokens])
 
         table.add_row(*row)
@@ -136,6 +155,7 @@ def print_output(data, fmt: str, file_path: str | None = None) -> None:
     else:
         # Pretty mode - just pretty-print the JSON with syntax highlighting
         from rich.syntax import Syntax
+
         json_str = json.dumps(data, indent=2, default=str)
         if file_path:
             with open(file_path, "w") as f:

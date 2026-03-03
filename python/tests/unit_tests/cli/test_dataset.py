@@ -11,10 +11,15 @@ class TestDatasetList:
         datasets = [make_dataset(name="ds-1"), make_dataset(name="ds-2")]
         mock_client.list_datasets.return_value = datasets
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -24,11 +29,17 @@ class TestDatasetList:
     def test_dataset_list_with_name_filter(self, runner, mock_client):
         mock_client.list_datasets.return_value = [make_dataset(name="eval-ds")]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "list",
-            "--name-contains", "eval",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "list",
+                "--name-contains",
+                "eval",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -39,11 +50,17 @@ class TestDatasetList:
     def test_dataset_list_with_limit(self, runner, mock_client):
         mock_client.list_datasets.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "list",
-            "--limit", "5",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "list",
+                "--limit",
+                "5",
+            ],
+        )
 
         call_kwargs = mock_client.list_datasets.call_args[1]
         assert call_kwargs["limit"] == 5
@@ -52,11 +69,17 @@ class TestDatasetList:
         datasets = [make_dataset(name="ds-pretty", description="A dataset")]
         mock_client.list_datasets.return_value = datasets
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "dataset", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "dataset",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "ds-pretty" in result.output
@@ -66,11 +89,17 @@ class TestDatasetList:
         mock_client.list_datasets.return_value = datasets
 
         output_file = str(tmp_path / "datasets.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "list",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "list",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -83,10 +112,16 @@ class TestDatasetGet:
         ds = make_dataset(name="my-dataset", description="Test dataset")
         mock_client.read_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "get", "my-dataset",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "get",
+                "my-dataset",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -94,14 +129,21 @@ class TestDatasetGet:
 
     def test_dataset_get_by_uuid(self, runner, mock_client):
         import uuid
+
         ds_id = uuid.uuid4()
         ds = make_dataset(dataset_id=ds_id, name="uuid-dataset")
         mock_client.read_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "get", str(ds_id),
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "get",
+                str(ds_id),
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -111,11 +153,18 @@ class TestDatasetGet:
         ds = make_dataset(name="pretty-ds")
         mock_client.read_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "dataset", "get", "pretty-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "dataset",
+                "get",
+                "pretty-ds",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -124,11 +173,18 @@ class TestDatasetGet:
         mock_client.read_dataset.return_value = ds
 
         output_file = str(tmp_path / "ds.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "get", "filed-ds",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "get",
+                "filed-ds",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -141,11 +197,17 @@ class TestDatasetCreate:
         ds = make_dataset(name="new-ds")
         mock_client.create_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "create",
-            "--name", "new-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "create",
+                "--name",
+                "new-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -156,16 +218,24 @@ class TestDatasetCreate:
         ds = make_dataset(name="new-ds", description="QA pairs")
         mock_client.create_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "create",
-            "--name", "new-ds",
-            "--description", "QA pairs",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "create",
+                "--name",
+                "new-ds",
+                "--description",
+                "QA pairs",
+            ],
+        )
 
         assert result.exit_code == 0
         mock_client.create_dataset.assert_called_once_with(
-            dataset_name="new-ds", description="QA pairs",
+            dataset_name="new-ds",
+            description="QA pairs",
         )
 
 
@@ -175,11 +245,17 @@ class TestDatasetDelete:
         mock_client.read_dataset.return_value = ds
         mock_client.delete_dataset.return_value = None
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "delete", "delete-me",
-            "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "delete",
+                "delete-me",
+                "--yes",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -199,10 +275,17 @@ class TestDatasetExport:
 
         output_file = str(tmp_path / "export.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "export", "export-ds", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "export",
+                "export-ds",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -216,11 +299,19 @@ class TestDatasetExport:
 
         output_file = str(tmp_path / "export.json")
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "export", "export-ds", output_file,
-            "--limit", "500",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "export",
+                "export-ds",
+                output_file,
+                "--limit",
+                "500",
+            ],
+        )
 
         call_kwargs = mock_client.list_examples.call_args[1]
         assert call_kwargs["limit"] == 500
@@ -234,16 +325,26 @@ class TestDatasetUpload:
 
         input_file = str(tmp_path / "data.json")
         with open(input_file, "w") as f:
-            json.dump([
-                {"inputs": {"q": "hello"}, "outputs": {"a": "world"}},
-                {"inputs": {"q": "foo"}, "outputs": {"a": "bar"}},
-            ], f)
+            json.dump(
+                [
+                    {"inputs": {"q": "hello"}, "outputs": {"a": "world"}},
+                    {"inputs": {"q": "foo"}, "outputs": {"a": "bar"}},
+                ],
+                f,
+            )
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "upload", input_file,
-            "--name", "upload-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "upload",
+                input_file,
+                "--name",
+                "upload-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -260,11 +361,18 @@ class TestDatasetUpload:
         with open(input_file, "w") as f:
             json.dump([{"question": "hello", "answer": "world"}], f)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "upload", input_file,
-            "--name", "raw-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "upload",
+                input_file,
+                "--name",
+                "raw-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.create_examples.call_args[1]
@@ -281,11 +389,18 @@ class TestDatasetUpload:
         with open(input_file, "w") as f:
             json.dump({"inputs": {"q": "hi"}, "outputs": {"a": "bye"}}, f)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "upload", input_file,
-            "--name", "single-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "upload",
+                input_file,
+                "--name",
+                "single-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -298,10 +413,16 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             json.dump([{"inputs": {"q": "hello"}, "outputs": {"a": "world"}}], f)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "view-file", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "view-file",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
         # Output has header lines (stderr) mixed in; find the JSON array
@@ -315,10 +436,16 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             f.write("question,answer\nhello,world\n")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "view-file", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "view-file",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
         output = result.output
@@ -331,11 +458,18 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             json.dump([{"q": f"q{i}"} for i in range(10)], f)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "view-file", file_path,
-            "--limit", "3",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "view-file",
+                file_path,
+                "--limit",
+                "3",
+            ],
+        )
 
         assert result.exit_code == 0
         output = result.output
@@ -348,11 +482,18 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             json.dump([{"inputs": {"q": "hello"}, "outputs": {"a": "world"}}], f)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "dataset", "view-file", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "dataset",
+                "view-file",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -361,11 +502,18 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             f.write("question,answer\nhello,world\n")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "dataset", "view-file", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "dataset",
+                "view-file",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -374,10 +522,16 @@ class TestDatasetViewFile:
         with open(file_path, "w") as f:
             f.write("hello")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "view-file", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "view-file",
+                file_path,
+            ],
+        )
 
         assert "Unsupported" in result.output
 
@@ -386,15 +540,24 @@ class TestDatasetStructure:
     def test_structure_json(self, runner, tmp_path):
         file_path = str(tmp_path / "data.json")
         with open(file_path, "w") as f:
-            json.dump([
-                {"inputs": {"q": "a"}, "outputs": {"a": "b"}},
-                {"inputs": {"q": "c"}},
-            ], f)
+            json.dump(
+                [
+                    {"inputs": {"q": "a"}, "outputs": {"a": "b"}},
+                    {"inputs": {"q": "c"}},
+                ],
+                f,
+            )
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "structure", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "structure",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -407,10 +570,16 @@ class TestDatasetStructure:
         with open(file_path, "w") as f:
             f.write("question,answer\nhello,world\nfoo,bar\n")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "structure", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "structure",
+                file_path,
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -423,10 +592,16 @@ class TestDatasetStructure:
         with open(file_path, "w") as f:
             f.write("hello")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "structure", file_path,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "structure",
+                file_path,
+            ],
+        )
 
         assert "Unsupported" in result.output
 
@@ -436,22 +611,39 @@ class TestDatasetGenerate:
         # Create input JSONL file
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "hello"}, "outputs": {"answer": "world"},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "hello"},
+                        "outputs": {"answer": "world"},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "final_response",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -467,22 +659,39 @@ class TestDatasetGenerate:
         input_dir.mkdir()
 
         trace_file = input_dir / "trace.jsonl"
-        trace_file.write_text(json.dumps({
-            "run_id": "r1", "trace_id": "t1", "name": "root",
-            "run_type": "chain", "parent_run_id": None,
-            "inputs": {"query": "q1"}, "outputs": {"answer": "a1"},
-            "start_time": "2024-01-01T00:00:00Z",
-        }) + "\n")
+        trace_file.write_text(
+            json.dumps(
+                {
+                    "run_id": "r1",
+                    "trace_id": "t1",
+                    "name": "root",
+                    "run_type": "chain",
+                    "parent_run_id": None,
+                    "inputs": {"query": "q1"},
+                    "outputs": {"answer": "a1"},
+                    "start_time": "2024-01-01T00:00:00Z",
+                }
+            )
+            + "\n"
+        )
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", str(input_dir),
-            "-o", output_file,
-            "--type", "final_response",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                str(input_dir),
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -494,62 +703,104 @@ class TestDatasetGenerate:
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", str(input_dir),
-            "-o", output_file,
-            "--type", "final_response",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                str(input_dir),
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+            ],
+        )
 
         assert "No traces found" in result.output
 
     def test_generate_file_exists_no_replace(self, runner, mock_client, tmp_path):
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "q"}, "outputs": {"answer": "a"},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "q"},
+                        "outputs": {"answer": "a"},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
         with open(output_file, "w") as f:
             f.write("existing content")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "final_response",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+            ],
+        )
 
         assert "exists" in result.output
 
     def test_generate_with_replace(self, runner, mock_client, tmp_path):
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "q"}, "outputs": {"answer": "a"},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "q"},
+                        "outputs": {"answer": "a"},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
         with open(output_file, "w") as f:
             f.write("existing content")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "final_response",
-            "--replace",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+                "--replace",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -557,28 +808,47 @@ class TestDatasetGenerate:
 
     def test_generate_with_upload(self, runner, mock_client, tmp_path):
         from types import SimpleNamespace
+
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "q"}, "outputs": {"answer": "a"},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "q"},
+                        "outputs": {"answer": "a"},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
 
         ds = SimpleNamespace(id="ds-123")
         mock_client.create_dataset.return_value = ds
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "final_response",
-            "--upload", "my-eval-set",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+                "--upload",
+                "my-eval-set",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -588,35 +858,69 @@ class TestDatasetGenerate:
     def test_generate_rag_type(self, runner, mock_client, tmp_path):
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "what is LangSmith"}, "outputs": {},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
-            f.write(json.dumps({
-                "run_id": "r2", "trace_id": "t1", "name": "retriever",
-                "run_type": "retriever", "parent_run_id": "r1",
-                "inputs": {"query": "what is LangSmith"},
-                "outputs": {"documents": [{"page_content": "LangSmith is..."}]},
-                "start_time": "2024-01-01T00:00:01Z",
-            }) + "\n")
-            f.write(json.dumps({
-                "run_id": "r3", "trace_id": "t1", "name": "llm",
-                "run_type": "llm", "parent_run_id": "r1",
-                "inputs": {}, "outputs": {"answer": "LangSmith is a platform"},
-                "start_time": "2024-01-01T00:00:02Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "what is LangSmith"},
+                        "outputs": {},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r2",
+                        "trace_id": "t1",
+                        "name": "retriever",
+                        "run_type": "retriever",
+                        "parent_run_id": "r1",
+                        "inputs": {"query": "what is LangSmith"},
+                        "outputs": {"documents": [{"page_content": "LangSmith is..."}]},
+                        "start_time": "2024-01-01T00:00:01Z",
+                    }
+                )
+                + "\n"
+            )
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r3",
+                        "trace_id": "t1",
+                        "name": "llm",
+                        "run_type": "llm",
+                        "parent_run_id": "r1",
+                        "inputs": {},
+                        "outputs": {"answer": "LangSmith is a platform"},
+                        "start_time": "2024-01-01T00:00:02Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "rag",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "rag",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -625,24 +929,43 @@ class TestDatasetGenerate:
     def test_generate_with_input_output_fields(self, runner, mock_client, tmp_path):
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"my_query": "hello"}, "outputs": {"my_answer": "world"},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"my_query": "hello"},
+                        "outputs": {"my_answer": "world"},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "final_response",
-            "--input-fields", "my_query",
-            "--output-fields", "my_answer",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "final_response",
+                "--input-fields",
+                "my_query",
+                "--output-fields",
+                "my_answer",
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -652,28 +975,54 @@ class TestDatasetGenerate:
     def test_generate_trajectory_type(self, runner, mock_client, tmp_path):
         input_file = str(tmp_path / "traces.jsonl")
         with open(input_file, "w") as f:
-            f.write(json.dumps({
-                "run_id": "r1", "trace_id": "t1", "name": "root",
-                "run_type": "chain", "parent_run_id": None,
-                "inputs": {"query": "find info"}, "outputs": {},
-                "start_time": "2024-01-01T00:00:00Z",
-            }) + "\n")
-            f.write(json.dumps({
-                "run_id": "r2", "trace_id": "t1", "name": "Search",
-                "run_type": "tool", "parent_run_id": "r1",
-                "inputs": {}, "outputs": {},
-                "start_time": "2024-01-01T00:00:01Z",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r1",
+                        "trace_id": "t1",
+                        "name": "root",
+                        "run_type": "chain",
+                        "parent_run_id": None,
+                        "inputs": {"query": "find info"},
+                        "outputs": {},
+                        "start_time": "2024-01-01T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
+            f.write(
+                json.dumps(
+                    {
+                        "run_id": "r2",
+                        "trace_id": "t1",
+                        "name": "Search",
+                        "run_type": "tool",
+                        "parent_run_id": "r1",
+                        "inputs": {},
+                        "outputs": {},
+                        "start_time": "2024-01-01T00:00:01Z",
+                    }
+                )
+                + "\n"
+            )
 
         output_file = str(tmp_path / "eval.json")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "dataset", "generate",
-            "-i", input_file,
-            "-o", output_file,
-            "--type", "trajectory",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "dataset",
+                "generate",
+                "-i",
+                input_file,
+                "-o",
+                output_file,
+                "--type",
+                "trajectory",
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:

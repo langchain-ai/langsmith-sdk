@@ -33,20 +33,58 @@ def trace_group():
 
 @trace_group.command("list")
 @common_filter_options(include_run_type=False)
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io. Returns all fields.")
-@click.option("--show-hierarchy", is_flag=True, default=False,
-              help="Fetch the full run tree for each trace (slower, more API calls).")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io. Returns all fields.",
+)
+@click.option(
+    "--show-hierarchy",
+    is_flag=True,
+    default=False,
+    help="Fetch the full run tree for each trace (slower, more API calls).",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
-def trace_list(ctx, trace_ids, limit, project, last_n_minutes, since, error,
-               name, min_latency, max_latency, min_tokens, tags, raw_filter,
-               include_metadata, include_io, full, show_hierarchy, output_file):
+def trace_list(
+    ctx,
+    trace_ids,
+    limit,
+    project,
+    last_n_minutes,
+    since,
+    error,
+    name,
+    min_latency,
+    max_latency,
+    min_tokens,
+    tags,
+    raw_filter,
+    include_metadata,
+    include_io,
+    full,
+    show_hierarchy,
+    output_file,
+):
     """List traces (root runs) matching filter criteria.
 
     \b
@@ -86,10 +124,19 @@ def trace_list(ctx, trace_ids, limit, project, last_n_minutes, since, error,
 
     client = get_client(ctx)
     params = build_query_params(
-        project=project, trace_ids=trace_ids, limit=limit,
-        last_n_minutes=last_n_minutes, since=since, run_type=None,
-        is_root=True, error=error, name=name, raw_filter=raw_filter,
-        min_latency=min_latency, max_latency=max_latency, min_tokens=min_tokens,
+        project=project,
+        trace_ids=trace_ids,
+        limit=limit,
+        last_n_minutes=last_n_minutes,
+        since=since,
+        run_type=None,
+        is_root=True,
+        error=error,
+        name=name,
+        raw_filter=raw_filter,
+        min_latency=min_latency,
+        max_latency=max_latency,
+        min_tokens=min_tokens,
         tags=tags,
     )
 
@@ -99,10 +146,14 @@ def trace_list(ctx, trace_ids, limit, project, last_n_minutes, since, error,
     if fmt == "pretty":
         if show_hierarchy:
             for run in runs:
-                all_runs = list(client.list_runs(
-                    trace_id=str(run.trace_id) if hasattr(run, "trace_id") else str(run.id),
-                    project_name=params.get("project_name"),
-                ))
+                all_runs = list(
+                    client.list_runs(
+                        trace_id=str(run.trace_id)
+                        if hasattr(run, "trace_id")
+                        else str(run.id),
+                        project_name=params.get("project_name"),
+                    )
+                )
                 output_tree(all_runs)
         else:
             print_runs_table(runs, include_metadata=include_metadata, title="Traces")
@@ -111,15 +162,22 @@ def trace_list(ctx, trace_ids, limit, project, last_n_minutes, since, error,
             result = []
             for run in runs:
                 tid = str(run.trace_id) if hasattr(run, "trace_id") else str(run.id)
-                all_runs = list(client.list_runs(
-                    trace_id=tid,
-                    project_name=params.get("project_name"),
-                ))
-                result.append({
-                    "trace_id": tid,
-                    "run_count": len(all_runs),
-                    "runs": [extract_run(r, include_metadata, include_io) for r in all_runs],
-                })
+                all_runs = list(
+                    client.list_runs(
+                        trace_id=tid,
+                        project_name=params.get("project_name"),
+                    )
+                )
+                result.append(
+                    {
+                        "trace_id": tid,
+                        "run_count": len(all_runs),
+                        "runs": [
+                            extract_run(r, include_metadata, include_io)
+                            for r in all_runs
+                        ],
+                    }
+                )
             output_json(result, output_file)
         else:
             data = [extract_run(r, include_metadata, include_io) for r in runs]
@@ -128,16 +186,36 @@ def trace_list(ctx, trace_ids, limit, project, last_n_minutes, since, error,
 
 @trace_group.command("get")
 @click.argument("trace_id")
-@click.option("--project", default=None,
-              help="Project name. Falls back to LANGSMITH_PROJECT env var.")
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--project",
+    default=None,
+    help="Project name. Falls back to LANGSMITH_PROJECT env var.",
+)
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def trace_get(ctx, trace_id, project, include_metadata, include_io, full, output_file):
     """Fetch every run in a single trace, given its trace ID.
@@ -179,18 +257,50 @@ def trace_get(ctx, trace_id, project, include_metadata, include_io, full, output
 @trace_group.command("export")
 @click.argument("output_dir")
 @common_filter_options(include_run_type=False)
-@click.option("--include-metadata", is_flag=True, default=False,
-              help="Add status, duration_ms, token_usage, costs, tags to each run.")
-@click.option("--include-io", is_flag=True, default=False,
-              help="Add inputs, outputs, and error fields to each run.")
-@click.option("--full", is_flag=True, default=False,
-              help="Shorthand for --include-metadata --include-io.")
-@click.option("--filename-pattern", default="{trace_id}.jsonl",
-              help="Filename pattern. Supports {trace_id} and {name} placeholders.")
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    default=False,
+    help="Add status, duration_ms, token_usage, costs, tags to each run.",
+)
+@click.option(
+    "--include-io",
+    is_flag=True,
+    default=False,
+    help="Add inputs, outputs, and error fields to each run.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Shorthand for --include-metadata --include-io.",
+)
+@click.option(
+    "--filename-pattern",
+    default="{trace_id}.jsonl",
+    help="Filename pattern. Supports {trace_id} and {name} placeholders.",
+)
 @click.pass_context
-def trace_export(ctx, output_dir, trace_ids, limit, project, last_n_minutes, since,
-                 error, name, min_latency, max_latency, min_tokens, tags, raw_filter,
-                 include_metadata, include_io, full, filename_pattern):
+def trace_export(
+    ctx,
+    output_dir,
+    trace_ids,
+    limit,
+    project,
+    last_n_minutes,
+    since,
+    error,
+    name,
+    min_latency,
+    max_latency,
+    min_tokens,
+    tags,
+    raw_filter,
+    include_metadata,
+    include_io,
+    full,
+    filename_pattern,
+):
     """Export traces to a directory as JSONL files (one file per trace).
 
     \b
@@ -219,10 +329,19 @@ def trace_export(ctx, output_dir, trace_ids, limit, project, last_n_minutes, sin
     os.makedirs(output_dir, exist_ok=True)
     client = get_client(ctx)
     params = build_query_params(
-        project=project, trace_ids=trace_ids, limit=limit,
-        last_n_minutes=last_n_minutes, since=since, run_type=None,
-        is_root=True, error=error, name=name, raw_filter=raw_filter,
-        min_latency=min_latency, max_latency=max_latency, min_tokens=min_tokens,
+        project=project,
+        trace_ids=trace_ids,
+        limit=limit,
+        last_n_minutes=last_n_minutes,
+        since=since,
+        run_type=None,
+        is_root=True,
+        error=error,
+        name=name,
+        raw_filter=raw_filter,
+        min_latency=min_latency,
+        max_latency=max_latency,
+        min_tokens=min_tokens,
         tags=tags,
     )
 
@@ -231,10 +350,12 @@ def trace_export(ctx, output_dir, trace_ids, limit, project, last_n_minutes, sin
 
     for root in root_runs:
         tid = str(root.trace_id) if hasattr(root, "trace_id") else str(root.id)
-        all_runs = list(client.list_runs(
-            trace_id=tid,
-            project_name=params.get("project_name"),
-        ))
+        all_runs = list(
+            client.list_runs(
+                trace_id=tid,
+                project_name=params.get("project_name"),
+            )
+        )
 
         filename = os.path.basename(
             filename_pattern.format(trace_id=tid, name=root.name or "unknown")
@@ -243,7 +364,12 @@ def trace_export(ctx, output_dir, trace_ids, limit, project, last_n_minutes, sin
 
         with open(filepath, "w") as f:
             for run in all_runs:
-                f.write(json.dumps(extract_run(run, include_metadata, include_io), default=str) + "\n")
+                f.write(
+                    json.dumps(
+                        extract_run(run, include_metadata, include_io), default=str
+                    )
+                    + "\n"
+                )
         exported += 1
 
     output_json({"status": "exported", "count": exported, "output_dir": output_dir})

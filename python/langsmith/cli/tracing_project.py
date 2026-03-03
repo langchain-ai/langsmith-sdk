@@ -31,12 +31,25 @@ def project_group():
 
 
 @project_group.command("list")
-@click.option("--limit", "-n", type=int, default=20,
-              help="Maximum number of projects to return. Default: 20.")
-@click.option("--name-contains", default=None,
-              help="Filter projects whose name contains this substring (case-insensitive).")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    help="Maximum number of projects to return. Default: 20.",
+)
+@click.option(
+    "--name-contains",
+    default=None,
+    help="Filter projects whose name contains this substring (case-insensitive).",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def project_list(ctx, limit, name_contains, output_file):
     """List tracing projects in the workspace.
@@ -74,16 +87,19 @@ def project_list(ctx, limit, name_contains, output_file):
             error_rate = f"{p.error_rate:.1%}" if p.error_rate is not None else "N/A"
             last_active = (
                 p.last_run_start_time.strftime("%Y-%m-%d %H:%M")
-                if p.last_run_start_time else "N/A"
+                if p.last_run_start_time
+                else "N/A"
             )
-            rows.append([
-                p.name or "N/A",
-                str(p.id)[:16] + "...",
-                str(p.run_count) if p.run_count is not None else "N/A",
-                latency,
-                error_rate,
-                last_active,
-            ])
+            rows.append(
+                [
+                    p.name or "N/A",
+                    str(p.id)[:16] + "...",
+                    str(p.run_count) if p.run_count is not None else "N/A",
+                    latency,
+                    error_rate,
+                    last_active,
+                ]
+            )
         output_table(columns, rows, title="Tracing Projects")
     else:
         data = []
@@ -98,7 +114,9 @@ def project_list(ctx, limit, name_contains, output_file):
                 "total_tokens": p.total_tokens,
                 "total_cost": float(p.total_cost) if p.total_cost is not None else None,
                 "error_rate": p.error_rate,
-                "last_run_start_time": str(p.last_run_start_time) if p.last_run_start_time else None,
+                "last_run_start_time": str(p.last_run_start_time)
+                if p.last_run_start_time
+                else None,
                 "start_time": str(p.start_time) if p.start_time else None,
             }
             data.append(entry)

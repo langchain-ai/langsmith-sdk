@@ -31,12 +31,26 @@ def experiment_group():
 
 
 @experiment_group.command("list")
-@click.option("--dataset", "dataset_name", default=None,
-              help="Filter to experiments that evaluated this dataset (by name).")
-@click.option("--limit", "-n", type=int, default=20,
-              help="Maximum number of experiments to return. Default: 20.")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "--dataset",
+    "dataset_name",
+    default=None,
+    help="Filter to experiments that evaluated this dataset (by name).",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=20,
+    help="Maximum number of experiments to return. Default: 20.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def experiment_list(ctx, dataset_name, limit, output_file):
     """List experiments, optionally filtered by dataset.
@@ -68,12 +82,16 @@ def experiment_list(ctx, dataset_name, limit, output_file):
         columns = ["Name", "ID", "Dataset ID", "Runs"]
         rows = []
         for p in projects:
-            rows.append([
-                p.name,
-                str(p.id)[:16] + "...",
-                str(p.reference_dataset_id)[:16] + "..." if p.reference_dataset_id else "N/A",
-                str(getattr(p, "run_count", "N/A")),
-            ])
+            rows.append(
+                [
+                    p.name,
+                    str(p.id)[:16] + "...",
+                    str(p.reference_dataset_id)[:16] + "..."
+                    if p.reference_dataset_id
+                    else "N/A",
+                    str(getattr(p, "run_count", "N/A")),
+                ]
+            )
         output_table(columns, rows, title="Experiments")
     else:
         data = []
@@ -81,7 +99,9 @@ def experiment_list(ctx, dataset_name, limit, output_file):
             entry = {
                 "id": str(p.id),
                 "name": p.name,
-                "reference_dataset_id": str(p.reference_dataset_id) if p.reference_dataset_id else None,
+                "reference_dataset_id": str(p.reference_dataset_id)
+                if p.reference_dataset_id
+                else None,
             }
             if hasattr(p, "run_count"):
                 entry["run_count"] = p.run_count
@@ -93,8 +113,13 @@ def experiment_list(ctx, dataset_name, limit, output_file):
 
 @experiment_group.command("get")
 @click.argument("name_or_id")
-@click.option("-o", "--output", "output_file", default=None,
-              help="Write JSON output to a file instead of stdout.")
+@click.option(
+    "-o",
+    "--output",
+    "output_file",
+    default=None,
+    help="Write JSON output to a file instead of stdout.",
+)
 @click.pass_context
 def experiment_get(ctx, name_or_id, output_file):
     """Get detailed results for a specific experiment.
@@ -134,6 +159,7 @@ def experiment_get(ctx, name_or_id, output_file):
 
         if fmt == "pretty":
             from langsmith.cli.output import print_output
+
             print_output(data, "pretty", output_file)
         else:
             output_json(data, output_file)
@@ -150,6 +176,7 @@ def experiment_get(ctx, name_or_id, output_file):
             }
             if fmt == "pretty":
                 from langsmith.cli.output import print_output
+
                 print_output(data, "pretty", output_file)
             else:
                 output_json(data, output_file)

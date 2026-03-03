@@ -25,10 +25,15 @@ class TestEvaluatorList:
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -39,18 +44,30 @@ class TestEvaluatorList:
     def test_evaluator_list_to_file(self, mock_requests, runner, tmp_path):
         mock_response = MagicMock()
         mock_response.json.return_value = [
-            {"id": "rule-1", "display_name": "eval1", "sampling_rate": 1.0,
-             "is_enabled": True, "dataset_id": None, "session_id": None},
+            {
+                "id": "rule-1",
+                "display_name": "eval1",
+                "sampling_rate": 1.0,
+                "is_enabled": True,
+                "dataset_id": None,
+                "session_id": None,
+            },
         ]
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
         output_file = str(tmp_path / "evals.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "list",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "list",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -61,19 +78,37 @@ class TestEvaluatorList:
     def test_evaluator_list_pretty(self, mock_requests, runner):
         mock_response = MagicMock()
         mock_response.json.return_value = [
-            {"id": "rule-1", "display_name": "accuracy", "sampling_rate": 1.0,
-             "is_enabled": True, "dataset_id": "ds-1", "session_id": None},
-            {"id": "rule-2", "display_name": "latency", "sampling_rate": 0.5,
-             "is_enabled": False, "dataset_id": None, "session_id": "proj-1"},
+            {
+                "id": "rule-1",
+                "display_name": "accuracy",
+                "sampling_rate": 1.0,
+                "is_enabled": True,
+                "dataset_id": "ds-1",
+                "session_id": None,
+            },
+            {
+                "id": "rule-2",
+                "display_name": "latency",
+                "sampling_rate": 0.5,
+                "is_enabled": False,
+                "dataset_id": None,
+                "session_id": "proj-1",
+            },
         ]
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "evaluator", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "evaluator",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "accuracy" in result.output
@@ -82,17 +117,29 @@ class TestEvaluatorList:
     def test_evaluator_list_pretty_no_target(self, mock_requests, runner):
         mock_response = MagicMock()
         mock_response.json.return_value = [
-            {"id": "rule-1", "display_name": "global-eval", "sampling_rate": 1.0,
-             "is_enabled": True, "dataset_id": None, "session_id": None},
+            {
+                "id": "rule-1",
+                "display_name": "global-eval",
+                "sampling_rate": 1.0,
+                "is_enabled": True,
+                "dataset_id": None,
+                "session_id": None,
+            },
         ]
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "evaluator", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "evaluator",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -102,10 +149,12 @@ class TestEvaluatorUpload:
     def test_upload_to_dataset(self, mock_requests, runner, mock_client, tmp_path):
         # Create eval file
         eval_file = tmp_path / "evals.py"
-        eval_file.write_text(textwrap.dedent("""\
+        eval_file.write_text(
+            textwrap.dedent("""\
             def check_accuracy(run, example):
                 return {"score": 1.0}
-        """))
+        """)
+        )
 
         # Mock dataset resolution
         ds = SimpleNamespace(id="ds-123")
@@ -123,13 +172,22 @@ class TestEvaluatorUpload:
         get_response.raise_for_status.return_value = None
         mock_requests.get.return_value = get_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "accuracy",
-            "--function", "check_accuracy",
-            "--dataset", "my-eval-set",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "accuracy",
+                "--function",
+                "check_accuracy",
+                "--dataset",
+                "my-eval-set",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -140,10 +198,12 @@ class TestEvaluatorUpload:
     @patch("langsmith.cli.evaluator.requests")
     def test_upload_to_project(self, mock_requests, runner, mock_client, tmp_path):
         eval_file = tmp_path / "evals.py"
-        eval_file.write_text(textwrap.dedent("""\
+        eval_file.write_text(
+            textwrap.dedent("""\
             def check_latency(run):
                 return {"score": 1.0 if run.latency < 5 else 0.0}
-        """))
+        """)
+        )
 
         mock_client.list_projects.return_value = [
             SimpleNamespace(name="my-app", id="proj-123"),
@@ -159,13 +219,22 @@ class TestEvaluatorUpload:
         get_response.raise_for_status.return_value = None
         mock_requests.get.return_value = get_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "latency-check",
-            "--function", "check_latency",
-            "--project", "my-app",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "latency-check",
+                "--function",
+                "check_latency",
+                "--project",
+                "my-app",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -173,22 +242,34 @@ class TestEvaluatorUpload:
         assert data["target"] == "project"
 
     @patch("langsmith.cli.evaluator.requests")
-    def test_upload_no_target_errors(self, mock_requests, runner, mock_client, tmp_path):
+    def test_upload_no_target_errors(
+        self, mock_requests, runner, mock_client, tmp_path
+    ):
         eval_file = tmp_path / "evals.py"
         eval_file.write_text("def my_eval(run): return {}\n")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "test",
-            "--function", "my_eval",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "test",
+                "--function",
+                "my_eval",
+            ],
+        )
 
         # Should error because neither --dataset nor --project specified
         assert "Must specify --dataset or --project" in result.output
 
     @patch("langsmith.cli.evaluator.requests")
-    def test_upload_function_not_found(self, mock_requests, runner, mock_client, tmp_path):
+    def test_upload_function_not_found(
+        self, mock_requests, runner, mock_client, tmp_path
+    ):
         eval_file = tmp_path / "evals.py"
         eval_file.write_text("def other_func(run): return {}\n")
 
@@ -200,23 +281,36 @@ class TestEvaluatorUpload:
         get_response.raise_for_status.return_value = None
         mock_requests.get.return_value = get_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "test",
-            "--function", "nonexistent",
-            "--dataset", "my-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "test",
+                "--function",
+                "nonexistent",
+                "--dataset",
+                "my-ds",
+            ],
+        )
 
         assert "not found" in result.output
 
     @patch("langsmith.cli.evaluator.requests")
-    def test_upload_replace_existing(self, mock_requests, runner, mock_client, tmp_path):
+    def test_upload_replace_existing(
+        self, mock_requests, runner, mock_client, tmp_path
+    ):
         eval_file = tmp_path / "evals.py"
-        eval_file.write_text(textwrap.dedent("""\
+        eval_file.write_text(
+            textwrap.dedent("""\
             def check_v2(run, example):
                 return {"score": 0.5}
-        """))
+        """)
+        )
 
         ds = SimpleNamespace(id="ds-123")
         mock_client.read_dataset.return_value = ds
@@ -240,14 +334,24 @@ class TestEvaluatorUpload:
         post_response.raise_for_status.return_value = None
         mock_requests.post.return_value = post_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "accuracy",
-            "--function", "check_v2",
-            "--dataset", "my-ds",
-            "--replace", "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "accuracy",
+                "--function",
+                "check_v2",
+                "--dataset",
+                "my-ds",
+                "--replace",
+                "--yes",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -255,7 +359,9 @@ class TestEvaluatorUpload:
         mock_requests.delete.assert_called_once()
 
     @patch("langsmith.cli.evaluator.requests")
-    def test_upload_existing_no_replace_warns(self, mock_requests, runner, mock_client, tmp_path):
+    def test_upload_existing_no_replace_warns(
+        self, mock_requests, runner, mock_client, tmp_path
+    ):
         eval_file = tmp_path / "evals.py"
         eval_file.write_text("def my_eval(run, example): return {}\n")
 
@@ -269,18 +375,29 @@ class TestEvaluatorUpload:
         get_response.raise_for_status.return_value = None
         mock_requests.get.return_value = get_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "test",
-            "--function", "my_eval",
-            "--dataset", "my-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "test",
+                "--function",
+                "my_eval",
+                "--dataset",
+                "my-ds",
+            ],
+        )
 
         assert "already exists" in result.output
 
     @patch("langsmith.cli.evaluator.requests")
-    def test_upload_project_not_found(self, mock_requests, runner, mock_client, tmp_path):
+    def test_upload_project_not_found(
+        self, mock_requests, runner, mock_client, tmp_path
+    ):
         eval_file = tmp_path / "evals.py"
         eval_file.write_text("def my_eval(run): return {}\n")
 
@@ -291,23 +408,34 @@ class TestEvaluatorUpload:
         get_response.raise_for_status.return_value = None
         mock_requests.get.return_value = get_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "test",
-            "--function", "my_eval",
-            "--project", "nonexistent-project",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "test",
+                "--function",
+                "my_eval",
+                "--project",
+                "nonexistent-project",
+            ],
+        )
 
         assert "not found" in result.output
 
     @patch("langsmith.cli.evaluator.requests")
     def test_upload_sampling_rate(self, mock_requests, runner, mock_client, tmp_path):
         eval_file = tmp_path / "evals.py"
-        eval_file.write_text(textwrap.dedent("""\
+        eval_file.write_text(
+            textwrap.dedent("""\
             def my_eval(run, example):
                 return {"score": 1.0}
-        """))
+        """)
+        )
 
         ds = SimpleNamespace(id="ds-123")
         mock_client.read_dataset.return_value = ds
@@ -322,14 +450,24 @@ class TestEvaluatorUpload:
         post_response.raise_for_status.return_value = None
         mock_requests.post.return_value = post_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "upload", str(eval_file),
-            "--name", "test",
-            "--function", "my_eval",
-            "--dataset", "my-ds",
-            "--sampling-rate", "0.5",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "upload",
+                str(eval_file),
+                "--name",
+                "test",
+                "--function",
+                "my_eval",
+                "--dataset",
+                "my-ds",
+                "--sampling-rate",
+                "0.5",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_requests.post.call_args
@@ -354,11 +492,17 @@ class TestEvaluatorDelete:
         mock_requests.get.return_value = list_response
         mock_requests.delete.return_value = delete_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "delete", "test-eval",
-            "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "delete",
+                "test-eval",
+                "--yes",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -371,11 +515,17 @@ class TestEvaluatorDelete:
         list_response.raise_for_status.return_value = None
         mock_requests.get.return_value = list_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "delete", "nonexistent",
-            "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "delete",
+                "nonexistent",
+                "--yes",
+            ],
+        )
 
         # Should print error to stderr
         assert "not found" in result.output or result.exit_code == 0
@@ -395,11 +545,17 @@ class TestEvaluatorDelete:
         mock_requests.get.return_value = list_response
         mock_requests.delete.return_value = delete_response
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "evaluator", "delete", "dup-eval",
-            "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "evaluator",
+                "delete",
+                "dup-eval",
+                "--yes",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)

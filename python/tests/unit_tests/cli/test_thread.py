@@ -18,11 +18,17 @@ class TestThreadList:
             },
         ]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test-project",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test-project",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -33,12 +39,19 @@ class TestThreadList:
     def test_thread_list_with_limit(self, runner, mock_client):
         mock_client.list_threads.return_value = []
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test",
-            "--limit", "5",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test",
+                "--limit",
+                "5",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.list_threads.call_args[1]
@@ -47,12 +60,19 @@ class TestThreadList:
     def test_thread_list_with_offset(self, runner, mock_client):
         mock_client.list_threads.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test",
-            "--offset", "10",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test",
+                "--offset",
+                "10",
+            ],
+        )
 
         call_kwargs = mock_client.list_threads.call_args[1]
         assert call_kwargs["offset"] == 10
@@ -60,12 +80,19 @@ class TestThreadList:
     def test_thread_list_with_last_n_minutes(self, runner, mock_client):
         mock_client.list_threads.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test",
-            "--last-n-minutes", "60",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test",
+                "--last-n-minutes",
+                "60",
+            ],
+        )
 
         call_kwargs = mock_client.list_threads.call_args[1]
         assert "start_time" in call_kwargs
@@ -73,12 +100,19 @@ class TestThreadList:
     def test_thread_list_with_filter(self, runner, mock_client):
         mock_client.list_threads.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test",
-            "--filter", 'eq(status, "error")',
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test",
+                "--filter",
+                'eq(status, "error")',
+            ],
+        )
 
         call_kwargs = mock_client.list_threads.call_args[1]
         assert call_kwargs["filter"] == 'eq(status, "error")'
@@ -93,28 +127,47 @@ class TestThreadList:
             },
         ]
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "thread", "list",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "thread",
+                "list",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "thread-1" in result.output
 
     def test_thread_list_to_file(self, runner, mock_client, tmp_path):
         mock_client.list_threads.return_value = [
-            {"thread_id": "thread-1", "count": 2, "min_start_time": None, "max_start_time": None},
+            {
+                "thread_id": "thread-1",
+                "count": 2,
+                "min_start_time": None,
+                "max_start_time": None,
+            },
         ]
 
         output_file = str(tmp_path / "threads.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-            "--project", "test",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+                "--project",
+                "test",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -122,10 +175,15 @@ class TestThreadList:
         assert len(data) == 1
 
     def test_thread_list_project_required(self, runner, mock_client):
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "list",
+            ],
+        )
 
         assert result.exit_code != 0
 
@@ -135,11 +193,18 @@ class TestThreadGet:
         runs = [make_run(name="turn-1"), make_run(name="turn-2")]
         mock_client.read_thread.return_value = iter(runs)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "get", "thread-abc",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "get",
+                "thread-abc",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -150,12 +215,19 @@ class TestThreadGet:
         runs = [make_run(inputs={"q": "hi"}, outputs={"a": "bye"}, total_tokens=10)]
         mock_client.read_thread.return_value = iter(runs)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "get", "thread-abc",
-            "--project", "test",
-            "--full",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "get",
+                "thread-abc",
+                "--project",
+                "test",
+                "--full",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -166,12 +238,20 @@ class TestThreadGet:
         runs = [make_run(name="turn-1")]
         mock_client.read_thread.return_value = iter(runs)
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "thread", "get", "thread-abc",
-            "--project", "test",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "thread",
+                "get",
+                "thread-abc",
+                "--project",
+                "test",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -180,12 +260,20 @@ class TestThreadGet:
         mock_client.read_thread.return_value = iter(runs)
 
         output_file = str(tmp_path / "thread.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "get", "thread-abc",
-            "--project", "test",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "get",
+                "thread-abc",
+                "--project",
+                "test",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -196,20 +284,34 @@ class TestThreadGet:
         runs = [make_run(name="turn-1")]
         mock_client.read_thread.return_value = iter(runs)
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "get", "thread-abc",
-            "--project", "test",
-            "--limit", "3",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "get",
+                "thread-abc",
+                "--project",
+                "test",
+                "--limit",
+                "3",
+            ],
+        )
 
         call_kwargs = mock_client.read_thread.call_args[1]
         assert call_kwargs["limit"] == 3
 
     def test_thread_get_project_required(self, runner, mock_client):
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "thread", "get", "thread-abc",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "thread",
+                "get",
+                "thread-abc",
+            ],
+        )
 
         assert result.exit_code != 0

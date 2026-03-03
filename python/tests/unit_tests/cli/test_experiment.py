@@ -22,10 +22,15 @@ class TestExperimentList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -34,15 +39,22 @@ class TestExperimentList:
 
     def test_experiment_list_with_dataset_filter(self, runner, mock_client):
         from tests.unit_tests.cli.conftest import make_dataset
+
         ds = make_dataset(name="eval-ds")
         mock_client.read_dataset.return_value = ds
         mock_client.list_projects.return_value = []
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "list",
-            "--dataset", "eval-ds",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "list",
+                "--dataset",
+                "eval-ds",
+            ],
+        )
 
         assert result.exit_code == 0
         call_kwargs = mock_client.list_projects.call_args[1]
@@ -51,11 +63,17 @@ class TestExperimentList:
     def test_experiment_list_with_limit(self, runner, mock_client):
         mock_client.list_projects.return_value = []
 
-        runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "list",
-            "--limit", "5",
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "list",
+                "--limit",
+                "5",
+            ],
+        )
 
         call_kwargs = mock_client.list_projects.call_args[1]
         assert call_kwargs["limit"] == 5
@@ -71,11 +89,17 @@ class TestExperimentList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "experiment", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "experiment",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "exp-pretty" in result.output
@@ -93,11 +117,17 @@ class TestExperimentList:
         mock_client.list_projects.return_value = projects
 
         output_file = str(tmp_path / "experiments.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "list",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "list",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -115,10 +145,15 @@ class TestExperimentList:
         ]
         mock_client.list_projects.return_value = projects
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "list",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "list",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -133,10 +168,16 @@ class TestExperimentGet:
             "examples_with_runs": [],
         }
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "get", "my-experiment",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "get",
+                "my-experiment",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -150,11 +191,18 @@ class TestExperimentGet:
             "examples_with_runs": [],
         }
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "--format", "pretty",
-            "experiment", "get", "my-experiment",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "--format",
+                "pretty",
+                "experiment",
+                "get",
+                "my-experiment",
+            ],
+        )
 
         assert result.exit_code == 0
 
@@ -166,11 +214,18 @@ class TestExperimentGet:
         }
 
         output_file = str(tmp_path / "experiment.json")
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "get", "my-experiment",
-            "-o", output_file,
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "get",
+                "my-experiment",
+                "-o",
+                output_file,
+            ],
+        )
 
         assert result.exit_code == 0
         with open(output_file) as f:
@@ -187,10 +242,16 @@ class TestExperimentGet:
             "examples_with_runs": [],
         }
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "get", "my-experiment",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "get",
+                "my-experiment",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -203,10 +264,16 @@ class TestExperimentGet:
         mock_df.to_dict.return_value = [{"example_id": "e1", "score": 0.9}]
         mock_client.get_test_results.return_value = mock_df
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "get", "fallback-experiment",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "get",
+                "fallback-experiment",
+            ],
+        )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -217,10 +284,16 @@ class TestExperimentGet:
         mock_client.get_experiment_results.side_effect = Exception("fail 1")
         mock_client.get_test_results.side_effect = Exception("fail 2")
 
-        result = runner.invoke(cli, [
-            "--api-key", "test-key",
-            "experiment", "get", "bad-experiment",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--api-key",
+                "test-key",
+                "experiment",
+                "get",
+                "bad-experiment",
+            ],
+        )
 
         # Should output error
         assert "fail 2" in result.output

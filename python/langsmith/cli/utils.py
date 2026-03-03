@@ -88,20 +88,24 @@ def extract_run(run, include_metadata: bool = False, include_io: bool = False) -
         if hasattr(run, "total_cost") and run.total_cost is not None:
             costs["total_cost"] = float(run.total_cost)
 
-        result.update({
-            "status": getattr(run, "status", None),
-            "duration_ms": duration_ms,
-            "custom_metadata": _serialize(custom_metadata),
-            "token_usage": token_usage if token_usage else None,
-            "costs": costs if costs else None,
-            "tags": list(run.tags) if hasattr(run, "tags") and run.tags else None,
-        })
+        result.update(
+            {
+                "status": getattr(run, "status", None),
+                "duration_ms": duration_ms,
+                "custom_metadata": _serialize(custom_metadata),
+                "token_usage": token_usage if token_usage else None,
+                "costs": costs if costs else None,
+                "tags": list(run.tags) if hasattr(run, "tags") and run.tags else None,
+            }
+        )
 
     if include_io:
-        result.update({
-            "inputs": _serialize(run.inputs) if run.inputs else None,
-            "outputs": _serialize(run.outputs) if run.outputs else None,
-            "error": run.error if hasattr(run, "error") else None,
-        })
+        result.update(
+            {
+                "inputs": _serialize(run.inputs) if run.inputs else None,
+                "outputs": _serialize(run.outputs) if run.outputs else None,
+                "error": run.error if hasattr(run, "error") else None,
+            }
+        )
 
     return result
