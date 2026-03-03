@@ -1414,9 +1414,7 @@ class _ClusterWithTraces:
 
     __slots__ = ("_cluster", "_report")
 
-    def __init__(
-        self, cluster: InsightsCluster, report: InsightsReportResult
-    ) -> None:
+    def __init__(self, cluster: InsightsCluster, report: InsightsReportResult) -> None:
         self._cluster = cluster
         self._report = report
 
