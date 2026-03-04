@@ -992,6 +992,51 @@ class Client:
         self._multipart_disabled: bool = False
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
+        # Set OTEL exporter before starting the tracing thread so the thread sees it
+        # and disables compression in OTEL-only mode (avoids "Run compression is not enabled" warning).
+        if _check_otel_enabled() or otel_enabled:
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
+
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    # Use existing global provider if available
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+
+                # Store imports for later use
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                )
+                self.otel_exporter = None
+        else:
+            self.otel_exporter = None
+
         # Initialize auto batching
         if auto_batch_tracing:
             queue_maxsize_str = ls_utils.get_env_var("TRACING_QUEUE_MAX_SIZE")
@@ -1099,49 +1144,6 @@ class Client:
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
         self._manual_cleanup = False
-
-        if _check_otel_enabled() or otel_enabled:
-            try:
-                (
-                    otel_trace,
-                    set_span_in_context,
-                    get_otlp_tracer_provider,
-                    OTELExporter,
-                ) = _import_otel()
-
-                existing_provider = otel_trace.get_tracer_provider()
-                tracer = existing_provider.get_tracer(__name__)
-                if otel_tracer_provider is None:
-                    # Use existing global provider if available
-                    if not (
-                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
-                        and hasattr(tracer, "_tracer")
-                        and isinstance(
-                            cast(
-                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
-                                tracer,
-                            )._tracer,
-                            otel_trace.NoOpTracer,
-                        )
-                    ):
-                        otel_tracer_provider = cast(TracerProvider, existing_provider)
-                    else:
-                        otel_tracer_provider = get_otlp_tracer_provider()
-                        otel_trace.set_tracer_provider(otel_tracer_provider)
-
-                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
-
-                # Store imports for later use
-                self._otel_trace = otel_trace
-                self._set_span_in_context = set_span_in_context
-
-            except ImportError:
-                warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
-                )
-                self.otel_exporter = None
-        else:
-            self.otel_exporter = None
 
         self._tracing_error_callback = tracing_error_callback
 
