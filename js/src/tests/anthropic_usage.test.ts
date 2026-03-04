@@ -6,8 +6,7 @@ describe("convertAnthropicUsageToInputTokenDetails", () => {
     const result = convertAnthropicUsageToInputTokenDetails({
       cache_creation: { ephemeral_1h_input_tokens: 200 },
     });
-    expect(result).toHaveProperty("ephemeral_1h_input_tokens", 200);
-    expect(result).not.toHaveProperty("ephemeral_1hr_input_tokens");
+    expect(result).toHaveProperty("ephemeral_1hr_input_tokens", 200);
   });
 
   test("legacy format maps to ephemeral_5m_input_tokens", () => {
@@ -77,11 +76,7 @@ describe("createUsageMetadata", () => {
     expect(result?.total_tokens).toBe(1650); // 1600 + 50
     expect(result?.input_token_details?.cache_read).toBe(500);
     expect(result?.input_token_details?.ephemeral_5m_input_tokens).toBe(800);
-    expect(result?.input_token_details?.ephemeral_1h_input_tokens).toBe(200);
-    // 1h key must not have a trailing "r"
-    expect(result?.input_token_details).not.toHaveProperty(
-      "ephemeral_1hr_input_tokens"
-    );
+    expect(result?.input_token_details?.ephemeral_1hr_input_tokens).toBe(200);
   });
 
   test("only cache_read", () => {

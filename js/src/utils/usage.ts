@@ -3,7 +3,7 @@ export const convertAnthropicUsageToInputTokenDetails = (
 ): Record<string, number> => {
   const result: {
     ephemeral_5m_input_tokens?: number;
-    ephemeral_1h_input_tokens?: number;
+    ephemeral_1hr_input_tokens?: number;
     cache_read?: number;
   } = {};
 
@@ -17,7 +17,7 @@ export const convertAnthropicUsageToInputTokenDetails = (
         cacheCreation.ephemeral_5m_input_tokens;
     }
     if (typeof cacheCreation.ephemeral_1h_input_tokens === "number") {
-      result.ephemeral_1h_input_tokens =
+      result.ephemeral_1hr_input_tokens =
         cacheCreation.ephemeral_1h_input_tokens;
     }
     // If cache_creation not returned (no beta header passed),
