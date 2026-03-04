@@ -89,6 +89,7 @@ GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 
+
 def _otel_safe_attribute_value(value: Any) -> Optional[Any]:
     """Convert a value to an OTel-valid attribute type.
 
