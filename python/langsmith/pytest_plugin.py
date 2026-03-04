@@ -70,6 +70,17 @@ def pytest_runtest_call(item):
         # Get marker kwargs if any (e.g.,
         # @pytest.mark.langsmith(output_keys=["expected"]))
         kwargs = marker.kwargs if marker else {}
+        # Inject experiment_metadata from session-scoped fixture if available
+        # and not already explicitly set in the marker kwargs
+        if "experiment_metadata" not in kwargs:
+            try:
+                experiment_metadata = item.getfixturevalue(
+                    "langsmith_experiment_metadata"
+                )
+                if experiment_metadata is not None:
+                    kwargs = {**kwargs, "experiment_metadata": experiment_metadata}
+            except pytest.FixtureLookupError:
+                pass
         # Wrap the test function with our test decorator
         original_func = item.obj
         item.obj = ls_test(**kwargs)(original_func)
