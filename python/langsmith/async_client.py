@@ -1502,7 +1502,7 @@ class AsyncClient:
             prompt_identifier
         )
 
-        if not self._current_tenant_is_owner(owner):
+        if not (await self._current_tenant_is_owner(owner)):
             return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
 
         settings = await self._get_settings()
