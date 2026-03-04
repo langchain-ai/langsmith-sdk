@@ -89,6 +89,25 @@ GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 
+
+def _otel_safe_attribute_value(value: Any) -> Optional[Any]:
+    """Convert a value to an OTel-valid attribute type.
+
+    OTel only accepts bool, str, bytes, int, float, or sequences of those.
+    Dicts and lists are JSON-serialized to a string.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (bool, bytes, int, float, str)):
+        return value
+    if isinstance(value, (dict, list)):
+        try:
+            return _orjson.dumps(value).decode("utf-8")
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
 # LangSmith custom attributes
 LANGSMITH_SESSION_ID = "langsmith.trace.session_id"
 LANGSMITH_SESSION_NAME = "langsmith.trace.session_name"
@@ -525,7 +544,9 @@ class OTELExporter:
         metadata = extra.get("metadata", {})
         for key, value in metadata.items():
             if value is not None:
-                span.set_attribute(f"{LANGSMITH_METADATA}.{key}", value)
+                safe = _otel_safe_attribute_value(value)
+                if safe is not None:
+                    span.set_attribute(f"{LANGSMITH_METADATA}.{key}", safe)
 
         tags = run_info.get("tags")
         if tags:
