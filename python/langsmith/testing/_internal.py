@@ -612,9 +612,7 @@ class _LangSmithTestSuite:
                 cls._instances = {}
             if test_suite_name not in cls._instances:
                 test_suite = _get_test_suite(client, test_suite_name)
-                experiment = _start_experiment(
-                    client, test_suite, experiment_metadata
-                )
+                experiment = _start_experiment(client, test_suite, experiment_metadata)
                 cls._instances[test_suite_name] = cls(
                     client, experiment, test_suite, experiment_metadata
                 )

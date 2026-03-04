@@ -186,9 +186,7 @@ def test_from_test_passes_experiment_metadata():
             "langsmith.testing._internal._get_test_suite_name",
             return_value="my-suite",
         ),
-        patch(
-            "langsmith.testing._internal._get_test_suite", return_value=dataset
-        ),
+        patch("langsmith.testing._internal._get_test_suite", return_value=dataset),
         patch(
             "langsmith.testing._internal._start_experiment", return_value=experiment
         ) as mock_start,
@@ -239,9 +237,7 @@ def test_env_var_experiment_metadata(monkeypatch):
     }
 
     with (
-        patch(
-            "langsmith.testing._internal._get_test_suite", return_value=dataset
-        ),
+        patch("langsmith.testing._internal._get_test_suite", return_value=dataset),
         patch(
             "langsmith.testing._internal._start_experiment", return_value=experiment
         ) as mock_start,
@@ -287,9 +283,7 @@ def test_env_var_invalid_json_logs_warning(monkeypatch, caplog):
     }
 
     with (
-        patch(
-            "langsmith.testing._internal._get_test_suite", return_value=dataset
-        ),
+        patch("langsmith.testing._internal._get_test_suite", return_value=dataset),
         patch(
             "langsmith.testing._internal._start_experiment", return_value=experiment
         ) as mock_start,
