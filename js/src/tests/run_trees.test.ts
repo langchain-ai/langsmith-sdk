@@ -560,6 +560,83 @@ test("memory leak test with multiple iterations", async () => {
   }
 });
 
+test("_remapForProject produces consistent trace_id and dotted_order for non-v7 UUIDs", () => {
+  // This test verifies the fix for LSE-1871: when input UUIDs are v4 (not v7),
+  // nonCryptographicUuid7Deterministic falls back to Date.now() for the timestamp.
+  // Without caching, if Date.now() advances between calls within _remapForProject,
+  // trace_id and the first segment of dotted_order can differ, causing the server
+  // to reject the run with "trace_id does not match first part of dotted_order".
+
+  // Simulate an advancing clock so each Date.now() call returns a different value,
+  // which is what triggers the bug without the cache fix.
+  let tick = 1700000000000;
+  (Date.now as jest.Mock).mockImplementation(() => tick++);
+
+  try {
+    // Use v4-style UUIDs (not v7) to trigger the Date.now() fallback path
+    const traceId = "4894d664-f133-4b57-b9e7-b377b43642c4";
+    const parentId = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const childId = "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a";
+
+    const parent = new RunTree({
+      name: "parent",
+      id: traceId,
+      project_name: "original-project",
+    });
+
+    const child1 = parent.createChild({ name: "child1", id: parentId });
+    const child2 = child1.createChild({ name: "child2", id: childId });
+
+    const remapped = (child2 as any)._remapForProject({
+      projectName: "replica-project",
+      runtimeEnv: undefined,
+      excludeChildRuns: true,
+      reroot: false,
+    });
+
+    // The critical invariant: trace_id must match the UUID in the first
+    // segment of dotted_order. Without the cache fix, these could differ
+    // by 1ms in the timestamp portion.
+    const firstSegment = remapped.dotted_order.split(".")[0];
+    const traceIdFromDottedOrder = firstSegment.slice(-36);
+    expect(remapped.trace_id).toBe(traceIdFromDottedOrder);
+  } finally {
+    (Date.now as jest.Mock).mockImplementation(() => _DATE);
+  }
+});
+
+test("_remapForProject cache ensures same input UUID maps to same output", () => {
+  // Verify that the same UUID appearing in multiple positions (id, trace_id,
+  // dotted_order) always maps to the same output UUID.
+
+  let tick = 1700000000000;
+  (Date.now as jest.Mock).mockImplementation(() => tick++);
+
+  try {
+    // A root run where id === trace_id and id appears in dotted_order
+    const rootId = "b5c6d7e8-f9a0-4b1c-8d2e-3f4a5b6c7d8e";
+    const root = new RunTree({
+      name: "root",
+      id: rootId,
+      project_name: "original-project",
+    });
+
+    const remapped = (root as any)._remapForProject({
+      projectName: "replica-project",
+      runtimeEnv: undefined,
+      excludeChildRuns: true,
+      reroot: false,
+    });
+
+    // For a root run: id, trace_id, and the UUID in dotted_order should all match
+    expect(remapped.id).toBe(remapped.trace_id);
+    const dottedOrderId = remapped.dotted_order.slice(-36);
+    expect(remapped.id).toBe(dottedOrderId);
+  } finally {
+    (Date.now as jest.Mock).mockImplementation(() => _DATE);
+  }
+});
+
 test("fromHeaders filters replica credentials", () => {
   const replicas = [
     {

@@ -717,16 +717,29 @@ export class RunTree implements BaseRun {
     // Remap IDs for the replica using nonCryptographicUuid7Deterministic
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
+    //
+    // Cache remapped UUIDs so the same source UUID always maps to the same
+    // output within a single _remapForProject call. Without this, non-v7
+    // UUIDs (which fall back to Date.now() for the timestamp) can produce
+    // different outputs if a millisecond elapses between calls, causing
+    // trace_id / dotted_order mismatches rejected by the server.
+    const remapCache = new Map<string, string>();
+    const cachedRemap = (id: string): string => {
+      let result = remapCache.get(id);
+      if (result === undefined) {
+        result = nonCryptographicUuid7Deterministic(id, projectName);
+        remapCache.set(id, result);
+      }
+      return result;
+    };
+
     const oldId = baseRun.id;
-    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
+    const newId = cachedRemap(oldId);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = nonCryptographicUuid7Deterministic(
-        baseRun.trace_id,
-        projectName
-      );
+      newTraceId = cachedRemap(baseRun.trace_id);
     } else {
       newTraceId = newId;
     }
@@ -734,10 +747,7 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = nonCryptographicUuid7Deterministic(
-        baseRun.parent_run_id,
-        projectName
-      );
+      newParentId = cachedRemap(baseRun.parent_run_id);
     }
 
     // Remap dotted_order segments
@@ -747,10 +757,7 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = nonCryptographicUuid7Deterministic(
-          segId,
-          projectName
-        );
+        const remappedId = cachedRemap(segId);
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
