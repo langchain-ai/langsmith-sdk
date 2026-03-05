@@ -3,6 +3,8 @@
 import uuid
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from langsmith.testing._internal import (
     _end_tests,
     _LangSmithTestSuite,
@@ -252,10 +254,8 @@ def test_env_var_experiment_metadata(monkeypatch):
     mock_start.assert_called_once_with(client, dataset, {"env": "ci"})
 
 
-def test_env_var_invalid_json_logs_warning(monkeypatch, caplog):
-    """Invalid JSON in LANGSMITH_EXPERIMENT_METADATA logs a warning and is ignored."""
-    import logging
-
+def test_env_var_invalid_json_raises(monkeypatch):
+    """Invalid JSON in LANGSMITH_EXPERIMENT_METADATA raises ValueError."""
     from langsmith.testing._internal import _create_test_case
 
     monkeypatch.setenv("LANGSMITH_EXPERIMENT_METADATA", "not-valid-json{")
@@ -286,16 +286,12 @@ def test_env_var_invalid_json_logs_warning(monkeypatch, caplog):
         patch("langsmith.testing._internal._get_test_suite", return_value=dataset),
         patch(
             "langsmith.testing._internal._start_experiment", return_value=experiment
-        ) as mock_start,
+        ),
         patch.object(_LangSmithTestSuite, "_instances", {}),
-        caplog.at_level(logging.WARNING, logger="langsmith.testing._internal"),
+        pytest.raises(ValueError, match="LANGSMITH_EXPERIMENT_METADATA"),
     ):
         _create_test_case(
             dummy_func,
             pytest_request=None,
             langtest_extra=langtest_extra,
         )
-
-    # experiment_metadata falls back to None when env var is invalid
-    mock_start.assert_called_once_with(client, dataset, None)
-    assert "LANGSMITH_EXPERIMENT_METADATA" in caplog.text
