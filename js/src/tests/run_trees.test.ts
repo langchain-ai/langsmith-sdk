@@ -561,7 +561,7 @@ test("memory leak test with multiple iterations", async () => {
 });
 
 test("_remapForProject produces consistent trace_id and dotted_order for non-v7 UUIDs", () => {
-  // This test verifies the fix for LSE-1871: when input UUIDs are v4 (not v7),
+  // When input UUIDs are v4 (not v7),
   // nonCryptographicUuid7Deterministic falls back to Date.now() for the timestamp.
   // Without caching, if Date.now() advances between calls within _remapForProject,
   // trace_id and the first segment of dotted_order can differ, causing the server
