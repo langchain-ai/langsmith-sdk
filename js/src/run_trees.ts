@@ -168,6 +168,22 @@ type WriteReplica = {
 };
 type Replica = ProjectReplica | WriteReplica;
 
+// Module-level cache of remapped UUIDs, keyed by "<sourceRunId>:<projectName>".
+// Shared across RunTree instances so that postRun and patchRun (which may be
+// called on different RunTree objects for the same logical run) produce
+// consistent remapped IDs for non-v7 UUID inputs.
+const _remapCache = new Map<string, string>();
+
+function _cachedRemap(sourceId: string, projectName: string): string {
+  const key = `${sourceId}:${projectName}`;
+  let result = _remapCache.get(key);
+  if (result === undefined) {
+    result = nonCryptographicUuid7Deterministic(sourceId, projectName);
+    _remapCache.set(key, result);
+  }
+  return result;
+}
+
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
   "updates",
@@ -714,24 +730,10 @@ export class RunTree implements BaseRun {
       }
     }
 
-    // Remap IDs for the replica using nonCryptographicUuid7Deterministic
-    // This ensures consistency across runs in the same replica while
-    // preserving UUID7 properties (time-ordering, monotonicity)
-    //
-    // Cache remapped UUIDs so the same source UUID always maps to the same
-    // output within a single _remapForProject call. Without this, non-v7
-    // UUIDs (which fall back to Date.now() for the timestamp) can produce
-    // different outputs if a millisecond elapses between calls, causing
-    // trace_id / dotted_order mismatches rejected by the server.
-    const remapCache = new Map<string, string>();
-    const cachedRemap = (id: string): string => {
-      let result = remapCache.get(id);
-      if (result === undefined) {
-        result = nonCryptographicUuid7Deterministic(id, projectName);
-        remapCache.set(id, result);
-      }
-      return result;
-    };
+    // Remap IDs for the replica using the module-level _cachedRemap,
+    // which ensures consistent outputs even for non-v7 UUID inputs
+    // across separate RunTree instances (see comment above _cachedRemap).
+    const cachedRemap = (id: string) => _cachedRemap(id, projectName);
 
     const oldId = baseRun.id;
     const newId = cachedRemap(oldId);

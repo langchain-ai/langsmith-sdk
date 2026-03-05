@@ -637,6 +637,62 @@ test("_remapForProject cache ensures same input UUID maps to same output", () =>
   }
 });
 
+test("_remapForProject cache works across separate RunTree instances (simulates LangChainTracer)", () => {
+  // LangChainTracer.getRunTreeWithTracingConfig creates a new RunTree instance
+  // for each onRunCreate (postRun) and onRunUpdate (patchRun) call.
+  // The module-level cache must ensure both instances remap the same source UUID
+  // to the same output, even when Date.now() advances between calls.
+
+  let tick = 1700000000000;
+  (Date.now as jest.Mock).mockImplementation(() => tick++);
+
+  try {
+    const rootId = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const projectName = "cross-instance-test";
+
+    // Simulate what LangChainTracer does: create two separate RunTree instances
+    // from the same logical run data (as getRunTreeWithTracingConfig does)
+    const runData = {
+      name: "root",
+      id: rootId,
+      project_name: "original-project",
+    };
+
+    const instance1 = new RunTree(runData);
+    // Advance time significantly to trigger different Date.now() values
+    tick += 5000;
+    const instance2 = new RunTree(runData);
+
+    const remapped1 = (instance1 as any)._remapForProject({
+      projectName,
+      runtimeEnv: undefined,
+      excludeChildRuns: true,
+      reroot: false,
+    });
+
+    // Advance time again before the second remap
+    tick += 5000;
+
+    const remapped2 = (instance2 as any)._remapForProject({
+      projectName,
+      runtimeEnv: undefined,
+      excludeChildRuns: true,
+      reroot: false,
+    });
+
+    // Both instances must produce identical remapped IDs
+    expect(remapped1.id).toBe(remapped2.id);
+    expect(remapped1.trace_id).toBe(remapped2.trace_id);
+    // dotted_order embeds the run's start_time prefix (from RunTree construction)
+    // which differs between instances. The UUID suffix must match.
+    const uuid1 = remapped1.dotted_order.slice(-36);
+    const uuid2 = remapped2.dotted_order.slice(-36);
+    expect(uuid1).toBe(uuid2);
+  } finally {
+    (Date.now as jest.Mock).mockImplementation(() => _DATE);
+  }
+});
+
 test("fromHeaders filters replica credentials", () => {
   const replicas = [
     {
