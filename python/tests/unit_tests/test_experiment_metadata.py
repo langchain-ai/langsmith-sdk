@@ -284,9 +284,7 @@ def test_env_var_invalid_json_raises(monkeypatch):
 
     with (
         patch("langsmith.testing._internal._get_test_suite", return_value=dataset),
-        patch(
-            "langsmith.testing._internal._start_experiment", return_value=experiment
-        ),
+        patch("langsmith.testing._internal._start_experiment", return_value=experiment),
         patch.object(_LangSmithTestSuite, "_instances", {}),
         pytest.raises(ValueError, match="LANGSMITH_EXPERIMENT_METADATA"),
     ):

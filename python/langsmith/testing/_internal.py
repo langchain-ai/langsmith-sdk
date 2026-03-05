@@ -938,10 +938,7 @@ def _create_test_case(
             try:
                 experiment_metadata = _orjson.loads(env_val)
             except Exception as e:
-                msg = (
-                    "LANGSMITH_EXPERIMENT_METADATA env var is not valid JSON: "
-                    f"{e}"
-                )
+                msg = f"LANGSMITH_EXPERIMENT_METADATA env var is not valid JSON: {e}"
                 raise ValueError(msg) from e
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
