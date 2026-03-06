@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import (
@@ -96,7 +97,10 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
 
 
 def _accumulate_event(
-    *, event: MessageStreamEvent, current_snapshot: Message | None
+    *,
+    event: MessageStreamEvent,
+    current_snapshot: Message | None,
+    raw_tool_inputs: dict[int, list[str]] | None = None,
 ) -> Message | None:
     try:
         from anthropic.types import ContentBlock
@@ -125,6 +129,11 @@ def _accumulate_event(
         content = current_snapshot.content[event.index]
         if content.type == "text" and event.delta.type == "text_delta":
             content.text += event.delta.text
+        elif content.type == "tool_use" and event.delta.type == "input_json_delta":
+            if raw_tool_inputs is not None:
+                raw_tool_inputs.setdefault(event.index, []).append(
+                    event.delta.partial_json
+                )
     elif event.type == "message_delta":
         current_snapshot.stop_reason = event.delta.stop_reason
         current_snapshot.stop_sequence = event.delta.stop_sequence
@@ -173,24 +182,56 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
 
 def _message_to_outputs(message: Any) -> dict:
     """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
-    rdict = message.model_dump()
-    anthropic_token_usage = rdict.pop("usage", None)
+    outputs = message.model_dump()
+    anthropic_token_usage = outputs.pop("usage", None)
     if anthropic_token_usage:
-        rdict["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
-    rdict.pop("type", None)
-    return rdict
+        outputs["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
+    outputs.pop("type", None)
+
+    content = outputs.get("content") or []
+    tool_use_blocks = [
+        b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"
+    ]
+    if tool_use_blocks:
+        outputs["tool_calls"] = [
+            {
+                "id": block.get("id", f"call_{i}"),
+                "type": "function",
+                "index": i,
+                "function": {
+                    "name": block.get("name", ""),
+                    "arguments": json.dumps(block.get("input", {})),
+                },
+            }
+            for i, block in enumerate(tool_use_blocks)
+        ]
+    return outputs
 
 
 def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
     full_message = None
+    raw_tool_inputs: dict[int, list[str]] = {}
     for chunk in all_chunks:
         try:
-            full_message = _accumulate_event(event=chunk, current_snapshot=full_message)
+            full_message = _accumulate_event(
+                event=chunk,
+                current_snapshot=full_message,
+                raw_tool_inputs=raw_tool_inputs,
+            )
         except RuntimeError as e:
             logger.debug(f"Error accumulating event in Anthropic Wrapper: {e}")
             return {"output": all_chunks}
     if full_message is None:
         return {"output": all_chunks}
+
+    for idx, parts in raw_tool_inputs.items():
+        raw = "".join(parts)
+        if raw:
+            try:
+                full_message.content[idx].input = json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+
     return _message_to_outputs(full_message)
 
 
