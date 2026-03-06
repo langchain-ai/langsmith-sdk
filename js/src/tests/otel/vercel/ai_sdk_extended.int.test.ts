@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { generateObject, streamObject, streamText } from "ai";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { Client } from "../../../client.js";
 import { traceable } from "../../../traceable.js";
 import { getLangSmithEnvironmentVariable } from "../../../utils/env.js";
@@ -27,7 +27,7 @@ describe.skip("AI SDK Streaming Integration", () => {
 
   it("works with streamText", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
-    const meta = uuidv7();
+    const meta = uuidv4();
     const client = new Client();
 
     const wrappedStreamText = traceable(
@@ -79,7 +79,7 @@ describe.skip("AI SDK Streaming Integration", () => {
 
   it("works with generateObject", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
-    const meta = uuidv7();
+    const meta = uuidv4();
     const client = new Client();
 
     const schema = z.object({
@@ -136,7 +136,7 @@ describe.skip("AI SDK Streaming Integration", () => {
 
   it("works with streamObject", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
-    const meta = uuidv7();
+    const meta = uuidv4();
     const client = new Client();
 
     const schema = z.object({

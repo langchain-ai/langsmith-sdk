@@ -1289,7 +1289,7 @@ export class Client implements LangSmithTracingClientInterface {
         headers: replayHeaders,
         body_base64: bodyBuffer.toString("base64"),
       });
-      const filename = `trace_${Date.now()}_${uuid.v7().slice(0, 8)}.json`;
+      const filename = `trace_${Date.now()}_${uuid.v4().slice(0, 8)}.json`;
       const filepath = fsUtils.path.join(directory, filename);
       if (!Client._fallbackDirsCreated.has(directory)) {
         await fsUtils.mkdir(directory);
@@ -2813,7 +2813,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<string> {
     const data = {
       run_id: runId,
-      share_token: shareId || uuid.v7(),
+      share_token: shareId || uuid.v4(),
     };
     assertUuid(runId);
     const body = JSON.stringify(data);
@@ -3915,7 +3915,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
     const example = await this.readExample(
-      response.example_ids?.[0] ?? uuid.v7()
+      response.example_ids?.[0] ?? uuid.v4()
     );
     return example;
   }
@@ -4529,7 +4529,7 @@ export class Client implements LangSmithTracingClientInterface {
       assertUuid(feedback_source.metadata["__run"].run_id);
     }
     const feedback: FeedbackCreate = {
-      id: feedbackId ?? uuid.v7(),
+      id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
       score: _formatFeedbackScore(score),
@@ -5075,7 +5075,7 @@ export class Client implements LangSmithTracingClientInterface {
     const body: Record<string, unknown> = {
       name,
       description,
-      id: queueId || uuid.v7(),
+      id: queueId || uuid.v4(),
       rubric_instructions: rubricInstructions,
       rubric_items: rubricItems,
     };
@@ -5874,7 +5874,7 @@ export class Client implements LangSmithTracingClientInterface {
     const formData = new FormData();
 
     for (const example of uploads) {
-      const exampleId = (example.id ?? uuid.v7()).toString();
+      const exampleId = (example.id ?? uuid.v4()).toString();
 
       // Prepare the main example body
       const exampleBody = {

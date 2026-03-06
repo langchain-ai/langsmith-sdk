@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { Client } from "../../../client.js";
 import { evaluate } from "../../../evaluation/index.js";
 import type { Run } from "../../../schemas.js";
@@ -26,7 +26,7 @@ afterAll(async () => {
 
 describe.skip("AI SDK Evaluate Integration with OTEL", () => {
   it("works with evaluate() using generateText target function", async () => {
-    const meta = uuidv7();
+    const meta = uuidv4();
     const client = new Client();
 
     // Create a dataset for this test

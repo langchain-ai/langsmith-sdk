@@ -13,7 +13,7 @@ import {
 } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { ExampleCreate } from "../schemas.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -233,7 +233,7 @@ test("Test share and unshare run", async () => {
   });
 
   // Create a new run
-  const runId = uuidv7();
+  const runId = uuidv4();
   await langchainClient.createRun({
     name: "Test run",
     inputs: { input: "hello world" },
@@ -306,7 +306,7 @@ test("Test create feedback with source run", async () => {
     if (await langchainClient.hasProject({ projectName })) {
       await deleteProject(langchainClient, projectName);
     }
-    const runId = uuidv7();
+    const runId = uuidv4();
     await langchainClient.createRun({
       id: runId,
       project_name: projectName,
@@ -318,7 +318,7 @@ test("Test create feedback with source run", async () => {
       end_time: new Date().getTime(),
     });
 
-    const runId2 = uuidv7();
+    const runId2 = uuidv4();
     await langchainClient.createRun({
       id: runId2,
       project_name: projectName,
@@ -374,7 +374,7 @@ test("Test create run with masked inputs/outputs", async () => {
   });
   const projectName = "__test_create_run_with_masked_inputs_outputs JS";
   await deleteProject(langchainClient, projectName);
-  const runId = uuidv7();
+  const runId = uuidv4();
   await langchainClient.createRun({
     id: runId,
     project_name: projectName,
@@ -386,7 +386,7 @@ test("Test create run with masked inputs/outputs", async () => {
     end_time: new Date().getTime(),
   });
 
-  const runId2 = uuidv7();
+  const runId2 = uuidv4();
   await langchainClient.createRun({
     id: runId2,
     project_name: projectName,
@@ -427,7 +427,7 @@ test.skip("Test create run with revision id", async () => {
     process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
     const projectName = "__test_create_run_with_revision_id JS";
     await deleteProject(langchainClient, projectName);
-    const runId = uuidv7();
+    const runId = uuidv4();
     await langchainClient.createRun({
       id: runId,
       project_name: projectName,
@@ -439,7 +439,7 @@ test.skip("Test create run with revision id", async () => {
       end_time: new Date().getTime(),
     });
 
-    const runId2 = uuidv7();
+    const runId2 = uuidv4();
     await langchainClient.createRun({
       id: runId2,
       project_name: projectName,
@@ -550,7 +550,7 @@ test("Test getRunUrl with run", async () => {
     autoBatchTracing: false,
     callerOptions: { maxRetries: 6 },
   });
-  const runId = uuidv7();
+  const runId = uuidv4();
   const run: Run = {
     id: runId,
     name: "foo",
@@ -797,7 +797,7 @@ test("Examples CRUD", async () => {
 test("list runs limit arg works", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const projectName = `test-limit-runs-${uuidv7().substring(0, 4)}`;
+  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
   const limit = 6;
 
   // delete the project just in case
@@ -811,7 +811,7 @@ test("list runs limit arg works", async () => {
     await client.createProject({ projectName });
     await Promise.all(
       createRunsFactory(projectName).map(async (payload) => {
-        if (!payload.id) payload.id = uuidv7();
+        if (!payload.id) payload.id = uuidv4();
         await client.createRun(payload);
         await waitUntilRunFound(client, payload.id);
       })
@@ -855,7 +855,7 @@ test("Test run stats", async () => {
 
 test("Test createProject raises LangSmithConflictError on duplicate name", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const projectName = `test_project_${uuidv7()}`;
+  const projectName = `test_project_${uuidv4()}`;
 
   try {
     // Create the project for the first time
@@ -881,7 +881,7 @@ test("Test createProject raises LangSmithConflictError on duplicate name", async
 
 test("Test list prompts", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const uid = uuidv7();
+  const uid = uuidv4();
   // push 3 prompts
   const promptName1 = `test_prompt_${uid}__0`;
   const promptName2 = `test_prompt_${uid}__1`;
@@ -945,7 +945,7 @@ test("Test list prompts", async () => {
 
 test("Test get prompt", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const promptName = `test_prompt_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_prompt_${uuidv4().slice(0, 8)}`;
   const promptTemplate = ChatPromptTemplate.fromMessages(
     [
       new SystemMessage({ content: "System message" }),
@@ -966,10 +966,10 @@ test("Test get prompt", async () => {
 
 test("Test prompt exists", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const nonExistentPrompt = `non_existent_${uuidv7().slice(0, 8)}`;
+  const nonExistentPrompt = `non_existent_${uuidv4().slice(0, 8)}`;
   expect(await client.promptExists(nonExistentPrompt)).toBe(false);
 
-  const existentPrompt = `existent_${uuidv7().slice(0, 8)}`;
+  const existentPrompt = `existent_${uuidv4().slice(0, 8)}`;
   await client.pushPrompt(existentPrompt, {
     object: ChatPromptTemplate.fromMessages(
       [
@@ -987,7 +987,7 @@ test("Test prompt exists", async () => {
 test("Test update prompt", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_update_prompt_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_update_prompt_${uuidv4().slice(0, 8)}`;
   await client.pushPrompt(promptName, {
     object: ChatPromptTemplate.fromMessages(
       [
@@ -1019,7 +1019,7 @@ test("Test update prompt", async () => {
 test("Test delete prompt", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_delete_prompt_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_delete_prompt_${uuidv4().slice(0, 8)}`;
   await client.pushPrompt(promptName, {
     object: ChatPromptTemplate.fromMessages(
       [
@@ -1037,7 +1037,7 @@ test("Test delete prompt", async () => {
 
 test("test listing projects by metadata", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const uid = uuidv7();
+  const uid = uuidv4();
   const projectName = `my_metadata_project_${uid}`;
 
   await client.createProject({
@@ -1062,7 +1062,7 @@ test("test listing projects by metadata", async () => {
 test("Test create commit", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_create_commit_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_create_commit_${uuidv4().slice(0, 8)}`;
   await client.pushPrompt(promptName, {
     object: ChatPromptTemplate.fromMessages(
       [
@@ -1091,7 +1091,7 @@ test("Test create commit", async () => {
 test("Test like and unlike prompt", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_like_prompt_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_like_prompt_${uuidv4().slice(0, 8)}`;
   await client.pushPrompt(promptName, {
     object: ChatPromptTemplate.fromMessages(
       [
@@ -1116,7 +1116,7 @@ test("Test like and unlike prompt", async () => {
 test("Test pull prompt commit", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_pull_commit_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
   const initialTemplate = ChatPromptTemplate.fromMessages(
     [
       new SystemMessage({ content: "System message" }),
@@ -1136,7 +1136,7 @@ test("Test pull prompt commit", async () => {
 test("Test push and pull prompt", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const promptName = `test_push_pull_${uuidv7().slice(0, 8)}`;
+  const promptName = `test_push_pull_${uuidv4().slice(0, 8)}`;
   const template = ChatPromptTemplate.fromMessages(
     [
       new SystemMessage({ content: "System message" }),
@@ -1194,7 +1194,7 @@ test("Test pull prompt include model", async () => {
     );
     const promptWithModel = promptTemplate.pipe(model);
 
-    promptName = `test_prompt_with_model_${uuidv7().slice(0, 8)}`;
+    promptName = `test_prompt_with_model_${uuidv4().slice(0, 8)}`;
     await client.pushPrompt(promptName, { object: promptWithModel });
 
     const pulledPrompt = await client._pullPrompt(promptName, {
@@ -1264,9 +1264,9 @@ test("clonePublicDataset method can clone a dataset", async () => {
 
 test("annotationqueue crud", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const queueName = `test-queue-${uuidv7().substring(0, 8)}`;
-  const projectName = `test-project-${uuidv7().substring(0, 8)}`;
-  const queueId = uuidv7();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
 
   try {
     // 1. Create an annotation queue
@@ -1292,7 +1292,7 @@ test("annotationqueue crud", async () => {
 
     // 2. Create a run in a random project
     await client.createProject({ projectName });
-    const runId = uuidv7();
+    const runId = uuidv4();
     await client.createRun({
       id: runId,
       name: "Test Run",
@@ -1357,9 +1357,9 @@ test("annotationqueue crud", async () => {
 
 test("annotationqueue crud with rubric instructions", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const queueName = `test-queue-${uuidv7().substring(0, 8)}`;
-  const projectName = `test-project-${uuidv7().substring(0, 8)}`;
-  const queueId = uuidv7();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
 
   try {
     // 1. Create an annotation queue
@@ -1401,9 +1401,9 @@ test("annotationqueue crud with rubric instructions", async () => {
 
 test("annotationqueue crud with rubric instructions 2", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const queueName = `test-queue-${uuidv7().substring(0, 8)}`;
-  const projectName = `test-project-${uuidv7().substring(0, 8)}`;
-  const queueId = uuidv7();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
 
   try {
     // 1. Create an annotation queue
@@ -1443,7 +1443,7 @@ test("annotationqueue crud with rubric instructions 2", async () => {
 
 test("feedback config crud", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const feedbackKey = `test-feedback-config-${uuidv7().substring(0, 8)}`;
+  const feedbackKey = `test-feedback-config-${uuidv4().substring(0, 8)}`;
 
   try {
     // 1. Create a continuous feedback config
@@ -1507,7 +1507,7 @@ test("feedback config crud", async () => {
 
 test("upload examples multipart", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_upload_examples_multipart${uuidv7().slice(0, 4)}`;
+  const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
 
   // Clean up existing dataset if it exists
   if (await client.hasDataset({ datasetName })) {
@@ -1526,7 +1526,7 @@ test("upload examples multipart", async () => {
     "parrot-icon.png"
   );
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example1: ExampleCreate = {
     id: exampleId,
     inputs: { text: "hello world" },
@@ -1586,7 +1586,7 @@ test("upload examples multipart", async () => {
 
 test("update examples multipart", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_update_examples_multipart${uuidv7().slice(0, 4)}`;
+  const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
 
   // Clean up existing dataset if it exists
   if (await client.hasDataset({ datasetName })) {
@@ -1605,7 +1605,7 @@ test("update examples multipart", async () => {
     "parrot-icon.png"
   );
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     metadata: { bar: "foo" },
@@ -1743,7 +1743,7 @@ test("update examples multipart", async () => {
 
 test("create example go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -1766,7 +1766,7 @@ test("create example go backend", async () => {
   );
 
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -1826,12 +1826,12 @@ test.skip("test use source run io multiple examples", async () => {
     callerOptions: { maxRetries: 6 },
   });
 
-  const datasetName = `__test_use_source_run_io${uuidv7().slice(0, 4)}`;
+  const datasetName = `__test_use_source_run_io${uuidv4().slice(0, 4)}`;
   const dataset = await client.createDataset(datasetName, {
     description: "Test dataset for creating dataset with description",
   });
 
-  const runId = uuidv7();
+  const runId = uuidv4();
   await client.createRun({
     name: "foo",
     run_type: "llm",
@@ -1844,7 +1844,7 @@ test.skip("test use source run io multiple examples", async () => {
     },
   });
 
-  const exampleIds = [uuidv7(), uuidv7(), uuidv7()];
+  const exampleIds = [uuidv4(), uuidv4(), uuidv4()];
   await client.createExamples([
     {
       id: exampleIds[0],
@@ -1925,7 +1925,7 @@ test.skip("test use source run io multiple examples", async () => {
 // Backend changes for go endpoint using runs still needs to land
 test.skip("test use source run io single example", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -1941,7 +1941,7 @@ test.skip("test use source run io single example", async () => {
     dataType: "kv",
   });
 
-  const runId = uuidv7();
+  const runId = uuidv4();
   await client.createRun({
     name: "foo",
     run_type: "llm",
@@ -1961,7 +1961,7 @@ test.skip("test use source run io single example", async () => {
   );
 
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -2012,7 +2012,7 @@ test.skip("test use source run io single example", async () => {
 
 test("update example go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -2035,7 +2035,7 @@ test("update example go backend", async () => {
   );
 
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -2085,7 +2085,7 @@ test("update example go backend", async () => {
 
 test("create examples go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -2108,7 +2108,7 @@ test("create examples go backend", async () => {
   );
 
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -2167,7 +2167,7 @@ test("create examples go backend", async () => {
 
 test("update examples go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -2190,7 +2190,7 @@ test("update examples go backend", async () => {
   );
 
   // Create test examples
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -2227,7 +2227,7 @@ test("update examples go backend", async () => {
 
 test("create example errors", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_create_examples_go_backend${uuidv7().slice(
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
     4
   )}`;
@@ -2243,7 +2243,7 @@ test("create example errors", async () => {
     dataType: "kv",
   });
 
-  const exampleId = uuidv7();
+  const exampleId = uuidv4();
   const example: ExampleCreate = {
     id: exampleId,
     dataset_id: dataset.id,
@@ -2303,11 +2303,11 @@ test("create example errors", async () => {
 
 test("fetch child runs", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const projectName = `__test_fetch_child_runs_${uuidv7().slice(0, 4)}`;
+  const projectName = `__test_fetch_child_runs_${uuidv4().slice(0, 4)}`;
   await deleteProject(client, projectName);
   try {
-    const parentRunId = uuidv7();
-    const childRunId = uuidv7();
+    const parentRunId = uuidv4();
+    const childRunId = uuidv4();
     const parent = traceable(
       async () => {
         const child = traceable(
@@ -2352,12 +2352,12 @@ test("listThreads returns threads grouped by thread_id", async () => {
     autoBatchTracing: false,
     callerOptions: { maxRetries: 6 },
   });
-  const projectName = `test-list-threads-${uuidv7().slice(0, 12)}`;
+  const projectName = `test-list-threads-${uuidv4().slice(0, 12)}`;
   if (await client.hasProject({ projectName })) {
     await deleteProject(client, projectName);
   }
   try {
-    const base = uuidv7().slice(0, 8);
+    const base = uuidv4().slice(0, 8);
     const threadA = `thread-${base}-a`;
     const threadB = `thread-${base}-b`;
     const now = new Date();
@@ -2429,12 +2429,12 @@ test("readThread yields runs for a single thread_id", async () => {
     autoBatchTracing: false,
     callerOptions: { maxRetries: 6 },
   });
-  const projectName = `test-read-thread-${uuidv7().slice(0, 12)}`;
+  const projectName = `test-read-thread-${uuidv4().slice(0, 12)}`;
   if (await client.hasProject({ projectName })) {
     await deleteProject(client, projectName);
   }
   try {
-    const threadId = `thread-${uuidv7().slice(0, 8)}`;
+    const threadId = `thread-${uuidv4().slice(0, 8)}`;
     const now = new Date();
     const meta = {
       metadata: {

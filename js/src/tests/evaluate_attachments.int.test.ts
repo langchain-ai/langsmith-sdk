@@ -1,7 +1,7 @@
 import { evaluate, TargetConfigT } from "../evaluation/_runner.js";
 import { ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { RunnableLambda } from "@langchain/core/runnables";
 
 function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -14,7 +14,7 @@ function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 test("evaluate can handle examples with attachments", async () => {
   const client = new Client();
-  const datasetName = `test_dataset_attachments_${uuidv7()}`;
+  const datasetName = `test_dataset_attachments_${uuidv4()}`;
   const dataset = await client.createDataset(datasetName);
 
   // Create examples with attachments
@@ -121,7 +121,7 @@ test("evaluate can handle examples with attachments", async () => {
 
 test("evaluate with attachments not in target function", async () => {
   const client = new Client();
-  const datasetName = `test_dataset_attachments_${uuidv7()}`;
+  const datasetName = `test_dataset_attachments_${uuidv4()}`;
   const dataset = await client.createDataset(datasetName);
 
   // Create examples with attachments
@@ -198,7 +198,7 @@ test("evaluate with attachments not in target function", async () => {
 
 test("multiple evaluators with attachments", async () => {
   const client = new Client();
-  const datasetName = `test_dataset_attachments_${uuidv7()}`;
+  const datasetName = `test_dataset_attachments_${uuidv4()}`;
   const dataset = await client.createDataset(datasetName);
 
   // Create examples with attachments
@@ -322,7 +322,7 @@ test("multiple evaluators with attachments", async () => {
 
 test("evaluate with attachments runnable target function", async () => {
   const client = new Client();
-  const datasetName = `test_dataset_attachments_${uuidv7()}`;
+  const datasetName = `test_dataset_attachments_${uuidv4()}`;
   const dataset = await client.createDataset(datasetName);
 
   // Create examples with attachments
@@ -419,7 +419,7 @@ test("evaluate with attachments runnable target function", async () => {
 
 test("attachments don't appear without includeAttachments", async () => {
   const client = new Client();
-  const datasetName = `test_dataset_attachments_${uuidv7()}`;
+  const datasetName = `test_dataset_attachments_${uuidv4()}`;
   const dataset = await client.createDataset(datasetName);
 
   // Create examples with attachments

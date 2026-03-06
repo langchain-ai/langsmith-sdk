@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { faker } from "@faker-js/faker";
 import { RunCreate } from "../schemas.js";
@@ -189,7 +189,7 @@ export function createRunsFactory(
   count = 10
 ): Array<RunCreate> {
   return Array.from({ length: count }).map((_, idx) => ({
-    id: uuidv7(),
+    id: uuidv4(),
     name: `${idx}-${faker.lorem.words()}`,
     run_type: faker.helpers.arrayElement(["tool", "chain", "llm", "retriever"]),
     inputs: {

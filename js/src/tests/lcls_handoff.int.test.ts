@@ -2,14 +2,14 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { MessageGraph } from "@langchain/langgraph";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { Run } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { toArray, waitUntil } from "./utils.js";
 
 test("Test handoff between run tree and LangChain code.", async () => {
-  const projectName = `__test_handoff ${uuidv7()}`;
+  const projectName = `__test_handoff ${uuidv4()}`;
 
   // Define a new graph
   const workflow = new MessageGraph();
@@ -52,7 +52,7 @@ test("Test handoff between run tree and LangChain code.", async () => {
     timeout_ms: 30_000,
   });
   try {
-    const runId = uuidv7();
+    const runId = uuidv4();
     const result = await app.invoke([new HumanMessage({ content: "Hello!" })], {
       callbacks: [tracer],
       runId,

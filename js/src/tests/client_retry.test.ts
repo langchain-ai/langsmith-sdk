@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { v7 } from "uuid";
+import { v4 } from "uuid";
 import { createServer, Server } from "http";
 import { Client } from "../client.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -91,7 +91,7 @@ describe("Client timeout and retry behavior", () => {
     });
 
     // This should succeed after retries
-    const result = await client.readRun(v7());
+    const result = await client.readRun(v4());
     expect(result).toHaveProperty("id");
     expect(result.name).toBe("test_run");
     expect(requestCount).toBe(3); // Should have made 3 requests (2 failures + 1 success)
@@ -115,7 +115,7 @@ describe("Client timeout and retry behavior", () => {
     });
 
     // This should succeed after retries
-    const result = await client.readRun(v7());
+    const result = await client.readRun(v4());
     expect(result).toHaveProperty("id");
     expect(result.name).toBe("test_run");
     expect(requestCount).toBe(3); // Should have made 3 requests (2 failures + 1 success)
@@ -132,7 +132,7 @@ describe("Client timeout and retry behavior", () => {
       autoBatchTracing: true,
     });
 
-    await expect(client.readRun(v7())).rejects.toThrow();
+    await expect(client.readRun(v4())).rejects.toThrow();
     expect(requestCount).toBe(1);
   });
 
@@ -154,7 +154,7 @@ describe("Client timeout and retry behavior", () => {
     });
 
     // Should fail immediately without retries on 400 status
-    await expect(client.readRun(v7())).rejects.toThrow();
+    await expect(client.readRun(v4())).rejects.toThrow();
 
     // Should only make one request (no retries)
     expect(requestCount).toBe(1);

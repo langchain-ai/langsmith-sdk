@@ -1,4 +1,4 @@
-import { v7 as uuid7, validate } from "uuid";
+import { v4 as uuid4, validate } from "uuid";
 import { Client } from "../index.js";
 import {
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,
@@ -206,17 +206,17 @@ export async function evaluateComparative(
 
   const datasetVersion = projects.at(0)?.extra?.metadata?.dataset_version;
 
-  const id = uuid7();
+  const id = uuid4();
   const experimentName = (() => {
     if (!options.experimentPrefix) {
       const names = projects
         .map((p) => p.name)
         .filter(Boolean)
         .join(" vs. ");
-      return `${names}-${uuid7().slice(0, 4)}`;
+      return `${names}-${uuid4().slice(0, 4)}`;
     }
 
-    return `${options.experimentPrefix}-${uuid7().slice(0, 4)}`;
+    return `${options.experimentPrefix}-${uuid4().slice(0, 4)}`;
   })();
 
   // TODO: add URL to the comparative experiment

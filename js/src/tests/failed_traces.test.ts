@@ -11,7 +11,7 @@ import {
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 
 async function makeTmpDir(): Promise<string> {
@@ -33,7 +33,7 @@ async function readEnvelope(dir: string, filename: string) {
 }
 
 function makeRunCreate() {
-  const id = uuidv7();
+  const id = uuidv4();
   return {
     id,
     name: "test_run",

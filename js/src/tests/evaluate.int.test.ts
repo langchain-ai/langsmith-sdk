@@ -8,7 +8,7 @@ import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 
 import * as ai from "ai";
 import { openai } from "@ai-sdk/openai";
@@ -16,8 +16,8 @@ import { wrapAISDK } from "../experimental/vercel/index.js";
 
 const { generateText } = wrapAISDK(ai);
 
-const TESTING_DATASET_NAME = `test_dataset_js_evaluate_${uuidv7()}`;
-const TESTING_DATASET_NAME2 = `my_splits_ds_${uuidv7()}`;
+const TESTING_DATASET_NAME = `test_dataset_js_evaluate_${uuidv4()}`;
+const TESTING_DATASET_NAME2 = `my_splits_ds_${uuidv4()}`;
 
 beforeAll(async () => {
   const client = new Client();

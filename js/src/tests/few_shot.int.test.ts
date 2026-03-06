@@ -1,8 +1,8 @@
 import { KVMap, ExampleSearch } from "../schemas.js";
 import { Client } from "../index.js";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 
-const TESTING_DATASET_NAME = `test_dataset_few_shot_js_${uuidv7()}`;
+const TESTING_DATASET_NAME = `test_dataset_few_shot_js_${uuidv4()}`;
 
 // TODO: This test is currently broken due to API issues (500 errors, dataset indexing conflicts)
 // Re-enable once the LangSmith API stability improves
