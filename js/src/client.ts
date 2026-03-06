@@ -4529,7 +4529,7 @@ export class Client implements LangSmithTracingClientInterface {
       assertUuid(feedback_source.metadata["__run"].run_id);
     }
     const feedback: FeedbackCreate = {
-      id: feedbackId ?? uuid.v4(),
+      id: feedbackId ?? uuid.v7(),
       run_id: runId,
       key,
       score: _formatFeedbackScore(score),
