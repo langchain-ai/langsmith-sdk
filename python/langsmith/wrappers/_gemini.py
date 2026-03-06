@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import functools
-import json
 import logging
 from collections.abc import Mapping
 from typing import (
@@ -19,6 +18,7 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._orjson import dumps as _dumps
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -329,7 +329,9 @@ def _process_generate_content_response(response: Any) -> dict:
                         "index": i,
                         "function": {
                             "name": tc["function_call"]["name"],
-                            "arguments": json.dumps(tc["function_call"]["arguments"]),
+                            "arguments": _dumps(
+                                tc["function_call"]["arguments"]
+                            ).decode(),
                         },
                     }
                     for i, tc in enumerate(tool_calls)
