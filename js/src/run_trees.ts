@@ -423,6 +423,21 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
+    // Propagate parent's thread_id so LangSmith threads work when set only on root.
+    const parentThreadId = this.extra?.metadata?.thread_id;
+    if (
+      parentThreadId != null &&
+      !Object.prototype.hasOwnProperty.call(
+        child.extra?.metadata ?? {},
+        "thread_id"
+      )
+    ) {
+      child.extra = {
+        ...child.extra,
+        metadata: { ...child.extra?.metadata, thread_id: parentThreadId },
+      };
+    }
+
     // Copy context vars over into the new run tree.
     if (_LC_CONTEXT_VARIABLES_KEY in this) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -513,15 +528,13 @@ export class RunTree implements BaseRun {
       }
     }
 
+    const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
     let child_runs: (RunCreate & { id: string })[];
-    let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
       child_runs = run.child_runs.map((child_run) =>
         this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
       );
-      parent_run_id = undefined;
     } else {
-      parent_run_id = run.parent_run?.id ?? run.parent_run_id;
       child_runs = [];
     }
     return {

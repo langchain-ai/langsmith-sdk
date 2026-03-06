@@ -532,6 +532,16 @@ class RunTree(ls_schemas.RunBase):
             start_time = max(start_time, self.start_time)
 
         serialized_ = serialized or {"name": name}
+        if extra:
+            child_extra = dict(extra)
+            child_meta = (extra.get("metadata") or {}).copy()
+        else:
+            child_extra = {}
+            child_meta = {}
+        child_extra["metadata"] = child_meta
+        parent_meta = (self.extra or {}).get("metadata") or {}
+        if "thread_id" not in child_meta and parent_meta.get("thread_id") is not None:
+            child_meta["thread_id"] = parent_meta["thread_id"]
         run = RunTree(
             name=name,
             id=_ensure_uuid(run_id),
@@ -543,7 +553,7 @@ class RunTree(ls_schemas.RunBase):
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.now(timezone.utc),
             end_time=end_time,
-            extra=extra or {},
+            extra=child_extra,
             parent_run=self,
             project_name=self.session_name,
             replicas=self.replicas,

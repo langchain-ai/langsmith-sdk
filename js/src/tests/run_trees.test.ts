@@ -560,6 +560,25 @@ test("memory leak test with multiple iterations", async () => {
   }
 });
 
+test("createChild propagates thread_id from parent when child does not set it", () => {
+  const { client } = mockClient();
+  const root = new RunTree({
+    name: "Root",
+    inputs: {},
+    client,
+    extra: { metadata: { thread_id: "thread-abc" } },
+  });
+  const child = root.createChild({ name: "Child" });
+  expect(child.extra?.metadata?.thread_id).toBe("thread-abc");
+  const childOverride = root.createChild({
+    name: "Child2",
+    extra: { metadata: { thread_id: "child-override" } },
+  });
+  expect(childOverride.extra?.metadata?.thread_id).toBe("child-override");
+  const grandchild = child.createChild({ name: "Grandchild" });
+  expect(grandchild.extra?.metadata?.thread_id).toBe("thread-abc");
+});
+
 test("fromHeaders filters replica credentials", () => {
   const replicas = [
     {
