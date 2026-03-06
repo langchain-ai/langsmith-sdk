@@ -140,9 +140,7 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                         }
                     )
                 elif "function_call" in part or "functionCall" in part:
-                    fc = _to_dict(
-                        part.get("function_call") or part.get("functionCall")
-                    )
+                    fc = _to_dict(part.get("function_call") or part.get("functionCall"))
                     if isinstance(fc, dict):
                         content_parts.append(
                             {
@@ -292,8 +290,7 @@ def _process_generate_content_response(response: Any) -> dict:
                             )
                         elif "function_call" in part or "functionCall" in part:
                             fc = _to_dict(
-                                part.get("function_call")
-                                or part.get("functionCall")
+                                part.get("function_call") or part.get("functionCall")
                             )
                             if isinstance(fc, dict):
                                 content_parts.append(
