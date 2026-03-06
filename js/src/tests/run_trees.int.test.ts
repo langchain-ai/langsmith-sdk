@@ -15,7 +15,7 @@ import {
 
 test("Test post and patch run", async () => {
   await skipIfTransientError(async () => {
-    const projectName = `__test_run_tree_js ${uuid.v4()}`;
+    const projectName = `__test_run_tree_js ${uuid.v7()}`;
     const langchainClient = new Client({ timeout_ms: 30_000 });
     const parentRunConfig: RunTreeConfig = {
       name: "parent_run",
@@ -214,7 +214,7 @@ test("Test list runs multi project", async () => {
 }, 120_000);
 
 test("Test end() write to metadata", async () => {
-  const runId = uuid.v4();
+  const runId = uuid.v7();
   const projectName = `__test_end_metadata_run_tree_js ${runId}`;
   const langchainClient = new Client({ timeout_ms: 30_000 });
   const parentRunConfig: RunTreeConfig = {
@@ -239,7 +239,7 @@ test("Test end() write to metadata", async () => {
 }, 120_000);
 
 test("dotted order matches start_time", async () => {
-  const projectName = `__test_dotted_order_matches_start_time_run_tree_js ${uuid.v4()}`;
+  const projectName = `__test_dotted_order_matches_start_time_run_tree_js ${uuid.v7()}`;
   const langchainClient = new Client({ timeout_ms: 30_000 });
   const parentRunConfig: RunTreeConfig = {
     name: "parent_run",

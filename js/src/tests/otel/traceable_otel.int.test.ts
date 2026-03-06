@@ -3,7 +3,7 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { trace } from "@opentelemetry/api";
 
 import { Client } from "../../client.js";
@@ -34,7 +34,7 @@ describe.skip("Traceable OTEL Integration Tests", () => {
   it("handles nested calls with OTEL context", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
 
     const childFunction = traceable(
@@ -82,7 +82,7 @@ describe.skip("Traceable OTEL Integration Tests", () => {
   it("traces as root even when nested within an irrelevant span", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
 
     const tracer = trace.getTracer("irrelevant-span");
@@ -138,7 +138,7 @@ describe.skip("Traceable OTEL Integration Tests", () => {
   it("works with AI SDK", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
     const wrappedText = traceable(
       async (content: string) => {

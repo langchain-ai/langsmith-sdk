@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 
 import crypto from "crypto";
-import { v4, v5 } from "uuid";
+import { v7, v5 } from "uuid";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
@@ -150,7 +150,7 @@ export function generateWrapperFromJestlikeMethods(
       } catch (e) {
         // Naming collision
         if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
-          const ent = v4().slice(0, 6);
+          const ent = v7().slice(0, 6);
           experimentName = `${experimentName}-${ent}`;
         } else {
           throw e;
@@ -330,7 +330,7 @@ export function generateWrapperFromJestlikeMethods(
       });
       return method(suiteName, () => {
         const startTime = new Date();
-        const suiteUuid = v4();
+        const suiteUuid = v7();
         const environment =
           experimentConfig?.metadata?.ENVIRONMENT ??
           getEnvironmentVariable("ENVIRONMENT");
@@ -500,7 +500,7 @@ export function generateWrapperFromJestlikeMethods(
       }
       const totalRuns = config?.repetitions ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
-        const testUuid = v4().replace(/-/g, "").slice(0, 13);
+        const testUuid = v7().replace(/-/g, "").slice(0, 13);
         // Jest will not group tests under the same "describe" group if you await the test and
         // total runs is greater than 1.
         const resultsPath = path.join(

@@ -6,7 +6,7 @@ import z from "zod";
 import { wrapAISDK } from "../../../experimental/vercel/index.js";
 import { generateLongContext } from "../../utils.js";
 import { traceable } from "../../../traceable.js";
-import { v4 } from "uuid";
+import { v7 } from "uuid";
 import { Client } from "../../../index.js";
 
 const { tool, stepCountIs } = ai;
@@ -148,7 +148,7 @@ describe("anthropic", () => {
 
   // Skipped due to high token usage
   it.skip("anthropic cache read and write tokens", async () => {
-    const meta = v4();
+    const meta = v7();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
 
@@ -229,7 +229,7 @@ describe("anthropic", () => {
 
   // Skipped due to high token usage
   it.skip("anthropic cache read and write 1h cached tokens", async () => {
-    const meta = v4();
+    const meta = v7();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
 

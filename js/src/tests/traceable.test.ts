@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest, expect, test, describe, it } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import {
@@ -848,7 +848,7 @@ describe("async generators", () => {
 
   test("parent run ends immediately on error without waiting for child runs", async () => {
     const { client, callSpy } = mockClient();
-    const parentId = uuidv4();
+    const parentId = uuidv7();
 
     // Create a child that never completes (simulating long-running streaming)
     const neverEndingChild = traceable(
@@ -2306,7 +2306,7 @@ test("serializes well-known types in inputs and outputs", async () => {
 // Unit tests converted from traceable.int.test.ts
 test("traceable wrapper with error thrown", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   const addValueTraceable = traceable(
     (_: string, __: number) => {
@@ -2337,7 +2337,7 @@ test("traceable wrapper with error thrown", async () => {
 
 test("traceable wrapper with async error thrown", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   const addValueTraceable = traceable(
     async (_: string, __: number) => {
@@ -2369,7 +2369,7 @@ test("traceable wrapper with async error thrown", async () => {
 
 test("traceable wrapper with nested calls", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   const addValueTraceable = traceable(
     (a: string, b: number) => {
@@ -2392,7 +2392,7 @@ test("traceable wrapper with nested calls", async () => {
   expect(tree.data["add_value:0"].outputs).toEqual({ outputs: "testing9" });
 
   // Test nested calls
-  const runId2 = uuidv4();
+  const runId2 = uuidv7();
   const nestedAddValueTraceable = traceable(
     (a: string, b: number) => {
       return a + b;
@@ -2428,7 +2428,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
   // Called outside a traceable function - should throw
   expect(() => getCurrentRunTree()).toThrowError();
 
-  const runId = uuidv4();
+  const runId = uuidv7();
   const nestedAddValueTraceable = traceable(
     (a: string, b: number) => {
       const runTree = getCurrentRunTree();
@@ -2464,7 +2464,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
 
 test("traceable wrapper with aggregator function", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
   let tracedOutput = "";
 
   // Mock a streaming function that yields chunks
@@ -2506,7 +2506,7 @@ test("traceable wrapper with aggregator function", async () => {
 
 test("traceable async generator success", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -2541,7 +2541,7 @@ test("traceable async generator success", async () => {
 
 test("traceable async generator throws error", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -2582,7 +2582,7 @@ test("traceable async generator throws error", async () => {
 
 test("traceable async generator break finishes run", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -2640,7 +2640,7 @@ test("traceable with function overloads", async () => {
 
 test("traceable returning async generator", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function giveMeGiveMeNumbers() {
     async function* giveMeNumbers() {
@@ -2675,7 +2675,7 @@ test("traceable returning async generator", async () => {
 
 test("traceable promise for async generator with error", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function giveMeGiveMeNumbers() {
     async function* giveMeNumbers() {
@@ -2719,7 +2719,7 @@ test("traceable promise for async generator with error", async () => {
 
 test("traceable promise for async generator break", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   async function giveMeGiveMeNumbers() {
     async function* giveMeNumbers() {
@@ -2755,7 +2755,7 @@ test("traceable promise for async generator break", async () => {
 
 test("passing null doesn't throw an error", async () => {
   const { client, callSpy } = mockClient();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   const func = traceable(async (input: null) => input, {
     name: "i_traceable",

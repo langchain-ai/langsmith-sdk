@@ -2,7 +2,7 @@
 /* eslint-disable no-process-env */
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 
 import { Client } from "../../../client.js";
 import { traceable } from "../../../traceable.js";
@@ -31,7 +31,7 @@ describe.skip("Anthropic Cache OTEL Integration Tests", () => {
   it.skip("anthropic cache read and write tokens with OTEL exporter", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
     const aiSDKResponses: any[] = [];
 
@@ -119,7 +119,7 @@ describe.skip("Anthropic Cache OTEL Integration Tests", () => {
   it.skip("anthropic cache read and write 1h cached tokens with OTEL exporter", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
     const aiSDKResponses: any[] = [];
 

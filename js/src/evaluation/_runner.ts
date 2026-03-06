@@ -21,7 +21,7 @@ import {
   runEvaluator,
 } from "./evaluator.js";
 import { LangSmithConflictError } from "../utils/error.js";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   evaluateComparative,
   ComparisonEvaluationResults,
@@ -400,7 +400,7 @@ export class _ExperimentManager {
     if (!args.experiment) {
       this._experimentName = randomName();
     } else if (typeof args.experiment === "string") {
-      this._experimentName = `${args.experiment}-${uuidv4().slice(0, 8)}`;
+      this._experimentName = `${args.experiment}-${uuidv7().slice(0, 8)}`;
     } else {
       if (!args.experiment.name) {
         throw new Error("Experiment must have a name");
@@ -480,7 +480,7 @@ export class _ExperimentManager {
       } catch (e) {
         // Naming collision
         if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
-          const ent = uuidv4().slice(0, 6);
+          const ent = uuidv7().slice(0, 6);
           this._experimentName = `${originalExperimentName}-${ent}`;
         } else {
           throw e;

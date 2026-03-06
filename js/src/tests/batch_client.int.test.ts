@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,10 +21,10 @@ test("Test persist update run", async () => {
       timeout_ms: 30_000,
     });
     const projectName =
-      "__test_persist_update_run_batch_1" + uuidv4().substring(0, 4);
+      "__test_persist_update_run_batch_1" + uuidv7().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
-    const runId = uuidv4();
+    const runId = uuidv7();
     const { dottedOrder } = convertToDottedOrderFormat(
       new Date().getTime(),
       runId
@@ -66,11 +66,11 @@ test.skip("Test persist update runs above the batch size limit", async () => {
     });
     const projectName =
       "__test_persist_update_run_batch_above_bs_limit" +
-      uuidv4().substring(0, 4);
+      uuidv7().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
     const createRun = async () => {
-      const runId = uuidv4();
+      const runId = uuidv7();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime(),
         runId
@@ -114,10 +114,10 @@ test("Test persist update run with delay", async () => {
       timeout_ms: 30_000,
     });
     const projectName =
-      "__test_persist_update_run_batch_with_delay" + uuidv4().substring(0, 4);
+      "__test_persist_update_run_batch_with_delay" + uuidv7().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
-    const runId = uuidv4();
+    const runId = uuidv7();
     const { dottedOrder } = convertToDottedOrderFormat(
       new Date().getTime() / 1000,
       runId
@@ -157,9 +157,9 @@ test("Test persist update run tree", async () => {
       timeout_ms: 30_000,
     });
     const projectName =
-      "__test_persist_update_run_tree" + uuidv4().substring(0, 4);
+      "__test_persist_update_run_tree" + uuidv7().substring(0, 4);
     await deleteProject(langchainClient, projectName);
-    const runId = uuidv4();
+    const runId = uuidv7();
     const runTree = new RunTree({
       name: "Test Run Tree",
       id: runId,
@@ -191,10 +191,10 @@ test("Test persist run with attachment", async () => {
       callerOptions: { maxRetries: 6 },
       timeout_ms: 30_000,
     });
-    const projectName = "__test_create_attachment" + uuidv4().substring(0, 4);
+    const projectName = "__test_create_attachment" + uuidv7().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
-    const runId = uuidv4();
+    const runId = uuidv7();
     const { dottedOrder } = convertToDottedOrderFormat(
       new Date().getTime() / 1000,
       runId
@@ -242,7 +242,7 @@ test.skip("very large runs", async () => {
     timeout_ms: 120_000,
   });
 
-  const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
+  const projectName = "__test_large_runs" + uuidv7().substring(0, 4);
   await deleteProject(langchainClient, projectName);
 
   console.time("largeRunTimer");

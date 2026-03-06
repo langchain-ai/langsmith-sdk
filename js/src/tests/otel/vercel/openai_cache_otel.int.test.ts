@@ -2,7 +2,7 @@
 /* eslint-disable no-process-env */
 import { generateText, streamText } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 
 import { Client } from "../../../client.js";
 import { traceable } from "../../../traceable.js";
@@ -31,7 +31,7 @@ describe("OpenAI Cache OTEL Integration Tests", () => {
   it.skip("openai cache with large prompt for automatic caching using OTEL", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
     const aiSDKResponses: any[] = [];
 
@@ -107,7 +107,7 @@ describe("OpenAI Cache OTEL Integration Tests", () => {
   it.skip("openai cache with streamText using OTEL", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
-    const meta = uuidv4();
+    const meta = uuidv7();
     const client = new Client();
     const aiSDKResponses: any[] = [];
 

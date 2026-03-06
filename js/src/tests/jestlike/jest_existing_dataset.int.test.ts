@@ -1,13 +1,13 @@
 import { describe } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 
 import { Client } from "../../client.js";
 import * as ls from "../../jest/index.js";
 
 describe("Existing dataset", () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = `__test_existing_dataset${uuidv4().slice(0, 4)}`;
-  const exampleIds = [uuidv4(), uuidv4()];
+  const datasetName = `__test_existing_dataset${uuidv7().slice(0, 4)}`;
+  const exampleIds = [uuidv7(), uuidv7()];
   const exampleParams = [
     {
       id: exampleIds[0],

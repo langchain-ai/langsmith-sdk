@@ -2,7 +2,7 @@
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
-import { v4 } from "uuid";
+import { v7 } from "uuid";
 import * as fs from "fs/promises";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -319,7 +319,7 @@ test.skip("wrap streamObject", async () => {
 });
 
 test("can set run id", async () => {
-  const runId = v4();
+  const runId = v7();
   const client = new Client();
   const { generateText } = wrapAISDK(ai, { id: runId });
   await generateText({
@@ -526,7 +526,7 @@ test("streamText with experimental_output should display as structured object in
 });
 
 it.skip("openai cache with large prompt for automatic caching", async () => {
-  const meta = v4();
+  const meta = v7();
   const client = new Client();
   const aiSDKResponses: unknown[] = [];
 
@@ -596,7 +596,7 @@ it.skip("openai cache with large prompt for automatic caching", async () => {
 });
 
 it.skip("openai cache with streamText", async () => {
-  const meta = v4();
+  const meta = v7();
   const client = new Client();
   const aiSDKResponses: unknown[] = [];
 

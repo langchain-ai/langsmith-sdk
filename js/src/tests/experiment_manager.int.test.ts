@@ -1,8 +1,8 @@
 import { _ExperimentManager } from "../evaluation/_runner.js";
 import { Client } from "../index.js";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 
-const TESTING_DATASET_NAME = `test_experiment_manager_${uuidv4()}`;
+const TESTING_DATASET_NAME = `test_experiment_manager_${uuidv7()}`;
 
 beforeAll(async () => {
   const client = new Client();
