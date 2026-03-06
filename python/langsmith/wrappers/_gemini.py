@@ -66,7 +66,7 @@ def _to_dict_safe(obj: Any) -> dict:
 
 
 def _part_to_dict(obj: Any) -> dict | str:
-    """Normalize Part-like object to dict or string (handles types.Part.from_text and plain dicts)."""
+    """Normalize Part-like object to dict or string (Part.from_text and plain dicts)."""
     if isinstance(obj, str):
         return obj
     if isinstance(obj, dict):
@@ -94,14 +94,16 @@ def _part_to_dict(obj: Any) -> dict | str:
         obj, "functionCall", None
     ) is not None:
         fc = getattr(obj, "function_call", None) or getattr(obj, "functionCall")
-        return {"function_call": _to_dict_safe(fc) or (fc if isinstance(fc, dict) else {})}
+        fc_dict = _to_dict_safe(fc) or (fc if isinstance(fc, dict) else {})
+        return {"function_call": fc_dict}
     if getattr(obj, "function_response", None) is not None or getattr(
         obj, "functionResponse", None
     ) is not None:
         fr = getattr(obj, "function_response", None) or getattr(
             obj, "functionResponse"
         )
-        return {"functionResponse": _to_dict_safe(fr) or (fr if isinstance(fr, dict) else {})}
+        fr_dict = _to_dict_safe(fr) or (fr if isinstance(fr, dict) else {})
+        return {"functionResponse": fr_dict}
     return {"text": str(obj)}
 
 
@@ -147,8 +149,8 @@ def _process_gemini_inputs(inputs: dict) -> dict:
             raw_parts = content.get("parts", [])
 
             # Extract text and other parts (normalize each part to dict/str)
-            text_parts = []
-            content_parts = []
+            text_parts: list[str] = []
+            content_parts: list[dict[str, Any]] = []
 
             for part in raw_parts:
                 part = _part_to_dict(part)
