@@ -538,10 +538,8 @@ class RunTree(ls_schemas.RunBase):
         else:
             child_extra = {}
             child_meta = {}
-        child_extra["metadata"] = child_meta
         parent_meta = (self.extra or {}).get("metadata") or {}
-        if "thread_id" not in child_meta and parent_meta.get("thread_id") is not None:
-            child_meta["thread_id"] = parent_meta["thread_id"]
+        child_extra["metadata"] = {**parent_meta, **child_meta}
         run = RunTree(
             name=name,
             id=_ensure_uuid(run_id),
