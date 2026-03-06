@@ -423,18 +423,13 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
-    // Propagate parent's thread_id so LangSmith threads work when set only on root.
-    const parentThreadId = this.extra?.metadata?.thread_id;
-    if (
-      parentThreadId != null &&
-      !Object.prototype.hasOwnProperty.call(
-        child.extra?.metadata ?? {},
-        "thread_id"
-      )
-    ) {
+    // Propagate all parent metadata; child metadata takes precedence.
+    const parentMeta = this.extra?.metadata ?? {};
+    const childMeta = child.extra?.metadata ?? {};
+    if (Object.keys(parentMeta).length > 0) {
       child.extra = {
         ...child.extra,
-        metadata: { ...child.extra?.metadata, thread_id: parentThreadId },
+        metadata: { ...parentMeta, ...childMeta },
       };
     }
 
