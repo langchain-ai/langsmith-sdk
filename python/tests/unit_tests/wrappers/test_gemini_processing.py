@@ -328,7 +328,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["type"] == "function"
         assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
+        assert tool_call["function"]["arguments"] == '{"location":"Boston"}'
         assert result["role"] == "assistant"
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
@@ -371,7 +371,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["type"] == "function"
         assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
+        assert tool_call["function"]["arguments"] == '{"location":"Boston"}'
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
