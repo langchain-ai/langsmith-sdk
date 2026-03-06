@@ -94,14 +94,16 @@ def _part_to_dict(obj: Any) -> dict | str:
         getattr(obj, "function_call", None) is not None
         or getattr(obj, "functionCall", None) is not None
     ):
-        fc = getattr(obj, "function_call", None) or getattr(obj, "functionCall")
+        fc = getattr(obj, "function_call", None) or getattr(obj, "functionCall", None)
         fc_dict = _to_dict_safe(fc) or (fc if isinstance(fc, dict) else {})
         return {"function_call": fc_dict}
     if (
         getattr(obj, "function_response", None) is not None
         or getattr(obj, "functionResponse", None) is not None
     ):
-        fr = getattr(obj, "function_response", None) or getattr(obj, "functionResponse")
+        fr = getattr(obj, "function_response", None) or getattr(
+            obj, "functionResponse", None
+        )
         fr_dict = _to_dict_safe(fr) or (fr if isinstance(fr, dict) else {})
         return {"functionResponse": fr_dict}
     return {"text": str(obj)}
