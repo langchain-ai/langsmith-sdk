@@ -218,6 +218,7 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
+_MIN_VERSION_DATASET_EXAMPLES_ENDPOINT = "0.13.18"
 EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
@@ -6477,18 +6478,23 @@ class Client:
         }
         if metadata is not None:
             params["metadata"] = _dumps_json(metadata)
-        if dataset_id is not None:
-            params["dataset"] = dataset_id
-        elif dataset_name is not None:
+        if dataset_id is None and dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-            params["dataset"] = dataset_id
-        else:
-            pass
         if include_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
-        for i, example in enumerate(
-            self._get_paginated_list("/examples", params=params)
-        ):
+        use_new_endpoint = dataset_id is not None and (
+            self.info.version
+            and ls_utils.is_version_greater_or_equal(
+                self.info.version, _MIN_VERSION_DATASET_EXAMPLES_ENDPOINT
+            )
+        )
+        if use_new_endpoint:
+            path = f"/v1/platform/datasets/{dataset_id}/examples"
+        else:
+            path = "/examples"
+            if dataset_id is not None:
+                params["dataset"] = dataset_id
+        for i, example in enumerate(self._get_paginated_list(path, params=params)):
             attachments = _convert_stored_attachments_to_attachments_dict(
                 example, attachments_key="attachment_urls", api_url=self.api_url
             )
