@@ -90,18 +90,18 @@ def _part_to_dict(obj: Any) -> dict | str:
                 "data": getattr(inline, "data", b""),
             }
         return {"inline_data": inline_dict}
-    if getattr(obj, "function_call", None) is not None or getattr(
-        obj, "functionCall", None
-    ) is not None:
+    if (
+        getattr(obj, "function_call", None) is not None
+        or getattr(obj, "functionCall", None) is not None
+    ):
         fc = getattr(obj, "function_call", None) or getattr(obj, "functionCall")
         fc_dict = _to_dict_safe(fc) or (fc if isinstance(fc, dict) else {})
         return {"function_call": fc_dict}
-    if getattr(obj, "function_response", None) is not None or getattr(
-        obj, "functionResponse", None
-    ) is not None:
-        fr = getattr(obj, "function_response", None) or getattr(
-            obj, "functionResponse"
-        )
+    if (
+        getattr(obj, "function_response", None) is not None
+        or getattr(obj, "functionResponse", None) is not None
+    ):
+        fr = getattr(obj, "function_response", None) or getattr(obj, "functionResponse")
         fr_dict = _to_dict_safe(fr) or (fr if isinstance(fr, dict) else {})
         return {"functionResponse": fr_dict}
     return {"text": str(obj)}
@@ -198,9 +198,7 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                             "type": "function_response",
                             "function_response": {
                                 "name": function_response.get("name"),
-                                "response": function_response.get(
-                                    "response", {}
-                                ),
+                                "response": function_response.get("response", {}),
                             },
                         }
                     )
@@ -231,9 +229,7 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                         )
 
             # If only text parts, use simple string format
-            if content_parts and all(
-                p.get("type") == "text" for p in content_parts
-            ):
+            if content_parts and all(p.get("type") == "text" for p in content_parts):
                 message_content: Union[str, list[dict[str, Any]]] = "\n".join(
                     text_parts
                 )
