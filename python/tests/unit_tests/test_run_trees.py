@@ -450,6 +450,32 @@ def test_create_child_enforces_timestamp_order():
     assert child3.start_time >= parent.start_time
 
 
+def test_create_child_propagates_thread_metadata():
+    """Child runs inherit thread_id from parent.
+
+    Ensures threads features work when user sets thread_id only on the root.
+    """
+    mock_client = MagicMock(spec=Client)
+    root = RunTree(
+        name="Root",
+        inputs={},
+        client=mock_client,
+        extra={"metadata": {"thread_id": "thread-abc"}},
+    )
+    # Child with no extra: inherits thread_id
+    child = root.create_child(name="Child")
+    assert child.extra["metadata"]["thread_id"] == "thread-abc"
+    # Child with own thread_id: keeps it
+    child2 = root.create_child(
+        name="Child2",
+        extra={"metadata": {"thread_id": "child-override"}},
+    )
+    assert child2.extra["metadata"]["thread_id"] == "child-override"
+    # Grandchild inherits from child (which got thread_id from root)
+    grandchild = child.create_child(name="Grandchild")
+    assert grandchild.extra["metadata"]["thread_id"] == "thread-abc"
+
+
 def test_trace_start_time():
     """Test that trace_start_time returns the root run's
     start time for all nested runs."""
