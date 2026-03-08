@@ -882,16 +882,13 @@ export class SandboxClient {
 
       if (statusResult.status === "failed") {
         throw new LangSmithResourceCreationError(
-          statusResult.status_message ??
-            `Sandbox '${name}' creation failed`,
+          statusResult.status_message ?? `Sandbox '${name}' creation failed`,
           "sandbox"
         );
       }
 
       // Wait before polling again
-      await new Promise((resolve) =>
-        setTimeout(resolve, pollInterval * 1000)
-      );
+      await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
     }
 
     throw new LangSmithResourceTimeoutError(

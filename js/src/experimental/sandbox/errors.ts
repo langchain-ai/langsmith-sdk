@@ -195,11 +195,7 @@ export class LangSmithResourceCreationError extends LangSmithSandboxError {
    */
   errorType?: string;
 
-  constructor(
-    message: string,
-    resourceType?: string,
-    errorType?: string
-  ) {
+  constructor(message: string, resourceType?: string, errorType?: string) {
     super(message);
     this.name = "LangSmithResourceCreationError";
     this.resourceType = resourceType;

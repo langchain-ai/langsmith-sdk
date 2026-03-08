@@ -392,8 +392,9 @@ describe("SandboxClient - waitForSandbox", () => {
 
   it("should poll until ready and return sandbox", async () => {
     let callCount = 0;
-    const mockFetch = jest.fn<typeof fetch>().mockImplementation(
-      async (url: any) => {
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      .mockImplementation(async (url: any) => {
         const urlStr = typeof url === "string" ? url : url.toString();
         if (urlStr.includes("/status")) {
           callCount++;
@@ -414,8 +415,7 @@ describe("SandboxClient - waitForSandbox", () => {
             status: "ready",
           }),
         } as Response;
-      }
-    );
+      });
 
     const client = createClientWithMock(mockFetch);
     const sandbox = await client.waitForSandbox("test-sb", {
