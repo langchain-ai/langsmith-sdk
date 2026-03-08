@@ -87,8 +87,7 @@ function getDefaultApiKey(): string | undefined {
  */
 export class SandboxClient {
   private _baseUrl: string;
-  /** @internal */
-  _apiKey?: string;
+  private _apiKey?: string;
   private _fetchImpl: typeof fetch;
   private _caller: AsyncCaller;
 
@@ -124,6 +123,14 @@ export class SandboxClient {
         headers,
       })
     );
+  }
+
+  /**
+   * Get the API key for WebSocket authentication.
+   * @internal
+   */
+  getApiKey(): string | undefined {
+    return this._apiKey;
   }
 
   // =========================================================================

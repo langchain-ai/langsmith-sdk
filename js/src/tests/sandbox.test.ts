@@ -30,6 +30,15 @@ const createMockFetch = (response: any) =>
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(response);
 
+// Helper to create a mock SandboxClient with the required methods
+const createMockClient = (overrides: Record<string, any> = {}) =>
+  ({
+    _fetch: createMockFetch({}),
+    getApiKey: () => "test-key",
+    deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ...overrides,
+  } as unknown as SandboxClient);
+
 describe("SandboxClient", () => {
   describe("constructor", () => {
     it("should trim trailing slash from endpoint", () => {
@@ -53,14 +62,6 @@ describe("SandboxClient", () => {
 describe("Sandbox", () => {
   describe("run", () => {
     it("should throw DataplaneNotConfiguredError when dataplane_url is missing", async () => {
-      // Create a minimal mock client
-      const mockClient = {
-        _fetch: createMockFetch({}),
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
-
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
@@ -68,7 +69,7 @@ describe("Sandbox", () => {
           template_name: "python-sandbox",
           // No dataplane_url
         },
-        mockClient,
+        createMockClient(),
         false
       );
 
@@ -87,12 +88,7 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -123,12 +119,7 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -160,12 +151,7 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -191,12 +177,7 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -224,12 +205,7 @@ describe("Sandbox", () => {
         arrayBuffer: async () => new TextEncoder().encode(testContent).buffer,
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -255,10 +231,9 @@ describe("Sandbox", () => {
         .fn<(name: string) => Promise<void>>()
         .mockResolvedValue(undefined);
 
-      const mockClient = {
-        _fetch: createMockFetch({}),
+      const mockClient = createMockClient({
         deleteSandbox: mockDeleteSandbox,
-      } as unknown as SandboxClient;
+      });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -470,13 +445,6 @@ describe("SandboxClient - waitForSandbox", () => {
 
 describe("Sandbox - status fields and not-ready guard", () => {
   it("should populate status and status_message from SandboxData", () => {
-    const mockClient = {
-      _fetch: createMockFetch({}),
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -484,7 +452,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         status: "provisioning",
         status_message: "Waiting for resources",
       },
-      mockClient
+      createMockClient()
     );
 
     expect(sandbox.status).toBe("provisioning");
@@ -492,13 +460,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
   });
 
   it("should throw LangSmithSandboxNotReadyError when status is not ready", async () => {
-    const mockClient = {
-      _fetch: createMockFetch({}),
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -506,7 +467,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "provisioning",
       },
-      mockClient
+      createMockClient()
     );
 
     await expect(sandbox.run("echo hello")).rejects.toThrow(
@@ -524,13 +485,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
       }),
     });
 
-    const mockClient = {
-      _fetch: mockFetch,
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -538,7 +492,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "ready",
       },
-      mockClient
+      createMockClient({ _fetch: mockFetch })
     );
 
     const result = await sandbox.run("echo hello");
@@ -749,7 +703,7 @@ describe("CommandHandle", () => {
 
   function createMockSandbox(): Sandbox {
     return {
-      _client: { _apiKey: "test-key" },
+      _client: { getApiKey: () => "test-key" },
       dataplane_url: "https://dp.example.com",
       name: "test-sandbox",
       reconnect: jest.fn<any>(),

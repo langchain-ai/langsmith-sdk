@@ -49,8 +49,7 @@ export class Sandbox {
   /** Timestamp when the sandbox was last updated. */
   readonly updated_at?: string;
 
-  /** @internal */
-  _client: SandboxClient;
+  private _client: SandboxClient;
 
   /** @internal */
   constructor(data: SandboxData, client: SandboxClient) {
@@ -189,7 +188,7 @@ export class Sandbox {
 
     const [stream, control] = await runWsStream(
       dataplaneUrl,
-      this._client._apiKey,
+      this._client.getApiKey(),
       command,
       { timeout, env, cwd, shell, onStdout, onStderr }
     );
@@ -265,7 +264,7 @@ export class Sandbox {
 
     const [stream, control] = await reconnectWsStream(
       dataplaneUrl,
-      this._client._apiKey,
+      this._client.getApiKey(),
       commandId,
       { stdoutOffset, stderrOffset }
     );
