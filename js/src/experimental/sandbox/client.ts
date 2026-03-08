@@ -11,6 +11,7 @@ import type {
   CreateTemplateOptions,
   CreateVolumeOptions,
   Pool,
+  ResourceStatus,
   SandboxClientConfig,
   SandboxData,
   SandboxTemplate,
@@ -18,11 +19,14 @@ import type {
   UpdateTemplateOptions,
   UpdateVolumeOptions,
   Volume,
+  WaitForSandboxOptions,
 } from "./types.js";
 import { Sandbox } from "./sandbox.js";
 import {
+  LangSmithResourceCreationError,
   LangSmithResourceNameConflictError,
   LangSmithResourceNotFoundError,
+  LangSmithResourceTimeoutError,
   LangSmithSandboxAPIError,
 } from "./errors.js";
 import {
@@ -667,23 +671,27 @@ export class SandboxClient {
     templateName: string,
     options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { name, timeout = 30 } = options;
+    const { name, timeout = 30, waitForReady = true } = options;
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
       template_name: templateName,
-      wait_for_ready: true,
-      timeout,
+      wait_for_ready: waitForReady,
     };
+    if (waitForReady) {
+      payload.timeout = timeout;
+    }
     if (name) {
       payload.name = name;
     }
+
+    const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
 
     const response = await this._fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout((timeout + 30) * 1000),
+      signal: AbortSignal.timeout(httpTimeout),
     });
 
     if (!response.ok) {
@@ -806,5 +814,90 @@ export class SandboxClient {
       }
       await handleClientHttpError(response);
     }
+  }
+
+  /**
+   * Get the provisioning status of a sandbox.
+   *
+   * This is a lightweight endpoint designed for polling during async creation.
+   * Use this instead of getSandbox() when you only need the status.
+   *
+   * @param name - Sandbox name.
+   * @returns ResourceStatus with status and optional status_message.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
+   */
+  async getSandboxStatus(name: string): Promise<ResourceStatus> {
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
+
+    const response = await this._fetch(url);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return (await response.json()) as ResourceStatus;
+  }
+
+  /**
+   * Wait for a sandbox to become ready.
+   *
+   * Polls getSandboxStatus() until the sandbox reaches "ready" or "failed" status,
+   * then returns the full Sandbox object.
+   *
+   * @param name - Sandbox name.
+   * @param options - Polling options (timeout, pollInterval).
+   * @returns Ready Sandbox.
+   * @throws LangSmithResourceCreationError if sandbox status becomes "failed".
+   * @throws LangSmithResourceTimeoutError if timeout expires while still provisioning.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
+   *
+   * @example
+   * ```typescript
+   * const sandbox = await client.createSandbox("python-sandbox", { waitForReady: false });
+   * // ... do other work ...
+   * const readySandbox = await client.waitForSandbox(sandbox.name);
+   * ```
+   */
+  async waitForSandbox(
+    name: string,
+    options: WaitForSandboxOptions = {}
+  ): Promise<Sandbox> {
+    const { timeout = 120, pollInterval = 1.0 } = options;
+    const deadline = Date.now() + timeout * 1000;
+    let lastStatus = "provisioning";
+
+    while (Date.now() < deadline) {
+      const statusResult = await this.getSandboxStatus(name);
+      lastStatus = statusResult.status;
+
+      if (statusResult.status === "ready") {
+        return this.getSandbox(name);
+      }
+
+      if (statusResult.status === "failed") {
+        throw new LangSmithResourceCreationError(
+          statusResult.status_message ??
+            `Sandbox '${name}' creation failed`,
+          "sandbox"
+        );
+      }
+
+      // Wait before polling again
+      await new Promise((resolve) =>
+        setTimeout(resolve, pollInterval * 1000)
+      );
+    }
+
+    throw new LangSmithResourceTimeoutError(
+      `Sandbox '${name}' did not become ready within ${timeout}s`,
+      "sandbox",
+      lastStatus
+    );
   }
 }

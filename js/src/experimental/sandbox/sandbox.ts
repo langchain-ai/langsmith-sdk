@@ -4,7 +4,10 @@
 
 import type { SandboxClient } from "./client.js";
 import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
-import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
+import {
+  LangSmithDataplaneNotConfiguredError,
+  LangSmithSandboxNotReadyError,
+} from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 
 /**
@@ -32,6 +35,10 @@ export class Sandbox {
   readonly template_name: string;
   /** URL for data plane operations (file I/O, command execution). */
   readonly dataplane_url?: string;
+  /** Provisioning status ("provisioning", "ready", "failed"). */
+  readonly status?: string;
+  /** Human-readable status message (e.g., error details when failed). */
+  readonly status_message?: string;
   /** Unique identifier (UUID). Remains constant even if name changes. */
   readonly id?: string;
   /** Timestamp when the sandbox was created. */
@@ -46,6 +53,8 @@ export class Sandbox {
     this.name = data.name;
     this.template_name = data.template_name;
     this.dataplane_url = data.dataplane_url;
+    this.status = data.status;
+    this.status_message = data.status_message;
     this.id = data.id;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
@@ -54,9 +63,16 @@ export class Sandbox {
 
   /**
    * Validate and return the dataplane URL.
+   * @throws LangSmithSandboxNotReadyError if sandbox status is not "ready".
    * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    */
   private requireDataplaneUrl(): string {
+    if (this.status && this.status !== "ready") {
+      throw new LangSmithSandboxNotReadyError(
+        `Sandbox '${this.name}' is not ready (status: ${this.status}). ` +
+          "Use waitForSandbox() to wait for the sandbox to become ready."
+      );
+    }
     if (!this.dataplane_url) {
       throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +

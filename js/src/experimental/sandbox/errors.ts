@@ -179,8 +179,40 @@ export class LangSmithQuotaExceededError extends LangSmithSandboxError {
 }
 
 // =============================================================================
-// Sandbox Creation Errors
+// Resource Creation Errors
 // =============================================================================
+
+/**
+ * Raised when resource provisioning fails (general-purpose).
+ */
+export class LangSmithResourceCreationError extends LangSmithSandboxError {
+  /**
+   * Type of resource that failed (e.g., "sandbox", "volume").
+   */
+  resourceType?: string;
+  /**
+   * Machine-readable error type (ImagePull, CrashLoop, SandboxConfig, Unschedulable).
+   */
+  errorType?: string;
+
+  constructor(
+    message: string,
+    resourceType?: string,
+    errorType?: string
+  ) {
+    super(message);
+    this.name = "LangSmithResourceCreationError";
+    this.resourceType = resourceType;
+    this.errorType = errorType;
+  }
+
+  override toString(): string {
+    if (this.errorType) {
+      return `${super.toString()} [${this.errorType}]`;
+    }
+    return super.toString();
+  }
+}
 
 /**
  * Raised when sandbox creation fails.
