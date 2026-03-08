@@ -76,6 +76,91 @@ try {
 }
 ```
 
+## Streaming Execution (WebSocket)
+
+For long-running commands, you can stream output in real-time using WebSocket-based execution. This requires the optional `ws` package:
+
+```bash
+npm install ws
+```
+
+### Stream with callbacks
+
+```typescript
+// Stream stdout/stderr via callbacks (blocks until complete)
+const result = await sandbox.run("make build", {
+  onStdout: (data) => process.stdout.write(data),
+  onStderr: (data) => process.stderr.write(data),
+});
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+### Non-blocking with CommandHandle
+
+```typescript
+// Get a CommandHandle for full control over the stream
+const handle = await sandbox.run("python train.py", {
+  wait: false,
+  timeout: 600,
+});
+
+console.log(`Command ID: ${handle.commandId}`);
+console.log(`PID: ${handle.pid}`);
+
+// Iterate over output chunks (auto-reconnects on transient errors)
+for await (const chunk of handle) {
+  if (chunk.stream === "stdout") {
+    process.stdout.write(chunk.data);
+  } else {
+    process.stderr.write(chunk.data);
+  }
+}
+
+// Get the final result
+const result = await handle.result;
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+### Sending stdin and killing commands
+
+```typescript
+const handle = await sandbox.run("python -i", { wait: false });
+
+// Send input to stdin
+handle.sendInput("print(2 + 2)\n");
+handle.sendInput("exit()\n");
+
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+```typescript
+const handle = await sandbox.run("sleep 300", { wait: false });
+
+// Kill the running command
+handle.kill();
+
+const result = await handle.result;
+console.log(result.exit_code); // non-zero
+```
+
+### Reconnecting to a running command
+
+```typescript
+// If a client disconnects, you can reconnect using the command ID
+const handle = await sandbox.run("long-task", { wait: false });
+const commandId = handle.commandId;
+
+// ... later, or from a different client ...
+const newHandle = await sandbox.reconnect(commandId);
+for await (const chunk of newHandle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+> **Note:** When `wait` is `true` (default) with no callbacks, `run()` automatically tries WebSocket first and falls back to HTTP POST if the `ws` package is not installed or the server doesn't support it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -242,12 +327,14 @@ The module provides typed exceptions for specific error handling:
 ```typescript
 import {
   SandboxClient,
-  LangSmithSandboxError,           // Base exception for all sandbox errors
-  LangSmithResourceNotFoundError,  // Resource doesn't exist (check resourceType)
-  LangSmithResourceTimeoutError,   // Operation timed out (check resourceType)
-  LangSmithSandboxConnectionError, // Network error
-  LangSmithQuotaExceededError,     // Quota limit reached
-  LangSmithValidationError,        // Invalid input
+  LangSmithSandboxError,              // Base exception for all sandbox errors
+  LangSmithResourceNotFoundError,     // Resource doesn't exist (check resourceType)
+  LangSmithResourceTimeoutError,      // Operation timed out (check resourceType)
+  LangSmithSandboxConnectionError,    // Network error
+  LangSmithSandboxServerReloadError,  // Server hot-reload (auto-reconnects)
+  LangSmithCommandTimeoutError,       // Command exceeded its timeout
+  LangSmithQuotaExceededError,        // Quota limit reached
+  LangSmithValidationError,           // Invalid input
 } from "langsmith/experimental/sandbox";
 
 const client = new SandboxClient();
@@ -298,10 +385,25 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `run(command, options?)` | Execute a shell command |
+| `run(command, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`) |
+| `reconnect(commandId, options?)` | Reconnect to a running command by ID |
 | `write(path, content, timeout?)` | Write file (string or Uint8Array) |
 | `read(path, timeout?)` | Read file (returns Uint8Array) |
 | `delete()` | Delete the sandbox |
+
+### CommandHandle
+
+| Property/Method | Description |
+|-----------------|-------------|
+| `commandId` | Server-assigned command ID |
+| `pid` | Process ID on the sandbox |
+| `result` | Final `ExecutionResult` (drains stream if needed) |
+| `kill()` | Send SIGKILL to the running command |
+| `sendInput(data)` | Write string data to the command's stdin |
+| `reconnect()` | Reconnect from the last known offsets |
+| `lastStdoutOffset` | Last stdout byte offset (for manual reconnection) |
+| `lastStderrOffset` | Last stderr byte offset (for manual reconnection) |
+| `[Symbol.asyncIterator]` | Yields `OutputChunk` objects with auto-reconnect |
 
 ### ExecutionResult
 
@@ -310,6 +412,14 @@ try {
 | `stdout` | Standard output (string) |
 | `stderr` | Standard error (string) |
 | `exit_code` | Exit code (number) |
+
+### OutputChunk
+
+| Property | Description |
+|----------|-------------|
+| `stream` | `"stdout"` or `"stderr"` |
+| `data` | Text content of the chunk |
+| `offset` | Byte offset within the stream |
 
 ### CreateSandboxOptions
 
@@ -360,6 +470,10 @@ try {
 
 | Property | Description |
 |----------|-------------|
+| `timeout?` | Execution timeout in seconds (default: 60) |
 | `env?` | Environment variables for the command |
 | `cwd?` | Working directory |
-| `timeout?` | Execution timeout in seconds (default: 60) |
+| `shell?` | Shell to use (default: `"/bin/bash"`) |
+| `wait?` | Wait for completion (default: `true`). When `false`, returns `CommandHandle` |
+| `onStdout?` | Callback invoked with each stdout chunk (triggers WS streaming) |
+| `onStderr?` | Callback invoked with each stderr chunk (triggers WS streaming) |

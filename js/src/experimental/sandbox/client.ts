@@ -87,7 +87,8 @@ function getDefaultApiKey(): string | undefined {
  */
 export class SandboxClient {
   private _baseUrl: string;
-  private _apiKey?: string;
+  /** @internal */
+  _apiKey?: string;
   private _fetchImpl: typeof fetch;
   private _caller: AsyncCaller;
 
