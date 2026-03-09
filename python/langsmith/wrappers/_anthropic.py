@@ -136,7 +136,6 @@ def _accumulate_event(
 def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     input_tokens = anthropic_token_usage.get("input_tokens") or 0
     output_tokens = anthropic_token_usage.get("output_tokens") or 0
-    total_tokens = input_tokens + output_tokens
 
     input_token_details: dict = {}
     cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
@@ -156,10 +155,16 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
         if cache_creation:
             input_token_details["cache_creation"] = cache_creation
 
+    # Anthropic cache tokens are ADDITIVE (not subsets of input_tokens like OpenAI).
+    # Sum them into input_tokens so the backend cost calculation is correct.
+    cache_token_sum = sum(input_token_details.values())
+    adjusted_input = input_tokens + cache_token_sum
+    adjusted_total = adjusted_input + output_tokens
+
     result = UsageMetadata(
-        input_tokens=input_tokens,
+        input_tokens=adjusted_input,
         output_tokens=output_tokens,
-        total_tokens=total_tokens,
+        total_tokens=adjusted_total,
     )
     if input_token_details:
         result["input_token_details"] = InputTokenDetails(**input_token_details)
