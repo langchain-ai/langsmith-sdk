@@ -901,15 +901,12 @@ class _TestCase:
             outputs=outputs,
             test_name=self.test_name,
         )
-        metadata = {**(self.metadata or {})}
-        if self.test_name:
-            metadata["test_name"] = self.test_name
         self.test_suite.end_run(
             run_tree,
             example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
-            metadata=metadata or None,
+            metadata=self.metadata,
             split=self.split,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
