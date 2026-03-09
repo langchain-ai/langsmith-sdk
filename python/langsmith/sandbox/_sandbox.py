@@ -16,6 +16,7 @@ from langsmith.sandbox._exceptions import (
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
     CommandHandle,
+    CommandInfo,
     ExecutionResult,
 )
 
@@ -442,4 +443,96 @@ class Sandbox:
                 ) from e
             handle_sandbox_http_error(e)
             # This line should never be reached but satisfies type checker
+            raise  # pragma: no cover
+
+    def list_commands(self, *, timeout: int = 60) -> list[CommandInfo]:
+        """List all commands in the sandbox.
+
+        Args:
+            timeout: Request timeout in seconds.
+
+        Returns:
+            List of CommandInfo objects.
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/commands"
+
+        try:
+            response = self._client._http.get(url, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            return [CommandInfo.from_dict(item) for item in data]
+        except httpx.HTTPStatusError as e:
+            handle_sandbox_http_error(e)
+            raise  # pragma: no cover
+
+    def get_command(self, command_id: str, *, timeout: int = 60) -> CommandInfo:
+        """Get info about a specific command.
+
+        Args:
+            command_id: The command ID to look up.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            CommandInfo for the specified command.
+
+        Raises:
+            ResourceNotFoundError: If the command is not found.
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/commands/{command_id}"
+
+        try:
+            response = self._client._http.get(url, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            return CommandInfo.from_dict(data)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Command '{command_id}' not found in sandbox '{self.name}'",
+                    resource_type="command",
+                ) from e
+            handle_sandbox_http_error(e)
+            raise  # pragma: no cover
+
+    def kill_command(self, command_id: str, *, timeout: int = 60) -> CommandInfo:
+        """Kill a running command.
+
+        Args:
+            command_id: The command ID to kill.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            CommandInfo for the killed command.
+
+        Raises:
+            ResourceNotFoundError: If the command is not found.
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/commands/{command_id}"
+
+        try:
+            response = self._client._http.request("DELETE", url, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            return CommandInfo.from_dict(data)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Command '{command_id}' not found in sandbox '{self.name}'",
+                    resource_type="command",
+                ) from e
+            handle_sandbox_http_error(e)
             raise  # pragma: no cover

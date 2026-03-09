@@ -22,6 +22,42 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class CommandInfo:
+    """Information about a running or completed command in a sandbox."""
+
+    id: str
+    command: str
+    shell: str = "/bin/bash"
+    workdir: str = ""
+    pid: Optional[int] = None
+    started_at: Optional[str] = None
+    timeout: Optional[int] = None
+    idle_timeout: Optional[int] = None
+    is_pty: bool = False
+    finished: bool = False
+    exit_code: Optional[int] = None
+    finished_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CommandInfo:
+        """Create a CommandInfo from API response dict."""
+        return cls(
+            id=data.get("id", ""),
+            command=data.get("command", ""),
+            shell=data.get("shell", "/bin/bash"),
+            workdir=data.get("workdir", ""),
+            pid=data.get("pid"),
+            started_at=data.get("started_at"),
+            timeout=data.get("timeout"),
+            idle_timeout=data.get("idle_timeout"),
+            is_pty=data.get("is_pty", False),
+            finished=data.get("finished", False),
+            exit_code=data.get("exit_code"),
+            finished_at=data.get("finished_at"),
+        )
+
+
+@dataclass
 class ExecutionResult:
     """Result of executing a command in a sandbox."""
 

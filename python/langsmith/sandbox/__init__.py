@@ -47,6 +47,7 @@ from langsmith.sandbox._exceptions import (
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
     CommandHandle,
+    CommandInfo,
     ExecutionResult,
     OutputChunk,
     Pool,
@@ -65,6 +66,7 @@ __all__ = [
     "Sandbox",
     "AsyncSandbox",
     # Models
+    "CommandInfo",
     "SandboxTemplate",
     "ResourceStatus",
     "ResourceSpec",

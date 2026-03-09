@@ -221,6 +221,25 @@ with client.sandbox(template_name="my-sandbox") as sb:
 > (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
 > back to HTTP which has its own request-level timeout.
 
+## Command Management
+
+List, inspect, and kill running commands in a sandbox:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # List all running commands
+    commands = sb.list_commands()
+    for cmd in commands:
+        print(f"{cmd.id}: {cmd.command} (finished={cmd.finished})")
+
+    # Get info about a specific command
+    info = sb.get_command(handle.command_id)
+    print(f"PID: {info.pid}, exit_code: {info.exit_code}")
+
+    # Kill a running command
+    sb.kill_command(handle.command_id)
+```
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -509,6 +528,9 @@ except SandboxClientError as e:
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
+| `list_commands()` | List all commands in the sandbox |
+| `get_command(command_id)` | Get info about a specific command |
+| `kill_command(command_id)` | Kill a running command |
 
 ### ExecutionResult
 
