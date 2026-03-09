@@ -3,13 +3,14 @@
  */
 
 import type { SandboxClient } from "./client.js";
-import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
+import type { CommandInfo, ExecutionResult, RunOptions, SandboxData } from "./types.js";
 import {
   LangSmithDataplaneNotConfiguredError,
+  LangSmithResourceNotFoundError,
   LangSmithSandboxConnectionError,
   LangSmithSandboxNotReadyError,
 } from "./errors.js";
-import { handleSandboxHttpError } from "./helpers.js";
+import { handleSandboxHttpError, parseErrorResponse } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import { reconnectWsStream, runWsStream } from "./ws_execute.js";
 
@@ -118,30 +119,48 @@ export class Sandbox {
    * ```
    */
   async run(
-    command: string,
-    options: RunOptions & { wait: false }
+    command?: string,
+    options?: RunOptions & { wait: false }
   ): Promise<CommandHandle>;
   async run(
-    command: string,
+    command?: string,
     options?: RunOptions & { wait?: true }
   ): Promise<ExecutionResult>;
   async run(
-    command: string,
+    command?: string,
     options?: RunOptions
   ): Promise<ExecutionResult | CommandHandle>;
   async run(
-    command: string,
+    command: string = "",
     options: RunOptions = {}
   ): Promise<ExecutionResult | CommandHandle> {
-    const { wait = true, onStdout, onStderr, ...restOptions } = options;
-    const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
+    const {
+      wait = true,
+      onStdout,
+      onStderr,
+      sessionId,
+      idleTimeout,
+      pty,
+      ...restOptions
+    } = options;
 
-    if (!wait || hasCallbacks) {
-      // WebSocket required for streaming / non-blocking
+    if (!command && !sessionId) {
+      throw new Error("Either command or sessionId must be provided.");
+    }
+
+    const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
+    const needsWs =
+      !wait || hasCallbacks || !!sessionId || idleTimeout !== undefined || !!pty;
+
+    if (needsWs) {
+      // WebSocket required for streaming / non-blocking / session features
       const handle = await this._runWs(command, {
         ...restOptions,
         onStdout,
         onStderr,
+        sessionId,
+        idleTimeout,
+        pty,
       });
 
       if (!wait) {
@@ -183,6 +202,9 @@ export class Sandbox {
       shell = "/bin/bash",
       onStdout,
       onStderr,
+      sessionId,
+      idleTimeout,
+      pty,
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
@@ -190,7 +212,7 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       command,
-      { timeout, env, cwd, shell, onStdout, onStderr }
+      { timeout, env, cwd, shell, onStdout, onStderr, sessionId, idleTimeout, pty }
     );
 
     const handle = new CommandHandle(stream, control, this);
@@ -346,6 +368,90 @@ export class Sandbox {
 
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
+  }
+
+  /**
+   * List all commands in the sandbox.
+   *
+   * @param timeout - Request timeout in seconds.
+   * @returns Array of CommandInfo objects.
+   */
+  async listCommands(timeout = 60): Promise<CommandInfo[]> {
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/commands`;
+
+    const response = await this._client._fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+
+    if (!response.ok) {
+      await handleSandboxHttpError(response);
+    }
+
+    return (await response.json()) as CommandInfo[];
+  }
+
+  /**
+   * Get info about a specific command.
+   *
+   * @param commandId - The command ID to look up.
+   * @param timeout - Request timeout in seconds.
+   * @returns CommandInfo for the specified command.
+   * @throws LangSmithResourceNotFoundError if the command is not found.
+   */
+  async getCommand(commandId: string, timeout = 60): Promise<CommandInfo> {
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/commands/${encodeURIComponent(commandId)}`;
+
+    const response = await this._client._fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        const data = await parseErrorResponse(response);
+        throw new LangSmithResourceNotFoundError(
+          data.message || `Command '${commandId}' not found`,
+          "command"
+        );
+      }
+      await handleSandboxHttpError(response);
+    }
+
+    return (await response.json()) as CommandInfo;
+  }
+
+  /**
+   * Kill a running command.
+   *
+   * @param commandId - The command ID to kill.
+   * @param timeout - Request timeout in seconds.
+   * @returns CommandInfo for the killed command.
+   * @throws LangSmithResourceNotFoundError if the command is not found.
+   */
+  async killCommand(commandId: string, timeout = 60): Promise<CommandInfo> {
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/commands/${encodeURIComponent(commandId)}`;
+
+    const response = await this._client._fetch(url, {
+      method: "DELETE",
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        const data = await parseErrorResponse(response);
+        throw new LangSmithResourceNotFoundError(
+          data.message || `Command '${commandId}' not found`,
+          "command"
+        );
+      }
+      await handleSandboxHttpError(response);
+    }
+
+    return (await response.json()) as CommandInfo;
   }
 
   /**

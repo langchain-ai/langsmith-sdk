@@ -72,6 +72,24 @@ export interface Pool {
 }
 
 /**
+ * Information about a running or completed command in a sandbox.
+ */
+export interface CommandInfo {
+  id: string;
+  command: string;
+  shell?: string;
+  workdir?: string;
+  pid?: number;
+  started_at?: string;
+  timeout?: number;
+  idle_timeout?: number;
+  is_pty?: boolean;
+  finished?: boolean;
+  exit_code?: number;
+  finished_at?: string;
+}
+
+/**
  * Lightweight provisioning status for any async-created resource.
  */
 export interface ResourceStatus {
@@ -161,6 +179,25 @@ export interface WsRunOptions {
   onStdout?: (data: string) => void;
   /** Callback invoked with each stderr chunk. */
   onStderr?: (data: string) => void;
+  /**
+   * Client-provided session ID for persistent processes.
+   * If set and a session with this ID exists, reconnects to it.
+   * If set and no session exists, creates a new one with this ID.
+   * The process persists across WebSocket disconnects.
+   */
+  sessionId?: string;
+  /**
+   * Per-session idle timeout in seconds. The process is killed after
+   * this many seconds with no connected clients.
+   * If undefined, uses the server default (1 hour).
+   */
+  idleTimeout?: number;
+  /**
+   * If true, allocate a PTY for the process. This provides terminal
+   * emulation (no stdout buffering, ANSI support) but merges stdout
+   * and stderr into a single stream.
+   */
+  pty?: boolean;
 }
 
 /**
@@ -199,6 +236,25 @@ export interface RunOptions {
    * When provided, WebSocket streaming is used.
    */
   onStderr?: (data: string) => void;
+  /**
+   * Client-provided session ID for persistent processes.
+   * If set and a session with this ID exists, reconnects to it.
+   * If set and no session exists, creates a new one with this ID.
+   * The process persists across WebSocket disconnects.
+   */
+  sessionId?: string;
+  /**
+   * Per-session idle timeout in seconds. The process is killed after
+   * this many seconds with no connected clients.
+   * If undefined, uses the server default (1 hour).
+   */
+  idleTimeout?: number;
+  /**
+   * If true, allocate a PTY for the process. This provides terminal
+   * emulation (no stdout buffering, ANSI support) but merges stdout
+   * and stderr into a single stream.
+   */
+  pty?: boolean;
 }
 
 /**

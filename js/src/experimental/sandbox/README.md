@@ -161,6 +161,124 @@ for await (const chunk of newHandle) {
 
 > **Note:** When `wait` is `true` (default) with no callbacks, `run()` automatically tries WebSocket first and falls back to HTTP POST if the `ws` package is not installed or the server doesn't support it.
 
+## Persistent Sessions
+
+By default, processes are tied to the WebSocket connection. With `sessionId`,
+the process persists across disconnects — if your agent shuts down, the process
+keeps running and you can reconnect later.
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+
+// Start a long-running process with a persistent session
+const handle = await sandbox.run("python3 train.py", {
+  sessionId: "training-run-1",
+  idleTimeout: 3600,  // keep alive 1 hour after last disconnect
+  timeout: 0,
+  wait: false,
+});
+
+// Read some output...
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+  if (chunk.data.includes("epoch 1")) break;  // disconnect, process keeps running
+}
+
+// ... later (even after agent restart) ...
+
+// Reconnect to the same session
+const handle2 = await sandbox.run("", { sessionId: "training-run-1", wait: false });
+for await (const chunk of handle2) {
+  process.stdout.write(chunk.data);
+}
+```
+
+The `idleTimeout` controls how long the process stays alive with no connected
+clients. After the timeout, the server kills the process. Default is 1 hour.
+
+### Reconnect vs Session ID
+
+There are two ways to resume a running process:
+
+- **`sandbox.reconnect(commandId)`** — resumes output from specific byte offsets
+  (replays missed output from the ring buffer). Best for resuming mid-stream.
+- **`sandbox.run("", { sessionId: "..." })`** — reconnects to the session,
+  streaming from the beginning of the ring buffer. Best for reconnecting after
+  a restart.
+
+## PTY Mode
+
+By default, processes use pipes with separate stdout/stderr streams. With
+`pty: true`, the process gets a real pseudo-terminal:
+
+```typescript
+const handle = await sandbox.run("python3", {
+  pty: true,
+  timeout: 0,
+  wait: false,
+});
+
+handle.sendInput("print('hello')\n");
+handle.sendInput("exit()\n");
+
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+| | Pipes (default) | PTY (`pty: true`) |
+|---|---|---|
+| **stdout/stderr** | Separate streams (`chunk.stream` is `"stdout"` or `"stderr"`) | Merged into one stream (all chunks have `stream: "stdout"`) |
+| **Buffering** | Programs may buffer stdout (e.g., Python needs `-u` or `PYTHONUNBUFFERED=1`) | No buffering — output appears immediately for all languages |
+| **ANSI/colors** | Only if the program forces them (most don't) | Full support — programs detect a terminal and enable colors automatically |
+| **Terminal features** | No terminal emulation | Supports curses, readline, interactive prompts |
+| **Output parsing** | Clean, structured — easy to parse programmatically | May contain escape sequences (cursor movement, colors) that need stripping |
+| **Best for** | Scripted commands, CI, structured output | Interactive REPLs, terminal UIs, any program that buffers by default |
+
+### Interactive REPL Example
+
+Combine `sessionId` and `pty` for a persistent, interactive REPL:
+
+```typescript
+const handle = await sandbox.run("python3", {
+  sessionId: "my-repl",
+  pty: true,
+  idleTimeout: 3600,
+  timeout: 0,
+  wait: false,
+});
+
+// Send commands
+handle.sendInput("x = 42\n");
+handle.sendInput("print(f'x = {x}')\n");
+
+// Read output
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+## Command Management
+
+List, inspect, and kill running commands in a sandbox:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+
+// List all running commands
+const commands = await sandbox.listCommands();
+for (const cmd of commands) {
+  console.log(`${cmd.id}: ${cmd.command} (finished=${cmd.finished})`);
+}
+
+// Get info about a specific command
+const info = await sandbox.getCommand(handle.commandId);
+console.log(`PID: ${info.pid}, exit_code: ${info.exit_code}`);
+
+// Kill a running command
+await sandbox.killCommand(handle.commandId);
+```
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -385,10 +503,13 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `run(command, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`) |
+| `run(command?, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`). Options include `sessionId`, `idleTimeout`, `pty`. |
 | `reconnect(commandId, options?)` | Reconnect to a running command by ID |
 | `write(path, content, timeout?)` | Write file (string or Uint8Array) |
 | `read(path, timeout?)` | Read file (returns Uint8Array) |
+| `listCommands(timeout?)` | List all commands in the sandbox |
+| `getCommand(commandId, timeout?)` | Get info about a specific command |
+| `killCommand(commandId, timeout?)` | Kill a running command |
 | `delete()` | Delete the sandbox |
 
 ### CommandHandle
@@ -470,10 +591,13 @@ try {
 
 | Property | Description |
 |----------|-------------|
-| `timeout?` | Execution timeout in seconds (default: 60) |
+| `timeout?` | Execution timeout in seconds (default: 60). 0 means no timeout. |
 | `env?` | Environment variables for the command |
 | `cwd?` | Working directory |
 | `shell?` | Shell to use (default: `"/bin/bash"`) |
 | `wait?` | Wait for completion (default: `true`). When `false`, returns `CommandHandle` |
 | `onStdout?` | Callback invoked with each stdout chunk (triggers WS streaming) |
 | `onStderr?` | Callback invoked with each stderr chunk (triggers WS streaming) |
+| `sessionId?` | Client-provided session ID for persistent processes. Reconnects to existing session if one exists. |
+| `idleTimeout?` | Per-session idle timeout in seconds. Process is killed after this long with no clients (default: 1 hour). |
+| `pty?` | Allocate a PTY (default: `false`). Merges stdout/stderr, no buffering, ANSI support. |
