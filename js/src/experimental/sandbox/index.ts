@@ -37,6 +37,7 @@ export { Sandbox } from "./sandbox.js";
 export type {
   ExecutionResult,
   ResourceSpec,
+  ResourceStatus,
   VolumeMountSpec,
   Volume,
   SandboxTemplate,
@@ -45,6 +46,7 @@ export type {
   SandboxClientConfig,
   RunOptions,
   CreateSandboxOptions,
+  WaitForSandboxOptions,
   CreateVolumeOptions,
   CreateTemplateOptions,
   UpdateTemplateOptions,
@@ -69,6 +71,8 @@ export {
   // Validation and quota errors
   LangSmithValidationError,
   LangSmithQuotaExceededError,
+  // Resource creation errors
+  LangSmithResourceCreationError,
   // Sandbox-specific errors
   LangSmithSandboxCreationError,
   LangSmithSandboxNotReadyError,

@@ -72,6 +72,16 @@ export interface Pool {
 }
 
 /**
+ * Lightweight provisioning status for any async-created resource.
+ */
+export interface ResourceStatus {
+  /** One of "provisioning", "ready", "failed". */
+  status: string;
+  /** Human-readable details when failed. */
+  status_message?: string;
+}
+
+/**
  * Data representing a sandbox instance from the API.
  */
 export interface SandboxData {
@@ -79,6 +89,8 @@ export interface SandboxData {
   name: string;
   template_name: string;
   dataplane_url?: string;
+  status?: string;
+  status_message?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -147,6 +159,29 @@ export interface CreateSandboxOptions {
    * Timeout in seconds when waiting for ready.
    */
   timeout?: number;
+  /**
+   * Whether to wait for the sandbox to be ready before returning.
+   * When false, returns immediately with status "provisioning".
+   * Use getSandboxStatus() or waitForSandbox() to poll for readiness.
+   * Default: true.
+   */
+  waitForReady?: boolean;
+}
+
+/**
+ * Options for waiting for a sandbox to become ready.
+ */
+export interface WaitForSandboxOptions {
+  /**
+   * Maximum time in seconds to wait for the sandbox to become ready.
+   * Default: 120.
+   */
+  timeout?: number;
+  /**
+   * Time in seconds between status polls.
+   * Default: 1.0.
+   */
+  pollInterval?: number;
 }
 
 /**
