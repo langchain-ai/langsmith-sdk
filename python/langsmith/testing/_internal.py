@@ -847,6 +847,7 @@ class _TestCase:
         )
 
     def log_inputs(self, inputs: dict) -> None:
+        self.inputs = inputs
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"inputs": inputs}
@@ -1205,7 +1206,7 @@ def log_inputs(inputs: dict, /) -> None:
         )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
-    test_case.log_inputs(inputs)
+    test_case.log_inputs(run_tree.inputs)
 
 
 def log_outputs(outputs: dict, /) -> None:
