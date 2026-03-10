@@ -135,7 +135,7 @@ class AsyncSandbox:
     @overload
     async def run(
         self,
-        command: str,
+        command: str = ...,
         *,
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
@@ -144,12 +144,15 @@ class AsyncSandbox:
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
         wait: Literal[True] = ...,
+        session_id: Optional[str] = ...,
+        idle_timeout: Optional[int] = ...,
+        pty: bool = ...,
     ) -> ExecutionResult: ...
 
     @overload
     async def run(
         self,
-        command: str,
+        command: str = ...,
         *,
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
@@ -158,11 +161,14 @@ class AsyncSandbox:
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
         wait: Literal[False],
+        session_id: Optional[str] = ...,
+        idle_timeout: Optional[int] = ...,
+        pty: bool = ...,
     ) -> AsyncCommandHandle: ...
 
     async def run(
         self,
-        command: str,
+        command: str = "",
         *,
         timeout: int = 60,
         env: Optional[dict[str, str]] = None,
@@ -171,12 +177,16 @@ class AsyncSandbox:
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
         wait: bool = True,
+        session_id: Optional[str] = None,
+        idle_timeout: Optional[int] = None,
+        pty: bool = False,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute a command in the sandbox asynchronously.
 
         Args:
-            command: Shell command to execute.
-            timeout: Command timeout in seconds.
+            command: Shell command to execute. Optional when session_id is
+                provided to reconnect to an existing session.
+            timeout: Command timeout in seconds. 0 means no timeout.
             env: Environment variables to set for the command.
             cwd: Working directory for command execution. If None, uses sandbox default.
             shell: Shell to use for command execution. Defaults to "/bin/bash".
@@ -191,6 +201,17 @@ class AsyncSandbox:
                 AsyncCommandHandle immediately for streaming output,
                 kill, stdin input, and reconnection. Cannot be combined
                 with on_stdout/on_stderr callbacks.
+            session_id: Client-provided session ID for persistent processes.
+                If set and a session with this ID exists, reconnects to it.
+                If set and no session exists, creates a new one with this ID.
+                The process persists across WebSocket disconnects and can be
+                reconnected to later.
+            idle_timeout: Per-session idle timeout in seconds. The process is
+                killed after this many seconds with no connected clients.
+                If None, uses the server default (1 hour).
+            pty: If True, allocate a PTY for the process. This provides
+                terminal emulation (no stdout buffering, ANSI support) but
+                merges stdout and stderr into a single stream.
 
         Returns:
             ExecutionResult when wait=True (default).
@@ -198,6 +219,7 @@ class AsyncSandbox:
 
         Raises:
             ValueError: If wait=False is combined with callbacks.
+            ValueError: If neither command nor session_id is provided.
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxOperationError: If command execution fails.
             CommandTimeoutError: If command exceeds its timeout.
@@ -205,6 +227,9 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        if not command and not session_id:
+            raise ValueError("Either command or session_id must be provided.")
+
         if not wait and (on_stdout or on_stderr):
             raise ValueError(
                 "Cannot combine wait=False with on_stdout/on_stderr callbacks. "
@@ -213,7 +238,14 @@ class AsyncSandbox:
 
         self._require_dataplane_url()
 
-        use_ws = not wait or on_stdout or on_stderr
+        use_ws = (
+            not wait
+            or on_stdout
+            or on_stderr
+            or session_id
+            or idle_timeout is not None
+            or pty
+        )
         if use_ws:
             return await self._run_ws(
                 command,
@@ -224,10 +256,11 @@ class AsyncSandbox:
                 wait=wait,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
+                session_id=session_id,
+                idle_timeout=idle_timeout,
+                pty=pty,
             )
 
-        # Catch broad exceptions so that unexpected WS failures (e.g. version
-        # incompatibilities) don't break users who don't need WS features.
         try:
             return await self._run_ws(
                 command,
@@ -259,6 +292,9 @@ class AsyncSandbox:
         wait: bool,
         on_stdout: Optional[Callable[[str], Any]],
         on_stderr: Optional[Callable[[str], Any]],
+        session_id: Optional[str] = None,
+        idle_timeout: Optional[int] = None,
+        pty: bool = False,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute via WebSocket /execute/ws."""
         from langsmith.sandbox._ws_execute import run_ws_stream_async
@@ -276,6 +312,9 @@ class AsyncSandbox:
             shell=shell,
             on_stdout=on_stdout,
             on_stderr=on_stderr,
+            session_id=session_id,
+            idle_timeout=idle_timeout,
+            pty=pty,
         )
 
         handle = AsyncCommandHandle(msg_stream, control, self)

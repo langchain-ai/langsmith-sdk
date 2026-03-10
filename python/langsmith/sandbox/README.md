@@ -221,6 +221,110 @@ with client.sandbox(template_name="my-sandbox") as sb:
 > (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
 > back to HTTP which has its own request-level timeout.
 
+## Persistent Sessions
+
+By default, processes are tied to the WebSocket connection. With `session_id`,
+the process persists across disconnects — if your agent shuts down, the process
+keeps running and you can reconnect later.
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Start a long-running process with a persistent session
+    handle = sb.run(
+        "python3 train.py",
+        session_id="training-run-1",
+        idle_timeout=3600,  # keep alive 1 hour after last disconnect
+        timeout=0,
+        wait=False,
+    )
+    command_id = handle.command_id  # same as session_id
+
+    # Read some output...
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "epoch 1" in chunk.data:
+            break  # disconnect, process keeps running
+
+    # ... later (even after agent restart) ...
+
+    # Reconnect to the same session
+    handle = sb.run(session_id="training-run-1", wait=False)
+    for chunk in handle:
+        print(chunk.data, end="")
+```
+
+The `idle_timeout` controls how long the process stays alive with no connected
+clients. After the timeout, the server kills the process. Default is 1 hour.
+
+### Reconnect vs Session ID
+
+There are two ways to resume a running process:
+
+- **`sb.reconnect(command_id)`** — resumes output from specific byte offsets
+  (replays missed output from the ring buffer). Best for resuming mid-stream.
+- **`sb.run(session_id="...")`** — reconnects to the session, streaming from
+  the beginning of the ring buffer. Best for reconnecting after a restart.
+
+## PTY Mode
+
+By default, processes use pipes with separate stdout/stderr streams. With
+`pty=True`, the process gets a real pseudo-terminal:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # PTY mode: no stdout buffering, ANSI colors work
+    handle = sb.run("python3", pty=True, timeout=0, wait=False)
+
+    handle.send_input("print('hello')\n")
+    handle.send_input("exit()\n")
+
+    for chunk in handle:
+        print(chunk.data, end="")
+```
+
+| | Pipes (default) | PTY (`pty=True`) |
+|---|---|---|
+| **stdout/stderr** | Separate streams (`chunk.stream` is `"stdout"` or `"stderr"`) | Merged into one stream (all chunks have `stream="stdout"`) |
+| **Buffering** | Programs may buffer stdout (e.g., Python needs `-u` or `PYTHONUNBUFFERED=1`) | No buffering — output appears immediately for all languages |
+| **ANSI/colors** | Only if the program forces them (most don't) | Full support — programs detect a terminal and enable colors automatically |
+| **Terminal features** | No terminal emulation | Supports curses, readline, interactive prompts |
+| **Output parsing** | Clean, structured — easy to parse programmatically | May contain escape sequences (cursor movement, colors) that need stripping |
+| **Best for** | Scripted commands, CI, structured output | Interactive REPLs, terminal UIs, any program that buffers by default |
+
+### Interactive REPL Example
+
+Combine `session_id` and `pty` for a persistent, interactive REPL:
+
+```python
+import threading
+import time
+
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run(
+        "python3",
+        session_id="my-repl",
+        pty=True,
+        idle_timeout=3600,
+        timeout=0,
+        wait=False,
+    )
+
+    # Send commands from a background thread
+    def send_commands():
+        time.sleep(0.5)
+        handle.send_input("x = 42\n")
+        handle.send_input("print(f'x = {x}')\n")
+        time.sleep(0.5)
+        handle.send_input("exit()\n")
+
+    sender = threading.Thread(target=send_commands, daemon=True)
+    sender.start()
+
+    # Read output on main thread
+    for chunk in handle:
+        print(chunk.data, end="", flush=True)
+```
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -505,7 +609,7 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
+| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, wait=True, session_id=None, idle_timeout=None, pty=False)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). `session_id` enables persistent sessions; `pty=True` allocates a terminal. |
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |

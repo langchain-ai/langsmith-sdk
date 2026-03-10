@@ -200,6 +200,9 @@ def run_ws_stream(
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
+    session_id: Optional[str] = None,
+    idle_timeout: Optional[int] = None,
+    pty: bool = False,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Execute a command over WebSocket, yielding raw message dicts.
 
@@ -233,18 +236,24 @@ def run_ws_stream(
                 control._bind(ws)
 
                 # Send execute request
-                ws.send(
-                    json.dumps(
-                        {
-                            "type": "execute",
-                            "command": command,
-                            "timeout": timeout,
-                            "shell": shell,
-                            **({"env": env} if env else {}),
-                            **({"cwd": cwd} if cwd else {}),
-                        }
-                    )
-                )
+                msg_payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout": timeout,
+                    "shell": shell,
+                }
+                if env:
+                    msg_payload["env"] = env
+                if cwd:
+                    msg_payload["cwd"] = cwd
+                if session_id:
+                    msg_payload["session_id"] = session_id
+                if idle_timeout is not None:
+                    msg_payload["idle_timeout"] = idle_timeout
+                if pty:
+                    msg_payload["pty"] = True
+
+                ws.send(json.dumps(msg_payload))
 
                 # Read messages until exit or error
                 for raw_msg in ws:
@@ -387,6 +396,9 @@ async def run_ws_stream_async(
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
+    session_id: Optional[str] = None,
+    idle_timeout: Optional[int] = None,
+    pty: bool = False,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of run_ws_stream.
 
@@ -409,18 +421,24 @@ async def run_ws_stream_async(
             ) as ws:
                 control._bind(ws)
 
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "execute",
-                            "command": command,
-                            "timeout": timeout,
-                            "shell": shell,
-                            **({"env": env} if env else {}),
-                            **({"cwd": cwd} if cwd else {}),
-                        }
-                    )
-                )
+                msg_payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout": timeout,
+                    "shell": shell,
+                }
+                if env:
+                    msg_payload["env"] = env
+                if cwd:
+                    msg_payload["cwd"] = cwd
+                if session_id:
+                    msg_payload["session_id"] = session_id
+                if idle_timeout is not None:
+                    msg_payload["idle_timeout"] = idle_timeout
+                if pty:
+                    msg_payload["pty"] = True
+
+                await ws.send(json.dumps(msg_payload))
 
                 async for raw_msg in ws:
                     msg = json.loads(raw_msg)
