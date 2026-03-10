@@ -26,6 +26,7 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
+    field_validator,
 )
 from typing_extensions import Literal, NotRequired, TypedDict
 
@@ -369,6 +370,22 @@ class RunBase(BaseModel):
     
     Each entry is a tuple of `(mime_type, bytes)`.
     """
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def _ensure_tz_aware(cls, v: Any) -> Any:
+        """Attach UTC timezone to naive datetimes deserialized from the API.
+
+        The LangSmith API returns ISO-8601 timestamps without a timezone suffix
+        in some code paths (e.g. list_runs used by aevaluate_existing). When these
+        naive datetimes are later serialized via .isoformat() for multipart upload,
+        the Go-based API parser rejects them with a 422 because it requires the
+        RFC3339 suffix (Z or +00:00). Attaching UTC here fixes the serialization
+        at the source without requiring callers to guard every usage site.
+        """
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
     @property
     def metadata(self) -> dict[str, Any]:
