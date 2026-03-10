@@ -298,7 +298,7 @@ export async function runWsStream(
     shell = "/bin/bash",
     onStdout,
     onStderr,
-    sessionId,
+    commandId,
     idleTimeout,
     pty,
   } = options;
@@ -322,7 +322,7 @@ export async function runWsStream(
       };
       if (env) payload.env = env;
       if (cwd) payload.cwd = cwd;
-      if (sessionId) payload.session_id = sessionId;
+      if (commandId) payload.command_id = commandId;
       if (idleTimeout !== undefined) payload.idle_timeout = idleTimeout;
       if (pty) payload.pty = true;
 
