@@ -5446,3 +5446,100 @@ class TestWriteTraceToFallbackDir:
         )
         assert client._failed_traces_dir is None
         _clear_env_cache()
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_info_unauthenticated_success(mock_session_cls: mock.Mock) -> None:
+    """GET /info succeeds without auth — no authenticated retry is made."""
+    _clear_env_cache()
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+
+    ok_response = mock.Mock()
+    ok_response.status_code = 200
+    ok_response.json.return_value = {"version": "0.1.0"}
+    mock_session.get.return_value = ok_response
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-key",
+        auto_batch_tracing=False,
+    )
+    info = client.info
+
+    assert info.version == "0.1.0"
+    # Unauthenticated GET was made
+    mock_session.get.assert_called_once()
+    url_called = mock_session.get.call_args[0][0]
+    assert url_called.endswith("/info")
+    # Auth headers should NOT be in the unauthenticated request
+    headers_sent = mock_session.get.call_args[1].get("headers", {})
+    assert "x-api-key" not in headers_sent
+    # No authenticated retry needed
+    mock_session.request.assert_not_called()
+    _clear_env_cache()
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_info_retries_with_auth_on_401(mock_session_cls: mock.Mock) -> None:
+    """GET /info returns 401 without auth, then succeeds with auth."""
+    _clear_env_cache()
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+
+    unauth_response = mock.Mock()
+    unauth_response.status_code = 401
+
+    auth_response = mock.Mock()
+    auth_response.status_code = 200
+    auth_response.json.return_value = {"version": "0.2.0"}
+    mock_session.get.return_value = unauth_response
+    # request_with_retries goes through session.request
+    mock_session.request.return_value = auth_response
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-key",
+        auto_batch_tracing=False,
+    )
+    with mock.patch("langsmith.client.ls_utils.raise_for_status_with_text"):
+        info = client.info
+
+    assert info.version == "0.2.0"
+    # First unauthenticated attempt
+    mock_session.get.assert_called_once()
+    # Authenticated retry via request_with_retries
+    mock_session.request.assert_called_once()
+    auth_headers = mock_session.request.call_args[1].get("headers", {})
+    assert auth_headers.get("x-api-key") == "test-key"
+    _clear_env_cache()
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_info_retries_with_auth_on_403(mock_session_cls: mock.Mock) -> None:
+    """GET /info returns 403 without auth, then succeeds with auth."""
+    _clear_env_cache()
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+
+    unauth_response = mock.Mock()
+    unauth_response.status_code = 403
+
+    auth_response = mock.Mock()
+    auth_response.status_code = 200
+    auth_response.json.return_value = {"version": "0.3.0"}
+    mock_session.get.return_value = unauth_response
+    mock_session.request.return_value = auth_response
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-key",
+        auto_batch_tracing=False,
+    )
+    with mock.patch("langsmith.client.ls_utils.raise_for_status_with_text"):
+        info = client.info
+
+    assert info.version == "0.3.0"
+    mock_session.get.assert_called_once()
+    mock_session.request.assert_called_once()
+    _clear_env_cache()

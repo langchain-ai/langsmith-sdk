@@ -1392,14 +1392,24 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
             return self._info
 
-        # Fetch info from API
+        # Fetch info from API.
+        # First try unauthenticated so deployments that don't require auth on
+        # /info still work without sending credentials unnecessarily. If the
+        # server returns 401 or 403, retry with the configured auth headers
+        # (supports FF_INFO_ENDPOINT_AUTH_REQUIRED on self-hosted deployments).
         try:
-            response = self.request_with_retries(
-                "GET",
-                "/info",
+            response = self.session.get(
+                _construct_url(self.api_url, "/info"),
                 headers={"Accept": "application/json"},
                 timeout=self._timeout,
             )
+            if response.status_code in (401, 403):
+                response = self.request_with_retries(
+                    "GET",
+                    "/info",
+                    headers={"Accept": "application/json"},
+                    timeout=self._timeout,
+                )
             ls_utils.raise_for_status_with_text(response)
             self._info = ls_schemas.LangSmithInfo(**response.json())
         except BaseException as e:
