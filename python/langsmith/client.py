@@ -8695,6 +8695,57 @@ class Client:
             for future in cf.as_completed(futures):
                 future.result()
 
+    def _delete_commit_tag(
+        self, prompt_owner_and_name: str, tag: str
+    ) -> None:
+        """Delete a commit tag from a prompt.
+
+        No-op if the tag does not exist.
+
+        Args:
+            prompt_owner_and_name (str): The owner and name of the prompt
+                in the format ``"owner/repo"``.
+            tag (str): The tag name to delete.
+        """
+        response = self.request_with_retries(
+            "DELETE", f"/repos/{prompt_owner_and_name}/tags/{tag}"
+        )
+        if response.status_code != 200:
+            # Tag does not exist — nothing to delete.
+            return
+
+    def update_commit_tags(
+        self,
+        prompt_identifier: str,
+        *,
+        commit_id: str,
+        tags: Union[str, list[str]],
+    ) -> None:
+        """Move commit tags so they point to *commit_id*.
+
+        If a tag already exists on another commit it is deleted first,
+        making this method safe to call repeatedly (idempotent).
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt
+                (e.g. ``"owner/prompt_name"``).
+            commit_id (str): The UUID of the commit to tag.
+            tags (Union[str, list[str]]): A single tag or list of tags
+                to apply.
+
+        Raises:
+            requests.exceptions.HTTPError: If a tag creation request fails.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+        prompt_owner_and_name = f"{owner}/{prompt_name}"
+
+        tag_list = [tags] if isinstance(tags, str) else tags
+        for tag in tag_list:
+            self._delete_commit_tag(prompt_owner_and_name, tag)
+        self._create_commit_tags(prompt_owner_and_name, commit_id, tag_list)
+
     def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
     ) -> dict[str, int]:

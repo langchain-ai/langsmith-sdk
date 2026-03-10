@@ -208,3 +208,115 @@ async def test_push_prompt_forwards_commit_tags(
     mock_create_commit.assert_awaited_once()
     _, kwargs = mock_create_commit.call_args
     assert kwargs["tags"] == commit_tags
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_update_commit_tags(mock_client_cls: mock.Mock) -> None:
+    """Test update_commit_tags deletes existing tags then creates new ones."""
+    mock_httpx_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    mock_httpx_client.request.return_value = mock_response
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Test 1: update_commit_tags with multiple tags
+    commit_id = "abc-123-def"
+    tags = ["dev", "prod"]
+
+    with patch.object(AsyncClient, "_get_settings") as mock_settings:
+        mock_settings.return_value = ls_schemas.LangSmithSettings(
+            id=str(uuid.uuid4()),
+            tenant_handle="test-owner",
+            display_name="test",
+            created_at=datetime.now(),
+        )
+        await client.update_commit_tags(
+            "test-owner/test-prompt",
+            commit_id=commit_id,
+            tags=tags,
+        )
+
+    # Should have DELETE calls for each tag, then POST calls for each tag
+    delete_calls = [
+        call
+        for call in mock_httpx_client.request.call_args_list
+        if call[0][0] == "DELETE" and "/tags/" in str(call)
+    ]
+    post_calls = [
+        call
+        for call in mock_httpx_client.request.call_args_list
+        if call[0][0] == "POST" and "/tags" in str(call)
+    ]
+
+    assert len(delete_calls) == 2
+    assert len(post_calls) == 2
+
+    # Verify DELETE calls target correct tags
+    deleted_tags = {
+        call[0][1].rsplit("/", 1)[-1] for call in delete_calls
+    }
+    assert deleted_tags == {"dev", "prod"}
+
+    # Verify POST calls create correct tags
+    created_tags = {call[1]["json"]["tag_name"] for call in post_calls}
+    assert created_tags == {"dev", "prod"}
+    for call in post_calls:
+        assert call[1]["json"]["commit_id"] == commit_id
+
+    # Test 2: single tag as string
+    mock_httpx_client.request.reset_mock()
+    mock_httpx_client.request.return_value = mock_response
+
+    with patch.object(AsyncClient, "_get_settings") as mock_settings:
+        mock_settings.return_value = ls_schemas.LangSmithSettings(
+            id=str(uuid.uuid4()),
+            tenant_handle="test-owner",
+            display_name="test",
+            created_at=datetime.now(),
+        )
+        await client.update_commit_tags(
+            "test-owner/test-prompt",
+            commit_id=commit_id,
+            tags="staging",
+        )
+
+    delete_calls = [
+        call
+        for call in mock_httpx_client.request.call_args_list
+        if call[0][0] == "DELETE" and "/tags/" in str(call)
+    ]
+    post_calls = [
+        call
+        for call in mock_httpx_client.request.call_args_list
+        if call[0][0] == "POST" and "/tags" in str(call)
+    ]
+    assert len(delete_calls) == 1
+    assert len(post_calls) == 1
+    assert post_calls[0][1]["json"]["tag_name"] == "staging"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_delete_commit_tag_not_found(mock_client_cls: mock.Mock) -> None:
+    """Test _delete_commit_tag is a no-op when the tag does not exist."""
+    mock_httpx_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+
+    mock_httpx_client.request.return_value = mock_response
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Should not raise
+    await client._delete_commit_tag("test-owner/test-repo", "nonexistent")
