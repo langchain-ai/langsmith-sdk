@@ -92,10 +92,18 @@ class _WSStreamControl:
         return self._killed
 
     def send_kill(self) -> None:
-        """Send a kill message to abort the running command."""
+        """Send a kill message and immediately close the WebSocket."""
         self._killed = True
         if self._ws and not self._closed:
-            self._ws.send(json.dumps({"type": "kill"}))
+            try:
+                self._ws.send(json.dumps({"type": "kill"}))
+            except Exception:
+                pass
+            try:
+                self._ws.close_timeout = 0
+                self._ws.close()
+            except Exception:
+                pass
 
     def send_input(self, data: str) -> None:
         """Send stdin data to the running command."""
@@ -125,7 +133,15 @@ class _AsyncWSStreamControl:
     async def send_kill(self) -> None:
         self._killed = True
         if self._ws and not self._closed:
-            await self._ws.send(json.dumps({"type": "kill"}))
+            try:
+                await self._ws.send(json.dumps({"type": "kill"}))
+            except Exception:
+                pass
+            try:
+                self._ws.close_timeout = 0
+                await self._ws.close()
+            except Exception:
+                pass
 
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
