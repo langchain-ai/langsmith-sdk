@@ -18,6 +18,7 @@ from langsmith.sandbox._models import (
     CommandHandle,
     ExecutionResult,
 )
+from langsmith.sandbox._tunnel import Tunnel
 
 if TYPE_CHECKING:
     from langsmith.sandbox._client import SandboxClient
@@ -443,3 +444,48 @@ class Sandbox:
             handle_sandbox_http_error(e)
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
+
+    def tunnel(self, remote_port: int, *, local_port: int = 0) -> Tunnel:
+        """Open a TCP tunnel to a port inside the sandbox.
+
+        Creates a local TCP listener that forwards connections through a
+        yamux-multiplexed WebSocket to the specified port inside the sandbox.
+        Works with any TCP protocol (databases, Redis, HTTP, etc.).
+
+        Use as a context manager for automatic cleanup::
+
+            with sandbox.tunnel(remote_port=5432) as t:
+                conn = psycopg2.connect(host="127.0.0.1", port=t.local_port)
+
+        Or manage the lifecycle explicitly::
+
+            t = sandbox.tunnel(remote_port=5432)
+            # ... use tunnel ...
+            t.close()
+
+        Args:
+            remote_port: TCP port inside the sandbox to tunnel to (1-65535).
+            local_port: Local port to listen on. Defaults to mirroring
+                remote_port. Use 0 to let the OS pick an available port.
+
+        Returns:
+            A Tunnel instance (context manager).
+
+        Raises:
+            ValueError: If port values are out of range.
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxNotReadyError: If sandbox is not ready.
+        """
+        if not 1 <= remote_port <= 65535:
+            raise ValueError(
+                f"remote_port must be between 1 and 65535 (got {remote_port})"
+            )
+        if local_port and not 1 <= local_port <= 65535:
+            raise ValueError(
+                f"local_port must be between 1 and 65535 (got {local_port})"
+            )
+        dataplane_url = self._require_dataplane_url()
+        api_key = self._client._api_key
+        t = Tunnel(dataplane_url, api_key, remote_port, local_port=local_port)
+        t._start()
+        return t

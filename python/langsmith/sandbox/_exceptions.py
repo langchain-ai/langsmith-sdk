@@ -284,3 +284,46 @@ class CommandTimeoutError(SandboxOperationError):
         """Initialize the error."""
         super().__init__(message, operation="command", error_type="CommandTimeout")
         self.timeout = timeout
+
+
+# ========================================================================
+# Tunnel Errors
+# ========================================================================
+
+
+class TunnelError(SandboxClientError):
+    """Base exception for TCP tunnel errors."""
+
+    pass
+
+
+class TunnelPortNotAllowedError(TunnelError):
+    """The daemon rejected the port as not allowed.
+
+    Attributes:
+        port: The port that was rejected.
+    """
+
+    def __init__(self, message: str, *, port: int):
+        """Initialize the error."""
+        super().__init__(message)
+        self.port = port
+
+
+class TunnelConnectionRefusedError(TunnelError):
+    """Nothing is listening on the target port inside the sandbox.
+
+    Attributes:
+        port: The port that could not be reached.
+    """
+
+    def __init__(self, message: str, *, port: int):
+        """Initialize the error."""
+        super().__init__(message)
+        self.port = port
+
+
+class TunnelUnsupportedVersionError(TunnelError):
+    """Protocol version mismatch between the tunnel client and the daemon."""
+
+    pass

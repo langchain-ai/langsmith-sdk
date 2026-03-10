@@ -243,6 +243,121 @@ with client.sandbox(template_name="my-python") as sb:
     sb.write("/app/data.bin", b"\x00\x01\x02\x03")
 ```
 
+## TCP Tunnel
+
+Access any TCP service running inside a sandbox (databases, Redis, HTTP servers,
+etc.) as if it were running on your local machine. The tunnel opens a local TCP
+port and forwards connections through a multiplexed WebSocket to the target port
+inside the sandbox.
+
+Requires the `websockets` package (`pip install 'langsmith[sandbox]'`).
+
+### Basic Usage — PostgreSQL
+
+Use a template with the `postgres:16` image. The entrypoint initializes and
+starts Postgres automatically:
+
+```python
+import psycopg2
+
+# Template uses the official postgres:16 image
+sb = client.create_sandbox(template_name="my-postgres")
+pg_handle = sb.run(
+    "POSTGRES_HOST_AUTH_METHOD=trust docker-entrypoint.sh postgres",
+    timeout=0,
+    wait=False,
+)
+import time; time.sleep(6)  # wait for Postgres to initialize and start
+
+try:
+    with sb.tunnel(remote_port=5432, local_port=25432) as t:
+        conn = psycopg2.connect(
+            host="127.0.0.1",
+            port=t.local_port,
+            user="postgres",
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT version()")
+        print(cursor.fetchone())
+        conn.close()
+finally:
+    pg_handle.kill()
+    client.delete_sandbox(sb.name)
+```
+
+### Basic Usage — Redis
+
+Use a template with the `redis:7` image. Redis self-daemonizes:
+
+```python
+import redis
+
+with client.sandbox(template_name="my-redis") as sb:
+    sb.run("redis-server --daemonize yes", timeout=10)
+
+    with sb.tunnel(remote_port=6379, local_port=26379) as t:
+        r = redis.Redis(host="127.0.0.1", port=t.local_port)
+        r.set("key", "value")
+        print(r.get("key"))  # b"value"
+```
+
+### HTTP Services
+
+Works with any TCP service. Start long-running services with `wait=False` and
+`timeout=0` so they stay alive across commands:
+
+```python
+sb = client.create_sandbox(template_name="my-sandbox")
+http_handle = sb.run("python3 -m http.server 3000", timeout=0, wait=False)
+import time; time.sleep(2)
+
+try:
+    with sb.tunnel(remote_port=3000, local_port=13000) as t:
+        import urllib.request
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{t.local_port}/")
+        print(resp.status)  # 200
+finally:
+    http_handle.kill()
+    client.delete_sandbox(sb.name)
+```
+
+### Multiple Tunnels
+
+Open several tunnels simultaneously to different services:
+
+```python
+http_handle2 = sb.run("python3 -m http.server 3001", timeout=0, wait=False)
+import time; time.sleep(1)
+
+with sb.tunnel(remote_port=3000, local_port=23000) as t1, \
+     sb.tunnel(remote_port=3001, local_port=23001) as t2:
+    resp1 = urllib.request.urlopen(f"http://127.0.0.1:{t1.local_port}/")
+    resp2 = urllib.request.urlopen(f"http://127.0.0.1:{t2.local_port}/")
+
+http_handle2.kill()
+```
+
+### Explicit Lifecycle
+
+For notebooks or long-lived sessions where a context manager isn't convenient:
+
+```python
+t = sb.tunnel(remote_port=3000, local_port=23002)
+
+print(t.local_port)
+# ... use the tunnel as long as needed ...
+
+t.close()
+```
+
+### Async Usage
+
+```python
+async with await client.sandbox(template_name="my-sandbox") as sb:
+    async with await sb.tunnel(remote_port=5432) as t:
+        conn = await asyncpg.connect(host="127.0.0.1", port=t.local_port)
+```
+
 ## Templates
 
 Templates define the container image and resources for sandboxes. **You must create a template before you can create sandboxes.**
@@ -445,6 +560,10 @@ from langsmith.sandbox import (
     SandboxConnectionError,   # Network/WebSocket error
     CommandTimeoutError,      # Command exceeded its timeout (extends SandboxOperationError)
     QuotaExceededError,       # Quota limit reached
+    TunnelError,              # Base for tunnel errors
+    TunnelPortNotAllowedError,       # Port blocked by daemon allowlist
+    TunnelConnectionRefusedError,    # Nothing listening on remote port
+    TunnelUnsupportedVersionError,   # Client/daemon protocol mismatch
 )
 
 try:
@@ -509,6 +628,7 @@ except SandboxClientError as e:
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
+| `tunnel(remote_port, *, local_port=0)` | Open a TCP tunnel. Returns `Tunnel` (context manager). |
 
 ### ExecutionResult
 
@@ -548,3 +668,14 @@ Returned by `sb.run(wait=False)`. Iterable, yielding `OutputChunk` objects.
 | `stream` | `"stdout"` or `"stderr"` |
 | `data` | Text content of this chunk (str) |
 | `offset` | Byte offset within the stream (int) |
+
+### Tunnel
+
+Returned by `sb.tunnel(remote_port)`. Context manager that opens a local TCP
+listener forwarding to a port inside the sandbox.
+
+| Property / Method | Description |
+|-------------------|-------------|
+| `local_port` | Local port the tunnel is listening on (int) |
+| `remote_port` | Target port inside the sandbox (int) |
+| `close()` | Shut down the tunnel and all connections |

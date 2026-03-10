@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
@@ -18,6 +19,7 @@ from langsmith.sandbox._models import (
     AsyncCommandHandle,
     ExecutionResult,
 )
+from langsmith.sandbox._tunnel import AsyncTunnel
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -444,3 +446,43 @@ class AsyncSandbox:
             handle_sandbox_http_error(e)
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
+
+    async def tunnel(self, remote_port: int, *, local_port: int = 0) -> AsyncTunnel:
+        """Open a TCP tunnel to a port inside the sandbox.
+
+        Creates a local TCP listener that forwards connections through a
+        yamux-multiplexed WebSocket to the specified port inside the sandbox.
+        Works with any TCP protocol (databases, Redis, HTTP, etc.).
+
+        Usage::
+
+            async with await sandbox.tunnel(remote_port=5432) as t:
+                conn = await asyncpg.connect(host="127.0.0.1", port=t.local_port)
+
+        Args:
+            remote_port: TCP port inside the sandbox to tunnel to (1-65535).
+            local_port: Local port to listen on. Defaults to mirroring
+                remote_port. Use 0 to let the OS pick an available port.
+
+        Returns:
+            An AsyncTunnel instance (async context manager).
+
+        Raises:
+            ValueError: If port values are out of range.
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxNotReadyError: If sandbox is not ready.
+        """
+        if not 1 <= remote_port <= 65535:
+            raise ValueError(
+                f"remote_port must be between 1 and 65535 (got {remote_port})"
+            )
+        if local_port and not 1 <= local_port <= 65535:
+            raise ValueError(
+                f"local_port must be between 1 and 65535 (got {local_port})"
+            )
+        dataplane_url = self._require_dataplane_url()
+        api_key = self._client._api_key
+        t = AsyncTunnel(dataplane_url, api_key, remote_port, local_port=local_port)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, t._tunnel._start)
+        return t
