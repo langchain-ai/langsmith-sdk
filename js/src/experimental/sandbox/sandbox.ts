@@ -133,13 +133,16 @@ export class Sandbox {
     command: string,
     options: RunOptions = {}
   ): Promise<ExecutionResult | CommandHandle> {
-    const { wait = true, onStdout, onStderr, ...restOptions } = options;
+    const { wait = true, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, ...restOptions } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
 
     if (!wait || hasCallbacks) {
       // WebSocket required for streaming / non-blocking
       const handle = await this._runWs(command, {
         ...restOptions,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
         onStdout,
         onStderr,
       });
@@ -154,7 +157,12 @@ export class Sandbox {
 
     // wait=true, no callbacks: try WS, fall back to HTTP
     try {
-      const handle = await this._runWs(command, restOptions);
+      const handle = await this._runWs(command, {
+        ...restOptions,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+      });
       return await handle.result;
     } catch (e) {
       // Fall back to HTTP on connection errors or missing ws package
@@ -183,6 +191,9 @@ export class Sandbox {
       shell = "/bin/bash",
       onStdout,
       onStderr,
+      idleTimeout,
+      killOnDisconnect,
+      ttlSeconds,
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
@@ -190,7 +201,7 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       command,
-      { timeout, env, cwd, shell, onStdout, onStderr }
+      { timeout, env, cwd, shell, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds }
     );
 
     const handle = new CommandHandle(stream, control, this);

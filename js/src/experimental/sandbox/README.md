@@ -161,6 +161,92 @@ for await (const chunk of newHandle) {
 
 > **Note:** When `wait` is `true` (default) with no callbacks, `run()` automatically tries WebSocket first and falls back to HTTP POST if the `ws` package is not installed or the server doesn't support it.
 
+## Command Lifecycle & TTL
+
+The sandbox daemon automatically manages command session lifecycles with two
+timeout mechanisms:
+
+### Session TTL (finished commands)
+
+After a command finishes (exits), its session remains in memory for a TTL
+period. During this window you can still reconnect to retrieve output. After the
+TTL expires, the session is cleaned up and `reconnect()` will throw an error.
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  const handle = await sandbox.run("make build", { wait: false });
+  const commandId = handle.commandId;
+
+  // Even after the command finishes, you can reconnect within the TTL window
+  const newHandle = await sandbox.reconnect(commandId);
+  const result = await newHandle.result;
+  console.log(result.stdout);
+
+  // After TTL expires, reconnect throws LangSmithSandboxOperationError
+} finally {
+  await sandbox.delete();
+}
+```
+
+### Idle Timeout (running commands)
+
+Running commands with no connected clients are killed after an idle timeout
+(default: 5 minutes). The idle timer resets each time a client connects. This
+prevents orphaned long-running processes from consuming resources indefinitely.
+
+You can set a per-command idle timeout via the `idleTimeout` option.
+Set to `-1` for no idle timeout (the command runs indefinitely until explicitly
+killed or it exits on its own).
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Start a long-running command with a 30-minute idle timeout
+  const handle = await sandbox.run("python server.py", {
+    timeout: 0,
+    idleTimeout: 1800,
+    wait: false,
+  });
+
+  // As long as a client is connected (iterating), the idle timer is paused
+  for await (const chunk of handle) {
+    process.stdout.write(chunk.data);
+    if (chunk.data.includes("Ready")) break;
+  }
+
+  // After disconnecting, the idle timer starts
+  // If no client reconnects within idleTimeout seconds, the process is killed
+} finally {
+  await sandbox.delete();
+}
+```
+
+### Kill on Disconnect
+
+By default, commands continue running after a client disconnects and can be
+reconnected to later. Set `killOnDisconnect: true` to kill the command
+immediately when the last client disconnects:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Command is killed as soon as the client disconnects
+  const handle = await sandbox.run("python server.py", {
+    killOnDisconnect: true,
+    wait: false,
+  });
+
+  for await (const chunk of handle) {
+    process.stdout.write(chunk.data);
+    if (chunk.data.includes("Ready")) break;
+  }
+  // Command is killed here when iteration stops and the WS disconnects
+} finally {
+  await sandbox.delete();
+}
+```
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -385,7 +471,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `run(command, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`) |
+| `run(command, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`). Supports `idleTimeout` option. |
 | `reconnect(commandId, options?)` | Reconnect to a running command by ID |
 | `write(path, content, timeout?)` | Write file (string or Uint8Array) |
 | `read(path, timeout?)` | Read file (returns Uint8Array) |
@@ -477,3 +563,6 @@ try {
 | `wait?` | Wait for completion (default: `true`). When `false`, returns `CommandHandle` |
 | `onStdout?` | Callback invoked with each stdout chunk (triggers WS streaming) |
 | `onStderr?` | Callback invoked with each stderr chunk (triggers WS streaming) |
+| `idleTimeout?` | Idle timeout in seconds (default: 300). Set to -1 for no timeout. Kills the command if no clients are connected for this duration |
+| `killOnDisconnect?` | If true, kill the command immediately when the last client disconnects (default: false) |
+| `ttlSeconds?` | How long a finished command's session is kept for reconnection (default: 600). Set to -1 to keep indefinitely |

@@ -299,7 +299,9 @@ export async function runWsStream(
     onStdout,
     onStderr,
     commandId,
-    idleTimeout,
+    idleTimeout = 300,
+    killOnDisconnect = false,
+    ttlSeconds = 600,
     pty,
   } = options;
 
@@ -317,13 +319,15 @@ export async function runWsStream(
       const payload: Record<string, unknown> = {
         type: "execute",
         command,
-        timeout,
+        timeout_seconds: timeout,
         shell,
+        idle_timeout_seconds: idleTimeout,
+        kill_on_disconnect: killOnDisconnect,
+        ttl_seconds: ttlSeconds,
       };
       if (env) payload.env = env;
       if (cwd) payload.cwd = cwd;
       if (commandId) payload.command_id = commandId;
-      if (idleTimeout !== undefined) payload.idle_timeout = idleTimeout;
       if (pty) payload.pty = true;
 
       ws.send(JSON.stringify(payload));

@@ -143,6 +143,9 @@ class Sandbox:
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
+        idle_timeout: int = ...,
+        kill_on_disconnect: bool = ...,
+        ttl_seconds: int = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
 
@@ -157,6 +160,9 @@ class Sandbox:
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
+        idle_timeout: int = ...,
+        kill_on_disconnect: bool = ...,
+        ttl_seconds: int = ...,
         wait: Literal[False],
     ) -> CommandHandle: ...
 
@@ -170,6 +176,9 @@ class Sandbox:
         shell: str = "/bin/bash",
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
         wait: bool = True,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute a command in the sandbox.
@@ -186,6 +195,16 @@ class Sandbox:
             on_stderr: Callback invoked with each stderr chunk as it arrives.
                 Blocks until the command completes and returns ExecutionResult.
                 Cannot be combined with wait=False.
+            idle_timeout: Idle timeout in seconds. If the command has no
+                connected clients for this duration, it is killed. Defaults
+                to 300 (5 minutes). Set to -1 for no idle timeout.
+                Only applies to WebSocket execution.
+            kill_on_disconnect: If True, kill the command immediately when
+                the last client disconnects. Defaults to False (command
+                continues running and can be reconnected to).
+            ttl_seconds: How long (in seconds) a finished command's session
+                is kept for reconnection. Defaults to 600 (10 minutes).
+                Set to -1 to keep indefinitely.
             wait: If True (default), block until the command completes and
                 return ExecutionResult. If False, return a
                 CommandHandle immediately for streaming output,
@@ -225,6 +244,9 @@ class Sandbox:
                 wait=wait,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
             )
 
         # Default (wait=True, no callbacks): try WS, fall back to HTTP.
@@ -240,6 +262,9 @@ class Sandbox:
                 wait=True,
                 on_stdout=None,
                 on_stderr=None,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
             )
         except (SandboxConnectionError, ImportError, OSError, TypeError):
             return self._run_http(
@@ -261,6 +286,9 @@ class Sandbox:
         wait: bool,
         on_stdout: Optional[Callable[[str], Any]],
         on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute via WebSocket /execute/ws."""
         from langsmith.sandbox._ws_execute import run_ws_stream
@@ -278,6 +306,9 @@ class Sandbox:
             shell=shell,
             on_stdout=on_stdout,
             on_stderr=on_stderr,
+            idle_timeout=idle_timeout,
+            kill_on_disconnect=kill_on_disconnect,
+            ttl_seconds=ttl_seconds,
         )
 
         handle = CommandHandle(msg_stream, control, self)
