@@ -32,10 +32,14 @@ console.warn(
 // Main classes
 export { SandboxClient } from "./client.js";
 export { Sandbox } from "./sandbox.js";
+export { CommandHandle } from "./command_handle.js";
 
 // Types
 export type {
   ExecutionResult,
+  OutputChunk,
+  WsMessage,
+  WsRunOptions,
   ResourceSpec,
   ResourceStatus,
   VolumeMountSpec,
@@ -62,6 +66,7 @@ export {
   LangSmithSandboxAPIError,
   LangSmithSandboxAuthenticationError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxServerReloadError,
   // Resource errors (type-based with resourceType attribute)
   LangSmithResourceNotFoundError,
   LangSmithResourceTimeoutError,
@@ -77,5 +82,6 @@ export {
   LangSmithSandboxCreationError,
   LangSmithSandboxNotReadyError,
   LangSmithSandboxOperationError,
+  LangSmithCommandTimeoutError,
   LangSmithDataplaneNotConfiguredError,
 } from "./errors.js";

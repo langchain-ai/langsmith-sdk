@@ -145,6 +145,10 @@ class AsyncSandbox:
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
+        idle_timeout: int = ...,
+        kill_on_disconnect: bool = ...,
+        ttl_seconds: int = ...,
+        pty: bool = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
 
@@ -159,6 +163,10 @@ class AsyncSandbox:
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
+        idle_timeout: int = ...,
+        kill_on_disconnect: bool = ...,
+        ttl_seconds: int = ...,
+        pty: bool = ...,
         wait: Literal[False],
     ) -> AsyncCommandHandle: ...
 
@@ -172,6 +180,10 @@ class AsyncSandbox:
         shell: str = "/bin/bash",
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
+        pty: bool = False,
         wait: bool = True,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute a command in the sandbox asynchronously.
@@ -188,6 +200,20 @@ class AsyncSandbox:
             on_stderr: Callback invoked with each stderr chunk as it arrives.
                 Blocks until the command completes and returns ExecutionResult.
                 Cannot be combined with wait=False.
+            idle_timeout: Idle timeout in seconds. If the command has no
+                connected clients for this duration, it is killed. Defaults
+                to 300 (5 minutes). Set to -1 for no idle timeout.
+                Only applies to WebSocket execution.
+            kill_on_disconnect: If True, kill the command immediately when
+                the last client disconnects. Defaults to False (command
+                continues running and can be reconnected to).
+            ttl_seconds: How long (in seconds) a finished command's session
+                is kept for reconnection. Defaults to 600 (10 minutes).
+                Set to -1 to keep indefinitely.
+            pty: If True, allocate a pseudo-terminal for the command.
+                Useful for commands that require a TTY (e.g., interactive
+                programs, commands that use terminal control codes).
+                Defaults to False.
             wait: If True (default), block until the command completes and
                 return ExecutionResult. If False, return an
                 AsyncCommandHandle immediately for streaming output,
@@ -226,6 +252,10 @@ class AsyncSandbox:
                 wait=wait,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
+                pty=pty,
             )
 
         # Catch broad exceptions so that unexpected WS failures (e.g. version
@@ -240,6 +270,10 @@ class AsyncSandbox:
                 wait=True,
                 on_stdout=None,
                 on_stderr=None,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
+                pty=pty,
             )
         except (SandboxConnectionError, ImportError, OSError, TypeError):
             return await self._run_http(
@@ -261,6 +295,10 @@ class AsyncSandbox:
         wait: bool,
         on_stdout: Optional[Callable[[str], Any]],
         on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
+        pty: bool = False,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute via WebSocket /execute/ws."""
         from langsmith.sandbox._ws_execute import run_ws_stream_async
@@ -278,6 +316,10 @@ class AsyncSandbox:
             shell=shell,
             on_stdout=on_stdout,
             on_stderr=on_stderr,
+            idle_timeout=idle_timeout,
+            kill_on_disconnect=kill_on_disconnect,
+            ttl_seconds=ttl_seconds,
+            pty=pty,
         )
 
         handle = AsyncCommandHandle(msg_stream, control, self)

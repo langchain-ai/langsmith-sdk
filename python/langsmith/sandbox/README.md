@@ -221,6 +221,136 @@ with client.sandbox(template_name="my-sandbox") as sb:
 > (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
 > back to HTTP which has its own request-level timeout.
 
+## Command Lifecycle & TTL
+
+The sandbox daemon automatically manages command session lifecycles with two
+timeout mechanisms:
+
+### Session TTL (finished commands)
+
+After a command finishes (exits), its session remains in memory for a TTL
+period. During this window you can still reconnect to retrieve output. After the
+TTL expires, the session is cleaned up and `reconnect()` will raise an error.
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", wait=False)
+    command_id = handle.command_id
+
+    # Even after the command finishes, you can reconnect within the TTL window
+    handle = sb.reconnect(command_id)
+    result = handle.result
+    print(result.stdout)
+
+    # After TTL expires, reconnect raises SandboxOperationError
+```
+
+### Idle Timeout (running commands)
+
+Running commands with no connected clients are killed after an idle timeout
+(default: 5 minutes). The idle timer resets each time a client connects. This
+prevents orphaned long-running processes from consuming resources indefinitely.
+
+You can set a per-command idle timeout via the `idle_timeout` parameter.
+Set to `-1` for no idle timeout (the command runs indefinitely until explicitly
+killed or it exits on its own).
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Start a long-running command with a 30-minute idle timeout
+    handle = sb.run(
+        "python server.py",
+        timeout=0,
+        idle_timeout=1800,
+        wait=False,
+    )
+
+    # As long as a client is connected (iterating), the idle timer is paused
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break
+
+    # After disconnecting, the idle timer starts
+    # If no client reconnects within idle_timeout seconds, the process is killed
+```
+
+### Kill on Disconnect
+
+By default, commands continue running after a client disconnects and can be
+reconnected to later. Set `kill_on_disconnect=True` to kill the command
+immediately when the last client disconnects:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Command is killed as soon as the client disconnects
+    handle = sb.run(
+        "python server.py",
+        kill_on_disconnect=True,
+        wait=False,
+    )
+
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break
+    # Command is killed here when iteration stops and the WS disconnects
+```
+
+### Combining Lifecycle Options
+
+All lifecycle parameters can be combined:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Long-running task: 30-min idle timeout, 1-hour session TTL
+    handle = sb.run(
+        "python train.py",
+        timeout=0,              # No command timeout
+        idle_timeout=1800,      # Kill after 30min with no clients
+        ttl_seconds=3600,       # Keep session for 1 hour after exit
+        wait=False,
+    )
+
+    # Fire-and-forget: no idle timeout, infinite TTL
+    handle = sb.run(
+        "python background_job.py",
+        timeout=0,
+        idle_timeout=-1,        # Never kill due to idle
+        ttl_seconds=-1,         # Keep session forever
+        wait=False,
+    )
+```
+
+## PTY (Pseudo-Terminal)
+
+Set `pty=True` to allocate a pseudo-terminal for the command. This is useful
+for interactive programs and commands that detect terminal capabilities:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Run an interactive Python REPL with PTY
+    handle = sb.run("python", pty=True, wait=False)
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("print('hello')\n")
+            break
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("exit()\n")
+            break
+
+    result = handle.result
+
+    # Commands that require a TTY
+    result = sb.run("top -b -n 1", pty=True)
+```
+
+> **Note:** PTY mode merges stdout and stderr into a single stream (stdout).
+> Only use PTY when the command requires it — most commands work fine without it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -624,7 +754,7 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
+| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, idle_timeout=300, kill_on_disconnect=False, ttl_seconds=600, pty=False, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
