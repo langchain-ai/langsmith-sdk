@@ -247,6 +247,70 @@ try {
 }
 ```
 
+### Combining Lifecycle Options
+
+All lifecycle options can be combined:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Long-running task: 30-min idle timeout, 1-hour session TTL
+  const handle = await sandbox.run("python train.py", {
+    timeout: 0,              // No command timeout
+    idleTimeout: 1800,       // Kill after 30min with no clients
+    ttlSeconds: 3600,        // Keep session for 1 hour after exit
+    wait: false,
+  });
+
+  // Fire-and-forget: no idle timeout, infinite TTL
+  const bg = await sandbox.run("python background_job.py", {
+    timeout: 0,
+    idleTimeout: -1,         // Never kill due to idle
+    ttlSeconds: -1,          // Keep session forever
+    wait: false,
+  });
+} finally {
+  await sandbox.delete();
+}
+```
+
+## PTY (Pseudo-Terminal)
+
+Set `pty: true` to allocate a pseudo-terminal for the command. This is useful
+for interactive programs and commands that detect terminal capabilities:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Run an interactive Python REPL with PTY
+  const handle = await sandbox.run("python", { pty: true, wait: false });
+
+  for await (const chunk of handle) {
+    if (chunk.data.includes(">>>")) {
+      handle.sendInput("print('hello')\n");
+      break;
+    }
+  }
+
+  for await (const chunk of handle) {
+    if (chunk.data.includes(">>>")) {
+      handle.sendInput("exit()\n");
+      break;
+    }
+  }
+
+  const result = await handle.result;
+
+  // Commands that require a TTY
+  const topResult = await sandbox.run("top -b -n 1", { pty: true });
+} finally {
+  await sandbox.delete();
+}
+```
+
+> **Note:** PTY mode merges stdout and stderr into a single stream (stdout).
+> Only use PTY when the command requires it — most commands work fine without it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -566,3 +630,4 @@ try {
 | `idleTimeout?` | Idle timeout in seconds (default: 300). Set to -1 for no timeout. Kills the command if no clients are connected for this duration |
 | `killOnDisconnect?` | If true, kill the command immediately when the last client disconnects (default: false) |
 | `ttlSeconds?` | How long a finished command's session is kept for reconnection (default: 600). Set to -1 to keep indefinitely |
+| `pty?` | Allocate a pseudo-terminal (default: false). Merges stderr into stdout |

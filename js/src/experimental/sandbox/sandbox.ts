@@ -133,7 +133,7 @@ export class Sandbox {
     command: string,
     options: RunOptions = {}
   ): Promise<ExecutionResult | CommandHandle> {
-    const { wait = true, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, ...restOptions } = options;
+    const { wait = true, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, pty, ...restOptions } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
 
     if (!wait || hasCallbacks) {
@@ -143,6 +143,7 @@ export class Sandbox {
         idleTimeout,
         killOnDisconnect,
         ttlSeconds,
+        pty,
         onStdout,
         onStderr,
       });
@@ -162,6 +163,7 @@ export class Sandbox {
         idleTimeout,
         killOnDisconnect,
         ttlSeconds,
+        pty,
       });
       return await handle.result;
     } catch (e) {
@@ -194,6 +196,7 @@ export class Sandbox {
       idleTimeout,
       killOnDisconnect,
       ttlSeconds,
+      pty,
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
@@ -201,7 +204,7 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       command,
-      { timeout, env, cwd, shell, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds }
+      { timeout, env, cwd, shell, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, pty }
     );
 
     const handle = new CommandHandle(stream, control, this);

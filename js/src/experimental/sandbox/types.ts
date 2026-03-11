@@ -235,6 +235,12 @@ export interface RunOptions {
    * reconnection. Defaults to 600 (10 minutes). Set to -1 to keep indefinitely.
    */
   ttlSeconds?: number;
+  /**
+   * If true, allocate a pseudo-terminal (PTY) for the command.
+   * Useful for commands that require a TTY (e.g., interactive programs,
+   * commands that use terminal control codes). Defaults to false.
+   */
+  pty?: boolean;
 }
 
 /**

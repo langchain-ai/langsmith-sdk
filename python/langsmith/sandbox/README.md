@@ -297,6 +297,60 @@ with client.sandbox(template_name="my-sandbox") as sb:
     # Command is killed here when iteration stops and the WS disconnects
 ```
 
+### Combining Lifecycle Options
+
+All lifecycle parameters can be combined:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Long-running task: 30-min idle timeout, 1-hour session TTL
+    handle = sb.run(
+        "python train.py",
+        timeout=0,              # No command timeout
+        idle_timeout=1800,      # Kill after 30min with no clients
+        ttl_seconds=3600,       # Keep session for 1 hour after exit
+        wait=False,
+    )
+
+    # Fire-and-forget: no idle timeout, infinite TTL
+    handle = sb.run(
+        "python background_job.py",
+        timeout=0,
+        idle_timeout=-1,        # Never kill due to idle
+        ttl_seconds=-1,         # Keep session forever
+        wait=False,
+    )
+```
+
+## PTY (Pseudo-Terminal)
+
+Set `pty=True` to allocate a pseudo-terminal for the command. This is useful
+for interactive programs and commands that detect terminal capabilities:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Run an interactive Python REPL with PTY
+    handle = sb.run("python", pty=True, wait=False)
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("print('hello')\n")
+            break
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("exit()\n")
+            break
+
+    result = handle.result
+
+    # Commands that require a TTY
+    result = sb.run("top -b -n 1", pty=True)
+```
+
+> **Note:** PTY mode merges stdout and stderr into a single stream (stdout).
+> Only use PTY when the command requires it — most commands work fine without it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -581,7 +635,7 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, idle_timeout=300, kill_on_disconnect=False, ttl_seconds=600, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
+| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, idle_timeout=300, kill_on_disconnect=False, ttl_seconds=600, pty=False, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |

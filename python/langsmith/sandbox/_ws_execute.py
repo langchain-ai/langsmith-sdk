@@ -203,6 +203,7 @@ def run_ws_stream(
     idle_timeout: int = 300,
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
+    pty: bool = False,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Execute a command over WebSocket, yielding raw message dicts.
 
@@ -249,6 +250,8 @@ def run_ws_stream(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
                 ws.send(json.dumps(payload))
 
                 # Read messages until exit or error
@@ -395,6 +398,7 @@ async def run_ws_stream_async(
     idle_timeout: int = 300,
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
+    pty: bool = False,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of run_ws_stream.
 
@@ -430,6 +434,8 @@ async def run_ws_stream_async(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
                 await ws.send(json.dumps(payload))
 
                 async for raw_msg in ws:

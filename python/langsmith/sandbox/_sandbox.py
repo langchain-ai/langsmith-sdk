@@ -146,6 +146,7 @@ class Sandbox:
         idle_timeout: int = ...,
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
+        pty: bool = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
 
@@ -163,6 +164,7 @@ class Sandbox:
         idle_timeout: int = ...,
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
+        pty: bool = ...,
         wait: Literal[False],
     ) -> CommandHandle: ...
 
@@ -179,6 +181,7 @@ class Sandbox:
         idle_timeout: int = 300,
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
+        pty: bool = False,
         wait: bool = True,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute a command in the sandbox.
@@ -205,6 +208,10 @@ class Sandbox:
             ttl_seconds: How long (in seconds) a finished command's session
                 is kept for reconnection. Defaults to 600 (10 minutes).
                 Set to -1 to keep indefinitely.
+            pty: If True, allocate a pseudo-terminal for the command.
+                Useful for commands that require a TTY (e.g., interactive
+                programs, commands that use terminal control codes).
+                Defaults to False.
             wait: If True (default), block until the command completes and
                 return ExecutionResult. If False, return a
                 CommandHandle immediately for streaming output,
@@ -247,6 +254,7 @@ class Sandbox:
                 idle_timeout=idle_timeout,
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
+                pty=pty,
             )
 
         # Default (wait=True, no callbacks): try WS, fall back to HTTP.
@@ -265,6 +273,7 @@ class Sandbox:
                 idle_timeout=idle_timeout,
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
+                pty=pty,
             )
         except (SandboxConnectionError, ImportError, OSError, TypeError):
             return self._run_http(
@@ -289,6 +298,7 @@ class Sandbox:
         idle_timeout: int = 300,
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
+        pty: bool = False,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute via WebSocket /execute/ws."""
         from langsmith.sandbox._ws_execute import run_ws_stream
@@ -309,6 +319,7 @@ class Sandbox:
             idle_timeout=idle_timeout,
             kill_on_disconnect=kill_on_disconnect,
             ttl_seconds=ttl_seconds,
+            pty=pty,
         )
 
         handle = CommandHandle(msg_stream, control, self)
