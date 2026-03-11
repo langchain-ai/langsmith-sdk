@@ -12,6 +12,7 @@ import logging
 import socket
 import struct
 import threading
+import time
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -183,6 +184,9 @@ class Tunnel:
         t.close()
     """
 
+    _BACKOFF_BASE = 0.5
+    _BACKOFF_MAX = 8.0
+
     def __init__(
         self,
         dataplane_url: str,
@@ -190,17 +194,20 @@ class Tunnel:
         remote_port: int,
         *,
         local_port: int = 0,
+        max_reconnects: int = 3,
     ) -> None:
         self._dataplane_url = dataplane_url
         self._api_key = api_key
         self._remote_port = remote_port
         self._requested_local_port = local_port or remote_port
         self._local_port = self._requested_local_port
+        self._max_reconnects = max_reconnects
 
         self._ws: object = None
         self._yamux: Optional[YamuxSession] = None
         self._server_socket: Optional[socket.socket] = None
         self._accept_thread: Optional[threading.Thread] = None
+        self._reconnect_lock = threading.Lock()
         self._closed = False
         self._started = False
 
@@ -236,24 +243,7 @@ class Tunnel:
             raise
 
     def _do_start(self) -> None:
-        from langsmith.sandbox._yamux import YamuxSession
-
-        ws_connect = _ensure_websockets()
-        ws_url = self._build_ws_url()
-        headers: dict[str, str] = {}
-        if self._api_key:
-            headers["X-Api-Key"] = self._api_key
-
-        self._ws = ws_connect(
-            ws_url,
-            additional_headers=headers,
-            open_timeout=15,
-            close_timeout=5,
-            ping_interval=None,  # yamux handles keepalive
-        )
-
-        adapter = _WSAdapter(self._ws)
-        self._yamux = YamuxSession(adapter)
+        self._connect()
 
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -296,6 +286,64 @@ class Tunnel:
         )
         self._accept_thread.start()
 
+    def _connect(self) -> None:
+        """Establish (or re-establish) the WebSocket + yamux session."""
+        from langsmith.sandbox._yamux import YamuxSession
+
+        old_yamux = self._yamux
+        if old_yamux:
+            try:
+                old_yamux.close()
+            except Exception:
+                pass
+
+        ws_connect = _ensure_websockets()
+        ws_url = self._build_ws_url()
+        headers: dict[str, str] = {}
+        if self._api_key:
+            headers["X-Api-Key"] = self._api_key
+
+        self._ws = ws_connect(
+            ws_url,
+            additional_headers=headers,
+            open_timeout=15,
+            close_timeout=5,
+            ping_interval=None,  # yamux handles keepalive
+        )
+
+        adapter = _WSAdapter(self._ws)
+        self._yamux = YamuxSession(adapter)
+
+    def _ensure_session(self) -> YamuxSession:
+        """Return a live yamux session, reconnecting if needed."""
+        from langsmith.sandbox._exceptions import TunnelError
+
+        if self._yamux and not self._yamux.is_closed:
+            return self._yamux
+
+        with self._reconnect_lock:
+            if self._yamux and not self._yamux.is_closed:
+                return self._yamux
+
+            last_err: Optional[Exception] = None
+            for attempt in range(self._max_reconnects):
+                try:
+                    self._connect()
+                    logger.debug("tunnel: reconnected (attempt %d)", attempt + 1)
+                    return self._yamux  # type: ignore[return-value]
+                except Exception as exc:
+                    last_err = exc
+                    if attempt < self._max_reconnects - 1:
+                        delay = min(
+                            self._BACKOFF_BASE * (2**attempt),
+                            self._BACKOFF_MAX,
+                        )
+                        time.sleep(delay)
+
+            raise TunnelError(
+                f"tunnel: reconnect failed after {self._max_reconnects} attempts"
+            ) from last_err
+
     def close(self) -> None:
         """Shut down the tunnel, closing all connections."""
         if self._closed:
@@ -328,7 +376,8 @@ class Tunnel:
 
     def _handle_conn(self, tcp_conn: socket.socket) -> None:
         try:
-            stream = self._yamux.open_stream()  # type: ignore[union-attr]
+            session = self._ensure_session()
+            stream = session.open_stream()
             _write_connect_header(stream, self._remote_port)
             status = _read_status(stream)
 
@@ -395,9 +444,14 @@ class AsyncTunnel:
         remote_port: int,
         *,
         local_port: int = 0,
+        max_reconnects: int = 3,
     ) -> None:
         self._tunnel = Tunnel(
-            dataplane_url, api_key, remote_port, local_port=local_port
+            dataplane_url,
+            api_key,
+            remote_port,
+            local_port=local_port,
+            max_reconnects=max_reconnects,
         )
 
     @property
