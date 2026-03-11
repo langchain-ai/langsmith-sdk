@@ -11,7 +11,6 @@ import type { Sandbox } from "./sandbox.js";
 import {
   LangSmithSandboxConnectionError,
   LangSmithSandboxOperationError,
-  LangSmithSandboxServerReloadError,
 } from "./errors.js";
 
 /**
@@ -204,7 +203,12 @@ export class CommandHandle {
         }
         return; // Stream ended normally (exit message received)
       } catch (e) {
-        if (!(e instanceof LangSmithSandboxConnectionError)) {
+        const eName =
+          e != null && typeof e === "object" ? (e as Error).name : "";
+        if (
+          eName !== "LangSmithSandboxConnectionError" &&
+          eName !== "LangSmithSandboxServerReloadError"
+        ) {
           throw e;
         }
 
@@ -219,7 +223,7 @@ export class CommandHandle {
           );
         }
 
-        const isHotReload = e instanceof LangSmithSandboxServerReloadError;
+        const isHotReload = eName === "LangSmithSandboxServerReloadError";
         if (!isHotReload) {
           const delay = Math.min(
             CommandHandle.BACKOFF_BASE * 2 ** (reconnectAttempts - 1),

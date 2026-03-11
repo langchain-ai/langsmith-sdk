@@ -6,7 +6,6 @@ import type { SandboxClient } from "./client.js";
 import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
 import {
   LangSmithDataplaneNotConfiguredError,
-  LangSmithSandboxConnectionError,
   LangSmithSandboxNotReadyError,
 } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
@@ -133,7 +132,16 @@ export class Sandbox {
     command: string,
     options: RunOptions = {}
   ): Promise<ExecutionResult | CommandHandle> {
-    const { wait = true, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, pty, ...restOptions } = options;
+    const {
+      wait = true,
+      onStdout,
+      onStderr,
+      idleTimeout,
+      killOnDisconnect,
+      ttlSeconds,
+      pty,
+      ...restOptions
+    } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
 
     if (!wait || hasCallbacks) {
@@ -168,9 +176,13 @@ export class Sandbox {
       return await handle.result;
     } catch (e) {
       // Fall back to HTTP on connection errors or missing ws package
+      const name = e != null && typeof e === "object" ? (e as Error).name : "";
+      const message =
+        e != null && typeof e === "object" ? (e as Error).message ?? "" : "";
       if (
-        e instanceof LangSmithSandboxConnectionError ||
-        (e instanceof Error && e.message.includes("'ws' package"))
+        name === "LangSmithSandboxConnectionError" ||
+        name === "LangSmithSandboxServerReloadError" ||
+        message.includes("'ws' package")
       ) {
         return this._runHttp(command, restOptions);
       }
@@ -204,7 +216,18 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       command,
-      { timeout, env, cwd, shell, onStdout, onStderr, idleTimeout, killOnDisconnect, ttlSeconds, pty }
+      {
+        timeout,
+        env,
+        cwd,
+        shell,
+        onStdout,
+        onStderr,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+        pty,
+      }
     );
 
     const handle = new CommandHandle(stream, control, this);
