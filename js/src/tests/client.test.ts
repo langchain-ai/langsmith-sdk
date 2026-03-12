@@ -851,14 +851,12 @@ describe("Client", () => {
         cursors: {},
       };
 
-      jest
-        .spyOn(client as any, "_fetch")
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => mockResponse,
-          text: async () => JSON.stringify(mockResponse),
-        });
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
 
       const runs: any[] = [];
       for await (const run of client.listRuns({ projectId: "proj-1" })) {
@@ -890,14 +888,12 @@ describe("Client", () => {
         cursors: {},
       };
 
-      jest
-        .spyOn(client as any, "_fetch")
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => mockResponse,
-          text: async () => JSON.stringify(mockResponse),
-        });
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
 
       const runs: any[] = [];
       for await (const run of client.listRuns({ projectId: "proj-1" })) {
