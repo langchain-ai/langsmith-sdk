@@ -1201,6 +1201,8 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
+    _ENVELOPE_HEADER_ALLOWLIST = frozenset({"Content-Type", "Content-Encoding"})
+
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1217,11 +1219,16 @@ class Client:
             body = body_fn()
             if isinstance(body, str):
                 body = body.encode("utf-8")
+            safe_headers = {
+                k: v
+                for k, v in headers.items()
+                if k in self._ENVELOPE_HEADER_ALLOWLIST
+            }
             self._write_trace_to_fallback_dir(
                 self._failed_traces_dir,
                 body,
                 endpoint="runs/multipart",
-                headers=headers,
+                headers=safe_headers,
                 max_bytes=self._failed_traces_max_bytes,
             )
         except Exception:
@@ -1246,6 +1253,10 @@ class Client:
             Content-Type: <value from saved headers>
             [Content-Encoding: <value from saved headers>]
             <decoded body>
+
+        Only ``Content-Type`` and ``Content-Encoding`` are persisted; auth
+        headers are intentionally excluded and should be sourced from the
+        environment at replay time.
 
         If *max_bytes* is set, new traces are dropped when the directory is
         already at or over the budget.
