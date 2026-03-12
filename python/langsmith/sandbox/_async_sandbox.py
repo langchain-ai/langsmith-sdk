@@ -489,7 +489,13 @@ class AsyncSandbox:
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
 
-    async def tunnel(self, remote_port: int, *, local_port: int = 0) -> AsyncTunnel:
+    async def tunnel(
+        self,
+        remote_port: int,
+        *,
+        local_port: int = 0,
+        max_reconnects: int = 3,
+    ) -> AsyncTunnel:
         """Open a TCP tunnel to a port inside the sandbox.
 
         Creates a local TCP listener that forwards connections through a
@@ -505,6 +511,8 @@ class AsyncSandbox:
             remote_port: TCP port inside the sandbox to tunnel to (1-65535).
             local_port: Local port to listen on. Defaults to mirroring
                 remote_port. Use 0 to let the OS pick an available port.
+            max_reconnects: Maximum number of automatic reconnect attempts
+                when the WebSocket session drops. Set to 0 to disable.
 
         Returns:
             An AsyncTunnel instance (async context manager).
@@ -524,7 +532,13 @@ class AsyncSandbox:
             )
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
-        t = AsyncTunnel(dataplane_url, api_key, remote_port, local_port=local_port)
+        t = AsyncTunnel(
+            dataplane_url,
+            api_key,
+            remote_port,
+            local_port=local_port,
+            max_reconnects=max_reconnects,
+        )
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, t._tunnel._start)
         return t

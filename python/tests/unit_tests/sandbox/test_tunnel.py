@@ -283,3 +283,88 @@ class TestPortValidation:
         assert t.remote_port == 5432
         assert t.local_port == 15432
         mock_start.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Reconnect
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureSession:
+    def test_returns_existing_live_session(self) -> None:
+        t = Tunnel("http://example.com", "key", 5432)
+        mock_yamux = MagicMock()
+        mock_yamux.is_closed = False
+        t._yamux = mock_yamux
+
+        result = t._ensure_session()
+        assert result is mock_yamux
+
+    def test_reconnects_when_session_is_dead(self) -> None:
+        t = Tunnel("http://example.com", "key", 5432)
+        dead_yamux = MagicMock()
+        dead_yamux.is_closed = True
+        t._yamux = dead_yamux
+
+        fresh_yamux = MagicMock()
+        fresh_yamux.is_closed = False
+
+        with patch.object(t, "_connect") as mock_connect:
+            mock_connect.side_effect = lambda: setattr(t, "_yamux", fresh_yamux)
+            result = t._ensure_session()
+
+        assert result is fresh_yamux
+        mock_connect.assert_called_once()
+
+    def test_raises_after_exhausting_retries(self) -> None:
+        t = Tunnel("http://example.com", "key", 5432, max_reconnects=2)
+        dead_yamux = MagicMock()
+        dead_yamux.is_closed = True
+        t._yamux = dead_yamux
+        t._BACKOFF_BASE = 0.01  # speed up test
+
+        with patch.object(t, "_connect", side_effect=ConnectionError("fail")):
+            with pytest.raises(TunnelError, match="reconnect failed"):
+                t._ensure_session()
+
+    def test_concurrent_threads_share_single_reconnect(self) -> None:
+        t = Tunnel("http://example.com", "key", 5432)
+        dead_yamux = MagicMock()
+        dead_yamux.is_closed = True
+        t._yamux = dead_yamux
+
+        fresh_yamux = MagicMock()
+        fresh_yamux.is_closed = False
+        connect_count = 0
+
+        def slow_connect() -> None:
+            nonlocal connect_count
+            import time
+
+            time.sleep(0.05)
+            connect_count += 1
+            t._yamux = fresh_yamux
+
+        results: list[object] = []
+
+        def worker() -> None:
+            results.append(t._ensure_session())
+
+        with patch.object(t, "_connect", side_effect=slow_connect):
+            threads = [threading.Thread(target=worker) for _ in range(5)]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+
+        assert connect_count == 1
+        assert all(r is fresh_yamux for r in results)
+
+    def test_reconnect_disabled_when_max_zero(self) -> None:
+        t = Tunnel("http://example.com", "key", 5432, max_reconnects=0)
+        dead_yamux = MagicMock()
+        dead_yamux.is_closed = True
+        t._yamux = dead_yamux
+
+        with pytest.raises(TunnelError, match="reconnect failed"):
+            t._ensure_session()
