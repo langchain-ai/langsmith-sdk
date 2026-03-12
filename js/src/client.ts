@@ -103,14 +103,12 @@ function _ensureUTCTimestamp(
   return ts;
 }
 
-function _normalizeRunTimestamps(run: Run): Run {
-  if (run.start_time !== undefined) {
-    run.start_time = _ensureUTCTimestamp(run.start_time);
-  }
-  if (run.end_time !== undefined) {
-    run.end_time = _ensureUTCTimestamp(run.end_time);
-  }
-  return run;
+function _normalizeRunTimestamps<T extends Run>(run: T): T {
+  return {
+    ...run,
+    start_time: _ensureUTCTimestamp(run.start_time),
+    end_time: _ensureUTCTimestamp(run.end_time),
+  };
 }
 
 export interface ClientConfig {
@@ -2230,8 +2228,7 @@ export class Client implements LangSmithTracingClientInterface {
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
   ): Promise<Run> {
     assertUuid(runId);
-    let run = await this._get<Run>(`/runs/${runId}`);
-    _normalizeRunTimestamps(run);
+    let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
       run = await this._loadChildRuns(run);
     }
@@ -2684,8 +2681,8 @@ export class Client implements LangSmithTracingClientInterface {
       "/runs/query",
       bodyQuery as RecordStringAny
     )) {
-      for (const run of runs) {
-        _normalizeRunTimestamps(run);
+      for (const raw of runs) {
+        const run = _normalizeRunTimestamps(raw);
         const tid = (run as unknown as Record<string, unknown>).thread_id as
           | string
           | undefined;
@@ -5268,7 +5265,7 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const run = await response.json();
-    return _normalizeRunTimestamps(run) as RunWithAnnotationQueueInfo;
+    return _normalizeRunTimestamps(run);
   }
 
   /**
