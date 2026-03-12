@@ -475,6 +475,10 @@ class Run(RunBase):
         inputs = kwargs.pop("inputs", None) or {}
         super().__init__(**kwargs, inputs=inputs)
         self._host_url = _host_url
+        if self.start_time.tzinfo is None:
+            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
+        if self.end_time is not None and self.end_time.tzinfo is None:
+            self.end_time = self.end_time.replace(tzinfo=timezone.utc)
         if not self.dotted_order.strip() and not self.parent_run_id:
             self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
 
