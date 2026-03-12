@@ -76,6 +76,241 @@ try {
 }
 ```
 
+## Streaming Execution (WebSocket)
+
+For long-running commands, you can stream output in real-time using WebSocket-based execution. This requires the optional `ws` package:
+
+```bash
+npm install ws
+```
+
+### Stream with callbacks
+
+```typescript
+// Stream stdout/stderr via callbacks (blocks until complete)
+const result = await sandbox.run("make build", {
+  onStdout: (data) => process.stdout.write(data),
+  onStderr: (data) => process.stderr.write(data),
+});
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+### Non-blocking with CommandHandle
+
+```typescript
+// Get a CommandHandle for full control over the stream
+const handle = await sandbox.run("python train.py", {
+  wait: false,
+  timeout: 600,
+});
+
+console.log(`Command ID: ${handle.commandId}`);
+console.log(`PID: ${handle.pid}`);
+
+// Iterate over output chunks (auto-reconnects on transient errors)
+for await (const chunk of handle) {
+  if (chunk.stream === "stdout") {
+    process.stdout.write(chunk.data);
+  } else {
+    process.stderr.write(chunk.data);
+  }
+}
+
+// Get the final result
+const result = await handle.result;
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+### Sending stdin and killing commands
+
+```typescript
+const handle = await sandbox.run("python -i", { wait: false });
+
+// Send input to stdin
+handle.sendInput("print(2 + 2)\n");
+handle.sendInput("exit()\n");
+
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+```typescript
+const handle = await sandbox.run("sleep 300", { wait: false });
+
+// Kill the running command
+handle.kill();
+
+const result = await handle.result;
+console.log(result.exit_code); // non-zero
+```
+
+### Reconnecting to a running command
+
+```typescript
+// If a client disconnects, you can reconnect using the command ID
+const handle = await sandbox.run("long-task", { wait: false });
+const commandId = handle.commandId;
+
+// ... later, or from a different client ...
+const newHandle = await sandbox.reconnect(commandId);
+for await (const chunk of newHandle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+> **Note:** When `wait` is `true` (default) with no callbacks, `run()` automatically tries WebSocket first and falls back to HTTP POST if the `ws` package is not installed or the server doesn't support it.
+
+## Command Lifecycle & TTL
+
+The sandbox daemon automatically manages command session lifecycles with two
+timeout mechanisms:
+
+### Session TTL (finished commands)
+
+After a command finishes (exits), its session remains in memory for a TTL
+period. During this window you can still reconnect to retrieve output. After the
+TTL expires, the session is cleaned up and `reconnect()` will throw an error.
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  const handle = await sandbox.run("make build", { wait: false });
+  const commandId = handle.commandId;
+
+  // Even after the command finishes, you can reconnect within the TTL window
+  const newHandle = await sandbox.reconnect(commandId);
+  const result = await newHandle.result;
+  console.log(result.stdout);
+
+  // After TTL expires, reconnect throws LangSmithSandboxOperationError
+} finally {
+  await sandbox.delete();
+}
+```
+
+### Idle Timeout (running commands)
+
+Running commands with no connected clients are killed after an idle timeout
+(default: 5 minutes). The idle timer resets each time a client connects. This
+prevents orphaned long-running processes from consuming resources indefinitely.
+
+You can set a per-command idle timeout via the `idleTimeout` option.
+Set to `-1` for no idle timeout (the command runs indefinitely until explicitly
+killed or it exits on its own).
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Start a long-running command with a 30-minute idle timeout
+  const handle = await sandbox.run("python server.py", {
+    timeout: 0,
+    idleTimeout: 1800,
+    wait: false,
+  });
+
+  // As long as a client is connected (iterating), the idle timer is paused
+  for await (const chunk of handle) {
+    process.stdout.write(chunk.data);
+    if (chunk.data.includes("Ready")) break;
+  }
+
+  // After disconnecting, the idle timer starts
+  // If no client reconnects within idleTimeout seconds, the process is killed
+} finally {
+  await sandbox.delete();
+}
+```
+
+### Kill on Disconnect
+
+By default, commands continue running after a client disconnects and can be
+reconnected to later. Set `killOnDisconnect: true` to kill the command
+immediately when the last client disconnects:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Command is killed as soon as the client disconnects
+  const handle = await sandbox.run("python server.py", {
+    killOnDisconnect: true,
+    wait: false,
+  });
+
+  for await (const chunk of handle) {
+    process.stdout.write(chunk.data);
+    if (chunk.data.includes("Ready")) break;
+  }
+  // Command is killed here when iteration stops and the WS disconnects
+} finally {
+  await sandbox.delete();
+}
+```
+
+### Combining Lifecycle Options
+
+All lifecycle options can be combined:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Long-running task: 30-min idle timeout, 1-hour session TTL
+  const handle = await sandbox.run("python train.py", {
+    timeout: 0,              // No command timeout
+    idleTimeout: 1800,       // Kill after 30min with no clients
+    ttlSeconds: 3600,        // Keep session for 1 hour after exit
+    wait: false,
+  });
+
+  // Fire-and-forget: no idle timeout, infinite TTL
+  const bg = await sandbox.run("python background_job.py", {
+    timeout: 0,
+    idleTimeout: -1,         // Never kill due to idle
+    ttlSeconds: -1,          // Keep session forever
+    wait: false,
+  });
+} finally {
+  await sandbox.delete();
+}
+```
+
+## PTY (Pseudo-Terminal)
+
+Set `pty: true` to allocate a pseudo-terminal for the command. This is useful
+for interactive programs and commands that detect terminal capabilities:
+
+```typescript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Run an interactive Python REPL with PTY
+  const handle = await sandbox.run("python", { pty: true, wait: false });
+
+  for await (const chunk of handle) {
+    if (chunk.data.includes(">>>")) {
+      handle.sendInput("print('hello')\n");
+      break;
+    }
+  }
+
+  for await (const chunk of handle) {
+    if (chunk.data.includes(">>>")) {
+      handle.sendInput("exit()\n");
+      break;
+    }
+  }
+
+  const result = await handle.result;
+
+  // Commands that require a TTY
+  const topResult = await sandbox.run("top -b -n 1", { pty: true });
+} finally {
+  await sandbox.delete();
+}
+```
+
+> **Note:** PTY mode merges stdout and stderr into a single stream (stdout).
+> Only use PTY when the command requires it — most commands work fine without it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -242,12 +477,14 @@ The module provides typed exceptions for specific error handling:
 ```typescript
 import {
   SandboxClient,
-  LangSmithSandboxError,           // Base exception for all sandbox errors
-  LangSmithResourceNotFoundError,  // Resource doesn't exist (check resourceType)
-  LangSmithResourceTimeoutError,   // Operation timed out (check resourceType)
-  LangSmithSandboxConnectionError, // Network error
-  LangSmithQuotaExceededError,     // Quota limit reached
-  LangSmithValidationError,        // Invalid input
+  LangSmithSandboxError,              // Base exception for all sandbox errors
+  LangSmithResourceNotFoundError,     // Resource doesn't exist (check resourceType)
+  LangSmithResourceTimeoutError,      // Operation timed out (check resourceType)
+  LangSmithSandboxConnectionError,    // Network error
+  LangSmithSandboxServerReloadError,  // Server hot-reload (auto-reconnects)
+  LangSmithCommandTimeoutError,       // Command exceeded its timeout
+  LangSmithQuotaExceededError,        // Quota limit reached
+  LangSmithValidationError,           // Invalid input
 } from "langsmith/experimental/sandbox";
 
 const client = new SandboxClient();
@@ -298,10 +535,25 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `run(command, options?)` | Execute a shell command |
+| `run(command, options?)` | Execute a shell command (returns `ExecutionResult` or `CommandHandle`). Supports `idleTimeout` option. |
+| `reconnect(commandId, options?)` | Reconnect to a running command by ID |
 | `write(path, content, timeout?)` | Write file (string or Uint8Array) |
 | `read(path, timeout?)` | Read file (returns Uint8Array) |
 | `delete()` | Delete the sandbox |
+
+### CommandHandle
+
+| Property/Method | Description |
+|-----------------|-------------|
+| `commandId` | Server-assigned command ID |
+| `pid` | Process ID on the sandbox |
+| `result` | Final `ExecutionResult` (drains stream if needed) |
+| `kill()` | Send SIGKILL to the running command |
+| `sendInput(data)` | Write string data to the command's stdin |
+| `reconnect()` | Reconnect from the last known offsets |
+| `lastStdoutOffset` | Last stdout byte offset (for manual reconnection) |
+| `lastStderrOffset` | Last stderr byte offset (for manual reconnection) |
+| `[Symbol.asyncIterator]` | Yields `OutputChunk` objects with auto-reconnect |
 
 ### ExecutionResult
 
@@ -310,6 +562,14 @@ try {
 | `stdout` | Standard output (string) |
 | `stderr` | Standard error (string) |
 | `exit_code` | Exit code (number) |
+
+### OutputChunk
+
+| Property | Description |
+|----------|-------------|
+| `stream` | `"stdout"` or `"stderr"` |
+| `data` | Text content of the chunk |
+| `offset` | Byte offset within the stream |
 
 ### CreateSandboxOptions
 
@@ -360,6 +620,14 @@ try {
 
 | Property | Description |
 |----------|-------------|
+| `timeout?` | Execution timeout in seconds (default: 60) |
 | `env?` | Environment variables for the command |
 | `cwd?` | Working directory |
-| `timeout?` | Execution timeout in seconds (default: 60) |
+| `shell?` | Shell to use (default: `"/bin/bash"`) |
+| `wait?` | Wait for completion (default: `true`). When `false`, returns `CommandHandle` |
+| `onStdout?` | Callback invoked with each stdout chunk (triggers WS streaming) |
+| `onStderr?` | Callback invoked with each stderr chunk (triggers WS streaming) |
+| `idleTimeout?` | Idle timeout in seconds (default: 300). Set to -1 for no timeout. Kills the command if no clients are connected for this duration |
+| `killOnDisconnect?` | If true, kill the command immediately when the last client disconnects (default: false) |
+| `ttlSeconds?` | How long a finished command's session is kept for reconnection (default: 600). Set to -1 to keep indefinitely |
+| `pty?` | Allocate a pseudo-terminal (default: false). Merges stderr into stdout |

@@ -125,6 +125,14 @@ export class SandboxClient {
     );
   }
 
+  /**
+   * Get the API key for WebSocket authentication.
+   * @internal
+   */
+  getApiKey(): string | undefined {
+    return this._apiKey;
+  }
+
   // =========================================================================
   // Volume Operations
   // =========================================================================
