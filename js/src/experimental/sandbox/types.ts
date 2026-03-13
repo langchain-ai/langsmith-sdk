@@ -126,6 +126,64 @@ export interface SandboxClientConfig {
 }
 
 /**
+ * A single chunk of streaming output from command execution.
+ */
+export interface OutputChunk {
+  /** Either "stdout" or "stderr". */
+  stream: "stdout" | "stderr";
+  /** The text content of this chunk. */
+  data: string;
+  /** Byte offset within the stream. Used internally for reconnection. */
+  offset: number;
+}
+
+/**
+ * Internal WebSocket message type from the server.
+ */
+export interface WsMessage {
+  type: "started" | "stdout" | "stderr" | "exit" | "error";
+  [key: string]: unknown;
+}
+
+/**
+ * Options for the low-level WebSocket stream functions.
+ */
+export interface WsRunOptions {
+  /** Command timeout in seconds. Default: 60. */
+  timeout?: number;
+  /** Environment variables to set for the command. */
+  env?: Record<string, string>;
+  /** Working directory for command execution. */
+  cwd?: string;
+  /** Shell to use. Default: "/bin/bash". */
+  shell?: string;
+  /** Callback invoked with each stdout chunk. */
+  onStdout?: (data: string) => void;
+  /** Callback invoked with each stderr chunk. */
+  onStderr?: (data: string) => void;
+  /** Client-assigned command ID. */
+  commandId?: string;
+  /**
+   * Idle timeout in seconds. If the command has no connected clients for
+   * this duration, it is killed. Defaults to 300 (5 minutes).
+   * Set to -1 for no idle timeout.
+   */
+  idleTimeout?: number;
+  /**
+   * If true, kill the command immediately when the last client disconnects.
+   * Defaults to false (command continues running and can be reconnected to).
+   */
+  killOnDisconnect?: boolean;
+  /**
+   * How long (in seconds) a finished command's session is kept for
+   * reconnection. Defaults to 600 (10 minutes). Set to -1 to keep indefinitely.
+   */
+  ttlSeconds?: number;
+  /** Whether to allocate a PTY. */
+  pty?: boolean;
+}
+
+/**
  * Options for running a command in a sandbox.
  */
 export interface RunOptions {
@@ -145,6 +203,44 @@ export interface RunOptions {
    * Shell to use for command execution. Defaults to "/bin/bash".
    */
   shell?: string;
+  /**
+   * Whether to wait for the command to complete before returning.
+   * When true (default), returns an ExecutionResult.
+   * When false, returns a CommandHandle for streaming output.
+   */
+  wait?: boolean;
+  /**
+   * Callback invoked with each stdout chunk during streaming execution.
+   * When provided, WebSocket streaming is used.
+   */
+  onStdout?: (data: string) => void;
+  /**
+   * Callback invoked with each stderr chunk during streaming execution.
+   * When provided, WebSocket streaming is used.
+   */
+  onStderr?: (data: string) => void;
+  /**
+   * Idle timeout in seconds. If the command has no connected clients for
+   * this duration, it is killed. Defaults to 300 (5 minutes).
+   * Set to -1 for no idle timeout.
+   */
+  idleTimeout?: number;
+  /**
+   * If true, kill the command immediately when the last client disconnects.
+   * Defaults to false (command continues running and can be reconnected to).
+   */
+  killOnDisconnect?: boolean;
+  /**
+   * How long (in seconds) a finished command's session is kept for
+   * reconnection. Defaults to 600 (10 minutes). Set to -1 to keep indefinitely.
+   */
+  ttlSeconds?: number;
+  /**
+   * If true, allocate a pseudo-terminal (PTY) for the command.
+   * Useful for commands that require a TTY (e.g., interactive programs,
+   * commands that use terminal control codes). Defaults to false.
+   */
+  pty?: boolean;
 }
 
 /**

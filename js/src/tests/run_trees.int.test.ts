@@ -254,7 +254,7 @@ test("dotted order matches start_time", async () => {
   const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(1);
   expect(runs[0].dotted_order).toEqual(parentRun.dotted_order);
-  expect((runs[0].start_time as string).replace(/[-:.]/g, "")).toEqual(
+  expect((runs[0].start_time as string).replace(/[-:.Z]/g, "")).toEqual(
     parentRun.dotted_order.split(".")[0].split("Z")[0]
   );
 });

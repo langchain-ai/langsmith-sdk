@@ -92,10 +92,18 @@ class _WSStreamControl:
         return self._killed
 
     def send_kill(self) -> None:
-        """Send a kill message to abort the running command."""
+        """Send a kill message and immediately close the WebSocket."""
         self._killed = True
         if self._ws and not self._closed:
-            self._ws.send(json.dumps({"type": "kill"}))
+            try:
+                self._ws.send(json.dumps({"type": "kill"}))
+            except Exception:
+                pass
+            try:
+                self._ws.close_timeout = 0
+                self._ws.close()
+            except Exception:
+                pass
 
     def send_input(self, data: str) -> None:
         """Send stdin data to the running command."""
@@ -125,7 +133,15 @@ class _AsyncWSStreamControl:
     async def send_kill(self) -> None:
         self._killed = True
         if self._ws and not self._closed:
-            await self._ws.send(json.dumps({"type": "kill"}))
+            try:
+                await self._ws.send(json.dumps({"type": "kill"}))
+            except Exception:
+                pass
+            try:
+                self._ws.close_timeout = 0
+                await self._ws.close()
+            except Exception:
+                pass
 
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
@@ -200,6 +216,10 @@ def run_ws_stream(
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
+    idle_timeout: int = 300,
+    kill_on_disconnect: bool = False,
+    ttl_seconds: int = 600,
+    pty: bool = False,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Execute a command over WebSocket, yielding raw message dicts.
 
@@ -233,18 +253,22 @@ def run_ws_stream(
                 control._bind(ws)
 
                 # Send execute request
-                ws.send(
-                    json.dumps(
-                        {
-                            "type": "execute",
-                            "command": command,
-                            "timeout": timeout,
-                            "shell": shell,
-                            **({"env": env} if env else {}),
-                            **({"cwd": cwd} if cwd else {}),
-                        }
-                    )
-                )
+                payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout_seconds": timeout,
+                    "shell": shell,
+                    "idle_timeout_seconds": idle_timeout,
+                    "kill_on_disconnect": kill_on_disconnect,
+                    "ttl_seconds": ttl_seconds,
+                }
+                if env:
+                    payload["env"] = env
+                if cwd:
+                    payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
+                ws.send(json.dumps(payload))
 
                 # Read messages until exit or error
                 for raw_msg in ws:
@@ -387,6 +411,10 @@ async def run_ws_stream_async(
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
+    idle_timeout: int = 300,
+    kill_on_disconnect: bool = False,
+    ttl_seconds: int = 600,
+    pty: bool = False,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of run_ws_stream.
 
@@ -409,18 +437,22 @@ async def run_ws_stream_async(
             ) as ws:
                 control._bind(ws)
 
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "execute",
-                            "command": command,
-                            "timeout": timeout,
-                            "shell": shell,
-                            **({"env": env} if env else {}),
-                            **({"cwd": cwd} if cwd else {}),
-                        }
-                    )
-                )
+                payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout_seconds": timeout,
+                    "shell": shell,
+                    "idle_timeout_seconds": idle_timeout,
+                    "kill_on_disconnect": kill_on_disconnect,
+                    "ttl_seconds": ttl_seconds,
+                }
+                if env:
+                    payload["env"] = env
+                if cwd:
+                    payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
+                await ws.send(json.dumps(payload))
 
                 async for raw_msg in ws:
                     msg = json.loads(raw_msg)

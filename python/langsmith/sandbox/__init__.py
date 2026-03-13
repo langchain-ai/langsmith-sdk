@@ -42,6 +42,10 @@ from langsmith.sandbox._exceptions import (
     SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
+    TunnelConnectionRefusedError,
+    TunnelError,
+    TunnelPortNotAllowedError,
+    TunnelUnsupportedVersionError,
     ValidationError,
 )
 from langsmith.sandbox._models import (
@@ -57,6 +61,7 @@ from langsmith.sandbox._models import (
     VolumeMountSpec,
 )
 from langsmith.sandbox._sandbox import Sandbox
+from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
 
 __all__ = [
     # Main classes
@@ -97,6 +102,13 @@ __all__ = [
     "SandboxOperationError",
     "CommandTimeoutError",
     "DataplaneNotConfiguredError",
+    # Tunnel
+    "Tunnel",
+    "AsyncTunnel",
+    "TunnelError",
+    "TunnelPortNotAllowedError",
+    "TunnelConnectionRefusedError",
+    "TunnelUnsupportedVersionError",
 ]
 
 # Emit warning on import
