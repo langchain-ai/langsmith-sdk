@@ -673,15 +673,20 @@ class _LangSmithTestSuite:
         try:
             example = self.client.read_example(example_id=example_id)
         except ls_utils.LangSmithNotFoundError:
-            example = self.client.create_example(
-                example_id=example_id,
-                inputs=inputs,
-                outputs=outputs,
-                dataset_id=self.id,
-                metadata=metadata,
-                split=split,
-                created_at=self._experiment.start_time,
-            )
+            try:
+                example = self.client.create_example(
+                    example_id=example_id,
+                    inputs=inputs,
+                    outputs=outputs,
+                    dataset_id=self.id,
+                    metadata=metadata,
+                    split=split,
+                    created_at=self._experiment.start_time,
+                )
+            except ls_utils.LangSmithConflictError:
+                # Another worker (e.g. pytest-xdist) created this example
+                # concurrently between our read and create. Read the existing one.
+                example = self.client.read_example(example_id=example_id)
         else:
             normalized_split = split
             if isinstance(normalized_split, str):
