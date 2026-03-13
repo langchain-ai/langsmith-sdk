@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import functools
-import json
 import logging
 from collections.abc import Mapping
 from typing import (
@@ -19,6 +18,7 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._orjson import dumps as _dumps
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -37,6 +37,17 @@ def _convert_config_for_tracing(kwargs: dict) -> None:
     """Convert `GenerateContentConfig` to `dict` for LangSmith compatibility."""
     if "config" in kwargs and not isinstance(kwargs["config"], dict):
         kwargs["config"] = vars(kwargs["config"])
+
+
+def _to_dict(obj: Any) -> Any:
+    """Serialize a Pydantic/model object to dict (or return as-is for dict/str)."""
+    if isinstance(obj, (dict, str)):
+        return obj
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    return obj
 
 
 def _process_gemini_inputs(inputs: dict) -> dict:
@@ -73,95 +84,85 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                 "model": inputs.get("model"),
                 **({k: v for k, v in inputs.items() if k not in ("contents", "model")}),
             }
-        # Handle complex multimodal case
+        # Handle complex multimodal case (dict or types.Content / types.Part objects)
         messages = []
         for content in contents:
-            if isinstance(content, dict):
-                role = content.get("role", "user")
-                parts = content.get("parts", [])
+            content = _to_dict(content)
+            if not isinstance(content, dict):
+                continue
+            role = content.get("role", "user")
+            raw_parts = content.get("parts", [])
 
-                # Extract text and other parts
-                text_parts = []
-                content_parts = []
+            text_parts: list[str] = []
+            content_parts: list[dict[str, Any]] = []
 
-                for part in parts:
-                    if isinstance(part, dict):
-                        # Handle text parts
-                        if "text" in part and part["text"]:
-                            text_parts.append(part["text"])
-                            content_parts.append({"type": "text", "text": part["text"]})
-                        # Handle inline data (images)
-                        elif "inline_data" in part:
-                            inline_data = part["inline_data"]
-                            mime_type = inline_data.get("mime_type", "image/jpeg")
-                            data = inline_data.get("data", b"")
+            for part in raw_parts:
+                part = _to_dict(part)
+                if isinstance(part, str):
+                    text_parts.append(part)
+                    content_parts.append({"type": "text", "text": part})
+                    continue
+                if not isinstance(part, dict):
+                    continue
+                if "text" in part and part["text"]:
+                    text_parts.append(part["text"])
+                    content_parts.append({"type": "text", "text": part["text"]})
+                elif "inline_data" in part:
+                    inline_data = _to_dict(part["inline_data"])
+                    if not isinstance(inline_data, dict):
+                        continue
+                    mime_type = inline_data.get("mime_type", "image/jpeg")
+                    data = inline_data.get("data", b"")
 
-                            # Convert bytes to base64 string if needed
-                            if isinstance(data, bytes):
-                                data_b64 = base64.b64encode(data).decode("utf-8")
-                            else:
-                                data_b64 = data  # Already a string
+                    if isinstance(data, bytes):
+                        data_b64 = base64.b64encode(data).decode("utf-8")
+                    else:
+                        data_b64 = data
 
-                            content_parts.append(
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{mime_type};base64,{data_b64}",
-                                        "detail": "high",
-                                    },
-                                }
-                            )
-                        # Handle function responses
-                        elif "functionResponse" in part:
-                            function_response = part["functionResponse"]
-                            content_parts.append(
-                                {
-                                    "type": "function_response",
-                                    "function_response": {
-                                        "name": function_response.get("name"),
-                                        "response": function_response.get(
-                                            "response", {}
-                                        ),
-                                    },
-                                }
-                            )
-                        # Handle function calls (for conversation history)
-                        elif "function_call" in part or "functionCall" in part:
-                            function_call = part.get("function_call") or part.get(
-                                "functionCall"
-                            )
-
-                            if function_call is not None:
-                                # Normalize to dict (FunctionCall is a Pydantic model)
-                                if not isinstance(function_call, dict):
-                                    function_call = function_call.to_dict()
-
-                                content_parts.append(
-                                    {
-                                        "type": "function_call",
-                                        "function_call": {
-                                            "id": function_call.get("id"),
-                                            "name": function_call.get("name"),
-                                            "arguments": function_call.get("args", {}),
-                                        },
-                                    }
-                                )
-                    elif isinstance(part, str):
-                        # Handle simple string parts
-                        text_parts.append(part)
-                        content_parts.append({"type": "text", "text": part})
-
-                # If only text parts, use simple string format
-                if content_parts and all(
-                    p.get("type") == "text" for p in content_parts
-                ):
-                    message_content: Union[str, list[dict[str, Any]]] = "\n".join(
-                        text_parts
+                    content_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{data_b64}",
+                                "detail": "high",
+                            },
+                        }
                     )
-                else:
-                    message_content = content_parts if content_parts else ""
+                elif "functionResponse" in part:
+                    function_response = part["functionResponse"]
+                    content_parts.append(
+                        {
+                            "type": "function_response",
+                            "function_response": {
+                                "name": function_response.get("name"),
+                                "response": function_response.get("response", {}),
+                            },
+                        }
+                    )
+                elif "function_call" in part or "functionCall" in part:
+                    fc = _to_dict(part.get("function_call") or part.get("functionCall"))
+                    if isinstance(fc, dict):
+                        content_parts.append(
+                            {
+                                "type": "function_call",
+                                "function_call": {
+                                    "id": fc.get("id"),
+                                    "name": fc.get("name"),
+                                    "arguments": fc.get("args", {}),
+                                },
+                            }
+                        )
 
-                messages.append({"role": role, "content": message_content})
+            # If only text parts, use simple string format
+            if content_parts and all(p.get("type") == "text" for p in content_parts):
+                message_content: Union[str, list[dict[str, Any]]] = "\n".join(
+                    text_parts
+                )
+            else:
+                message_content = content_parts if content_parts else ""
+
+            messages.append({"role": role, "content": message_content})
+
         return {
             "messages": messages,
             "model": inputs.get("model"),
@@ -287,24 +288,18 @@ def _process_generate_content_response(response: Any) -> dict:
                                     },
                                 }
                             )
-                        # Handle function calls in response
                         elif "function_call" in part or "functionCall" in part:
-                            function_call = part.get("function_call") or part.get(
-                                "functionCall"
+                            fc = _to_dict(
+                                part.get("function_call") or part.get("functionCall")
                             )
-
-                            if function_call is not None:
-                                # Normalize to dict (FunctionCall is a Pydantic model)
-                                if not isinstance(function_call, dict):
-                                    function_call = function_call.to_dict()
-
+                            if isinstance(fc, dict):
                                 content_parts.append(
                                     {
                                         "type": "function_call",
                                         "function_call": {
-                                            "id": function_call.get("id"),
-                                            "name": function_call.get("name"),
-                                            "arguments": function_call.get("args", {}),
+                                            "id": fc.get("id"),
+                                            "name": fc.get("name"),
+                                            "arguments": fc.get("args", {}),
                                         },
                                     }
                                 )
@@ -329,7 +324,9 @@ def _process_generate_content_response(response: Any) -> dict:
                         "index": i,
                         "function": {
                             "name": tc["function_call"]["name"],
-                            "arguments": json.dumps(tc["function_call"]["arguments"]),
+                            "arguments": _dumps(
+                                tc["function_call"]["arguments"]
+                            ).decode(),
                         },
                     }
                     for i, tc in enumerate(tool_calls)

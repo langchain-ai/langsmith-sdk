@@ -9,6 +9,8 @@ import {
   LangSmithSandboxNotReadyError,
 } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
+import { CommandHandle } from "./command_handle.js";
+import { reconnectWsStream, runWsStream } from "./ws_execute.js";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -85,24 +87,161 @@ export class Sandbox {
   /**
    * Execute a command in the sandbox.
    *
+   * When `wait` is true (default) and no streaming callbacks are provided,
+   * tries WebSocket first and falls back to HTTP POST.
+   *
+   * When `wait` is false or streaming callbacks are provided, uses WebSocket
+   * (required). Returns a CommandHandle for streaming output.
+   *
    * @param command - Shell command to execute.
    * @param options - Execution options.
-   * @returns ExecutionResult with stdout, stderr, and exit_code.
-   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
-   * @throws SandboxOperationError if command execution fails.
-   * @throws SandboxConnectionError if connection to sandbox fails.
-   * @throws SandboxNotReadyError if sandbox is not ready.
+   * @returns ExecutionResult when wait=true, CommandHandle when wait=false.
    *
    * @example
    * ```typescript
+   * // Blocking (default)
    * const result = await sandbox.run("echo hello");
-   * console.log(result.stdout); // "hello\n"
-   * console.log(result.exit_code); // 0
+   * console.log(result.stdout);
+   *
+   * // Streaming with callbacks
+   * const result = await sandbox.run("make build", {
+   *   onStdout: (data) => process.stdout.write(data),
+   * });
+   *
+   * // Non-blocking with CommandHandle
+   * const handle = await sandbox.run("make build", { wait: false });
+   * for await (const chunk of handle) {
+   *   process.stdout.write(chunk.data);
+   * }
+   * const result = await handle.result;
    * ```
    */
   async run(
     command: string,
+    options: RunOptions & { wait: false }
+  ): Promise<CommandHandle>;
+  async run(
+    command: string,
+    options?: RunOptions & { wait?: true }
+  ): Promise<ExecutionResult>;
+  async run(
+    command: string,
+    options?: RunOptions
+  ): Promise<ExecutionResult | CommandHandle>;
+  async run(
+    command: string,
     options: RunOptions = {}
+  ): Promise<ExecutionResult | CommandHandle> {
+    const {
+      wait = true,
+      onStdout,
+      onStderr,
+      idleTimeout,
+      killOnDisconnect,
+      ttlSeconds,
+      pty,
+      ...restOptions
+    } = options;
+    const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
+
+    if (!wait || hasCallbacks) {
+      // WebSocket required for streaming / non-blocking
+      const handle = await this._runWs(command, {
+        ...restOptions,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+        pty,
+        onStdout,
+        onStderr,
+      });
+
+      if (!wait) {
+        return handle;
+      }
+
+      // wait=true with callbacks: drain stream and return result
+      return handle.result;
+    }
+
+    // wait=true, no callbacks: try WS, fall back to HTTP
+    try {
+      const handle = await this._runWs(command, {
+        ...restOptions,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+        pty,
+      });
+      return await handle.result;
+    } catch (e) {
+      // Fall back to HTTP on connection errors or missing ws package
+      const name = e != null && typeof e === "object" ? (e as Error).name : "";
+      const message =
+        e != null && typeof e === "object" ? (e as Error).message ?? "" : "";
+      if (
+        name === "LangSmithSandboxConnectionError" ||
+        name === "LangSmithSandboxServerReloadError" ||
+        message.includes("'ws' package")
+      ) {
+        return this._runHttp(command, restOptions);
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Execute a command via WebSocket streaming.
+   * @internal
+   */
+  private async _runWs(
+    command: string,
+    options: Omit<RunOptions, "wait"> = {}
+  ): Promise<CommandHandle> {
+    const {
+      timeout = 60,
+      env,
+      cwd,
+      shell = "/bin/bash",
+      onStdout,
+      onStderr,
+      idleTimeout,
+      killOnDisconnect,
+      ttlSeconds,
+      pty,
+    } = options;
+    const dataplaneUrl = this.requireDataplaneUrl();
+
+    const [stream, control] = await runWsStream(
+      dataplaneUrl,
+      this._client.getApiKey(),
+      command,
+      {
+        timeout,
+        env,
+        cwd,
+        shell,
+        onStdout,
+        onStderr,
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+        pty,
+      }
+    );
+
+    const handle = new CommandHandle(stream, control, this);
+    await handle._ensureStarted();
+    return handle;
+  }
+
+  /**
+   * Execute a command via HTTP POST (blocking).
+   * @internal
+   */
+  private async _runHttp(
+    command: string,
+    options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {}
   ): Promise<ExecutionResult> {
     const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
@@ -142,14 +281,44 @@ export class Sandbox {
   }
 
   /**
+   * Reconnect to a running command by its command ID.
+   *
+   * Returns a new CommandHandle that resumes output from the given offsets.
+   *
+   * @param commandId - The server-assigned command ID.
+   * @param options - Reconnection options with byte offsets.
+   * @returns A new CommandHandle.
+   */
+  async reconnect(
+    commandId: string,
+    options: {
+      stdoutOffset?: number;
+      stderrOffset?: number;
+    } = {}
+  ): Promise<CommandHandle> {
+    const { stdoutOffset = 0, stderrOffset = 0 } = options;
+    const dataplaneUrl = this.requireDataplaneUrl();
+
+    const [stream, control] = await reconnectWsStream(
+      dataplaneUrl,
+      this._client.getApiKey(),
+      commandId,
+      { stdoutOffset, stderrOffset }
+    );
+
+    return new CommandHandle(stream, control, this, {
+      commandId,
+      stdoutOffset,
+      stderrOffset,
+    });
+  }
+
+  /**
    * Write content to a file in the sandbox.
    *
    * @param path - Target file path in the sandbox.
    * @param content - File content (string or bytes).
    * @param timeout - Request timeout in seconds.
-   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
-   * @throws SandboxOperationError if file write fails.
-   * @throws SandboxConnectionError if connection to sandbox fails.
    *
    * @example
    * ```typescript
@@ -188,14 +357,9 @@ export class Sandbox {
   /**
    * Read a file from the sandbox.
    *
-   * @param path - File path to read. Supports both absolute paths (e.g., /tmp/file.txt)
-   *               and relative paths (resolved from /home/user/).
+   * @param path - File path to read.
    * @param timeout - Request timeout in seconds.
    * @returns File contents as Uint8Array.
-   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
-   * @throws ResourceNotFoundError if the file doesn't exist.
-   * @throws SandboxOperationError if file read fails.
-   * @throws SandboxConnectionError if connection to sandbox fails.
    *
    * @example
    * ```typescript
@@ -223,8 +387,6 @@ export class Sandbox {
 
   /**
    * Delete this sandbox.
-   *
-   * Call this when you're done using the sandbox to clean up resources.
    *
    * @example
    * ```typescript
