@@ -1197,6 +1197,8 @@ class AsyncExperimentResults:
                     self._processed_count += 1
                     return result
                 elif self._task.done():
+                    if self._task.exception():
+                        raise self._task.exception()
                     raise StopAsyncIteration
 
             await asyncio.shield(
