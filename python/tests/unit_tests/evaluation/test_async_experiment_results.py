@@ -1,6 +1,5 @@
 """Tests for AsyncExperimentResults edge cases."""
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
