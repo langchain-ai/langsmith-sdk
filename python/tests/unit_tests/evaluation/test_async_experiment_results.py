@@ -64,9 +64,7 @@ def _make_manager(
     if summary_error is not None:
         manager.aget_summary_scores = AsyncMock(side_effect=summary_error)
     else:
-        manager.aget_summary_scores = AsyncMock(
-            return_value=summary or {"results": []}
-        )
+        manager.aget_summary_scores = AsyncMock(return_value=summary or {"results": []})
 
     return manager
 
@@ -111,9 +109,7 @@ async def test_exception_propagates_from_producer():
 async def test_summary_error_propagates():
     """If aget_summary_scores() raises, __anext__ surfaces the exception."""
     items = [_make_result(i) for i in range(2)]
-    manager = _make_manager(
-        items, summary_error=RuntimeError("summary failed")
-    )
+    manager = _make_manager(items, summary_error=RuntimeError("summary failed"))
 
     results = AsyncExperimentResults(manager)
     collected = []
