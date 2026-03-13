@@ -1193,6 +1193,9 @@ class AsyncExperimentResults:
                     self._processed_count += 1
                     return result
                 elif self._task.done():
+                    exc = self._task.exception()
+                    if exc is not None:
+                        raise exc
                     raise StopAsyncIteration
                 await self._condition.wait()
 
