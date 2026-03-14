@@ -286,3 +286,28 @@ export class LangSmithSandboxOperationError extends LangSmithSandboxError {
     return super.toString();
   }
 }
+
+/**
+ * Raised when a command exceeds its timeout.
+ */
+export class LangSmithCommandTimeoutError extends LangSmithSandboxOperationError {
+  timeout?: number;
+
+  constructor(message: string, timeout?: number) {
+    super(message, "command", "CommandTimeout");
+    this.name = "LangSmithCommandTimeoutError";
+    this.timeout = timeout;
+  }
+}
+
+/**
+ * Raised when the sandbox server is reloading (close code 1001).
+ *
+ * Subclass of connection error that signals immediate reconnect (no backoff).
+ */
+export class LangSmithSandboxServerReloadError extends LangSmithSandboxConnectionError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxServerReloadError";
+  }
+}

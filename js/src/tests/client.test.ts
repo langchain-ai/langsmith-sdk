@@ -829,4 +829,80 @@ describe("Client", () => {
       expect(result.extra.metadata).toBeDefined();
     });
   });
+
+  describe("listRuns normalizes naive timestamps", () => {
+    it("should append Z to naive timestamps returned by the API", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const naiveRun = {
+        id: "run-1",
+        name: "test-run",
+        run_type: "chain",
+        inputs: {},
+        start_time: "2026-03-12T19:38:10.269893",
+        end_time: "2026-03-12T19:38:11.000000",
+        session_id: "proj-1",
+        trace_id: "run-1",
+        dotted_order: "20260312T193810269893Zrun-1",
+      };
+
+      const mockResponse = {
+        runs: [naiveRun],
+        cursors: {},
+      };
+
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
+
+      const runs: any[] = [];
+      for await (const run of client.listRuns({ projectId: "proj-1" })) {
+        runs.push(run);
+      }
+
+      expect(runs).toHaveLength(1);
+      expect(runs[0].start_time).toBe("2026-03-12T19:38:10.269893Z");
+      expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000Z");
+    });
+
+    it("should not double-append Z to already-aware timestamps", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const awareRun = {
+        id: "run-2",
+        name: "test-run",
+        run_type: "chain",
+        inputs: {},
+        start_time: "2026-03-12T19:38:10.269893Z",
+        end_time: "2026-03-12T19:38:11.000000+00:00",
+        session_id: "proj-1",
+        trace_id: "run-2",
+        dotted_order: "20260312T193810269893Zrun-2",
+      };
+
+      const mockResponse = {
+        runs: [awareRun],
+        cursors: {},
+      };
+
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
+
+      const runs: any[] = [];
+      for await (const run of client.listRuns({ projectId: "proj-1" })) {
+        runs.push(run);
+      }
+
+      expect(runs).toHaveLength(1);
+      expect(runs[0].start_time).toBe("2026-03-12T19:38:10.269893Z");
+      expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000+00:00");
+    });
+  });
 });

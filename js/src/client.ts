@@ -85,6 +85,32 @@ import {
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
+/**
+ * Catches timestamps without a timezone suffix.
+ */
+function _ensureUTCTimestamp(
+  ts: string | number | undefined
+): string | number | undefined {
+  if (
+    typeof ts === "string" &&
+    ts.length > 0 &&
+    !ts.includes("Z") &&
+    !ts.includes("+") &&
+    !ts.includes("-", 10)
+  ) {
+    return ts + "Z";
+  }
+  return ts;
+}
+
+function _normalizeRunTimestamps<T extends Run>(run: T): T {
+  return {
+    ...run,
+    start_time: _ensureUTCTimestamp(run.start_time),
+    end_time: _ensureUTCTimestamp(run.end_time),
+  };
+}
+
 export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
@@ -2202,7 +2228,7 @@ export class Client implements LangSmithTracingClientInterface {
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
   ): Promise<Run> {
     assertUuid(runId);
-    let run = await this._get<Run>(`/runs/${runId}`);
+    let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
       run = await this._loadChildRuns(run);
     }
@@ -2469,19 +2495,20 @@ export class Client implements LangSmithTracingClientInterface {
       "/runs/query",
       body
     )) {
+      const normalized = runs.map(_normalizeRunTimestamps);
       if (limit) {
         if (runsYielded >= limit) {
           break;
         }
-        if (runs.length + runsYielded > limit) {
-          const newRuns = runs.slice(0, limit - runsYielded);
+        if (normalized.length + runsYielded > limit) {
+          const newRuns = normalized.slice(0, limit - runsYielded);
           yield* newRuns;
           break;
         }
-        runsYielded += runs.length;
-        yield* runs;
+        runsYielded += normalized.length;
+        yield* normalized;
       } else {
-        yield* runs;
+        yield* normalized;
       }
     }
   }
@@ -2654,7 +2681,8 @@ export class Client implements LangSmithTracingClientInterface {
       "/runs/query",
       bodyQuery as RecordStringAny
     )) {
-      for (const run of runs) {
+      for (const raw of runs) {
+        const run = _normalizeRunTimestamps(raw);
         const tid = (run as unknown as Record<string, unknown>).thread_id as
           | string
           | undefined;
@@ -2898,8 +2926,8 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, "list shared runs");
       return res;
     });
-    const runs = await response.json();
-    return runs as Run[];
+    const runs = (await response.json()) as Run[];
+    return runs.map(_normalizeRunTimestamps);
   }
 
   public async readDatasetSharedSchema(
@@ -5236,7 +5264,8 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, "get run from annotation queue");
       return res;
     });
-    return response.json();
+    const run = await response.json();
+    return _normalizeRunTimestamps(run);
   }
 
   /**

@@ -221,6 +221,136 @@ with client.sandbox(template_name="my-sandbox") as sb:
 > (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
 > back to HTTP which has its own request-level timeout.
 
+## Command Lifecycle & TTL
+
+The sandbox daemon automatically manages command session lifecycles with two
+timeout mechanisms:
+
+### Session TTL (finished commands)
+
+After a command finishes (exits), its session remains in memory for a TTL
+period. During this window you can still reconnect to retrieve output. After the
+TTL expires, the session is cleaned up and `reconnect()` will raise an error.
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", wait=False)
+    command_id = handle.command_id
+
+    # Even after the command finishes, you can reconnect within the TTL window
+    handle = sb.reconnect(command_id)
+    result = handle.result
+    print(result.stdout)
+
+    # After TTL expires, reconnect raises SandboxOperationError
+```
+
+### Idle Timeout (running commands)
+
+Running commands with no connected clients are killed after an idle timeout
+(default: 5 minutes). The idle timer resets each time a client connects. This
+prevents orphaned long-running processes from consuming resources indefinitely.
+
+You can set a per-command idle timeout via the `idle_timeout` parameter.
+Set to `-1` for no idle timeout (the command runs indefinitely until explicitly
+killed or it exits on its own).
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Start a long-running command with a 30-minute idle timeout
+    handle = sb.run(
+        "python server.py",
+        timeout=0,
+        idle_timeout=1800,
+        wait=False,
+    )
+
+    # As long as a client is connected (iterating), the idle timer is paused
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break
+
+    # After disconnecting, the idle timer starts
+    # If no client reconnects within idle_timeout seconds, the process is killed
+```
+
+### Kill on Disconnect
+
+By default, commands continue running after a client disconnects and can be
+reconnected to later. Set `kill_on_disconnect=True` to kill the command
+immediately when the last client disconnects:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Command is killed as soon as the client disconnects
+    handle = sb.run(
+        "python server.py",
+        kill_on_disconnect=True,
+        wait=False,
+    )
+
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break
+    # Command is killed here when iteration stops and the WS disconnects
+```
+
+### Combining Lifecycle Options
+
+All lifecycle parameters can be combined:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Long-running task: 30-min idle timeout, 1-hour session TTL
+    handle = sb.run(
+        "python train.py",
+        timeout=0,              # No command timeout
+        idle_timeout=1800,      # Kill after 30min with no clients
+        ttl_seconds=3600,       # Keep session for 1 hour after exit
+        wait=False,
+    )
+
+    # Fire-and-forget: no idle timeout, infinite TTL
+    handle = sb.run(
+        "python background_job.py",
+        timeout=0,
+        idle_timeout=-1,        # Never kill due to idle
+        ttl_seconds=-1,         # Keep session forever
+        wait=False,
+    )
+```
+
+## PTY (Pseudo-Terminal)
+
+Set `pty=True` to allocate a pseudo-terminal for the command. This is useful
+for interactive programs and commands that detect terminal capabilities:
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Run an interactive Python REPL with PTY
+    handle = sb.run("python", pty=True, wait=False)
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("print('hello')\n")
+            break
+
+    for chunk in handle:
+        if ">>>" in chunk.data:
+            handle.send_input("exit()\n")
+            break
+
+    result = handle.result
+
+    # Commands that require a TTY
+    result = sb.run("top -b -n 1", pty=True)
+```
+
+> **Note:** PTY mode merges stdout and stderr into a single stream (stdout).
+> Only use PTY when the command requires it — most commands work fine without it.
+
 ## File Operations
 
 Read and write files in the sandbox:
@@ -241,6 +371,121 @@ with client.sandbox(template_name="my-python") as sb:
 
     # Write binary files
     sb.write("/app/data.bin", b"\x00\x01\x02\x03")
+```
+
+## TCP Tunnel
+
+Access any TCP service running inside a sandbox (databases, Redis, HTTP servers,
+etc.) as if it were running on your local machine. The tunnel opens a local TCP
+port and forwards connections through a multiplexed WebSocket to the target port
+inside the sandbox.
+
+Requires the `websockets` package (`pip install 'langsmith[sandbox]'`).
+
+### Basic Usage — PostgreSQL
+
+Use a template with the `postgres:16` image. The entrypoint initializes and
+starts Postgres automatically:
+
+```python
+import psycopg2
+
+# Template uses the official postgres:16 image
+sb = client.create_sandbox(template_name="my-postgres")
+pg_handle = sb.run(
+    "POSTGRES_HOST_AUTH_METHOD=trust docker-entrypoint.sh postgres",
+    timeout=0,
+    wait=False,
+)
+import time; time.sleep(6)  # wait for Postgres to initialize and start
+
+try:
+    with sb.tunnel(remote_port=5432, local_port=25432) as t:
+        conn = psycopg2.connect(
+            host="127.0.0.1",
+            port=t.local_port,
+            user="postgres",
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT version()")
+        print(cursor.fetchone())
+        conn.close()
+finally:
+    pg_handle.kill()
+    client.delete_sandbox(sb.name)
+```
+
+### Basic Usage — Redis
+
+Use a template with the `redis:7` image. Redis self-daemonizes:
+
+```python
+import redis
+
+with client.sandbox(template_name="my-redis") as sb:
+    sb.run("redis-server --daemonize yes", timeout=10)
+
+    with sb.tunnel(remote_port=6379, local_port=26379) as t:
+        r = redis.Redis(host="127.0.0.1", port=t.local_port)
+        r.set("key", "value")
+        print(r.get("key"))  # b"value"
+```
+
+### HTTP Services
+
+Works with any TCP service. Start long-running services with `wait=False` and
+`timeout=0` so they stay alive across commands:
+
+```python
+sb = client.create_sandbox(template_name="my-sandbox")
+http_handle = sb.run("python3 -m http.server 3000", timeout=0, wait=False)
+import time; time.sleep(2)
+
+try:
+    with sb.tunnel(remote_port=3000, local_port=13000) as t:
+        import urllib.request
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{t.local_port}/")
+        print(resp.status)  # 200
+finally:
+    http_handle.kill()
+    client.delete_sandbox(sb.name)
+```
+
+### Multiple Tunnels
+
+Open several tunnels simultaneously to different services:
+
+```python
+http_handle2 = sb.run("python3 -m http.server 3001", timeout=0, wait=False)
+import time; time.sleep(1)
+
+with sb.tunnel(remote_port=3000, local_port=23000) as t1, \
+     sb.tunnel(remote_port=3001, local_port=23001) as t2:
+    resp1 = urllib.request.urlopen(f"http://127.0.0.1:{t1.local_port}/")
+    resp2 = urllib.request.urlopen(f"http://127.0.0.1:{t2.local_port}/")
+
+http_handle2.kill()
+```
+
+### Explicit Lifecycle
+
+For notebooks or long-lived sessions where a context manager isn't convenient:
+
+```python
+t = sb.tunnel(remote_port=3000, local_port=23002)
+
+print(t.local_port)
+# ... use the tunnel as long as needed ...
+
+t.close()
+```
+
+### Async Usage
+
+```python
+async with await client.sandbox(template_name="my-sandbox") as sb:
+    async with await sb.tunnel(remote_port=5432) as t:
+        conn = await asyncpg.connect(host="127.0.0.1", port=t.local_port)
 ```
 
 ## Templates
@@ -445,6 +690,10 @@ from langsmith.sandbox import (
     SandboxConnectionError,   # Network/WebSocket error
     CommandTimeoutError,      # Command exceeded its timeout (extends SandboxOperationError)
     QuotaExceededError,       # Quota limit reached
+    TunnelError,              # Base for tunnel errors
+    TunnelPortNotAllowedError,       # Port blocked by daemon allowlist
+    TunnelConnectionRefusedError,    # Nothing listening on remote port
+    TunnelUnsupportedVersionError,   # Client/daemon protocol mismatch
 )
 
 try:
@@ -505,10 +754,11 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
+| `run(command, *, timeout=60, on_stdout=None, on_stderr=None, idle_timeout=300, kill_on_disconnect=False, ttl_seconds=600, pty=False, wait=True)` | Execute a shell command. Returns `ExecutionResult` or `CommandHandle` (when `wait=False`). |
 | `reconnect(command_id, *, stdout_offset=0, stderr_offset=0)` | Reconnect to a running command. Returns `CommandHandle`. |
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
+| `tunnel(remote_port, *, local_port=0)` | Open a TCP tunnel. Returns `Tunnel` (context manager). |
 
 ### ExecutionResult
 
@@ -548,3 +798,14 @@ Returned by `sb.run(wait=False)`. Iterable, yielding `OutputChunk` objects.
 | `stream` | `"stdout"` or `"stderr"` |
 | `data` | Text content of this chunk (str) |
 | `offset` | Byte offset within the stream (int) |
+
+### Tunnel
+
+Returned by `sb.tunnel(remote_port)`. Context manager that opens a local TCP
+listener forwarding to a port inside the sandbox.
+
+| Property / Method | Description |
+|-------------------|-------------|
+| `local_port` | Local port the tunnel is listening on (int) |
+| `remote_port` | Target port inside the sandbox (int) |
+| `close()` | Shut down the tunnel and all connections |

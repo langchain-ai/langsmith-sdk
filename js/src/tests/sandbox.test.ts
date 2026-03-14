@@ -2,6 +2,13 @@
 import { jest, describe, it, expect } from "@jest/globals";
 import { SandboxClient } from "../experimental/sandbox/client.js";
 import { Sandbox } from "../experimental/sandbox/sandbox.js";
+import { CommandHandle } from "../experimental/sandbox/command_handle.js";
+import {
+  buildWsUrl,
+  buildAuthHeaders,
+  WSStreamControl,
+  raiseForWsError,
+} from "../experimental/sandbox/ws_execute.js";
 import {
   LangSmithResourceCreationError,
   LangSmithResourceNotFoundError,
@@ -11,13 +18,26 @@ import {
   LangSmithResourceTimeoutError,
   LangSmithSandboxCreationError,
   LangSmithSandboxNotReadyError,
+  LangSmithSandboxOperationError,
+  LangSmithCommandTimeoutError,
+  LangSmithSandboxServerReloadError,
 } from "../experimental/sandbox/errors.js";
+import type { WsMessage, OutputChunk } from "../experimental/sandbox/types.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
   jest
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(response);
+
+// Helper to create a mock SandboxClient with the required methods
+const createMockClient = (overrides: Record<string, any> = {}) =>
+  ({
+    _fetch: createMockFetch({}),
+    getApiKey: () => "test-key",
+    deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ...overrides,
+  } as unknown as SandboxClient);
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -42,14 +62,6 @@ describe("SandboxClient", () => {
 describe("Sandbox", () => {
   describe("run", () => {
     it("should throw DataplaneNotConfiguredError when dataplane_url is missing", async () => {
-      // Create a minimal mock client
-      const mockClient = {
-        _fetch: createMockFetch({}),
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
-
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
@@ -57,7 +69,7 @@ describe("Sandbox", () => {
           template_name: "python-sandbox",
           // No dataplane_url
         },
-        mockClient,
+        createMockClient(),
         false
       );
 
@@ -76,12 +88,7 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -112,12 +119,7 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -149,12 +151,7 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -180,12 +177,7 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -213,12 +205,7 @@ describe("Sandbox", () => {
         arrayBuffer: async () => new TextEncoder().encode(testContent).buffer,
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -244,10 +231,9 @@ describe("Sandbox", () => {
         .fn<(name: string) => Promise<void>>()
         .mockResolvedValue(undefined);
 
-      const mockClient = {
-        _fetch: createMockFetch({}),
+      const mockClient = createMockClient({
         deleteSandbox: mockDeleteSandbox,
-      } as unknown as SandboxClient;
+      });
 
       const sandbox = new (Sandbox as any)(
         {
@@ -459,13 +445,6 @@ describe("SandboxClient - waitForSandbox", () => {
 
 describe("Sandbox - status fields and not-ready guard", () => {
   it("should populate status and status_message from SandboxData", () => {
-    const mockClient = {
-      _fetch: createMockFetch({}),
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -473,7 +452,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         status: "provisioning",
         status_message: "Waiting for resources",
       },
-      mockClient
+      createMockClient()
     );
 
     expect(sandbox.status).toBe("provisioning");
@@ -481,13 +460,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
   });
 
   it("should throw LangSmithSandboxNotReadyError when status is not ready", async () => {
-    const mockClient = {
-      _fetch: createMockFetch({}),
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -495,7 +467,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "provisioning",
       },
-      mockClient
+      createMockClient()
     );
 
     await expect(sandbox.run("echo hello")).rejects.toThrow(
@@ -513,13 +485,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
       }),
     });
 
-    const mockClient = {
-      _fetch: mockFetch,
-      deleteSandbox: jest
-        .fn<() => Promise<void>>()
-        .mockResolvedValue(undefined),
-    } as unknown as SandboxClient;
-
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
@@ -527,7 +492,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "ready",
       },
-      mockClient
+      createMockClient({ _fetch: mockFetch })
     );
 
     const result = await sandbox.run("echo hello");
@@ -599,5 +564,315 @@ describe("Error classes", () => {
     expect(error.resourceType).toBe("sandbox");
     expect(error.errorType).toBe("ImagePull");
     expect(error.toString()).toContain("ImagePull");
+  });
+
+  it("LangSmithCommandTimeoutError should extend SandboxOperationError", () => {
+    const error = new LangSmithCommandTimeoutError("Command timed out", 60);
+    expect(error.name).toBe("LangSmithCommandTimeoutError");
+    expect(error.timeout).toBe(60);
+    expect(error.operation).toBe("command");
+    expect(error.errorType).toBe("CommandTimeout");
+    expect(error).toBeInstanceOf(LangSmithSandboxOperationError);
+  });
+
+  it("LangSmithSandboxServerReloadError should extend SandboxConnectionError", () => {
+    const error = new LangSmithSandboxServerReloadError("Server reloading");
+    expect(error.name).toBe("LangSmithSandboxServerReloadError");
+    expect(error.message).toBe("Server reloading");
+  });
+});
+
+// =============================================================================
+// WebSocket Execute Tests
+// =============================================================================
+
+describe("buildWsUrl", () => {
+  it("should convert https to wss and append /execute/ws", () => {
+    expect(buildWsUrl("https://dataplane.example.com")).toBe(
+      "wss://dataplane.example.com/execute/ws"
+    );
+  });
+
+  it("should convert http to ws", () => {
+    expect(buildWsUrl("http://localhost:8080")).toBe(
+      "ws://localhost:8080/execute/ws"
+    );
+  });
+
+  it("should handle URLs with paths", () => {
+    expect(buildWsUrl("https://dataplane.example.com/some/path")).toBe(
+      "wss://dataplane.example.com/some/path/execute/ws"
+    );
+  });
+});
+
+describe("buildAuthHeaders", () => {
+  it("should return X-Api-Key header when key is provided", () => {
+    expect(buildAuthHeaders("test-key")).toEqual({ "X-Api-Key": "test-key" });
+  });
+
+  it("should return empty headers when no key", () => {
+    expect(buildAuthHeaders(undefined)).toEqual({});
+  });
+});
+
+describe("WSStreamControl", () => {
+  it("should track killed state", () => {
+    const control = new WSStreamControl();
+    expect(control.killed).toBe(false);
+    control.sendKill();
+    expect(control.killed).toBe(true);
+  });
+
+  it("should not throw when sending on unbound control", () => {
+    const control = new WSStreamControl();
+    // Should not throw
+    control.sendKill();
+    control.sendInput("hello");
+  });
+});
+
+describe("raiseForWsError", () => {
+  it("should throw LangSmithCommandTimeoutError for CommandTimeout", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "CommandTimeout",
+      error: "Command timed out after 60s",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithCommandTimeoutError);
+  });
+
+  it("should throw SandboxOperationError for CommandNotFound", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "CommandNotFound",
+      error: "Not found",
+    };
+    expect(() => raiseForWsError(msg, "cmd-123")).toThrow(
+      LangSmithSandboxOperationError
+    );
+    try {
+      raiseForWsError(msg, "cmd-123");
+    } catch (e: any) {
+      expect(e.message).toContain("cmd-123");
+      expect(e.operation).toBe("reconnect");
+    }
+  });
+
+  it("should throw SandboxOperationError for SessionExpired", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "SessionExpired",
+      error: "Expired",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithSandboxOperationError);
+  });
+
+  it("should throw SandboxOperationError for unknown error types", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "UnknownError",
+      error: "Something went wrong",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithSandboxOperationError);
+  });
+});
+
+// =============================================================================
+// CommandHandle Tests
+// =============================================================================
+
+describe("CommandHandle", () => {
+  // Helper to create an async iterator from an array of WsMessages
+  function createMockStream(
+    messages: WsMessage[]
+  ): AsyncIterableIterator<WsMessage> {
+    let index = 0;
+    return {
+      next: async () => {
+        if (index < messages.length) {
+          return { value: messages[index++], done: false };
+        }
+        return { value: undefined as any, done: true };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  }
+
+  function createMockSandbox(): Sandbox {
+    return {
+      _client: { getApiKey: () => "test-key" },
+      dataplane_url: "https://dp.example.com",
+      name: "test-sandbox",
+      reconnect: jest.fn<any>(),
+    } as unknown as Sandbox;
+  }
+
+  describe("construction and _ensureStarted", () => {
+    it("should read 'started' message and populate commandId/pid", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      expect(handle.commandId).toBe("cmd-123");
+      expect(handle.pid).toBe(42);
+    });
+
+    it("should throw if stream ends before started message", async () => {
+      const stream = createMockStream([]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        LangSmithSandboxOperationError
+      );
+    });
+
+    it("should throw if first message is not 'started'", async () => {
+      const stream = createMockStream([
+        { type: "stdout", data: "hello\n", offset: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        "Expected 'started' message"
+      );
+    });
+
+    it("should skip _ensureStarted for reconnections (commandId set)", async () => {
+      const stream = createMockStream([
+        { type: "stdout", data: "hello\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+      // Should already be started
+      expect(handle.commandId).toBe("cmd-123");
+    });
+  });
+
+  describe("iteration", () => {
+    it("should yield OutputChunk objects", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello ", offset: 0 },
+        { type: "stderr", data: "warn\n", offset: 0 },
+        { type: "stdout", data: "world\n", offset: 6 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      const chunks: OutputChunk[] = [];
+      for await (const chunk of handle) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toEqual({
+        stream: "stdout",
+        data: "hello ",
+        offset: 0,
+      });
+      expect(chunks[1]).toEqual({
+        stream: "stderr",
+        data: "warn\n",
+        offset: 0,
+      });
+      expect(chunks[2]).toEqual({
+        stream: "stdout",
+        data: "world\n",
+        offset: 6,
+      });
+    });
+
+    it("should track offsets", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello", offset: 0 },
+        { type: "stderr", data: "err", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      for await (const _chunk of handle) {
+        // drain
+      }
+
+      expect(handle.lastStdoutOffset).toBe(5);
+      expect(handle.lastStderrOffset).toBe(3);
+    });
+  });
+
+  describe("result", () => {
+    it("should drain stream and return ExecutionResult", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello ", offset: 0 },
+        { type: "stdout", data: "world\n", offset: 6 },
+        { type: "stderr", data: "warning\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      const result = await handle.result;
+
+      expect(result.stdout).toBe("hello world\n");
+      expect(result.stderr).toBe("warning\n");
+      expect(result.exit_code).toBe(0);
+    });
+
+    it("should throw if stream ends without exit message", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello\n", offset: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      await expect(handle.result).rejects.toThrow(
+        "Command stream ended without exit message"
+      );
+    });
+  });
+
+  describe("kill", () => {
+    it("should call sendKill on control", () => {
+      const control = new WSStreamControl();
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, control, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+
+      handle.kill();
+
+      expect(control.killed).toBe(true);
+    });
+  });
+
+  describe("sendInput", () => {
+    it("should not throw when control is null", () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+
+      // Should not throw
+      handle.sendInput("test input");
+    });
   });
 });
