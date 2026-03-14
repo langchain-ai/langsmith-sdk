@@ -54,7 +54,7 @@ const _formatTracedOutputs = (
   );
 };
 
-const setUsageMetadataOnRunTree = (
+export const setUsageMetadataOnRunTree = (
   result: {
     usage?: LanguageModelV2Usage;
     providerMetadata?: SharedV2ProviderMetadata;
