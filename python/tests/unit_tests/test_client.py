@@ -4324,11 +4324,12 @@ class TestEndToEndWorkspaceFlow:
     ) -> None:
         """Test recovery from org-scoped key error by providing workspace."""
         _clear_env_cache()
+        monkeypatch.delenv("LANGSMITH_TRACING_SAMPLING_RATE", raising=False)
+        monkeypatch.delenv("LANGCHAIN_TRACING_SAMPLING_RATE", raising=False)
 
         client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
 
-        # mock requests.Session
-        with mock.patch("requests.Session.request") as mock_request:
+        with mock.patch.object(client.session, "request") as mock_request:
             # org-scoped error
             mock_response_error = mock.MagicMock()
             mock_response_error.status_code = 403
