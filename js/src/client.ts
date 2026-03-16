@@ -3473,7 +3473,7 @@ export class Client implements LangSmithTracingClientInterface {
     const body: KVMap = {
       name,
       description,
-      extra: metadata ? { metadata } : undefined,
+      extra: { source: "sdk", ...(metadata ? { metadata } : {}) },
     };
     if (dataType) {
       body.data_type = dataType;

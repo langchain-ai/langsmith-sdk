@@ -4866,7 +4866,8 @@ class Client:
                 "metadata": {
                     "runtime": ls_env.get_runtime_environment(),
                     **(metadata or {}),
-                }
+                },
+                "source": "sdk",
             },
         }
         if description is not None:
