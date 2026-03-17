@@ -1,17 +1,46 @@
 import asyncio
 import functools
 import logging
+import threading
 import time
 from contextlib import contextmanager
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
-from langsmith import Client, aevaluate, evaluate, expect, test
+from langsmith import (
+    Client,
+    aevaluate,
+    aevaluate_existing,
+    evaluate,
+    evaluate_existing,
+    expect,
+    test,
+)
 from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
+
+# Global lock to prevent parallel dataset deletions that can cause deadlocks
+_dataset_deletion_lock = threading.Lock()
+
+
+def safe_delete_dataset(
+    client: Client, dataset_id: str = None, dataset_name: str = None
+):
+    """Delete a dataset with thread safety to prevent deadlocks in parallel tests."""
+    with _dataset_deletion_lock:
+        try:
+            if dataset_id:
+                client.delete_dataset(dataset_id=dataset_id)
+            elif dataset_name:
+                client.delete_dataset(dataset_name=dataset_name)
+        except Exception as e:
+            # Log the error but don't fail the test - dataset might already be deleted
+            logger.warning(f"Failed to delete dataset: {e}")
 
 
 @contextmanager
@@ -531,3 +560,98 @@ Actual: {outputs["equation"]}
 
     finish_time = time.time()
     assert (finish_time - start) <= 8.5
+
+
+def test_evaluate_blocking():
+    client = Client()
+    ds_name = "__test_dataset_for_evaluate_blocking"
+    if not client.has_dataset(dataset_name=ds_name):
+        safe_delete_dataset(client, dataset_name=ds_name)
+        client.create_dataset(dataset_name=ds_name)
+        client.create_example(
+            dataset_name=ds_name, inputs={"foo": "bar"}, outputs={"foo": "bar"}
+        )
+
+    try:
+
+        def always_quarter(run: Run, example: Example) -> dict:
+            time.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.25}
+
+        def always_half(run: Run, example: Example) -> dict:
+            time.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.5}
+
+        def target_fn(inputs: dict) -> dict:
+            time.sleep(0.5)
+            return {"output": "Yes"}
+
+        params = {
+            "data": ds_name,
+            "client": client,
+            "experiment_prefix": "test_thingy",
+            "evaluators": [always_quarter],
+            "blocking": True,
+        }
+
+        results = evaluate(target_fn, **params)
+        results.wait()
+
+        experiment = next(client.list_projects(name=results.experiment_name))
+        experiment_id = experiment.id
+
+        evaluate_existing(
+            experiment_id,
+            evaluators=[always_half],
+            max_concurrency=1,
+            client=client,
+        )
+    finally:
+        safe_delete_dataset(client, dataset_name=ds_name)
+
+
+async def test_aevaluate_blocking():
+    client = Client()
+    ds_name = "__test_dataset_for_aevaluate_blocking"
+    if not client.has_dataset(dataset_name=ds_name):
+        safe_delete_dataset(client, dataset_name=ds_name)
+        client.create_dataset(dataset_name=ds_name)
+        client.create_example(
+            dataset_name=ds_name, inputs={"foo": "bar"}, outputs={"foo": "bar"}
+        )
+
+    try:
+
+        async def always_quarter(inputs: dict, outputs: dict) -> float:
+            await asyncio.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.25}
+
+        async def always_half(inputs: dict, outputs: dict) -> float:
+            await asyncio.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.5}
+
+        async def target_fn(inputs: dict) -> dict:
+            await asyncio.sleep(0.5)
+            return {"output": "Yes"}
+
+        params = {
+            "data": ds_name,
+            "client": client,
+            "experiment_prefix": "test_thingy",
+            "blocking": True,
+            "evaluators": [always_quarter],
+        }
+
+        results = await aevaluate(target_fn, **params)
+
+        experiment = next(client.list_projects(name=results.experiment_name))
+        experiment_id = experiment.id
+
+        await aevaluate_existing(
+            experiment_id,
+            evaluators=[always_half],
+            max_concurrency=1,
+            client=client,
+        )
+    finally:
+        safe_delete_dataset(client, dataset_name=ds_name)
