@@ -3077,22 +3077,29 @@ class Client:
 
             for idx in range(1, attempts + 1):
                 try:
-                    headers = {
-                        **self._headers,
-                        "X-API-KEY": api_key,
-                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-                        "Content-Encoding": "zstd",
-                        "X-Pre-Compressed-Size": (
-                            str(compressed_traces_info[0])
-                            if compressed_traces_info
-                            else ""
-                        ),
-                        "X-Post-Compressed-Size": (
-                            str(compressed_traces_info[1])
-                            if compressed_traces_info
-                            else ""
-                        ),
-                    }
+                    headers = _apply_auth_overrides(
+                        self._headers,
+                        api_key=api_key,
+                        service_key=None,
+                        tenant_id=None,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    )
+                    headers["Content-Type"] = (
+                        f"multipart/form-data; boundary={_BOUNDARY}"
+                    )
+                    headers["Content-Encoding"] = "zstd"
+                    headers["X-Pre-Compressed-Size"] = (
+                        str(compressed_traces_info[0])
+                        if compressed_traces_info
+                        else ""
+                    )
+                    headers["X-Post-Compressed-Size"] = (
+                        str(compressed_traces_info[1])
+                        if compressed_traces_info
+                        else ""
+                    )
                     logger.debug(
                         f"Sending compressed multipart request with context: {_context}"
                     )
