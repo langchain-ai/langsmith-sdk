@@ -3091,14 +3091,10 @@ class Client:
                     )
                     headers["Content-Encoding"] = "zstd"
                     headers["X-Pre-Compressed-Size"] = (
-                        str(compressed_traces_info[0])
-                        if compressed_traces_info
-                        else ""
+                        str(compressed_traces_info[0]) if compressed_traces_info else ""
                     )
                     headers["X-Post-Compressed-Size"] = (
-                        str(compressed_traces_info[1])
-                        if compressed_traces_info
-                        else ""
+                        str(compressed_traces_info[1]) if compressed_traces_info else ""
                     )
                     logger.debug(
                         f"Sending compressed multipart request with context: {_context}"
