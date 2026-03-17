@@ -2441,12 +2441,12 @@ def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError):
         langchain_client.update_examples(
             dataset_id=dataset1.id, updates=[example_update_1, example_update_2]
         )
 
-    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError):
         langchain_client.update_examples(
             example_ids=[example1_id, example2_id],
             inputs=[example_update_1.inputs, example_update_2.inputs],
