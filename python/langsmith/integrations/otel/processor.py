@@ -203,6 +203,11 @@ class OtelSpanProcessor:
         """Forward span end events to the inner processor."""
         self._processor.on_end(span)
 
+    def _on_ending(self, span):
+        """Forward span ending events to the inner processor."""
+        if hasattr(self._processor, "_on_ending"):
+            self._processor._on_ending(span)
+
     def shutdown(self):
         """Shutdown processor."""
         self._processor.shutdown()
