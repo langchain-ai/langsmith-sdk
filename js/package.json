@@ -177,7 +177,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
     "@typescript-eslint/parser": "^5.59.8",
-    "ai": "^6.0.1",
+    "ai": "^6.0.116",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^16.1.3",
