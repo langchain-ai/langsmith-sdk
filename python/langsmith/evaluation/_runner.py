@@ -564,6 +564,16 @@ class ExperimentResults:
     def experiment_name(self) -> str:
         return self._manager.experiment_name
 
+    @property
+    def experiment_id(self) -> uuid.UUID:
+        """The ID of the experiment."""
+        return self._manager._get_experiment().id
+
+    @property
+    def url(self) -> Optional[str]:
+        """The URL of the experiment in the LangSmith UI."""
+        return self._manager._get_experiment().url
+
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         ix = 0
         while (
