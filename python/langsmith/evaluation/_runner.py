@@ -572,15 +572,6 @@ class ExperimentResults:
     @property
     def url(self) -> Optional[str]:
         """The URL of the experiment in the LangSmith UI."""
-        return self._manager._get_experiment().url
-
-    def get_dataset_id(self) -> str:
-        """Get the ID of the dataset associated with this experiment."""
-        return self._manager.dataset_id
-
-    @property
-    def comparison_url(self) -> Optional[str]:
-        """The URL to the comparison view for this experiment."""
         experiment = self._manager._get_experiment()
         if experiment.url:
             project_url = experiment.url.split("?")[0]
@@ -590,6 +581,15 @@ class ExperimentResults:
                 f"selectedSessions={experiment.id}"
             )
         return None
+
+    def get_dataset_id(self) -> str:
+        """Get the ID of the dataset associated with this experiment."""
+        return self._manager.dataset_id
+
+    @property
+    def comparison_url(self) -> Optional[str]:
+        """The URL to the comparison view for this experiment."""
+        return self.url
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         ix = 0
