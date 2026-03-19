@@ -574,6 +574,23 @@ class ExperimentResults:
         """The URL of the experiment in the LangSmith UI."""
         return self._manager._get_experiment().url
 
+    def get_dataset_id(self) -> str:
+        """Get the ID of the dataset associated with this experiment."""
+        return self._manager.dataset_id
+
+    @property
+    def comparison_url(self) -> Optional[str]:
+        """The URL to the comparison view for this experiment."""
+        experiment = self._manager._get_experiment()
+        if experiment.url:
+            project_url = experiment.url.split("?")[0]
+            base_url = project_url.split("/projects/p/")[0]
+            return (
+                f"{base_url}/datasets/{self._manager.dataset_id}/compare?"
+                f"selectedSessions={experiment.id}"
+            )
+        return None
+
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         ix = 0
         while (
@@ -1274,7 +1291,6 @@ class _ExperimentManagerMixin:
         self, project: Optional[schemas.TracerSession], first_example: schemas.Example
     ) -> None:
         if project and project.url:
-            # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
             base_url = project_url.split("/projects/p/")[0]

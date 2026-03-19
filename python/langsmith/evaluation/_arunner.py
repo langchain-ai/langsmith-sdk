@@ -1177,6 +1177,7 @@ class AsyncExperimentResults:
         self._condition = asyncio.Condition()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
+        self._comparison_url: Optional[str] = None
 
     @property
     def experiment_name(self) -> str:
@@ -1191,6 +1192,23 @@ class AsyncExperimentResults:
     def url(self) -> Optional[str]:
         """The URL of the experiment in the LangSmith UI."""
         return self._manager._get_experiment().url
+
+    async def get_dataset_id(self) -> str:
+        """Get the ID of the dataset associated with this experiment."""
+        return await self._manager.get_dataset_id()
+
+    async def get_comparison_url(self) -> Optional[str]:
+        """Get the URL to the comparison view for this experiment."""
+        experiment = self._manager._get_experiment()
+        if not self._comparison_url and experiment.url:
+            dataset_id = await self._manager.get_dataset_id()
+            project_url = experiment.url.split("?")[0]
+            base_url = project_url.split("/projects/p/")[0]
+            self._comparison_url = (
+                f"{base_url}/datasets/{dataset_id}/compare?"
+                f"selectedSessions={experiment.id}"
+            )
+        return self._comparison_url
 
     def __aiter__(self) -> AsyncIterator[ExperimentResultRow]:
         return self
