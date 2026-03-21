@@ -173,6 +173,15 @@ export const convertMessageToTracedFormat = (
           type: "image_url",
           image_url: normalizeFileDataAsDataURL(image, mediaType),
         };
+      } else if (
+        part.type === "reasoning" &&
+        "text" in part &&
+        typeof part.text === "string"
+      ) {
+        return {
+          type: "reasoning",
+          reasoning: part.text,
+        };
       }
       return part;
     });
