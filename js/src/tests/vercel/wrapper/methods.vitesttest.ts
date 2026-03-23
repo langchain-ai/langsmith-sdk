@@ -2388,7 +2388,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV3({
         modelId: "content-block-test",
         doStream: async () => ({
-          stream: simulateReadableStream({ chunks }),
+          stream: simulateReadableStream({ chunks: chunks as any }),
         }),
       });
 
