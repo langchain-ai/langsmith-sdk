@@ -2373,47 +2373,42 @@ describe("wrapAISDK", () => {
           { type: "text", text: "Done" },
         ],
       },
-    ])(
-      "should handle $scenario",
-      async ({ chunks, expectedContent }) => {
-        const wrappedMethods = wrapAISDK(
-          {
-            wrapLanguageModel: ai.wrapLanguageModel,
-            generateText: ai.generateText,
-            streamText: ai.streamText,
-            generateObject: ai.generateObject,
-            streamObject: ai.streamObject,
-          },
-          { client: mockClient as any }
-        );
+    ])("should handle $scenario", async ({ chunks, expectedContent }) => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
 
-        const mockLangModel = new MockLanguageModelV3({
-          modelId: "content-block-test",
-          doStream: async () => ({
-            stream: simulateReadableStream({ chunks }),
-          }),
-        });
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "content-block-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({ chunks }),
+        }),
+      });
 
-        const result = wrappedMethods.streamText({
-          model: mockLangModel,
-          prompt: "test",
-        });
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "test",
+      });
 
-        await result.consumeStream();
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      await result.consumeStream();
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
-        const doStreamUpdateRun = mockHttpRequests.find(
-          (req) =>
-            req.type === "updateRun" &&
-            req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
-        );
+      const doStreamUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
+      );
 
-        expect(doStreamUpdateRun).toBeDefined();
-        expect(doStreamUpdateRun.body.outputs.content).toEqual(
-          expectedContent
-        );
-      }
-    );
+      expect(doStreamUpdateRun).toBeDefined();
+      expect(doStreamUpdateRun.body.outputs.content).toEqual(expectedContent);
+    });
 
     it("should preserve providerMetadata extras on reasoning blocks", async () => {
       const wrappedMethods = wrapAISDK(
