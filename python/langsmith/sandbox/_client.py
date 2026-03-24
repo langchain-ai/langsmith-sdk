@@ -22,6 +22,7 @@ from langsmith.sandbox._helpers import (
     handle_sandbox_creation_error,
     handle_volume_creation_error,
     parse_error_response,
+    validate_ttl,
 )
 from langsmith.sandbox._models import (
     Pool,
@@ -663,6 +664,8 @@ class SandboxClient:
         *,
         name: Optional[str] = None,
         timeout: int = 30,
+        ttl_seconds: Optional[int] = None,
+        idle_ttl_seconds: Optional[int] = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
 
@@ -679,6 +682,12 @@ class SandboxClient:
             template_name: Name of the SandboxTemplate to use.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
+            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
+                will be automatically deleted after this duration. Must be a
+                multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
+                automatically deleted after this duration of inactivity. Must be
+                a multiple of 60. 0 or None disables this TTL.
 
         Returns:
             Sandbox instance.
@@ -687,11 +696,14 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
+            ValueError: If TTL values are invalid.
         """
         sb = self.create_sandbox(
             template_name=template_name,
             name=name,
             timeout=timeout,
+            ttl_seconds=ttl_seconds,
+            idle_ttl_seconds=idle_ttl_seconds,
         )
         sb._auto_delete = True
         return sb
@@ -703,6 +715,8 @@ class SandboxClient:
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
+        ttl_seconds: Optional[int] = None,
+        idle_ttl_seconds: Optional[int] = None,
     ) -> Sandbox:
         """Create a new Sandbox.
 
@@ -717,6 +731,12 @@ class SandboxClient:
             wait_for_ready: If True (default), block until sandbox is ready.
                 If False, return immediately with status "provisioning". Use
                 get_sandbox_status() or wait_for_sandbox() to poll for readiness.
+            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
+                will be automatically deleted after this duration. Must be a
+                multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
+                automatically deleted after this duration of inactivity. Must be
+                a multiple of 60. 0 or None disables this TTL.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -726,7 +746,11 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
+            ValueError: If TTL values are invalid.
         """
+        validate_ttl(ttl_seconds, "ttl_seconds")
+        validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+
         url = f"{self._base_url}/boxes"
 
         payload: dict[str, Any] = {
@@ -737,6 +761,10 @@ class SandboxClient:
             payload["timeout"] = timeout
         if name:
             payload["name"] = name
+        if ttl_seconds is not None:
+            payload["ttl_seconds"] = ttl_seconds
+        if idle_ttl_seconds is not None:
+            payload["idle_ttl_seconds"] = idle_ttl_seconds
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -802,12 +830,23 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def update_sandbox(self, name: str, *, new_name: str) -> Sandbox:
-        """Update a sandbox's display name.
+    def update_sandbox(
+        self,
+        name: str,
+        *,
+        new_name: Optional[str] = None,
+        ttl_seconds: Optional[int] = None,
+        idle_ttl_seconds: Optional[int] = None,
+    ) -> Sandbox:
+        """Update a sandbox's properties.
 
         Args:
             name: Current sandbox name.
             new_name: New display name.
+            ttl_seconds: Maximum lifetime in seconds from creation. Must be a
+                multiple of 60. 0 disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of 60.
+                0 disables this TTL.
 
         Returns:
             Updated Sandbox.
@@ -816,9 +855,19 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             ResourceNameConflictError: If new_name is already in use.
             SandboxClientError: For other errors.
+            ValueError: If TTL values are invalid.
         """
+        validate_ttl(ttl_seconds, "ttl_seconds")
+        validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+
         url = f"{self._base_url}/boxes/{name}"
-        payload = {"name": new_name}
+        payload: dict[str, Any] = {}
+        if new_name is not None:
+            payload["name"] = new_name
+        if ttl_seconds is not None:
+            payload["ttl_seconds"] = ttl_seconds
+        if idle_ttl_seconds is not None:
+            payload["idle_ttl_seconds"] = idle_ttl_seconds
 
         try:
             response = self._http.patch(url, json=payload)
