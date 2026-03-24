@@ -49,6 +49,58 @@ class TestSandboxProperties:
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
 
+class TestSandboxTTLFields:
+    """Tests for TTL fields on Sandbox."""
+
+    def test_from_dict_with_ttl(self, client):
+        """Test from_dict parses TTL fields."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "ttl_seconds": 3600,
+                "idle_ttl_seconds": 600,
+                "expires_at": "2026-03-24T12:00:00Z",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.ttl_seconds == 3600
+        assert sb.idle_ttl_seconds == 600
+        assert sb.expires_at == "2026-03-24T12:00:00Z"
+
+    def test_from_dict_without_ttl(self, client):
+        """Test from_dict defaults TTL fields to None when absent."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.ttl_seconds is None
+        assert sb.idle_ttl_seconds is None
+        assert sb.expires_at is None
+
+    def test_from_dict_with_zero_ttl(self, client):
+        """Test from_dict handles zero TTL values (TTL disabled)."""
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "ttl_seconds": 0,
+                "idle_ttl_seconds": 0,
+                "expires_at": None,
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.ttl_seconds == 0
+        assert sb.idle_ttl_seconds == 0
+        assert sb.expires_at is None
+
+
 class TestSandboxStatusFields:
     """Tests for status fields on Sandbox."""
 

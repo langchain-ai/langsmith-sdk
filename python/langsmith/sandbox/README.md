@@ -588,6 +588,65 @@ client.delete_pool("python-pool")
 
 > **Note:** Templates with volume mounts cannot be used in pools.
 
+## Sandbox Lifetime & TTL
+
+Control how long a sandbox stays alive with two optional TTL parameters:
+
+- **`ttl_seconds`** — Maximum lifetime from creation. The sandbox is automatically
+  deleted after this many seconds, regardless of activity.
+- **`idle_ttl_seconds`** — Idle timeout. The sandbox is automatically deleted after
+  this many seconds of inactivity. Activity (command execution, file I/O) resets
+  the timer.
+
+Both values must be multiples of 60 (minute-resolution). Pass `0` to explicitly
+disable a TTL. When both are set, whichever deadline comes first wins.
+
+```python
+# Create a sandbox that expires after 1 hour
+with client.sandbox(
+    template_name="my-sandbox",
+    ttl_seconds=3600,
+) as sb:
+    result = sb.run("echo hello")
+
+# Create a sandbox that expires after 10 min of inactivity
+sb = client.create_sandbox(
+    template_name="my-sandbox",
+    idle_ttl_seconds=600,
+)
+
+# Combine both: 2-hour max lifetime, 15-min idle timeout
+sb = client.create_sandbox(
+    template_name="my-sandbox",
+    ttl_seconds=7200,
+    idle_ttl_seconds=900,
+)
+
+# Check expiration
+print(sb.ttl_seconds)       # 7200
+print(sb.idle_ttl_seconds)  # 900
+print(sb.expires_at)        # e.g. "2026-03-24T14:00:00Z"
+```
+
+### Updating TTL on Existing Sandboxes
+
+You can update TTL values on an already-running sandbox:
+
+```python
+# Extend the idle timeout to 30 minutes
+sb = client.update_sandbox("my-sandbox", idle_ttl_seconds=1800)
+
+# Disable the absolute TTL (sandbox runs indefinitely, idle TTL still applies)
+sb = client.update_sandbox("my-sandbox", ttl_seconds=0)
+
+# Update name and TTL together
+sb = client.update_sandbox(
+    "my-sandbox",
+    new_name="my-sandbox-v2",
+    ttl_seconds=3600,
+)
+```
+
 ## Reusing Existing Sandboxes
 
 Get a sandbox that's already running:
@@ -719,13 +778,13 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(template_name, ...)` | Create a sandbox (auto-deleted on context exit) |
-| `create_sandbox(template_name, *, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Pass `wait_for_ready=False` for async creation. |
+| `sandbox(template_name, *, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit) |
+| `create_sandbox(template_name, *, wait_for_ready=True, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (requires explicit delete). Pass `wait_for_ready=False` for async creation. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
 | `list_sandboxes()` | List all sandboxes |
-| `update_sandbox(name, *, new_name)` | Update a sandbox's display name |
+| `update_sandbox(name, *, new_name=None, ttl_seconds=None, idle_ttl_seconds=None)` | Update a sandbox's name or TTL settings |
 | `delete_sandbox(name)` | Delete a sandbox |
 | `create_template(name, image, ...)` | Create a template |
 | `list_templates()` | List all templates |
@@ -751,6 +810,9 @@ except SandboxClientError as e:
 | `status_message` | Human-readable details when status is `"failed"`, `None` otherwise |
 | `dataplane_url` | URL for runtime operations (only functional when status is `"ready"`) |
 | `id` | Unique identifier (UUID) |
+| `ttl_seconds` | Maximum lifetime TTL in seconds (`0` means disabled, `None` means not set) |
+| `idle_ttl_seconds` | Idle timeout TTL in seconds (`0` means disabled, `None` means not set) |
+| `expires_at` | Computed expiration timestamp, or `None` if no TTL is active |
 
 | Method | Description |
 |--------|-------------|

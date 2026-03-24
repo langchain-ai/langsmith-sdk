@@ -43,6 +43,9 @@ class AsyncSandbox:
         status_message: Human-readable details when status is "failed", None otherwise.
         created_at: Timestamp when the sandbox was created.
         updated_at: Timestamp when the sandbox was last updated.
+        ttl_seconds: Maximum lifetime TTL in seconds (0 means disabled).
+        idle_ttl_seconds: Idle timeout TTL in seconds (0 means disabled).
+        expires_at: Computed expiration timestamp, or None if no TTL is set.
 
     Example:
         async with await client.sandbox(template_name="python-sandbox") as sandbox:
@@ -59,6 +62,9 @@ class AsyncSandbox:
     status_message: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    ttl_seconds: Optional[int] = None
+    idle_ttl_seconds: Optional[int] = None
+    expires_at: Optional[str] = None
 
     # Internal fields (not from API)
     _client: AsyncSandboxClient = field(repr=False, default=None)  # type: ignore
@@ -90,6 +96,9 @@ class AsyncSandbox:
             status_message=data.get("status_message"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
+            ttl_seconds=data.get("ttl_seconds"),
+            idle_ttl_seconds=data.get("idle_ttl_seconds"),
+            expires_at=data.get("expires_at"),
             _client=client,
             _auto_delete=auto_delete,
         )
