@@ -237,6 +237,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
   if (typeof contents === "string") {
     return {
       messages: [{ role: "user", content: contents }],
+      model,
       ...rest,
     };
   }
@@ -245,6 +246,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
     if (contents.every((item) => typeof item === "string")) {
       return {
         messages: contents.map((text) => ({ role: "user", content: text })),
+        model,
         ...rest,
       };
     }
@@ -315,7 +317,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
         } => msg !== null
       );
 
-    return { messages, ...rest };
+    return { messages, model, ...rest };
   }
 
   return inputs;
