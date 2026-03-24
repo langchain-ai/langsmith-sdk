@@ -231,13 +231,12 @@ const chatAggregator = (input: unknown): KVMap => {
 };
 
 function processGeminiInputs(inputs: KVMap): KVMap {
-  const { contents, model, ...rest } = inputs as GenerateContentParameters;
+  const { contents, ...rest } = inputs as GenerateContentParameters;
   if (!contents) return inputs;
 
   if (typeof contents === "string") {
     return {
       messages: [{ role: "user", content: contents }],
-      model,
       ...rest,
     };
   }
@@ -246,7 +245,6 @@ function processGeminiInputs(inputs: KVMap): KVMap {
     if (contents.every((item) => typeof item === "string")) {
       return {
         messages: contents.map((text) => ({ role: "user", content: text })),
-        model,
         ...rest,
       };
     }
@@ -317,7 +315,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
         } => msg !== null
       );
 
-    return { messages, model, ...rest };
+    return { messages, ...rest };
   }
 
   return inputs;
