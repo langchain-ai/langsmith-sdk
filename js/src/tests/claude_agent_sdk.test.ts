@@ -2370,4 +2370,413 @@ describe("wrapClaudeAgentSDK", () => {
       },
     });
   });
+
+  test("subagent calling snapshot", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+
+          mcp_servers: [],
+          model: "claude-sonnet-4-6",
+          permissionMode: "default",
+
+          apiKeySource: "ANTHROPIC_API_KEY",
+          claude_code_version: "2.1.83",
+          output_style: "default",
+          agents: [
+            "general-purpose",
+            "statusline-setup",
+            "Explore",
+            "Plan",
+            "oracle",
+          ],
+          skills: [
+            "update-config",
+            "debug",
+            "simplify",
+            "batch",
+            "loop",
+            "schedule",
+            "claude-api",
+          ],
+          plugins: [],
+          uuid: "a5ab9b7f-b1bc-4f19-8c5e-93bbbd8f3199",
+          fast_mode_state: "off",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01GjybJ6Ro5aJj3Cphhe4TtE",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "thinking",
+                thinking:
+                  "The user wants me to get the current time using the oracle subagent.",
+                signature:
+                  "Ev8BClkIDBgCKkDq4aCzS3BF3LcasdWEFkXT/Hn7xeTNUwuqLb041SVsc1+ox84BriZwOh2iE61PYhcqGUVlAxCKJ1QiGtp5anXnMhFjbGF1ZGUtc29ubmV0LTQtNhIMHRbxh9G5sofkeErOGgx2ie8GmImq96iLIJciMOw5BpgWL6iTW5/U7mc5NbTEWf9nMxgrZ7/GsJEReLTTdi0xIIZlztM2C72yh7qakipUTVUQiwdgydGWmGp969LJL7Kq5nRCgSu6Hp0fjXGt9cz4Fjlbhlw7RoayXNzVtIRsbxXuOvwwPK6P445XBznqiJuFpQIdjRSZ4ZDVd795kNTw0f43GAE=",
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 9488,
+              cache_read_input_tokens: 0,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 9488,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 0,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "8d9e4441-c418-41c9-8d1f-7383d1875f89",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01GjybJ6Ro5aJj3Cphhe4TtE",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+                name: "Agent",
+                input: {
+                  description: "Get current time",
+                  prompt:
+                    "What is the current time? Please run a bash command to get it.",
+                  subagent_type: "oracle",
+                },
+                caller: {
+                  type: "direct",
+                },
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 9488,
+              cache_read_input_tokens: 0,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 9488,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 0,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "3be5b4f6-3cd1-4b61-b820-8fb79d8e813f",
+        };
+        yield {
+          type: "system",
+          subtype: "task_started",
+          task_id: "a81bf415a7d8dc4ea",
+          tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          description: "Get current time",
+          task_type: "local_agent",
+          prompt:
+            "What is the current time? Please run a bash command to get it.",
+          uuid: "7cd65e40-eb9d-4007-bb28-153007d6148d",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "What is the current time? Please run a bash command to get it.",
+              },
+            ],
+          },
+          parent_tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "724a1839-593c-433c-b24f-2f0964068a25",
+          timestamp: "2026-03-25T12:00:17.749Z",
+        };
+        yield {
+          type: "system",
+          subtype: "task_progress",
+          task_id: "a81bf415a7d8dc4ea",
+          tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          description: "Running Get current date and time",
+          usage: {
+            total_tokens: 4282,
+            tool_uses: 1,
+            duration_ms: 2508,
+          },
+          last_tool_name: "Bash",
+          uuid: "9a7900fb-db11-4990-8ebc-30dea5e9262d",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01LKeuToAj9w3P1PEy4TAEjm",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_015z38ZntH1r2AFzYKVEuCnx",
+                name: "Bash",
+                input: {
+                  command: "date",
+                  description: "Get current date and time",
+                },
+                caller: {
+                  type: "direct",
+                },
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 3,
+              cache_creation_input_tokens: 923,
+              cache_read_input_tokens: 3306,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 923,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 50,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "c5cd2212-3e5b-4e94-a8e9-d100b68a6dd2",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                tool_use_id: "toolu_015z38ZntH1r2AFzYKVEuCnx",
+                type: "tool_result",
+                content: "Wed Mar 25 13:00:20 CET 2026",
+                is_error: false,
+              },
+            ],
+          },
+          parent_tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "06512cdd-e63e-480a-9410-a2af5b60b322",
+          timestamp: "2026-03-25T12:00:20.771Z",
+        };
+        yield {
+          type: "system",
+          subtype: "task_notification",
+          task_id: "a81bf415a7d8dc4ea",
+          tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+          status: "completed",
+          output_file: "",
+          summary: "Get current time",
+          usage: {
+            total_tokens: 4387,
+            tool_uses: 1,
+            duration_ms: 5325,
+          },
+          uuid: "51b17eb0-f59d-43bf-aa4a-69f6b78aeca1",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+        };
+        yield {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                tool_use_id: "toolu_011NwzdcdoWCS2kpb93oXbQm",
+                type: "tool_result",
+                content: [
+                  {
+                    type: "text",
+                    text: "The current time is 13:00:20 CET (Central European Time) on Wednesday, March 25, 2026.",
+                  },
+                  {
+                    type: "text",
+                    text: "agentId: a81bf415a7d8dc4ea (use SendMessage with to: 'a81bf415a7d8dc4ea' to continue this agent)\n<usage>total_tokens: 4366\ntool_uses: 1\nduration_ms: 5327</usage>",
+                  },
+                ],
+              },
+            ],
+          },
+          parent_tool_use_id: null,
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "e1977f73-721b-4019-b4ce-8c355ef5c60d",
+          timestamp: "2026-03-25T12:00:23.076Z",
+          tool_use_result: {
+            status: "completed",
+            prompt:
+              "What is the current time? Please run a bash command to get it.",
+            agentId: "a81bf415a7d8dc4ea",
+            content: [
+              {
+                type: "text",
+                text: "The current time is 13:00:20 CET (Central European Time) on Wednesday, March 25, 2026.",
+              },
+            ],
+            totalDurationMs: 5327,
+            totalTokens: 4366,
+            totalToolUseCount: 1,
+            usage: {
+              input_tokens: 1,
+              cache_creation_input_tokens: 1027,
+              cache_read_input_tokens: 3306,
+              output_tokens: 32,
+              server_tool_use: {
+                web_search_requests: 0,
+                web_fetch_requests: 0,
+              },
+              service_tier: "standard",
+              cache_creation: {
+                ephemeral_1h_input_tokens: 0,
+                ephemeral_5m_input_tokens: 1027,
+              },
+              inference_geo: "",
+              iterations: [],
+              speed: "standard",
+            },
+          },
+        };
+        yield {
+          type: "assistant",
+          message: {
+            model: "claude-sonnet-4-6",
+            id: "msg_01GLhdrGMmZd2VLeVfKFemtG",
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "text",
+                text: "The oracle subagent has returned the current time:\n\n> 🕐 **Current Time:** 1:00:20 PM CET (Central European Time)\n> 📅 **Date:** Wednesday, March 25, 2026",
+              },
+            ],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 1,
+              cache_creation_input_tokens: 247,
+              cache_read_input_tokens: 9488,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 247,
+                ephemeral_1h_input_tokens: 0,
+              },
+              output_tokens: 1,
+              service_tier: "standard",
+              inference_geo: "global",
+            },
+            context_management: null,
+          },
+          parent_tool_use_id: null,
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          uuid: "f797c716-5146-4844-b3c6-dadf6c437a74",
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          duration_ms: 9711,
+          duration_api_ms: 9193,
+          num_turns: 2,
+          result:
+            "The oracle subagent has returned the current time:\n\n> 🕐 **Current Time:** 1:00:20 PM CET (Central European Time)\n> 📅 **Date:** Wednesday, March 25, 2026",
+          stop_reason: "end_turn",
+          session_id: "0aaeb22f-9a28-44c1-95f0-32cbfe025a92",
+          total_cost_usd: 0.053157750000000004,
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 9735,
+            cache_read_input_tokens: 9488,
+            output_tokens: 193,
+            server_tool_use: {
+              web_search_requests: 0,
+              web_fetch_requests: 0,
+            },
+            service_tier: "standard",
+            cache_creation: {
+              ephemeral_1h_input_tokens: 0,
+              ephemeral_5m_input_tokens: 9735,
+            },
+            inference_geo: "",
+            iterations: [],
+            speed: "standard",
+          },
+          modelUsage: {
+            "claude-sonnet-4-6": {
+              inputTokens: 8,
+              outputTokens: 299,
+              cacheReadInputTokens: 16100,
+              cacheCreationInputTokens: 11685,
+              webSearchRequests: 0,
+              costUSD: 0.053157750000000004,
+              contextWindow: 200000,
+              maxOutputTokens: 32000,
+            },
+          },
+          permission_denials: [],
+          fast_mode_state: "off",
+          uuid: "d533f969-f62e-4a9e-ad09-cdc3b8a677c3",
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+    const result: unknown[] = [];
+    for await (const message of wrapped.query({
+      prompt: "Get current time using oracle subagent",
+      options: {
+        allowedTools: ["Bash", "Agent"],
+      },
+    })) {
+      result.push(message);
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(res).toMatchObject({
+      nodes: [
+        "claude.conversation:0",
+        "claude.assistant.turn:1",
+        "oracle:2",
+        "Bash:3",
+        "claude.assistant.turn:4",
+        "claude.assistant.turn:5",
+      ],
+      edges: [
+        ["claude.conversation:0", "claude.assistant.turn:1"],
+        ["claude.conversation:0", "oracle:2"],
+        ["oracle:2", "Bash:3"],
+        ["oracle:2", "claude.assistant.turn:4"],
+        ["claude.conversation:0", "claude.assistant.turn:5"],
+      ],
+    });
+  });
 });

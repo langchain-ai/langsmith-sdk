@@ -16,11 +16,11 @@ import type { SDKMessage } from "./types.js";
  * @internal
  */
 export class StreamManager {
-  namespaces: { [namespace: string]: RunTree };
+  namespaces: { [namespace: string]: RunTree | undefined };
   history: { [namespace: string]: SDKMessage[] };
 
-  assistant: { [messageId: string]: RunTree } = {};
-  tools: { [toolUseId: string]: RunTree } = {};
+  assistant: { [messageId: string]: RunTree | undefined } = {};
+  tools: { [toolUseId: string]: RunTree | undefined } = {};
 
   postRunQueue: Promise<void>[] = [];
   runTrees: RunTree[] = [];
@@ -42,7 +42,7 @@ export class StreamManager {
       if (message.modelUsage) {
         correctUsageFromResults(
           message.modelUsage,
-          Object.values(this.assistant)
+          Object.values(this.assistant).filter((runTree) => runTree != null)
         );
       }
 
@@ -97,6 +97,8 @@ export class StreamManager {
         outputs: { output: { messages: [] } },
       });
 
+      if (this.assistant[messageId] == null) return;
+
       this.assistant[messageId].outputs = (() => {
         const prevMessages =
           this.assistant[messageId].outputs?.output.messages ?? [];
@@ -131,23 +133,25 @@ export class StreamManager {
               : null) ||
             "unknown-agent";
 
-          this.tools[block.id] ??= this.createChild("root", {
-            name,
-            run_type: "chain",
-            inputs: block.input,
-            start_time: eventTime,
-          });
+          this.tools[block.id] ??=
+            this.createChild("root", {
+              name,
+              run_type: "chain",
+              inputs: block.input,
+              start_time: eventTime,
+            }) ?? this.tools[block.id];
 
           this.namespaces[block.id] ??= this.tools[block.id];
         } else {
           const name = block.name || "unknown-tool";
 
-          this.tools[block.id] ??= this.createChild(namespace, {
-            name,
-            run_type: "tool",
-            inputs: block.input ? { input: block.input } : {},
-            start_time: eventTime,
-          });
+          this.tools[block.id] ??=
+            this.createChild(namespace, {
+              name,
+              run_type: "tool",
+              inputs: block.input ? { input: block.input } : {},
+              start_time: eventTime,
+            }) ?? this.tools[block.id];
         }
       }
     }
@@ -193,7 +197,7 @@ export class StreamManager {
               ? getToolError(result)
               : undefined;
 
-          void this.tools[block.tool_use_id].end(toolOutput, toolError);
+          void this.tools[block.tool_use_id]?.end(toolOutput, toolError);
         }
       }
     }
@@ -204,8 +208,10 @@ export class StreamManager {
   protected createChild(
     namespace: string,
     args: Parameters<RunTree["createChild"]>[0]
-  ): RunTree {
-    const runTree = this.namespaces[namespace].createChild(args);
+  ): RunTree | undefined {
+    const runTree = this.namespaces[namespace]?.createChild(args);
+    if (runTree == null) return undefined;
+
     this.postRunQueue.push(runTree.postRun());
     this.runTrees.push(runTree);
     return runTree;
@@ -214,6 +220,7 @@ export class StreamManager {
   async finish() {
     // Clean up incomplete tools and subagent calls
     for (const tool of Object.values(this.tools)) {
+      if (tool == null) continue;
       if (tool.outputs == null && tool.error == null) {
         void tool.end(undefined, "Run not completed (conversation ended)");
       }
