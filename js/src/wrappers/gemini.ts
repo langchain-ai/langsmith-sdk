@@ -231,7 +231,7 @@ const chatAggregator = (input: unknown): KVMap => {
 };
 
 function processGeminiInputs(inputs: KVMap): KVMap {
-  const { contents, model, ...rest } = inputs as GenerateContentParameters;
+  const { contents, ...rest } = inputs as GenerateContentParameters;
   if (!contents) return inputs;
 
   if (typeof contents === "string") {
