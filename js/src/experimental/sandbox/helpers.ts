@@ -23,6 +23,35 @@ import {
 } from "./errors.js";
 
 // =============================================================================
+// Input validation
+// =============================================================================
+
+/**
+ * Validate TTL values for sandbox create/update (minute resolution).
+ *
+ * @param value - TTL in seconds (`undefined` means unset; `0` disables).
+ * @param name - Parameter name for error messages.
+ * @throws LangSmithValidationError if negative or not a multiple of 60 (when non-zero).
+ */
+export function validateTtl(value: number | undefined, name: string): void {
+  if (value === undefined) {
+    return;
+  }
+  if (value < 0) {
+    throw new LangSmithValidationError(
+      `${name} must be >= 0, got ${value}`,
+      name
+    );
+  }
+  if (value !== 0 && value % 60 !== 0) {
+    throw new LangSmithValidationError(
+      `${name} must be a multiple of 60 seconds, got ${value}`,
+      name
+    );
+  }
+}
+
+// =============================================================================
 // Error Response Parsing
 // =============================================================================
 

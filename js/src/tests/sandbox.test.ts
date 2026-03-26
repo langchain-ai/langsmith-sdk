@@ -23,6 +23,7 @@ import {
   LangSmithSandboxServerReloadError,
 } from "../experimental/sandbox/errors.js";
 import type { WsMessage, OutputChunk } from "../experimental/sandbox/types.js";
+import { validateTtl } from "../experimental/sandbox/helpers.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
@@ -322,6 +323,142 @@ describe("SandboxClient - createSandbox", () => {
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     // The signal should be an AbortSignal with 30s timeout
     expect(init.signal).toBeDefined();
+  });
+
+  it("should include ttl_seconds and idle_ttl_seconds in the request body when set", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        template_name: "python-sandbox",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+        ttl_seconds: 3600,
+        idle_ttl_seconds: 600,
+        expires_at: "2026-03-24T15:00:00Z",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox("python-sandbox", {
+      ttlSeconds: 3600,
+      idleTtlSeconds: 600,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.ttl_seconds).toBe(3600);
+    expect(body.idle_ttl_seconds).toBe(600);
+    expect(sandbox.ttl_seconds).toBe(3600);
+    expect(sandbox.idle_ttl_seconds).toBe(600);
+    expect(sandbox.expires_at).toBe("2026-03-24T15:00:00Z");
+  });
+
+  it("should reject invalid TTL values before calling the API", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.createSandbox("python-sandbox", { ttlSeconds: 61 })
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("validateTtl", () => {
+  it("accepts undefined, 0, and positive multiples of 60", () => {
+    expect(() => validateTtl(undefined, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(0, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(60, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(3600, "idleTtlSeconds")).not.toThrow();
+  });
+
+  it("rejects negative values and non-multiples of 60", () => {
+    expect(() => validateTtl(-1, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+    expect(() => validateTtl(30, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+    expect(() => validateTtl(61, "idleTtlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+  });
+});
+
+describe("SandboxClient - updateSandbox", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should PATCH ttl fields when provided in options", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        template_name: "python-sandbox",
+        status: "ready",
+        ttl_seconds: 0,
+        idle_ttl_seconds: 1800,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", {
+      ttlSeconds: 0,
+      idleTtlSeconds: 1800,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("PATCH");
+    const body = JSON.parse(init.body as string);
+    expect(body.ttl_seconds).toBe(0);
+    expect(body.idle_ttl_seconds).toBe(1800);
+    expect(body.name).toBeUndefined();
+  });
+
+  it("should still support rename via string second argument", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-renamed",
+        template_name: "python-sandbox",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", "sb-renamed");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.name).toBe("sb-renamed");
+  });
+
+  it("should GET sandbox when update options object is empty", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        template_name: "python-sandbox",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sb = await client.updateSandbox("sb-1", {});
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/sb-1");
+    expect(init.method).toBeUndefined();
+    expect(sb.name).toBe("sb-1");
   });
 });
 

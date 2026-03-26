@@ -93,6 +93,12 @@ export interface SandboxData {
   status_message?: string;
   created_at?: string;
   updated_at?: string;
+  /** Maximum lifetime TTL in seconds (`0` means disabled, omitted/`undefined` means not set). */
+  ttl_seconds?: number;
+  /** Idle timeout TTL in seconds (`0` means disabled, omitted/`undefined` means not set). */
+  idle_ttl_seconds?: number;
+  /** Computed expiration timestamp when a TTL is active, else omitted/`undefined`. */
+  expires_at?: string;
 }
 
 /**
@@ -262,6 +268,33 @@ export interface CreateSandboxOptions {
    * Default: true.
    */
   waitForReady?: boolean;
+  /**
+   * Maximum lifetime in seconds from creation. The sandbox is deleted after
+   * this duration. Must be a multiple of 60, or `0`/`undefined` to disable or omit.
+   */
+  ttlSeconds?: number;
+  /**
+   * Idle timeout in seconds. The sandbox is deleted after this much inactivity.
+   * Must be a multiple of 60, or `0`/`undefined` to disable or omit.
+   */
+  idleTtlSeconds?: number;
+}
+
+/**
+ * Options for updating a sandbox (name and/or TTL).
+ */
+export interface UpdateSandboxOptions {
+  /** New display name. */
+  newName?: string;
+  /**
+   * Maximum lifetime in seconds from creation. Must be a multiple of 60.
+   * Pass `0` to disable absolute TTL.
+   */
+  ttlSeconds?: number;
+  /**
+   * Idle timeout in seconds. Must be a multiple of 60. Pass `0` to disable.
+   */
+  idleTtlSeconds?: number;
 }
 
 /**
