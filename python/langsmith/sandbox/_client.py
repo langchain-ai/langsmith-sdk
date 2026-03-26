@@ -82,6 +82,7 @@ class SandboxClient:
         timeout: float = 10.0,
         api_key: Optional[str] = None,
         max_retries: int = 3,
+        headers: Optional[RequestHeaders] = None,
     ):
         """Initialize the SandboxClient.
 
@@ -98,11 +99,13 @@ class SandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
-        headers: dict[str, str] = {}
+        client_headers: dict[str, str] = {}
         if resolved_api_key:
-            headers["X-Api-Key"] = resolved_api_key
+            client_headers["X-Api-Key"] = resolved_api_key
+        if headers:
+            client_headers = merge_headers(client_headers, headers)
         transport = RetryTransport(max_retries=max_retries)
-        self._http = httpx.Client(transport=transport, timeout=timeout, headers=headers)
+        self._http = httpx.Client(transport=transport, timeout=timeout, headers=client_headers)
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge default client headers with per-request overrides."""
