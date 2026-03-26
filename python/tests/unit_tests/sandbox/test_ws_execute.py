@@ -78,6 +78,16 @@ class TestBuildAuthHeaders:
         headers = _build_auth_headers(None)
         assert headers == {}
 
+    def test_custom_headers_override_auth_header(self):
+        headers = _build_auth_headers(
+            "default-key",
+            {"X-Api-Key": "override-key", "X-Test-Header": "ws-value"},
+        )
+        assert headers == {
+            "X-Api-Key": "override-key",
+            "X-Test-Header": "ws-value",
+        }
+
 
 # =============================================================================
 # Tests: _WSStreamControl
@@ -643,6 +653,33 @@ class TestSandboxRunWs:
         assert stdout_chunks == ["out"]
         assert stderr_chunks == ["err"]
 
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_forwards_headers(self, mock_run_ws):
+        """Custom headers are forwarded to WebSocket execution."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox()
+        sandbox.run("echo hello", headers={"X-Test-Header": "sandbox-ws"})
+
+        mock_run_ws.assert_called_once_with(
+            "https://router.example.com/sb-123",
+            "test-key",
+            "echo hello",
+            timeout=60,
+            env=None,
+            cwd=None,
+            shell="/bin/bash",
+            headers={"X-Test-Header": "sandbox-ws"},
+            on_stdout=None,
+            on_stderr=None,
+            idle_timeout=300,
+            kill_on_disconnect=False,
+            ttl_seconds=600,
+            pty=False,
+        )
+
     def test_run_wait_false_plus_callbacks_raises(self):
         """wait=False + callbacks raises ValueError."""
         sandbox = self._make_sandbox()
@@ -740,6 +777,25 @@ class TestSandboxReconnect:
             "cmd-123",
             stdout_offset=100,
             stderr_offset=50,
+        )
+
+    @patch("langsmith.sandbox._ws_execute.reconnect_ws_stream")
+    def test_reconnect_forwards_headers(self, mock_reconnect_ws):
+        """Reconnect forwards per-request headers to WebSocket execution."""
+        mock_reconnect_ws.return_value = (
+            _make_stream([_exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox()
+        sandbox.reconnect("cmd-123", headers={"X-Test-Header": "sandbox-reconnect"})
+
+        mock_reconnect_ws.assert_called_once_with(
+            "https://router.example.com/sb-123",
+            "test-key",
+            "cmd-123",
+            stdout_offset=0,
+            stderr_offset=0,
+            headers={"X-Test-Header": "sandbox-reconnect"},
         )
 
 

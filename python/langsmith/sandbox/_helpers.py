@@ -6,6 +6,7 @@ and raise appropriate exceptions. They contain no I/O operations.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import httpx
@@ -24,6 +25,22 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     ValidationError,
 )
+
+# =============================================================================
+# Header Utilities
+# =============================================================================
+
+
+def merge_headers(
+    base_headers: Optional[Mapping[str, str]] = None,
+    override_headers: Optional[Mapping[str, str]] = None,
+) -> dict[str, str]:
+    """Merge request headers, giving precedence to overrides."""
+    merged: dict[str, str] = dict(base_headers or {})
+    if override_headers:
+        merged.update(override_headers)
+    return merged
+
 
 # =============================================================================
 # Input Validation
