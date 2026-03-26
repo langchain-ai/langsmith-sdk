@@ -105,7 +105,9 @@ class SandboxClient:
         if headers:
             client_headers = merge_headers(client_headers, headers)
         transport = RetryTransport(max_retries=max_retries)
-        self._http = httpx.Client(transport=transport, timeout=timeout, headers=client_headers)
+        self._http = httpx.Client(
+            transport=transport, timeout=timeout, headers=client_headers
+        )
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge default client headers with per-request overrides."""
@@ -479,9 +481,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_template(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    def delete_template(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a SandboxTemplate.
 
         Args:
@@ -942,9 +942,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_sandbox(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    def delete_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a Sandbox.
 
         Args:

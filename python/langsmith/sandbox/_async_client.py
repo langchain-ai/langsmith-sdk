@@ -241,9 +241,7 @@ class AsyncSandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    async def delete_volume(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    async def delete_volume(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a volume.
 
         Args:
@@ -684,9 +682,7 @@ class AsyncSandboxClient:
             handle_pool_error(e)
             raise  # pragma: no cover
 
-    async def delete_pool(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    async def delete_pool(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a Pool.
 
         This will terminate all sandboxes in the pool.
