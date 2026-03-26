@@ -374,8 +374,12 @@ describe("validateTtl", () => {
   });
 
   it("rejects negative values and non-multiples of 60", () => {
-    expect(() => validateTtl(-1, "ttlSeconds")).toThrow(LangSmithValidationError);
-    expect(() => validateTtl(30, "ttlSeconds")).toThrow(LangSmithValidationError);
+    expect(() => validateTtl(-1, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+    expect(() => validateTtl(30, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
     expect(() => validateTtl(61, "idleTtlSeconds")).toThrow(
       LangSmithValidationError
     );

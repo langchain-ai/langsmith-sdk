@@ -38,7 +38,10 @@ export function validateTtl(value: number | undefined, name: string): void {
     return;
   }
   if (value < 0) {
-    throw new LangSmithValidationError(`${name} must be >= 0, got ${value}`, name);
+    throw new LangSmithValidationError(
+      `${name} must be >= 0, got ${value}`,
+      name
+    );
   }
   if (value !== 0 && value % 60 !== 0) {
     throw new LangSmithValidationError(
