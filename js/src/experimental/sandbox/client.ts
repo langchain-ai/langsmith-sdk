@@ -16,6 +16,7 @@ import type {
   SandboxData,
   SandboxTemplate,
   UpdatePoolOptions,
+  UpdateSandboxOptions,
   UpdateTemplateOptions,
   UpdateVolumeOptions,
   Volume,
@@ -36,6 +37,7 @@ import {
   handleResourceInUseError,
   handleSandboxCreationError,
   handleVolumeCreationError,
+  validateTtl,
 } from "./helpers.js";
 
 /**
@@ -663,6 +665,7 @@ export class SandboxClient {
    * @returns Created Sandbox.
    * @throws ResourceTimeoutError if timeout waiting for sandbox to be ready.
    * @throws SandboxCreationError if sandbox creation fails.
+   * @throws LangSmithValidationError if TTL values are invalid.
    *
    * @example
    * ```typescript
@@ -679,7 +682,16 @@ export class SandboxClient {
     templateName: string,
     options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { name, timeout = 30, waitForReady = true } = options;
+    const {
+      name,
+      timeout = 30,
+      waitForReady = true,
+      ttlSeconds,
+      idleTtlSeconds,
+    } = options;
+    validateTtl(ttlSeconds, "ttlSeconds");
+    validateTtl(idleTtlSeconds, "idleTtlSeconds");
+
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
@@ -691,6 +703,12 @@ export class SandboxClient {
     }
     if (name) {
       payload.name = name;
+    }
+    if (ttlSeconds !== undefined) {
+      payload.ttl_seconds = ttlSeconds;
+    }
+    if (idleTtlSeconds !== undefined) {
+      payload.idle_ttl_seconds = idleTtlSeconds;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
@@ -768,13 +786,54 @@ export class SandboxClient {
    *
    * @param name - Current sandbox name.
    * @param newName - New display name.
-   * @returns Updated Sandbox.
+   */
+  async updateSandbox(name: string, newName: string): Promise<Sandbox>;
+  /**
+   * Update a sandbox's name and/or TTL settings.
+   *
+   * @param name - Current sandbox name.
+   * @param options - Fields to update. Omit a field to leave it unchanged.
+   * @returns Updated Sandbox. If no fields are provided, returns the current sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
+   * @throws LangSmithValidationError if TTL values are invalid.
    */
-  async updateSandbox(name: string, newName: string): Promise<Sandbox> {
+  async updateSandbox(
+    name: string,
+    options: UpdateSandboxOptions
+  ): Promise<Sandbox>;
+  async updateSandbox(
+    name: string,
+    newNameOrOptions: string | UpdateSandboxOptions
+  ): Promise<Sandbox> {
+    const options: UpdateSandboxOptions =
+      typeof newNameOrOptions === "string"
+        ? { newName: newNameOrOptions }
+        : newNameOrOptions;
+
+    const { newName, ttlSeconds, idleTtlSeconds } = options;
+    validateTtl(ttlSeconds, "ttlSeconds");
+    validateTtl(idleTtlSeconds, "idleTtlSeconds");
+
+    if (
+      newName === undefined &&
+      ttlSeconds === undefined &&
+      idleTtlSeconds === undefined
+    ) {
+      return this.getSandbox(name);
+    }
+
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
-    const payload = { name: newName };
+    const payload: Record<string, unknown> = {};
+    if (newName !== undefined) {
+      payload.name = newName;
+    }
+    if (ttlSeconds !== undefined) {
+      payload.ttl_seconds = ttlSeconds;
+    }
+    if (idleTtlSeconds !== undefined) {
+      payload.idle_ttl_seconds = idleTtlSeconds;
+    }
 
     const response = await this._fetch(url, {
       method: "PATCH",
@@ -791,7 +850,9 @@ export class SandboxClient {
       }
       if (response.status === 409) {
         throw new LangSmithResourceNameConflictError(
-          `Sandbox name '${newName}' already in use`,
+          newName !== undefined
+            ? `Sandbox name '${newName}' already in use`
+            : "Sandbox update conflict (name may already be in use)",
           "sandbox"
         );
       }

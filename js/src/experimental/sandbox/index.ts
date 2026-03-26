@@ -50,6 +50,7 @@ export type {
   SandboxClientConfig,
   RunOptions,
   CreateSandboxOptions,
+  UpdateSandboxOptions,
   WaitForSandboxOptions,
   CreateVolumeOptions,
   CreateTemplateOptions,
