@@ -550,3 +550,56 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_post_merges_invocation_params_and_ls_metadata_into_metadata():
+    """Test that post() merges invocation_params and ls_metadata into metadata.
+
+    Priority: metadata > ls_metadata > invocation_params.
+    ls_metadata is popped off extra; invocation_params is kept.
+    Non-dict values are ignored. Patch uses original extra unchanged.
+    """
+    mock_client = MagicMock(spec=Client)
+    rt = RunTree(
+        name="test",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": {"a": "ip", "b": "ip", "c": "ip"},
+            "ls_metadata": {"a": "ls", "b": "ls"},
+            "metadata": {"a": "meta"},
+        },
+    )
+    rt.post()
+    post_extra = mock_client.create_run.call_args.kwargs["extra"]
+
+    # merge priority: metadata > invocation_params > ls_metadata
+    assert post_extra["metadata"]["a"] == "meta"
+    assert post_extra["metadata"]["b"] == "ip"
+    assert post_extra["metadata"]["c"] == "ip"
+    # ls_metadata popped, invocation_params kept
+    assert "ls_metadata" not in post_extra
+    assert "invocation_params" in post_extra
+
+    # patch sends original extra — merged metadata not present
+    rt.end(outputs={"result": "done"})
+    rt.patch()
+    patch_extra = mock_client.update_run.call_args.kwargs["extra"]
+    assert "model" not in patch_extra.get("metadata", {})
+
+    # non-dict values are ignored
+    mock_client.reset_mock()
+    rt2 = RunTree(
+        name="test2",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": "bad",
+            "ls_metadata": 123,
+            "metadata": {"key": "val"},
+        },
+    )
+    rt2.post()
+    extra2 = mock_client.create_run.call_args.kwargs["extra"]
+    assert extra2["metadata"] == {"key": "val"}
+    assert extra2["ls_metadata"] == 123

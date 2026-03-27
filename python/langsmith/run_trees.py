@@ -670,6 +670,18 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
+        run_extra = {**self.extra}
+        # TODO: pop invocation_params off extra next minor bump
+        if isinstance(run_extra.get("invocation_params"), dict):
+            run_extra["metadata"] = {
+                **run_extra.get("invocation_params", {}),
+                **run_extra.get("metadata", {}),
+            }
+        if isinstance(run_extra.get("ls_metadata"), dict):
+            run_extra["metadata"] = {
+                **run_extra.pop("ls_metadata"),
+                **run_extra.get("metadata", {}),
+            }
         if self.replicas:
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
@@ -680,6 +692,7 @@ class RunTree(ls_schemas.RunBase):
                 )
                 self.client.create_run(
                     **run_dict,
+                    extra=run_extra,
                     api_key=api_key,
                     api_url=api_url,
                     service_key=service_key,
@@ -689,7 +702,8 @@ class RunTree(ls_schemas.RunBase):
                 )
         else:
             kwargs = self._get_dicts_safe()
-            self.client.create_run(**kwargs)
+            kwargs.pop("extra", None)
+            self.client.create_run(**kwargs, extra=run_extra)
         if self.attachments:
             keys = [str(name) for name in self.attachments]
             self.events.append(

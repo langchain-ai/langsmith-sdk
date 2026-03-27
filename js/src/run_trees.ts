@@ -523,6 +523,28 @@ export class RunTree implements BaseRun {
       }
     }
 
+    // TODO: pop invocation_params off extra next minor bump
+    if (
+      typeof runExtra.invocation_params === "object" &&
+      runExtra.invocation_params !== null
+    ) {
+      runExtra.metadata = {
+        ...runExtra.invocation_params,
+        ...runExtra.metadata,
+      };
+    }
+
+    if (
+      typeof runExtra.ls_metadata === "object" &&
+      runExtra.ls_metadata !== null
+    ) {
+      runExtra.metadata = {
+        ...runExtra.ls_metadata,
+        ...runExtra.metadata,
+      };
+      delete runExtra.ls_metadata;
+    }
+
     const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
     let child_runs: (RunCreate & { id: string })[];
     if (!excludeChildRuns) {
