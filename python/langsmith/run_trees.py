@@ -671,9 +671,15 @@ class RunTree(ls_schemas.RunBase):
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
         run_extra = {**self.extra}
-        if run_extra.get("invocation_params"):
+        # TODO: pop invocation_params off extra next minor bump
+        if isinstance(run_extra.get("invocation_params"), dict):
             run_extra["metadata"] = {
                 **run_extra.get("invocation_params", {}),
+                **run_extra.get("metadata", {}),
+            }
+        if isinstance(run_extra.get("ls_metadata"), dict):
+            run_extra["metadata"] = {
+                **run_extra.pop("ls_metadata"),
                 **run_extra.get("metadata", {}),
             }
         if self.replicas:
@@ -1256,5 +1262,4 @@ def _extract_replica_auth(
         tenant_id=None,
         authorization=None,
         cookie=None,
-    )
     )

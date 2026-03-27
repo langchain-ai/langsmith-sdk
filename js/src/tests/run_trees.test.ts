@@ -609,3 +609,40 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.projectName).toBe("legit-project");
   expect(replica.updates).toEqual({ reroot: true });
 });
+
+test("_convertToCreate merges invocation_params and ls_metadata into metadata", () => {
+  // Priority: metadata > ls_metadata > invocation_params
+  // ls_metadata is deleted from extra; invocation_params is kept
+  const rt = new RunTree({
+    name: "test",
+    client: new Client({ apiKey: "test" }),
+    extra: {
+      invocation_params: { a: "ip", b: "ip", c: "ip" },
+      ls_metadata: { a: "ls", b: "ls" },
+      metadata: { a: "meta" },
+    },
+  });
+  const created = (rt as any)._convertToCreate(rt, undefined, true);
+
+  // merge priority: metadata > invocation_params > ls_metadata
+  expect(created.extra.metadata.a).toBe("meta");
+  expect(created.extra.metadata.b).toBe("ip");
+  expect(created.extra.metadata.c).toBe("ip");
+  // ls_metadata deleted, invocation_params kept
+  expect(created.extra.ls_metadata).toBeUndefined();
+  expect(created.extra.invocation_params).toBeDefined();
+
+  // non-dict values are ignored
+  const rt2 = new RunTree({
+    name: "test2",
+    client: new Client({ apiKey: "test" }),
+    extra: {
+      invocation_params: "bad" as any,
+      ls_metadata: 123 as any,
+      metadata: { key: "val" },
+    },
+  });
+  const created2 = (rt2 as any)._convertToCreate(rt2, undefined, true);
+  expect(created2.extra.metadata).toEqual({ key: "val" });
+  expect(created2.extra.ls_metadata).toBe(123);
+});
