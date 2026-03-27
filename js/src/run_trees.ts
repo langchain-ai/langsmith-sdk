@@ -523,6 +523,16 @@ export class RunTree implements BaseRun {
       }
     }
 
+    if (
+      typeof runExtra.invocation_params === "object" &&
+      runExtra.invocation_params !== null
+    ) {
+      runExtra.metadata = {
+        ...runExtra.invocation_params,
+        ...runExtra.metadata,
+      };
+    }
+
     const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
     let child_runs: (RunCreate & { id: string })[];
     if (!excludeChildRuns) {
