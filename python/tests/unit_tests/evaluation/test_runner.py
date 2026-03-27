@@ -49,7 +49,10 @@ class FakeRequest:
                     "name": self.ds_name,
                 }
                 return res
-            elif endpoint == "http://localhost:1984/examples":
+            elif endpoint == "http://localhost:1984/examples" or re.match(
+                r"http://localhost:1984/v1/platform/datasets/[^/]+/examples",
+                endpoint,
+            ):
                 res = MagicMock()
                 res.json.return_value = [
                     e.dict() if not isinstance(e, dict) else e for e in self.ds_examples
