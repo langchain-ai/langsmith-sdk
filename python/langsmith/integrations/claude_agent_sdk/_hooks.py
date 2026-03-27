@@ -26,6 +26,10 @@ _active_tool_runs: dict[str, tuple[Any, float]] = {}
 # Key: tool_use_id, Value: run_tree
 _client_managed_runs: dict[str, RunTree] = {}
 
+# Completed tool run IDs — persists after hooks finish so client can attach run_id
+# to tool messages in outputs.messages. Key: tool_use_id, Value: str(run_tree.id)
+_completed_tool_run_ids: dict[str, str] = {}
+
 
 async def pre_tool_use_hook(
     input_data: "HookInput",
@@ -120,6 +124,7 @@ async def post_tool_use_hook(
                 error=outputs.get("output") if is_error else None,
             )
             run_tree.patch()
+            _completed_tool_run_ids[tool_use_id] = str(run_tree.id)
         except Exception as e:
             logger.warning(f"Failed to update client-managed run: {e}")
         return {}
@@ -152,6 +157,8 @@ async def post_tool_use_hook(
             tool_run.patch()
         except Exception as e:
             logger.warning(f"Failed to patch tool run for {tool_name}: {e}")
+
+        _completed_tool_run_ids[tool_use_id] = str(tool_run.id)
 
     except Exception as e:
         logger.warning(f"Error in PostToolUse hook for {tool_name}: {e}", exc_info=True)
@@ -229,7 +236,7 @@ def clear_active_tool_runs() -> None:
     This should be called when a conversation ends to avoid memory leaks
     and to clean up any orphaned tool runs.
     """
-    global _active_tool_runs, _client_managed_runs
+    global _active_tool_runs, _client_managed_runs, _completed_tool_run_ids
 
     # End any orphaned client-managed runs
     for tool_use_id, run_tree in _client_managed_runs.items():
@@ -251,3 +258,4 @@ def clear_active_tool_runs() -> None:
 
     _active_tool_runs.clear()
     _client_managed_runs.clear()
+    _completed_tool_run_ids.clear()
