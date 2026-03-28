@@ -5177,6 +5177,95 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
                 assert len(tag_post_calls) == 0
 
 
+@patch("langsmith.client.requests.Session")
+def test_update_commit_tags(mock_session_cls: mock.Mock) -> None:
+    """Test update_commit_tags deletes existing tags then creates new ones."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Test 1: update_commit_tags with multiple tags
+    commit_id = "abc-123-def"
+    tags = ["dev", "prod"]
+    client.update_commit_tags(
+        "test-owner/test-prompt",
+        commit_id=commit_id,
+        tags=tags,
+    )
+
+    delete_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "DELETE" and "/tags/" in call[0][1]
+    ]
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/tags" in call[0][1]
+    ]
+
+    assert len(delete_calls) == 2
+    assert len(post_calls) == 2
+
+    # Verify DELETE calls target correct tags
+    deleted_tags = {call[0][1].rsplit("/", 1)[-1] for call in delete_calls}
+    assert deleted_tags == {"dev", "prod"}
+
+    # Verify POST calls create correct tags
+    created_tags = {call[1]["json"]["tag_name"] for call in post_calls}
+    assert created_tags == {"dev", "prod"}
+    for call_args in post_calls:
+        assert call_args[1]["json"]["commit_id"] == commit_id
+
+    # Test 2: single tag as string
+    mock_session.request.reset_mock()
+    mock_session.request.return_value = mock_response
+    client.update_commit_tags(
+        "test-owner/test-prompt",
+        commit_id=commit_id,
+        tags="staging",
+    )
+
+    delete_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "DELETE" and "/tags/" in call[0][1]
+    ]
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/tags" in call[0][1]
+    ]
+    assert len(delete_calls) == 1
+    assert len(post_calls) == 1
+    assert post_calls[0][1]["json"]["tag_name"] == "staging"
+
+
+@patch("langsmith.client.requests.Session")
+def test_delete_commit_tag_not_found(mock_session_cls: mock.Mock) -> None:
+    """Test _delete_commit_tag is a no-op when the tag does not exist."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Should not raise
+    client._delete_commit_tag("test-owner/test-repo", "nonexistent")
+
+
 @pytest.mark.parametrize(
     "kwargs,expected_params,expected_body_fields",
     [
