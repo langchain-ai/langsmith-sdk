@@ -70,7 +70,28 @@ class EvaluationResult(BaseModel):
     evaluator_info: dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
     feedback_config: Optional[Union[FeedbackConfig, dict]] = None
-    """The configuration used to generate this feedback."""
+    """The configuration used to generate this feedback.
+
+    Note:
+        This field does not accept arbitrary dictionaries. It is expected to
+        conform to the structure of `FeedbackConfig`.
+
+        Supported keys include:
+            - type
+            - min
+            - max
+            - categories
+
+        Any additional or unknown keys may be ignored or rejected depending
+        on the validation behavior.
+
+    Example:
+        # Incorrect: contains unsupported key
+        feedback_config = {"threshold": 1.0}
+
+        # Correct usage
+        feedback_config = {"type": "continuous", "min": 0, "max": 1}
+    """
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
     target_run_id: Optional[Union[uuid.UUID, str]] = None
