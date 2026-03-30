@@ -1448,8 +1448,14 @@ def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://eu.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://eu.smith.langchain.com"
 
+    client = Client(api_url="https://aws.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://aws.smith.langchain.com"
+
     client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://dev.smith.langchain.com"
+
+    client = Client(api_url="https://aws.example.com", api_key="API_KEY")
+    assert client._host_url == "https://smith.langchain.com"
 
     client = Client(api_url="https://api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://smith.langchain.com"

@@ -156,6 +156,24 @@ describe("Client", () => {
       expect(result).toBe("https://eu.smith.langchain.com");
     });
 
+    it("should return 'https://aws.smith.langchain.com' for the AWS hosted apiUrl", () => {
+      const client = new Client({
+        apiUrl: "https://aws.api.smith.langchain.com",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://aws.smith.langchain.com");
+    });
+
+    it("should not match non-LangSmith hosts that contain 'aws'", () => {
+      const client = new Client({
+        apiUrl: "https://aws.example.com",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://smith.langchain.com");
+    });
+
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
       const client = new Client({
         apiUrl: "https://smith.langchain.com/api",

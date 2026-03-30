@@ -882,7 +882,10 @@ def get_host_url(web_url: Optional[str], api_url: str):
         link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
     elif str(parsed_url.netloc).startswith("eu."):
         link = "https://eu.smith.langchain.com"
-    elif str(parsed_url.netloc).startswith("aws."):
+    elif parsed_url.hostname in {
+        "aws.api.smith.langchain.com",
+        "aws.smith.langchain.com",
+    }:
         link = "https://aws.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
