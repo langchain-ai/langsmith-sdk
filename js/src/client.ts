@@ -585,6 +585,18 @@ const isLocalhost = (url: string): boolean => {
   );
 };
 
+const isAwsHostedApiUrl = (url: string): boolean => {
+  try {
+    const hostname = new URL(url).hostname;
+    return (
+      hostname === "aws.api.smith.langchain.com" ||
+      hostname === "aws.smith.langchain.com"
+    );
+  } catch {
+    return false;
+  }
+};
+
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
@@ -980,7 +992,7 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
       this.webUrl = "https://eu.smith.langchain.com";
       return this.webUrl;
-    } else if (this.apiUrl.split(".", 1)[0].includes("aws")) {
+    } else if (isAwsHostedApiUrl(this.apiUrl)) {
       this.webUrl = "https://aws.smith.langchain.com";
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
