@@ -1566,6 +1566,26 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
 MB = 1024 * 1024
 
 
+def _get_multipart_request_parts(
+    mock_session: MagicMock,
+) -> list[list[MultipartPart]]:
+    payloads = [
+        (call[2]["headers"], call[2]["data"])
+        for call in mock_session.request.mock_calls
+        if call.args
+        and call.args[0] == "POST"
+        and call.args[1].endswith("runs/multipart")
+    ]
+    parsed_payloads: list[list[MultipartPart]] = []
+    for headers, data in payloads:
+        assert headers["Content-Type"].startswith("multipart/form-data")
+        assert isinstance(data, bytes)
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parser = MultipartParser(io.BytesIO(data), boundary)
+        parsed_payloads.append(list(parser.parts()))
+    return parsed_payloads
+
+
 @pytest.mark.parametrize("payload_size", [MB, 5 * MB, 9 * MB, 21 * MB])
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))
 def test_batch_ingest_run_splits_large_batches(
@@ -1595,7 +1615,9 @@ def test_batch_ingest_run_splits_large_batches(
             "id": run_id,
             "trace_id": run_id,
             "dotted_order": run_id,
+            "start_time": "2021-01-01T00:00:00Z",
             "end_time": "2021-01-01T00:00:00Z",
+            "session_id": str(uuid.uuid4()),
             "outputs": {"y": "b" * payload_size},
         }
         for run_id in patch_ids
@@ -1669,6 +1691,112 @@ def test_batch_ingest_run_splits_large_batches(
 
         # Check that no duplicate run_ids are present in the request bodies
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+
+
+def test_multipart_ingest_sparse_update_after_create_reuses_post_payload() -> None:
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    run_id = str(uuid.uuid4())
+    dotted_order = f"20210101T000000000000Z{run_id}"
+
+    client.multipart_ingest(
+        create=[
+            {
+                "id": run_id,
+                "session_name": "project",
+                "name": "test",
+                "run_type": "chain",
+                "trace_id": run_id,
+                "dotted_order": dotted_order,
+                "inputs": {"x": 1},
+            }
+        ],
+        update=[],
+    )
+    client.multipart_ingest(
+        create=[],
+        update=[
+            {
+                "id": run_id,
+                "trace_id": run_id,
+                "dotted_order": dotted_order,
+                "outputs": {"y": 2},
+            }
+        ],
+    )
+
+    multipart_requests = _get_multipart_request_parts(mock_session)
+    assert len(multipart_requests) == 2
+
+    second_request = multipart_requests[1]
+    assert [part.name for part in second_request] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+        f"post.{run_id}.extra",
+    ]
+    run_parsed = json.loads(second_request[0].value)
+    assert run_parsed["session_name"] == "project"
+    assert run_parsed["name"] == "test"
+    assert run_parsed["run_type"] == "chain"
+    assert json.loads(second_request[1].value) == {"x": 1}
+    assert json.loads(second_request[2].value) == {"y": 2}
+
+
+def test_multipart_ingest_sparse_update_before_create_is_deferred() -> None:
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    run_id = str(uuid.uuid4())
+    dotted_order = f"20210101T000000000000Z{run_id}"
+
+    client.multipart_ingest(
+        create=[],
+        update=[
+            {
+                "id": run_id,
+                "trace_id": run_id,
+                "dotted_order": dotted_order,
+                "outputs": {"y": 2},
+            }
+        ],
+    )
+    assert _get_multipart_request_parts(mock_session) == []
+
+    client.multipart_ingest(
+        create=[
+            {
+                "id": run_id,
+                "session_name": "project",
+                "name": "test",
+                "run_type": "chain",
+                "trace_id": run_id,
+                "dotted_order": dotted_order,
+                "inputs": {"x": 1},
+            }
+        ],
+        update=[],
+    )
+
+    multipart_requests = _get_multipart_request_parts(mock_session)
+    assert len(multipart_requests) == 1
+
+    request_parts = multipart_requests[0]
+    assert [part.name for part in request_parts] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+        f"post.{run_id}.extra",
+    ]
+    assert json.loads(request_parts[1].value) == {"x": 1}
+    assert json.loads(request_parts[2].value) == {"y": 2}
 
 
 def test_sampling_and_batching():
