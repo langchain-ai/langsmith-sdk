@@ -367,6 +367,33 @@ class TestAsyncSandboxOperations:
             sandbox.dataplane_url == "https://sandbox-router.example.com/tenant/sb-123"
         )
 
+    async def test_create_sandbox_merges_custom_headers(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test per-request headers override default client headers."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+                "template_name": "python-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
+            },
+            status_code=201,
+        )
+
+        await client.create_sandbox(
+            template_name="python-sandbox",
+            headers={
+                "X-Api-Key": "override-key",
+                "X-Test-Header": "sandbox-client",
+            },
+        )
+
+        request = httpx_mock.get_request()
+        assert request.headers.get("X-Api-Key") == "override-key"
+        assert request.headers.get("X-Test-Header") == "sandbox-client"
+
     async def test_sandbox_async_context_manager(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
@@ -23,6 +24,9 @@ from langsmith.sandbox._tunnel import AsyncTunnel
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
+
+
+RequestHeaders = Optional[Mapping[str, str]]
 
 
 @dataclass
@@ -158,6 +162,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
+        headers: RequestHeaders = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
 
@@ -176,6 +181,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
+        headers: RequestHeaders = ...,
         wait: Literal[False],
     ) -> AsyncCommandHandle: ...
 
@@ -193,6 +199,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
+        headers: RequestHeaders = None,
         wait: bool = True,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute a command in the sandbox asynchronously.
@@ -265,6 +272,7 @@ class AsyncSandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
+                headers=headers,
             )
 
         # Catch broad exceptions so that unexpected WS failures (e.g. version
@@ -283,6 +291,7 @@ class AsyncSandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
+                headers=headers,
             )
         except (SandboxConnectionError, ImportError, OSError, TypeError):
             return await self._run_http(
@@ -291,6 +300,7 @@ class AsyncSandbox:
                 env=env,
                 cwd=cwd,
                 shell=shell,
+                headers=headers,
             )
 
     async def _run_ws(
@@ -308,6 +318,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
+        headers: RequestHeaders = None,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute via WebSocket /execute/ws."""
         from langsmith.sandbox._ws_execute import run_ws_stream_async
@@ -315,20 +326,26 @@ class AsyncSandbox:
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
 
+        ws_kwargs: dict[str, Any] = {
+            "timeout": timeout,
+            "env": env,
+            "cwd": cwd,
+            "shell": shell,
+            "on_stdout": on_stdout,
+            "on_stderr": on_stderr,
+            "idle_timeout": idle_timeout,
+            "kill_on_disconnect": kill_on_disconnect,
+            "ttl_seconds": ttl_seconds,
+            "pty": pty,
+        }
+        if headers is not None:
+            ws_kwargs["headers"] = headers
+
         msg_stream, control = await run_ws_stream_async(
             dataplane_url,
             api_key,
             command,
-            timeout=timeout,
-            env=env,
-            cwd=cwd,
-            shell=shell,
-            on_stdout=on_stdout,
-            on_stderr=on_stderr,
-            idle_timeout=idle_timeout,
-            kill_on_disconnect=kill_on_disconnect,
-            ttl_seconds=ttl_seconds,
-            pty=pty,
+            **ws_kwargs,
         )
 
         handle = AsyncCommandHandle(msg_stream, control, self)
@@ -347,6 +364,7 @@ class AsyncSandbox:
         env: Optional[dict[str, str]],
         cwd: Optional[str],
         shell: str,
+        headers: RequestHeaders,
     ) -> ExecutionResult:
         """Execute via HTTP POST /execute (existing implementation)."""
         dataplane_url = self._require_dataplane_url()
@@ -363,7 +381,10 @@ class AsyncSandbox:
 
         try:
             response = await self._client._http.post(
-                url, json=payload, timeout=timeout + 10
+                url,
+                json=payload,
+                timeout=timeout + 10,
+                headers=self._client._request_headers(headers),
             )
             response.raise_for_status()
             data = response.json()
@@ -382,6 +403,7 @@ class AsyncSandbox:
         *,
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        headers: RequestHeaders = None,
     ) -> AsyncCommandHandle:
         """Reconnect to a running or recently-finished command.
 
@@ -405,12 +427,18 @@ class AsyncSandbox:
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
 
+        reconnect_kwargs: dict[str, Any] = {
+            "stdout_offset": stdout_offset,
+            "stderr_offset": stderr_offset,
+        }
+        if headers is not None:
+            reconnect_kwargs["headers"] = headers
+
         msg_stream, control = await reconnect_ws_stream_async(
             dataplane_url,
             api_key,
             command_id,
-            stdout_offset=stdout_offset,
-            stderr_offset=stderr_offset,
+            **reconnect_kwargs,
         )
 
         return AsyncCommandHandle(
@@ -428,6 +456,7 @@ class AsyncSandbox:
         content: Union[str, bytes],
         *,
         timeout: int = 60,
+        headers: RequestHeaders = None,
     ) -> None:
         """Write content to a file in the sandbox asynchronously.
 
@@ -454,13 +483,19 @@ class AsyncSandbox:
 
         try:
             response = await self._client._http.post(
-                url, params={"path": path}, files=files, timeout=timeout
+                url,
+                params={"path": path},
+                files=files,
+                timeout=timeout,
+                headers=self._client._request_headers(headers),
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
-    async def read(self, path: str, *, timeout: int = 60) -> bytes:
+    async def read(
+        self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
+    ) -> bytes:
         """Read a file from the sandbox asynchronously.
 
         Args:
@@ -484,7 +519,10 @@ class AsyncSandbox:
 
         try:
             response = await self._client._http.get(
-                url, params={"path": path}, timeout=timeout
+                url,
+                params={"path": path},
+                timeout=timeout,
+                headers=self._client._request_headers(headers),
             )
             response.raise_for_status()
             return response.content
@@ -504,6 +542,7 @@ class AsyncSandbox:
         *,
         local_port: int = 0,
         max_reconnects: int = 3,
+        headers: RequestHeaders = None,
     ) -> AsyncTunnel:
         """Open a TCP tunnel to a port inside the sandbox.
 
@@ -547,6 +586,7 @@ class AsyncSandbox:
             remote_port,
             local_port=local_port,
             max_reconnects=max_reconnects,
+            headers=headers,
         )
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, t._tunnel._start)
