@@ -726,6 +726,8 @@ class Client:
         "_use_daemon_threads",
         "_tracing_error_callback",
         "_multipart_disabled",
+        "_multipart_ingest_run_cache",
+        "_multipart_ingest_pending_updates",
         "_cache",
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
@@ -990,6 +992,8 @@ class Client:
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
         self._multipart_disabled: bool = False
+        self._multipart_ingest_run_cache: dict[uuid.UUID, dict[str, Any]] = {}
+        self._multipart_ingest_pending_updates: dict[uuid.UUID, dict[str, Any]] = {}
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
         # Set OTEL exporter before starting the tracing thread so the thread sees it
@@ -1975,6 +1979,48 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _copy_multipart_run_dict(self, run: dict[str, Any]) -> dict[str, Any]:
+        return cast(dict[str, Any], ls_utils.deepish_copy(run))
+
+    def _merge_multipart_run_dicts(
+        self,
+        base: Optional[dict[str, Any]],
+        update: dict[str, Any],
+    ) -> dict[str, Any]:
+        if base is None:
+            return self._copy_multipart_run_dict(update)
+
+        merged = self._copy_multipart_run_dict(base)
+        for key, value in update.items():
+            if value is None:
+                continue
+            if (
+                key == "attachments"
+                and isinstance(merged.get("attachments"), dict)
+                and isinstance(value, dict)
+            ):
+                attachments = cast(
+                    dict[str, Any], ls_utils.deepish_copy(merged["attachments"])
+                )
+                attachments.update(cast(dict[str, Any], ls_utils.deepish_copy(value)))
+                merged["attachments"] = attachments
+            else:
+                merged[key] = ls_utils.deepish_copy(value)
+        return merged
+
+    def _multipart_patch_has_required_fields(self, run: dict[str, Any]) -> bool:
+        return all(
+            run.get(key) is not None
+            for key in (
+                "id",
+                "trace_id",
+                "dotted_order",
+                "start_time",
+                "end_time",
+                "session_id",
+            )
+        )
+
     def _should_sample(self) -> bool:
         if self.tracing_sample_rate is None:
             return True
@@ -2909,25 +2955,65 @@ class Client:
                     )
             else:
                 del run
-        # combine post and patch dicts where possible
-        if update_dicts and create_dicts:
-            create_by_id = {run["id"]: run for run in create_dicts}
-            standalone_updates: list[dict] = []
-            for run in update_dicts:
-                if run["id"] in create_by_id:
-                    for k, v in run.items():
-                        if v is not None:
-                            create_by_id[run["id"]][k] = v
-                else:
-                    standalone_updates.append(run)
-            else:
-                del run
-            update_dicts = standalone_updates
+        # Merge sparse updates into known create payloads when possible.
+        # The multipart endpoint now expects patch payloads to be fully populated,
+        # so standalone sparse updates are deferred until a matching create arrives.
+        create_by_id: dict[uuid.UUID, dict[str, Any]] = {}
+        for run in create_dicts:
+            create_by_id[run["id"]] = self._merge_multipart_run_dicts(
+                self._multipart_ingest_pending_updates.pop(run["id"], None),
+                run,
+            )
+
+        standalone_updates: list[dict] = []
+        for run in update_dicts:
+            run_id = run["id"]
+            pending_update = self._multipart_ingest_pending_updates.pop(run_id, None)
+            if pending_update is not None:
+                run = self._merge_multipart_run_dicts(pending_update, run)
+
+            if run_id in create_by_id:
+                create_by_id[run_id] = self._merge_multipart_run_dicts(
+                    create_by_id[run_id], run
+                )
+                continue
+
+            cached_run = self._multipart_ingest_run_cache.get(run_id)
+            if cached_run is not None:
+                create_by_id[run_id] = self._merge_multipart_run_dicts(
+                    cached_run, run
+                )
+                continue
+
+            if self._multipart_patch_has_required_fields(run):
+                standalone_updates.append(run)
+                continue
+
+            self._multipart_ingest_pending_updates[run_id] = (
+                self._merge_multipart_run_dicts(
+                    self._multipart_ingest_pending_updates.get(run_id), run
+                )
+            )
+
+        create_dicts = list(create_by_id.values())
+        update_dicts = standalone_updates
+
         if not create_dicts and not update_dicts:
             return
         # insert runtime environment
         self._insert_runtime_env(create_dicts)
         self._insert_runtime_env(update_dicts)
+
+        for run in create_dicts:
+            self._multipart_ingest_run_cache[run["id"]] = (
+                self._copy_multipart_run_dict(run)
+            )
+        for run in update_dicts:
+            cached_run = self._multipart_ingest_run_cache.get(run["id"])
+            if cached_run is not None:
+                self._multipart_ingest_run_cache[run["id"]] = (
+                    self._merge_multipart_run_dicts(cached_run, run)
+                )
 
         # format as serialized operations
         serialized_ops = combine_serialized_queue_operations(

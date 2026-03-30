@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
 
 from langsmith.sandbox._exceptions import (
@@ -12,6 +12,7 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     SandboxServerReloadError,
 )
+from langsmith.sandbox._helpers import merge_headers
 
 
 def _ensure_websockets():
@@ -48,11 +49,12 @@ def _build_ws_url(dataplane_url: str) -> str:
     return f"{ws_url}/execute/ws"
 
 
-def _build_auth_headers(api_key: Optional[str]) -> dict[str, str]:
+def _build_auth_headers(
+    api_key: Optional[str], headers: Optional[Mapping[str, str]] = None
+) -> dict[str, str]:
     """Build auth headers for the WebSocket upgrade request."""
-    if api_key:
-        return {"X-Api-Key": api_key}
-    return {}
+    auth_headers = {"X-Api-Key": api_key} if api_key else None
+    return merge_headers(auth_headers, headers)
 
 
 # =============================================================================
@@ -220,6 +222,7 @@ def run_ws_stream(
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
     pty: bool = False,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Execute a command over WebSocket, yielding raw message dicts.
 
@@ -237,14 +240,14 @@ def run_ws_stream(
     """
     ws_connect, ConnectionClosed, InvalidStatus = _ensure_websockets()
     ws_url = _build_ws_url(dataplane_url)
-    headers = _build_auth_headers(api_key)
+    request_headers = _build_auth_headers(api_key, headers)
     control = _WSStreamControl()
 
     def _stream() -> Iterator[dict]:
         try:
             with ws_connect(
                 ws_url,
-                additional_headers=headers,
+                additional_headers=request_headers,
                 open_timeout=30,
                 close_timeout=10,
                 ping_interval=30,
@@ -320,6 +323,7 @@ def reconnect_ws_stream(
     *,
     stdout_offset: int = 0,
     stderr_offset: int = 0,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Reconnect to an existing command over WebSocket.
 
@@ -335,14 +339,14 @@ def reconnect_ws_stream(
     """
     ws_connect, ConnectionClosed, InvalidStatus = _ensure_websockets()
     ws_url = _build_ws_url(dataplane_url)
-    headers = _build_auth_headers(api_key)
+    request_headers = _build_auth_headers(api_key, headers)
     control = _WSStreamControl()
 
     def _stream() -> Iterator[dict]:
         try:
             with ws_connect(
                 ws_url,
-                additional_headers=headers,
+                additional_headers=request_headers,
                 open_timeout=30,
                 close_timeout=10,
                 ping_interval=30,
@@ -415,6 +419,7 @@ async def run_ws_stream_async(
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
     pty: bool = False,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of run_ws_stream.
 
@@ -422,14 +427,14 @@ async def run_ws_stream_async(
     """
     ws_connect_async, ConnectionClosed, InvalidStatus = _ensure_websockets_async()
     ws_url = _build_ws_url(dataplane_url)
-    headers = _build_auth_headers(api_key)
+    request_headers = _build_auth_headers(api_key, headers)
     control = _AsyncWSStreamControl()
 
     async def _stream() -> AsyncIterator[dict]:
         try:
             async with ws_connect_async(
                 ws_url,
-                additional_headers=headers,
+                additional_headers=request_headers,
                 open_timeout=30,
                 close_timeout=10,
                 ping_interval=30,
@@ -499,18 +504,19 @@ async def reconnect_ws_stream_async(
     *,
     stdout_offset: int = 0,
     stderr_offset: int = 0,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of reconnect_ws_stream."""
     ws_connect_async, ConnectionClosed, InvalidStatus = _ensure_websockets_async()
     ws_url = _build_ws_url(dataplane_url)
-    headers = _build_auth_headers(api_key)
+    request_headers = _build_auth_headers(api_key, headers)
     control = _AsyncWSStreamControl()
 
     async def _stream() -> AsyncIterator[dict]:
         try:
             async with ws_connect_async(
                 ws_url,
-                additional_headers=headers,
+                additional_headers=request_headers,
                 open_timeout=30,
                 close_timeout=10,
                 ping_interval=30,
