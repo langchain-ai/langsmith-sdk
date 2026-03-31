@@ -5176,6 +5176,67 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
                 ]
                 assert len(tag_post_calls) == 0
 
+    # Test 5: create_commit with description
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                    description="initial prompt version",
+                )
+
+                commit_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/commits/" in call[0][1]
+                    and "/tags" not in call[0][1]
+                ]
+                assert len(commit_post_calls) == 1
+                body = commit_post_calls[0][1]["json"]
+                assert body["description"] == "initial prompt version"
+
+    # Test 6: create_commit without description omits field from body
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                )
+
+                commit_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/commits/" in call[0][1]
+                    and "/tags" not in call[0][1]
+                ]
+                assert len(commit_post_calls) == 1
+                body = commit_post_calls[0][1]["json"]
+                assert "description" not in body
+
 
 @pytest.mark.parametrize(
     "kwargs,expected_params,expected_body_fields",

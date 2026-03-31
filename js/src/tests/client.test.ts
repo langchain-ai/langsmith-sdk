@@ -325,6 +325,76 @@ describe("Client", () => {
     });
   });
 
+  describe("createCommit", () => {
+    it("should include description in request body when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      let capturedBody: string | undefined;
+      jest
+        .spyOn(client as any, "promptExists")
+        .mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest
+        .spyOn(client as any, "_fetch")
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ commit_hash: "new123", id: "1" }),
+          text: async () => "",
+          headers: new Headers(),
+        });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      // Capture the fetch call body
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit("owner/my-prompt", { id: "test" }, {
+        description: "initial prompt version",
+      });
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      capturedBody = fetchCall[1]?.body as string;
+      const parsed = JSON.parse(capturedBody!);
+      expect(parsed.description).toBe("initial prompt version");
+    });
+
+    it("should omit description from request body when not provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest
+        .spyOn(client as any, "promptExists")
+        .mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest
+        .spyOn(client as any, "_fetch")
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ commit_hash: "new123", id: "1" }),
+          text: async () => "",
+          headers: new Headers(),
+        });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit("owner/my-prompt", { id: "test" });
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      const capturedBody = fetchCall[1]?.body as string;
+      const parsed = JSON.parse(capturedBody!);
+      expect(parsed.description).toBeUndefined();
+    });
+  });
+
   describe("_filterForSampling patch logic", () => {
     it("should filter patch runs based on trace_id instead of run.id", () => {
       const client = new Client({
