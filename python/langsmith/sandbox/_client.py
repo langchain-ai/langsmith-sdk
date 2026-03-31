@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import httpx
@@ -21,6 +22,7 @@ from langsmith.sandbox._helpers import (
     handle_pool_error,
     handle_sandbox_creation_error,
     handle_volume_creation_error,
+    merge_headers,
     parse_error_response,
     validate_ttl,
 )
@@ -47,6 +49,9 @@ def _get_default_api_endpoint() -> str:
 def _get_default_api_key() -> Optional[str]:
     """Get the default API key from environment."""
     return ls_utils.get_env_var("API_KEY")
+
+
+RequestHeaders = Optional[Mapping[str, str]]
 
 
 class SandboxClient:
@@ -77,6 +82,7 @@ class SandboxClient:
         timeout: float = 10.0,
         api_key: Optional[str] = None,
         max_retries: int = 3,
+        headers: Optional[RequestHeaders] = None,
     ):
         """Initialize the SandboxClient.
 
@@ -93,11 +99,21 @@ class SandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
-        headers: dict[str, str] = {}
+        client_headers: dict[str, str] = {}
         if resolved_api_key:
-            headers["X-Api-Key"] = resolved_api_key
+            client_headers["X-Api-Key"] = resolved_api_key
+        if headers:
+            client_headers = merge_headers(client_headers, headers)
         transport = RetryTransport(max_retries=max_retries)
-        self._http = httpx.Client(transport=transport, timeout=timeout, headers=headers)
+        self._http = httpx.Client(
+            transport=transport, timeout=timeout, headers=client_headers
+        )
+
+    def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge default client headers with per-request overrides."""
+        if headers is None:
+            return None
+        return merge_headers(self._http.headers, headers)
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -134,6 +150,7 @@ class SandboxClient:
         size: str,
         *,
         timeout: int = 60,
+        headers: RequestHeaders = None,
     ) -> Volume:
         """Create a new persistent volume.
 
@@ -162,14 +179,19 @@ class SandboxClient:
         }
 
         try:
-            response = self._http.post(url, json=payload, timeout=timeout + 30)
+            response = self._http.post(
+                url,
+                json=payload,
+                timeout=timeout + 30,
+                headers=self._request_headers(headers),
+            )
             response.raise_for_status()
             return Volume.from_dict(response.json())
         except httpx.HTTPStatusError as e:
             handle_volume_creation_error(e)
             raise  # pragma: no cover
 
-    def get_volume(self, name: str) -> Volume:
+    def get_volume(self, name: str, *, headers: RequestHeaders = None) -> Volume:
         """Get a volume by name.
 
         Args:
@@ -185,7 +207,7 @@ class SandboxClient:
         url = f"{self._base_url}/volumes/{name}"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return Volume.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -196,7 +218,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_volumes(self) -> list[Volume]:
+    def list_volumes(self, *, headers: RequestHeaders = None) -> list[Volume]:
         """List all volumes.
 
         Returns:
@@ -205,7 +227,7 @@ class SandboxClient:
         url = f"{self._base_url}/volumes"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [Volume.from_dict(v) for v in data.get("volumes", [])]
@@ -218,7 +240,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_volume(self, name: str) -> None:
+    def delete_volume(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a volume.
 
         Args:
@@ -232,7 +254,7 @@ class SandboxClient:
         url = f"{self._base_url}/volumes/{name}"
 
         try:
-            response = self._http.delete(url)
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -250,6 +272,7 @@ class SandboxClient:
         *,
         new_name: Optional[str] = None,
         size: Optional[str] = None,
+        headers: RequestHeaders = None,
     ) -> Volume:
         """Update a volume's name and/or size.
 
@@ -280,10 +303,12 @@ class SandboxClient:
 
         if not payload:
             # Nothing to update, just return the current volume
-            return self.get_volume(name)
+            return self.get_volume(name, headers=headers)
 
         try:
-            response = self._http.patch(url, json=payload)
+            response = self._http.patch(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return Volume.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -315,6 +340,7 @@ class SandboxClient:
         memory: str = "512Mi",
         storage: Optional[str] = None,
         volume_mounts: Optional[list[VolumeMountSpec]] = None,
+        headers: RequestHeaders = None,
     ) -> SandboxTemplate:
         """Create a new SandboxTemplate.
 
@@ -354,14 +380,18 @@ class SandboxClient:
             ]
 
         try:
-            response = self._http.post(url, json=payload)
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return SandboxTemplate.from_dict(response.json())
         except httpx.HTTPStatusError as e:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def get_template(self, name: str) -> SandboxTemplate:
+    def get_template(
+        self, name: str, *, headers: RequestHeaders = None
+    ) -> SandboxTemplate:
         """Get a SandboxTemplate by name.
 
         Args:
@@ -377,7 +407,7 @@ class SandboxClient:
         url = f"{self._base_url}/templates/{name}"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return SandboxTemplate.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -388,7 +418,9 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_templates(self) -> list[SandboxTemplate]:
+    def list_templates(
+        self, *, headers: RequestHeaders = None
+    ) -> list[SandboxTemplate]:
         """List all SandboxTemplates.
 
         Returns:
@@ -397,7 +429,7 @@ class SandboxClient:
         url = f"{self._base_url}/templates"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [SandboxTemplate.from_dict(t) for t in data.get("templates", [])]
@@ -410,7 +442,9 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def update_template(self, name: str, *, new_name: str) -> SandboxTemplate:
+    def update_template(
+        self, name: str, *, new_name: str, headers: RequestHeaders = None
+    ) -> SandboxTemplate:
         """Update a template's display name.
 
         Args:
@@ -429,7 +463,9 @@ class SandboxClient:
         payload = {"name": new_name}
 
         try:
-            response = self._http.patch(url, json=payload)
+            response = self._http.patch(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return SandboxTemplate.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -445,7 +481,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_template(self, name: str) -> None:
+    def delete_template(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a SandboxTemplate.
 
         Args:
@@ -459,7 +495,7 @@ class SandboxClient:
         url = f"{self._base_url}/templates/{name}"
 
         try:
-            response = self._http.delete(url)
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -484,6 +520,7 @@ class SandboxClient:
         replicas: int,
         *,
         timeout: int = 30,
+        headers: RequestHeaders = None,
     ) -> Pool:
         """Create a new Sandbox Pool.
 
@@ -518,14 +555,19 @@ class SandboxClient:
 
         try:
             http_timeout = timeout + 30
-            response = self._http.post(url, json=payload, timeout=http_timeout)
+            response = self._http.post(
+                url,
+                json=payload,
+                timeout=http_timeout,
+                headers=self._request_headers(headers),
+            )
             response.raise_for_status()
             return Pool.from_dict(response.json())
         except httpx.HTTPStatusError as e:
             handle_pool_error(e)
             raise  # pragma: no cover
 
-    def get_pool(self, name: str) -> Pool:
+    def get_pool(self, name: str, *, headers: RequestHeaders = None) -> Pool:
         """Get a Pool by name.
 
         Args:
@@ -541,7 +583,7 @@ class SandboxClient:
         url = f"{self._base_url}/pools/{name}"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return Pool.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -552,7 +594,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_pools(self) -> list[Pool]:
+    def list_pools(self, *, headers: RequestHeaders = None) -> list[Pool]:
         """List all Pools.
 
         Returns:
@@ -561,7 +603,7 @@ class SandboxClient:
         url = f"{self._base_url}/pools"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [Pool.from_dict(p) for p in data.get("pools", [])]
@@ -580,6 +622,7 @@ class SandboxClient:
         *,
         new_name: Optional[str] = None,
         replicas: Optional[int] = None,
+        headers: RequestHeaders = None,
     ) -> Pool:
         """Update a Pool's name and/or replica count.
 
@@ -611,10 +654,12 @@ class SandboxClient:
 
         if not payload:
             # Nothing to update, just return the current pool
-            return self.get_pool(name)
+            return self.get_pool(name, headers=headers)
 
         try:
-            response = self._http.patch(url, json=payload)
+            response = self._http.patch(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return Pool.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -630,7 +675,7 @@ class SandboxClient:
             handle_pool_error(e)
             raise  # pragma: no cover
 
-    def delete_pool(self, name: str) -> None:
+    def delete_pool(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a Pool.
 
         This will terminate all sandboxes in the pool.
@@ -645,7 +690,7 @@ class SandboxClient:
         url = f"{self._base_url}/pools/{name}"
 
         try:
-            response = self._http.delete(url)
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -666,6 +711,7 @@ class SandboxClient:
         timeout: int = 30,
         ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
 
@@ -704,6 +750,7 @@ class SandboxClient:
             timeout=timeout,
             ttl_seconds=ttl_seconds,
             idle_ttl_seconds=idle_ttl_seconds,
+            headers=headers,
         )
         sb._auto_delete = True
         return sb
@@ -717,6 +764,7 @@ class SandboxClient:
         wait_for_ready: bool = True,
         ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
 
@@ -769,14 +817,19 @@ class SandboxClient:
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
         try:
-            response = self._http.post(url, json=payload, timeout=http_timeout)
+            response = self._http.post(
+                url,
+                json=payload,
+                timeout=http_timeout,
+                headers=self._request_headers(headers),
+            )
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
             handle_sandbox_creation_error(e)
             raise  # pragma: no cover
 
-    def get_sandbox(self, name: str) -> Sandbox:
+    def get_sandbox(self, name: str, *, headers: RequestHeaders = None) -> Sandbox:
         """Get a Sandbox by name.
 
         The sandbox is NOT automatically deleted. Use delete_sandbox() for cleanup.
@@ -794,7 +847,7 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{name}"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
@@ -805,7 +858,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_sandboxes(self) -> list[Sandbox]:
+    def list_sandboxes(self, *, headers: RequestHeaders = None) -> list[Sandbox]:
         """List all Sandboxes.
 
         Returns:
@@ -814,7 +867,7 @@ class SandboxClient:
         url = f"{self._base_url}/boxes"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [
@@ -837,6 +890,7 @@ class SandboxClient:
         new_name: Optional[str] = None,
         ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Update a sandbox's properties.
 
@@ -870,7 +924,9 @@ class SandboxClient:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
 
         try:
-            response = self._http.patch(url, json=payload)
+            response = self._http.patch(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
@@ -886,7 +942,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_sandbox(self, name: str) -> None:
+    def delete_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a Sandbox.
 
         Args:
@@ -899,7 +955,7 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{name}"
 
         try:
-            response = self._http.delete(url)
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -908,7 +964,9 @@ class SandboxClient:
                 ) from e
             handle_client_http_error(e)
 
-    def get_sandbox_status(self, name: str) -> ResourceStatus:
+    def get_sandbox_status(
+        self, name: str, *, headers: RequestHeaders = None
+    ) -> ResourceStatus:
         """Get the provisioning status of a sandbox.
 
         This is a lightweight endpoint designed for high-frequency polling
@@ -928,7 +986,7 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{name}/status"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return ResourceStatus.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -945,6 +1003,7 @@ class SandboxClient:
         *,
         timeout: int = 120,
         poll_interval: float = 1.0,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Poll until a sandbox reaches "ready" or "failed" status.
 
@@ -969,9 +1028,9 @@ class SandboxClient:
 
         deadline = time.monotonic() + timeout
         while True:
-            status = self.get_sandbox_status(name)
+            status = self.get_sandbox_status(name, headers=headers)
             if status.status == "ready":
-                return self.get_sandbox(name)
+                return self.get_sandbox(name, headers=headers)
             if status.status == "failed":
                 raise ResourceCreationError(
                     status.status_message or "Sandbox provisioning failed",
