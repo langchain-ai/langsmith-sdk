@@ -28,7 +28,8 @@
   "exclude": [
     "node_modules",
     "dist",
-    "coverage"
+    "coverage",
+    "src/tests"
   ],
   "includeVersion": true,
   "typedocOptions": {

@@ -29,5 +29,6 @@ export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
     client,
   });
 
-  return { client, callSpy, langChainTracer };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { client, callSpy: callSpy as any, langChainTracer };
 };
