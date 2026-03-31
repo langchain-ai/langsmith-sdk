@@ -8,6 +8,10 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[options]
+exclude-newer = "2026-03-30T17:11:04.217161Z"
+exclude-newer-span = "P1D"
+
 [[package]]
 name = "absolufy-imports"
 version = "0.3.1"

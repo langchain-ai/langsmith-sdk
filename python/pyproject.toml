@@ -133,6 +133,9 @@ test = [
 [project.entry-points."pytest11"]
 langsmith_plugin = "langsmith.pytest_plugin"
 
+[tool.uv]
+exclude-newer = "P1D"
+
 [tool.hatch.version]
 path = "langsmith/__init__.py"
 
