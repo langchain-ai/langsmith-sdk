@@ -474,6 +474,7 @@ ID_TYPE = Union[uuid.UUID, str]
 RUN_TYPE_T = Literal[
     "tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"
 ]
+_MULTIPART_INGEST_CACHE_LIMIT = 1024
 
 
 @functools.lru_cache(maxsize=1)
@@ -992,8 +993,12 @@ class Client:
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
         self._multipart_disabled: bool = False
-        self._multipart_ingest_run_cache: dict[uuid.UUID, dict[str, Any]] = {}
-        self._multipart_ingest_pending_updates: dict[uuid.UUID, dict[str, Any]] = {}
+        self._multipart_ingest_run_cache: collections.OrderedDict[
+            uuid.UUID, dict[str, Any]
+        ] = collections.OrderedDict()
+        self._multipart_ingest_pending_updates: collections.OrderedDict[
+            uuid.UUID, dict[str, Any]
+        ] = collections.OrderedDict()
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
         # Set OTEL exporter before starting the tracing thread so the thread sees it
@@ -1979,8 +1984,36 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _copy_multipart_run_value(self, value: Any) -> Any:
+        if isinstance(value, (dict, list, tuple, set)):
+            return ls_utils.deepish_copy(value)
+        return value
+
     def _copy_multipart_run_dict(self, run: dict[str, Any]) -> dict[str, Any]:
-        return cast(dict[str, Any], ls_utils.deepish_copy(run))
+        return {
+            key: self._copy_multipart_run_value(value) for key, value in run.items()
+        }
+
+    def _get_multipart_cache_entry(
+        self,
+        cache: collections.OrderedDict[uuid.UUID, dict[str, Any]],
+        run_id: uuid.UUID,
+    ) -> Optional[dict[str, Any]]:
+        run = cache.get(run_id)
+        if run is not None:
+            cache.move_to_end(run_id)
+        return run
+
+    def _set_multipart_cache_entry(
+        self,
+        cache: collections.OrderedDict[uuid.UUID, dict[str, Any]],
+        run_id: uuid.UUID,
+        run: dict[str, Any],
+    ) -> None:
+        cache[run_id] = run
+        cache.move_to_end(run_id)
+        if len(cache) > _MULTIPART_INGEST_CACHE_LIMIT:
+            cache.popitem(last=False)
 
     def _merge_multipart_run_dicts(
         self,
@@ -1990,7 +2023,7 @@ class Client:
         if base is None:
             return self._copy_multipart_run_dict(update)
 
-        merged = self._copy_multipart_run_dict(base)
+        merged = dict(base)
         for key, value in update.items():
             if value is None:
                 continue
@@ -1999,13 +2032,18 @@ class Client:
                 and isinstance(merged.get("attachments"), dict)
                 and isinstance(value, dict)
             ):
-                attachments = cast(
-                    dict[str, Any], ls_utils.deepish_copy(merged["attachments"])
+                attachments = cast(dict[str, Any], merged["attachments"]).copy()
+                attachments.update(
+                    {
+                        attachment_name: self._copy_multipart_run_value(
+                            attachment_value
+                        )
+                        for attachment_name, attachment_value in value.items()
+                    }
                 )
-                attachments.update(cast(dict[str, Any], ls_utils.deepish_copy(value)))
                 merged["attachments"] = attachments
             else:
-                merged[key] = ls_utils.deepish_copy(value)
+                merged[key] = self._copy_multipart_run_value(value)
         return merged
 
     def _multipart_patch_has_required_fields(self, run: dict[str, Any]) -> bool:
@@ -2978,7 +3016,9 @@ class Client:
                 )
                 continue
 
-            cached_run = self._multipart_ingest_run_cache.get(run_id)
+            cached_run = self._get_multipart_cache_entry(
+                self._multipart_ingest_run_cache, run_id
+            )
             if cached_run is not None:
                 create_by_id[run_id] = self._merge_multipart_run_dicts(
                     cached_run, run
@@ -2989,9 +3029,14 @@ class Client:
                 standalone_updates.append(run)
                 continue
 
-            self._multipart_ingest_pending_updates[run_id] = (
+            self._set_multipart_cache_entry(
+                self._multipart_ingest_pending_updates,
+                run_id,
                 self._merge_multipart_run_dicts(
-                    self._multipart_ingest_pending_updates.get(run_id), run
+                    self._get_multipart_cache_entry(
+                        self._multipart_ingest_pending_updates, run_id
+                    ),
+                    run,
                 )
             )
 
@@ -3005,14 +3050,20 @@ class Client:
         self._insert_runtime_env(update_dicts)
 
         for run in create_dicts:
-            self._multipart_ingest_run_cache[run["id"]] = (
-                self._copy_multipart_run_dict(run)
+            self._set_multipart_cache_entry(
+                self._multipart_ingest_run_cache,
+                run["id"],
+                self._copy_multipart_run_dict(run),
             )
         for run in update_dicts:
-            cached_run = self._multipart_ingest_run_cache.get(run["id"])
+            cached_run = self._get_multipart_cache_entry(
+                self._multipart_ingest_run_cache, run["id"]
+            )
             if cached_run is not None:
-                self._multipart_ingest_run_cache[run["id"]] = (
-                    self._merge_multipart_run_dicts(cached_run, run)
+                self._set_multipart_cache_entry(
+                    self._multipart_ingest_run_cache,
+                    run["id"],
+                    self._merge_multipart_run_dicts(cached_run, run),
                 )
 
         # format as serialized operations

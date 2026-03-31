@@ -1708,6 +1708,7 @@ def test_multipart_ingest_sparse_update_after_create_reuses_post_payload() -> No
 
     run_id = str(uuid.uuid4())
     dotted_order = f"20210101T000000000000Z{run_id}"
+    inputs = {"x": {"nested": 1}}
 
     client.multipart_ingest(
         create=[
@@ -1718,11 +1719,12 @@ def test_multipart_ingest_sparse_update_after_create_reuses_post_payload() -> No
                 "run_type": "chain",
                 "trace_id": run_id,
                 "dotted_order": dotted_order,
-                "inputs": {"x": 1},
+                "inputs": inputs,
             }
         ],
         update=[],
     )
+    inputs["x"]["nested"] = 2
     client.multipart_ingest(
         create=[],
         update=[
@@ -1749,7 +1751,7 @@ def test_multipart_ingest_sparse_update_after_create_reuses_post_payload() -> No
     assert run_parsed["session_name"] == "project"
     assert run_parsed["name"] == "test"
     assert run_parsed["run_type"] == "chain"
-    assert json.loads(second_request[1].value) == {"x": 1}
+    assert json.loads(second_request[1].value) == {"x": {"nested": 1}}
     assert json.loads(second_request[2].value) == {"y": 2}
 
 
@@ -1803,6 +1805,53 @@ def test_multipart_ingest_sparse_update_before_create_is_deferred() -> None:
     ]
     assert json.loads(request_parts[1].value) == {"x": 1}
     assert json.loads(request_parts[2].value) == {"y": 2}
+
+
+@patch("langsmith.client._MULTIPART_INGEST_CACHE_LIMIT", 2)
+def test_multipart_ingest_caches_are_bounded() -> None:
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    cache_limit = 2
+
+    pending_run_ids = [str(uuid.uuid4()) for _ in range(cache_limit + 1)]
+    for run_id in pending_run_ids:
+        client.multipart_ingest(
+            create=[],
+            update=[
+                {
+                    "id": run_id,
+                    "trace_id": run_id,
+                    "dotted_order": f"20210101T000000000000Z{run_id}",
+                    "outputs": {"y": 1},
+                }
+            ],
+        )
+
+    assert len(client._multipart_ingest_pending_updates) == cache_limit
+    assert uuid.UUID(pending_run_ids[0]) not in client._multipart_ingest_pending_updates
+
+    created_run_ids = [str(uuid.uuid4()) for _ in range(cache_limit + 1)]
+    for run_id in created_run_ids:
+        client.multipart_ingest(
+            create=[
+                {
+                    "id": run_id,
+                    "session_name": "project",
+                    "name": "test",
+                    "run_type": "chain",
+                    "trace_id": run_id,
+                    "dotted_order": f"20210101T000000000000Z{run_id}",
+                    "inputs": {"x": 1},
+                }
+            ],
+            update=[],
+        )
+
+    assert len(client._multipart_ingest_run_cache) == cache_limit
+    assert uuid.UUID(created_run_ids[0]) not in client._multipart_ingest_run_cache
 
 
 def test_sampling_and_batching():
