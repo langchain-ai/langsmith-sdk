@@ -3020,9 +3020,7 @@ class Client:
                 self._multipart_ingest_run_cache, run_id
             )
             if cached_run is not None:
-                create_by_id[run_id] = self._merge_multipart_run_dicts(
-                    cached_run, run
-                )
+                create_by_id[run_id] = self._merge_multipart_run_dicts(cached_run, run)
                 continue
 
             if self._multipart_patch_has_required_fields(run):
@@ -3037,7 +3035,7 @@ class Client:
                         self._multipart_ingest_pending_updates, run_id
                     ),
                     run,
-                )
+                ),
             )
 
         create_dicts = list(create_by_id.values())
