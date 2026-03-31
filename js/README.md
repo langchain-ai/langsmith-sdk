@@ -43,7 +43,7 @@ You can log traces natively in your LangChain application or using a LangSmith R
 LangSmith seamlessly integrates with the JavaScript LangChain library to record traces from your LLM applications.
 
 ```bash
-yarn add langchain
+pnpm add langchain
 ```
 
 1. **Copy the environment variables from the Settings Page and add them to your application.**

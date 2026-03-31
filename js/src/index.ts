@@ -31,5 +31,5 @@ export {
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
 
-// Update using yarn bump-version
+// Update using pnpm bump-version
 export const __version__ = "0.5.15";

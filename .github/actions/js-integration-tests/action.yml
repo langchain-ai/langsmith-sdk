@@ -19,20 +19,23 @@ runs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "yarn"
-        cache-dependency-path: "js/yarn.lock"
+        cache: pnpm
+        cache-dependency-path: js/pnpm-lock.yaml
 
-    - name: Install Yarn dependencies
-      run: yarn install
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
       shell: bash
       working-directory: js
 
     - name: Run JS integration tests
-      run: yarn test:integration
+      run: pnpm test:integration
       shell: bash
       working-directory: js
       env:
