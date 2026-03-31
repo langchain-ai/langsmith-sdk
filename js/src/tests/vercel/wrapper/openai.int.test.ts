@@ -119,8 +119,8 @@ test("wrap generateText with flex service tier", async () => {
   await client.awaitPendingTraceBatches();
   const patchBodies = await Promise.all(
     callSpy.mock.calls
-      .filter((call) => call[1]!.method === "PATCH")
-      .map((call) => new Response(call[1]!.body).json())
+      .filter((call: any) => call[1]!.method === "PATCH")
+      .map((call: any) => new Response(call[1]!.body).json())
   );
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
@@ -197,8 +197,8 @@ test("wrap streamText with service tier", async () => {
   await result.consumeStream();
   const patchBodies = await Promise.all(
     callSpy.mock.calls
-      .filter((call) => call[1]!.method === "PATCH")
-      .map((call) => new Response(call[1]!.body).json())
+      .filter((call: any) => call[1]!.method === "PATCH")
+      .map((call: any) => new Response(call[1]!.body).json())
   );
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
