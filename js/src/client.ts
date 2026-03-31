@@ -5717,6 +5717,7 @@ export class Client implements LangSmithTracingClientInterface {
     object: any,
     options?: {
       parentCommitHash?: string;
+      description?: string;
     }
   ): Promise<string> {
     if (!(await this.promptExists(promptIdentifier))) {
@@ -5729,10 +5730,13 @@ export class Client implements LangSmithTracingClientInterface {
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
         : options?.parentCommitHash;
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       manifest: JSON.parse(JSON.stringify(object)),
       parent_commit: resolvedParentCommitHash,
     };
+    if (options?.description !== undefined) {
+      payload.description = options.description;
+    }
 
     const body = JSON.stringify(payload);
 
@@ -6187,6 +6191,7 @@ export class Client implements LangSmithTracingClientInterface {
       description?: string;
       readme?: string;
       tags?: string[];
+      commitDescription?: string;
     }
   ): Promise<string> {
     // Create or update prompt metadata
@@ -6215,6 +6220,7 @@ export class Client implements LangSmithTracingClientInterface {
     // Create a commit with the new manifest
     const url = await this.createCommit(promptIdentifier, options?.object, {
       parentCommitHash: options?.parentCommitHash,
+      description: options?.commitDescription,
     });
     return url;
   }
