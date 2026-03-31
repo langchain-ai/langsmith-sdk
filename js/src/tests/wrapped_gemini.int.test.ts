@@ -157,7 +157,7 @@ test("should include model in traced inputs", async () => {
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST"
   );
   expect(postCalls.length).toBeGreaterThan(0);
 
@@ -293,7 +293,7 @@ test("should handle function calling", async () => {
 
   // Find the PATCH call
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH"
   );
 
   if (patchCalls.length > 0) {
@@ -462,7 +462,7 @@ test("prepopulated invocation params are passed through", async () => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST"
   );
 
   expect(postCalls.length).toBeGreaterThan(0);

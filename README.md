@@ -43,7 +43,7 @@ client.chat.completions.create(
 To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the instructions in the [JS README](js/README.md).
 
 ```bash
-yarn add langsmith
+pnpm add langsmith
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
 export LANGSMITH_WORKSPACE_ID=<your-workspace-id> # Required for org-scoped keys

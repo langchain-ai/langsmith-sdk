@@ -32,23 +32,27 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # JS Build
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
           node-version: 24.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
           registry-url: "https://registry.npmjs.org"
       - name: Install dependencies
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
-        run: yarn run build
+        run: pnpm run build
       - name: Check version
-        run: yarn run check-version
+        run: pnpm run check-version
       - name: Check NPM version
         id: check_npm_version
         run: |
-          if yarn run check-npm-version; then
+          if pnpm run check-npm-version; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT

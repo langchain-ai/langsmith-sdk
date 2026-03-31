@@ -2,7 +2,7 @@
   "name": "langsmith",
   "version": "0.5.15",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
-  "packageManager": "yarn@1.22.19",
+  "packageManager": "pnpm@10.33.0",
   "files": [
     "dist/",
     "client.cjs",
@@ -106,8 +106,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
-    "build:typedoc": "yarn build && rm -rf ./_build/api_refs && npx typedoc",
+    "build": "pnpm clean && pnpm build:esm && pnpm build:cjs && node scripts/create-entrypoints.js",
+    "build:typedoc": "pnpm build && rm -rf ./_build/api_refs && npx typedoc",
     "bump-version": "node scripts/bump-version.js",
     "check-version": "node scripts/check-version.js",
     "check-npm-version": "node scripts/check-npm-version.js",
@@ -116,17 +116,17 @@
     "build:cjs": "echo '{}' > src/package.json && tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs src/package.json",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
-    "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
-    "watch:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --watch --config jest.config.cjs --testTimeout 100000",
+    "test:single": "NODE_OPTIONS=--experimental-vm-modules pnpm jest --config jest.config.cjs --testTimeout 100000",
+    "watch:single": "NODE_OPTIONS=--experimental-vm-modules pnpm jest --watch --config jest.config.cjs --testTimeout 100000",
     "test:vitest": "vitest run --config vitest.config.ts",
     "test:eval:vitest": "vitest run --config ls.vitest.config.ts",
     "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
-    "lint:fix": "yarn lint --fix",
+    "lint:fix": "pnpm lint --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx,mts}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx,mts}'",
     "check:types": "tsc --noEmit",
     "precommit": "lint-staged",
-    "prepublish": "yarn run build"
+    "prepublish": "pnpm run build"
   },
   "repository": {
     "type": "git",
@@ -145,7 +145,6 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
-    "@types/uuid": "^10.0.0",
     "chalk": "^5.6.2",
     "console-table-printer": "^2.12.1",
     "p-queue": "^6.6.2",
@@ -168,12 +167,15 @@
     "@langchain/openai": "^0.5.16",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.72.0",
+    "@opentelemetry/context-async-hooks": "^2.6.1",
     "@opentelemetry/sdk-node": "^0.214.0",
     "@opentelemetry/sdk-trace-base": "^2.0.0",
     "@opentelemetry/sdk-trace-node": "^2.0.0",
     "@tsconfig/recommended": "^1.0.2",
     "@types/jest": "^29.5.1",
     "@types/node-fetch": "^2.6.12",
+    "@types/semver": "^7.7.1",
+    "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
     "@typescript-eslint/parser": "^5.59.8",
@@ -450,9 +452,10 @@
     },
     "./package.json": "./package.json"
   },
-  "resolutions": {
-    "js-yaml": "^4.1.1",
-    "rimraf/**/glob": "10.5.0"
+  "pnpm": {
+    "overrides": {
+      "js-yaml": "^4.1.1"
+    }
   },
   "browser": {
     "./dist/utils/fs.js": "./dist/utils/fs.browser.js"
