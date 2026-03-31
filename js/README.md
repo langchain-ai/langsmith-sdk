@@ -8,7 +8,7 @@ This package contains the TypeScript client for interacting with the [LangSmith 
 To install:
 
 ```bash
-yarn add langsmith
+pnpm add langsmith
 ```
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchainjs), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
