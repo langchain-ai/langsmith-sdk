@@ -452,8 +452,10 @@
     },
     "./package.json": "./package.json"
   },
-  "overrides": {
-    "js-yaml": "^4.1.1"
+  "pnpm": {
+    "overrides": {
+      "js-yaml": "^4.1.1"
+    }
   },
   "browser": {
     "./dist/utils/fs.js": "./dist/utils/fs.browser.js"
