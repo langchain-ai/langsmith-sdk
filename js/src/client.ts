@@ -5730,13 +5730,13 @@ export class Client implements LangSmithTracingClientInterface {
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
         : options?.parentCommitHash;
 
-    const payload: Record<string, unknown> = {
+    const payload = {
       manifest: JSON.parse(JSON.stringify(object)),
       parent_commit: resolvedParentCommitHash,
+      ...(options?.description !== undefined && {
+        description: options.description,
+      }),
     };
-    if (options?.description !== undefined) {
-      payload.description = options.description;
-    }
 
     const body = JSON.stringify(payload);
 
