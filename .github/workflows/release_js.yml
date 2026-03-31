@@ -34,6 +34,8 @@ jobs:
       # JS Build
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
