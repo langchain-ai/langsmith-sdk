@@ -3151,11 +3151,15 @@ test("child traceable with own replicas config", async () => {
   // Grandchild also goes to BOTH (inherits child's replicas)
   const grandchildRuns = runs.filter((r: any) => r.name === "grandchild");
   expect(grandchildRuns.length).toBe(2);
-  const grandchildProjects = grandchildRuns.map((r: any) => r.session_name).sort();
+  const grandchildProjects = grandchildRuns
+    .map((r: any) => r.session_name)
+    .sort();
   expect(grandchildProjects).toEqual([defaultProject, replicaProject].sort());
 
   // GreatGrandchild also goes to BOTH (inherits from grandchild which inherits from child)
-  const greatGrandchildRuns = runs.filter((r: any) => r.name === "greatGrandchild");
+  const greatGrandchildRuns = runs.filter(
+    (r: any) => r.name === "greatGrandchild"
+  );
   expect(greatGrandchildRuns.length).toBe(2);
   const greatGrandchildProjects = greatGrandchildRuns
     .map((r: any) => r.session_name)
@@ -3226,7 +3230,9 @@ test("child traceable with own replicas config", async () => {
   expect(defaultChild.parent_run_id).toBeDefined();
 
   // All runs in default project should share same trace_id (parent's trace)
-  const defaultParent = defaultProjectRuns.find((r: any) => r.name === "parent");
+  const defaultParent = defaultProjectRuns.find(
+    (r: any) => r.name === "parent"
+  );
   expect(defaultChild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGrandchild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGreatGrandchild.trace_id).toBe(defaultParent?.trace_id);
