@@ -1469,6 +1469,18 @@ def _container_end(
         except BaseException as e:
             warnings.warn(f"Failed to run on_end function: {e}")
 
+    # Clear RunTree reference from the copied context to prevent memory leak.
+    # On Python 3.11+, asyncio.create_task(context=...) retains the context
+    # in Task._context even after the task completes. Without this cleanup,
+    # the RunTree (and its inputs/outputs) is kept alive indefinitely.
+    # See: https://github.com/langchain-ai/langsmith-sdk/issues/2097
+    ctx = container.get("context")
+    if ctx is not None:
+        try:
+            ctx.run(_context._PARENT_RUN_TREE.set, None)
+        except Exception:
+            pass
+
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
     run_extra = langsmith_extra.get("run_extra", None)

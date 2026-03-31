@@ -2475,3 +2475,46 @@ class TestTraceableExceptionsToHandle:
                 pytest.fail(
                     f"Expected error to be None for handled exception, got: {err}"
                 )
+
+
+@pytest.mark.asyncio
+async def test_traceable_async_clears_context_after_run(mock_client: Client) -> None:
+    """Verify that _PARENT_RUN_TREE is cleared from the container's copied context
+    after _container_end runs.
+
+    On Python 3.11+, asyncio.create_task(context=copied_ctx) retains the context
+    in Task._context after completion. If _PARENT_RUN_TREE is not cleared from it,
+    RunTree objects are kept alive indefinitely, causing unbounded memory growth.
+
+    Regression test for: https://github.com/langchain-ai/langsmith-sdk/issues/2097
+    """
+    import langsmith.run_helpers as rh
+    from langsmith._internal._context import _PARENT_RUN_TREE
+
+    captured_contexts: list = []
+    original_container_end = rh._container_end
+
+    def capturing_container_end(container, outputs=None, error=None):
+        original_container_end(container, outputs=outputs, error=error)
+        ctx = container.get("context")
+        if ctx is not None:
+            # Read _PARENT_RUN_TREE from the container's context AFTER cleanup
+            parent_run = ctx.run(_PARENT_RUN_TREE.get)
+            captured_contexts.append(parent_run)
+
+    with patch.object(rh, "_container_end", capturing_container_end):
+
+        @traceable(client=mock_client)
+        async def my_func(x: int) -> int:
+            return x + 1
+
+        with tracing_context(enabled=True):
+            for _ in range(3):
+                await my_func(1)
+
+    assert len(captured_contexts) == 3
+    for i, parent_run in enumerate(captured_contexts):
+        assert parent_run is None, (
+            f"Call {i}: _PARENT_RUN_TREE still set in container context after "
+            f"_container_end — RunTree will leak via Task._context"
+        )
