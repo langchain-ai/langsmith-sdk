@@ -32,4 +32,4 @@ export {
 } from "./utils/prompt_cache/index.js";
 
 // Update using pnpm bump-version
-export const __version__ = "0.5.15";
+export const __version__ = "0.5.16";
