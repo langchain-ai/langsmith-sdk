@@ -377,7 +377,10 @@ test("should reuse tool def without double wrapping tool traces", async () => {
   expect(result2.providerMetadata).toBeDefined();
 });
 
-test("image and file data normalization", async () => {
+// Skipped: data: URL in image part triggers SSRF validation bug in
+// @ai-sdk/provider-utils@4.0.21. Fix merged upstream (vercel/ai#13376)
+// but not yet released. Re-enable once a patched version is available.
+test.skip("image and file data normalization", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
@@ -392,6 +395,7 @@ test("image and file data normalization", async () => {
   ) as ArrayBuffer;
   const imgBase64 = imgBuffer.toString("base64");
   const imgUrl = "https://smith.langchain.com/og_image.png";
+  const imgDataUrl = `data:image/png;base64,${imgBase64}`;
   const imgUrlObject = new URL("https://smith.langchain.com/og_image.png");
 
   const result = await generateText({
@@ -405,6 +409,7 @@ test("image and file data normalization", async () => {
           { type: "image", image: imgArrayBuffer }, // ArrayBuffer
           { type: "image", image: imgBase64 }, // Base64 string
           { type: "image", image: imgUrl }, // HTTP URL string
+          { type: "image", image: imgDataUrl }, // Data URL
           { type: "image", image: imgUrlObject }, // URL object
           {
             type: "file",
