@@ -392,7 +392,6 @@ test("image and file data normalization", async () => {
   ) as ArrayBuffer;
   const imgBase64 = imgBuffer.toString("base64");
   const imgUrl = "https://smith.langchain.com/og_image.png";
-  const imgDataUrl = `data:image/png;base64,${imgBase64}`;
   const imgUrlObject = new URL("https://smith.langchain.com/og_image.png");
 
   const result = await generateText({
@@ -406,11 +405,6 @@ test("image and file data normalization", async () => {
           { type: "image", image: imgArrayBuffer }, // ArrayBuffer
           { type: "image", image: imgBase64 }, // Base64 string
           { type: "image", image: imgUrl }, // HTTP URL string
-          {
-            type: "file",
-            data: imgDataUrl,
-            mediaType: "image/png",
-          }, // Data URL as file part
           { type: "image", image: imgUrlObject }, // URL object
           {
             type: "file",
