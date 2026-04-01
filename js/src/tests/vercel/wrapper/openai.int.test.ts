@@ -406,7 +406,11 @@ test("image and file data normalization", async () => {
           { type: "image", image: imgArrayBuffer }, // ArrayBuffer
           { type: "image", image: imgBase64 }, // Base64 string
           { type: "image", image: imgUrl }, // HTTP URL string
-          { type: "image", image: imgDataUrl }, // Existing data URL
+          {
+            type: "file",
+            data: imgDataUrl,
+            mediaType: "image/png",
+          }, // Data URL as file part
           { type: "image", image: imgUrlObject }, // URL object
           {
             type: "file",
