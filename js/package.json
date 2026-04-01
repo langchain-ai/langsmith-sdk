@@ -454,7 +454,8 @@
   },
   "pnpm": {
     "overrides": {
-      "js-yaml": "^4.1.1"
+      "js-yaml": "^4.1.1",
+      "langsmith": ">=0.4.6"
     }
   },
   "browser": {
