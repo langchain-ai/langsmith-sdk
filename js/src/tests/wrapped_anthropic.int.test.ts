@@ -602,6 +602,60 @@ describe.skip("Requires Anthropic API key", () => {
     callSpy.mockClear();
   });
 
+  test("beta.messages.parse", async () => {
+    const { client, callSpy } = mockClient();
+
+    const originalClient = new Anthropic();
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      client,
+      tracingEnabled: true,
+    });
+
+    expect(patchedClient.beta.messages.parse).toBeDefined();
+
+    const original = await originalClient.beta.messages.parse({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: "Alice and Bob are going to a science fair on Friday.",
+        },
+      ],
+    });
+
+    const patched = await patchedClient.beta.messages.parse({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: "Alice and Bob are going to a science fair on Friday.",
+        },
+      ],
+    });
+
+    expect(patched.content).toBeDefined();
+    expect(patched.role).toBe("assistant");
+    expect(original.role).toBe("assistant");
+
+    expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+    const postCalls = callSpy.mock.calls.filter(
+      (call: any) => (call[1] as any).method === "POST"
+    );
+    expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+    const postBody = parseRequestBody((postCalls[0][1] as any).body);
+    expect(postBody.extra.metadata).toMatchObject({
+      ls_model_name: "claude-haiku-4-5",
+      ls_model_type: "chat",
+      ls_provider: "anthropic",
+    });
+
+    callSpy.mockClear();
+  });
+
   test("beta.messages.create streaming", async () => {
     const { client, callSpy } = mockClient();
 

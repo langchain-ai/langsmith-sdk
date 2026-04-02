@@ -325,10 +325,6 @@ export interface RawExample extends BaseExample {
 
 export interface ExampleUpdateWithId extends ExampleUpdate {}
 
-export interface ExampleSearch extends BaseExample {
-  id: string;
-}
-
 export interface BaseDataset {
   name: string;
   description: string;

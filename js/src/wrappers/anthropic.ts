@@ -22,6 +22,8 @@ type MessagesNamespace = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   create: (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parse?: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stream: (...args: any[]) => any;
 };
 
@@ -474,6 +476,14 @@ export const wrapAnthropic = <T extends AnthropicType>(
       anthropic.beta.messages.create.bind(anthropic.beta.messages),
       messagesCreateConfig
     );
+
+    // Wrap beta.messages.parse if it exists
+    if (typeof anthropic.beta.messages.parse === "function") {
+      tracedBeta.messages.parse = traceable(
+        anthropic.beta.messages.parse.bind(anthropic.beta.messages),
+        messagesCreateConfig
+      );
+    }
 
     // Wrap beta.messages.stream if it exists
     if (typeof anthropic.beta.messages.stream === "function") {
