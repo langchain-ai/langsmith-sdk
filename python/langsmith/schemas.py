@@ -996,6 +996,8 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: list[dict]
     """The list of examples."""
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class ListedPromptCommit(BaseModel):
@@ -1039,6 +1041,9 @@ class ListedPromptCommit(BaseModel):
 
     parent_commit_hash: Optional[str] = None
     """The optional hash of the parent commit."""
+
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class Prompt(BaseModel):

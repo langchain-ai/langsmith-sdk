@@ -8746,6 +8746,7 @@ class Client:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -8756,6 +8757,8 @@ class Client:
                 Defaults to latest commit.
             tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
                 Defaults to None.
+            description (Optional[str]): Optional human-readable description for the
+                commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The url of the prompt commit.
@@ -8791,7 +8794,12 @@ class Client:
         if parent_commit_hash == "latest" or parent_commit_hash is None:
             parent_commit_hash = self._get_latest_commit_hash(prompt_owner_and_name)
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = self.request_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -9092,6 +9100,7 @@ class Client:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -9117,6 +9126,8 @@ class Client:
                 Defaults to an empty list.
             commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
+            commit_description (Optional[str]): Optional human-readable description
+                for the commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The URL of the prompt.
@@ -9151,6 +9162,7 @@ class Client:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
 

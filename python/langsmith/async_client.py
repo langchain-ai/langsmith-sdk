@@ -1521,6 +1521,7 @@ class AsyncClient:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -1533,6 +1534,8 @@ class AsyncClient:
             tags: A single tag or list of tags to apply to the commit.
 
                 Defaults to `None`.
+            description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The url of the prompt commit.
@@ -1570,7 +1573,12 @@ class AsyncClient:
                 prompt_owner_and_name
             )
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = await self._arequest_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -1878,6 +1886,7 @@ class AsyncClient:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -1911,6 +1920,8 @@ class AsyncClient:
             commit_tags: A single tag or list of tags for the prompt commit.
 
                 Defaults to an empty list.
+            commit_description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The URL of the prompt.
@@ -1945,6 +1956,7 @@ class AsyncClient:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
 

@@ -495,6 +495,7 @@ export interface PromptCommit {
   commit_hash: string;
   manifest: Record<string, any>;
   examples: Array<Record<any, any>>;
+  description?: string;
 }
 
 export interface Prompt {
