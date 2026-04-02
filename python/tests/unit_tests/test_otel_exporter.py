@@ -1,10 +1,11 @@
-"""Unit tests for OTELExporter cleanup functionality."""
+"""Unit tests for OTEL exporter and span processor."""
 
 import time
 import uuid
 from unittest.mock import MagicMock, patch
 
 from langsmith._internal.otel._otel_exporter import OTELExporter
+from langsmith.integrations.otel.processor import OtelSpanProcessor
 
 
 def test_cleanup_stale_spans():
@@ -75,3 +76,28 @@ def test_env_var_ttl(mock_get_env_var):
 
         assert exporter._span_ttl_seconds == 1800
         mock_get_env_var.assert_any_call("OTEL_SPAN_TTL_SECONDS", default="3600")
+
+
+@patch(
+    "langsmith.integrations.otel.processor.OtelExporter",
+    return_value=MagicMock(),
+)
+@patch(
+    "langsmith.integrations.otel.processor.OTEL_AVAILABLE",
+    True,
+)
+def test_set_metadata_propagates_to_spans(mock_exporter_cls):
+    """Test that set_metadata propagates attributes to every span on_start."""
+    mock_inner_processor = MagicMock()
+    processor = OtelSpanProcessor(
+        api_key="test", project="test", SpanProcessor=lambda _: mock_inner_processor
+    )
+
+    processor.set_metadata({"thread_id": "t-123", "session_id": "s-456"})
+
+    span = MagicMock()
+    processor.on_start(span, parent_context=None)
+
+    span.set_attribute.assert_any_call("langsmith.metadata.thread_id", "t-123")
+    span.set_attribute.assert_any_call("langsmith.metadata.session_id", "s-456")
+    mock_inner_processor.on_start.assert_called_once_with(span, None)
