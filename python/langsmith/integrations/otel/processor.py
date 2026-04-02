@@ -2,7 +2,7 @@
 
 import logging
 import warnings
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 from langsmith import utils as ls_utils
@@ -56,6 +56,8 @@ except ImportError:
             )
 
     OTEL_AVAILABLE = False
+
+LANGSMITH_METADATA_PREFIX = "langsmith.metadata"
 
 
 class OtelExporter(OTLPSpanExporter):
@@ -194,9 +196,43 @@ class OtelSpanProcessor:
             SpanProcessor = BatchSpanProcessor
 
         self._processor = SpanProcessor(self._exporter)
+        self._metadata: dict[str, Any] = {}
+
+    def set_metadata(self, metadata: dict[str, Any]) -> None:
+        """Set metadata attributes to propagate to all spans.
+
+        Use this to ensure metadata like ``thread_id`` appears on every span
+        in a trace, not just the root span.  This is required for LangSmith
+        features (e.g. the threads view) that query runs by metadata fields.
+
+        Examples:
+            Set a thread ID so all spans in the trace are grouped::
+
+                processor = OtelSpanProcessor(project="my-project")
+                processor.set_metadata({"thread_id": "my-thread-123"})
+
+            Update metadata between conversations::
+
+                processor.set_metadata({"thread_id": "new-conversation"})
+
+        Args:
+            metadata: Key-value pairs to set as ``langsmith.metadata.<key>``
+                on every span.  Common keys: ``thread_id``,
+                ``session_id``, ``conversation_id``.
+        """
+        self._metadata = metadata.copy()
 
     def on_start(self, span, parent_context=None):
-        """Forward span start events to the inner processor."""
+        """Forward span start events to the inner processor.
+
+        If metadata has been set via :meth:`set_metadata`, each key-value pair
+        is added as a ``langsmith.metadata.<key>`` attribute on the span before
+        it is forwarded to the batch processor.
+        """
+        if self._metadata:
+            for key, value in self._metadata.items():
+                if value is not None:
+                    span.set_attribute(f"{LANGSMITH_METADATA_PREFIX}.{key}", value)
         self._processor.on_start(span, parent_context)
 
     def on_end(self, span):
