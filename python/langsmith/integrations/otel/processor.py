@@ -204,31 +204,11 @@ class OtelSpanProcessor:
         Use this to ensure metadata like ``thread_id`` appears on every span
         in a trace, not just the root span.  This is required for LangSmith
         features (e.g. the threads view) that query runs by metadata fields.
-
-        Examples:
-            Set a thread ID so all spans in the trace are grouped::
-
-                processor = OtelSpanProcessor(project="my-project")
-                processor.set_metadata({"thread_id": "my-thread-123"})
-
-            Update metadata between conversations::
-
-                processor.set_metadata({"thread_id": "new-conversation"})
-
-        Args:
-            metadata: Key-value pairs to set as ``langsmith.metadata.<key>``
-                on every span.  Common keys: ``thread_id``,
-                ``session_id``, ``conversation_id``.
         """
         self._metadata = metadata.copy()
 
     def on_start(self, span, parent_context=None):
-        """Forward span start events to the inner processor.
-
-        If metadata has been set via :meth:`set_metadata`, each key-value pair
-        is added as a ``langsmith.metadata.<key>`` attribute on the span before
-        it is forwarded to the batch processor.
-        """
+        """Forward span start events to the inner processor."""
         if self._metadata:
             for key, value in self._metadata.items():
                 if value is not None:
