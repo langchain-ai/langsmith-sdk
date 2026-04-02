@@ -36,7 +36,6 @@ import {
   RunCreate,
   RunUpdate,
   ScoreType,
-  ExampleSearch,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -3775,116 +3774,6 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
-  }
-
-  public async indexDataset({
-    datasetId,
-    datasetName,
-    tag,
-  }: {
-    datasetId?: string;
-    datasetName?: string;
-    tag?: string;
-  }): Promise<void> {
-    let datasetId_ = datasetId;
-    if (!datasetId_ && !datasetName) {
-      throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ && datasetName) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (!datasetId_) {
-      const dataset = await this.readDataset({ datasetName });
-      datasetId_ = dataset.id;
-    }
-    assertUuid(datasetId_);
-
-    const data = {
-      tag: tag,
-    };
-    const body = JSON.stringify(data);
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/datasets/${datasetId_}/index`,
-        {
-          method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        }
-      );
-      await raiseForStatus(res, "index dataset");
-      return res;
-    });
-    await response.json();
-  }
-
-  /**
-   * Lets you run a similarity search query on a dataset.
-   *
-   * Requires the dataset to be indexed. Please see the `indexDataset` method to set up indexing.
-   *
-   * @param inputs      The input on which to run the similarity search. Must have the
-   *                    same schema as the dataset.
-   *
-   * @param datasetId   The dataset to search for similar examples.
-   *
-   * @param limit       The maximum number of examples to return. Will return the top `limit` most
-   *                    similar examples in order of most similar to least similar. If no similar
-   *                    examples are found, random examples will be returned.
-   *
-   * @param filter      A filter string to apply to the search. Only examples will be returned that
-   *                    match the filter string. Some examples of filters
-   *
-   *                    - eq(metadata.mykey, "value")
-   *                    - and(neq(metadata.my.nested.key, "value"), neq(metadata.mykey, "value"))
-   *                    - or(eq(metadata.mykey, "value"), eq(metadata.mykey, "othervalue"))
-   *
-   * @returns           A list of similar examples.
-   *
-   *
-   * @example
-   * dataset_id = "123e4567-e89b-12d3-a456-426614174000"
-   * inputs = {"text": "How many people live in Berlin?"}
-   * limit = 5
-   * examples = await client.similarExamples(inputs, dataset_id, limit)
-   */
-  public async similarExamples(
-    inputs: KVMap,
-    datasetId: string,
-    limit: number,
-    {
-      filter,
-    }: {
-      filter?: string;
-    } = {}
-  ): Promise<ExampleSearch[]> {
-    const data: KVMap = {
-      limit: limit,
-      inputs: inputs,
-    };
-
-    if (filter !== undefined) {
-      data["filter"] = filter;
-    }
-
-    assertUuid(datasetId);
-    const body = JSON.stringify(data);
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/datasets/${datasetId}/search`,
-        {
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          method: "POST",
-          body,
-        }
-      );
-      await raiseForStatus(res, "fetch similar examples");
-      return res;
-    });
-    const result = await response.json();
-    return result["examples"] as ExampleSearch[];
   }
 
   public async createExample(update: ExampleCreate): Promise<Example>;
