@@ -602,7 +602,6 @@ def traceable(
             )
 
             try:
-                accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
 
@@ -615,28 +614,11 @@ def traceable(
                         with otel_context_manager:
                             return await func(*args, **kwargs)
 
-                    if accepts_context:
-                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
-                            run_with_otel_context(), context=run_container["context"]
-                        )
-                    else:
-                        # Python < 3.11
-                        with tracing_context(
-                            **get_tracing_context(run_container["context"])
-                        ):
-                            function_result = await run_with_otel_context()
+                    with _swap_tracing_context(run_container["context"]):
+                        function_result = await run_with_otel_context()
                 else:
-                    fr_coro = func(*args, **kwargs)
-                    if accepts_context:
-                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
-                            fr_coro, context=run_container["context"]
-                        )
-                    else:
-                        # Python < 3.11
-                        with tracing_context(
-                            **get_tracing_context(run_container["context"])
-                        ):
-                            function_result = await fr_coro
+                    with _swap_tracing_context(run_container["context"]):
+                        function_result = await func(*args, **kwargs)
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 _cleanup_traceback(e)
@@ -677,18 +659,9 @@ def traceable(
 
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
-                accepts_context = aitertools.asyncio_accepts_context()
                 if inspect.iscoroutine(async_gen_result):
-                    if accepts_context:
-                        async_gen_result = await asyncio.create_task(
-                            async_gen_result, context=run_container["context"]
-                        )  # type: ignore
-                    else:
-                        # Python < 3.11
-                        with tracing_context(
-                            **get_tracing_context(run_container["context"])
-                        ):
-                            async_gen_result = await async_gen_result
+                    with _swap_tracing_context(run_container["context"]):
+                        async_gen_result = await async_gen_result
 
                 async for item in _process_async_iterator(
                     generator=async_gen_result,
@@ -698,7 +671,6 @@ def traceable(
                         if run_container["new_run"]
                         else False
                     ),
-                    accepts_context=accepts_context,
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
                     otel_context_manager=otel_context_manager,
@@ -1854,6 +1826,24 @@ def _set_tracing_context(context: Optional[dict[str, Any]] = None):
         var.set(v)
 
 
+@contextlib.contextmanager
+def _swap_tracing_context(
+    context: contextvars.Context,
+) -> Generator[None, None, None]:
+    """Temporarily apply tracing vars from a copied context to the current task.
+
+    `_setup_run()` starts from a copy of the active task context and only mutates
+    LangSmith-specific contextvars. Reusing the current task here avoids helper
+    tasks that can retain the copied context after completion on Python 3.11+.
+    """
+    current_context = get_tracing_context()
+    _set_tracing_context(get_tracing_context(context))
+    try:
+        yield
+    finally:
+        _set_tracing_context(current_context)
+
+
 def _process_iterator(
     generator: Iterator[T],
     run_container: _TraceableContainer,
@@ -1910,7 +1900,6 @@ async def _process_async_iterator(
     run_container: _TraceableContainer,
     *,
     is_llm_run: bool,
-    accepts_context: bool,
     results: list[Any],
     process_chunk: Optional[Callable],
     otel_context_manager: Optional[Any] = None,
@@ -1929,29 +1918,11 @@ async def _process_async_iterator(
                                 return await aitertools.py_anext(generator)
                     return await aitertools.py_anext(generator)
 
-                if accepts_context:
-                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                        anext_with_otel_context(),
-                        context=run_container["context"],
-                    )
-                else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        item = await anext_with_otel_context()
+                with _swap_tracing_context(run_container["context"]):
+                    item = await anext_with_otel_context()
             else:
-                if accepts_context:
-                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                        aitertools.py_anext(generator),  # type: ignore[arg-type]
-                        context=run_container["context"],
-                    )
-                else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        item = await aitertools.py_anext(generator)
+                with _swap_tracing_context(run_container["context"]):
+                    item = await aitertools.py_anext(generator)
             if process_chunk:
                 traced_item = process_chunk(item)
             else:
@@ -2112,7 +2083,6 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             generator=self.__ls_stream__,
             run_container=self.__ls_trace_container__,
             is_llm_run=self.__is_llm_run__,
-            accepts_context=aitertools.asyncio_accepts_context(),
             results=self.__ls_accumulated_output__,
             process_chunk=process_chunk,
         )

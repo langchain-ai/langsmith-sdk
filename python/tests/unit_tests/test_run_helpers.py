@@ -27,6 +27,7 @@ from requests_toolbelt import MultipartEncoder
 from typing_extensions import Annotated, Literal
 
 import langsmith
+import langsmith.run_helpers as run_helpers
 from langsmith import Client
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -1127,6 +1128,69 @@ async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason="context-aware create_task is only available on Python 3.11+",
+)
+async def test_traceable_async_does_not_create_tasks_with_context(
+    mock_client: Client,
+) -> None:
+    create_task_calls: list[dict[str, Any]] = []
+    original_create_task = asyncio.create_task
+
+    def record_create_task(coro: Any, *args: Any, **kwargs: Any) -> asyncio.Task[Any]:
+        create_task_calls.append(dict(kwargs))
+        return original_create_task(coro, *args, **kwargs)
+
+    @traceable(client=mock_client)
+    async def my_function(a: int) -> int:
+        assert get_current_run_tree() is not None
+        await asyncio.sleep(0)
+        return a + 1
+
+    with tracing_context(enabled=True):
+        with patch.object(
+            run_helpers.asyncio,
+            "create_task",
+            side_effect=record_create_task,
+        ):
+            assert await my_function(1) == 2
+
+    assert all(call.get("context") is None for call in create_task_calls)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason="context-aware create_task is only available on Python 3.11+",
+)
+async def test_traceable_async_generator_does_not_create_tasks_with_context(
+    mock_client: Client,
+) -> None:
+    create_task_calls: list[dict[str, Any]] = []
+    original_create_task = asyncio.create_task
+
+    def record_create_task(coro: Any, *args: Any, **kwargs: Any) -> asyncio.Task[Any]:
+        create_task_calls.append(dict(kwargs))
+        return original_create_task(coro, *args, **kwargs)
+
+    @traceable(client=mock_client)
+    async def my_function(a: int) -> AsyncGenerator[int, None]:
+        assert get_current_run_tree() is not None
+        for i in range(a):
+            await asyncio.sleep(0)
+            yield i
+
+    with tracing_context(enabled=True):
+        with patch.object(
+            run_helpers.asyncio,
+            "create_task",
+            side_effect=record_create_task,
+        ):
+            assert [item async for item in my_function(3)] == [0, 1, 2]
+
+    assert all(call.get("context") is None for call in create_task_calls)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
