@@ -39,13 +39,88 @@ def _get_package_version(package_name: str) -> str | None:
 
 LLM_RUN_NAME = "claude.assistant.turn"
 
+# Fields to exclude from ls_invocation_params. Everything else on the options
+# object is captured automatically, so new config fields added by the Claude
+# Agent SDK will be traced without requiring an update here.
+_EXCLUDED_INVOCATION_PARAM_KEYS = frozenset(
+    {
+        # Already captured elsewhere
+        "system_prompt",
+        "model",
+        # Not serializable (functions, IO)
+        "hooks",
+        "can_use_tool",
+        "stderr",
+        "debug_stderr",
+        # Sensitive
+        "env",
+        # Internal / filesystem
+        "cwd",
+        "cli_path",
+        "settings",
+        "add_dirs",
+        "extra_args",
+        "max_buffer_size",
+        "setting_sources",
+        # Complex objects (not useful as flat metadata)
+        "mcp_servers",
+        "agents",
+        "plugins",
+        "tools",
+    }
+)
+
+
+def _safe_serialize(value: Any) -> Any:
+    """Serialize a value for JSON-safe metadata storage."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_safe_serialize(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _safe_serialize(v) for k, v in value.items()}
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "__dict__"):
+        return {
+            k: _safe_serialize(v)
+            for k, v in vars(value).items()
+            if not k.startswith("_")
+        }
+    return str(value)
+
+
+def _build_invocation_params(options: Any) -> dict[str, Any]:
+    """Extract config from ClaudeAgentOptions for ls_invocation_params.
+
+    Uses an exclude-list so that new config fields added to the Claude Agent
+    SDK are automatically captured without requiring changes here.
+    """
+    params: dict[str, Any] = {}
+    for key in vars(options):
+        if key.startswith("_") or key in _EXCLUDED_INVOCATION_PARAM_KEYS:
+            continue
+        val = getattr(options, key, None)
+        if val is None or callable(val):
+            continue
+        try:
+            params[key] = _safe_serialize(val)
+        except Exception:
+            logger.debug(f"Failed to serialize {key} for invocation params")
+    return params
+
 
 class TurnLifecycle:
     """Track ongoing model runs so consecutive messages are recorded correctly."""
 
-    def __init__(self, query_start_time: Optional[float] = None):
+    def __init__(
+        self,
+        query_start_time: Optional[float] = None,
+        invocation_params: Optional[dict[str, Any]] = None,
+    ):
         self.current_run: Optional[Any] = None
         self.next_start_time: Optional[float] = query_start_time
+        self.invocation_params = invocation_params
 
     def start_llm_run(
         self,
@@ -62,7 +137,12 @@ class TurnLifecycle:
             self.current_run.patch()
 
         final_output, run = begin_llm_run_from_assistant_messages(
-            [message], prompt, history, start_time=start, parent=parent
+            [message],
+            prompt,
+            history,
+            start_time=start,
+            parent=parent,
+            invocation_params=self.invocation_params,
         )
         self.current_run = run
         self.next_start_time = None
@@ -95,6 +175,7 @@ def begin_llm_run_from_assistant_messages(
     history: list[dict[str, Any]],
     start_time: Optional[float] = None,
     parent: Optional[Any] = None,
+    invocation_params: Optional[dict[str, Any]] = None,
 ) -> tuple[Optional[dict[str, Any]], Optional[Any]]:
     """Create a traced model run from assistant messages."""
     if not messages or type(messages[-1]).__name__ != "AssistantMessage":
@@ -114,11 +195,21 @@ def begin_llm_run_from_assistant_messages(
         if hasattr(m, "content")
     ]
 
+    metadata: dict[str, Any] = {
+        "ls_provider": "anthropic",
+        "ls_model_type": "chat",
+    }
+    if model:
+        metadata["ls_model_name"] = model
+    if invocation_params:
+        metadata["ls_invocation_params"] = invocation_params
+
     llm_run = parent.create_child(
         name=LLM_RUN_NAME,
         run_type="llm",
         inputs={"messages": inputs} if inputs else {},
-        extra={"metadata": {"ls_model_name": model}} if model else {},
+        outputs=outputs[-1] if len(outputs) == 1 else {"content": outputs},
+        extra={"metadata": metadata},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc)
         if start_time
         else None,
@@ -377,7 +468,15 @@ def instrument_claude_client(original_class: Any) -> Any:
                 metadata=trace_metadata,
             ) as run:
                 set_parent_run_tree(run)
-                tracker = TurnLifecycle(self._start_time)
+                invocation_params = (
+                    _build_invocation_params(self.options)
+                    if hasattr(self, "options") and self.options
+                    else None
+                )
+                tracker = TurnLifecycle(
+                    self._start_time,
+                    invocation_params=invocation_params,
+                )
                 collected: list[dict[str, Any]] = []
 
                 # Track subagent sessions by Task tool_use_id
