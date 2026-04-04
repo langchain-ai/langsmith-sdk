@@ -30,7 +30,7 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache", "_info")
 
     def __init__(
         self,
@@ -85,6 +85,7 @@ class AsyncClient:
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
+        self._info: Optional[ls_schemas.LangSmithInfo] = None
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -681,13 +682,27 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Example]:
         """List examples."""
         params = kwargs.copy()
+        resolved_dataset_id = None
         if dataset_id:
-            params["dataset"] = ls_client._as_uuid(dataset_id)
+            resolved_dataset_id = ls_client._as_uuid(dataset_id)
         elif dataset_name:
             dataset = await self.read_dataset(dataset_name=dataset_name)
-            params["dataset"] = dataset.id
+            resolved_dataset_id = dataset.id
 
-        async for example in self._aget_paginated_list("/examples", params=params):
+        info = await self._aget_info()
+        use_new_endpoint = resolved_dataset_id is not None and (
+            info.version
+            and ls_utils.is_version_greater_or_equal(
+                info.version, ls_client._MIN_VERSION_DATASET_EXAMPLES_ENDPOINT
+            )
+        )
+        if use_new_endpoint:
+            path = f"/v1/platform/datasets/{resolved_dataset_id}/examples"
+        else:
+            path = "/examples"
+            if resolved_dataset_id is not None:
+                params["dataset"] = resolved_dataset_id
+        async for example in self._aget_paginated_list(path, params=params):
             yield ls_schemas.Example(**example)
 
     async def create_feedback(
@@ -1232,6 +1247,15 @@ class AsyncClient:
             self._settings = ls_schemas.LangSmithSettings(**response.json())
 
         return self._settings
+
+    async def _aget_info(self) -> ls_schemas.LangSmithInfo:
+        if self._info is None:
+            try:
+                response = await self._arequest_with_retries("GET", "/info")
+                self._info = ls_schemas.LangSmithInfo(**response.json())
+            except Exception:
+                self._info = ls_schemas.LangSmithInfo()
+        return self._info
 
     async def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.
