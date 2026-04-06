@@ -14,9 +14,6 @@ importers:
       '@opentelemetry/exporter-trace-otlp-proto':
         specifier: '*'
         version: 0.214.0(@opentelemetry/api@1.9.1)
-      console-table-printer:
-        specifier: ^2.12.1
-        version: 2.15.0
       p-queue:
         specifier: ^6.6.2
         version: 6.6.2

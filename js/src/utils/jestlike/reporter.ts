@@ -1,4 +1,5 @@
-import { Table } from "console-table-printer";
+import { Table } from "../console-table-printer/index.js";
+import chalk from "../chalk/source/index.js";
 
 import * as os from "node:os";
 import * as path from "node:path";
@@ -6,62 +7,6 @@ import * as fs from "node:fs/promises";
 import { SimpleEvaluationResult } from "./types.js";
 import { ScoreType } from "../../schemas.js";
 import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./constants.js";
-
-function getColorLevel(): number {
-  const env = process.env;
-
-  if ("NO_COLOR" in env || env.FORCE_COLOR === "false") return 0;
-  if ("FORCE_COLOR" in env) {
-    return env.FORCE_COLOR!.length === 0
-      ? 1
-      : Math.min(Number.parseInt(env.FORCE_COLOR!, 10) || 1, 3);
-  }
-
-  // CI environments that support color
-  if ("CI" in env) {
-    if (
-      ["GITHUB_ACTIONS", "GITEA_ACTIONS", "CIRCLECI"].some((k) => k in env)
-    ) {
-      return 1;
-    }
-    if (
-      ["TRAVIS", "APPVEYOR", "GITLAB_CI", "BUILDKITE", "DRONE"].some(
-        (k) => k in env
-      )
-    ) {
-      return 1;
-    }
-    return 0;
-  }
-
-  if (env.TERM === "dumb") return 0;
-
-  if (process.stdout?.isTTY) return 1;
-
-  return 0;
-}
-
-const colorize = (open: string, close: string) => {
-  return (text: unknown): string => {
-    if (getColorLevel() === 0) return String(text);
-    let str = String(text);
-    // Re-open style after newlines to prevent bleed
-    const lfIndex = str.indexOf("\n");
-    if (lfIndex !== -1) {
-      str = str.replaceAll("\n", `${close}\n${open}`);
-    }
-    return `${open}${str}${close}`;
-  };
-};
-
-const chalk = {
-  red: colorize("\x1b[31m", "\x1b[39m"),
-  green: colorize("\x1b[32m", "\x1b[39m"),
-  yellow: colorize("\x1b[33m", "\x1b[39m"),
-  white: colorize("\x1b[37m", "\x1b[39m"),
-  redBright: colorize("\x1b[91m", "\x1b[39m"),
-  greenBright: colorize("\x1b[92m", "\x1b[39m"),
-};
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 48;
 const MAX_TEST_PARAMS_LENGTH = 18;
