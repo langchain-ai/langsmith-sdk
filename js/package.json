@@ -191,7 +191,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^6.18.0",
     "prettier": "^2.8.8",
-    "semver": "7.7.4",
+    "semver": "^7.7.4",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
     "typedoc": "^0.28.16",
