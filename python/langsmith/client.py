@@ -10055,6 +10055,80 @@ class Client:
         result._attach_client(self, session_id, job_id)
         return result
 
+    def list_project_issues(
+        self,
+        project_name: str,
+        *,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+    ) -> list[dict]:
+        """List issues associated with a tracing project (forge issues board).
+
+        Retrieves all issues from the forge issues board that are linked to the
+        given tracing project (identified by its session name).
+
+        Args:
+            project_name (str): The name of the tracing project (session) whose
+                issues you want to list.
+            status (Optional[str]): Filter issues by status (e.g. ``"open"``,
+                ``"resolved"``). If ``None``, issues of all statuses are returned.
+            priority (Optional[str]): Filter issues by priority (e.g.
+                ``"high"``, ``"medium"``, ``"low"``). If ``None``, issues of all
+                priorities are returned.
+
+        Returns:
+            List[dict]: A list of issue objects. Each dict contains the following
+            keys:
+
+            - ``id`` (str): Issue UUID.
+            - ``tenant_id`` (str): Workspace/tenant UUID.
+            - ``issue_board_id`` (str): UUID of the issue board this issue belongs to.
+            - ``title`` (str): Issue title.
+            - ``description`` (str): Issue description.
+            - ``priority`` (str): Issue priority.
+            - ``status`` (str): Issue status.
+            - ``category`` (str | None): Optional category label.
+            - ``trace_ids`` (List[str]): Run/trace IDs associated with the issue.
+            - ``github_issue_url`` (str | None): URL of the linked GitHub issue.
+            - ``github_issue_number`` (int | None): Number of the linked GitHub issue.
+            - ``created_at`` (str): ISO-8601 creation timestamp.
+            - ``updated_at`` (str): ISO-8601 last-updated timestamp.
+            - ``resolved_at`` (str | None): ISO-8601 resolution timestamp, or ``None``.
+
+        Example:
+            ```python
+            from langsmith import Client
+
+            client = Client()
+
+            # List all issues for a project
+            issues = client.list_project_issues("my-project")
+
+            # Filter by status and priority
+            open_high = client.list_project_issues(
+                "my-project", status="open", priority="high"
+            )
+            for issue in open_high:
+                print(issue["id"], issue["title"])
+            ```
+        """
+        params: dict[str, Any] = {"session_name": project_name}
+        if status is not None:
+            params["status"] = status
+        if priority is not None:
+            params["priority"] = priority
+        path = _platform_path(self.api_url, "forge-issues")
+        full_url = _construct_url(self.api_url, path)
+        response = self.session.request(
+            "GET",
+            full_url,
+            params=params,
+            headers=self._headers,
+            timeout=self._timeout,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     def _ensure_insights_api_key(
         self,
         *,
