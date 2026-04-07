@@ -1,63 +1,88 @@
-"""Token usage utilities for Claude Agent SDK."""
+"""Token usage utilities for Claude Agent SDK.
+
+Normalizes raw Anthropic usage dicts into the canonical ``usage_metadata``
+format expected by LangSmith.  The key Anthropic-specific behavior is that
+cache tokens (``cache_read_input_tokens`` and ``cache_creation_input_tokens``)
+are **additive** — they are *not* included in the raw ``input_tokens`` value,
+so they must be summed in.
+
+The canonical shape matches the JS LangSmith SDK's ``createUsageMetadata``:
+
+.. code-block:: json
+
+   {
+     "input_tokens": 21400,
+     "output_tokens": 7,
+     "total_tokens": 21407,
+     "input_token_details": {
+       "cache_read": 21375,
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1hr_input_tokens": 0
+     }
+   }
+"""
 
 from typing import Any
 
 
+def _to_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
+
+
 def extract_usage_metadata(usage: Any) -> dict[str, Any]:
-    """Extract and normalize usage metrics from a Claude usage object or dict."""
+    """Normalize a raw Anthropic usage dict into canonical ``usage_metadata``.
+
+    Anthropic cache tokens are **additive**: ``cache_read_input_tokens`` and
+    ``cache_creation_input_tokens`` are not included in the raw
+    ``input_tokens``, so we sum them in to get the true input total.
+    """
     if not usage:
         return {}
 
-    get = usage.get if isinstance(usage, dict) else lambda k: getattr(usage, k, None)
+    get = (
+        usage.get if isinstance(usage, dict) else lambda k, d=None: getattr(usage, k, d)
+    )
 
-    def to_int(value):
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
+    raw_input = _to_int(get("input_tokens"))
+    output_tokens = _to_int(get("output_tokens"))
 
-    def to_float(value):
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return None
+    # Build input_token_details from cache fields
+    input_token_details: dict[str, int] = {}
 
-    meta: dict[str, Any] = {}
-    if (v := to_int(get("input_tokens"))) is not None:
-        meta["input_tokens"] = v
-    if (v := to_int(get("output_tokens"))) is not None:
-        meta["output_tokens"] = v
+    cache_read = _to_int(get("cache_read_input_tokens"))
+    if cache_read:
+        input_token_details["cache_read"] = cache_read
 
-    cache_read = to_float(get("cache_read_input_tokens"))
-    cache_create = to_float(get("cache_creation_input_tokens"))
-    if cache_read is not None or cache_create is not None:
-        meta["input_token_details"] = {}
-        if cache_read is not None:
-            meta["input_token_details"]["cache_read"] = cache_read
-        if cache_create is not None:
-            meta["input_token_details"]["cache_creation"] = cache_create
+    # Structured cache_creation (with ephemeral breakdown) takes precedence
+    # over the flat cache_creation_input_tokens field.
+    cache_creation = get("cache_creation")
+    if isinstance(cache_creation, dict):
+        eph_5m = _to_int(cache_creation.get("ephemeral_5m_input_tokens"))
+        eph_1h = _to_int(cache_creation.get("ephemeral_1h_input_tokens"))
+        if eph_5m:
+            input_token_details["ephemeral_5m_input_tokens"] = eph_5m
+        if eph_1h:
+            input_token_details["ephemeral_1hr_input_tokens"] = eph_1h
+    else:
+        # Flat/legacy field — assume 5-minute cache
+        flat_cache_create = _to_int(get("cache_creation_input_tokens"))
+        if flat_cache_create:
+            input_token_details["ephemeral_5m_input_tokens"] = flat_cache_create
+
+    # Sum cache tokens into input_tokens (Anthropic cache tokens are additive)
+    cache_token_sum = sum(input_token_details.values())
+    adjusted_input = raw_input + cache_token_sum
+    total_tokens = adjusted_input + output_tokens
+
+    meta: dict[str, Any] = {
+        "input_tokens": adjusted_input,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+    if input_token_details:
+        meta["input_token_details"] = input_token_details
 
     return meta
-
-
-def sum_anthropic_tokens(usage_metadata: dict[str, Any]) -> dict[str, int]:
-    """Sum Anthropic cache tokens into `input_tokens` and add `total_tokens`."""
-    details = usage_metadata.get("input_token_details") or {}
-    cache_read = details.get(
-        "cache_read", usage_metadata.get("cache_read_input_tokens")
-    )
-    cache_create = details.get(
-        "cache_creation", usage_metadata.get("cache_creation_input_tokens")
-    )
-
-    input_tokens = usage_metadata.get("input_tokens") or 0
-    cache_read_val = cache_read or 0
-    cache_create_val = cache_create or 0
-    total_prompt = input_tokens + cache_read_val + cache_create_val
-
-    output_tokens = usage_metadata.get("output_tokens") or 0
-    return {
-        **usage_metadata,
-        "input_tokens": total_prompt,
-        "total_tokens": total_prompt + output_tokens,
-    }

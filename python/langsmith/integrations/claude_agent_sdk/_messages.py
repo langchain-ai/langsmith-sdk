@@ -108,9 +108,8 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
 
 def extract_usage_from_result_message(msg: Any) -> dict[str, Any]:
     """Normalize and merge token usage metrics from a `ResultMessage`."""
-    from ._usage import extract_usage_metadata, sum_anthropic_tokens
+    from ._usage import extract_usage_metadata
 
     if not getattr(msg, "usage", None):
         return {}
-    metrics = extract_usage_metadata(msg.usage)
-    return sum_anthropic_tokens(metrics) if metrics else {}
+    return extract_usage_metadata(msg.usage)

@@ -10,10 +10,14 @@ from typing import Any, Optional
 from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._hooks import (
+    _active_tool_runs,
     clear_active_tool_runs,
+    get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
     post_tool_use_hook,
     pre_tool_use_hook,
+    subagent_start_hook,
+    subagent_stop_hook,
 )
 from ._messages import (
     build_llm_input,
@@ -41,10 +45,17 @@ LLM_RUN_NAME = "claude.assistant.turn"
 
 
 class TurnLifecycle:
-    """Track ongoing model runs so consecutive messages are recorded correctly."""
+    """Track ongoing model runs so consecutive messages are recorded correctly.
+
+    The Claude Agent SDK may deliver a single assistant turn as multiple
+    ``AssistantMessage`` events (e.g. one with ``ThinkingBlock``, another
+    with ``TextBlock``/``ToolUseBlock``).  Messages that share the same
+    ``message_id`` are accumulated into a single LLM run.
+    """
 
     def __init__(self, query_start_time: Optional[float] = None):
         self.current_run: Optional[Any] = None
+        self.current_message_id: Optional[str] = None
         self.next_start_time: Optional[float] = query_start_time
 
     def start_llm_run(
@@ -54,9 +65,27 @@ class TurnLifecycle:
         history: list[dict[str, Any]],
         parent: Optional[Any] = None,
     ) -> Optional[dict[str, Any]]:
-        """Begin a new model run, ending any existing one."""
+        """Begin or continue a model run for *message*.
+
+        If *message* has the same ``message_id`` as the current run the
+        output is appended; otherwise a new run is started (ending any
+        previous one first).
+        """
+        message_id = getattr(message, "message_id", None)
         start = self.next_start_time or time.time()
 
+        # Same turn – just accumulate the output blocks.
+        if message_id and message_id == self.current_message_id and self.current_run:
+            content = flatten_content_blocks(getattr(message, "content", None))
+            if content and self.current_run.outputs:
+                prev = self.current_run.outputs.get("content", [])
+                if isinstance(prev, list) and isinstance(content, list):
+                    self.current_run.outputs["content"] = prev + content
+                elif isinstance(content, list):
+                    self.current_run.outputs["content"] = content
+            return {"content": content, "role": "assistant"} if content else None
+
+        # Different turn – close previous, open new.
         if self.current_run:
             self.current_run.end()
             self.current_run.patch()
@@ -65,6 +94,7 @@ class TurnLifecycle:
             [message], prompt, history, start_time=start, parent=parent
         )
         self.current_run = run
+        self.current_message_id = message_id
         self.next_start_time = None
         return final_output
 
@@ -73,13 +103,17 @@ class TurnLifecycle:
         self.next_start_time = time.time()
 
     def add_usage(self, metrics: dict[str, Any]) -> None:
-        """Attach token usage details to the current run."""
+        """Attach usage from ``ResultMessage`` to the current (last) LLM run.
+
+        The Python SDK's per-``AssistantMessage`` usage is unreliable
+        (output tokens are under-counted), so we only set usage from the
+        ``ResultMessage`` which has correct aggregated totals.  This means
+        only the last LLM run in a conversation gets usage metadata.
+        """
         if not (self.current_run and metrics):
             return
-        meta = self.current_run.extra.setdefault("metadata", {}).setdefault(
-            "usage_metadata", {}
-        )
-        meta.update(metrics)
+        meta = self.current_run.extra.setdefault("metadata", {})
+        meta["usage_metadata"] = metrics
 
     def close(self) -> None:
         """End any open run gracefully."""
@@ -149,7 +183,13 @@ def _inject_tracing_hooks(options: Any) -> None:
     if options.hooks is None:
         options.hooks = {}
 
-    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+    for event in (
+        "PreToolUse",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "SubagentStart",
+        "SubagentStop",
+    ):
         if event not in options.hooks:
             options.hooks[event] = []
 
@@ -161,10 +201,18 @@ def _inject_tracing_hooks(options: Any) -> None:
         langsmith_failure_matcher = HookMatcher(
             matcher=None, hooks=[post_tool_use_failure_hook]
         )
+        langsmith_subagent_start_matcher = HookMatcher(
+            matcher=None, hooks=[subagent_start_hook]
+        )
+        langsmith_subagent_stop_matcher = HookMatcher(
+            matcher=None, hooks=[subagent_stop_hook]
+        )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
         options.hooks["PostToolUse"].insert(0, langsmith_post_matcher)
         options.hooks["PostToolUseFailure"].insert(0, langsmith_failure_matcher)
+        options.hooks["SubagentStart"].insert(0, langsmith_subagent_start_matcher)
+        options.hooks["SubagentStop"].insert(0, langsmith_subagent_stop_matcher)
 
         logger.debug("Injected LangSmith tracing hooks into ClaudeAgentOptions")
     except ImportError:
@@ -251,79 +299,6 @@ def instrument_claude_client(original_class: Any) -> Any:
 
             return await super().query(*args, **kwargs)
 
-        def _handle_assistant_tool_uses(
-            self,
-            msg: Any,
-            run: Any,
-            subagent_sessions: dict[str, Any],
-        ) -> None:
-            """Process tool uses for an assistant message."""
-            if not hasattr(msg, "content"):
-                return
-
-            from ._hooks import _client_managed_runs
-
-            parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
-
-            for block in msg.content:
-                if type(block).__name__ != "ToolUseBlock":
-                    continue
-
-                try:
-                    tool_use_id = getattr(block, "id", None)
-                    tool_name = getattr(block, "name", "unknown_tool")
-                    tool_input = getattr(block, "input", {})
-
-                    if not tool_use_id:
-                        continue
-
-                    start_time = time.time()
-
-                    # Check if this is a Task tool (subagent)
-                    if tool_name == "Task" and not parent_tool_use_id:
-                        # Extract subagent name
-                        subagent_name = (
-                            tool_input.get("subagent_type")
-                            or (
-                                tool_input.get("description", "").split()[0]
-                                if tool_input.get("description")
-                                else None
-                            )
-                            or "unknown-agent"
-                        )
-
-                        subagent_session = run.create_child(
-                            name=subagent_name,
-                            run_type="chain",
-                            inputs=tool_input,
-                            start_time=datetime.fromtimestamp(
-                                start_time, tz=timezone.utc
-                            ),
-                        )
-                        subagent_session.post()
-                        subagent_sessions[tool_use_id] = subagent_session
-
-                        _client_managed_runs[tool_use_id] = subagent_session
-
-                    # Check if tool use is within a subagent
-                    elif parent_tool_use_id and parent_tool_use_id in subagent_sessions:
-                        subagent_session = subagent_sessions[parent_tool_use_id]
-                        # Create tool run as child of subagent
-                        tool_run = subagent_session.create_child(
-                            name=tool_name,
-                            run_type="tool",
-                            inputs={"input": tool_input} if tool_input else {},
-                            start_time=datetime.fromtimestamp(
-                                start_time,
-                                tz=timezone.utc,
-                            ),
-                        )
-                        tool_run.post()
-                        _client_managed_runs[tool_use_id] = tool_run
-
-                except Exception as e:
-                    logger.warning(f"Failed to create client-managed tool run: {e}")
-
         async def receive_response(self) -> AsyncGenerator[Any, None]:
             """Intercept message stream and record chain run activity."""
             messages = super().receive_response()
@@ -380,9 +355,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                 tracker = TurnLifecycle(self._start_time)
                 collected: list[dict[str, Any]] = []
 
-                # Track subagent sessions by Task tool_use_id
-                subagent_sessions: dict[str, Any] = {}
-
                 prompt_for_llm: Any = self._prompt
 
                 try:
@@ -399,11 +371,17 @@ def instrument_claude_client(original_class: Any) -> Any:
                         msg_type = type(msg).__name__
                         if msg_type == "AssistantMessage":
                             # Check if this message belongs to a subagent
+                            # via parent_tool_use_id (set by some SDK
+                            # versions).  The Python SDK does not yield
+                            # subagent AssistantMessages through
+                            # receive_response() despite documentation to the contrary,
+                            # so in practice this is always None and LLM
+                            # turns always land on the root chain.
                             parent_tool_use_id = getattr(
                                 msg, "parent_tool_use_id", None
                             )
                             llm_parent = (
-                                subagent_sessions.get(parent_tool_use_id)
+                                get_subagent_run_by_tool_id(parent_tool_use_id)
                                 if parent_tool_use_id
                                 else None
                             )
@@ -414,12 +392,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                             if content:
                                 collected.append(content)
 
-                            # Process tool uses in this AssistantMessage
-                            self._handle_assistant_tool_uses(
-                                msg,
-                                run,
-                                subagent_sessions,
-                            )
                         elif msg_type == "UserMessage":
                             if hasattr(msg, "content"):
                                 # Check if this is a tool result message
@@ -432,15 +404,39 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 ):
                                     # Format each tool result as a separate message
                                     for block in flattened:
+                                        tool_use_id = block.get("tool_use_id")
                                         collected.append(
                                             {
                                                 "role": "tool",
                                                 "content": block.get("content", ""),
-                                                "tool_call_id": block.get(
-                                                    "tool_use_id"
-                                                ),
+                                                "tool_call_id": tool_use_id,
                                             }
                                         )
+                                        # Close orphaned tool runs whose
+                                        # PostToolUse never fired (e.g.
+                                        # permission-denied MCP tools).
+                                        if (
+                                            tool_use_id
+                                            and tool_use_id in _active_tool_runs
+                                        ):
+                                            tool_run, _ = _active_tool_runs.pop(
+                                                tool_use_id
+                                            )
+                                            result_content = block.get("content", "")
+                                            is_error = block.get("is_error", False)
+                                            tool_run.end(
+                                                outputs={"output": result_content},
+                                                error=str(result_content)
+                                                if is_error
+                                                else None,
+                                            )
+                                            try:
+                                                tool_run.patch()
+                                            except Exception as e:
+                                                logger.warning(
+                                                    "Failed to patch"
+                                                    f" orphaned tool run: {e}"
+                                                )
                                 else:
                                     collected.append(
                                         {
