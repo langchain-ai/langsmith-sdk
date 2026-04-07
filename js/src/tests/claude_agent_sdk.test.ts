@@ -274,8 +274,11 @@ describe("wrapClaudeAgentSDK", () => {
   });
 
   test("accepts custom configuration", async () => {
+    const { client, callSpy } = mockClient();
     const mockSDK = createMockSDK();
     const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
       project_name: "test-project",
       metadata: { custom: "metadata" },
       tags: ["test-tag"],
@@ -287,6 +290,21 @@ describe("wrapClaudeAgentSDK", () => {
     }
 
     expect(messages.length).toBeGreaterThan(0);
+
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
+      data: {
+        "claude.conversation:0": {
+          extra: {
+            metadata: expect.objectContaining({
+              ls_integration: "claude-agent-sdk-js",
+              custom: "metadata",
+            }),
+          },
+        },
+      },
+    });
   });
 
   test("handles async iterable prompt", async () => {

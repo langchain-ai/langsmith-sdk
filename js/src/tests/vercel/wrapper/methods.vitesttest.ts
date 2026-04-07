@@ -158,12 +158,20 @@ describe("wrapAISDK", () => {
         "ai_sdk_method",
         "ai.generateText"
       );
+      expect(generateTextRun.body.extra.metadata).toHaveProperty(
+        "ls_integration",
+        "vercel-ai-sdk"
+      );
 
       // The second createRun should be the low-level doGenerate call
       const doGenerateRun = mockHttpRequests[1];
       expect(doGenerateRun.body.extra.metadata).toHaveProperty(
         "ai_sdk_method",
         "ai.doGenerate"
+      );
+      expect(doGenerateRun.body.extra.metadata).toHaveProperty(
+        "ls_integration",
+        "vercel-ai-sdk"
       );
     });
 
@@ -227,6 +235,7 @@ describe("wrapAISDK", () => {
       const generateTextRun = mockHttpRequests[0];
       const updateTextRun = mockHttpRequests[3];
       expect(generateTextRun.body.extra.metadata).toMatchObject({
+        ls_integration: "vercel-ai-sdk",
         customField: "test-value",
         version: "2.0",
         ai_sdk_method: "ai.generateText",
