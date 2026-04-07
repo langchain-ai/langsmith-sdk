@@ -145,11 +145,8 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
-    "chalk": "^5.6.2",
-    "console-table-printer": "^2.12.1",
-    "p-queue": "^6.6.2",
-    "semver": "^7.6.3",
-    "uuid": "^10.0.0"
+    "p-queue": "6.6.2",
+    "uuid": "10.0.0"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
@@ -194,6 +191,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^6.18.0",
     "prettier": "^2.8.8",
+    "semver": "^7.7.4",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
     "typedoc": "^0.28.16",
