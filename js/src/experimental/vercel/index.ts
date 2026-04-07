@@ -119,6 +119,7 @@ const _mergeConfig = (
     ...baseConfig,
     ...runtimeConfig,
     metadata: {
+      ls_integration: "vercel-ai-sdk",
       ...baseConfig?.metadata,
       ...runtimeConfig?.metadata,
     },
