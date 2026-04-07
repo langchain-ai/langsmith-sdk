@@ -6,7 +6,7 @@ This module provides automatic tracing for the Claude Agent SDK by instrumenting
 
 import logging
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from ._client import instrument_claude_client
 from ._config import set_tracing_config
@@ -80,4 +80,30 @@ def configure_claude_agent_sdk(
         except Exception:
             continue
 
+    # Patch create_sdk_mcp_server to wrap tool handlers so that
+    # @traceable calls inside them nest under the tool run.
+    _patch_create_sdk_mcp_server(claude_agent_sdk)
+
     return True
+
+
+def _patch_create_sdk_mcp_server(sdk_module: Any) -> None:
+    """Wrap ``create_sdk_mcp_server`` to inject run context into handlers."""
+    original_create = getattr(sdk_module, "create_sdk_mcp_server", None)
+    if not original_create:
+        return
+    # Guard against double-patching the same function object.
+    if getattr(original_create, "_langsmith_patched", False):
+        return
+
+    from ._client import _wrap_tool_handler
+
+    def patched_create(name: str, version: str = "1.0.0", tools: Any = None) -> Any:
+        if tools:
+            for tool in tools:
+                if hasattr(tool, "handler"):
+                    tool.handler = _wrap_tool_handler(tool.handler)
+        return original_create(name, version=version, tools=tools)
+
+    patched_create._langsmith_patched = True  # type: ignore[attr-defined]
+    sdk_module.create_sdk_mcp_server = patched_create

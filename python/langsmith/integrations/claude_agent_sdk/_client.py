@@ -24,7 +24,13 @@ from ._messages import (
     extract_usage_from_result_message,
     flatten_content_blocks,
 )
-from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_tree
+from ._tools import (
+    clear_current_llm_run,
+    clear_parent_run_tree,
+    get_parent_run_tree,
+    set_current_llm_run,
+    set_parent_run_tree,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +102,11 @@ class TurnLifecycle:
         self.current_run = run
         self.current_message_id = message_id
         self.next_start_time = None
+
+        # Expose the LLM run so tool hooks can nest under it
+        if run:
+            set_current_llm_run(run)
+
         return final_output
 
     def mark_next_start(self) -> None:
@@ -121,6 +132,7 @@ class TurnLifecycle:
             self.current_run.end()
             self.current_run.patch()
             self.current_run = None
+        clear_current_llm_run()
 
 
 def begin_llm_run_from_assistant_messages(
@@ -219,6 +231,42 @@ def _inject_tracing_hooks(options: Any) -> None:
         logger.warning("Failed to import HookMatcher from claude_agent_sdk")
     except Exception as e:
         logger.warning(f"Failed to inject tracing hooks: {e}")
+
+
+def _wrap_tool_handler(original_handler: Any) -> Any:
+    """Wrap an MCP tool handler to propagate LangSmith run context.
+
+    The Claude SDK runs hooks and tool handlers in different async task
+    contexts, so contextvars set in ``PreToolUse`` are invisible to the
+    handler.  This wrapper copies the active tool run into the contextvar
+    before calling the original handler, so ``@traceable`` calls inside
+    the handler nest correctly.
+    """
+
+    async def _wrapped(args: Any) -> Any:
+        # The most recently added active tool run is the one
+        # PreToolUse just created for this invocation.
+        tool_run = _get_last_active_tool_run()
+        if tool_run:
+            from langsmith._internal import _context
+
+            token = _context._PARENT_RUN_TREE.set(tool_run)
+            try:
+                return await original_handler(args)
+            finally:
+                _context._PARENT_RUN_TREE.reset(token)
+        return await original_handler(args)
+
+    return _wrapped
+
+
+def _get_last_active_tool_run() -> Any:
+    """Return the most recently created active tool run, or None."""
+    if not _active_tool_runs:
+        return None
+    last_id = list(_active_tool_runs.keys())[-1]
+    run, _ = _active_tool_runs[last_id]
+    return run
 
 
 def _unwrap_streamed_messages(

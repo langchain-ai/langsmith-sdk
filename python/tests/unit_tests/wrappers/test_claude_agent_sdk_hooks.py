@@ -142,12 +142,16 @@ class TestInjectTracingHooks:
         options = MagicMock()
         options.hooks = None
 
+        original_module = sys.modules.get("claude_agent_sdk")
         mock_module = MagicMock()
         sys.modules["claude_agent_sdk"] = mock_module
         try:
             _inject_tracing_hooks(options)
         finally:
-            del sys.modules["claude_agent_sdk"]
+            if original_module is not None:
+                sys.modules["claude_agent_sdk"] = original_module
+            else:
+                sys.modules.pop("claude_agent_sdk", None)
 
         for event in (
             "PreToolUse",

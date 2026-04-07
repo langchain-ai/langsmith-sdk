@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
-from ._tools import get_parent_run_tree
+from ._tools import get_current_llm_run, get_parent_run_tree
 
 if TYPE_CHECKING:
     from claude_agent_sdk import (
@@ -104,12 +104,14 @@ async def pre_tool_use_hook(
         _pending_agent_tools[tool_use_id] = tool_input
 
     try:
-        # Determine parent: if agent_id matches a subagent, nest under it
+        # Determine parent: subagent > current LLM run > root chain
         parent: Optional[RunTree] = None
         if agent_id and agent_id in _subagent_runs:
             parent = _subagent_runs[agent_id]
         else:
-            parent = get_parent_run_tree() or get_current_run_tree()
+            parent = (
+                get_current_llm_run() or get_parent_run_tree() or get_current_run_tree()
+            )
 
         if not parent:
             return {}
