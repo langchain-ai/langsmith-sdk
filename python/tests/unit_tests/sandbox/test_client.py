@@ -16,6 +16,7 @@ from langsmith.sandbox import (
     ResourceTimeoutError,
     SandboxClient,
     SandboxConnectionError,
+    ServiceURL,
     ValidationError,
 )
 
@@ -1442,3 +1443,116 @@ class TestVolumeOperations:
 
         with pytest.raises(ResourceInUseError):
             client.delete_volume("my-volume")
+
+
+class TestService:
+    """Tests for SandboxClient.service()."""
+
+    def test_service_happy_path(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test getting a service URL returns ServiceURL with correct fields."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://uuid--3000.svc.example.com/_svc/auth?token=jwt",
+                "service_url": "http://uuid--3000.svc.example.com/",
+                "token": "jwt-token",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        svc = client.service("my-sandbox", 3000)
+
+        assert isinstance(svc, ServiceURL)
+        assert svc.token == "jwt-token"
+        assert svc.service_url == "http://uuid--3000.svc.example.com/"
+        assert svc.browser_url.endswith("?token=jwt")
+        assert svc.expires_at == "2099-01-01T00:00:00Z"
+
+    def test_service_custom_expiry(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test custom expires_in_seconds is sent in payload."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b",
+                "service_url": "http://s/",
+                "token": "t",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        client.service("my-sandbox", 3000, expires_in_seconds=3600)
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        import json
+
+        body = json.loads(request.content)
+        assert body["port"] == 3000
+        assert body["expires_in_seconds"] == 3600
+
+    def test_service_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test 404 raises ResourceNotFoundError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/service-url",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.service("nonexistent", 3000)
+
+    def test_service_invalid_port_zero(self, client: SandboxClient):
+        """Test port=0 raises ValueError."""
+        with pytest.raises(ValueError, match="positive integer"):
+            client.service("my-sandbox", 0)
+
+    def test_service_invalid_port_negative(self, client: SandboxClient):
+        """Test negative port raises ValueError."""
+        with pytest.raises(ValueError, match="positive integer"):
+            client.service("my-sandbox", -1)
+
+    def test_service_invalid_port_string(self, client: SandboxClient):
+        """Test non-integer port raises ValueError."""
+        with pytest.raises(ValueError, match="positive integer"):
+            client.service("my-sandbox", "3000")  # type: ignore[arg-type]
+
+    def test_service_invalid_expiry_zero(self, client: SandboxClient):
+        """Test expires_in_seconds=0 raises ValueError."""
+        with pytest.raises(ValueError, match="between 1 and 86400"):
+            client.service("my-sandbox", 3000, expires_in_seconds=0)
+
+    def test_service_invalid_expiry_too_large(self, client: SandboxClient):
+        """Test expires_in_seconds > 86400 raises ValueError."""
+        with pytest.raises(ValueError, match="between 1 and 86400"):
+            client.service("my-sandbox", 3000, expires_in_seconds=86401)
+
+    def test_service_has_refresher(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test returned ServiceURL has a working refresher."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b1",
+                "service_url": "http://s1/",
+                "token": "token-1",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b2",
+                "service_url": "http://s2/",
+                "token": "token-2",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        svc = client.service("my-sandbox", 3000)
+        assert svc._refresher is not None
+        fresh = svc._refresher()
+        assert fresh._token == "token-2"

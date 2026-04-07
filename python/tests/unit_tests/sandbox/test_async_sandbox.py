@@ -1,10 +1,13 @@
 """Tests for AsyncSandbox class."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
     AsyncSandboxClient,
+    AsyncServiceURL,
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
     SandboxConnectionError,
@@ -539,3 +542,34 @@ class TestAsyncSandboxContextManager:
         # Verify no delete request
         requests = httpx_mock.get_requests()
         assert len(requests) == 0
+
+
+class TestAsyncSandboxService:
+    """Tests for AsyncSandbox.service() convenience method."""
+
+    async def test_service_delegates_to_client(self, client: AsyncSandboxClient):
+        """Test service() calls client.service() with sandbox name."""
+        mock_svc = AsyncServiceURL(
+            browser_url="http://b",
+            service_url="http://s/",
+            token="t",
+            expires_at="2026-04-01T12:10:00Z",
+        )
+        client.service = AsyncMock(return_value=mock_svc)  # type: ignore[method-assign]
+
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "template_name": "test-template",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        result = await sb.service(port=3000, expires_in_seconds=1800)
+
+        client.service.assert_called_once_with(
+            "test-sandbox", 3000, expires_in_seconds=1800, headers=None
+        )
+        assert result is mock_svc

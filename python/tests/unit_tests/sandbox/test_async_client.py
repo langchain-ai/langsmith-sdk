@@ -7,6 +7,7 @@ from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
     AsyncSandboxClient,
+    AsyncServiceURL,
     QuotaExceededError,
     ResourceAlreadyExistsError,
     ResourceCreationError,
@@ -1450,3 +1451,108 @@ class TestAsyncVolumeOperations:
 
         with pytest.raises(ResourceInUseError):
             await client.delete_volume("my-volume")
+
+
+class TestService:
+    """Tests for AsyncSandboxClient.service()."""
+
+    async def test_service_happy_path(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test getting a service URL returns AsyncServiceURL with correct fields."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://uuid--3000.svc.example.com/_svc/auth?token=jwt",
+                "service_url": "http://uuid--3000.svc.example.com/",
+                "token": "jwt-token",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        svc = await client.service("my-sandbox", 3000)
+
+        assert isinstance(svc, AsyncServiceURL)
+        assert svc.token == "jwt-token"
+        assert svc.service_url == "http://uuid--3000.svc.example.com/"
+        assert svc.expires_at == "2099-01-01T00:00:00Z"
+
+    async def test_service_custom_expiry(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test custom expires_in_seconds is sent in payload."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b",
+                "service_url": "http://s/",
+                "token": "t",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        await client.service("my-sandbox", 3000, expires_in_seconds=3600)
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        import json
+
+        body = json.loads(request.content)
+        assert body["port"] == 3000
+        assert body["expires_in_seconds"] == 3600
+
+    async def test_service_not_found(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test 404 raises ResourceNotFoundError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/service-url",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            await client.service("nonexistent", 3000)
+
+    async def test_service_invalid_port(self, client: AsyncSandboxClient):
+        """Test port=0 raises ValueError."""
+        with pytest.raises(ValueError, match="positive integer"):
+            await client.service("my-sandbox", 0)
+
+    async def test_service_invalid_expiry(self, client: AsyncSandboxClient):
+        """Test expires_in_seconds=0 raises ValueError."""
+        with pytest.raises(ValueError, match="between 1 and 86400"):
+            await client.service("my-sandbox", 3000, expires_in_seconds=0)
+
+    async def test_service_has_refresher(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test returned AsyncServiceURL has a working refresher."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b1",
+                "service_url": "http://s1/",
+                "token": "token-1",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/service-url",
+            json={
+                "browser_url": "http://b2",
+                "service_url": "http://s2/",
+                "token": "token-2",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        svc = await client.service("my-sandbox", 3000)
+        assert svc._refresher is not None
+        fresh = await svc._refresher()
+        assert fresh._token == "token-2"

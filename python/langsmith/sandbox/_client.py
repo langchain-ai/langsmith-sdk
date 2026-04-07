@@ -24,12 +24,14 @@ from langsmith.sandbox._helpers import (
     handle_volume_creation_error,
     merge_headers,
     parse_error_response,
+    validate_service_params,
     validate_ttl,
 )
 from langsmith.sandbox._models import (
     Pool,
     ResourceStatus,
     SandboxTemplate,
+    ServiceURL,
     Volume,
     VolumeMountSpec,
 )
@@ -989,6 +991,61 @@ class SandboxClient:
             response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return ResourceStatus.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        headers: RequestHeaders = None,
+    ) -> ServiceURL:
+        """Get an authenticated URL for a service running inside a sandbox.
+
+        Returns a :class:`ServiceURL` whose properties auto-refresh the
+        token transparently before it expires.  The object also provides
+        HTTP helper methods (``.get``, ``.post``, etc.) that inject the
+        authentication header automatically.
+
+        Args:
+            name: Sandbox name.
+            port: Port the service is listening on inside the sandbox.
+            expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            headers: Optional per-request header overrides.
+
+        Returns:
+            ServiceURL with auto-refreshing token and HTTP helpers.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If port or expires_in_seconds is out of range.
+            SandboxClientError: For other errors.
+        """
+        validate_service_params(port, expires_in_seconds)
+        url = f"{self._base_url}/boxes/{name}/service-url"
+        payload = {"port": port, "expires_in_seconds": expires_in_seconds}
+
+        def _refresher() -> ServiceURL:
+            return self.service(
+                name,
+                port,
+                expires_in_seconds=expires_in_seconds,
+                headers=headers,
+            )
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            return ServiceURL.from_dict(response.json(), _refresher=_refresher)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(

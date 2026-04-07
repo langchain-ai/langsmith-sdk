@@ -18,6 +18,7 @@ from langsmith.sandbox._exceptions import (
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
+    AsyncServiceURL,
     ExecutionResult,
 )
 from langsmith.sandbox._tunnel import AsyncTunnel
@@ -591,3 +592,35 @@ class AsyncSandbox:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, t._tunnel._start)
         return t
+
+    async def service(
+        self,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        headers: RequestHeaders = None,
+    ) -> AsyncServiceURL:
+        """Get an authenticated URL for a service running in this sandbox.
+
+        Returns an :class:`AsyncServiceURL` whose async accessors
+        auto-refresh the token transparently before it expires.
+
+        Args:
+            port: Port the service is listening on inside the sandbox.
+            expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            headers: Optional per-request header overrides.
+
+        Returns:
+            AsyncServiceURL with auto-refreshing token and HTTP helpers.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If port or expires_in_seconds is out of range.
+            SandboxClientError: For other errors.
+        """
+        return await self._client.service(
+            self.name,
+            port,
+            expires_in_seconds=expires_in_seconds,
+            headers=headers,
+        )
