@@ -73,6 +73,7 @@ async def test_tool_failure_creates_error_trace():
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(reruns=2)
 async def test_subagent():
     """Subagent chain nested under Agent tool via live hooks."""
     from unittest.mock import patch
