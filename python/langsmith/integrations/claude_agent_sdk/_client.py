@@ -397,7 +397,10 @@ def instrument_claude_client(original_class: Any) -> Any:
                 name=TRACE_CHAIN_NAME,
                 run_type="chain",
                 inputs=trace_inputs,
-                metadata=trace_metadata,
+                metadata={
+                    **trace_metadata,
+                    "ls_agent_type": "root",
+                },
             ) as run:
                 set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)

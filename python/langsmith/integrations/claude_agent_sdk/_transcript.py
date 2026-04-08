@@ -5,6 +5,7 @@ Ported from the Claude Code CLI plugin.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -82,8 +83,6 @@ def _strip_model_date_suffix(model: str) -> str:
 
     E.g. "claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5"
     """
-    import re
-
     return re.sub(r"-\d{8}$", "", model)
 
 

@@ -311,6 +311,10 @@ async def subagent_start_hook(
             inputs=agent_tool_input if agent_tool_input else {},
             start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
         )
+        subagent_run.extra["metadata"] = {
+            **subagent_run.extra.get("metadata", {}),
+            "ls_agent_type": "subagent",
+        }
 
         try:
             subagent_run.post()
