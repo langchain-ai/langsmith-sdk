@@ -69,7 +69,7 @@ def _simple_default(obj):
     return str(obj)
 
 
-_serialization_methods = [
+_serialization_methods: list[tuple[str, dict[str, Any]]] = [
     (
         "model_dump",
         {"exclude_none": True, "mode": "json"},
