@@ -106,6 +106,96 @@ export function createUsageMetadata(
   };
 }
 
+function safeJsonStringify(obj: unknown): string {
+  try {
+    return JSON.stringify(obj ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
+function contentBlockToDict(block: unknown): Record<string, unknown> {
+  if (block && typeof block === "object" && !Array.isArray(block)) {
+    return { ...(block as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function contentBlocksAsDicts(
+  content: unknown
+): Array<Record<string, unknown>> {
+  if (!Array.isArray(content)) return [];
+  return content.map(contentBlockToDict);
+}
+
+function addToolsTabOutputs(
+  outputs: KVMap,
+  content: Array<Record<string, unknown>>,
+  toolBlocks: Array<Record<string, unknown>>
+): void {
+  const parts: KVMap[] = [];
+  for (const b of content) {
+    if (b.type === "text") {
+      parts.push({ type: "text", text: String(b.text ?? "") });
+    }
+  }
+  for (const b of toolBlocks) {
+    let inp: Record<string, unknown> = {};
+    const raw = b.input;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      inp = raw as Record<string, unknown>;
+    }
+    parts.push({
+      type: "tool_call",
+      name: String(b.name ?? ""),
+      args: inp,
+      id: String(b.id ?? ""),
+    });
+  }
+  outputs.messages = [{ role: "assistant", content: parts }];
+  outputs.choices = [
+    {
+      index: 0,
+      finish_reason: "tool_calls",
+      message: {
+        role: "assistant",
+        content: outputs.content,
+        tool_calls: outputs.tool_calls,
+      },
+    },
+  ];
+}
+
+/**
+ * Align Anthropic message outputs with LangSmith LLM trace + OpenAI-style choices
+ * so the Tools tab shows tools as "Called" (parity with Python `wrap_anthropic`).
+ *
+ * @see https://docs.langchain.com/langsmith/log-llm-trace
+ */
+export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
+  const content = contentBlocksAsDicts(result.content);
+  result.content = content;
+  const toolBlocks = content.filter((b) => b.type === "tool_use");
+  if (toolBlocks.length === 0) {
+    return result;
+  }
+  const textParts = content
+    .filter((b) => b.type === "text")
+    .map((b) => String(b.text ?? ""));
+  result.content = textParts.join("") || null;
+  result.tool_calls = toolBlocks.map((block, i) => ({
+    id: String(block.id ?? `call_${i}`),
+    type: "function",
+    index: i,
+    function: {
+      name: String(block.name ?? ""),
+      arguments: safeJsonStringify(block.input),
+    },
+  }));
+  addToolsTabOutputs(result, content, toolBlocks);
+  return result;
+}
+
 /**
  * Process Anthropic message outputs
  */
@@ -120,7 +210,7 @@ function processMessageOutput(outputs: KVMap): KVMap {
     delete result.usage;
   }
 
-  return result;
+  return enrichAnthropicMessageOutputs(result);
 }
 
 /**
@@ -261,7 +351,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
   // Add usage metadata
   result.usage_metadata = createUsageMetadata(usage);
 
-  return result;
+  return enrichAnthropicMessageOutputs(result);
 };
 
 /**

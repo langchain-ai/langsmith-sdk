@@ -1,5 +1,8 @@
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
-import { createUsageMetadata } from "../wrappers/anthropic.js";
+import {
+  createUsageMetadata,
+  enrichAnthropicMessageOutputs,
+} from "../wrappers/anthropic.js";
 
 describe("convertAnthropicUsageToInputTokenDetails", () => {
   test("1h cache key has no trailing r", () => {
@@ -94,5 +97,75 @@ describe("createUsageMetadata", () => {
   test("returns undefined when usage is falsy", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(createUsageMetadata(null as any)).toBeUndefined();
+  });
+});
+
+describe("enrichAnthropicMessageOutputs", () => {
+  test("text-only message is unchanged aside from normalized content blocks", () => {
+    const out = enrichAnthropicMessageOutputs({
+      role: "assistant",
+      content: [{ type: "text", text: "Hello!" }],
+    });
+    expect(out.content).toEqual([{ type: "text", text: "Hello!" }]);
+    expect(out.tool_calls).toBeUndefined();
+    expect(out.messages).toBeUndefined();
+    expect(out.choices).toBeUndefined();
+  });
+
+  test("tool_use adds tool_calls, messages, and choices for LangSmith Tools tab", () => {
+    const out = enrichAnthropicMessageOutputs({
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_abc",
+          name: "get_weather",
+          input: { location: "SF", unit: "celsius" },
+        },
+      ],
+    });
+    expect(out.content).toBeNull();
+    expect(out.tool_calls).toHaveLength(1);
+    expect(out.tool_calls?.[0]).toMatchObject({
+      id: "toolu_abc",
+      type: "function",
+      index: 0,
+      function: {
+        name: "get_weather",
+        arguments: JSON.stringify({ location: "SF", unit: "celsius" }),
+      },
+    });
+    expect(out.messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            name: "get_weather",
+            args: { location: "SF", unit: "celsius" },
+            id: "toolu_abc",
+          },
+        ],
+      },
+    ]);
+    expect(out.choices?.[0]?.finish_reason).toBe("tool_calls");
+    expect(out.choices?.[0]?.message?.tool_calls).toBe(out.tool_calls);
+  });
+
+  test("text + tool_use strips text into content string", () => {
+    const out = enrichAnthropicMessageOutputs({
+      role: "assistant",
+      content: [
+        { type: "text", text: "Checking." },
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "search",
+          input: { q: "x" },
+        },
+      ],
+    });
+    expect(out.content).toBe("Checking.");
+    expect(out.tool_calls).toHaveLength(1);
   });
 });
