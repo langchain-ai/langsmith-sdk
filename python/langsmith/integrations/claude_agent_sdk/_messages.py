@@ -103,4 +103,4 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
 
         return [*formatted, *history] if history else formatted
 
-    return history or []
+    return list(history) if history else []

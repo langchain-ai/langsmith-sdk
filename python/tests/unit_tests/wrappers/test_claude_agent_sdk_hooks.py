@@ -394,3 +394,259 @@ class TestTranscriptPathCapture:
         _hooks_module._main_transcript_path = "/some/path.jsonl"
         clear_active_tool_runs()
         assert _hooks_module._main_transcript_path is None
+
+
+class TestReadLLMTurnsFromTranscript:
+    """Unit tests for read_llm_turns_from_transcript."""
+
+    def test_extracts_final_entries_only(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        transcript = tmp_path / "session.jsonl"
+        import json
+
+        lines = [
+            # Initial user prompt
+            {
+                "type": "user",
+                "message": {"content": "echo hello"},
+            },
+            # Partial (streaming) — stop_reason null
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_001",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "Thinking..."}],
+                    "stop_reason": None,
+                    "usage": {"input_tokens": 100, "output_tokens": 3},
+                },
+                "timestamp": "2025-01-01T00:00:00.000Z",
+            },
+            # Final — stop_reason set
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_001",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu_1",
+                            "name": "Bash",
+                            "input": {"command": "echo hello"},
+                        },
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 100, "output_tokens": 42},
+                },
+                "timestamp": "2025-01-01T00:00:01.000Z",
+            },
+            # User message (tool result)
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tu_1",
+                            "content": "hello",
+                        },
+                    ]
+                },
+            },
+            # Second turn — partial
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_002",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "d"}],
+                    "stop_reason": None,
+                    "usage": {"input_tokens": 150, "output_tokens": 1},
+                },
+                "timestamp": "2025-01-01T00:00:02.000Z",
+            },
+            # Second turn — final
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_002",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 150, "output_tokens": 5},
+                },
+                "timestamp": "2025-01-01T00:00:03.000Z",
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        turns = read_llm_turns_from_transcript(str(transcript))
+
+        assert len(turns) == 2
+
+        assert turns[0]["message_id"] == "msg_001"
+        assert turns[0]["stop_reason"] == "tool_use"
+        assert turns[0]["usage"]["output_tokens"] == 42
+        # First turn should see only the initial user prompt
+        assert turns[0]["input_messages"] == [
+            {"role": "user", "content": "echo hello"},
+        ]
+
+        assert turns[1]["message_id"] == "msg_002"
+        assert turns[1]["stop_reason"] == "end_turn"
+        assert turns[1]["content"] == [{"type": "text", "text": "done"}]
+        # Second turn should see full conversation history
+        assert turns[1]["input_messages"] == [
+            {"role": "user", "content": "echo hello"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu_1",
+                        "name": "Bash",
+                        "input": {"command": "echo hello"},
+                    },
+                ],
+            },
+            {"role": "tool", "content": "hello", "tool_call_id": "tu_1"},
+        ]
+
+    def test_empty_file(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        transcript = tmp_path / "empty.jsonl"
+        transcript.write_text("")
+        assert read_llm_turns_from_transcript(str(transcript)) == []
+
+    def test_missing_file(self):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        assert read_llm_turns_from_transcript("/nonexistent/path.jsonl") == []
+
+
+class TestMissingSubagentLLMRuns:
+    """_patch_usage_from_transcripts creates LLM runs for subagent turns
+    that were not seen in the live stream."""
+
+    def test_creates_missing_llm_run_from_transcript(self, tmp_path):
+        import json
+
+        from langsmith.integrations.claude_agent_sdk._client import (
+            LLM_RUN_NAME,
+            TurnLifecycle,
+            _patch_usage_from_transcripts,
+        )
+
+        # Create a subagent run
+        parent = _make_parent_run()
+        subagent_run = parent.create_child(
+            name="foo",
+            run_type="chain",
+        )
+
+        # Write a transcript with 2 turns
+        transcript = tmp_path / "subagent.jsonl"
+        lines = [
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_seen",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [
+                        {"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {}}
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                },
+                "timestamp": "2025-01-01T00:00:01.000Z",
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_missing",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 150, "output_tokens": 5},
+                },
+                "timestamp": "2025-01-01T00:00:03.000Z",
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        # Set up tracker with msg_seen already created
+        tracker = TurnLifecycle()
+        existing_run = parent.create_child(
+            name=LLM_RUN_NAME,
+            run_type="llm",
+        )
+        tracker.llm_runs_by_message_id["msg_seen"] = existing_run
+
+        # Register subagent transcript
+        _subagent_transcript_paths.append((str(transcript), subagent_run))
+
+        _patch_usage_from_transcripts(tracker)
+
+        # msg_missing should now have an LLM run
+        assert "msg_missing" in tracker.llm_runs_by_message_id
+        new_run = tracker.llm_runs_by_message_id["msg_missing"]
+        assert new_run.name == LLM_RUN_NAME
+        assert new_run.run_type == "llm"
+        assert new_run.parent_run_id == subagent_run.id
+        assert new_run.outputs == {
+            "content": [{"type": "text", "text": "done"}],
+            "role": "assistant",
+        }
+
+    def test_skips_already_seen_message_ids(self, tmp_path):
+        import json
+
+        from langsmith.integrations.claude_agent_sdk._client import (
+            LLM_RUN_NAME,
+            TurnLifecycle,
+            _patch_usage_from_transcripts,
+        )
+
+        parent = _make_parent_run()
+        subagent_run = parent.create_child(
+            name="foo",
+            run_type="chain",
+        )
+
+        transcript = tmp_path / "subagent.jsonl"
+        lines = [
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_already_seen",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "hi"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 50, "output_tokens": 2},
+                },
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        tracker = TurnLifecycle()
+        existing_run = parent.create_child(
+            name=LLM_RUN_NAME,
+            run_type="llm",
+        )
+        tracker.llm_runs_by_message_id["msg_already_seen"] = existing_run
+
+        _subagent_transcript_paths.append((str(transcript), subagent_run))
+
+        _patch_usage_from_transcripts(tracker)
+
+        # Should still be the same run, not replaced
+        assert tracker.llm_runs_by_message_id["msg_already_seen"] is existing_run

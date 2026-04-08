@@ -9,8 +9,8 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
-from ._config import get_tracing_config
 from . import _hooks as _hooks_module
+from ._config import get_tracing_config
 from ._hooks import (
     _active_tool_runs,
     _subagent_transcript_paths,
@@ -30,6 +30,11 @@ from ._tools import (
     clear_parent_run_tree,
     get_parent_run_tree,
     set_parent_run_tree,
+)
+from ._usage import (
+    extract_usage_metadata,
+    read_llm_turns_from_transcript,
+    read_usage_from_transcript,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,15 +92,24 @@ class TurnLifecycle:
         start = self.next_start_time or time.time()
 
         # Same turn – just accumulate the output blocks and update usage.
+        # Return None so the caller does NOT append a duplicate history
+        # entry; the original entry in ``history`` is updated in place.
         if message_id and message_id == self.current_message_id and self.current_run:
             content = flatten_content_blocks(getattr(message, "content", None))
             if content and self.current_run.outputs:
                 prev = self.current_run.outputs.get("content", [])
                 if isinstance(prev, list) and isinstance(content, list):
-                    self.current_run.outputs["content"] = prev + content
+                    merged = prev + content
+                    self.current_run.outputs["content"] = merged
+                    # Update the existing history entry in place so
+                    # subsequent LLM runs see a single merged message.
+                    for entry in reversed(history):
+                        if entry.get("role") == "assistant":
+                            entry["content"] = merged
+                            break
                 elif isinstance(content, list):
                     self.current_run.outputs["content"] = content
-            return {"content": content, "role": "assistant"} if content else None
+            return None
 
         # Different turn – end previous but defer patch() until
         # transcript usage is available.
@@ -275,33 +289,107 @@ def _get_last_active_tool_run() -> Any:
 def _patch_usage_from_transcripts(
     tracker: TurnLifecycle,
 ) -> None:
-    """Read transcripts and set accurate usage on LLM runs.
+    """Read transcripts and reconcile LLM runs.
 
-    The Claude SDK's live ``AssistantMessage.usage.output_tokens`` is a
-    partial streaming count.  The JSONL transcripts contain a final
-    chunk per message (with ``stop_reason`` set) that has the correct
-    total.  This function reads those transcripts after the conversation
-    ends and patches usage onto the corresponding ``RunTree`` objects
-    before they are finalised.
+    This function does two things after the conversation ends:
+
+    1. **Usage correction** — The Claude SDK's live
+       ``AssistantMessage.usage.output_tokens`` is a partial streaming
+       count.  The JSONL transcripts contain a final chunk per message
+       (with ``stop_reason`` set) that has the correct total.  This
+       patches accurate usage onto LLM run ``RunTree`` objects before
+       they are finalised.
+
+    2. **Missing subagent LLM runs** — The SDK does not relay all of a
+       subagent's ``AssistantMessage`` events through the parent stream.
+       Typically only the first turn (tool call) appears; the final
+       response is folded into the Agent tool result.  This reads each
+       subagent transcript and creates LLM runs for any turns that were
+       not seen in the stream.
     """
-    from ._usage import read_usage_from_transcript
+    # ── 1. Create missing subagent LLM runs from transcripts ─────────
+    # Guard against the same message_id being processed twice (e.g. if the
+    # same transcript path appears multiple times in the list).
+    created_from_transcript: set[str] = set()
+    for path, subagent_run in _subagent_transcript_paths:
+        try:
+            turns = read_llm_turns_from_transcript(path)
+            for turn in turns:
+                mid = turn["message_id"]
+                if mid in tracker.llm_runs_by_message_id:
+                    # Already created from the live stream — skip.
+                    continue
+                if mid in created_from_transcript:
+                    continue
 
+                # Create a new LLM run under the subagent chain.
+                ts = None
+                if turn.get("timestamp"):
+                    try:
+                        ts = datetime.fromisoformat(
+                            turn["timestamp"].replace("Z", "+00:00")
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                input_messages = turn.get("input_messages", [])
+                llm_run = subagent_run.create_child(
+                    name=LLM_RUN_NAME,
+                    run_type="llm",
+                    inputs={"messages": input_messages} if input_messages else {},
+                    extra={
+                        "metadata": {
+                            "ls_model_name": turn.get("model"),
+                        }
+                    }
+                    if turn.get("model")
+                    else {},
+                    start_time=ts,
+                )
+
+                # Set outputs from transcript content blocks
+                content = turn.get("content", [])
+                llm_run.outputs = {"content": content, "role": "assistant"}
+
+                # Set usage from transcript
+                raw_usage = turn.get("usage")
+                if raw_usage:
+                    usage_meta = extract_usage_metadata(raw_usage)
+                    if usage_meta:
+                        meta = llm_run.extra.setdefault("metadata", {})
+                        meta["usage_metadata"] = usage_meta
+
+                llm_run.end(end_time=ts)
+                try:
+                    llm_run.post()
+                    llm_run.patch()
+                except Exception as e:
+                    logger.warning(f"Failed to post/patch subagent LLM run: {e}")
+
+                tracker.llm_runs_by_message_id[mid] = llm_run
+                created_from_transcript.add(mid)
+                logger.debug(f"Created missing subagent LLM run for message {mid}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to create subagent LLM runs from {path}: {e}",
+                exc_info=True,
+            )
+
+    # ── 2. Patch usage on existing LLM runs ──────────────────────────
     if not tracker.llm_runs_by_message_id:
         return
 
-    # Collect usage from all relevant transcripts
     all_usage: dict[str, dict[str, Any]] = {}
 
-    # Main session transcript (captured from BaseHookInput.transcript_path)
+    # Main session transcript
     main_path = _hooks_module._main_transcript_path
     if main_path:
         all_usage.update(read_usage_from_transcript(main_path))
 
     # Subagent transcripts
-    for path in _subagent_transcript_paths:
+    for path, _run in _subagent_transcript_paths:
         all_usage.update(read_usage_from_transcript(path))
 
-    # Set usage on LLM runs (they haven't been patch()ed yet).
     patched = 0
     for message_id, run in tracker.llm_runs_by_message_id.items():
         usage = all_usage.get(message_id)
@@ -459,7 +547,9 @@ def instrument_claude_client(original_class: Any) -> Any:
             async with trace(**trace_kwargs) as run:
                 set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)
-                collected: list[dict[str, Any]] = []
+                # Message histories scoped by context.
+                # None → main agent, parent_tool_use_id → subagent.
+                collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
                 prompt_for_llm: Any = self._prompt
 
@@ -489,16 +579,27 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 else None
                             )
 
+                            # Route to context-scoped history
+                            ctx_key = parent_tool_use_id
+                            ctx_history = collected_by_ctx.setdefault(ctx_key, [])
+
                             content = tracker.start_llm_run(
                                 msg,
-                                prompt_for_llm,
-                                collected,
+                                prompt_for_llm if parent_tool_use_id is None else None,
+                                ctx_history,
                                 parent=llm_parent,
                             )
                             if content:
-                                collected.append(content)
+                                ctx_history.append(content)
 
                         elif msg_type == "UserMessage":
+                            # Route to the correct context
+                            parent_tool_use_id = getattr(
+                                msg, "parent_tool_use_id", None
+                            )
+                            ctx_key = parent_tool_use_id
+                            ctx_history = collected_by_ctx.setdefault(ctx_key, [])
+
                             if hasattr(msg, "content"):
                                 # Check if this is a tool result message
                                 flattened = flatten_content_blocks(msg.content)
@@ -511,7 +612,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                     # Format each tool result as a separate message
                                     for block in flattened:
                                         tool_use_id = block.get("tool_use_id")
-                                        collected.append(
+                                        ctx_history.append(
                                             {
                                                 "role": "tool",
                                                 "content": block.get("content", ""),
@@ -544,7 +645,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                                     f" orphaned tool run: {e}"
                                                 )
                                 else:
-                                    collected.append(
+                                    ctx_history.append(
                                         {
                                             "content": flattened,
                                             "role": "user",
@@ -570,7 +671,8 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 run.metadata.update(meta)
 
                         yield msg
-                    run.end(outputs=collected[-1] if collected else None)
+                    main_collected = collected_by_ctx.get(None, [])
+                    run.end(outputs=main_collected[-1] if main_collected else None)
                 except Exception:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:

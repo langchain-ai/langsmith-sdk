@@ -50,8 +50,9 @@ _agent_to_tool_mapping: dict[str, str] = {}
 # clear_active_tool_runs() ends + patches it.
 _ended_subagent_runs: dict[str, RunTree] = {}
 
-# Transcript paths captured from SubagentStop, used for usage extraction.
-_subagent_transcript_paths: list[str] = []
+# (transcript_path, subagent_RunTree) captured from SubagentStop.
+# Used for usage extraction and creating missing LLM runs.
+_subagent_transcript_paths: list[tuple[str, "RunTree"]] = []
 
 # Main session transcript path, captured from BaseHookInput.transcript_path
 # on the first hook that fires (every hook inherits this field).
@@ -378,13 +379,13 @@ async def subagent_stop_hook(
     if not agent_id:
         return {}
 
-    if transcript_path:
-        _subagent_transcript_paths.append(transcript_path)
-
     try:
         subagent_run = _subagent_runs.pop(agent_id, None)
         if not subagent_run:
             return {}
+
+        if transcript_path:
+            _subagent_transcript_paths.append((transcript_path, subagent_run))
 
         # Move to ended state so PostToolUse can set outputs.
         agent_tool_id = _agent_to_tool_mapping.pop(agent_id, None)

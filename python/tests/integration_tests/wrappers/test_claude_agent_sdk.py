@@ -93,8 +93,9 @@ async def test_subagent():
             "foo": claude_agent_sdk.AgentDefinition(
                 description="Does foo things.",
                 prompt=(
-                    "You must call the Bash tool with command"
-                    " 'echo hello' and then respond with"
+                    "You must first call the Bash tool with command"
+                    " 'echo hello', then call the Bash tool with command"
+                    " 'echo world', and then respond with"
                     " exactly: 'done'"
                 ),
                 model="haiku",
@@ -134,7 +135,7 @@ async def test_subagent():
     # Verify the trace hierarchy was created
     run_names = [r["name"] for r in posted_runs]
 
-    # Should have: Agent tool, foo subagent chain, Bash tool (inside subagent)
+    # Should have: Agent tool, foo subagent chain, Bash tools (inside subagent)
     assert "Agent" in run_names, f"Expected Agent tool run, saw: {run_names}"
     assert "foo" in run_names, f"Expected foo subagent chain run, saw: {run_names}"
     assert "Bash" in run_names, (
@@ -148,10 +149,104 @@ async def test_subagent():
         "foo subagent should be nested under Agent tool"
     )
 
-    # Verify Bash is nested under the foo subagent
-    bash_runs = [r for r in posted_runs if r["name"] == "Bash"]
-    assert any(r["parent_run_id"] == foo_run["id"] for r in bash_runs), (
-        "Bash tool should be nested under foo subagent"
+    # Verify both Bash runs are nested under the foo subagent
+    bash_runs = [
+        r
+        for r in posted_runs
+        if r["name"] == "Bash" and r["parent_run_id"] == foo_run["id"]
+    ]
+    assert len(bash_runs) >= 2, (
+        f"Expected at least 2 Bash tool runs under foo subagent,"
+        f" saw {len(bash_runs)}: {run_names}"
+    )
+
+    # Verify LLM runs under the foo subagent.
+    # The subagent makes at least 2 LLM turns (tool calls may be batched
+    # into one turn by the model, plus a final response).  Only the first
+    # is relayed via the stream; the rest come from the transcript.
+    subagent_llm_runs = [
+        r
+        for r in posted_runs
+        if r["name"] == "claude.assistant.turn"
+        and r["run_type"] == "llm"
+        and r["parent_run_id"] == foo_run["id"]
+    ]
+    assert len(subagent_llm_runs) >= 2, (
+        f"Expected at least 2 LLM runs under foo subagent, saw"
+        f" {len(subagent_llm_runs)}: {subagent_llm_runs}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.flaky(reruns=2)
+async def test_continue_session():
+    """Continuing a prior session should not duplicate LLM runs from old turns."""
+    from unittest.mock import patch
+
+    from langsmith.integrations.claude_agent_sdk import (
+        configure_claude_agent_sdk,
+    )
+    from langsmith.run_trees import RunTree
+
+    configure_claude_agent_sdk()
+
+    options = claude_agent_sdk.ClaudeAgentOptions(
+        model="claude-haiku-4-5",
+        system_prompt="Answer concisely.",
+        max_turns=1,
+    )
+
+    # First conversation — capture the session_id
+    session_id = None
+    async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
+        await client.query("Say hello.")
+        async for msg in client.receive_response():
+            sid = getattr(msg, "session_id", None)
+            if sid:
+                session_id = str(sid)
+
+    assert session_id is not None, "First conversation should produce a session_id"
+
+    # Second conversation — resume the same session
+    continue_options = claude_agent_sdk.ClaudeAgentOptions(
+        model="claude-haiku-4-5",
+        system_prompt="Answer concisely.",
+        max_turns=1,
+        resume=session_id,
+    )
+
+    posted_runs: list[dict] = []
+    original_post = RunTree.post
+
+    def tracked_post(self, *args, **kwargs):
+        posted_runs.append(
+            {
+                "name": self.name,
+                "run_type": self.run_type,
+                "id": str(self.id),
+                "parent_run_id": str(self.parent_run_id)
+                if self.parent_run_id
+                else None,
+            }
+        )
+        return original_post(self, *args, **kwargs)
+
+    with patch.object(RunTree, "post", tracked_post):
+        async with claude_agent_sdk.ClaudeSDKClient(options=continue_options) as client:
+            await client.query("Say goodbye.")
+            async for msg in client.receive_response():
+                pass
+
+    assert len(_active_tool_runs) == 0
+
+    # The continued session should only have LLM runs for the NEW
+    # conversation, not duplicates from the first one.
+    llm_runs = [r for r in posted_runs if r["run_type"] == "llm"]
+    assert len(llm_runs) >= 1, f"Expected at least 1 LLM run, saw: {posted_runs}"
+    # With max_turns=1 and no tool calls, there should be exactly 1 LLM run.
+    assert len(llm_runs) == 1, (
+        f"Expected exactly 1 LLM run for the continued session (no duplicates"
+        f" from the first session), saw {len(llm_runs)}: {llm_runs}"
     )
 
 
