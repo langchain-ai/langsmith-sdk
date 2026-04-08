@@ -54,6 +54,10 @@ _ended_subagent_runs: dict[str, RunTree] = {}
 # Each entry is (subagent RunTree, transcript_path).
 _pending_subagent_traces: list[tuple[RunTree, str]] = []
 
+# agent_ids whose internals will be traced from transcripts.
+# PreToolUse skips tool runs for these agents to avoid double-tracing.
+_transcript_traced_agents: set[str] = set()
+
 
 # ── Public helpers (used by _client.py) ───────────────────────────────────────
 
@@ -103,15 +107,16 @@ async def pre_tool_use_hook(
     if tool_name == "Agent":
         _pending_agent_tools[tool_use_id] = tool_input
 
+    # Skip tool calls inside transcript-traced subagents — they will be
+    # traced from the JSONL transcript instead.
+    if agent_id and agent_id in _transcript_traced_agents:
+        return {}
+
     try:
-        # Determine parent: subagent > current LLM run > root chain
-        parent: Optional[RunTree] = None
-        if agent_id and agent_id in _subagent_runs:
-            parent = _subagent_runs[agent_id]
-        else:
-            parent = (
-                get_current_llm_run() or get_parent_run_tree() or get_current_run_tree()
-            )
+        # Determine parent: current LLM run > root chain
+        parent: Optional[RunTree] = (
+            get_current_llm_run() or get_parent_run_tree() or get_current_run_tree()
+        )
 
         if not parent:
             return {}
@@ -323,6 +328,9 @@ async def subagent_start_hook(
 
         # Store by agent_id so tool hooks and LLM run lookup can find it
         _subagent_runs[agent_id] = subagent_run
+
+        # Mark this agent for transcript-based tracing so live hooks skip it
+        _transcript_traced_agents.add(agent_id)
 
         # Remember which Agent tool_use_id spawned this agent_id
         if agent_tool_use_id:
@@ -540,6 +548,11 @@ def _trace_tool_call(llm_run: Any, tool_call: Any) -> None:
         start_time=start_time,
     )
 
+    try:
+        tool_run.post()
+    except Exception as e:
+        logger.warning(f"Failed to post tool run: {e}")
+
     outputs: dict[str, Any] = {}
     if tool_call.result and tool_call.result.get("content"):
         outputs["output"] = tool_call.result["content"]
@@ -613,3 +626,4 @@ def clear_active_tool_runs() -> None:
     _pending_agent_tools.clear()
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
+    _transcript_traced_agents.clear()

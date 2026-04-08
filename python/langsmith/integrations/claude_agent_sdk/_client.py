@@ -11,8 +11,8 @@ from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._hooks import (
     _active_tool_runs,
+    _transcript_traced_agents,
     clear_active_tool_runs,
-    get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
     post_tool_use_hook,
     pre_tool_use_hook,
@@ -421,24 +421,32 @@ def instrument_claude_client(original_class: Any) -> Any:
 
                         msg_type = type(msg).__name__
                         if msg_type == "AssistantMessage":
-                            # Check if this message belongs to a subagent
-                            # via parent_tool_use_id (set by some SDK
-                            # versions).  The Python SDK does not yield
-                            # subagent AssistantMessages through
-                            # receive_response() despite documentation to the contrary,
-                            # so in practice this is always None and LLM
-                            # turns always land on the root chain.
+                            # Skip messages from transcript-traced
+                            # subagents — their LLM turns are traced
+                            # from the JSONL transcript instead.
+                            # Check both agent_id and parent_tool_use_id
+                            # since SDK versions vary.
+                            msg_agent_id = getattr(msg, "agent_id", None)
                             parent_tool_use_id = getattr(
                                 msg, "parent_tool_use_id", None
                             )
-                            llm_parent = (
-                                get_subagent_run_by_tool_id(parent_tool_use_id)
-                                if parent_tool_use_id
-                                else None
-                            )
+                            is_subagent_msg = False
+                            if (
+                                msg_agent_id
+                                and str(msg_agent_id) in _transcript_traced_agents
+                            ):
+                                is_subagent_msg = True
+                            elif parent_tool_use_id:
+                                is_subagent_msg = True
+
+                            if is_subagent_msg:
+                                yield msg
+                                continue
 
                             content = tracker.start_llm_run(
-                                msg, prompt_for_llm, collected, parent=llm_parent
+                                msg,
+                                prompt_for_llm,
+                                collected,
                             )
                             if content:
                                 collected.append(content)

@@ -139,6 +139,70 @@ async def test_subagent():
 
 
 @pytest.mark.asyncio
+async def test_subagent_transcript_tool_calls_are_posted():
+    """Tool calls traced from subagent transcripts call post() before patch()."""
+    from unittest.mock import patch
+
+    from langsmith.integrations.claude_agent_sdk import (
+        configure_claude_agent_sdk,
+    )
+    from langsmith.run_trees import RunTree
+
+    configure_claude_agent_sdk()
+
+    # Track which runs had post() called before patch()
+    posted_runs: set[str] = set()
+    patched_runs: list[str] = []
+
+    original_post = RunTree.post
+    original_patch = RunTree.patch
+
+    def tracked_post(self, *args, **kwargs):
+        posted_runs.add(str(self.id))
+        return original_post(self, *args, **kwargs)
+
+    def tracked_patch(self, *args, **kwargs):
+        run_id = str(self.id)
+        patched_runs.append(run_id)
+        # Verify this run was posted before being patched
+        assert run_id in posted_runs, (
+            f"Run {self.name} ({run_id}) was patched without being posted first"
+        )
+        return original_patch(self, *args, **kwargs)
+
+    options = claude_agent_sdk.ClaudeAgentOptions(
+        model="claude-haiku-4-5",
+        system_prompt="You must always call the foo subagent.",
+        allowed_tools=["Agent"],
+        agents={
+            "foo": claude_agent_sdk.AgentDefinition(
+                description="Does foo things.",
+                prompt=(
+                    "You must call the Bash tool with command 'echo hello' "
+                    "and then respond with exactly: 'done'"
+                ),
+                model="haiku",
+                tools=["Bash"],
+            ),
+        },
+    )
+
+    with patch.object(RunTree, "post", tracked_post):
+        with patch.object(RunTree, "patch", tracked_patch):
+            async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
+                await client.query("Call foo.")
+                async for message in client.receive_response():
+                    pass
+
+    # All patched runs should have been posted first (assertion in tracked_patch)
+    # This verifies the fix for the bug where transcript tool runs called
+    # patch() without post(), causing them to never be created on the server.
+    # We expect at least the root chain, Agent tool, subagent chain, LLM run,
+    # and the Bash tool call from the transcript.
+    assert len(patched_runs) >= 1, "Expected at least one run to be patched"
+
+
+@pytest.mark.asyncio
 async def test_custom_tool_permission_denied():
     """MCP tool denied by default permissions -> closed from stream."""
     from langsmith.integrations.claude_agent_sdk import (

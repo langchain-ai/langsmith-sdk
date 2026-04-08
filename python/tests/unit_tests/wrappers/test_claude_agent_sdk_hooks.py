@@ -13,6 +13,7 @@ from langsmith.integrations.claude_agent_sdk._hooks import (
     _pending_agent_tools,
     _pending_subagent_traces,
     _subagent_runs,
+    _transcript_traced_agents,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
@@ -35,6 +36,7 @@ def _clear_state():
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
     _pending_subagent_traces.clear()
+    _transcript_traced_agents.clear()
     yield
     _active_tool_runs.clear()
     _subagent_runs.clear()
@@ -42,6 +44,7 @@ def _clear_state():
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
     _pending_subagent_traces.clear()
+    _transcript_traced_agents.clear()
 
 
 def _make_parent_run() -> RunTree:
@@ -219,8 +222,8 @@ class TestSubagentFlow:
         # Pending should be consumed
         assert "tool_1" not in _pending_agent_tools
 
-    def test_tool_inside_subagent_uses_subagent_as_parent(self):
-        """Tools inside a subagent should use the subagent run as parent."""
+    def test_tool_inside_subagent_skipped_by_live_hooks(self):
+        """Tools inside a subagent are skipped (traced from transcript instead)."""
         # Set up: Agent tool call + subagent start
         asyncio.run(
             pre_tool_use_hook(
@@ -237,7 +240,7 @@ class TestSubagentFlow:
             )
         )
 
-        # Tool inside subagent — agent_id identifies the subagent
+        # Tool inside subagent — should be skipped by live hooks
         asyncio.run(
             pre_tool_use_hook(
                 {
@@ -250,10 +253,9 @@ class TestSubagentFlow:
             )
         )
 
-        assert "tool_2" in _active_tool_runs
-        tool_run, _ = _active_tool_runs["tool_2"]
-        assert tool_run.name == "Bash"
-        assert tool_run.parent_run_id == _subagent_runs["agent_123"].id
+        # Tool should NOT be in _active_tool_runs — it will be traced
+        # from the subagent transcript instead.
+        assert "tool_2" not in _active_tool_runs
 
     def test_subagent_findable_after_stop(self):
         """Subagent run is still findable via tool_use_id after SubagentStop."""
@@ -346,3 +348,58 @@ class TestSubagentFlow:
         clear_active_tool_runs()
         assert subagent_run.end_time is not None
         assert len(_ended_subagent_runs) == 0
+
+    def test_trace_tool_call_posts_before_patch(self):
+        """_trace_tool_call must call post() before patch() to create the run."""
+        from unittest.mock import patch
+
+        from langsmith.integrations.claude_agent_sdk._hooks import (
+            _trace_tool_call,
+        )
+        from langsmith.integrations.claude_agent_sdk._transcript import (
+            ToolCall,
+            ToolUseBlock,
+        )
+
+        parent_run = _make_parent_run()
+
+        tool_use = ToolUseBlock(
+            id="toolu_123",
+            name="Bash",
+            input={"command": "ls"},
+        )
+        tool_call = ToolCall(
+            tool_use=tool_use,
+            result={
+                "content": "file1.txt\nfile2.txt",
+                "timestamp": "2024-01-01T00:00:05Z",
+            },
+        )
+
+        # Track calls to post and patch
+        post_called = []
+        patch_called = []
+
+        original_post = RunTree.post
+        original_patch = RunTree.patch
+
+        def tracked_post(self, *args, **kwargs):
+            post_called.append(self.id)
+            return original_post(self, *args, **kwargs)
+
+        def tracked_patch(self, *args, **kwargs):
+            patch_called.append(self.id)
+            return original_patch(self, *args, **kwargs)
+
+        with patch.object(RunTree, "post", tracked_post):
+            with patch.object(RunTree, "patch", tracked_patch):
+                _trace_tool_call(parent_run, tool_call)
+
+        # Both post and patch should have been called
+        assert len(post_called) >= 1, "post() must be called to create the run"
+        assert len(patch_called) >= 1, "patch() must be called to update outputs"
+
+        # The same run should have been posted then patched
+        assert post_called[0] == patch_called[0], (
+            "post() and patch() should be called on the same run"
+        )
