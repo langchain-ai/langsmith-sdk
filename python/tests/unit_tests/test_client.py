@@ -1534,6 +1534,35 @@ def test_http_status_404_handling(mock_raise_for_status):
         client.request_with_retries("GET", "https://test.url")
 
 
+@patch("langsmith.client.time.sleep")
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_request_with_retries_retries_on_502(mock_raise_for_status, _mock_sleep):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
+
+    first_response = MagicMock()
+    first_response.status_code = 502
+    first_response.headers = {}
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    mock_session.request.side_effect = [first_response, second_response]
+
+    def _raise_for_status(response):
+        if response.status_code >= 400:
+            raise HTTPError(response=response)
+
+    mock_raise_for_status.side_effect = _raise_for_status
+
+    response = client.request_with_retries(
+        "GET",
+        "https://test.url",
+        stop_after_attempt=2,
+    )
+    assert response == second_response
+    assert mock_session.request.call_count == 2
+
+
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
 def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
     mock_session = MagicMock()

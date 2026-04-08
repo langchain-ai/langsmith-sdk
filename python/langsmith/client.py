@@ -1506,7 +1506,7 @@ class Client:
             *(
                 ls_utils.LangSmithConnectionError,
                 ls_utils.LangSmithRequestTimeout,  # 408
-                ls_utils.LangSmithAPIError,  # 500
+                ls_utils.LangSmithAPIError,  # 500/502/503/504
             ),
         )
         to_ignore_: tuple[type[BaseException], ...] = (*(to_ignore or ()),)
@@ -1538,9 +1538,9 @@ class Client:
                                 should_continue = handle_response(response, idx + 1)
                                 if should_continue:
                                     continue
-                        if response.status_code == 500:
+                        if response.status_code in {500, 502, 503, 504}:
                             raise ls_utils.LangSmithAPIError(
-                                f"Server error caused failure to {method}"
+                                f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
                                 f"{_context}"
@@ -8680,8 +8680,17 @@ class Client:
                 another error occurs.
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        stop_after_attempt = 1
+        retry_total = self.retry_config.total
+        if isinstance(retry_total, int):
+            stop_after_attempt = max(1, retry_total)
+
         try:
-            response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}")
+            response = self.request_with_retries(
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
+                stop_after_attempt=stop_after_attempt,
+            )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
             return None
