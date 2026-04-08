@@ -1337,10 +1337,12 @@ class Client:
         return ls_utils.get_host_url(self._web_url, self.api_url)
 
     def _compute_headers(self) -> dict[str, str]:
-        headers = {**self._custom_headers}
-        # Required headers that should not be overridden
-        headers["User-Agent"] = f"langsmith-py/{langsmith.__version__}"
-        headers["Accept"] = "application/json"
+        headers = {
+            "User-Agent": f"langsmith-py/{langsmith.__version__}",
+            "Accept": "application/json",
+        }
+        # Merge custom headers first so they don't override required headers
+        headers.update(self._custom_headers)
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:
