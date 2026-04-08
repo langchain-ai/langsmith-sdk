@@ -119,7 +119,7 @@ async def _build_runner_async(agent):
 
 
 def _collect_runs(mock_ls_client: Client) -> list[dict[str, Any]]:
-    runs: list[dict[str, Any]] = []
+    runs_by_id: dict[str, dict[str, Any]] = {}
     for call in _get_calls(mock_ls_client, minimum=0):
         data = call.kwargs.get("data")
         if not isinstance(data, (bytes, bytearray)):
@@ -128,9 +128,15 @@ def _collect_runs(mock_ls_client: Client) -> list[dict[str, Any]]:
             payload = json.loads(data.decode("utf-8"))
         except Exception:
             continue
-        runs.extend(payload.get("post") or [])
-        runs.extend(payload.get("patch") or [])
-    return runs
+        for run in [*(payload.get("post") or []), *(payload.get("patch") or [])]:
+            run_id = run.get("id")
+            if run_id and run_id in runs_by_id:
+                runs_by_id[run_id].update(
+                    {k: v for k, v in run.items() if v is not None}
+                )
+            elif run_id:
+                runs_by_id[run_id] = run
+    return list(runs_by_id.values())
 
 
 def _find_run(runs: list[dict[str, Any]], name: str) -> dict[str, Any]:
