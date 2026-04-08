@@ -1506,7 +1506,7 @@ class Client:
             *(
                 ls_utils.LangSmithConnectionError,
                 ls_utils.LangSmithRequestTimeout,  # 408
-                ls_utils.LangSmithAPIError,  # 500
+                ls_utils.LangSmithAPIError,  # 500/502/503/504
             ),
         )
         to_ignore_: tuple[type[BaseException], ...] = (*(to_ignore or ()),)
