@@ -31,6 +31,7 @@ from ._tools import (
     set_parent_run_tree,
 )
 from ._transcripts import LLM_RUN_NAME, reconcile_from_transcripts
+from ._usage import extract_usage_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ class TurnLifecycle:
                             break
                 elif isinstance(content, list):
                     self.current_run.outputs["content"] = content
+            self._set_usage_from_message(message, self.current_run)
             return None
 
         # Different turn – end previous but defer patch() until
@@ -119,8 +121,25 @@ class TurnLifecycle:
         if run:
             if message_id:
                 self.llm_runs_by_message_id[message_id] = run
+            self._set_usage_from_message(message, run)
 
         return final_output
+
+    @staticmethod
+    def _set_usage_from_message(message: Any, run: Any) -> None:
+        """Set usage metadata on a run from a live AssistantMessage.
+
+        Always overwrites — later chunks in the same turn have more
+        accurate counts.  Transcript-based usage will overwrite again
+        if available.
+        """
+        raw_usage = getattr(message, "usage", None)
+        if not raw_usage:
+            return
+        usage_meta = extract_usage_metadata(raw_usage)
+        if usage_meta:
+            meta = run.extra.setdefault("metadata", {})
+            meta["usage_metadata"] = usage_meta
 
     def mark_next_start(self) -> None:
         """Mark when the next assistant message will start."""
@@ -276,9 +295,6 @@ def _get_last_active_tool_run() -> Any:
     last_id = list(_active_tool_runs.keys())[-1]
     run, _ = _active_tool_runs[last_id]
     return run
-
-
-
 
 
 def instrument_claude_client(original_class: Any) -> Any:
