@@ -106,12 +106,12 @@ describe("enrichAnthropicMessageOutputs", () => {
       content: [{ type: "text", text: "Hello!" }],
     });
     expect(out.content).toEqual([{ type: "text", text: "Hello!" }]);
-    expect(out.tool_calls).toBeUndefined();
+    expect(out.message).toBeUndefined();
     expect(out.messages).toBeUndefined();
     expect(out.choices).toBeUndefined();
   });
 
-  test("tool_use sets message.content for LangSmith + LangChain tool_calls", () => {
+  test("tool_use sets message.content for LangSmith", () => {
     const out = enrichAnthropicMessageOutputs({
       role: "assistant",
       content: [
@@ -135,12 +135,7 @@ describe("enrichAnthropicMessageOutputs", () => {
       role: "assistant",
       content: out.content,
     });
-    expect(out.tool_calls).toHaveLength(1);
-    expect(out.tool_calls?.[0]).toEqual({
-      id: "toolu_abc",
-      name: "get_weather",
-      args: { location: "SF", unit: "celsius" },
-    });
+    expect(out.tool_calls).toBeUndefined();
     expect(out.messages).toBeUndefined();
     expect(out.choices).toBeUndefined();
   });
@@ -163,6 +158,6 @@ describe("enrichAnthropicMessageOutputs", () => {
       { type: "tool_use", id: "t1", name: "search", input: { q: "x" } },
     ]);
     expect(out.message?.content).toEqual(out.content);
-    expect(out.tool_calls).toHaveLength(1);
+    expect(out.tool_calls).toBeUndefined();
   });
 });

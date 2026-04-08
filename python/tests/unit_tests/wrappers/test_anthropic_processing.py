@@ -90,7 +90,7 @@ class TestCreateUsageMetadata:
 
 
 class TestMessageToOutputsToolCalls:
-    """``message`` + ``tool_calls`` enrichment when ``tool_use`` blocks exist."""
+    """Adds ``message`` when ``tool_use`` blocks exist (LangSmith UI)."""
 
     @staticmethod
     def _make_message(content, usage=None, stop_reason="end_turn"):
@@ -106,7 +106,7 @@ class TestMessageToOutputsToolCalls:
         }
         return msg
 
-    def test_tool_use_converted_to_tool_calls(self):
+    def test_tool_use_sets_message(self):
         blocks = [
             {
                 "type": "tool_use",
@@ -120,18 +120,14 @@ class TestMessageToOutputsToolCalls:
 
         assert result["content"] == blocks
         assert result["message"] == {"role": "assistant", "content": blocks}
-        assert len(result["tool_calls"]) == 1
-        tc = result["tool_calls"][0]
-        assert tc["id"] == "toolu_abc"
-        assert tc["name"] == "get_weather"
-        assert tc["args"] == {"location": "SF", "unit": "celsius"}
+        assert "tool_calls" not in result
         assert not any(k in result for k in ("choices", "messages"))
 
-    def test_text_only_has_no_tool_calls(self):
+    def test_text_only_has_no_message_enrichment(self):
         msg = self._make_message([{"type": "text", "text": "Hello!"}])
         result = _message_to_outputs(msg)
 
-        assert "tool_calls" not in result
+        assert "message" not in result
         assert result["content"] == [{"type": "text", "text": "Hello!"}]
 
     def test_text_and_tool_use_keep_native_blocks(self):
@@ -149,9 +145,8 @@ class TestMessageToOutputsToolCalls:
 
         assert result["content"] == blocks
         assert result["message"]["content"] == blocks
-        assert len(result["tool_calls"]) == 1
 
-    def test_multiple_tool_calls(self):
+    def test_multiple_tool_use_blocks(self):
         msg = self._make_message(
             [
                 {
@@ -171,9 +166,9 @@ class TestMessageToOutputsToolCalls:
         )
         result = _message_to_outputs(msg)
 
-        assert len(result["tool_calls"]) == 2
-        assert result["tool_calls"][0]["name"] == "get_weather"
-        assert result["tool_calls"][1]["name"] == "get_stock"
+        assert len(result["message"]["content"]) == 2
+        assert result["message"]["content"][0]["name"] == "get_weather"
+        assert result["message"]["content"][1]["name"] == "get_stock"
 
 
 class TestInferLsParams:

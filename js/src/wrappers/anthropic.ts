@@ -126,14 +126,10 @@ function contentBlocksAsDicts(
   );
 }
 
-function toolArgsFromInput(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  return {};
-}
-
-/** Native ``tool_use`` in ``message.content`` + LangChain-style ``tool_calls``. */
+/**
+ * Trace-only: set ``message`` when ``tool_use`` blocks exist (LangSmith ``getFunctionsUsed``).
+ * The Anthropic client still returns the raw ``Message``.
+ */
 export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
   const content = contentBlocksAsDicts(result.content);
   result.content = content;
@@ -143,11 +139,6 @@ export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
   }
   const role = result.role ?? "assistant";
   result.message = { role, content };
-  result.tool_calls = toolBlocks.map((block, i) => ({
-    id: String(block.id ?? `call_${i}`),
-    name: String(block.name ?? ""),
-    args: toolArgsFromInput(block.input),
-  }));
   return result;
 }
 

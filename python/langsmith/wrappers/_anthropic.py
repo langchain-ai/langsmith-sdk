@@ -172,7 +172,15 @@ def _content_blocks_as_dicts(content: Any) -> list[dict[str, Any]]:
 
 
 def _message_to_outputs(message: Any) -> dict:
-    """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
+    """Anthropic Message → run outputs: keep API shape, add tracing-only fields.
+
+    Used only as ``traceable(process_outputs=…)`` — the wrapped client still
+    returns the raw SDK ``Message`` to application code.
+
+    Preserves native fields from ``model_dump()`` (content blocks, role, model,
+    stop_reason, …). Adds ``usage_metadata``. When ``tool_use`` blocks exist,
+    adds ``message`` (``role`` + ``content``) for LangSmith ``getFunctionsUsed``.
+    """
     outputs = message.model_dump()
     anthropic_token_usage = outputs.pop("usage", None)
     if anthropic_token_usage:
@@ -183,21 +191,10 @@ def _message_to_outputs(message: Any) -> dict:
     outputs["content"] = content
     tool_blocks = [b for b in content if b.get("type") == "tool_use"]
     if tool_blocks:
-        # getFunctionsUsed Anthropic path: outputs.message.content with tool_use blocks.
         outputs["message"] = {
             "role": outputs.get("role", "assistant"),
             "content": content,
         }
-        outputs["tool_calls"] = [
-            {
-                "id": str(block.get("id") or f"call_{i}"),
-                "name": block.get("name") or "",
-                "args": block.get("input")
-                if isinstance(block.get("input"), dict)
-                else {},
-            }
-            for i, block in enumerate(tool_blocks)
-        ]
     return outputs
 
 
