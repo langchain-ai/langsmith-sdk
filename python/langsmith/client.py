@@ -1343,7 +1343,6 @@ class Client:
         }
         # Merge custom headers first so they don't override required headers
         headers.update(self._custom_headers)
-        # Required headers that should not be overridden
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:
@@ -1372,6 +1371,15 @@ class Client:
     @workspace_id.setter
     def workspace_id(self, value: Optional[str]) -> None:
         self._set_header_affecting_attr("_workspace_id", value)
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._set_header_affecting_attr("_custom_headers", value or {})
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:

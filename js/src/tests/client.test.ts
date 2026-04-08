@@ -952,4 +952,81 @@ describe("Client", () => {
       expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000+00:00");
     });
   });
+
+  describe("custom headers", () => {
+    it("should include custom headers in requests", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Custom-Header": "custom-value",
+          "X-Another-Header": "another-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+      // Default headers should still be present
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+
+    it("should not allow custom headers to override required headers", () => {
+      const client = new Client({
+        apiKey: "correct-api-key",
+        headers: {
+          "x-api-key": "wrong-key",
+          "X-Custom-Header": "custom-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      // API key from config should take precedence
+      expect(mergedHeaders["x-api-key"]).toBe("correct-api-key");
+      // Custom header should still be present
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+    });
+
+    it("should allow dynamic update of custom headers", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Initial-Header": "initial-value",
+        },
+      });
+
+      let mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBe("initial-value");
+      expect(mergedHeaders["X-New-Header"]).toBeUndefined();
+
+      // Update custom headers
+      client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+      };
+
+      mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBeUndefined();
+      expect(mergedHeaders["X-New-Header"]).toBe("new-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+    });
+
+    it("should return custom headers via getter", () => {
+      const customHeaders = { "X-Custom-Header": "custom-value" };
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: customHeaders,
+      });
+
+      expect(client.headers).toEqual(customHeaders);
+    });
+
+    it("should work without custom headers", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+  });
 });
