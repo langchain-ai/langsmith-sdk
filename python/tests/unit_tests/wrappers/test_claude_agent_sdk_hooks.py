@@ -534,16 +534,16 @@ class TestReadLLMTurnsFromTranscript:
 
 
 class TestMissingSubagentLLMRuns:
-    """_patch_usage_from_transcripts creates LLM runs for subagent turns
+    """reconcile_from_transcripts creates LLM runs for subagent turns
     that were not seen in the live stream."""
 
     def test_creates_missing_llm_run_from_transcript(self, tmp_path):
         import json
 
-        from langsmith.integrations.claude_agent_sdk._client import (
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
             LLM_RUN_NAME,
-            TurnLifecycle,
-            _patch_usage_from_transcripts,
+            reconcile_from_transcripts,
         )
 
         # Create a subagent run
@@ -594,7 +594,7 @@ class TestMissingSubagentLLMRuns:
         # Register subagent transcript
         _subagent_transcript_paths.append((str(transcript), subagent_run))
 
-        _patch_usage_from_transcripts(tracker)
+        reconcile_from_transcripts(tracker)
 
         # msg_missing should now have an LLM run
         assert "msg_missing" in tracker.llm_runs_by_message_id
@@ -610,10 +610,10 @@ class TestMissingSubagentLLMRuns:
     def test_skips_already_seen_message_ids(self, tmp_path):
         import json
 
-        from langsmith.integrations.claude_agent_sdk._client import (
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
             LLM_RUN_NAME,
-            TurnLifecycle,
-            _patch_usage_from_transcripts,
+            reconcile_from_transcripts,
         )
 
         parent = _make_parent_run()
@@ -646,7 +646,7 @@ class TestMissingSubagentLLMRuns:
 
         _subagent_transcript_paths.append((str(transcript), subagent_run))
 
-        _patch_usage_from_transcripts(tracker)
+        reconcile_from_transcripts(tracker)
 
         # Should still be the same run, not replaced
         assert tracker.llm_runs_by_message_id["msg_already_seen"] is existing_run

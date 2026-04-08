@@ -9,11 +9,9 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
-from . import _hooks as _hooks_module
 from ._config import get_tracing_config
 from ._hooks import (
     _active_tool_runs,
-    _subagent_transcript_paths,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
@@ -31,11 +29,7 @@ from ._tools import (
     get_parent_run_tree,
     set_parent_run_tree,
 )
-from ._usage import (
-    extract_usage_metadata,
-    read_llm_turns_from_transcript,
-    read_usage_from_transcript,
-)
+from ._transcripts import LLM_RUN_NAME, reconcile_from_transcripts
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +44,6 @@ def _get_package_version(package_name: str) -> str | None:
         return version(package_name)
     except Exception:
         return None
-
-
-LLM_RUN_NAME = "claude.assistant.turn"
 
 
 class TurnLifecycle:
@@ -284,122 +275,6 @@ def _get_last_active_tool_run() -> Any:
     last_id = list(_active_tool_runs.keys())[-1]
     run, _ = _active_tool_runs[last_id]
     return run
-
-
-def _patch_usage_from_transcripts(
-    tracker: TurnLifecycle,
-) -> None:
-    """Read transcripts and reconcile LLM runs.
-
-    This function does two things after the conversation ends:
-
-    1. **Usage correction** — The Claude SDK's live
-       ``AssistantMessage.usage.output_tokens`` is a partial streaming
-       count.  The JSONL transcripts contain a final chunk per message
-       (with ``stop_reason`` set) that has the correct total.  This
-       patches accurate usage onto LLM run ``RunTree`` objects before
-       they are finalised.
-
-    2. **Missing subagent LLM runs** — The SDK does not relay all of a
-       subagent's ``AssistantMessage`` events through the parent stream.
-       Typically only the first turn (tool call) appears; the final
-       response is folded into the Agent tool result.  This reads each
-       subagent transcript and creates LLM runs for any turns that were
-       not seen in the stream.
-    """
-    # ── 1. Create missing subagent LLM runs from transcripts ─────────
-    # Guard against the same message_id being processed twice (e.g. if the
-    # same transcript path appears multiple times in the list).
-    created_from_transcript: set[str] = set()
-    for path, subagent_run in _subagent_transcript_paths:
-        try:
-            turns = read_llm_turns_from_transcript(path)
-            for turn in turns:
-                mid = turn["message_id"]
-                if mid in tracker.llm_runs_by_message_id:
-                    # Already created from the live stream — skip.
-                    continue
-                if mid in created_from_transcript:
-                    continue
-
-                # Create a new LLM run under the subagent chain.
-                ts = None
-                if turn.get("timestamp"):
-                    try:
-                        ts = datetime.fromisoformat(
-                            turn["timestamp"].replace("Z", "+00:00")
-                        )
-                    except (ValueError, TypeError):
-                        pass
-
-                input_messages = turn.get("input_messages", [])
-                llm_run = subagent_run.create_child(
-                    name=LLM_RUN_NAME,
-                    run_type="llm",
-                    inputs={"messages": input_messages} if input_messages else {},
-                    extra={
-                        "metadata": {
-                            "ls_model_name": turn.get("model"),
-                        }
-                    }
-                    if turn.get("model")
-                    else {},
-                    start_time=ts,
-                )
-
-                # Set outputs from transcript content blocks
-                content = turn.get("content", [])
-                llm_run.outputs = {"content": content, "role": "assistant"}
-
-                # Set usage from transcript
-                raw_usage = turn.get("usage")
-                if raw_usage:
-                    usage_meta = extract_usage_metadata(raw_usage)
-                    if usage_meta:
-                        meta = llm_run.extra.setdefault("metadata", {})
-                        meta["usage_metadata"] = usage_meta
-
-                llm_run.end(end_time=ts)
-                try:
-                    llm_run.post()
-                    llm_run.patch()
-                except Exception as e:
-                    logger.warning(f"Failed to post/patch subagent LLM run: {e}")
-
-                tracker.llm_runs_by_message_id[mid] = llm_run
-                created_from_transcript.add(mid)
-                logger.debug(f"Created missing subagent LLM run for message {mid}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to create subagent LLM runs from {path}: {e}",
-                exc_info=True,
-            )
-
-    # ── 2. Patch usage on existing LLM runs ──────────────────────────
-    if not tracker.llm_runs_by_message_id:
-        return
-
-    all_usage: dict[str, dict[str, Any]] = {}
-
-    # Main session transcript
-    main_path = _hooks_module._main_transcript_path
-    if main_path:
-        all_usage.update(read_usage_from_transcript(main_path))
-
-    # Subagent transcripts
-    for path, _run in _subagent_transcript_paths:
-        all_usage.update(read_usage_from_transcript(path))
-
-    patched = 0
-    for message_id, run in tracker.llm_runs_by_message_id.items():
-        usage = all_usage.get(message_id)
-        if usage:
-            meta = run.extra.setdefault("metadata", {})
-            meta["usage_metadata"] = usage
-            patched += 1
-
-    if patched:
-        logger.debug(f"Set usage on {patched} LLM run(s) from transcripts")
 
 
 def _unwrap_streamed_messages(
@@ -677,7 +552,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
                     tracker.close()
-                    _patch_usage_from_transcripts(tracker)
+                    reconcile_from_transcripts(tracker)
                     tracker.flush()
                     clear_parent_run_tree()
                     clear_active_tool_runs()
