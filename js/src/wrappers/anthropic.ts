@@ -115,14 +115,6 @@ export function createUsageMetadata(
   };
 }
 
-function safeJsonStringify(obj: unknown): string {
-  try {
-    return JSON.stringify(obj ?? {});
-  } catch {
-    return "{}";
-  }
-}
-
 function contentBlockToDict(block: unknown): Record<string, unknown> {
   if (block && typeof block === "object" && !Array.isArray(block)) {
     return { ...(block as Record<string, unknown>) };
@@ -137,49 +129,14 @@ function contentBlocksAsDicts(
   return content.map(contentBlockToDict);
 }
 
-function addToolsTabOutputs(
-  outputs: KVMap,
-  content: Array<Record<string, unknown>>,
-  toolBlocks: Array<Record<string, unknown>>
-): void {
-  const parts: KVMap[] = [];
-  for (const b of content) {
-    if (b.type === "text") {
-      parts.push({ type: "text", text: String(b.text ?? "") });
-    }
+function toolArgsFromBlockInput(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
   }
-  for (const b of toolBlocks) {
-    let inp: Record<string, unknown> = {};
-    const raw = b.input;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      inp = raw as Record<string, unknown>;
-    }
-    parts.push({
-      type: "tool_call",
-      name: String(b.name ?? ""),
-      args: inp,
-      id: String(b.id ?? ""),
-    });
-  }
-  outputs.messages = [{ role: "assistant", content: parts }];
-  outputs.choices = [
-    {
-      index: 0,
-      finish_reason: "tool_calls",
-      message: {
-        role: "assistant",
-        content: outputs.content,
-        tool_calls: outputs.tool_calls,
-      },
-    },
-  ];
+  return {};
 }
 
-/**
- * OpenAI-style ``tool_calls`` + log-LLM-trace ``messages`` / ``choices`` for LangSmith.
- *
- * @see https://docs.langchain.com/langsmith/log-llm-trace
- */
+/** Native ``tool_use`` in ``message.content`` + LangChain-style ``tool_calls``. */
 export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
   const content = contentBlocksAsDicts(result.content);
   result.content = content;
@@ -187,26 +144,17 @@ export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
   if (toolBlocks.length === 0) {
     return result;
   }
-  const textParts = content
-    .filter((b) => b.type === "text")
-    .map((b) => String(b.text ?? ""));
-  result.content = textParts.join("") || null;
+  const role =
+    typeof result.role === "string" ? result.role : "assistant";
+  result.message = { role, content };
   result.tool_calls = toolBlocks.map((block, i) => ({
     id: String(block.id ?? `call_${i}`),
-    type: "function",
-    index: i,
-    function: {
-      name: String(block.name ?? ""),
-      arguments: safeJsonStringify(block.input),
-    },
+    name: String(block.name ?? ""),
+    args: toolArgsFromBlockInput(block.input),
   }));
-  addToolsTabOutputs(result, content, toolBlocks);
   return result;
 }
 
-/**
- * Process Anthropic message outputs
- */
 function processMessageOutput(outputs: KVMap): KVMap {
   const message = outputs as Anthropic.Message;
 

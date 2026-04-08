@@ -16,7 +16,6 @@ from typing_extensions import Self, TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
-from langsmith._internal._orjson import dumps as _dumps
 from langsmith.schemas import InputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -172,37 +171,6 @@ def _content_blocks_as_dicts(content: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _add_tools_tab_outputs(
-    outputs: dict[str, Any],
-    content: list[dict[str, Any]],
-    tool_blocks: list[dict[str, Any]],
-) -> None:
-    """LangSmith Tools tab: log-LLM-trace ``messages`` + OpenAI ``choices``."""
-    parts: list[dict[str, Any]] = []
-    for b in content:
-        if b.get("type") == "text":
-            parts.append({"type": "text", "text": b.get("text", "")})
-    for b in tool_blocks:
-        inp = b.get("input")
-        if not isinstance(inp, dict):
-            inp = {}
-        bid = str(b.get("id") or "")
-        name = b.get("name") or ""
-        parts.append({"type": "tool_call", "name": name, "args": inp, "id": bid})
-    outputs["messages"] = [{"role": "assistant", "content": parts}]
-    outputs["choices"] = [
-        {
-            "index": 0,
-            "finish_reason": "tool_calls",
-            "message": {
-                "role": "assistant",
-                "content": outputs.get("content"),
-                "tool_calls": outputs["tool_calls"],
-            },
-        }
-    ]
-
-
 def _message_to_outputs(message: Any) -> dict:
     """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
     outputs = message.model_dump()
@@ -215,24 +183,21 @@ def _message_to_outputs(message: Any) -> dict:
     outputs["content"] = content
     tool_blocks = [b for b in content if b.get("type") == "tool_use"]
     if tool_blocks:
-        text_parts = [
-            b.get("text", "") for b in content if b.get("type") == "text"
-        ]
-        outputs["content"] = "".join(text_parts) or None
-        tool_calls = [
+        # getFunctionsUsed Anthropic path: outputs.message.content with tool_use blocks.
+        outputs["message"] = {
+            "role": outputs.get("role", "assistant"),
+            "content": content,
+        }
+        outputs["tool_calls"] = [
             {
-                "id": block.get("id", f"call_{i}"),
-                "type": "function",
-                "index": i,
-                "function": {
-                    "name": block.get("name", ""),
-                    "arguments": _dumps(block.get("input", {})).decode(),
-                },
+                "id": str(block.get("id") or f"call_{i}"),
+                "name": block.get("name") or "",
+                "args": block.get("input")
+                if isinstance(block.get("input"), dict)
+                else {},
             }
             for i, block in enumerate(tool_blocks)
         ]
-        outputs["tool_calls"] = tool_calls
-        _add_tools_tab_outputs(outputs, content, tool_blocks)
     return outputs
 
 

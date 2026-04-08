@@ -111,7 +111,7 @@ describe("enrichAnthropicMessageOutputs", () => {
     expect(out.choices).toBeUndefined();
   });
 
-  test("tool_use adds OpenAI tool_calls plus messages and choices", () => {
+  test("tool_use sets message.content for LangSmith + LangChain tool_calls", () => {
     const out = enrichAnthropicMessageOutputs({
       role: "assistant",
       content: [
@@ -123,35 +123,29 @@ describe("enrichAnthropicMessageOutputs", () => {
         },
       ],
     });
-    expect(out.content).toBeNull();
-    expect(out.tool_calls).toHaveLength(1);
-    expect(out.tool_calls?.[0]).toMatchObject({
-      id: "toolu_abc",
-      type: "function",
-      index: 0,
-      function: {
-        name: "get_weather",
-        arguments: JSON.stringify({ location: "SF", unit: "celsius" }),
-      },
-    });
-    expect(out.messages).toEqual([
+    expect(out.content).toEqual([
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            name: "get_weather",
-            args: { location: "SF", unit: "celsius" },
-            id: "toolu_abc",
-          },
-        ],
+        type: "tool_use",
+        id: "toolu_abc",
+        name: "get_weather",
+        input: { location: "SF", unit: "celsius" },
       },
     ]);
-    expect(out.choices?.[0]?.finish_reason).toBe("tool_calls");
-    expect(out.choices?.[0]?.message?.tool_calls).toBe(out.tool_calls);
+    expect(out.message).toEqual({
+      role: "assistant",
+      content: out.content,
+    });
+    expect(out.tool_calls).toHaveLength(1);
+    expect(out.tool_calls?.[0]).toEqual({
+      id: "toolu_abc",
+      name: "get_weather",
+      args: { location: "SF", unit: "celsius" },
+    });
+    expect(out.messages).toBeUndefined();
+    expect(out.choices).toBeUndefined();
   });
 
-  test("text + tool_use strips text into content string", () => {
+  test("text + tool_use keeps native blocks on content and message", () => {
     const out = enrichAnthropicMessageOutputs({
       role: "assistant",
       content: [
@@ -164,7 +158,11 @@ describe("enrichAnthropicMessageOutputs", () => {
         },
       ],
     });
-    expect(out.content).toBe("Checking.");
+    expect(out.content).toEqual([
+      { type: "text", text: "Checking." },
+      { type: "tool_use", id: "t1", name: "search", input: { q: "x" } },
+    ]);
+    expect(out.message?.content).toEqual(out.content);
     expect(out.tool_calls).toHaveLength(1);
   });
 });

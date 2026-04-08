@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-from langsmith._internal._orjson import loads as _loads
 from langsmith.wrappers._anthropic import (
     _create_usage_metadata,
     _infer_ls_params,
@@ -91,7 +90,7 @@ class TestCreateUsageMetadata:
 
 
 class TestMessageToOutputsToolCalls:
-    """Map tool_use to OpenAI tool_calls and log-LLM-trace messages/choices."""
+    """Native ``message.content`` for LangSmith UI + LangChain-style ``tool_calls``."""
 
     @staticmethod
     def _make_message(content, usage=None, stop_reason="end_turn"):
@@ -108,45 +107,25 @@ class TestMessageToOutputsToolCalls:
         return msg
 
     def test_tool_use_converted_to_tool_calls(self):
-        msg = self._make_message(
-            [
-                {
-                    "type": "tool_use",
-                    "id": "toolu_abc",
-                    "name": "get_weather",
-                    "input": {"location": "SF", "unit": "celsius"},
-                },
-            ],
-            stop_reason="tool_use",
-        )
+        blocks = [
+            {
+                "type": "tool_use",
+                "id": "toolu_abc",
+                "name": "get_weather",
+                "input": {"location": "SF", "unit": "celsius"},
+            },
+        ]
+        msg = self._make_message(blocks, stop_reason="tool_use")
         result = _message_to_outputs(msg)
 
-        assert result["content"] is None
+        assert result["content"] == blocks
+        assert result["message"] == {"role": "assistant", "content": blocks}
         assert len(result["tool_calls"]) == 1
         tc = result["tool_calls"][0]
         assert tc["id"] == "toolu_abc"
-        assert tc["type"] == "function"
-        assert tc["index"] == 0
-        assert tc["function"]["name"] == "get_weather"
-        assert _loads(tc["function"]["arguments"]) == {
-            "location": "SF",
-            "unit": "celsius",
-        }
-        assert result["messages"] == [
-            {
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_call",
-                        "name": "get_weather",
-                        "args": {"location": "SF", "unit": "celsius"},
-                        "id": "toolu_abc",
-                    },
-                ],
-            },
-        ]
-        assert result["choices"][0]["finish_reason"] == "tool_calls"
-        assert result["choices"][0]["message"]["tool_calls"] == result["tool_calls"]
+        assert tc["name"] == "get_weather"
+        assert tc["args"] == {"location": "SF", "unit": "celsius"}
+        assert not any(k in result for k in ("choices", "messages"))
 
     def test_text_only_has_no_tool_calls(self):
         msg = self._make_message([{"type": "text", "text": "Hello!"}])
@@ -155,25 +134,24 @@ class TestMessageToOutputsToolCalls:
         assert "tool_calls" not in result
         assert result["content"] == [{"type": "text", "text": "Hello!"}]
 
-    def test_text_stripped_from_content_when_tool_calls_present(self):
-        msg = self._make_message(
-            [
-                {"type": "text", "text": "Let me check."},
-                {
-                    "type": "tool_use",
-                    "id": "toolu_1",
-                    "name": "search",
-                    "input": {"q": "weather"},
-                },
-            ],
-            stop_reason="tool_use",
-        )
+    def test_text_and_tool_use_keep_native_blocks(self):
+        blocks = [
+            {"type": "text", "text": "Let me check."},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "search",
+                "input": {"q": "weather"},
+            },
+        ]
+        msg = self._make_message(blocks, stop_reason="tool_use")
         result = _message_to_outputs(msg)
 
-        assert result["content"] == "Let me check."
+        assert result["content"] == blocks
+        assert result["message"]["content"] == blocks
         assert len(result["tool_calls"]) == 1
 
-    def test_multiple_tool_calls_indexed(self):
+    def test_multiple_tool_calls(self):
         msg = self._make_message(
             [
                 {
@@ -194,10 +172,8 @@ class TestMessageToOutputsToolCalls:
         result = _message_to_outputs(msg)
 
         assert len(result["tool_calls"]) == 2
-        assert result["tool_calls"][0]["index"] == 0
-        assert result["tool_calls"][1]["index"] == 1
-        assert result["tool_calls"][0]["function"]["name"] == "get_weather"
-        assert result["tool_calls"][1]["function"]["name"] == "get_stock"
+        assert result["tool_calls"][0]["name"] == "get_weather"
+        assert result["tool_calls"][1]["name"] == "get_stock"
 
 
 class TestInferLsParams:
