@@ -74,6 +74,7 @@ _serialization_methods = [
         "model_dump",
         {"exclude_none": True, "mode": "json"},
     ),  # Pydantic V2 with non-serializable fields
+    ("model_dump", {"exclude_none": True}),  # Pydantic V2 without json mode
     ("dict", {}),  # Pydantic V1 with non-serializable field
     ("to_dict", {}),  # dataclasses-json
 ]
