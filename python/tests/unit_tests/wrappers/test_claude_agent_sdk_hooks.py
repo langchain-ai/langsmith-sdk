@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from langsmith.integrations.claude_agent_sdk import _hooks as _hooks_module
 from langsmith.integrations.claude_agent_sdk._hooks import (
     _active_tool_runs,
     _agent_to_tool_mapping,
@@ -35,6 +36,7 @@ def _clear_state():
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
     _subagent_transcript_paths.clear()
+    _hooks_module._main_transcript_path = None
     yield
     _active_tool_runs.clear()
     _subagent_runs.clear()
@@ -42,6 +44,7 @@ def _clear_state():
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
     _subagent_transcript_paths.clear()
+    _hooks_module._main_transcript_path = None
 
 
 def _make_parent_run() -> RunTree:
@@ -340,3 +343,54 @@ class TestSubagentFlow:
         clear_active_tool_runs()
         assert subagent_run.end_time is not None
         assert len(_ended_subagent_runs) == 0
+
+
+class TestTranscriptPathCapture:
+    """Pre-tool-use hook captures transcript_path from BaseHookInput."""
+
+    @pytest.fixture(autouse=True)
+    def _set_parent(self):
+        from langsmith.integrations.claude_agent_sdk import _tools
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        yield
+        _tools.clear_parent_run_tree()
+
+    def test_captures_transcript_path_from_first_hook(self):
+        assert _hooks_module._main_transcript_path is None
+
+        asyncio.run(
+            pre_tool_use_hook(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "echo hi"},
+                    "transcript_path": "/tmp/sessions/abc.jsonl",
+                },
+                "tu_1",
+                MagicMock(),
+            )
+        )
+
+        assert _hooks_module._main_transcript_path == "/tmp/sessions/abc.jsonl"
+
+    def test_does_not_overwrite_on_subsequent_hooks(self):
+        _hooks_module._main_transcript_path = "/first/path.jsonl"
+
+        asyncio.run(
+            pre_tool_use_hook(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {},
+                    "transcript_path": "/second/path.jsonl",
+                },
+                "tu_2",
+                MagicMock(),
+            )
+        )
+
+        assert _hooks_module._main_transcript_path == "/first/path.jsonl"
+
+    def test_clear_active_tool_runs_resets_transcript_path(self):
+        _hooks_module._main_transcript_path = "/some/path.jsonl"
+        clear_active_tool_runs()
+        assert _hooks_module._main_transcript_path is None

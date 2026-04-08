@@ -139,18 +139,4 @@ def read_usage_from_transcript(
         return {}
 
 
-def find_session_transcript(session_id: str) -> str | None:
-    """Find the transcript JSONL for a session_id.
 
-    Claude Code stores transcripts at
-    ``~/.claude/projects/{project_dir}/{session_id}.jsonl``.
-    """
-    try:
-        base = Path.home() / ".claude" / "projects"
-        if not base.exists():
-            return None
-        for path in base.glob(f"*/{session_id}.jsonl"):
-            return str(path)
-    except OSError:
-        pass
-    return None

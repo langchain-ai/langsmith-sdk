@@ -53,6 +53,10 @@ _ended_subagent_runs: dict[str, RunTree] = {}
 # Transcript paths captured from SubagentStop, used for usage extraction.
 _subagent_transcript_paths: list[str] = []
 
+# Main session transcript path, captured from BaseHookInput.transcript_path
+# on the first hook that fires (every hook inherits this field).
+_main_transcript_path: Optional[str] = None
+
 
 # ── Public helpers (used by _client.py) ───────────────────────────────────────
 
@@ -93,10 +97,15 @@ async def pre_tool_use_hook(
     if not tool_use_id:
         return {}
 
+    global _main_transcript_path
     data: dict[str, Any] = dict(input_data)  # flatten TypedDict union
     tool_name: str = str(data.get("tool_name", "unknown_tool"))
     tool_input: dict[str, Any] = dict(data.get("tool_input") or {})
     agent_id: Optional[str] = str(data["agent_id"]) if data.get("agent_id") else None
+
+    # Capture main session transcript path from BaseHookInput
+    if _main_transcript_path is None and data.get("transcript_path"):
+        _main_transcript_path = str(data["transcript_path"])
 
     # If this is an Agent tool call, record it so SubagentStart can find it
     if tool_name == "Agent":
@@ -428,9 +437,11 @@ def clear_active_tool_runs() -> None:
             logger.debug(f"Failed to clean up orphaned tool run {tool_use_id}: {e}")
 
     # 4. Reset all state
+    global _main_transcript_path
     _active_tool_runs.clear()
     _subagent_runs.clear()
     _pending_agent_tools.clear()
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
     _subagent_transcript_paths.clear()
+    _main_transcript_path = None

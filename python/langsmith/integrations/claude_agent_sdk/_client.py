@@ -10,6 +10,7 @@ from typing import Any, Optional
 from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._config import get_tracing_config
+from . import _hooks as _hooks_module
 from ._hooks import (
     _active_tool_runs,
     _subagent_transcript_paths,
@@ -273,7 +274,6 @@ def _get_last_active_tool_run() -> Any:
 
 def _patch_usage_from_transcripts(
     tracker: TurnLifecycle,
-    session_id: Optional[str],
 ) -> None:
     """Read transcripts and set accurate usage on LLM runs.
 
@@ -284,7 +284,7 @@ def _patch_usage_from_transcripts(
     ends and patches usage onto the corresponding ``RunTree`` objects
     before they are finalised.
     """
-    from ._usage import find_session_transcript, read_usage_from_transcript
+    from ._usage import read_usage_from_transcript
 
     if not tracker.llm_runs_by_message_id:
         return
@@ -292,11 +292,10 @@ def _patch_usage_from_transcripts(
     # Collect usage from all relevant transcripts
     all_usage: dict[str, dict[str, Any]] = {}
 
-    # Main session transcript
-    if session_id:
-        path = find_session_transcript(session_id)
-        if path:
-            all_usage.update(read_usage_from_transcript(path))
+    # Main session transcript (captured from BaseHookInput.transcript_path)
+    main_path = _hooks_module._main_transcript_path
+    if main_path:
+        all_usage.update(read_usage_from_transcript(main_path))
 
     # Subagent transcripts
     for path in _subagent_transcript_paths:
@@ -463,7 +462,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                 collected: list[dict[str, Any]] = []
 
                 prompt_for_llm: Any = self._prompt
-                result_session_id: Optional[str] = None
 
                 try:
                     async for msg in messages:
@@ -477,14 +475,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                             awaiting_streamed_input = False
 
                         msg_type = type(msg).__name__
-
-                        # Capture session_id from the first message
-                        # that has it, so transcript lookup works
-                        # even if ResultMessage is never received.
-                        if not result_session_id:
-                            sid = getattr(msg, "session_id", None)
-                            if sid:
-                                result_session_id = str(sid)
 
                         if msg_type == "AssistantMessage":
                             # Check if this message belongs to a subagent
@@ -585,7 +575,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
                     tracker.close()
-                    _patch_usage_from_transcripts(tracker, result_session_id)
+                    _patch_usage_from_transcripts(tracker)
                     tracker.flush()
                     clear_parent_run_tree()
                     clear_active_tool_runs()
