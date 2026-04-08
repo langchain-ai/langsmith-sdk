@@ -1506,7 +1506,7 @@ class Client:
             *(
                 ls_utils.LangSmithConnectionError,
                 ls_utils.LangSmithRequestTimeout,  # 408
-                ls_utils.LangSmithAPIError,  # 425/500/502/503/504
+                ls_utils.LangSmithAPIError,  # 500
             ),
         )
         to_ignore_: tuple[type[BaseException], ...] = (*(to_ignore or ()),)
@@ -1538,7 +1538,7 @@ class Client:
                                 should_continue = handle_response(response, idx + 1)
                                 if should_continue:
                                     continue
-                        if response.status_code in {425, 500, 502, 503, 504}:
+                        if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
                                 f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
