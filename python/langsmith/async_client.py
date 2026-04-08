@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import random
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
@@ -172,7 +173,7 @@ class AsyncClient:
                     return response
                 except httpx.HTTPStatusError as e:
                     response = e.response
-                    if response.status_code in {500, 502, 503, 504}:
+                    if response.status_code in {425, 500, 502, 503, 504}:
                         raise ls_utils.LangSmithAPIError(
                             f"Server error ({response.status_code}) caused failure to"
                             f" {method} {endpoint} in"
@@ -213,7 +214,8 @@ class AsyncClient:
             ):
                 if attempt == max_retries - 1:
                     raise
-                await asyncio.sleep(2**attempt)
+                sleep_time = 2**attempt + (random.random() * 0.5)
+                await asyncio.sleep(sleep_time)
         raise ls_utils.LangSmithAPIError(
             "Unexpected error connecting to the LangSmith API"
         )
@@ -1463,7 +1465,8 @@ class AsyncClient:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = await self._arequest_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
