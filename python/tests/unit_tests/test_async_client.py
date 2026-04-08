@@ -15,6 +15,105 @@ from langsmith import schemas as ls_schemas
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_custom_headers(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers={
+            "X-Custom-Header": "custom-value",
+            "X-Another-Header": "another-value",
+        },
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["X-Custom-Header"] == "custom-value"
+    assert passed_headers["X-Another-Header"] == "another-value"
+    assert passed_headers["Content-Type"] == "application/json"
+    assert passed_headers["x-api-key"] == "test-api-key"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_dont_override_required(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="correct-api-key",
+        headers={
+            "x-api-key": "wrong-key",
+            "X-Custom-Header": "custom-value",
+        },
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["x-api-key"] == "correct-api-key"
+    assert passed_headers["X-Custom-Header"] == "custom-value"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_property_setter(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers={"X-Initial-Header": "initial-value"},
+    )
+
+    client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+    }
+
+    assert client._headers["x-new-header"] == "new-value"
+    assert client._headers["x-another-header"] == "another-value"
+    assert client._headers["x-api-key"] == "test-api-key"
+    assert "x-initial-header" not in client._headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_property_getter(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    custom_headers = {"X-Custom-Header": "custom-value"}
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers=custom_headers,
+    )
+
+    assert client.headers == custom_headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_no_custom_headers(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["Content-Type"] == "application/json"
+    assert passed_headers["x-api-key"] == "test-api-key"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 @patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
 @patch("langsmith.async_client.ls_utils.raise_for_status_with_text")

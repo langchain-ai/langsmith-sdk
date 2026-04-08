@@ -31,7 +31,51 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = (
+        "_retry_config",
+        "_client",
+        "_web_url",
+        "_settings",
+        "_cache",
+        "_custom_headers",
+        "_api_key",
+    )
+
+    _custom_headers: dict[str, str]
+    _api_key: Optional[str]
+
+    def _compute_headers(self) -> dict[str, str]:
+        headers = {**self._custom_headers}
+        # Required headers that should not be overridden
+        headers["Content-Type"] = "application/json"
+        if self._api_key:
+            headers[ls_client.X_API_KEY] = self._api_key
+        return headers
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._custom_headers = value or {}
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        """Return the merged headers used for API requests."""
+        return dict(self._client.headers)
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Return the API key used for authentication."""
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._api_key = value
+        self._client.headers = httpx.Headers(self._compute_headers())
 
     def __init__(
         self,
@@ -44,6 +88,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
         disable_prompt_cache: bool = False,
         cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
@@ -55,6 +100,11 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
+            headers: Additional HTTP headers to include in all requests.
+
+                These headers will be merged with the default headers
+                (Content-Type, x-api-key, etc.). Custom headers will not override
+                the default required headers.
             disable_prompt_cache: Disable prompt caching for this client.
             cache: **[Deprecated]** Control prompt caching behavior.
 
@@ -66,13 +116,11 @@ class AsyncClient:
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
-        _headers = {
-            "Content-Type": "application/json",
-        }
+        self._custom_headers = headers or {}
         api_key = ls_utils.get_api_key(api_key)
         api_url = ls_utils.get_api_url(api_url)
-        if api_key:
-            _headers[ls_client.X_API_KEY] = api_key
+        self._api_key = api_key
+        _headers = self._compute_headers()
         ls_client._validate_api_key_if_hosted(api_url, api_key)
 
         if isinstance(timeout_ms, int):

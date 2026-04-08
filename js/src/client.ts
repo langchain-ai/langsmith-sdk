@@ -164,6 +164,14 @@ export interface ClientConfig {
   disablePromptCache?: boolean;
 
   /**
+   * Additional HTTP headers to include in all requests.
+   * These headers will be merged with the default headers (User-Agent,
+   * x-api-key, x-tenant-id, etc.). Custom headers will not override
+   * the default required headers.
+   */
+  headers?: Record<string, string>;
+
+  /**
    * @deprecated Use `configureGlobalPromptCache()` to configure caching, or
    * `disablePromptCache: true` to disable it. This parameter is deprecated.
    *
@@ -826,6 +834,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private static _fallbackDirsCreated = new Set<string>();
 
+  private _customHeaders: Record<string, string> = {};
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -933,6 +943,9 @@ export class Client implements LangSmithTracingClientInterface {
       // Use the global singleton instance
       this._promptCache = promptCacheSingleton;
     }
+
+    // Initialize custom headers
+    this._customHeaders = config.headers ?? {};
   }
 
   public static getDefaultClientConfig(): {
@@ -991,10 +1004,13 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private get headers(): { [header: string]: string } {
+  private get _mergedHeaders(): { [header: string]: string } {
+    // Start with custom headers so they don't override required headers
     const headers: { [header: string]: string } = {
+      ...this._customHeaders,
       "User-Agent": `langsmith-js/${__version__}`,
     };
+    // Required headers that should not be overridden
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
@@ -1002,6 +1018,19 @@ export class Client implements LangSmithTracingClientInterface {
       headers["x-tenant-id"] = this.workspaceId;
     }
     return headers;
+  }
+
+  /**
+   * Get or set custom headers for the client.
+   * Custom headers are merged with default headers (User-Agent, x-api-key, x-tenant-id).
+   * Custom headers will not override the default required headers.
+   */
+  public get headers(): Record<string, string> {
+    return this._customHeaders;
+  }
+
+  public set headers(value: Record<string, string> | undefined) {
+    this._customHeaders = value ?? {};
   }
 
   private _getPlatformEndpointPath(path: string): string {
@@ -1065,7 +1094,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -1098,7 +1127,7 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(url, {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         });
@@ -1133,7 +1162,10 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(`${this.apiUrl}${path}`, {
           method: requestMethod,
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -1577,7 +1609,7 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
     const session_name = run.project_name;
@@ -1725,7 +1757,7 @@ export class Client implements LangSmithTracingClientInterface {
     options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
   ) {
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
@@ -2043,7 +2075,7 @@ export class Client implements LangSmithTracingClientInterface {
         async () => {
           const body = await bodyFactory();
           const headers: Record<string, string> = {
-            ...this.headers,
+            ...this._mergedHeaders,
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           };
           if (options?.apiKey !== undefined) {
@@ -2196,7 +2228,7 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
     if (options?.apiKey !== undefined) {
@@ -2559,7 +2591,10 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(url, {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -2824,7 +2859,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -2850,7 +2885,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "PUT",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -2870,7 +2905,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -2884,7 +2919,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -2920,7 +2955,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -2949,7 +2984,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -2985,7 +3020,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "PUT",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -3008,7 +3043,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -3025,7 +3060,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/datasets`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -3068,7 +3103,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -3125,7 +3160,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(endpoint, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -3167,7 +3202,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(endpoint, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -3202,7 +3237,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}${path}?${params}`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -3397,7 +3432,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/sessions/${projectId_}`, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -3443,7 +3478,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "POST",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: formData,
@@ -3490,7 +3525,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -3682,7 +3717,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets/${_datasetId}`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -3732,7 +3767,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${_datasetId}/tags`,
         {
           method: "PUT",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -3767,7 +3805,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4114,7 +4152,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4143,7 +4181,10 @@ export class Client implements LangSmithTracingClientInterface {
       await this.caller.call(async () => {
         const res = await this._fetch(`${this.apiUrl}${path}`, {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             example_ids: exampleIds,
             hard_delete: true,
@@ -4164,7 +4205,7 @@ export class Client implements LangSmithTracingClientInterface {
           `${this.apiUrl}/examples?${params.toString()}`,
           {
             method: "DELETE",
-            headers: this.headers,
+            headers: this._mergedHeaders,
             signal: AbortSignal.timeout(this.timeout_ms),
             ...this.fetchOptions,
           }
@@ -4284,7 +4325,7 @@ export class Client implements LangSmithTracingClientInterface {
         }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
         {
           method: "GET",
-          headers: { ...this.headers },
+          headers: { ...this._mergedHeaders },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -4378,7 +4419,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId_}/splits`,
         {
           method: "PUT",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -4467,7 +4511,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -4510,7 +4554,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback/${feedbackId}`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -4533,7 +4577,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4624,7 +4668,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback/tokens`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -4685,7 +4729,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets/comparative`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -4819,7 +4863,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: JSON.stringify(body),
@@ -4896,7 +4940,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: JSON.stringify(body),
@@ -4918,7 +4962,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/feedback-configs?${params}`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5008,7 +5052,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/annotation-queues`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -5032,7 +5076,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5072,7 +5116,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "PATCH",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -5093,7 +5140,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "DELETE",
-          headers: { ...this.headers, Accept: "application/json" },
+          headers: { ...this._mergedHeaders, Accept: "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5123,7 +5170,10 @@ export class Client implements LangSmithTracingClientInterface {
         )}/runs`,
         {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -5149,7 +5199,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}${baseUrl}/${index}`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -5177,7 +5227,7 @@ export class Client implements LangSmithTracingClientInterface {
         )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
         {
           method: "DELETE",
-          headers: { ...this.headers, Accept: "application/json" },
+          headers: { ...this._mergedHeaders, Accept: "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5202,7 +5252,7 @@ export class Client implements LangSmithTracingClientInterface {
         )}/size`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5238,7 +5288,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5266,7 +5316,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/likes/${owner}/${promptName}`,
         {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -5477,7 +5530,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/repos/${owner}/${promptName}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5560,7 +5613,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/repos/`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -5634,7 +5687,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/commits/${owner}/${promptName}`,
         {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -5762,7 +5818,7 @@ export class Client implements LangSmithTracingClientInterface {
         )}`,
         {
           method: "PATCH",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body: formData,
@@ -5876,7 +5932,7 @@ export class Client implements LangSmithTracingClientInterface {
         )}`,
         {
           method: "POST",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body: formData,
@@ -5929,7 +5985,7 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PATCH",
           headers: {
-            ...this.headers,
+            ...this._mergedHeaders,
             "Content-Type": "application/json",
           },
           signal: AbortSignal.timeout(this.timeout_ms),
@@ -5959,7 +6015,7 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/repos/${owner}/${promptName}`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -5998,7 +6054,7 @@ export class Client implements LangSmithTracingClientInterface {
         }`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
