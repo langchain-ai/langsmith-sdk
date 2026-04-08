@@ -8680,16 +8680,10 @@ class Client:
                 another error occurs.
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
-        stop_after_attempt = 1
-        retry_total = self.retry_config.total
-        if isinstance(retry_total, int):
-            stop_after_attempt = max(1, retry_total)
-
         try:
             response = self.request_with_retries(
                 "GET",
                 f"/repos/{owner}/{prompt_name}",
-                stop_after_attempt=stop_after_attempt,
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
