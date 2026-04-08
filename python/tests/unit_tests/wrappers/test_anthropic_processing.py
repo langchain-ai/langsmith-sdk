@@ -129,6 +129,21 @@ class TestMessageToOutputsToolCalls:
             "location": "SF",
             "unit": "celsius",
         }
+        assert result["messages"] == [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_call",
+                        "name": "get_weather",
+                        "args": {"location": "SF", "unit": "celsius"},
+                        "id": "toolu_abc",
+                    },
+                ],
+            },
+        ]
+        assert result["choices"][0]["finish_reason"] == "tool_calls"
+        assert result["choices"][0]["message"]["tool_calls"] == result["tool_calls"]
 
     def test_text_only_has_no_tool_calls(self):
         msg = self._make_message([{"type": "text", "text": "Hello!"}])

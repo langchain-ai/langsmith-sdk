@@ -144,6 +144,72 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     return result
 
 
+_TOOL_BLOCK_TYPES = frozenset({"tool_use", "server_tool_use"})
+
+
+def _content_blocks_as_dicts(content: Any) -> list[dict[str, Any]]:
+    """Normalize SDK content blocks so tool detection works (dict or Pydantic models)."""
+    if not content:
+        return []
+    out: list[dict[str, Any]] = []
+    for b in content:
+        if isinstance(b, dict):
+            out.append(b)
+        elif hasattr(b, "model_dump"):
+            out.append(b.model_dump())
+        else:
+            t = getattr(b, "type", None)
+            name = getattr(b, "name", None)
+            bid = getattr(b, "id", None)
+            inp = getattr(b, "input", None)
+            if t is not None:
+                d: dict[str, Any] = {"type": t}
+                if bid is not None:
+                    d["id"] = bid
+                if name is not None:
+                    d["name"] = name
+                if inp is not None:
+                    d["input"] = inp
+                out.append(d)
+    return out
+
+
+def _add_tools_tab_outputs(
+    outputs: dict[str, Any],
+    content: list[dict[str, Any]],
+    tool_blocks: list[dict[str, Any]],
+) -> None:
+    """LangSmith Tools tab."""
+    parts: list[dict[str, Any]] = []
+    for b in content:
+        if b.get("type") == "text":
+            parts.append({"type": "text", "text": b.get("text", "")})
+    for b in tool_blocks:
+        inp = b.get("input")
+        if not isinstance(inp, dict):
+            inp = {}
+        bid = str(b.get("id") or "")
+        name = b.get("name") or ""
+        if b.get("type") == "tool_use":
+            parts.append({"type": "tool_call", "name": name, "args": inp, "id": bid})
+        elif b.get("type") == "server_tool_use":
+            parts.append(
+                {"type": "server_tool_call", "name": name, "args": inp, "id": bid}
+            )
+    outputs["messages"] = [{"role": "assistant", "content": parts}]
+    outputs["choices"] = [
+        {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": outputs.get("content"),
+                "tool_calls": outputs["tool_calls"],
+            },
+        }
+    ]
+
+
 def _message_to_outputs(message: Any) -> dict:
     """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
     outputs = message.model_dump()
@@ -152,11 +218,10 @@ def _message_to_outputs(message: Any) -> dict:
         outputs["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
     outputs.pop("type", None)
 
-    content = outputs.get("content") or []
-    tool_use_blocks = [
-        b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"
-    ]
-    if tool_use_blocks:
+    content = _content_blocks_as_dicts(outputs.get("content"))
+    outputs["content"] = content
+    tool_blocks = [b for b in content if b.get("type") in _TOOL_BLOCK_TYPES]
+    if tool_blocks:
         text_parts = [
             b.get("text", "")
             for b in content
@@ -173,8 +238,9 @@ def _message_to_outputs(message: Any) -> dict:
                     "arguments": _dumps(block.get("input", {})).decode(),
                 },
             }
-            for i, block in enumerate(tool_use_blocks)
+            for i, block in enumerate(tool_blocks)
         ]
+        _add_tools_tab_outputs(outputs, content, tool_blocks)
     return outputs
 
 
