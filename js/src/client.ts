@@ -1007,8 +1007,8 @@ export class Client implements LangSmithTracingClientInterface {
   private get _mergedHeaders(): { [header: string]: string } {
     // Start with custom headers so they don't override required headers
     const headers: { [header: string]: string } = {
-      ...this._customHeaders,
       "User-Agent": `langsmith-js/${__version__}`,
+      ...this._customHeaders,
     };
     // Required headers that should not be overridden
     if (this.apiKey) {
