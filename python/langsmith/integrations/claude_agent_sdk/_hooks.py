@@ -172,7 +172,7 @@ async def post_tool_use_hook(
         if not run_info:
             return {}
 
-        tool_run, start_time = run_info
+        tool_run, _ = run_info
 
         if isinstance(tool_response, dict):
             outputs = tool_response
@@ -248,7 +248,7 @@ async def post_tool_use_failure_hook(
         if not run_info:
             return {}
 
-        tool_run, start_time = run_info
+        tool_run, _ = run_info
 
         tool_run.end(
             outputs={"error": error},

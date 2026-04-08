@@ -23,6 +23,7 @@ from ._hooks import (
 from ._messages import (
     build_llm_input,
     flatten_content_blocks,
+    unwrap_message_dicts,
 )
 from ._tools import (
     clear_parent_run_tree,
@@ -277,34 +278,7 @@ def _get_last_active_tool_run() -> Any:
     return run
 
 
-def _unwrap_streamed_messages(
-    messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Unwrap streaming input messages for trace display."""
-    if not messages:
-        return []
 
-    formatted = []
-    for msg in messages:
-        if not isinstance(msg, dict):
-            formatted.append(msg)
-            continue
-
-        if "message" in msg:
-            inner = msg["message"]
-            if isinstance(inner, dict):
-                formatted.append(
-                    {
-                        "role": inner.get("role", "user"),
-                        "content": inner.get("content", ""),
-                    }
-                )
-            else:
-                formatted.append(msg)
-        else:
-            formatted.append(msg)
-
-    return formatted
 
 
 def instrument_claude_client(original_class: Any) -> Any:
@@ -431,7 +405,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                 try:
                     async for msg in messages:
                         if awaiting_streamed_input and self._streamed_input:
-                            unwrapped_messages = _unwrap_streamed_messages(
+                            unwrapped_messages = unwrap_message_dicts(
                                 self._streamed_input
                             )
                             if unwrapped_messages:
