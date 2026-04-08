@@ -11,8 +11,9 @@ from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._hooks import (
     _active_tool_runs,
-    _transcript_traced_agents,
+    _subagent_transcript_paths,
     clear_active_tool_runs,
+    get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
     post_tool_use_hook,
     pre_tool_use_hook,
@@ -21,14 +22,11 @@ from ._hooks import (
 )
 from ._messages import (
     build_llm_input,
-    extract_usage_from_result_message,
     flatten_content_blocks,
 )
 from ._tools import (
-    clear_current_llm_run,
     clear_parent_run_tree,
     get_parent_run_tree,
-    set_current_llm_run,
     set_parent_run_tree,
 )
 
@@ -63,6 +61,12 @@ class TurnLifecycle:
         self.current_run: Optional[Any] = None
         self.current_message_id: Optional[str] = None
         self.next_start_time: Optional[float] = query_start_time
+        # message_id → RunTree for all LLM runs created this conversation.
+        # Used to retroactively set usage from transcripts.
+        self.llm_runs_by_message_id: dict[str, Any] = {}
+        # Runs that have been end()ed but not yet patch()ed.
+        # Deferred so transcript usage can be set before the single patch().
+        self._pending_patch: list[Any] = []
 
     def start_llm_run(
         self,
@@ -80,7 +84,7 @@ class TurnLifecycle:
         message_id = getattr(message, "message_id", None)
         start = self.next_start_time or time.time()
 
-        # Same turn – just accumulate the output blocks.
+        # Same turn – just accumulate the output blocks and update usage.
         if message_id and message_id == self.current_message_id and self.current_run:
             content = flatten_content_blocks(getattr(message, "content", None))
             if content and self.current_run.outputs:
@@ -91,10 +95,11 @@ class TurnLifecycle:
                     self.current_run.outputs["content"] = content
             return {"content": content, "role": "assistant"} if content else None
 
-        # Different turn – close previous, open new.
+        # Different turn – end previous but defer patch() until
+        # transcript usage is available.
         if self.current_run:
             self.current_run.end()
-            self.current_run.patch()
+            self._pending_patch.append(self.current_run)
 
         final_output, run = begin_llm_run_from_assistant_messages(
             [message], prompt, history, start_time=start, parent=parent
@@ -103,9 +108,9 @@ class TurnLifecycle:
         self.current_message_id = message_id
         self.next_start_time = None
 
-        # Expose the LLM run so tool hooks can nest under it
         if run:
-            set_current_llm_run(run)
+            if message_id:
+                self.llm_runs_by_message_id[message_id] = run
 
         return final_output
 
@@ -113,26 +118,21 @@ class TurnLifecycle:
         """Mark when the next assistant message will start."""
         self.next_start_time = time.time()
 
-    def add_usage(self, metrics: dict[str, Any]) -> None:
-        """Attach usage from ``ResultMessage`` to the current (last) LLM run.
-
-        The Python SDK's per-``AssistantMessage`` usage is unreliable
-        (output tokens are under-counted), so we only set usage from the
-        ``ResultMessage`` which has correct aggregated totals.  This means
-        only the last LLM run in a conversation gets usage metadata.
-        """
-        if not (self.current_run and metrics):
-            return
-        meta = self.current_run.extra.setdefault("metadata", {})
-        meta["usage_metadata"] = metrics
-
     def close(self) -> None:
-        """End any open run gracefully."""
+        """End any open run and add to pending patch list."""
         if self.current_run:
             self.current_run.end()
-            self.current_run.patch()
+            self._pending_patch.append(self.current_run)
             self.current_run = None
-        clear_current_llm_run()
+
+    def flush(self) -> None:
+        """Patch all deferred LLM runs. Call after usage has been set."""
+        for run in self._pending_patch:
+            try:
+                run.patch()
+            except Exception as e:
+                logger.warning(f"Failed to patch LLM run: {e}")
+        self._pending_patch.clear()
 
 
 def begin_llm_run_from_assistant_messages(
@@ -267,6 +267,50 @@ def _get_last_active_tool_run() -> Any:
     last_id = list(_active_tool_runs.keys())[-1]
     run, _ = _active_tool_runs[last_id]
     return run
+
+
+def _patch_usage_from_transcripts(
+    tracker: TurnLifecycle,
+    session_id: Optional[str],
+) -> None:
+    """Read transcripts and set accurate usage on LLM runs.
+
+    The Claude SDK's live ``AssistantMessage.usage.output_tokens`` is a
+    partial streaming count.  The JSONL transcripts contain a final
+    chunk per message (with ``stop_reason`` set) that has the correct
+    total.  This function reads those transcripts after the conversation
+    ends and patches usage onto the corresponding ``RunTree`` objects
+    before they are finalised.
+    """
+    from ._usage import find_session_transcript, read_usage_from_transcript
+
+    if not tracker.llm_runs_by_message_id:
+        return
+
+    # Collect usage from all relevant transcripts
+    all_usage: dict[str, dict[str, Any]] = {}
+
+    # Main session transcript
+    if session_id:
+        path = find_session_transcript(session_id)
+        if path:
+            all_usage.update(read_usage_from_transcript(path))
+
+    # Subagent transcripts
+    for path in _subagent_transcript_paths:
+        all_usage.update(read_usage_from_transcript(path))
+
+    # Set usage on LLM runs (they haven't been patch()ed yet).
+    patched = 0
+    for message_id, run in tracker.llm_runs_by_message_id.items():
+        usage = all_usage.get(message_id)
+        if usage:
+            meta = run.extra.setdefault("metadata", {})
+            meta["usage_metadata"] = usage
+            patched += 1
+
+    if patched:
+        logger.debug(f"Set usage on {patched} LLM run(s) from transcripts")
 
 
 def _unwrap_streamed_messages(
@@ -407,6 +451,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                 collected: list[dict[str, Any]] = []
 
                 prompt_for_llm: Any = self._prompt
+                result_session_id: Optional[str] = None
 
                 try:
                     async for msg in messages:
@@ -420,33 +465,33 @@ def instrument_claude_client(original_class: Any) -> Any:
                             awaiting_streamed_input = False
 
                         msg_type = type(msg).__name__
+
+                        # Capture session_id from the first message
+                        # that has it, so transcript lookup works
+                        # even if ResultMessage is never received.
+                        if not result_session_id:
+                            sid = getattr(msg, "session_id", None)
+                            if sid:
+                                result_session_id = str(sid)
+
                         if msg_type == "AssistantMessage":
-                            # Skip messages from transcript-traced
-                            # subagents — their LLM turns are traced
-                            # from the JSONL transcript instead.
-                            # Check both agent_id and parent_tool_use_id
-                            # since SDK versions vary.
-                            msg_agent_id = getattr(msg, "agent_id", None)
+                            # Check if this message belongs to a subagent
+                            # via parent_tool_use_id.  If so, nest the
+                            # LLM run under the subagent chain.
                             parent_tool_use_id = getattr(
                                 msg, "parent_tool_use_id", None
                             )
-                            is_subagent_msg = False
-                            if (
-                                msg_agent_id
-                                and str(msg_agent_id) in _transcript_traced_agents
-                            ):
-                                is_subagent_msg = True
-                            elif parent_tool_use_id:
-                                is_subagent_msg = True
-
-                            if is_subagent_msg:
-                                yield msg
-                                continue
+                            llm_parent = (
+                                get_subagent_run_by_tool_id(parent_tool_use_id)
+                                if parent_tool_use_id
+                                else None
+                            )
 
                             content = tracker.start_llm_run(
                                 msg,
                                 prompt_for_llm,
                                 collected,
+                                parent=llm_parent,
                             )
                             if content:
                                 collected.append(content)
@@ -505,17 +550,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                                     )
                             tracker.mark_next_start()
                         elif msg_type == "ResultMessage":
-                            # Add usage metrics including cost
-                            if hasattr(msg, "usage"):
-                                usage = extract_usage_from_result_message(msg)
-                                # Add total_cost to usage_metadata if available
-                                if (
-                                    hasattr(msg, "total_cost_usd")
-                                    and msg.total_cost_usd is not None
-                                ):
-                                    usage["total_cost"] = msg.total_cost_usd
-                                tracker.add_usage(usage)
-
                             # Add conversation-level metadata
                             meta = {
                                 k: v
@@ -539,6 +573,8 @@ def instrument_claude_client(original_class: Any) -> Any:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
                     tracker.close()
+                    _patch_usage_from_transcripts(tracker, result_session_id)
+                    tracker.flush()
                     clear_parent_run_tree()
                     clear_active_tool_runs()
 

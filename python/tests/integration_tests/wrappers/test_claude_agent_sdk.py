@@ -1,7 +1,5 @@
 """Integration tests for Claude Agent SDK tracing."""
 
-import asyncio
-
 import pytest
 
 try:
@@ -76,71 +74,7 @@ async def test_tool_failure_creates_error_trace():
 
 @pytest.mark.asyncio
 async def test_subagent():
-    """Subagent chain nested under Agent tool; transcript LLM turns traced."""
-    from langsmith.integrations.claude_agent_sdk import (
-        configure_claude_agent_sdk,
-    )
-    from langsmith.integrations.claude_agent_sdk._transcript import (
-        TextBlock,
-        group_into_turns,
-        read_transcript,
-    )
-
-    configure_claude_agent_sdk()
-
-    agent_transcript_path = None
-
-    async def capture_transcript(input_data, tool_use_id, context):
-        nonlocal agent_transcript_path
-        agent_transcript_path = input_data.get("agent_transcript_path")
-        return {}
-
-    options = claude_agent_sdk.ClaudeAgentOptions(
-        model="claude-haiku-4-5",
-        system_prompt="You must always call the foo subagent.",
-        allowed_tools=["Agent"],
-        agents={
-            "foo": claude_agent_sdk.AgentDefinition(
-                description="Does foo things.",
-                prompt="You must always respond with exactly: 'bar'",
-                model="haiku",
-                tools=[],
-            ),
-        },
-        hooks={
-            "SubagentStop": [
-                claude_agent_sdk.HookMatcher(matcher=None, hooks=[capture_transcript])
-            ],
-        },
-    )
-
-    async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
-        await client.query("Call foo.")
-        async for message in client.receive_response():
-            pass
-
-    assert len(_active_tool_runs) == 0
-    assert len(_subagent_runs) == 0
-    assert len(_agent_to_tool_mapping) == 0
-    assert agent_transcript_path is not None, "SubagentStop hook did not fire"
-
-    await asyncio.sleep(0.3)  # wait for transcript flush
-
-    messages = read_transcript(agent_transcript_path)
-    assert len(messages) >= 2
-
-    turns = group_into_turns(messages)
-    assert len(turns) >= 1
-    assert len(turns[0].llm_calls) >= 1
-    assert turns[0].llm_calls[0].model == "claude-haiku-4-5"
-
-    text_blocks = [b for b in turns[0].llm_calls[0].content if isinstance(b, TextBlock)]
-    assert len(text_blocks) >= 1
-
-
-@pytest.mark.asyncio
-async def test_subagent_transcript_tool_calls_are_posted():
-    """Tool calls traced from subagent transcripts call post() before patch()."""
+    """Subagent chain nested under Agent tool via live hooks."""
     from unittest.mock import patch
 
     from langsmith.integrations.claude_agent_sdk import (
@@ -150,26 +84,6 @@ async def test_subagent_transcript_tool_calls_are_posted():
 
     configure_claude_agent_sdk()
 
-    # Track which runs had post() called before patch()
-    posted_runs: set[str] = set()
-    patched_runs: list[str] = []
-
-    original_post = RunTree.post
-    original_patch = RunTree.patch
-
-    def tracked_post(self, *args, **kwargs):
-        posted_runs.add(str(self.id))
-        return original_post(self, *args, **kwargs)
-
-    def tracked_patch(self, *args, **kwargs):
-        run_id = str(self.id)
-        patched_runs.append(run_id)
-        # Verify this run was posted before being patched
-        assert run_id in posted_runs, (
-            f"Run {self.name} ({run_id}) was patched without being posted first"
-        )
-        return original_patch(self, *args, **kwargs)
-
     options = claude_agent_sdk.ClaudeAgentOptions(
         model="claude-haiku-4-5",
         system_prompt="You must always call the foo subagent.",
@@ -178,8 +92,9 @@ async def test_subagent_transcript_tool_calls_are_posted():
             "foo": claude_agent_sdk.AgentDefinition(
                 description="Does foo things.",
                 prompt=(
-                    "You must call the Bash tool with command 'echo hello' "
-                    "and then respond with exactly: 'done'"
+                    "You must call the Bash tool with command"
+                    " 'echo hello' and then respond with"
+                    " exactly: 'done'"
                 ),
                 model="haiku",
                 tools=["Bash"],
@@ -187,19 +102,56 @@ async def test_subagent_transcript_tool_calls_are_posted():
         },
     )
 
-    with patch.object(RunTree, "post", tracked_post):
-        with patch.object(RunTree, "patch", tracked_patch):
-            async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
-                await client.query("Call foo.")
-                async for message in client.receive_response():
-                    pass
+    # Track all posted runs to verify hierarchy
+    posted_runs: list[dict] = []
+    original_post = RunTree.post
 
-    # All patched runs should have been posted first (assertion in tracked_patch)
-    # This verifies the fix for the bug where transcript tool runs called
-    # patch() without post(), causing them to never be created on the server.
-    # We expect at least the root chain, Agent tool, subagent chain, LLM run,
-    # and the Bash tool call from the transcript.
-    assert len(patched_runs) >= 1, "Expected at least one run to be patched"
+    def tracked_post(self, *args, **kwargs):
+        posted_runs.append(
+            {
+                "name": self.name,
+                "run_type": self.run_type,
+                "id": str(self.id),
+                "parent_run_id": str(self.parent_run_id)
+                if self.parent_run_id
+                else None,
+            }
+        )
+        return original_post(self, *args, **kwargs)
+
+    with patch.object(RunTree, "post", tracked_post):
+        async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
+            await client.query("Call foo.")
+            async for message in client.receive_response():
+                pass
+
+    # All hook state should be cleaned up
+    assert len(_active_tool_runs) == 0
+    assert len(_subagent_runs) == 0
+    assert len(_agent_to_tool_mapping) == 0
+
+    # Verify the trace hierarchy was created
+    run_names = [r["name"] for r in posted_runs]
+
+    # Should have: Agent tool, foo subagent chain, Bash tool (inside subagent)
+    assert "Agent" in run_names, f"Expected Agent tool run, saw: {run_names}"
+    assert "foo" in run_names, f"Expected foo subagent chain run, saw: {run_names}"
+    assert "Bash" in run_names, (
+        f"Expected Bash tool run inside subagent, saw: {run_names}"
+    )
+
+    # Verify nesting: foo should be a child of Agent
+    agent_run = next(r for r in posted_runs if r["name"] == "Agent")
+    foo_run = next(r for r in posted_runs if r["name"] == "foo")
+    assert foo_run["parent_run_id"] == agent_run["id"], (
+        "foo subagent should be nested under Agent tool"
+    )
+
+    # Verify Bash is nested under the foo subagent
+    bash_runs = [r for r in posted_runs if r["name"] == "Bash"]
+    assert any(r["parent_run_id"] == foo_run["id"] for r in bash_runs), (
+        "Bash tool should be nested under foo subagent"
+    )
 
 
 @pytest.mark.asyncio

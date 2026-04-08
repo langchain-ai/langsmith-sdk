@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
-from ._tools import get_current_llm_run, get_parent_run_tree
+from ._tools import get_parent_run_tree
 
 if TYPE_CHECKING:
     from claude_agent_sdk import (
@@ -50,13 +50,8 @@ _agent_to_tool_mapping: dict[str, str] = {}
 # clear_active_tool_runs() ends + patches it.
 _ended_subagent_runs: dict[str, RunTree] = {}
 
-# Queued by SubagentStop, processed by clear_active_tool_runs().
-# Each entry is (subagent RunTree, transcript_path).
-_pending_subagent_traces: list[tuple[RunTree, str]] = []
-
-# agent_ids whose internals will be traced from transcripts.
-# PreToolUse skips tool runs for these agents to avoid double-tracing.
-_transcript_traced_agents: set[str] = set()
+# Transcript paths captured from SubagentStop, used for usage extraction.
+_subagent_transcript_paths: list[str] = []
 
 
 # ── Public helpers (used by _client.py) ───────────────────────────────────────
@@ -107,16 +102,14 @@ async def pre_tool_use_hook(
     if tool_name == "Agent":
         _pending_agent_tools[tool_use_id] = tool_input
 
-    # Skip tool calls inside transcript-traced subagents — they will be
-    # traced from the JSONL transcript instead.
-    if agent_id and agent_id in _transcript_traced_agents:
-        return {}
-
     try:
-        # Determine parent: current LLM run > root chain
-        parent: Optional[RunTree] = (
-            get_current_llm_run() or get_parent_run_tree() or get_current_run_tree()
-        )
+        # Determine parent: subagent chain > root chain.
+        # Tool runs are siblings of LLM runs, not children.
+        parent: Optional[RunTree] = None
+        if agent_id and agent_id in _subagent_runs:
+            parent = _subagent_runs[agent_id]
+        else:
+            parent = get_parent_run_tree() or get_current_run_tree()
 
         if not parent:
             return {}
@@ -150,13 +143,14 @@ async def post_tool_use_hook(
     """Trace tool execution after it completes.
 
     Args:
-        input_data: Contains `tool_name`, `tool_input`, `tool_response`, `session_id`, etc.
+        input_data: Contains `tool_name`, `tool_input`, `tool_response`,
+            `session_id`, etc.
         tool_use_id: Unique identifier for this tool invocation
         context: Hook context (currently contains only signal)
 
     Returns:
         Hook output (empty `dict` by default)
-    """  # noqa: E501
+    """
     if not tool_use_id:
         return {}
 
@@ -192,11 +186,11 @@ async def post_tool_use_hook(
         except Exception as e:
             logger.warning(f"Failed to patch tool run for {tool_name}: {e}")
 
-        # If this is an Agent tool, also set outputs on the stashed subagent run.
-        # We don't end/patch the subagent here because its AssistantMessage
-        # hasn't been yielded to receive_response() yet — the client still
-        # needs to create LLM child runs under it.  clear_active_tool_runs()
-        # will finalise it at the end of the conversation.
+        # If this is an Agent tool, also set outputs on the stashed
+        # subagent run.  We don't end/patch the subagent here because
+        # its AssistantMessages may not have been yielded to
+        # receive_response() yet.  clear_active_tool_runs() will
+        # finalise it at the end of the conversation.
         subagent_run = _ended_subagent_runs.get(tool_use_id)
         if subagent_run:
             try:
@@ -205,7 +199,10 @@ async def post_tool_use_hook(
                 logger.warning(f"Failed to set subagent run outputs: {e}")
 
     except Exception as e:
-        logger.warning(f"Error in PostToolUse hook for {tool_name}: {e}", exc_info=True)
+        logger.warning(
+            f"Error in PostToolUse hook for {tool_name}: {e}",
+            exc_info=True,
+        )
 
     return {}
 
@@ -255,7 +252,8 @@ async def post_tool_use_failure_hook(
 
     except Exception as e:
         logger.warning(
-            f"Error in PostToolUseFailure hook for {tool_name}: {e}", exc_info=True
+            f"Error in PostToolUseFailure hook for {tool_name}: {e}",
+            exc_info=True,
         )
 
     return {}
@@ -275,7 +273,8 @@ async def subagent_start_hook(
 
     Args:
         input_data: Contains ``agent_id``, ``agent_type``, ``session_id``
-        tool_use_id: SDK-internal session id (not the Agent tool's tool_use_id)
+        tool_use_id: SDK-internal session id (not the Agent tool's
+            tool_use_id)
         context: Hook context
 
     Returns:
@@ -329,9 +328,6 @@ async def subagent_start_hook(
         # Store by agent_id so tool hooks and LLM run lookup can find it
         _subagent_runs[agent_id] = subagent_run
 
-        # Mark this agent for transcript-based tracing so live hooks skip it
-        _transcript_traced_agents.add(agent_id)
-
         # Remember which Agent tool_use_id spawned this agent_id
         if agent_tool_use_id:
             _agent_to_tool_mapping[agent_id] = agent_tool_use_id
@@ -347,12 +343,11 @@ async def subagent_stop_hook(
     tool_use_id: Optional[str],
     context: "HookContext",
 ) -> "HookJSONOutput":
-    """Queue subagent transcript for deferred tracing.
+    """Move the subagent run to ended state when it finishes.
 
-    Does NOT trace immediately — instead queues the transcript path
-    for processing at conversation end (in :func:`clear_active_tool_runs`).
-    This avoids blocking the message stream while waiting for the
-    transcript file to flush to disk.
+    Does NOT end/patch the run — ``PostToolUse`` for the Agent tool will
+    set outputs, and ``clear_active_tool_runs()`` will finalise it at the
+    end of the conversation.
 
     Args:
         input_data: Contains ``agent_id``, ``agent_type``, ``session_id``,
@@ -374,19 +369,15 @@ async def subagent_stop_hook(
     if not agent_id:
         return {}
 
+    if transcript_path:
+        _subagent_transcript_paths.append(transcript_path)
+
     try:
         subagent_run = _subagent_runs.pop(agent_id, None)
         if not subagent_run:
             return {}
 
-        # Queue transcript for deferred tracing — store the run directly
-        # so we don't need to look it up later.
-        if transcript_path:
-            _pending_subagent_traces.append((subagent_run, transcript_path))
-            logger.debug(f"Queued subagent transcript for deferred tracing: {agent_id}")
-
-        # Don't end the run yet — PostToolUse for the Agent tool will
-        # set outputs and then end + patch it.
+        # Move to ended state so PostToolUse can set outputs.
         agent_tool_id = _agent_to_tool_mapping.pop(agent_id, None)
         if agent_tool_id:
             _ended_subagent_runs[agent_tool_id] = subagent_run
@@ -404,199 +395,15 @@ async def subagent_stop_hook(
     return {}
 
 
-def _trace_subagent_turns(parent_run: Any, turns: list) -> None:
-    """Trace LLM turns from a subagent transcript under the parent run."""
-    for turn_num, turn in enumerate(turns, start=1):
-        # Build the conversation history for this turn
-        accumulated_messages: list[dict[str, Any]] = []
-        if turn.user_content:
-            accumulated_messages.append(
-                {
-                    "role": "user",
-                    "content": turn.user_content,
-                }
-            )
-
-        for llm_call in turn.llm_calls:
-            try:
-                _trace_llm_call(parent_run, llm_call, accumulated_messages)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to trace LLM call in subagent turn {turn_num}: {e}"
-                )
-
-            # Grow history for subsequent LLM calls in the same turn
-            assistant_content = _format_llm_content(llm_call)
-            accumulated_messages.append(
-                {"role": "assistant", "content": assistant_content}
-            )
-
-            for tool_call in llm_call.tool_calls:
-                if tool_call.result and tool_call.result.get("content"):
-                    accumulated_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": tool_call.tool_use.id,
-                                    "content": tool_call.result["content"],
-                                }
-                            ],
-                        }
-                    )
-
-
-def _format_llm_content(llm_call: Any) -> list[dict[str, Any]]:
-    """Format LLM call content blocks for the Anthropic message format."""
-    from ._transcript import TextBlock, ThinkingBlock, ToolUseBlock
-
-    content: list[dict[str, Any]] = []
-    for block in llm_call.content:
-        if isinstance(block, TextBlock):
-            content.append({"type": "text", "text": block.text})
-        elif isinstance(block, ThinkingBlock):
-            content.append({"type": "thinking", "thinking": block.thinking})
-        elif isinstance(block, ToolUseBlock):
-            content.append(
-                {
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                }
-            )
-    return content
-
-
-def _trace_llm_call(
-    parent_run: Any,
-    llm_call: Any,
-    accumulated_messages: list[dict[str, Any]],
-) -> None:
-    """Trace a single LLM call as a child ``llm`` run."""
-    # Parse timestamps
-    try:
-        start_time = datetime.fromisoformat(llm_call.start_time.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        start_time = datetime.now(timezone.utc)
-
-    output_content = _format_llm_content(llm_call)
-
-    # Snapshot the accumulated messages so later mutations don't affect this run
-    llm_run = parent_run.create_child(
-        name="claude.assistant.turn",
-        run_type="llm",
-        inputs={"messages": list(accumulated_messages)},
-        start_time=start_time,
-    )
-
-    # Outputs
-    outputs: dict[str, Any] = {"role": "assistant"}
-    if output_content:
-        outputs["content"] = output_content
-
-    # Usage → run metadata (not outputs)
-    if llm_call.usage:
-        from ._usage import extract_usage_metadata
-
-        if not llm_run.extra:
-            llm_run.extra = {}
-        if "metadata" not in llm_run.extra:
-            llm_run.extra["metadata"] = {}
-        llm_run.extra["metadata"]["usage_metadata"] = extract_usage_metadata(
-            llm_call.usage
-        )
-
-    llm_run.end(outputs=outputs)
-
-    try:
-        llm_run.post()
-    except Exception as e:
-        logger.warning(f"Failed to post LLM run: {e}")
-
-    # Trace tool calls as children
-    for tool_call in llm_call.tool_calls:
-        try:
-            _trace_tool_call(llm_run, tool_call)
-        except Exception as e:
-            logger.warning(f"Failed to trace tool call: {e}")
-
-
-def _trace_tool_call(llm_run: Any, tool_call: Any) -> None:
-    """Trace a tool call as a child of an LLM run."""
-    from ._transcript import ToolUseBlock
-
-    tool_use = tool_call.tool_use
-    if not isinstance(tool_use, ToolUseBlock):
-        return
-
-    if tool_call.result and tool_call.result.get("timestamp"):
-        try:
-            start_time = datetime.fromisoformat(
-                tool_call.result["timestamp"].replace("Z", "+00:00")
-            )
-        except (ValueError, AttributeError):
-            start_time = datetime.now(timezone.utc)
-    else:
-        start_time = datetime.now(timezone.utc)
-
-    tool_run = llm_run.create_child(
-        name=tool_use.name,
-        run_type="tool",
-        inputs={"input": tool_use.input},
-        start_time=start_time,
-    )
-
-    try:
-        tool_run.post()
-    except Exception as e:
-        logger.warning(f"Failed to post tool run: {e}")
-
-    outputs: dict[str, Any] = {}
-    if tool_call.result and tool_call.result.get("content"):
-        outputs["output"] = tool_call.result["content"]
-
-    tool_run.end(outputs=outputs)
-
-    try:
-        tool_run.patch()
-    except Exception as e:
-        logger.warning(f"Failed to patch tool run: {e}")
-
-
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
 
 def clear_active_tool_runs() -> None:
     """Finalise all runs and clear module state.
 
-    Called by ``receive_response()`` when a conversation ends. Processing
-    order matters:
-
-    1. **Deferred transcript traces** — the transcript files are now
-       definitely flushed, so we can safely read and trace them.
-    2. **Ended subagent runs** — outputs were set by ``PostToolUse``;
-       end + patch them now.
-    3. **Orphaned runs** — anything still open gets error-closed.
+    Called by ``receive_response()`` when a conversation ends.
     """
-    # 1. Process deferred transcript traces
-    for subagent_run, transcript_path in _pending_subagent_traces:
-        try:
-            from ._transcript import group_into_turns, read_transcript
-
-            messages = read_transcript(transcript_path)
-            if messages:
-                turns = group_into_turns(messages)
-                _trace_subagent_turns(subagent_run, turns)
-                logger.debug(f"Traced {len(turns)} turn(s) from {transcript_path}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to trace subagent transcript {transcript_path}: {e}"
-            )
-    _pending_subagent_traces.clear()
-
-    # 2. End orphaned subagent runs (SubagentStop never fired)
+    # 1. End orphaned subagent runs (SubagentStop never fired)
     for agent_id, subagent_run in _subagent_runs.items():
         try:
             subagent_run.end(error="Subagent run not completed (conversation ended)")
@@ -604,7 +411,7 @@ def clear_active_tool_runs() -> None:
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned subagent run {agent_id}: {e}")
 
-    # 3. Finalise ended subagent runs (outputs already set by PostToolUse)
+    # 2. Finalise ended subagent runs (outputs already set by PostToolUse)
     for tool_use_id, subagent_run in _ended_subagent_runs.items():
         try:
             subagent_run.end()
@@ -612,7 +419,7 @@ def clear_active_tool_runs() -> None:
         except Exception as e:
             logger.debug(f"Failed to finalise ended subagent run {tool_use_id}: {e}")
 
-    # 4. End orphaned tool runs
+    # 3. End orphaned tool runs
     for tool_use_id, (tool_run, _) in _active_tool_runs.items():
         try:
             tool_run.end(error="Tool run not completed (conversation ended)")
@@ -620,10 +427,10 @@ def clear_active_tool_runs() -> None:
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned tool run {tool_use_id}: {e}")
 
-    # 5. Reset all state
+    # 4. Reset all state
     _active_tool_runs.clear()
     _subagent_runs.clear()
     _pending_agent_tools.clear()
     _agent_to_tool_mapping.clear()
     _ended_subagent_runs.clear()
-    _transcript_traced_agents.clear()
+    _subagent_transcript_paths.clear()

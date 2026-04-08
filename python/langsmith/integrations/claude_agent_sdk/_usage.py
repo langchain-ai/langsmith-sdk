@@ -22,7 +22,12 @@ The canonical shape matches the JS LangSmith SDK's ``createUsageMetadata``:
    }
 """
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _to_int(value: Any) -> int:
@@ -86,3 +91,66 @@ def extract_usage_metadata(usage: Any) -> dict[str, Any]:
         meta["input_token_details"] = input_token_details
 
     return meta
+
+
+def read_usage_from_transcript(
+    file_path: str,
+) -> dict[str, dict[str, Any]]:
+    """Read a JSONL transcript and return final usage per message_id.
+
+    The Claude SDK streams assistant messages as multiple JSONL chunks
+    with the same ``message.id``.  Only the final chunk (where
+    ``stop_reason`` is set) has accurate ``output_tokens``.
+
+    Returns:
+        ``{message_id: usage_metadata}`` with canonical usage dicts.
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {}
+
+        # Collect the last usage seen per message_id — the final chunk
+        # (with stop_reason set) overwrites earlier partials.
+        raw_usage: dict[str, dict[str, Any]] = {}
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if data.get("type") != "assistant":
+                    continue
+                msg = data.get("message", {})
+                msg_id = msg.get("id")
+                usage = msg.get("usage")
+                if not msg_id or not usage:
+                    continue
+                # Always overwrite — later chunks have better counts.
+                # The final chunk (with stop_reason) is last.
+                raw_usage[msg_id] = usage
+
+        return {mid: extract_usage_metadata(u) for mid, u in raw_usage.items() if u}
+    except OSError as e:
+        logger.debug(f"Could not read transcript {file_path}: {e}")
+        return {}
+
+
+def find_session_transcript(session_id: str) -> str | None:
+    """Find the transcript JSONL for a session_id.
+
+    Claude Code stores transcripts at
+    ``~/.claude/projects/{project_dir}/{session_id}.jsonl``.
+    """
+    try:
+        base = Path.home() / ".claude" / "projects"
+        if not base.exists():
+            return None
+        for path in base.glob(f"*/{session_id}.jsonl"):
+            return str(path)
+    except OSError:
+        pass
+    return None
