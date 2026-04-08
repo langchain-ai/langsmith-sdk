@@ -7,10 +7,46 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from langsmith import AsyncClient
 from langsmith import schemas as ls_schemas
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_arequest_with_retries_retries_on_502(
+    mock_raise_for_status: mock.Mock,
+    _mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+
+    first_response = MagicMock()
+    first_response.status_code = 502
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    mock_httpx_client.request.side_effect = [first_response, second_response]
+
+    def _raise_for_status(response):
+        if response.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "status error",
+                request=httpx.Request("GET", "http://test"),
+                response=response,
+            )
+
+    mock_raise_for_status.side_effect = _raise_for_status
+
+    client = AsyncClient(retry_config={"max_retries": 2})
+    response = await client._arequest_with_retries("GET", "/repos/-/test")
+    assert response == second_response
+    assert mock_httpx_client.request.call_count == 2
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
