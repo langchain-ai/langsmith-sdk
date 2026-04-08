@@ -144,9 +144,6 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     return result
 
 
-_TOOL_BLOCK_TYPES = frozenset({"tool_use", "server_tool_use"})
-
-
 def _content_blocks_as_dicts(content: Any) -> list[dict[str, Any]]:
     """Normalize SDK content blocks so tool detection works (dict or Pydantic models)."""
     if not content:
@@ -190,12 +187,7 @@ def _add_tools_tab_outputs(
             inp = {}
         bid = str(b.get("id") or "")
         name = b.get("name") or ""
-        if b.get("type") == "tool_use":
-            parts.append({"type": "tool_call", "name": name, "args": inp, "id": bid})
-        elif b.get("type") == "server_tool_use":
-            parts.append(
-                {"type": "server_tool_call", "name": name, "args": inp, "id": bid}
-            )
+        parts.append({"type": "tool_call", "name": name, "args": inp, "id": bid})
     outputs["messages"] = [{"role": "assistant", "content": parts}]
     outputs["choices"] = [
         {
@@ -220,7 +212,7 @@ def _message_to_outputs(message: Any) -> dict:
 
     content = _content_blocks_as_dicts(outputs.get("content"))
     outputs["content"] = content
-    tool_blocks = [b for b in content if b.get("type") in _TOOL_BLOCK_TYPES]
+    tool_blocks = [b for b in content if b.get("type") == "tool_use"]
     if tool_blocks:
         text_parts = [
             b.get("text", "")
