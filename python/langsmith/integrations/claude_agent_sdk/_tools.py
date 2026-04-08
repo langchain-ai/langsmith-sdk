@@ -5,11 +5,8 @@ which is used by hooks to maintain trace context when async context
 propagation is broken.
 """
 
-import logging
 import threading
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # Thread-local store for passing the parent run tree into hooks.
 # Claude's async event loop by default breaks tracing.
@@ -32,19 +29,3 @@ def clear_parent_run_tree() -> None:
 def get_parent_run_tree() -> Any:
     """Get the parent run tree from thread-local storage."""
     return getattr(_thread_local, "parent_run_tree", None)
-
-
-def set_current_llm_run(run_tree: Any) -> None:
-    """Set the current LLM run so tool hooks can nest under it."""
-    _thread_local.current_llm_run = run_tree
-
-
-def clear_current_llm_run() -> None:
-    """Clear the current LLM run."""
-    if hasattr(_thread_local, "current_llm_run"):
-        delattr(_thread_local, "current_llm_run")
-
-
-def get_current_llm_run() -> Any:
-    """Get the current LLM run from thread-local storage."""
-    return getattr(_thread_local, "current_llm_run", None)

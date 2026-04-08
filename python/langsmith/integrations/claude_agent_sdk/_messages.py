@@ -104,12 +104,3 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
         return [*formatted, *history] if history else formatted
 
     return history or []
-
-
-def extract_usage_from_result_message(msg: Any) -> dict[str, Any]:
-    """Normalize and merge token usage metrics from a `ResultMessage`."""
-    from ._usage import extract_usage_metadata
-
-    if not getattr(msg, "usage", None):
-        return {}
-    return extract_usage_metadata(msg.usage)

@@ -98,12 +98,15 @@ def _patch_create_sdk_mcp_server(sdk_module: Any) -> None:
 
     from ._client import _wrap_tool_handler
 
-    def patched_create(name: str, version: str = "1.0.0", tools: Any = None) -> Any:
+    def patched_create(*args: Any, **kwargs: Any) -> Any:
+        tools = kwargs.get("tools") or (args[2] if len(args) > 2 else None)
         if tools:
             for tool in tools:
-                if hasattr(tool, "handler"):
+                if hasattr(tool, "handler") and not getattr(
+                    tool.handler, "_langsmith_wrapped", False
+                ):
                     tool.handler = _wrap_tool_handler(tool.handler)
-        return original_create(name, version=version, tools=tools)
+        return original_create(*args, **kwargs)
 
     patched_create._langsmith_patched = True  # type: ignore[attr-defined]
     sdk_module.create_sdk_mcp_server = patched_create

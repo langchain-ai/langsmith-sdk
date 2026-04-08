@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
+from ._config import get_tracing_config
 from ._hooks import (
     _active_tool_runs,
     _subagent_transcript_paths,
@@ -257,6 +258,7 @@ def _wrap_tool_handler(original_handler: Any) -> Any:
                 _context._PARENT_RUN_TREE.reset(token)
         return await original_handler(args)
 
+    _wrapped._langsmith_wrapped = True  # type: ignore[attr-defined]
     return _wrapped
 
 
@@ -437,15 +439,25 @@ def instrument_claude_client(original_class: Any) -> Any:
                         if val is not None:
                             trace_metadata[attr] = val
 
-            async with trace(
-                name=TRACE_CHAIN_NAME,
-                run_type="chain",
-                inputs=trace_inputs,
-                metadata={
+            config = get_tracing_config()
+            user_metadata = config.get("metadata") or {}
+
+            trace_kwargs: dict[str, Any] = {
+                "name": config.get("name") or TRACE_CHAIN_NAME,
+                "run_type": "chain",
+                "inputs": trace_inputs,
+                "metadata": {
                     **trace_metadata,
+                    **user_metadata,
                     "ls_agent_type": "root",
                 },
-            ) as run:
+            }
+            if config.get("project_name"):
+                trace_kwargs["project_name"] = config["project_name"]
+            if config.get("tags"):
+                trace_kwargs["tags"] = config["tags"]
+
+            async with trace(**trace_kwargs) as run:
                 set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)
                 collected: list[dict[str, Any]] = []
