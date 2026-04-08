@@ -71,6 +71,7 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
         "mcp_servers",
         "service_tier",
         "tool_choice",
+        "tools",
         "top_k",
         "top_p",
         "stream",
@@ -145,7 +146,7 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
 
 
 def _content_blocks_as_dicts(content: Any) -> list[dict[str, Any]]:
-    """Normalize SDK content blocks so tool detection works (dict or Pydantic models)."""
+    """Normalize content blocks for tool detection (dicts or Pydantic models)."""
     if not content:
         return []
     out: list[dict[str, Any]] = []
@@ -176,7 +177,7 @@ def _add_tools_tab_outputs(
     content: list[dict[str, Any]],
     tool_blocks: list[dict[str, Any]],
 ) -> None:
-    """LangSmith Tools tab."""
+    """LangSmith Tools tab: log-LLM-trace ``messages`` + OpenAI ``choices``."""
     parts: list[dict[str, Any]] = []
     for b in content:
         if b.get("type") == "text":
@@ -215,12 +216,10 @@ def _message_to_outputs(message: Any) -> dict:
     tool_blocks = [b for b in content if b.get("type") == "tool_use"]
     if tool_blocks:
         text_parts = [
-            b.get("text", "")
-            for b in content
-            if isinstance(b, dict) and b.get("type") == "text"
+            b.get("text", "") for b in content if b.get("type") == "text"
         ]
         outputs["content"] = "".join(text_parts) or None
-        outputs["tool_calls"] = [
+        tool_calls = [
             {
                 "id": block.get("id", f"call_{i}"),
                 "type": "function",
@@ -232,6 +231,7 @@ def _message_to_outputs(message: Any) -> dict:
             }
             for i, block in enumerate(tool_blocks)
         ]
+        outputs["tool_calls"] = tool_calls
         _add_tools_tab_outputs(outputs, content, tool_blocks)
     return outputs
 
@@ -628,29 +628,29 @@ def wrap_anthropic(
         tracing_extra_rest,
     )
 
-    if (
-        hasattr(client, "beta")
-        and hasattr(client.beta, "messages")
-        and hasattr(client.beta.messages, "create")
-    ):
-        client.beta.messages.create = _get_wrapper(  # type: ignore[method-assign]
-            client.beta.messages.create,  # type: ignore
-            chat_name,
-            _reduce_chat_chunks,
-            prepopulated_invocation_params,
-            tracing_extra_rest,
-        )
-
-    if (
-        hasattr(client, "beta")
-        and hasattr(client.beta, "messages")
-        and hasattr(client.beta.messages, "parse")
-    ):
-        client.beta.messages.parse = _get_wrapper(  # type: ignore[method-assign]
-            client.beta.messages.parse,  # type: ignore
-            chat_name,
-            _reduce_chat_chunks,
-            prepopulated_invocation_params,
-            tracing_extra_rest,
-        )
+    beta_messages = getattr(getattr(client, "beta", None), "messages", None)
+    if beta_messages is not None:
+        if hasattr(beta_messages, "create"):
+            beta_messages.create = _get_wrapper(  # type: ignore[method-assign]
+                beta_messages.create,
+                chat_name,
+                _reduce_chat_chunks,
+                prepopulated_invocation_params,
+                tracing_extra_rest,
+            )
+        if hasattr(beta_messages, "parse"):
+            beta_messages.parse = _get_wrapper(  # type: ignore[method-assign]
+                beta_messages.parse,
+                chat_name,
+                _reduce_chat_chunks,
+                prepopulated_invocation_params,
+                tracing_extra_rest,
+            )
+        if hasattr(beta_messages, "stream"):
+            beta_messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
+                beta_messages.stream,
+                chat_name,
+                prepopulated_invocation_params,
+                tracing_extra_rest,
+            )
     return client

@@ -3,7 +3,11 @@
 from unittest.mock import MagicMock
 
 from langsmith._internal._orjson import loads as _loads
-from langsmith.wrappers._anthropic import _create_usage_metadata, _message_to_outputs
+from langsmith.wrappers._anthropic import (
+    _create_usage_metadata,
+    _infer_ls_params,
+    _message_to_outputs,
+)
 
 
 class TestCreateUsageMetadata:
@@ -87,8 +91,7 @@ class TestCreateUsageMetadata:
 
 
 class TestMessageToOutputsToolCalls:
-    """Test that _message_to_outputs converts Anthropic tool_use blocks
-    to the OpenAI-compatible tool_calls format the LangSmith UI expects."""
+    """Map tool_use to OpenAI tool_calls and log-LLM-trace messages/choices."""
 
     @staticmethod
     def _make_message(content, usage=None, stop_reason="end_turn"):
@@ -195,3 +198,19 @@ class TestMessageToOutputsToolCalls:
         assert result["tool_calls"][1]["index"] == 1
         assert result["tool_calls"][0]["function"]["name"] == "get_weather"
         assert result["tool_calls"][1]["function"]["name"] == "get_stock"
+
+
+class TestInferLsParams:
+    """Invocation params include tools for LangSmith Tools tab name matching."""
+
+    def test_tools_passed_to_ls_invocation_params(self):
+        tools = [{"name": "get_weather", "input_schema": {"type": "object"}}]
+        out = _infer_ls_params(
+            {},
+            {
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "tools": tools,
+            },
+        )
+        assert out["ls_invocation_params"]["tools"] == tools

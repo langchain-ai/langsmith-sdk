@@ -36,11 +36,10 @@ describe("convertAnthropicUsageToInputTokenDetails", () => {
 
 describe("createUsageMetadata", () => {
   test("no cache — passthrough", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = createUsageMetadata({
       input_tokens: 100,
       output_tokens: 50,
-    } as any);
+    });
     expect(result?.input_tokens).toBe(100);
     expect(result?.output_tokens).toBe(50);
     expect(result?.total_tokens).toBe(150);
@@ -112,7 +111,7 @@ describe("enrichAnthropicMessageOutputs", () => {
     expect(out.choices).toBeUndefined();
   });
 
-  test("tool_use adds tool_calls, messages, and choices for LangSmith Tools tab", () => {
+  test("tool_use adds OpenAI tool_calls plus messages and choices", () => {
     const out = enrichAnthropicMessageOutputs({
       role: "assistant",
       content: [

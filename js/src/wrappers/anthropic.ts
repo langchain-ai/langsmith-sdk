@@ -10,7 +10,16 @@ import {
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
 
-const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
+const TRACED_INVOCATION_KEYS = [
+  "mcp_servers",
+  "service_tier",
+  "tool_choice",
+  "tools",
+  "top_k",
+  "top_p",
+  "stream",
+  "thinking",
+];
 
 type ExtraRunTreeConfig = Pick<
   Partial<RunTreeConfig>,
@@ -167,8 +176,7 @@ function addToolsTabOutputs(
 }
 
 /**
- * Align Anthropic message outputs with LangSmith LLM trace + OpenAI-style choices
- * so the Tools tab shows tools as "Called" (parity with Python `wrap_anthropic`).
+ * OpenAI-style ``tool_calls`` + log-LLM-trace ``messages`` / ``choices`` for LangSmith.
  *
  * @see https://docs.langchain.com/langsmith/log-llm-trace
  */
