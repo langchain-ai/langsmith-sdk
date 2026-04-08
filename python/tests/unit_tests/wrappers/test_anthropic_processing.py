@@ -90,7 +90,7 @@ class TestCreateUsageMetadata:
 
 
 class TestMessageToOutputsToolCalls:
-    """Native ``message.content`` for LangSmith UI + LangChain-style ``tool_calls``."""
+    """``message`` + ``tool_calls`` enrichment when ``tool_use`` blocks exist."""
 
     @staticmethod
     def _make_message(content, usage=None, stop_reason="end_turn"):
@@ -177,7 +177,7 @@ class TestMessageToOutputsToolCalls:
 
 
 class TestInferLsParams:
-    """Invocation params include tools for LangSmith Tools tab name matching."""
+    """``tools`` forwarded into ``ls_invocation_params``."""
 
     def test_tools_passed_to_ls_invocation_params(self):
         tools = [{"name": "get_weather", "input_schema": {"type": "object"}}]

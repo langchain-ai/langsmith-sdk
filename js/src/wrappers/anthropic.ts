@@ -115,21 +115,18 @@ export function createUsageMetadata(
   };
 }
 
-function contentBlockToDict(block: unknown): Record<string, unknown> {
-  if (block && typeof block === "object" && !Array.isArray(block)) {
-    return { ...(block as Record<string, unknown>) };
-  }
-  return {};
-}
-
 function contentBlocksAsDicts(
   content: unknown
 ): Array<Record<string, unknown>> {
   if (!Array.isArray(content)) return [];
-  return content.map(contentBlockToDict);
+  return content.map((block) =>
+    block && typeof block === "object" && !Array.isArray(block)
+      ? { ...(block as Record<string, unknown>) }
+      : {}
+  );
 }
 
-function toolArgsFromBlockInput(raw: unknown): Record<string, unknown> {
+function toolArgsFromInput(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
   }
@@ -144,13 +141,12 @@ export function enrichAnthropicMessageOutputs(result: KVMap): KVMap {
   if (toolBlocks.length === 0) {
     return result;
   }
-  const role =
-    typeof result.role === "string" ? result.role : "assistant";
+  const role = result.role ?? "assistant";
   result.message = { role, content };
   result.tool_calls = toolBlocks.map((block, i) => ({
     id: String(block.id ?? `call_${i}`),
     name: String(block.name ?? ""),
-    args: toolArgsFromBlockInput(block.input),
+    args: toolArgsFromInput(block.input),
   }));
   return result;
 }
