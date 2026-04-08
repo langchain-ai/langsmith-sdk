@@ -70,7 +70,10 @@ import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { parsePromptIdentifier } from "./utils/prompts.js";
+import {
+  parsePromptIdentifier,
+  isVersionGreaterOrEqual,
+} from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
 import {
   PromptCache,
@@ -630,6 +633,8 @@ export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 export const DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
+
+const MIN_VERSION_DATASET_EXAMPLES_ENDPOINT = "0.13.18";
 
 /** Maximum number of operations to batch in a single request. */
 const DEFAULT_BATCH_SIZE_LIMIT = 100;
@@ -4040,7 +4045,17 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide a datasetName or datasetId");
     }
-    const params = new URLSearchParams({ dataset: datasetId_ });
+    const serverInfo = await this._ensureServerInfo();
+    const useNewEndpoint =
+      serverInfo.version &&
+      isVersionGreaterOrEqual(
+        serverInfo.version,
+        MIN_VERSION_DATASET_EXAMPLES_ENDPOINT
+      );
+    const params = new URLSearchParams();
+    if (!useNewEndpoint) {
+      params.append("dataset", datasetId_);
+    }
     const dataset_version = asOf
       ? typeof asOf === "string"
         ? asOf
@@ -4080,8 +4095,11 @@ export class Client implements LangSmithTracingClientInterface {
       );
     }
     let i = 0;
+    const path = useNewEndpoint
+      ? `/v1/platform/datasets/${datasetId_}/examples`
+      : "/examples";
     for await (const rawExamples of this._getPaginated<RawExample>(
-      "/examples",
+      path,
       params
     )) {
       for (const rawExample of rawExamples) {
