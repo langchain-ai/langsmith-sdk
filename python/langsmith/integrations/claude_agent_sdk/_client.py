@@ -297,261 +297,265 @@ def _get_last_active_tool_run() -> Any:
     return run
 
 
-def instrument_claude_client(original_class: Any) -> Any:
-    """Wrap `ClaudeSDKClient` to trace both `query()` and `receive_response()`."""
+def instrument_claude_client(original_class: Any) -> None:
+    """Patch ``ClaudeSDKClient`` **in place** to trace calls.
+
+    In-place patching (rather than subclassing + reference replacement)
+    ensures that callers who imported ``ClaudeSDKClient`` *before*
+    ``configure_claude_agent_sdk()`` was called still get instrumented.
+    """
     if getattr(original_class, "_langsmith_instrumented", False):
-        return original_class  # Already wrapped, avoid double-tracing
+        return  # Already wrapped, avoid double-tracing
 
-    class TracedClaudeSDKClient(original_class):
-        _langsmith_instrumented = True
+    # ── stash originals ──────────────────────────────────────────────
+    _orig_init = original_class.__init__
+    _orig_query = original_class.query
+    _orig_receive_response = original_class.receive_response
 
-        def __init__(self, *args: Any, **kwargs: Any):
-            # Inject LangSmith tracing hooks into options before initialization
-            options = kwargs.get("options") or (args[0] if args else None)
-            if options:
-                _inject_tracing_hooks(options)
+    # ── patched __init__ ─────────────────────────────────────────────
+    def _traced_init(self: Any, *args: Any, **kwargs: Any) -> None:
+        options = kwargs.get("options") or (args[0] if args else None)
+        if options:
+            _inject_tracing_hooks(options)
+        _orig_init(self, *args, **kwargs)
+        self._ls_prompt: Optional[str] = None
+        self._ls_start_time: Optional[float] = None
+        self._ls_streamed_input: Optional[list[dict[str, Any]]] = None
 
-            super().__init__(*args, **kwargs)
-            self._prompt: Optional[str] = None
-            self._start_time: Optional[float] = None
-            self._streamed_input: Optional[list[dict[str, Any]]] = None
+    # ── patched query ────────────────────────────────────────────────
+    async def _traced_query(self: Any, *args: Any, **kwargs: Any) -> Any:
+        self._ls_start_time = time.time()
+        self._ls_streamed_input = None
+        prompt = args[0] if args else kwargs.get("prompt")
 
-        async def query(self, *args: Any, **kwargs: Any) -> Any:
-            """Capture prompt and start time, wrapping generators if needed."""
-            self._start_time = time.time()
-            self._streamed_input = None
-            prompt = args[0] if args else kwargs.get("prompt")
+        if prompt is None:
+            pass
+        elif isinstance(prompt, str):
+            self._ls_prompt = prompt
+        elif isinstance(prompt, AsyncIterable):
+            collector: list[dict[str, Any]] = []
+            self._ls_streamed_input = collector
+            self._ls_prompt = None
 
-            if prompt is None:
-                pass
-            elif isinstance(prompt, str):
-                self._prompt = prompt
-            elif isinstance(prompt, AsyncIterable):
-                collector: list[dict[str, Any]] = []
-                self._streamed_input = collector
-                self._prompt = None
+            async def _gen_wrapper() -> AsyncGenerator[dict[str, Any], None]:
+                async for msg in prompt:
+                    collector.append(msg)
+                    yield msg
 
-                async def _gen_wrapper() -> AsyncGenerator[dict[str, Any], None]:
-                    async for msg in prompt:
-                        collector.append(msg)
-                        yield msg
-
-                if args:
-                    args = (_gen_wrapper(),) + args[1:]
-                else:
-                    kwargs["prompt"] = _gen_wrapper()
+            if args:
+                args = (_gen_wrapper(),) + args[1:]
             else:
-                self._prompt = str(prompt)
+                kwargs["prompt"] = _gen_wrapper()
+        else:
+            self._ls_prompt = str(prompt)
 
-            return await super().query(*args, **kwargs)
+        return await _orig_query(self, *args, **kwargs)
 
-        async def receive_response(self) -> AsyncGenerator[Any, None]:
-            """Intercept message stream and record chain run activity."""
-            messages = super().receive_response()
+    # ── patched receive_response ─────────────────────────────────────
+    async def _traced_receive_response(self: Any) -> AsyncGenerator[Any, None]:
+        messages = _orig_receive_response(self)
 
-            # Capture configuration in inputs and metadata
-            trace_inputs: dict[str, Any] = {}
-            trace_metadata: dict[str, Any] = {
-                "ls_integration": "claude-agent-sdk",
-                "ls_integration_version": _get_package_version("claude_agent_sdk"),
-            }
+        trace_inputs: dict[str, Any] = {}
+        trace_metadata: dict[str, Any] = {
+            "ls_integration": "claude-agent-sdk",
+            "ls_integration_version": _get_package_version("claude_agent_sdk"),
+        }
 
-            # Track if we need to update input from captured streaming messages
-            awaiting_streamed_input = self._streamed_input is not None
+        awaiting_streamed_input = self._ls_streamed_input is not None
 
-            # Add prompt to inputs (for string prompts)
-            if self._prompt:
-                trace_inputs["prompt"] = self._prompt
+        if self._ls_prompt:
+            trace_inputs["prompt"] = self._ls_prompt
 
-            # Add system_prompt to inputs if available
-            if hasattr(self, "options") and self.options:
-                if (
-                    hasattr(self.options, "system_prompt")
-                    and self.options.system_prompt
-                ):
-                    system_prompt = self.options.system_prompt
-                    if isinstance(system_prompt, str):
+        if hasattr(self, "options") and self.options:
+            if hasattr(self.options, "system_prompt") and self.options.system_prompt:
+                system_prompt = self.options.system_prompt
+                if isinstance(system_prompt, str):
+                    trace_inputs["system"] = system_prompt
+                elif isinstance(system_prompt, dict):
+                    if system_prompt.get("type") == "preset":
+                        preset_text = (
+                            f"preset: {system_prompt.get('preset', 'claude_code')}"
+                        )
+                        if "append" in system_prompt:
+                            preset_text += f"\nappend: {system_prompt['append']}"
+                        trace_inputs["system"] = preset_text
+                    else:
                         trace_inputs["system"] = system_prompt
-                    elif isinstance(system_prompt, dict):
-                        # Handle SystemPromptPreset format
-                        if system_prompt.get("type") == "preset":
-                            preset_text = (
-                                f"preset: {system_prompt.get('preset', 'claude_code')}"
-                            )
-                            if "append" in system_prompt:
-                                preset_text += f"\nappend: {system_prompt['append']}"
-                            trace_inputs["system"] = preset_text
-                        else:
-                            trace_inputs["system"] = system_prompt
 
-                # Add other config to metadata
-                for attr in ["model", "permission_mode", "max_turns"]:
-                    if hasattr(self.options, attr):
-                        val = getattr(self.options, attr)
-                        if val is not None:
-                            trace_metadata[attr] = val
+            for attr in ["model", "permission_mode", "max_turns"]:
+                if hasattr(self.options, attr):
+                    val = getattr(self.options, attr)
+                    if val is not None:
+                        trace_metadata[attr] = val
 
-            config = get_tracing_config()
-            user_metadata = config.get("metadata") or {}
+        config = get_tracing_config()
+        user_metadata = config.get("metadata") or {}
 
-            trace_kwargs: dict[str, Any] = {
-                "name": config.get("name") or TRACE_CHAIN_NAME,
-                "run_type": "chain",
-                "inputs": trace_inputs,
-                "metadata": {
-                    **trace_metadata,
-                    **user_metadata,
-                    "ls_agent_type": "root",
-                },
-            }
-            if config.get("project_name"):
-                trace_kwargs["project_name"] = config["project_name"]
-            if config.get("tags"):
-                trace_kwargs["tags"] = config["tags"]
+        trace_kwargs: dict[str, Any] = {
+            "name": config.get("name") or TRACE_CHAIN_NAME,
+            "run_type": "chain",
+            "inputs": trace_inputs,
+            "metadata": {
+                **trace_metadata,
+                **user_metadata,
+                "ls_agent_type": "root",
+            },
+        }
+        if config.get("project_name"):
+            trace_kwargs["project_name"] = config["project_name"]
+        if config.get("tags"):
+            trace_kwargs["tags"] = config["tags"]
 
-            async with trace(**trace_kwargs) as run:
-                set_parent_run_tree(run)
-                tracker = TurnLifecycle(self._start_time)
-                # Message histories scoped by context.
-                # None → main agent, parent_tool_use_id → subagent.
-                collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
+        async with trace(**trace_kwargs) as run:
+            set_parent_run_tree(run)
+            tracker = TurnLifecycle(self._ls_start_time)
+            collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
-                prompt_for_llm: Any = self._prompt
+            prompt_for_llm: Any = self._ls_prompt
 
-                try:
-                    async for msg in messages:
-                        if awaiting_streamed_input and self._streamed_input:
-                            unwrapped_messages = unwrap_message_dicts(
-                                self._streamed_input
-                            )
-                            if unwrapped_messages:
-                                run.inputs["messages"] = unwrapped_messages
-                                prompt_for_llm = self._streamed_input
-                            awaiting_streamed_input = False
+            try:
+                async for msg in messages:
+                    if awaiting_streamed_input and self._ls_streamed_input:
+                        unwrapped_messages = unwrap_message_dicts(
+                            self._ls_streamed_input
+                        )
+                        if unwrapped_messages:
+                            run.inputs["messages"] = unwrapped_messages
+                            prompt_for_llm = self._ls_streamed_input
+                        awaiting_streamed_input = False
 
-                        msg_type = type(msg).__name__
+                    msg_type = type(msg).__name__
 
-                        if msg_type == "AssistantMessage":
-                            # Check if this message belongs to a subagent
-                            # via parent_tool_use_id.  If so, nest the
-                            # LLM run under the subagent chain.
-                            parent_tool_use_id = getattr(
-                                msg, "parent_tool_use_id", None
-                            )
-                            llm_parent = (
-                                get_subagent_run_by_tool_id(parent_tool_use_id)
-                                if parent_tool_use_id
-                                else None
-                            )
+                    if msg_type == "AssistantMessage":
+                        parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
+                        llm_parent = (
+                            get_subagent_run_by_tool_id(parent_tool_use_id)
+                            if parent_tool_use_id
+                            else None
+                        )
 
-                            # Route to context-scoped history
-                            ctx_key = parent_tool_use_id
-                            ctx_history = collected_by_ctx.setdefault(ctx_key, [])
+                        ctx_key = parent_tool_use_id
+                        ctx_history = collected_by_ctx.setdefault(ctx_key, [])
 
-                            content = tracker.start_llm_run(
-                                msg,
-                                prompt_for_llm if parent_tool_use_id is None else None,
-                                ctx_history,
-                                parent=llm_parent,
-                            )
-                            if content:
-                                ctx_history.append(content)
+                        content = tracker.start_llm_run(
+                            msg,
+                            prompt_for_llm if parent_tool_use_id is None else None,
+                            ctx_history,
+                            parent=llm_parent,
+                        )
+                        if content:
+                            ctx_history.append(content)
 
-                        elif msg_type == "UserMessage":
-                            # Route to the correct context
-                            parent_tool_use_id = getattr(
-                                msg, "parent_tool_use_id", None
-                            )
-                            ctx_key = parent_tool_use_id
-                            ctx_history = collected_by_ctx.setdefault(ctx_key, [])
+                    elif msg_type == "UserMessage":
+                        parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
+                        ctx_key = parent_tool_use_id
+                        ctx_history = collected_by_ctx.setdefault(ctx_key, [])
 
-                            if hasattr(msg, "content"):
-                                # Check if this is a tool result message
-                                flattened = flatten_content_blocks(msg.content)
-                                if (
-                                    isinstance(flattened, list)
-                                    and flattened
-                                    and isinstance(flattened[0], dict)
-                                    and flattened[0].get("type") == "tool_result"
-                                ):
-                                    # Format each tool result as a separate message
-                                    for block in flattened:
-                                        tool_use_id = block.get("tool_use_id")
-                                        ctx_history.append(
-                                            {
-                                                "role": "tool",
-                                                "content": block.get("content", ""),
-                                                "tool_call_id": tool_use_id,
-                                            }
-                                        )
-                                        # Close orphaned tool runs whose
-                                        # PostToolUse never fired (e.g.
-                                        # permission-denied MCP tools).
-                                        if (
-                                            tool_use_id
-                                            and tool_use_id in _active_tool_runs
-                                        ):
-                                            tool_run, _ = _active_tool_runs.pop(
-                                                tool_use_id
-                                            )
-                                            result_content = block.get("content", "")
-                                            is_error = block.get("is_error", False)
-                                            tool_run.end(
-                                                outputs={"output": result_content},
-                                                error=str(result_content)
-                                                if is_error
-                                                else None,
-                                            )
-                                            try:
-                                                tool_run.patch()
-                                            except Exception as e:
-                                                logger.warning(
-                                                    "Failed to patch"
-                                                    f" orphaned tool run: {e}"
-                                                )
-                                else:
+                        if hasattr(msg, "content"):
+                            flattened = flatten_content_blocks(msg.content)
+                            if (
+                                isinstance(flattened, list)
+                                and flattened
+                                and isinstance(flattened[0], dict)
+                                and flattened[0].get("type") == "tool_result"
+                            ):
+                                for block in flattened:
+                                    tool_use_id = block.get("tool_use_id")
                                     ctx_history.append(
                                         {
-                                            "content": flattened,
-                                            "role": "user",
+                                            "role": "tool",
+                                            "content": block.get("content", ""),
+                                            "tool_call_id": tool_use_id,
                                         }
                                     )
-                            tracker.mark_next_start()
-                        elif msg_type == "ResultMessage":
-                            # Add conversation-level metadata
-                            meta = {
-                                k: v
-                                for k, v in {
-                                    "num_turns": getattr(msg, "num_turns", None),
-                                    "session_id": getattr(msg, "session_id", None),
-                                    "duration_ms": getattr(msg, "duration_ms", None),
-                                    "duration_api_ms": getattr(
-                                        msg, "duration_api_ms", None
-                                    ),
-                                    "is_error": getattr(msg, "is_error", None),
-                                }.items()
-                                if v is not None
-                            }
-                            if meta:
-                                run.metadata.update(meta)
+                                    if tool_use_id and tool_use_id in _active_tool_runs:
+                                        tool_run, _ = _active_tool_runs.pop(tool_use_id)
+                                        result_content = block.get("content", "")
+                                        is_error = block.get("is_error", False)
+                                        tool_run.end(
+                                            outputs={"output": result_content},
+                                            error=str(result_content)
+                                            if is_error
+                                            else None,
+                                        )
+                                        try:
+                                            tool_run.patch()
+                                        except Exception as e:
+                                            logger.warning(
+                                                "Failed to patch"
+                                                f" orphaned tool run: {e}"
+                                            )
+                            else:
+                                ctx_history.append(
+                                    {
+                                        "content": flattened,
+                                        "role": "user",
+                                    }
+                                )
+                        tracker.mark_next_start()
+                    elif msg_type == "ResultMessage":
+                        meta = {
+                            k: v
+                            for k, v in {
+                                "num_turns": getattr(msg, "num_turns", None),
+                                "session_id": getattr(msg, "session_id", None),
+                                "duration_ms": getattr(msg, "duration_ms", None),
+                                "duration_api_ms": getattr(
+                                    msg, "duration_api_ms", None
+                                ),
+                                "is_error": getattr(msg, "is_error", None),
+                            }.items()
+                            if v is not None
+                        }
+                        if meta:
+                            run.metadata.update(meta)
 
-                        yield msg
-                    main_collected = collected_by_ctx.get(None, [])
-                    run.end(outputs=main_collected[-1] if main_collected else None)
-                except Exception:
-                    logger.exception("Error while tracing Claude Agent stream")
-                finally:
-                    tracker.close()
-                    reconcile_from_transcripts(tracker)
-                    tracker.flush()
-                    clear_parent_run_tree()
-                    clear_active_tool_runs()
+                    yield msg
+                main_collected = collected_by_ctx.get(None, [])
+                run.end(outputs=main_collected[-1] if main_collected else None)
+            except Exception:
+                logger.exception("Error while tracing Claude Agent stream")
+            finally:
+                tracker.close()
+                reconcile_from_transcripts(tracker)
+                tracker.flush()
+                clear_parent_run_tree()
+                clear_active_tool_runs()
 
-        async def __aenter__(self) -> "TracedClaudeSDKClient":
-            await super().__aenter__()
-            return self
+    # ── apply patches to the class itself ────────────────────────────
+    original_class.__init__ = _traced_init
+    original_class.query = _traced_query
+    original_class.receive_response = _traced_receive_response
+    original_class._langsmith_instrumented = True
 
-        async def __aexit__(self, *args: Any) -> None:
-            await super().__aexit__(*args)
 
-    return TracedClaudeSDKClient
+def instrument_sdk_mcp_tool(tool_class: Any) -> None:
+    """Patch ``SdkMcpTool.__getattribute__`` to lazily wrap handlers.
+
+    The Claude Agent SDK's ``call_tool`` accesses ``tool_def.handler`` at
+    call time (not registration time).  By intercepting attribute access we
+    can wrap the handler the first time it is invoked, regardless of whether
+    the tool was created before or after ``configure_claude_agent_sdk()``
+    and regardless of whether ``create_sdk_mcp_server`` was imported
+    early.
+    """
+    if getattr(tool_class, "_langsmith_handler_patched", False):
+        return
+
+    orig_getattribute = tool_class.__getattribute__
+
+    def _patched_getattribute(self: Any, name: str) -> Any:
+        val = orig_getattribute(self, name)
+        if (
+            name == "handler"
+            and callable(val)
+            and not getattr(val, "_langsmith_wrapped", False)
+        ):
+            wrapped = _wrap_tool_handler(val)
+            # Store wrapped version back so subsequent accesses are free.
+            object.__setattr__(self, "handler", wrapped)
+            return wrapped
+        return val
+
+    tool_class.__getattribute__ = _patched_getattribute
+    tool_class._langsmith_handler_patched = True

@@ -2,13 +2,16 @@
 
 This module provides automatic tracing for the Claude Agent SDK by instrumenting
 `ClaudeSDKClient` and injecting hooks to trace all tool calls.
+
+Instrumentation is applied **in place** on the original ``ClaudeSDKClient`` class
+so that callers who imported the class *before* ``configure_claude_agent_sdk()``
+was called still get traced.
 """
 
 import logging
-import sys
-from typing import Any, Optional
+from typing import Optional
 
-from ._client import instrument_claude_client
+from ._client import instrument_claude_client, instrument_sdk_mcp_tool
 from ._config import set_tracing_config
 
 logger = logging.getLogger(__name__)
@@ -29,7 +32,11 @@ def configure_claude_agent_sdk(
     - Model runs for each assistant turn
     - All tool calls including built-in tools, external MCP tools, and SDK MCP tools
 
-    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks
+    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks.
+
+    The class is patched **in place**, so references obtained via
+    ``from claude_agent_sdk import ClaudeSDKClient`` before this call
+    will still be instrumented.
 
     Args:
         name: Name of the root trace.
@@ -66,47 +73,12 @@ def configure_claude_agent_sdk(
         tags=tags,
     )
 
-    original = getattr(claude_agent_sdk, "ClaudeSDKClient", None)
-    if not original:
-        return False
+    instrument_claude_client(claude_agent_sdk.ClaudeSDKClient)
 
-    wrapped = instrument_claude_client(original)
-    setattr(claude_agent_sdk, "ClaudeSDKClient", wrapped)
-
-    for module in list(sys.modules.values()):
-        try:
-            if module and getattr(module, "ClaudeSDKClient", None) is original:
-                setattr(module, "ClaudeSDKClient", wrapped)
-        except Exception:
-            continue
-
-    # Patch create_sdk_mcp_server to wrap tool handlers so that
-    # @traceable calls inside them nest under the tool run.
-    _patch_create_sdk_mcp_server(claude_agent_sdk)
+    # Patch SdkMcpTool so that tool handlers are lazily wrapped with
+    # run-context propagation, regardless of import order.
+    sdk_mcp_tool_cls = getattr(claude_agent_sdk, "SdkMcpTool", None)
+    if sdk_mcp_tool_cls:
+        instrument_sdk_mcp_tool(sdk_mcp_tool_cls)
 
     return True
-
-
-def _patch_create_sdk_mcp_server(sdk_module: Any) -> None:
-    """Wrap ``create_sdk_mcp_server`` to inject run context into handlers."""
-    original_create = getattr(sdk_module, "create_sdk_mcp_server", None)
-    if not original_create:
-        return
-    # Guard against double-patching the same function object.
-    if getattr(original_create, "_langsmith_patched", False):
-        return
-
-    from ._client import _wrap_tool_handler
-
-    def patched_create(*args: Any, **kwargs: Any) -> Any:
-        tools = kwargs.get("tools") or (args[2] if len(args) > 2 else None)
-        if tools:
-            for tool in tools:
-                if hasattr(tool, "handler") and not getattr(
-                    tool.handler, "_langsmith_wrapped", False
-                ):
-                    tool.handler = _wrap_tool_handler(tool.handler)
-        return original_create(*args, **kwargs)
-
-    patched_create._langsmith_patched = True  # type: ignore[attr-defined]
-    sdk_module.create_sdk_mcp_server = patched_create
