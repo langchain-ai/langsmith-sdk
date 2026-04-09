@@ -47,6 +47,27 @@ def merge_headers(
 # =============================================================================
 
 
+def validate_service_params(port: int, expires_in_seconds: int) -> None:
+    """Validate parameters for service URL generation.
+
+    Args:
+        port: Target port inside the sandbox.
+        expires_in_seconds: Token TTL.
+
+    Raises:
+        ValueError: If port or TTL is out of range.
+    """
+    if not isinstance(port, int) or port <= 0:
+        raise ValueError(f"port must be a positive integer, got {port!r}")
+    if not isinstance(expires_in_seconds, int) or not (
+        1 <= expires_in_seconds <= 86400
+    ):
+        raise ValueError(
+            f"expires_in_seconds must be between 1 and 86400, "
+            f"got {expires_in_seconds!r}"
+        )
+
+
 def validate_ttl(value: Optional[int], name: str) -> None:
     """Validate a TTL value for sandbox create/update.
 

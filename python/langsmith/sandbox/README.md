@@ -488,6 +488,75 @@ async with await client.sandbox(template_name="my-sandbox") as sb:
         conn = await asyncpg.connect(host="127.0.0.1", port=t.local_port)
 ```
 
+## Service URLs
+
+Access HTTP services running inside a sandbox without opening a TCP tunnel.
+`service()` returns a `ServiceURL` object with a short-lived JWT that
+auto-refreshes transparently. Built-in HTTP helpers inject the auth header
+for you.
+
+### Basic Usage
+
+```python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Start a web server inside the sandbox
+    handle = sb.run("python -m http.server 3000", timeout=0, wait=False)
+    import time; time.sleep(2)
+
+    # Get a service URL for port 3000
+    svc = sb.service(port=3000)
+
+    # Make requests — token is injected automatically
+    resp = svc.get("/")
+    print(resp.status_code)  # 200
+
+    # POST with JSON body
+    resp = svc.post("/api/data", json={"key": "value"})
+
+    # Access the raw token or URLs directly
+    print(svc.token)        # JWT (auto-refreshes near expiry)
+    print(svc.service_url)  # base URL for programmatic access
+    print(svc.browser_url)  # URL that sets a cookie in a browser
+
+    handle.kill()
+```
+
+### Custom Token TTL
+
+Tokens default to 10 minutes. Set `expires_in_seconds` for longer or shorter
+lifetimes (1 second to 24 hours):
+
+```python
+# Token valid for 1 hour
+svc = sb.service(port=3000, expires_in_seconds=3600)
+```
+
+### Auto-Refresh
+
+The `ServiceURL` object automatically refreshes its token before it expires.
+You never need to worry about token rotation — just keep using the object:
+
+```python
+svc = sb.service(port=3000, expires_in_seconds=60)
+
+# Even after 60 seconds, this still works — token refreshes transparently
+resp = svc.get("/api/status")
+```
+
+### Async Usage
+
+```python
+async with await client.sandbox(template_name="my-sandbox") as sb:
+    svc = await sb.service(port=3000)
+
+    # Async HTTP helpers
+    resp = await svc.get("/api/data")
+
+    # Async accessors for auto-refreshing properties
+    token = await svc.get_token()
+    url = await svc.get_service_url()
+```
+
 ## Templates
 
 Templates define the container image and resources for sandboxes. **You must create a template before you can create sandboxes.**
@@ -783,6 +852,7 @@ except SandboxClientError as e:
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
+| `service(name, port, *, expires_in_seconds=600)` | Get a `ServiceURL` for an HTTP service on the given port |
 | `list_sandboxes()` | List all sandboxes |
 | `update_sandbox(name, *, new_name=None, ttl_seconds=None, idle_ttl_seconds=None)` | Update a sandbox's name or TTL settings |
 | `delete_sandbox(name)` | Delete a sandbox |
@@ -821,6 +891,7 @@ except SandboxClientError as e:
 | `write(path, content)` | Write file (str or bytes) |
 | `read(path)` | Read file (returns bytes) |
 | `tunnel(remote_port, *, local_port=0)` | Open a TCP tunnel. Returns `Tunnel` (context manager). |
+| `service(port, *, expires_in_seconds=600)` | Get a `ServiceURL` for an HTTP service. Auto-refreshes token. |
 
 ### ExecutionResult
 
@@ -871,3 +942,28 @@ listener forwarding to a port inside the sandbox.
 | `local_port` | Local port the tunnel is listening on (int) |
 | `remote_port` | Target port inside the sandbox (int) |
 | `close()` | Shut down the tunnel and all connections |
+
+### ServiceURL
+
+Returned by `sb.service(port)`. Holds a short-lived JWT for accessing an HTTP
+service in the sandbox. Properties auto-refresh the token near expiry.
+
+| Property | Description |
+|----------|-------------|
+| `token` | Raw JWT for programmatic use (auto-refreshes) |
+| `service_url` | Base URL for programmatic HTTP access (auto-refreshes) |
+| `browser_url` | URL that exchanges the JWT for a cookie in a browser (auto-refreshes) |
+| `expires_at` | ISO 8601 expiration timestamp (auto-refreshes) |
+
+| Method | Description |
+|--------|-------------|
+| `request(method, path="/", **kwargs)` | Make an HTTP request with auth header injected. Returns `httpx.Response`. |
+| `get(path="/", **kwargs)` | HTTP GET |
+| `post(path="/", **kwargs)` | HTTP POST |
+| `put(path="/", **kwargs)` | HTTP PUT |
+| `patch(path="/", **kwargs)` | HTTP PATCH |
+| `delete(path="/", **kwargs)` | HTTP DELETE |
+
+`AsyncServiceURL` is the async variant. Use `await svc.get_token()`,
+`await svc.get_service_url()`, etc. for auto-refreshing access, and
+`await svc.get(path)` for async HTTP helpers.

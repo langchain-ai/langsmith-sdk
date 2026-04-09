@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
+
+import httpx
 
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
@@ -185,6 +188,316 @@ class Pool:
             id=data.get("id"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
+        )
+
+
+# =============================================================================
+# Service URL Models
+# =============================================================================
+
+_AUTH_HEADER = "X-Langsmith-Sandbox-Service-Token"
+_REFRESH_MARGIN_SECONDS = 30
+
+
+class ServiceURL:
+    """Authenticated URL for accessing an HTTP service running in a sandbox.
+
+    Properties auto-refresh the token transparently when it nears expiry.
+    HTTP helper methods (``.get``, ``.post``, etc.) inject the auth header
+    automatically.
+
+    When constructed by :meth:`SandboxClient.service` or
+    :meth:`Sandbox.service`, the object holds an internal refresher that
+    re-calls the API to obtain a fresh token before the current one expires.
+
+    Example::
+
+        svc = sb.service(port=3000)
+
+        resp = svc.get("/api/data")  # token injected + auto-refreshed
+        print(svc.browser_url)  # always-fresh URL
+    """
+
+    def __init__(
+        self,
+        browser_url: str,
+        service_url: str,
+        token: str,
+        expires_at: str,
+        *,
+        _refresher: Optional[Callable[[], ServiceURL]] = None,
+    ) -> None:
+        self._browser_url = browser_url
+        self._service_url = service_url
+        self._token = token
+        self._expires_at = expires_at
+        self._refresher = _refresher
+
+    # -- Auto-refresh logic -------------------------------------------------
+
+    def _should_refresh(self) -> bool:
+        if self._refresher is None:
+            return False
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        return remaining <= _REFRESH_MARGIN_SECONDS
+
+    def _maybe_refresh(self) -> None:
+        if self._should_refresh():
+            fresh = self._refresher()  # type: ignore[misc]
+            self._browser_url = fresh._browser_url
+            self._service_url = fresh._service_url
+            self._token = fresh._token
+            self._expires_at = fresh._expires_at
+
+    # -- Properties (auto-refresh on access) --------------------------------
+
+    @property
+    def token(self) -> str:
+        """Return the raw JWT, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._token
+
+    @property
+    def service_url(self) -> str:
+        """Return the base URL, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._service_url
+
+    @property
+    def browser_url(self) -> str:
+        """Return the browser auth URL, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._browser_url
+
+    @property
+    def expires_at(self) -> str:
+        """Return the ISO 8601 expiration, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._expires_at
+
+    # -- HTTP helpers (stateless, one httpx call per request) ----------------
+
+    def request(self, method: str, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Make an HTTP request to the service, injecting the auth header.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            path: Path relative to the service URL.
+            **kwargs: Forwarded to ``httpx.request``.
+
+        Returns:
+            httpx.Response.
+        """
+        url = self.service_url.rstrip("/") + "/" + path.lstrip("/")
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers[_AUTH_HEADER] = self.token
+        return httpx.request(method, url, headers=headers, **kwargs)
+
+    def get(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP GET to the service."""
+        return self.request("GET", path, **kwargs)
+
+    def post(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP POST to the service."""
+        return self.request("POST", path, **kwargs)
+
+    def put(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP PUT to the service."""
+        return self.request("PUT", path, **kwargs)
+
+    def patch(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP PATCH to the service."""
+        return self.request("PATCH", path, **kwargs)
+
+    def delete(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP DELETE to the service."""
+        return self.request("DELETE", path, **kwargs)
+
+    # -- Construction -------------------------------------------------------
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        _refresher: Optional[Callable[[], ServiceURL]] = None,
+    ) -> ServiceURL:
+        """Create a ServiceURL from API response dict."""
+        return cls(
+            browser_url=data["browser_url"],
+            service_url=data["service_url"],
+            token=data["token"],
+            expires_at=data["expires_at"],
+            _refresher=_refresher,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"ServiceURL(service_url={self._service_url!r}, "
+            f"expires_at={self._expires_at!r})"
+        )
+
+
+class AsyncServiceURL:
+    """Async variant of :class:`ServiceURL` with auto-refreshing token.
+
+    Properties and HTTP helpers are async. Use with
+    :meth:`AsyncSandboxClient.service` or :meth:`AsyncSandbox.service`.
+
+    Example::
+
+        svc = await sb.service(port=3000)
+
+        resp = await svc.get("/api/data")
+        print(await svc.get_browser_url())
+    """
+
+    def __init__(
+        self,
+        browser_url: str,
+        service_url: str,
+        token: str,
+        expires_at: str,
+        *,
+        _refresher: Optional[Callable[[], Awaitable[AsyncServiceURL]]] = None,
+    ) -> None:
+        self._browser_url = browser_url
+        self._service_url = service_url
+        self._token = token
+        self._expires_at = expires_at
+        self._refresher = _refresher
+
+    # -- Auto-refresh logic -------------------------------------------------
+
+    def _should_refresh(self) -> bool:
+        if self._refresher is None:
+            return False
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        return remaining <= _REFRESH_MARGIN_SECONDS
+
+    async def _maybe_refresh(self) -> None:
+        if self._should_refresh():
+            fresh = await self._refresher()  # type: ignore[misc]
+            self._browser_url = fresh._browser_url
+            self._service_url = fresh._service_url
+            self._token = fresh._token
+            self._expires_at = fresh._expires_at
+
+    # -- Async accessors (auto-refresh on access) ---------------------------
+
+    async def get_token(self) -> str:
+        """Return the raw JWT, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._token
+
+    async def get_service_url(self) -> str:
+        """Return the base URL, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._service_url
+
+    async def get_browser_url(self) -> str:
+        """Return the browser auth URL, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._browser_url
+
+    async def get_expires_at(self) -> str:
+        """Return the ISO 8601 expiration, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._expires_at
+
+    # -- Sync property access (no refresh, use when token is known-fresh) ---
+
+    @property
+    def token(self) -> str:
+        """Return the raw JWT without refreshing."""
+        return self._token
+
+    @property
+    def service_url(self) -> str:
+        """Return the base URL without refreshing."""
+        return self._service_url
+
+    @property
+    def browser_url(self) -> str:
+        """Return the browser auth URL without refreshing."""
+        return self._browser_url
+
+    @property
+    def expires_at(self) -> str:
+        """Return the expiration timestamp without refreshing."""
+        return self._expires_at
+
+    # -- HTTP helpers (one request per call) --------------------------------
+
+    async def request(
+        self, method: str, path: str = "/", **kwargs: Any
+    ) -> httpx.Response:
+        """Make an async HTTP request to the service, injecting the auth header.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            path: Path relative to the service URL.
+            **kwargs: Forwarded to ``httpx.AsyncClient.request``.
+
+        Returns:
+            httpx.Response.
+        """
+        url = (await self.get_service_url()).rstrip("/") + "/" + path.lstrip("/")
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers[_AUTH_HEADER] = await self.get_token()
+        async with httpx.AsyncClient() as client:
+            return await client.request(method, url, headers=headers, **kwargs)
+
+    async def get(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP GET to the service."""
+        return await self.request("GET", path, **kwargs)
+
+    async def post(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP POST to the service."""
+        return await self.request("POST", path, **kwargs)
+
+    async def put(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP PUT to the service."""
+        return await self.request("PUT", path, **kwargs)
+
+    async def patch(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP PATCH to the service."""
+        return await self.request("PATCH", path, **kwargs)
+
+    async def delete(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP DELETE to the service."""
+        return await self.request("DELETE", path, **kwargs)
+
+    # -- Construction -------------------------------------------------------
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        _refresher: Optional[Callable[[], Awaitable[AsyncServiceURL]]] = None,
+    ) -> AsyncServiceURL:
+        """Create an AsyncServiceURL from API response dict."""
+        return cls(
+            browser_url=data["browser_url"],
+            service_url=data["service_url"],
+            token=data["token"],
+            expires_at=data["expires_at"],
+            _refresher=_refresher,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"AsyncServiceURL(service_url={self._service_url!r}, "
+            f"expires_at={self._expires_at!r})"
         )
 
 
