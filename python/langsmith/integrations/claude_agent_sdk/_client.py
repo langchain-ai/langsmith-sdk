@@ -187,11 +187,15 @@ def begin_llm_run_from_assistant_messages(
         if hasattr(m, "content")
     ]
 
+    llm_metadata: dict[str, Any] = {"ls_provider": "anthropic"}
+    if model:
+        llm_metadata["ls_model_name"] = model
+
     llm_run = parent.create_child(
         name=LLM_RUN_NAME,
         run_type="llm",
         inputs={"messages": inputs} if inputs else {},
-        extra={"metadata": {"ls_model_name": model}} if model else {},
+        extra={"metadata": llm_metadata},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc)
         if start_time
         else None,

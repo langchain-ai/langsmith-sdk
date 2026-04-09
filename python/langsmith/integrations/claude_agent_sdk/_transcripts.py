@@ -78,13 +78,17 @@ def _create_missing_subagent_llm_runs(
                 ts = _parse_timestamp(turn.get("timestamp"))
 
                 input_messages = turn.get("input_messages", [])
+                llm_metadata: dict[str, Any] = {
+                    "ls_provider": "anthropic",
+                }
+                if turn.get("model"):
+                    llm_metadata["ls_model_name"] = turn["model"]
+
                 llm_run = subagent_run.create_child(
                     name=LLM_RUN_NAME,
                     run_type="llm",
                     inputs={"messages": input_messages} if input_messages else {},
-                    extra={"metadata": {"ls_model_name": turn.get("model")}}
-                    if turn.get("model")
-                    else {},
+                    extra={"metadata": llm_metadata},
                     start_time=ts,
                 )
 
