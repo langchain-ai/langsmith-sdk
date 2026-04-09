@@ -86,6 +86,8 @@ function getDefaultApiKey(): string | undefined {
  *   await sandbox.delete();
  * }
  * ```
+ *
+ * @experimental This feature is experimental, and breaking changes are expected.
  */
 export class SandboxClient {
   private _baseUrl: string;

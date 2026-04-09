@@ -29,6 +29,8 @@ import { reconnectWsStream, runWsStream } from "./ws_execute.js";
  *   await sandbox.delete();
  * }
  * ```
+ *
+ * @experimental This feature is experimental, and breaking changes are expected.
  */
 export class Sandbox {
   /** Display name (can be updated). */
