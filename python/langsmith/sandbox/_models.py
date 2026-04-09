@@ -238,7 +238,8 @@ class ServiceURL:
     def _should_refresh(self) -> bool:
         if self._refresher is None:
             return False
-        expires = datetime.fromisoformat(self._expires_at)
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         remaining = (expires - datetime.now(timezone.utc)).total_seconds()
@@ -375,7 +376,8 @@ class AsyncServiceURL:
     def _should_refresh(self) -> bool:
         if self._refresher is None:
             return False
-        expires = datetime.fromisoformat(self._expires_at)
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         remaining = (expires - datetime.now(timezone.utc)).total_seconds()
