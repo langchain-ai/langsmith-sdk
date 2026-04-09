@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
-    "parent": _context._PARENT_RUN_TREE,
+    "parent_id": _context._PARENT_RUN_TREE_ID,
     "project_name": _context._PROJECT_NAME,
     "tags": _context._TAGS,
     "metadata": _context._METADATA,
@@ -72,8 +72,16 @@ _OTEL_AVAILABLE: Optional[bool] = None
 
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
-    """Get the current run tree."""
-    return _context._PARENT_RUN_TREE.get()
+    """Get the current run tree.
+
+    Uses the ID-based lookup to avoid memory leaks from captured contexts.
+    The RunTree is stored in a WeakValueDictionary, so it may return None
+    if the RunTree has been garbage collected.
+    """
+    run_id = _context._PARENT_RUN_TREE_ID.get()
+    if run_id is not None:
+        return _context.get_run_tree_by_id(run_id)
+    return None
 
 
 @contextlib.contextmanager
@@ -82,7 +90,7 @@ def set_tracing_parent(
 ) -> Generator[None, None, None]:
     """Set a RunTree as the active tracing parent within this block.
 
-    Unlike `tracing_context`, this only sets `_PARENT_RUN_TREE` and nothing
+    Unlike `tracing_context`, this only sets the parent run tree and nothing
     else, making it safe to use in isolated threads where you want precise
     control over which run acts as the parent without inheriting or overwriting
     other context variables.
@@ -90,11 +98,12 @@ def set_tracing_parent(
     Args:
         run_tree: The RunTree to use as the active parent.
     """
-    token = _context._PARENT_RUN_TREE.set(run_tree)
+    run_id = _context.register_run_tree(run_tree)
+    token_id = _context._PARENT_RUN_TREE_ID.set(run_id)
     try:
         yield
     finally:
-        _context._PARENT_RUN_TREE.reset(token)
+        _context._PARENT_RUN_TREE_ID.reset(token_id)
 
 
 def set_run_metadata(**metadata: Any) -> None:
@@ -114,8 +123,10 @@ def get_tracing_context(
 ) -> dict[str, Any]:
     """Get the current tracing context."""
     if context is None:
+        run_id = _context._PARENT_RUN_TREE_ID.get()
+        parent = _context.get_run_tree_by_id(run_id) if run_id else None
         return {
-            "parent": _context._PARENT_RUN_TREE.get(),
+            "parent": parent,
             "project_name": _context._PROJECT_NAME.get(),
             "tags": _context._TAGS.get(),
             "metadata": _context._METADATA.get(),
@@ -124,7 +135,11 @@ def get_tracing_context(
             "replicas": run_trees._REPLICAS.get(),
             "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
-    return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
+    # When reading from a copied context, look up the parent by ID
+    result = {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
+    parent_id = result.pop("parent_id", None)
+    result["parent"] = _context.get_run_tree_by_id(parent_id) if parent_id else None
+    return result
 
 
 @contextlib.contextmanager
@@ -1128,7 +1143,11 @@ class trace:
         if enabled:
             _context._TAGS.set(tags_)
             _context._METADATA.set(metadata)
-            _context._PARENT_RUN_TREE.set(self.new_run)
+            if self.new_run is not None:
+                run_id = _context.register_run_tree(self.new_run)
+                _context._PARENT_RUN_TREE_ID.set(run_id)
+            else:
+                _context._PARENT_RUN_TREE_ID.set(None)
             _context._PROJECT_NAME.set(project_name_)
             _context._CLIENT.set(client_)
 
@@ -1231,7 +1250,7 @@ class trace:
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
     if project_name:
         return project_name
-    prt = _PARENT_RUN_TREE.get()
+    prt = get_current_run_tree()
     return (
         # Maintain tree consistency first
         _context._PROJECT_NAME.get()
@@ -1678,7 +1697,13 @@ def _setup_run(
         exceptions_to_handle=container_input.get("exceptions_to_handle"),
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])
-    context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
+    # Store only the RunTree ID (not the RunTree itself) in the copied context.
+    # This prevents memory leaks when contexts are captured by asyncio operations
+    # (call_later, create_task, etc.) — the captured context holds only a string,
+    # and the RunTree can be GC'd once no strong references remain.
+    if new_run is not None:
+        run_id = _context.register_run_tree(new_run)
+        context.run(_context._PARENT_RUN_TREE_ID.set, run_id)
     return response_container
 
 
@@ -1850,8 +1875,17 @@ def _set_tracing_context(context: Optional[dict[str, Any]] = None):
             v.set(None)
         return
     for k, v in context.items():
-        var = _CONTEXT_KEYS[k]
-        var.set(v)
+        if k == "parent":
+            # "parent" is a RunTree — register it and store only the ID
+            if v is not None:
+                run_id = _context.register_run_tree(v)
+                _context._PARENT_RUN_TREE_ID.set(run_id)
+            else:
+                _context._PARENT_RUN_TREE_ID.set(None)
+            continue
+        var = _CONTEXT_KEYS.get(k)
+        if var is not None:
+            var.set(v)
 
 
 def _process_iterator(
@@ -2235,4 +2269,4 @@ _TAGS = _context._TAGS
 _METADATA = _context._METADATA
 _TRACING_ENABLED = _context._TRACING_ENABLED
 _CLIENT = _context._CLIENT
-_PARENT_RUN_TREE = _context._PARENT_RUN_TREE
+_PARENT_RUN_TREE_ID = _context._PARENT_RUN_TREE_ID

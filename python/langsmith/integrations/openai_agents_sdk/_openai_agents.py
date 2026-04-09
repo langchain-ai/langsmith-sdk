@@ -232,7 +232,9 @@ if HAVE_AGENTS:
                 # Delay posting until first response/generation span ends
                 # so inputs can be included in the POST.
                 self._unposted_traces.add(trace.trace_id)
-                _context._PARENT_RUN_TREE.set(new_run)
+                if new_run is not None:
+                    run_id = _context.register_run_tree(new_run)
+                    _context._PARENT_RUN_TREE_ID.set(run_id)
                 self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
@@ -266,7 +268,12 @@ if HAVE_AGENTS:
                     self._first_response_inputs.pop(trace.trace_id, None)
                     run.patch(exclude_inputs=True)
 
-                _context._PARENT_RUN_TREE.set(run.parent_run)
+                # Restore parent context
+                if run.parent_run is not None:
+                    run_id = _context.register_run_tree(run.parent_run)
+                    _context._PARENT_RUN_TREE_ID.set(run_id)
+                else:
+                    _context._PARENT_RUN_TREE_ID.set(None)
             except Exception as e:
                 logger.exception(f"Error updating trace run: {e}")
 

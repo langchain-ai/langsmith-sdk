@@ -281,11 +281,12 @@ def _wrap_tool_handler(original_handler: Any) -> Any:
         if tool_run:
             from langsmith._internal import _context
 
-            token = _context._PARENT_RUN_TREE.set(tool_run)
+            run_id = _context.register_run_tree(tool_run)
+            token_id = _context._PARENT_RUN_TREE_ID.set(run_id)
             try:
                 return await original_handler(args)
             finally:
-                _context._PARENT_RUN_TREE.reset(token)
+                _context._PARENT_RUN_TREE_ID.reset(token_id)
         return await original_handler(args)
 
     _wrapped._langsmith_wrapped = True  # type: ignore[attr-defined]
