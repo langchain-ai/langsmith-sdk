@@ -318,9 +318,9 @@ def instrument_claude_client(original_class: Any) -> None:
         if options:
             _inject_tracing_hooks(options)
         _orig_init(self, *args, **kwargs)
-        self._ls_prompt: Optional[str] = None
-        self._ls_start_time: Optional[float] = None
-        self._ls_streamed_input: Optional[list[dict[str, Any]]] = None
+        self._ls_prompt = None
+        self._ls_start_time = None
+        self._ls_streamed_input = None
 
     # ── patched query ────────────────────────────────────────────────
     async def _traced_query(self: Any, *args: Any, **kwargs: Any) -> Any:
