@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import datetime
 import collections
 import concurrent.futures as cf
 import functools
@@ -1917,7 +1918,10 @@ def _forward(
     def _set_reference_example_id(r: rt.RunTree) -> None:
         r.reference_example_id = example.id
 
-    example_version = (example.modified_at or example.created_at).isoformat()
+    # Add 1ms so the server's exclusive upper-bound version resolution returns
+    # the state AT modified_at rather than the state before it.
+    _example_ts = example.modified_at or example.created_at
+    example_version = (_example_ts + datetime.timedelta(milliseconds=1)).isoformat()
     langsmith_extra = rh.LangSmithExtra(
         on_end=_get_run,
         project_name=experiment_name,
