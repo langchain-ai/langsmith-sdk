@@ -767,9 +767,11 @@ export class _ExperimentManager {
           reference_example_id: example.id,
           project_name: "evaluators",
           metadata: {
-            example_version: example.modified_at
-              ? new Date(example.modified_at).toISOString()
-              : new Date(example.created_at).toISOString(),
+            // Add 1ms so the server's exclusive upper-bound version resolution
+            // returns the state AT modified_at rather than the state before it.
+            example_version: new Date(
+              new Date(example.modified_at ?? example.created_at).getTime() + 1
+            ).toISOString(),
           },
           client: fields.client,
           tracingEnabled: true,
@@ -1141,9 +1143,11 @@ async function _forward(
     project_name: experimentName,
     metadata: {
       ...metadata,
-      example_version: example.modified_at
-        ? new Date(example.modified_at).toISOString()
-        : new Date(example.created_at).toISOString(),
+      // Add 1ms so the server's exclusive upper-bound version resolution
+      // returns the state AT modified_at rather than the state before it.
+      example_version: new Date(
+        new Date(example.modified_at ?? example.created_at).getTime() + 1
+      ).toISOString(),
     },
     client,
     tracingEnabled: true,
