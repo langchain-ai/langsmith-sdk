@@ -1343,7 +1343,6 @@ class Client:
         }
         # Merge custom headers first so they don't override required headers
         headers.update(self._custom_headers)
-        # Required headers that should not be overridden
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:
@@ -1372,6 +1371,15 @@ class Client:
     @workspace_id.setter
     def workspace_id(self, value: Optional[str]) -> None:
         self._set_header_affecting_attr("_workspace_id", value)
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._set_header_affecting_attr("_custom_headers", value or {})
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
@@ -1540,7 +1548,7 @@ class Client:
                                     continue
                         if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
-                                f"Server error caused failure to {method}"
+                                f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
                                 f"{_context}"
@@ -8681,7 +8689,10 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
-            response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}")
+            response = self.request_with_retries(
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
+            )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
             return None

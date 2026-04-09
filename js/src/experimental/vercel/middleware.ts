@@ -214,6 +214,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doGenerate",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doGenerate",
             ...lsConfig?.metadata,
@@ -253,6 +254,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doStream",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doStream",
             ...lsConfig?.metadata,

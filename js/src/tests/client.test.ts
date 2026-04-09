@@ -5,10 +5,7 @@ import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
-import {
-  isVersionGreaterOrEqual,
-  parsePromptIdentifier,
-} from "../utils/prompts.js";
+import { parsePromptIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -198,23 +195,6 @@ describe("Client", () => {
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
-    });
-  });
-
-  describe("isVersionGreaterOrEqual", () => {
-    it("should return true if the version is greater or equal", () => {
-      // Test versions equal to 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.23", "0.5.23")).toBe(true);
-
-      // Test versions greater than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.24", "0.5.23"));
-      expect(isVersionGreaterOrEqual("0.6.0", "0.5.23"));
-      expect(isVersionGreaterOrEqual("1.0.0", "0.5.23"));
-
-      // Test versions less than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
     });
   });
 
@@ -970,6 +950,83 @@ describe("Client", () => {
       expect(runs).toHaveLength(1);
       expect(runs[0].start_time).toBe("2026-03-12T19:38:10.269893Z");
       expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000+00:00");
+    });
+  });
+
+  describe("custom headers", () => {
+    it("should include custom headers in requests", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Custom-Header": "custom-value",
+          "X-Another-Header": "another-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+      // Default headers should still be present
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+
+    it("should not allow custom headers to override required headers", () => {
+      const client = new Client({
+        apiKey: "correct-api-key",
+        headers: {
+          "x-api-key": "wrong-key",
+          "X-Custom-Header": "custom-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      // API key from config should take precedence
+      expect(mergedHeaders["x-api-key"]).toBe("correct-api-key");
+      // Custom header should still be present
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+    });
+
+    it("should allow dynamic update of custom headers", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Initial-Header": "initial-value",
+        },
+      });
+
+      let mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBe("initial-value");
+      expect(mergedHeaders["X-New-Header"]).toBeUndefined();
+
+      // Update custom headers
+      client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+      };
+
+      mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBeUndefined();
+      expect(mergedHeaders["X-New-Header"]).toBe("new-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+    });
+
+    it("should return custom headers via getter", () => {
+      const customHeaders = { "X-Custom-Header": "custom-value" };
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: customHeaders,
+      });
+
+      expect(client.headers).toEqual(customHeaders);
+    });
+
+    it("should work without custom headers", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
     });
   });
 });

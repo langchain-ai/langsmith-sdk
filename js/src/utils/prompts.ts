@@ -1,19 +1,4 @@
-import { parse as parseVersion } from "semver";
 import { getInvalidPromptIdentifierMsg } from "./error.js";
-
-export function isVersionGreaterOrEqual(
-  current_version: string,
-  target_version: string
-): boolean {
-  const current = parseVersion(current_version);
-  const target = parseVersion(target_version);
-
-  if (!current || !target) {
-    throw new Error("Invalid version format.");
-  }
-
-  return current.compare(target) >= 0;
-}
 
 export function parsePromptIdentifier(
   identifier: string

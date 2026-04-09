@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import random
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
@@ -30,7 +31,51 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = (
+        "_retry_config",
+        "_client",
+        "_web_url",
+        "_settings",
+        "_cache",
+        "_custom_headers",
+        "_api_key",
+    )
+
+    _custom_headers: dict[str, str]
+    _api_key: Optional[str]
+
+    def _compute_headers(self) -> dict[str, str]:
+        headers = {**self._custom_headers}
+        # Required headers that should not be overridden
+        headers["Content-Type"] = "application/json"
+        if self._api_key:
+            headers[ls_client.X_API_KEY] = self._api_key
+        return headers
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._custom_headers = value or {}
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        """Return the merged headers used for API requests."""
+        return dict(self._client.headers)
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Return the API key used for authentication."""
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._api_key = value
+        self._client.headers = httpx.Headers(self._compute_headers())
 
     def __init__(
         self,
@@ -43,6 +88,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
         disable_prompt_cache: bool = False,
         cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
@@ -54,6 +100,11 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
+            headers: Additional HTTP headers to include in all requests.
+
+                These headers will be merged with the default headers
+                (Content-Type, x-api-key, etc.). Custom headers will not override
+                the default required headers.
             disable_prompt_cache: Disable prompt caching for this client.
             cache: **[Deprecated]** Control prompt caching behavior.
 
@@ -65,13 +116,11 @@ class AsyncClient:
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
-        _headers = {
-            "Content-Type": "application/json",
-        }
+        self._custom_headers = headers or {}
         api_key = ls_utils.get_api_key(api_key)
         api_url = ls_utils.get_api_url(api_url)
-        if api_key:
-            _headers[ls_client.X_API_KEY] = api_key
+        self._api_key = api_key
+        _headers = self._compute_headers()
         ls_client._validate_api_key_if_hosted(api_url, api_key)
 
         if isinstance(timeout_ms, int):
@@ -166,44 +215,55 @@ class AsyncClient:
 
         for attempt in range(max_retries):
             try:
-                response = await self._client.request(method, endpoint, **kwargs)
-                ls_utils.raise_for_status_with_text(response)
-                return response
-            except httpx.HTTPStatusError as e:
-                if response.status_code == 500:
-                    raise ls_utils.LangSmithAPIError(
-                        f"Server error caused failure to {method}"
-                        f" {endpoint} in"
-                        f" LangSmith API. {repr(e)}"
-                    )
-                elif response.status_code == 408:
-                    raise ls_utils.LangSmithRequestTimeout(
-                        f"Client took too long to send request to {method}{endpoint}"
-                    )
-                elif response.status_code == 429:
-                    raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 401:
-                    raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 404:
-                    raise ls_utils.LangSmithNotFoundError(
-                        f"Resource not found for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 409:
-                    raise ls_utils.LangSmithConflictError(
-                        f"Conflict for {endpoint}. {repr(e)}"
-                    )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
-                    )
-            except httpx.RequestError as e:
+                try:
+                    response = await self._client.request(method, endpoint, **kwargs)
+                    ls_utils.raise_for_status_with_text(response)
+                    return response
+                except httpx.HTTPStatusError as e:
+                    response = e.response
+                    if response.status_code in {425, 500, 502, 503, 504}:
+                        raise ls_utils.LangSmithAPIError(
+                            f"Server error ({response.status_code}) caused failure to"
+                            f" {method} {endpoint} in"
+                            f" LangSmith API. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 408:
+                        raise ls_utils.LangSmithRequestTimeout(
+                            f"Client took too long to send request to {method}{endpoint}"
+                        ) from e
+                    elif response.status_code == 429:
+                        raise ls_utils.LangSmithRateLimitError(
+                            f"Rate limit exceeded for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 401:
+                        raise ls_utils.LangSmithAuthError(
+                            f"Authentication failed for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 404:
+                        raise ls_utils.LangSmithNotFoundError(
+                            f"Resource not found for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 409:
+                        raise ls_utils.LangSmithConflictError(
+                            f"Conflict for {endpoint}. {repr(e)}"
+                        ) from e
+                    else:
+                        raise ls_utils.LangSmithError(
+                            f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
+                        ) from e
+                except httpx.RequestError as e:
+                    raise ls_utils.LangSmithConnectionError(
+                        f"Request error: {repr(e)}"
+                    ) from e
+            except (
+                ls_utils.LangSmithConnectionError,
+                ls_utils.LangSmithRequestTimeout,
+                ls_utils.LangSmithAPIError,
+            ):
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithConnectionError(f"Request error: {repr(e)}")
-                await asyncio.sleep(2**attempt)
+                    raise
+                sleep_time = 2**attempt + (random.random() * 0.5)
+                await asyncio.sleep(sleep_time)
         raise ls_utils.LangSmithAPIError(
             "Unexpected error connecting to the LangSmith API"
         )
@@ -1453,7 +1513,8 @@ class AsyncClient:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = await self._arequest_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:

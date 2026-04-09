@@ -1,5 +1,5 @@
-import { Table } from "console-table-printer";
-import chalk from "chalk";
+import { Table } from "../console-table-printer/index.js";
+import chalk from "../chalk/source/index.js";
 
 import * as os from "node:os";
 import * as path from "node:path";
