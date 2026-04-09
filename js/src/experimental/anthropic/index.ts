@@ -154,6 +154,7 @@ function wrapClaudeAgentQuery<
       ...baseConfig,
       metadata: {
         ls_integration: "claude-agent-sdk-js",
+        ls_agent_type: "root",
         ...baseConfig?.metadata,
       },
       __deferredSerializableArgOptions: { maxDepth: 1 },
