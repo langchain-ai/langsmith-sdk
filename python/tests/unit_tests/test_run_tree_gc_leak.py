@@ -8,13 +8,6 @@ collected when:
 The leak occurs because any copy_context() that happens during the @traceable call
 permanently captures the RunTree reference. Since RunTrees form a parent/child tree,
 one captured reference retains the entire tree.
-
-Related issues:
-- https://github.com/langchain-ai/langsmith-sdk/issues/2097
-- https://github.com/langchain-ai/langsmith-sdk/issues/2009
-- https://github.com/langchain-ai/langsmith-sdk/pull/2636
-- https://github.com/langchain-ai/langsmith-sdk/pull/2649
-- https://github.com/langchain-ai/langgraph/issues/7094
 """
 
 import asyncio
