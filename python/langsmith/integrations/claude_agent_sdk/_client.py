@@ -530,32 +530,25 @@ def instrument_claude_client(original_class: Any) -> None:
 
 
 def instrument_sdk_mcp_tool(tool_class: Any) -> None:
-    """Patch ``SdkMcpTool.__getattribute__`` to lazily wrap handlers.
+    """Patch ``SdkMcpTool.__init__`` to auto-wrap handlers.
 
-    The Claude Agent SDK's ``call_tool`` accesses ``tool_def.handler`` at
-    call time (not registration time).  By intercepting attribute access we
-    can wrap the handler the first time it is invoked, regardless of whether
-    the tool was created before or after ``configure_claude_agent_sdk()``
-    and regardless of whether ``create_sdk_mcp_server`` was imported
-    early.
+    Wrapping happens at construction time so that any tool created
+    *after* ``configure_claude_agent_sdk()`` automatically gets
+    run-context propagation, regardless of how ``tool`` or
+    ``create_sdk_mcp_server`` were imported.
     """
     if getattr(tool_class, "_langsmith_handler_patched", False):
         return
 
-    orig_getattribute = tool_class.__getattribute__
+    _orig_init = tool_class.__init__
 
-    def _patched_getattribute(self: Any, name: str) -> Any:
-        val = orig_getattribute(self, name)
-        if (
-            name == "handler"
-            and callable(val)
-            and not getattr(val, "_langsmith_wrapped", False)
+    def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
+        _orig_init(self, *args, **kwargs)
+        handler = self.handler
+        if callable(handler) and not getattr(
+            handler, "_langsmith_wrapped", False
         ):
-            wrapped = _wrap_tool_handler(val)
-            # Store wrapped version back so subsequent accesses are free.
-            object.__setattr__(self, "handler", wrapped)
-            return wrapped
-        return val
+            self.handler = _wrap_tool_handler(handler)
 
-    tool_class.__getattribute__ = _patched_getattribute
+    tool_class.__init__ = _patched_init
     tool_class._langsmith_handler_patched = True
