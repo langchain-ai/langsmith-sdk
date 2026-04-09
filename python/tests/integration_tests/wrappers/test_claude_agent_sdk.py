@@ -78,6 +78,8 @@ async def test_subagent():
     """Subagent chain nested under Agent tool via live hooks."""
     from unittest.mock import patch
 
+    from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, ClaudeSDKClient
+
     from langsmith.integrations.claude_agent_sdk import (
         configure_claude_agent_sdk,
     )
@@ -85,12 +87,12 @@ async def test_subagent():
 
     configure_claude_agent_sdk()
 
-    options = claude_agent_sdk.ClaudeAgentOptions(
+    options = ClaudeAgentOptions(
         model="claude-haiku-4-5",
         system_prompt="You must always call the foo subagent.",
         allowed_tools=["Agent"],
         agents={
-            "foo": claude_agent_sdk.AgentDefinition(
+            "foo": AgentDefinition(
                 description="Does foo things.",
                 prompt=(
                     "You must first call the Bash tool with command"
@@ -122,7 +124,7 @@ async def test_subagent():
         return original_post(self, *args, **kwargs)
 
     with patch.object(RunTree, "post", tracked_post):
-        async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
+        async with ClaudeSDKClient(options=options) as client:
             await client.query("Call foo.")
             async for message in client.receive_response():
                 pass
@@ -295,6 +297,13 @@ async def test_custom_tool_permission_denied():
 @pytest.mark.asyncio
 async def test_custom_tool_permission_granted():
     """MCP tool granted via can_use_tool; @traceable inside handler nests."""
+    from claude_agent_sdk import (
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        create_sdk_mcp_server,
+        tool,
+    )
+
     from langsmith.integrations.claude_agent_sdk import (
         configure_claude_agent_sdk,
     )
@@ -312,7 +321,7 @@ async def test_custom_tool_permission_granted():
             captured_parent_run_id = rt.parent_run_id
         return f"Foggy in {city}"
 
-    @claude_agent_sdk.tool(
+    @tool(
         "get_weather",
         "Gets the current weather for a given city.",
         {"city": str},
@@ -321,9 +330,9 @@ async def test_custom_tool_permission_granted():
         result = await inner_helper(args["city"])
         return {"content": [{"type": "text", "text": result}]}
 
-    server = claude_agent_sdk.create_sdk_mcp_server("weather", tools=[get_weather])
+    server = create_sdk_mcp_server("weather", tools=[get_weather])
 
-    options = claude_agent_sdk.ClaudeAgentOptions(
+    options = ClaudeAgentOptions(
         model="claude-haiku-4-5",
         system_prompt=_WEATHER_PROMPT,
         mcp_servers={"weather": server},
@@ -333,7 +342,7 @@ async def test_custom_tool_permission_granted():
 
     tool_names_seen: list[str] = []
     tool_results_seen: list[str] = []
-    async with claude_agent_sdk.ClaudeSDKClient(options=options) as client:
+    async with ClaudeSDKClient(options=options) as client:
         await client.query("What's the weather in San Francisco?")
         async for msg in client.receive_response():
             if type(msg).__name__ == "AssistantMessage" and hasattr(msg, "content"):
