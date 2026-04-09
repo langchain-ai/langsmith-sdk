@@ -2,11 +2,13 @@
 
 import logging
 import time
+import weakref
 from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
 from functools import cache
 from typing import Any, Optional
 
+from langsmith._internal import _context
 from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._config import get_tracing_config
@@ -279,10 +281,6 @@ def _wrap_tool_handler(original_handler: Any) -> Any:
         # PreToolUse just created for this invocation.
         tool_run = _get_last_active_tool_run()
         if tool_run:
-            import weakref
-
-            from langsmith._internal import _context
-
             token = _context._PARENT_RUN_TREE_REF.set(weakref.ref(tool_run))
             try:
                 return await original_handler(args)
