@@ -139,6 +139,11 @@ export class StreamManager {
               run_type: "chain",
               inputs: block.input,
               start_time: eventTime,
+              extra: {
+                metadata: {
+                  ls_agent_type: "subagent",
+                },
+              },
             }) ?? this.tools[block.id];
 
           this.namespaces[block.id] ??= this.tools[block.id];
