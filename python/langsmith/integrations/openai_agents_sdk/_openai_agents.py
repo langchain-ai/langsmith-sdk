@@ -1,4 +1,5 @@
 import logging
+import weakref
 from datetime import datetime
 from functools import cache
 from typing import Optional
@@ -232,7 +233,8 @@ if HAVE_AGENTS:
                 # Delay posting until first response/generation span ends
                 # so inputs can be included in the POST.
                 self._unposted_traces.add(trace.trace_id)
-                _context._PARENT_RUN_TREE.set(new_run)
+                if new_run is not None:
+                    _context._PARENT_RUN_TREE_REF.set(weakref.ref(new_run))
                 self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
@@ -266,7 +268,11 @@ if HAVE_AGENTS:
                     self._first_response_inputs.pop(trace.trace_id, None)
                     run.patch(exclude_inputs=True)
 
-                _context._PARENT_RUN_TREE.set(run.parent_run)
+                # Restore parent context
+                if run.parent_run is not None:
+                    _context._PARENT_RUN_TREE_REF.set(weakref.ref(run.parent_run))
+                else:
+                    _context._PARENT_RUN_TREE_REF.set(None)
             except Exception as e:
                 logger.exception(f"Error updating trace run: {e}")
 
