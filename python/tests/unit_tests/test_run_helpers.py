@@ -2238,6 +2238,49 @@ def test_traceable_nested_outer_enabled_inner_disabled(mock_client: Client) -> N
     assert "inner_function" not in names
 
 
+def test_traceable_disabled_clears_parent_context(mock_client: Client) -> None:
+    """Test that when enabled=False, the parent RunTree context is cleared.
+
+    This ensures that a nested @traceable with enabled=False doesn't incorrectly
+    inherit the parent's RunTree, which would cause incorrect nesting.
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    def outer_function(a: int) -> int:
+        # At this point, get_current_run_tree() should return outer's run
+        outer_run = get_current_run_tree()
+        assert outer_run is not None
+        assert outer_run.name == "outer_function"
+        result = inner_disabled(a)
+        # After inner_disabled returns, we should still have outer's run
+        outer_run_after = get_current_run_tree()
+        assert outer_run_after is not None
+        assert outer_run_after.name == "outer_function"
+        return result
+
+    @traceable(client=mock_client, enabled=False)
+    def inner_disabled(a: int) -> int:
+        # Since enabled=False, get_current_run_tree() should return None
+        # (the parent context was cleared, not inherited)
+        inner_run = get_current_run_tree()
+        assert inner_run is None, (
+            "Expected None when enabled=False, but got a RunTree. "
+            "Parent context should be cleared, not inherited."
+        )
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    # Only outer_function should be traced
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" in names
+    assert "inner_disabled" not in names
+
+
 @pytest.mark.parametrize(
     "decorator_enabled,context_enabled,should_trace",
     [

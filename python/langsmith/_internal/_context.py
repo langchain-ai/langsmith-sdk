@@ -20,60 +20,22 @@ _TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]
 )
 _CLIENT = contextvars.ContextVar[Optional["Client"]]("_CLIENT", default=None)
 
-# Store only the RunTree ID (string) in the context.
-# The actual RunTree is stored in a WeakValueDictionary, allowing it to be
-# garbage collected when no strong references exist. This prevents memory leaks
-# when contexts are captured by asyncio operations.
-_PARENT_RUN_TREE_ID = contextvars.ContextVar[Optional[str]](
-    "_PARENT_RUN_TREE_ID", default=None
-)
-
-# WeakValueDictionary mapping RunTree ID -> RunTree.
-# Uses weak references so RunTrees can be garbage collected when no longer needed.
-_RUN_TREE_REGISTRY: weakref.WeakValueDictionary[str, "RunTree"] = (
-    weakref.WeakValueDictionary()
+# Store a weak reference to the RunTree in the context.
+# This prevents memory leaks when contexts are captured by asyncio operations
+# (call_later, create_task, etc.) — the captured context holds only a weakref,
+# and the RunTree can be GC'd once no strong references remain.
+_PARENT_RUN_TREE_REF = contextvars.ContextVar[Optional[weakref.ref["RunTree"]]](
+    "_PARENT_RUN_TREE_REF", default=None
 )
 
 
-def register_run_tree(run: "RunTree") -> str:
-    """Register a RunTree in the registry and return its ID.
+def get_current_run_tree() -> Optional["RunTree"]:
+    """Get the current RunTree from the context.
 
-    The RunTree is stored with a weak reference, allowing it to be garbage
-    collected when no strong references exist (e.g., after a traceable function
-    completes and its run_container goes out of scope).
-
-    Args:
-        run: The RunTree to register.
-
-    Returns:
-        The RunTree's ID as a string.
+    Returns the RunTree if it's still alive, otherwise None.
     """
-    run_id = str(run.id)
-    _RUN_TREE_REGISTRY[run_id] = run
-    return run_id
-
-
-def get_run_tree_by_id(run_id: Optional[str]) -> Optional["RunTree"]:
-    """Get a RunTree by its ID from the registry.
-
-    Args:
-        run_id: The RunTree ID, or None.
-
-    Returns:
-        The RunTree if found and still alive, otherwise None.
-    """
-    if run_id is None:
-        return None
-    return _RUN_TREE_REGISTRY.get(run_id)
-
-
-def get_current_run_tree_id() -> Optional[str]:
-    """Get the current RunTree ID from the context.
-
-    Returns:
-        The current RunTree ID, or None if not set.
-    """
-    return _PARENT_RUN_TREE_ID.get()
+    ref = _PARENT_RUN_TREE_REF.get()
+    return ref() if ref is not None else None
 
 
 # Not thread-local, so you can set this process-wide (before asyncio.run, etc.)

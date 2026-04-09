@@ -279,14 +279,15 @@ def _wrap_tool_handler(original_handler: Any) -> Any:
         # PreToolUse just created for this invocation.
         tool_run = _get_last_active_tool_run()
         if tool_run:
+            import weakref
+
             from langsmith._internal import _context
 
-            run_id = _context.register_run_tree(tool_run)
-            token_id = _context._PARENT_RUN_TREE_ID.set(run_id)
+            token = _context._PARENT_RUN_TREE_REF.set(weakref.ref(tool_run))
             try:
                 return await original_handler(args)
             finally:
-                _context._PARENT_RUN_TREE_ID.reset(token_id)
+                _context._PARENT_RUN_TREE_REF.reset(token)
         return await original_handler(args)
 
     _wrapped._langsmith_wrapped = True  # type: ignore[attr-defined]
