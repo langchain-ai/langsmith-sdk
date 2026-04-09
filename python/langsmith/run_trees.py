@@ -267,13 +267,53 @@ class RunTree(ls_schemas.RunBase):
     @model_validator(mode="before")
     def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
         """Assign name to the run."""
+        # Try to get name from serialized data (legacy LangChain support)
         if values.get("name") is None and values.get("serialized") is not None:
-            if "name" in values["serialized"]:
-                values["name"] = values["serialized"]["name"]
-            elif "id" in values["serialized"]:
-                values["name"] = values["serialized"]["id"][-1]
+            serialized = values["serialized"]
+            values["name"] = serialized.get("name") or (
+                serialized["id"][-1] if "id" in serialized else None
+            )
+
+        # If still no name, try to infer from caller
         if values.get("name") is None:
-            values["name"] = "Unnamed"
+            name = None
+            try:
+                import inspect
+                import os
+
+                # Look up the stack, skipping internal frames
+                for frame_info in inspect.stack()[1:8]:
+                    filename = frame_info.filename
+                    norm_path = filename.replace("\\", "/")
+
+                    # Skip pydantic and langsmith internal modules
+                    if "/pydantic/" in norm_path:
+                        continue
+                    if os.path.basename(filename) in {
+                        "run_trees.py",
+                        "run_helpers.py",
+                        "client.py",
+                        "_context.py",
+                    }:
+                        continue
+
+                    # Try to get class name from self or cls
+                    frame_locals = frame_info.frame.f_locals
+                    if "self" in frame_locals:
+                        name = frame_locals["self"].__class__.__name__
+                        break
+                    elif "cls" in frame_locals:
+                        name = frame_locals["cls"].__name__
+                        break
+            except Exception:
+                pass
+
+            # Use inferred name or descriptive fallback
+            if name:
+                values["name"] = name
+            else:
+                run_type = values.get("run_type", "chain")
+                values["name"] = f"Unnamed_{run_type}"
         if "client" in values:  # Handle user-constructed clients
             values["ls_client"] = values.pop("client")
         elif "_client" in values:
