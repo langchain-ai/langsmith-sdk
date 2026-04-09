@@ -545,9 +545,7 @@ def instrument_sdk_mcp_tool(tool_class: Any) -> None:
     def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
         _orig_init(self, *args, **kwargs)
         handler = self.handler
-        if callable(handler) and not getattr(
-            handler, "_langsmith_wrapped", False
-        ):
+        if callable(handler) and not getattr(handler, "_langsmith_wrapped", False):
             self.handler = _wrap_tool_handler(handler)
 
     tool_class.__init__ = _patched_init
