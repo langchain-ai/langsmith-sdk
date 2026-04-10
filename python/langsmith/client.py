@@ -9179,6 +9179,7 @@ class Client:
 
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""
+        self.flush()
         self._manual_cleanup = True
         if self._cache is not None:
             self._cache.shutdown()

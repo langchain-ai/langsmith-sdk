@@ -3851,6 +3851,53 @@ def test_tracing_queue_default_maxsize():
     client.cleanup()
 
 
+def test_cleanup_flushes_buffered_runs() -> None:
+    """Ensure ``cleanup()`` blocks until buffered runs are flushed."""
+    session = MagicMock(spec=requests.Session)
+    session.request.return_value = MagicMock(status_code=200)
+
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=session,
+            info=ls_schemas.LangSmithInfo(
+                batch_ingest_config=ls_schemas.BatchIngestConfig(
+                    use_multipart_endpoint=True,
+                    size_limit=100,
+                    size_limit_bytes=20_971_520,
+                    scale_up_nthreads_limit=16,
+                    scale_up_qsize_trigger=1000,
+                    scale_down_nempty_trigger=4,
+                ),
+            ),
+        )
+
+        run_id = uuid.uuid4()
+        start_time = datetime.now(timezone.utc)
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}",
+            start_time=start_time,
+        )
+        client.cleanup()
+
+    assert client.tracing_queue is not None
+    assert client.tracing_queue.unfinished_tasks == 0
+
+    post_calls = [
+        c
+        for c in session.request.call_args_list
+        if c.args and c.args[0] == "POST" and c.args[1].endswith("/runs/multipart")
+    ]
+    assert post_calls, "cleanup() did not flush the buffered run"
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     """Test list_shared_examples handles pagination correctly."""
