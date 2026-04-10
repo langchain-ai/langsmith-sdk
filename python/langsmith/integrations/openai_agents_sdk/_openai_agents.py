@@ -180,6 +180,9 @@ if HAVE_AGENTS:
             self._last_response_outputs: dict = {}
 
             self._runs: dict[str, rt.RunTree] = {}
+            self._span_data_types: dict[
+                str, type
+            ] = {}  # Track span data types by span_id
             self._unposted_traces: set[str] = set()
             self._unposted_spans: set[str] = set()
 
@@ -200,6 +203,7 @@ if HAVE_AGENTS:
                     **(self._metadata or {}),
                     "ls_integration": "openai-agents-sdk",
                     "ls_integration_version": _get_package_version("openai-agents"),
+                    "ls_agent_type": "root",
                 }
             }
             trace_dict = trace.export() or {}
@@ -318,6 +322,26 @@ if HAVE_AGENTS:
                     else None,
                 )
 
+                # Add ls_agent_type metadata for agent spans that are children of
+                # function spans (i.e., agents used as tools via as_tool()).
+                # Note: Handoff agents are considered root agents, not subagents,
+                # since they take over the conversation rather than being called
+                # as tools.
+                if isinstance(span.span_data, tracing.AgentSpanData):
+                    # Check if parent span is a function span (agent used as tool)
+                    parent_span_data_type = (
+                        self._span_data_types.get(span.parent_id)
+                        if span.parent_id
+                        else None
+                    )
+                    if parent_span_data_type is tracing.FunctionSpanData:
+                        if "metadata" not in child_run.extra:
+                            child_run.extra["metadata"] = {}
+                        child_run.extra["metadata"]["ls_agent_type"] = "subagent"
+
+                # Track span data type for parent lookups
+                self._span_data_types[span.span_id] = type(span.span_data)
+
                 # Delay posting for spans whose inputs aren't available at start
                 if isinstance(
                     span.span_data,
@@ -336,6 +360,9 @@ if HAVE_AGENTS:
 
         def on_span_end(self, span: tracing.Span) -> None:
             run = self._runs.pop(span.span_id, None)
+            self._span_data_types.pop(
+                span.span_id, None
+            )  # Clean up span data type tracking
             if not run:
                 return
 
