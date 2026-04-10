@@ -1,0 +1,237 @@
+interactions:
+- request:
+    body: '{"include":[],"input":[{"content":"Calculate 5 + 3","role":"user"}],"instructions":"You
+      are a calculator.","model":"gpt-4.1","tools":[{"name":"calculate_sum","parameters":{"properties":{"a":{"title":"A","type":"integer"},"b":{"title":"B","type":"integer"}},"required":["a","b"],"title":"calculate_sum_args","type":"object","additionalProperties":false},"strict":true,"type":"function","description":""}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '404'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=.kJo58m33H9881DHeZswdUMKXNF6xlVFlKNkAc1Z.dw-1775777793.1441417-1.0.1.1-8cVdfxP2IlQslVNlC9hL3qQno0rlC5WKNtixyZrhI1PtueTv1v2qOamTvYe00MEMdEg_mq8GK0eoIc4FzUFSex9x1Mq2MSd5.a.UD0KQBGIFkmt5VFQjN_IsF9WE_O8r
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_04e00070cecd19e60069d8380d7b6c81a086a5ecc88df0fa39\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775777805,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775777806,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a calculator.\",\n  \"max_output_tokens\": null,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\":
+        \"fc_04e00070cecd19e60069d8380e0f6c81a0a13bbf7d37b46a54\",\n      \"type\":
+        \"function_call\",\n      \"status\": \"completed\",\n      \"arguments\":
+        \"{\\\"a\\\":5,\\\"b\\\":3}\",\n      \"call_id\": \"call_jqAL8ggeZN6t9J5HKFpGGcMD\",\n
+        \     \"name\": \"calculate_sum\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [\n    {\n      \"type\":
+        \"function\",\n      \"description\": null,\n      \"name\": \"calculate_sum\",\n
+        \     \"parameters\": {\n        \"properties\": {\n          \"a\": {\n            \"title\":
+        \"A\",\n            \"type\": \"integer\"\n          },\n          \"b\":
+        {\n            \"title\": \"B\",\n            \"type\": \"integer\"\n          }\n
+        \       },\n        \"required\": [\n          \"a\",\n          \"b\"\n        ],\n
+        \       \"title\": \"calculate_sum_args\",\n        \"type\": \"object\",\n
+        \       \"additionalProperties\": false\n      },\n      \"strict\": true\n
+        \   }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\": 1.0,\n  \"truncation\":
+        \"disabled\",\n  \"usage\": {\n    \"input_tokens\": 60,\n    \"input_tokens_details\":
+        {\n      \"cached_tokens\": 0\n    },\n    \"output_tokens\": 19,\n    \"output_tokens_details\":
+        {\n      \"reasoning_tokens\": 0\n    },\n    \"total_tokens\": 79\n  },\n
+        \ \"user\": null,\n  \"metadata\": {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d55f3dc9f5bc0-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:36:46 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2007'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '825'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_4fc28e7903a840e5af0c5fd00b383209
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"include":[],"input":[{"content":"Calculate 5 + 3","role":"user"},{"arguments":"{\"a\":5,\"b\":3}","call_id":"call_jqAL8ggeZN6t9J5HKFpGGcMD","name":"calculate_sum","type":"function_call","id":"fc_04e00070cecd19e60069d8380e0f6c81a0a13bbf7d37b46a54","status":"completed"},{"call_id":"call_jqAL8ggeZN6t9J5HKFpGGcMD","output":"The
+      sum is 8","type":"function_call_output"}],"instructions":"You are a calculator.","model":"gpt-4.1","tools":[{"name":"calculate_sum","parameters":{"properties":{"a":{"title":"A","type":"integer"},"b":{"title":"B","type":"integer"}},"required":["a","b"],"title":"calculate_sum_args","type":"object","additionalProperties":false},"strict":true,"type":"function","description":""}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '706'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=.kJo58m33H9881DHeZswdUMKXNF6xlVFlKNkAc1Z.dw-1775777793.1441417-1.0.1.1-8cVdfxP2IlQslVNlC9hL3qQno0rlC5WKNtixyZrhI1PtueTv1v2qOamTvYe00MEMdEg_mq8GK0eoIc4FzUFSex9x1Mq2MSd5.a.UD0KQBGIFkmt5VFQjN_IsF9WE_O8r
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_04e00070cecd19e60069d8380e6c1081a096acc10d894a811e\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775777806,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775777808,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a calculator.\",\n  \"max_output_tokens\": null,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\":
+        \"msg_04e00070cecd19e60069d838104a9481a084cc87d16e2f6e25\",\n      \"type\":
+        \"message\",\n      \"status\": \"completed\",\n      \"content\": [\n        {\n
+        \         \"type\": \"output_text\",\n          \"annotations\": [],\n          \"logprobs\":
+        [],\n          \"text\": \"5 + 3 = 8\"\n        }\n      ],\n      \"role\":
+        \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\": true,\n  \"presence_penalty\":
+        0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\": null,\n  \"prompt_cache_retention\":
+        null,\n  \"reasoning\": {\n    \"effort\": null,\n    \"summary\": null\n
+        \ },\n  \"safety_identifier\": null,\n  \"service_tier\": \"default\",\n  \"store\":
+        true,\n  \"temperature\": 1.0,\n  \"text\": {\n    \"format\": {\n      \"type\":
+        \"text\"\n    },\n    \"verbosity\": \"medium\"\n  },\n  \"tool_choice\":
+        \"auto\",\n  \"tools\": [\n    {\n      \"type\": \"function\",\n      \"description\":
+        null,\n      \"name\": \"calculate_sum\",\n      \"parameters\": {\n        \"properties\":
+        {\n          \"a\": {\n            \"title\": \"A\",\n            \"type\":
+        \"integer\"\n          },\n          \"b\": {\n            \"title\": \"B\",\n
+        \           \"type\": \"integer\"\n          }\n        },\n        \"required\":
+        [\n          \"a\",\n          \"b\"\n        ],\n        \"title\": \"calculate_sum_args\",\n
+        \       \"type\": \"object\",\n        \"additionalProperties\": false\n      },\n
+        \     \"strict\": true\n    }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\":
+        1.0,\n  \"truncation\": \"disabled\",\n  \"usage\": {\n    \"input_tokens\":
+        92,\n    \"input_tokens_details\": {\n      \"cached_tokens\": 0\n    },\n
+        \   \"output_tokens\": 9,\n    \"output_tokens_details\": {\n      \"reasoning_tokens\":
+        0\n    },\n    \"total_tokens\": 101\n  },\n  \"user\": null,\n  \"metadata\":
+        {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d55f9bd1dfc54-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:36:48 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2074'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '2184'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_b2446a41917c4123995d9ea42d67c864
+    status:
+      code: 200
+      message: OK
+version: 1
