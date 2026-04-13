@@ -1226,7 +1226,7 @@ function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {
   }
 }
 
-function _formatExtraFields(runExtra: Record<string, unknown>) {
+function _formatExtraFields(runExtra: KVMap) {
   const formattedExtra = { ...runExtra };
   // TODO: pop invocation_params off extra next minor bump
   if (
