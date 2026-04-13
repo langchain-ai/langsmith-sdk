@@ -582,4 +582,17 @@ def wrap_anthropic(
             prepopulated_invocation_params,
             tracing_extra_rest,
         )
+
+    if (
+        hasattr(client, "beta")
+        and hasattr(client.beta, "messages")
+        and hasattr(client.beta.messages, "parse")
+    ):
+        client.beta.messages.parse = _get_wrapper(  # type: ignore[method-assign]
+            client.beta.messages.parse,  # type: ignore
+            chat_name,
+            _reduce_chat_chunks,
+            prepopulated_invocation_params,
+            tracing_extra_rest,
+        )
     return client

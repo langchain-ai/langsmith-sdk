@@ -1,34 +1,64 @@
-import set from "../utils/lodash/set.js";
-
 export interface StringNode {
   value: string;
   path: string;
 }
 
+interface StringNodeInternal extends StringNode {
+  // Direct reference to the parent object and key, so we can write back
+  // without path parsing/traversal (avoids prototype pollution entirely).
+  parent: Record<string, unknown>;
+  key: string;
+  // Unique identity for matching after maskNodes processing.
+  _id: number;
+}
+
 function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
   const parsedOptions = { ...options, maxDepth: options.maxDepth ?? 10 };
 
-  const queue: [value: unknown, depth: number, path: string][] = [
-    [data, 0, ""],
-  ];
+  const queue: [
+    value: unknown,
+    depth: number,
+    path: string,
+    parent: Record<string, unknown> | null,
+    key: string
+  ][] = [[data, 0, "", null, ""]];
 
-  const result: StringNode[] = [];
+  let nextId = 0;
+  const result: StringNodeInternal[] = [];
   while (queue.length > 0) {
     const task = queue.shift();
     if (task == null) continue;
-    const [value, depth, path] = task;
-    if (typeof value === "object" && value != null) {
-      if (depth >= parsedOptions.maxDepth) continue;
-      for (const [key, nestedValue] of Object.entries(value)) {
-        queue.push([nestedValue, depth + 1, path ? `${path}.${key}` : key]);
-      }
+    const [value, depth, path, parent, key] = task;
+    if (typeof value === "string") {
+      result.push({
+        value,
+        path,
+        parent: parent as Record<string, unknown>,
+        key,
+        _id: nextId++,
+      });
     } else if (Array.isArray(value)) {
       if (depth >= parsedOptions.maxDepth) continue;
       for (let i = 0; i < value.length; i++) {
-        queue.push([value[i], depth + 1, `${path}[${i}]`]);
+        queue.push([
+          value[i],
+          depth + 1,
+          `${path}[${i}]`,
+          value as unknown as Record<string, unknown>,
+          String(i),
+        ]);
       }
-    } else if (typeof value === "string") {
-      result.push({ value, path });
+    } else if (typeof value === "object" && value != null) {
+      if (depth >= parsedOptions.maxDepth) continue;
+      for (const [k, nestedValue] of Object.entries(value)) {
+        queue.push([
+          nestedValue,
+          depth + 1,
+          path ? `${path}.${k}` : k,
+          value as Record<string, unknown>,
+          k,
+        ]);
+      }
     }
   }
 
@@ -93,7 +123,7 @@ export function createAnonymizer(
                 }, item.value);
 
                 if (newValue !== item.value) {
-                  memo.push({ value: newValue, path: item.path });
+                  memo.push({ ...item, value: newValue });
                 }
 
                 return memo;
@@ -107,7 +137,7 @@ export function createAnonymizer(
             nodes.reduce<StringNode[]>((memo, item) => {
               const newValue = replacer(item.value, item.path);
               if (newValue !== item.value) {
-                memo.push({ value: newValue, path: item.path });
+                memo.push({ ...item, value: newValue });
               }
 
               return memo;
@@ -115,12 +145,27 @@ export function createAnonymizer(
         }
       : replacer;
 
+    // Build a lookup from _id to internal node for direct write-back.
+    const nodesById = new Map<number, StringNodeInternal>();
+    for (const node of nodes) {
+      nodesById.set(node._id, node);
+    }
+
     const toUpdate = processor.maskNodes(nodes);
     for (const node of toUpdate) {
       if (node.path === "") {
         mutateValue = node.value as unknown as T;
       } else {
-        set(mutateValue as unknown as object, node.path, node.value);
+        // Match by _id if available (built-in replacers propagate it from
+        // the input nodes), otherwise fall back to path matching.
+        const asInternal = node as Partial<StringNodeInternal>;
+        const internal =
+          asInternal._id !== undefined
+            ? nodesById.get(asInternal._id)
+            : nodes.find((n) => n.path === node.path);
+        if (internal) {
+          internal.parent[internal.key] = node.value;
+        }
       }
     }
 

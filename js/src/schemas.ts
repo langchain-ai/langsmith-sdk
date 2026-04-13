@@ -325,10 +325,6 @@ export interface RawExample extends BaseExample {
 
 export interface ExampleUpdateWithId extends ExampleUpdate {}
 
-export interface ExampleSearch extends BaseExample {
-  id: string;
-}
-
 export interface BaseDataset {
   name: string;
   description: string;
@@ -499,6 +495,7 @@ export interface PromptCommit {
   commit_hash: string;
   manifest: Record<string, any>;
   examples: Array<Record<any, any>>;
+  description?: string;
 }
 
 export interface Prompt {

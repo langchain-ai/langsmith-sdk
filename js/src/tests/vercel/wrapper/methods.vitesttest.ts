@@ -158,12 +158,20 @@ describe("wrapAISDK", () => {
         "ai_sdk_method",
         "ai.generateText"
       );
+      expect(generateTextRun.body.extra.metadata).toHaveProperty(
+        "ls_integration",
+        "vercel-ai-sdk"
+      );
 
       // The second createRun should be the low-level doGenerate call
       const doGenerateRun = mockHttpRequests[1];
       expect(doGenerateRun.body.extra.metadata).toHaveProperty(
         "ai_sdk_method",
         "ai.doGenerate"
+      );
+      expect(doGenerateRun.body.extra.metadata).toHaveProperty(
+        "ls_integration",
+        "vercel-ai-sdk"
       );
     });
 
@@ -227,6 +235,7 @@ describe("wrapAISDK", () => {
       const generateTextRun = mockHttpRequests[0];
       const updateTextRun = mockHttpRequests[3];
       expect(generateTextRun.body.extra.metadata).toMatchObject({
+        ls_integration: "vercel-ai-sdk",
         customField: "test-value",
         version: "2.0",
         ai_sdk_method: "ai.generateText",
@@ -2982,6 +2991,64 @@ describe("wrapAISDK", () => {
         doStreamUpdateRun.body.extra.metadata.usage_metadata
           .output_token_details.reasoning
       ).toBe(2);
+    });
+  });
+
+  describe("ls_agent_type metadata", () => {
+    it("should set ls_agent_type to 'root' at top level and 'subagent' inside a tool", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      // Top-level call should be "root"
+      await wrappedMethods.generateText({
+        model: standardMockedModel,
+        prompt: "Root prompt",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      const rootRun = mockHttpRequests.find(
+        (r: any) =>
+          r.type === "createRun" &&
+          r.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+      );
+      expect(rootRun).toBeDefined();
+      expect(rootRun.body.extra.metadata.ls_agent_type).toBe("root");
+
+      // Reset for next call
+      mockHttpRequests.length = 0;
+
+      // Call inside a tool should be "subagent"
+      const toolFunc = traceable(
+        async () => {
+          await wrappedMethods.generateText({
+            model: standardMockedModel,
+            prompt: "Subagent prompt",
+          });
+          return "tool result";
+        },
+        { name: "my_tool", run_type: "tool", client: mockClient as any }
+      );
+
+      await toolFunc();
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      const subagentRun = mockHttpRequests.find(
+        (r: any) =>
+          r.type === "createRun" &&
+          r.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+      );
+      expect(subagentRun).toBeDefined();
+      expect(subagentRun.body.extra.metadata.ls_agent_type).toBe("subagent");
     });
   });
 });

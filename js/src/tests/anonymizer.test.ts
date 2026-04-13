@@ -9,6 +9,79 @@ const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}/g;
 const UUID_REGEX =
   /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
 
+describe("prototype pollution prevention", () => {
+  test("blocks constructor.prototype path", () => {
+    const anonymizer = createAnonymizer([
+      { pattern: "secret", replace: "[REDACTED]" },
+    ]);
+
+    // Verify clean state
+    expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
+
+    // Malicious input with prototype pollution attempt
+    const maliciousInput = {
+      wrapper: {
+        "constructor.prototype.isAdmin": "this-is-secret-data",
+      },
+    };
+
+    anonymizer(maliciousInput);
+
+    // Should NOT pollute Object.prototype
+    expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
+  });
+
+  test("blocks __proto__ path", () => {
+    const anonymizer = createAnonymizer([
+      { pattern: "secret", replace: "[REDACTED]" },
+    ]);
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    const maliciousInput = {
+      "__proto__.polluted": "secret-data",
+    };
+
+    anonymizer(maliciousInput);
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test("blocks prototype path", () => {
+    const anonymizer = createAnonymizer([
+      { pattern: "secret", replace: "[REDACTED]" },
+    ]);
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    const maliciousInput = {
+      prototype: {
+        polluted: "secret-data",
+      },
+    };
+
+    anonymizer(maliciousInput);
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test("handles dotted keys distinctly from nested keys", () => {
+    const anonymizer = createAnonymizer([
+      { pattern: "secret", replace: "[REDACTED]" },
+    ]);
+
+    const input = {
+      "a.b": "secret-1",
+      a: { b: "secret-2" },
+    };
+
+    const output = anonymizer(input);
+
+    expect(output["a.b"]).toBe("[REDACTED]-1");
+    expect(output.a.b).toBe("[REDACTED]-2");
+  });
+});
+
 describe("replacer", () => {
   const replacer = (text: string) =>
     text.replace(EMAIL_REGEX, "[email address]").replace(UUID_REGEX, "[uuid]");

@@ -23,12 +23,6 @@
  * @packageDocumentation
  */
 
-// Emit warning on import (alpha feature)
-console.warn(
-  "langsmith/experimental/sandbox is in alpha. " +
-    "This feature is experimental, and breaking changes are expected."
-);
-
 // Main classes
 export { SandboxClient } from "./client.js";
 export { Sandbox } from "./sandbox.js";

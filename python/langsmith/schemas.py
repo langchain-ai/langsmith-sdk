@@ -177,12 +177,6 @@ class Example(ExampleBase):
         return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
 
 
-class ExampleSearch(ExampleBase):
-    """Example returned via search."""
-
-    id: UUID
-
-
 class AttachmentsOperations(BaseModel):
     """Operations to perform on attachments."""
 
@@ -1002,6 +996,8 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: list[dict]
     """The list of examples."""
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class ListedPromptCommit(BaseModel):
@@ -1045,6 +1041,9 @@ class ListedPromptCommit(BaseModel):
 
     parent_commit_hash: Optional[str] = None
     """The optional hash of the parent commit."""
+
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class Prompt(BaseModel):

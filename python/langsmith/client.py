@@ -1343,7 +1343,6 @@ class Client:
         }
         # Merge custom headers first so they don't override required headers
         headers.update(self._custom_headers)
-        # Required headers that should not be overridden
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:
@@ -1372,6 +1371,15 @@ class Client:
     @workspace_id.setter
     def workspace_id(self, value: Optional[str]) -> None:
         self._set_header_affecting_attr("_workspace_id", value)
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._set_header_affecting_attr("_custom_headers", value or {})
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
@@ -1540,7 +1548,7 @@ class Client:
                                     continue
                         if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
-                                f"Server error caused failure to {method}"
+                                f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
                                 f"{_context}"
@@ -6506,166 +6514,6 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    @warn_beta
-    def index_dataset(
-        self,
-        *,
-        dataset_id: ID_TYPE,
-        tag: str = "latest",
-        **kwargs: Any,
-    ) -> None:
-        """Enable dataset indexing. Examples are indexed by their inputs.
-
-        This enables searching for similar examples by inputs with
-        ``client.similar_examples()``.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to index.
-            tag (Optional[str]): The version of the dataset to index. If 'latest'
-                then any updates to the dataset (additions, updates, deletions of
-                examples) will be reflected in the index.
-            **kwargs (Any): Additional keyword arguments to pass as part of request body.
-
-        Returns:
-            None
-        """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index",
-            headers=self._headers,
-            data=json.dumps({"tag": tag, **kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @warn_beta
-    def sync_indexed_dataset(
-        self,
-        *,
-        dataset_id: ID_TYPE,
-        **kwargs: Any,
-    ) -> None:
-        """Sync dataset index.
-
-        This already happens automatically every 5 minutes, but you can call this to
-        force a sync.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
-
-        Returns:
-            None
-        """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index/sync",
-            headers=self._headers,
-            data=json.dumps({**kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
-    @warn_beta
-    def similar_examples(
-        self,
-        inputs: dict,
-        /,
-        *,
-        limit: int,
-        dataset_id: ID_TYPE,
-        filter: Optional[str] = None,
-        **kwargs: Any,
-    ) -> list[ls_schemas.ExampleSearch]:
-        r"""Retrieve the dataset examples whose inputs best match the current inputs.
-
-        !!! note
-
-            Must have few-shot indexing enabled for the dataset. See `client.index_dataset()`.
-
-        Args:
-            inputs (dict): The inputs to use as a search query. Must match the dataset
-                input schema. Must be JSON serializable.
-            limit (int): The maximum number of examples to return.
-            dataset_id (Union[UUID, str]): The ID of the dataset to search over.
-            filter (Optional[str]): A filter string to apply to the search results. Uses
-                the same syntax as the `filter` parameter in `list_runs()`. Only a subset
-                of operations are supported.
-
-                For example, you can use ``and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))``
-                to filter only examples where some_tag has some_value, and the environment is not dev.
-            **kwargs: Additional keyword arguments to pass as part of request body.
-
-        Returns:
-            list[ExampleSearch]: List of ExampleSearch objects.
-
-        Examples:
-            ```python
-            from langsmith import Client
-
-            client = Client()
-            client.similar_examples(
-                {"question": "When would i use the runnable generator"},
-                limit=3,
-                dataset_id="...",
-            )
-            ```
-
-            ```python
-            [
-                ExampleSearch(
-                    inputs={
-                        "question": "How do I cache a Chat model? What caches can I use?"
-                    },
-                    outputs={
-                        "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\nYou can also use SQLite Cache which uses a SQLite database:\n\nrm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n"
-                    },
-                    metadata=None,
-                    id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "What's a runnable lambda?"},
-                    outputs={
-                        "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
-                    },
-                    metadata=None,
-                    id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "Show me how to use RecursiveURLLoader"},
-                    outputs={
-                        "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
-                    },
-                    metadata=None,
-                    id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-            ]
-            ```
-        """
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        req = {
-            "inputs": inputs,
-            "limit": limit,
-            **kwargs,
-        }
-        if filter is not None:
-            req["filter"] = filter
-
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/search",
-            headers=self._headers,
-            data=json.dumps(req),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-        examples = []
-        for ex in resp.json()["examples"]:
-            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
-        return examples
-
     def update_example(
         self,
         example_id: ID_TYPE,
@@ -8841,7 +8689,10 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
-            response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}")
+            response = self.request_with_retries(
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
+            )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
             return None
@@ -8906,6 +8757,7 @@ class Client:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -8916,6 +8768,8 @@ class Client:
                 Defaults to latest commit.
             tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
                 Defaults to None.
+            description (Optional[str]): Optional human-readable description for the
+                commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The url of the prompt commit.
@@ -8951,7 +8805,12 @@ class Client:
         if parent_commit_hash == "latest" or parent_commit_hash is None:
             parent_commit_hash = self._get_latest_commit_hash(prompt_owner_and_name)
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = self.request_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -9252,6 +9111,7 @@ class Client:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -9277,6 +9137,8 @@ class Client:
                 Defaults to an empty list.
             commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
+            commit_description (Optional[str]): Optional human-readable description
+                for the commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The URL of the prompt.
@@ -9311,6 +9173,7 @@ class Client:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
 
@@ -10202,6 +10065,80 @@ class Client:
         result = ls_schemas.InsightsReportResult(**report_json)
         result._attach_client(self, session_id, job_id)
         return result
+
+    def list_project_issues(
+        self,
+        project_name: str,
+        *,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+    ) -> list[dict]:
+        """List issues associated with a tracing project (forge issues board).
+
+        Retrieves all issues from the forge issues board that are linked to the
+        given tracing project (identified by its session name).
+
+        Args:
+            project_name (str): The name of the tracing project (session) whose
+                issues you want to list.
+            status (Optional[str]): Filter issues by status (e.g. ``"open"``,
+                ``"resolved"``). If ``None``, issues of all statuses are returned.
+            priority (Optional[str]): Filter issues by priority (e.g.
+                ``"high"``, ``"medium"``, ``"low"``). If ``None``, issues of all
+                priorities are returned.
+
+        Returns:
+            List[dict]: A list of issue objects. Each dict contains the following
+            keys:
+
+            - ``id`` (str): Issue UUID.
+            - ``tenant_id`` (str): Workspace/tenant UUID.
+            - ``issue_board_id`` (str): UUID of the issue board this issue belongs to.
+            - ``title`` (str): Issue title.
+            - ``description`` (str): Issue description.
+            - ``priority`` (str): Issue priority.
+            - ``status`` (str): Issue status.
+            - ``category`` (str | None): Optional category label.
+            - ``trace_ids`` (List[str]): Run/trace IDs associated with the issue.
+            - ``github_issue_url`` (str | None): URL of the linked GitHub issue.
+            - ``github_issue_number`` (int | None): Number of the linked GitHub issue.
+            - ``created_at`` (str): ISO-8601 creation timestamp.
+            - ``updated_at`` (str): ISO-8601 last-updated timestamp.
+            - ``resolved_at`` (str | None): ISO-8601 resolution timestamp, or ``None``.
+
+        Example:
+            ```python
+            from langsmith import Client
+
+            client = Client()
+
+            # List all issues for a project
+            issues = client.list_project_issues("my-project")
+
+            # Filter by status and priority
+            open_high = client.list_project_issues(
+                "my-project", status="open", priority="high"
+            )
+            for issue in open_high:
+                print(issue["id"], issue["title"])
+            ```
+        """
+        params: dict[str, Any] = {"session_name": project_name}
+        if status is not None:
+            params["status"] = status
+        if priority is not None:
+            params["priority"] = priority
+        path = _platform_path(self.api_url, "forge-issues")
+        full_url = _construct_url(self.api_url, path)
+        response = self.session.request(
+            "GET",
+            full_url,
+            params=params,
+            headers=self._headers,
+            timeout=self._timeout,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
 
     def _ensure_insights_api_key(
         self,

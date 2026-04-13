@@ -50,6 +50,7 @@ from langsmith.sandbox._exceptions import (
 )
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
+    AsyncServiceURL,
     CommandHandle,
     ExecutionResult,
     OutputChunk,
@@ -57,6 +58,7 @@ from langsmith.sandbox._models import (
     ResourceSpec,
     ResourceStatus,
     SandboxTemplate,
+    ServiceURL,
     Volume,
     VolumeMountSpec,
 )
@@ -77,6 +79,8 @@ __all__ = [
     "Volume",
     "VolumeMountSpec",
     "Pool",
+    "ServiceURL",
+    "AsyncServiceURL",
     # WebSocket streaming models
     "CommandHandle",
     "AsyncCommandHandle",

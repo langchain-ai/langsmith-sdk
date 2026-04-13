@@ -6,6 +6,7 @@ and raise appropriate exceptions. They contain no I/O operations.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import httpx
@@ -26,8 +27,45 @@ from langsmith.sandbox._exceptions import (
 )
 
 # =============================================================================
+# Header Utilities
+# =============================================================================
+
+
+def merge_headers(
+    base_headers: Optional[Mapping[str, str]] = None,
+    override_headers: Optional[Mapping[str, str]] = None,
+) -> dict[str, str]:
+    """Merge request headers, giving precedence to overrides."""
+    merged: dict[str, str] = dict(base_headers or {})
+    if override_headers:
+        merged.update(override_headers)
+    return merged
+
+
+# =============================================================================
 # Input Validation
 # =============================================================================
+
+
+def validate_service_params(port: int, expires_in_seconds: int) -> None:
+    """Validate parameters for service URL generation.
+
+    Args:
+        port: Target port inside the sandbox.
+        expires_in_seconds: Token TTL.
+
+    Raises:
+        ValueError: If port or TTL is out of range.
+    """
+    if not isinstance(port, int) or port <= 0:
+        raise ValueError(f"port must be a positive integer, got {port!r}")
+    if not isinstance(expires_in_seconds, int) or not (
+        1 <= expires_in_seconds <= 86400
+    ):
+        raise ValueError(
+            f"expires_in_seconds must be between 1 and 86400, "
+            f"got {expires_in_seconds!r}"
+        )
 
 
 def validate_ttl(value: Optional[int], name: str) -> None:

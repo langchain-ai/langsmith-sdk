@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import random
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
@@ -22,7 +23,6 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _beta_decorator as ls_beta
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
@@ -31,7 +31,51 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = (
+        "_retry_config",
+        "_client",
+        "_web_url",
+        "_settings",
+        "_cache",
+        "_custom_headers",
+        "_api_key",
+    )
+
+    _custom_headers: dict[str, str]
+    _api_key: Optional[str]
+
+    def _compute_headers(self) -> dict[str, str]:
+        headers = {**self._custom_headers}
+        # Required headers that should not be overridden
+        headers["Content-Type"] = "application/json"
+        if self._api_key:
+            headers[ls_client.X_API_KEY] = self._api_key
+        return headers
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._custom_headers = value or {}
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        """Return the merged headers used for API requests."""
+        return dict(self._client.headers)
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Return the API key used for authentication."""
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._api_key = value
+        self._client.headers = httpx.Headers(self._compute_headers())
 
     def __init__(
         self,
@@ -44,6 +88,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
         disable_prompt_cache: bool = False,
         cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
@@ -55,6 +100,11 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
+            headers: Additional HTTP headers to include in all requests.
+
+                These headers will be merged with the default headers
+                (Content-Type, x-api-key, etc.). Custom headers will not override
+                the default required headers.
             disable_prompt_cache: Disable prompt caching for this client.
             cache: **[Deprecated]** Control prompt caching behavior.
 
@@ -66,13 +116,11 @@ class AsyncClient:
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
-        _headers = {
-            "Content-Type": "application/json",
-        }
+        self._custom_headers = headers or {}
         api_key = ls_utils.get_api_key(api_key)
         api_url = ls_utils.get_api_url(api_url)
-        if api_key:
-            _headers[ls_client.X_API_KEY] = api_key
+        self._api_key = api_key
+        _headers = self._compute_headers()
         ls_client._validate_api_key_if_hosted(api_url, api_key)
 
         if isinstance(timeout_ms, int):
@@ -167,44 +215,55 @@ class AsyncClient:
 
         for attempt in range(max_retries):
             try:
-                response = await self._client.request(method, endpoint, **kwargs)
-                ls_utils.raise_for_status_with_text(response)
-                return response
-            except httpx.HTTPStatusError as e:
-                if response.status_code == 500:
-                    raise ls_utils.LangSmithAPIError(
-                        f"Server error caused failure to {method}"
-                        f" {endpoint} in"
-                        f" LangSmith API. {repr(e)}"
-                    )
-                elif response.status_code == 408:
-                    raise ls_utils.LangSmithRequestTimeout(
-                        f"Client took too long to send request to {method}{endpoint}"
-                    )
-                elif response.status_code == 429:
-                    raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 401:
-                    raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 404:
-                    raise ls_utils.LangSmithNotFoundError(
-                        f"Resource not found for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 409:
-                    raise ls_utils.LangSmithConflictError(
-                        f"Conflict for {endpoint}. {repr(e)}"
-                    )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
-                    )
-            except httpx.RequestError as e:
+                try:
+                    response = await self._client.request(method, endpoint, **kwargs)
+                    ls_utils.raise_for_status_with_text(response)
+                    return response
+                except httpx.HTTPStatusError as e:
+                    response = e.response
+                    if response.status_code in {425, 500, 502, 503, 504}:
+                        raise ls_utils.LangSmithAPIError(
+                            f"Server error ({response.status_code}) caused failure to"
+                            f" {method} {endpoint} in"
+                            f" LangSmith API. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 408:
+                        raise ls_utils.LangSmithRequestTimeout(
+                            f"Client took too long to send request to {method}{endpoint}"
+                        ) from e
+                    elif response.status_code == 429:
+                        raise ls_utils.LangSmithRateLimitError(
+                            f"Rate limit exceeded for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 401:
+                        raise ls_utils.LangSmithAuthError(
+                            f"Authentication failed for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 404:
+                        raise ls_utils.LangSmithNotFoundError(
+                            f"Resource not found for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 409:
+                        raise ls_utils.LangSmithConflictError(
+                            f"Conflict for {endpoint}. {repr(e)}"
+                        ) from e
+                    else:
+                        raise ls_utils.LangSmithError(
+                            f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
+                        ) from e
+                except httpx.RequestError as e:
+                    raise ls_utils.LangSmithConnectionError(
+                        f"Request error: {repr(e)}"
+                    ) from e
+            except (
+                ls_utils.LangSmithConnectionError,
+                ls_utils.LangSmithRequestTimeout,
+                ls_utils.LangSmithAPIError,
+            ):
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithConnectionError(f"Request error: {repr(e)}")
-                await asyncio.sleep(2**attempt)
+                    raise
+                sleep_time = 2**attempt + (random.random() * 0.5)
+                await asyncio.sleep(sleep_time)
         raise ls_utils.LangSmithAPIError(
             "Unexpected error connecting to the LangSmith API"
         )
@@ -1221,165 +1280,6 @@ class AsyncClient:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    @ls_beta.warn_beta
-    async def index_dataset(
-        self,
-        *,
-        dataset_id: ls_client.ID_TYPE,
-        tag: str = "latest",
-        **kwargs: Any,
-    ) -> None:
-        """Enable dataset indexing. Examples are indexed by their inputs.
-
-        This enables searching for similar examples by inputs with
-        `client.similar_examples()`.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to index.
-            tag: The version of the dataset to index.
-
-                If `'latest'` then any updates to the dataset (additions, updates,
-                deletions of examples) will be reflected in the index.
-
-        Raises:
-            requests.HTTPError: If the request fails.
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index",
-            content=ls_client._dumps_json({"tag": tag, **kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @ls_beta.warn_beta
-    async def sync_indexed_dataset(
-        self,
-        *,
-        dataset_id: ls_client.ID_TYPE,
-        **kwargs: Any,
-    ) -> None:
-        """Sync dataset index.
-
-        This already happens automatically every 5 minutes, but you can call this to
-        force a sync.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
-
-        Raises:
-            requests.HTTPError: If the request fails.
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index/sync",
-            content=ls_client._dumps_json({**kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @ls_beta.warn_beta
-    async def similar_examples(
-        self,
-        inputs: dict,
-        /,
-        *,
-        limit: int,
-        dataset_id: ls_client.ID_TYPE,
-        filter: Optional[str] = None,
-        **kwargs: Any,
-    ) -> list[ls_schemas.ExampleSearch]:
-        r"""Retrieve the dataset examples whose inputs best match the current inputs.
-
-        !!! note
-
-            Must have few-shot indexing enabled for the dataset. See `client.index_dataset()`.
-
-        Args:
-            inputs: The inputs to use as a search query.
-
-                Must match the dataset input schema.
-
-                Must be JSON serializable.
-            limit: The maximum number of examples to return.
-            dataset_id (Union[UUID, str]): The ID of the dataset to search over.
-            filter: A filter string to apply to the search results.
-
-                Uses the same syntax as the `filter` parameter in `list_runs()`.
-
-                Only a subset of operations are supported.
-            kwargs: Additional keyword args to pass as part of request body.
-
-        Returns:
-            List of `ExampleSearch` objects.
-
-        Examples:
-            ```python
-            from langsmith import Client
-
-            client = Client()
-            await client.similar_examples(
-                {"question": "When would i use the runnable generator"},
-                limit=3,
-                dataset_id="...",
-            )
-            ```
-
-            ```python
-            [
-                ExampleSearch(
-                    inputs={
-                        "question": "How do I cache a Chat model? What caches can I use?"
-                    },
-                    outputs={
-                        "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n```\n"
-                    },
-                    metadata=None,
-                    id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "What's a runnable lambda?"},
-                    outputs={
-                        "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
-                    },
-                    metadata=None,
-                    id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "Show me how to use RecursiveURLLoader"},
-                    outputs={
-                        "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
-                    },
-                    metadata=None,
-                    id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-            ]
-            ```
-
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        req = {
-            "inputs": inputs,
-            "limit": limit,
-            **kwargs,
-        }
-        if filter:
-            req["filter"] = filter
-
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/search",
-            content=ls_client._dumps_json(req),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-        examples = []
-        for ex in resp.json()["examples"]:
-            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
-        return examples
-
     async def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
 
@@ -1613,7 +1513,8 @@ class AsyncClient:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = await self._arequest_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
@@ -1681,6 +1582,7 @@ class AsyncClient:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -1693,6 +1595,8 @@ class AsyncClient:
             tags: A single tag or list of tags to apply to the commit.
 
                 Defaults to `None`.
+            description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The url of the prompt commit.
@@ -1730,7 +1634,12 @@ class AsyncClient:
                 prompt_owner_and_name
             )
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = await self._arequest_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -2038,6 +1947,7 @@ class AsyncClient:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -2071,6 +1981,8 @@ class AsyncClient:
             commit_tags: A single tag or list of tags for the prompt commit.
 
                 Defaults to an empty list.
+            commit_description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The URL of the prompt.
@@ -2105,6 +2017,7 @@ class AsyncClient:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
 

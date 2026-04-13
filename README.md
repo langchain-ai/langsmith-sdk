@@ -1,7 +1,7 @@
 # LangSmith Client SDKs
 
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
-[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
+[![Python Downloads](https://img.shields.io/pypi/dm/langsmith)](https://pypi.org/project/langsmith/)
 
 ![NPM Version](https://img.shields.io/npm/v/langsmith?logo=npm)
 [![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
@@ -43,7 +43,7 @@ client.chat.completions.create(
 To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the instructions in the [JS README](js/README.md).
 
 ```bash
-yarn add langsmith
+pnpm add langsmith
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
 export LANGSMITH_WORKSPACE_ID=<your-workspace-id> # Required for org-scoped keys

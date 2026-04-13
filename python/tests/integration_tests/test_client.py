@@ -387,66 +387,6 @@ def test_list_examples(langchain_client: "Client") -> None:
         safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-@pytest.mark.slow
-def test_similar_examples(langchain_client: Client) -> None:
-    inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
-    outputs = [
-        {"response": "good how are you"},
-        {"response": "ta ta"},
-        {"response": "tootles"},
-    ]
-    dataset_name = "__test_similar_examples" + uuid7().hex
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
-    dataset = langchain_client.create_dataset(
-        dataset_name=dataset_name,
-        inputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-            },
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        outputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "response": {"type": "string"},
-            },
-            "required": ["response"],
-            "additionalProperties": False,
-        },
-    )
-    langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, dataset_id=dataset.id
-    )
-    langchain_client.index_dataset(dataset_id=dataset.id)
-    # Need to wait for indexing to finish.
-    time.sleep(5)
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=2, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 2
-
-    langchain_client.create_example(
-        inputs={"text": "howdy"},
-        outputs={"response": "howdy"},
-        dataset_id=dataset.id,
-    )
-
-    langchain_client.sync_indexed_dataset(dataset_id=dataset.id)
-    time.sleep(5)
-
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=5, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 4
-
-    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
-
-
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -1326,9 +1266,9 @@ def test_multipart_ingest_create_then_update(
     _session = "__test_multipart_ingest_create_then_update"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_create: list[dict] = [
         {
@@ -1339,6 +1279,7 @@ def test_multipart_ingest_create_then_update(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 
@@ -1351,8 +1292,11 @@ def test_multipart_ingest_create_then_update(
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1368,15 +1312,18 @@ def test_multipart_ingest_update_then_create(
     _session = "__test_multipart_ingest_update_then_create"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1396,6 +1343,7 @@ def test_multipart_ingest_update_then_create(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 

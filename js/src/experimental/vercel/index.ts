@@ -9,7 +9,11 @@ import {
   LangSmithMiddleware,
 } from "./middleware.js";
 import { convertMessageToTracedFormat } from "./utils.js";
-import { isTraceableFunction, traceable } from "../../traceable.js";
+import {
+  isTraceableFunction,
+  traceable,
+  getCurrentRunTree,
+} from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
 const _wrapTools = (
@@ -119,6 +123,7 @@ const _mergeConfig = (
     ...baseConfig,
     ...runtimeConfig,
     metadata: {
+      ls_integration: "vercel-ai-sdk",
       ...baseConfig?.metadata,
       ...runtimeConfig?.metadata,
     },
@@ -403,6 +408,14 @@ const _resolveConfigs = (
   };
 };
 
+const _getLsAgentType = (): string => {
+  const parentRun = getCurrentRunTree(true);
+  if (parentRun != null && parentRun.run_type === "tool") {
+    return "subagent";
+  }
+  return "root";
+};
+
 const _getGenerateTextWrapperConfig = ({
   model,
   runName,
@@ -424,6 +437,7 @@ const _getGenerateTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
+      ls_agent_type: _getLsAgentType(),
       ai_sdk_method: aiSdkMethodName ?? "ai.generateText",
       ...resolvedLsConfig?.metadata,
     },
@@ -517,6 +531,7 @@ const _getStreamTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
+      ls_agent_type: _getLsAgentType(),
       ai_sdk_method: aiSdkMethodName ?? "ai.streamText",
       ...resolvedLsConfig?.metadata,
     },
@@ -773,6 +788,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
+            ls_agent_type: _getLsAgentType(),
             ai_sdk_method: "ai.generateObject",
             ...resolvedLsConfig?.metadata,
           },
@@ -926,6 +942,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
+            ls_agent_type: _getLsAgentType(),
             ai_sdk_method: "ai.streamObject",
             ...resolvedLsConfig?.metadata,
           },
