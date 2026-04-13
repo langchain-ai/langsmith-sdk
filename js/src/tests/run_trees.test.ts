@@ -741,3 +741,61 @@ test("patch uses formatted extra with merged metadata", async () => {
   expect(body.extra.metadata.version).toBe("2");
   expect(body.extra.ls_metadata).toBeUndefined();
 });
+
+test("patchRun with replicas uses formatted extra", async () => {
+  const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+    ok: true,
+    text: () => Promise.resolve(""),
+  } as Response);
+
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 0 },
+    timeout_ms: 30_000,
+    apiKey: "test-key",
+    fetchImplementation: callSpy,
+  });
+
+  const rt = new RunTree({
+    name: "test",
+    client,
+    project_name: "main-project",
+    extra: {
+      invocation_params: { model: "gpt-4", temp: 0.7 },
+      ls_metadata: { model: "claude", version: "2" },
+      metadata: { model: "custom" },
+    },
+  });
+
+  rt.replicas = [
+    {
+      projectName: "replica-project",
+      apiKey: "replica-key",
+      apiUrl: "https://replica.example.com",
+    },
+  ];
+
+  await rt.end({ result: "done" });
+  await rt.patchRun();
+
+  // Find the PATCH call to the replica
+  const patchCall = callSpy.mock.calls.find(
+    (call: any[]) =>
+      (call[1] as any).method === "PATCH" &&
+      (call[0] as string).includes("replica.example.com")
+  );
+  expect(patchCall).toBeDefined();
+
+  const rawBody = (patchCall as any[])[1].body;
+  const body =
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    rawBody instanceof Uint8Array
+      ? JSON.parse(new TextDecoder().decode(rawBody))
+      : JSON.parse(rawBody);
+
+  expect(body.extra).toBeDefined();
+  expect(body.extra.metadata.model).toBe("custom");
+  expect(body.extra.metadata.temp).toBe(0.7);
+  expect(body.extra.metadata.version).toBe("2");
+  expect(body.extra.ls_metadata).toBeUndefined();
+});

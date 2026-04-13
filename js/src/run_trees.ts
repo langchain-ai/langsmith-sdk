@@ -860,7 +860,7 @@ export class RunTree implements BaseRun {
           trace_id: runData.trace_id,
           events: runData.events,
           tags: runData.tags,
-          extra: formattedExtra(runData.extra),
+          extra: _formatExtraFields(runData.extra ?? {}),
           attachments: this.attachments,
           ...updates,
         };

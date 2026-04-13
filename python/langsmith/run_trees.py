@@ -671,16 +671,6 @@ class RunTree(ls_schemas.RunBase):
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
         run_extra = _format_extra_fields(self.extra)
-        if isinstance(run_extra.get("invocation_params"), dict):
-            run_extra["metadata"] = {
-                **run_extra.get("invocation_params", {}),
-                **run_extra.get("metadata", {}),
-            }
-        if isinstance(run_extra.get("ls_metadata"), dict):
-            run_extra["metadata"] = {
-                **run_extra.pop("ls_metadata"),
-                **run_extra.get("metadata", {}),
-            }
         if self.replicas:
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
