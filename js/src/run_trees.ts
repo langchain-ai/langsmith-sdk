@@ -508,7 +508,7 @@ export class RunTree implements BaseRun {
     runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
   ): RunCreate & { id: string } {
-    const runExtra = run.extra ?? {};
+    const runExtra = _formatExtraFields(run.extra ?? {});
     // Avoid overwriting the runtime environment if it's already set
     if (runExtra?.runtime?.library === undefined) {
       if (!runExtra.runtime) {
@@ -521,28 +521,6 @@ export class RunTree implements BaseRun {
           }
         }
       }
-    }
-
-    // TODO: pop invocation_params off extra next minor bump
-    if (
-      typeof runExtra.invocation_params === "object" &&
-      runExtra.invocation_params !== null
-    ) {
-      runExtra.metadata = {
-        ...runExtra.invocation_params,
-        ...runExtra.metadata,
-      };
-    }
-
-    if (
-      typeof runExtra.ls_metadata === "object" &&
-      runExtra.ls_metadata !== null
-    ) {
-      runExtra.metadata = {
-        ...runExtra.ls_metadata,
-        ...runExtra.metadata,
-      };
-      delete runExtra.ls_metadata;
     }
 
     const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
@@ -882,7 +860,7 @@ export class RunTree implements BaseRun {
           trace_id: runData.trace_id,
           events: runData.events,
           tags: runData.tags,
-          extra: runData.extra,
+          extra: formattedExtra(runData.extra),
           attachments: this.attachments,
           ...updates,
         };
@@ -909,7 +887,7 @@ export class RunTree implements BaseRun {
           outputs: this.outputs,
           parent_run_id: this.parent_run?.id ?? this.parent_run_id,
           reference_example_id: this.reference_example_id,
-          extra: this.extra,
+          extra: _formatExtraFields(this.extra),
           events: this.events,
           dotted_order: this.dotted_order,
           trace_id: this.trace_id,
@@ -1246,4 +1224,30 @@ function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {
   ) {
     throw new ConflictingEndpointsError();
   }
+}
+
+function _formatExtraFields(runExtra: Record<string, unknown>) {
+  const formattedExtra = { ...runExtra };
+  // TODO: pop invocation_params off extra next minor bump
+  if (
+    typeof formattedExtra.invocation_params === "object" &&
+    formattedExtra.invocation_params !== null
+  ) {
+    formattedExtra.metadata = {
+      ...formattedExtra.invocation_params,
+      ...formattedExtra.metadata,
+    };
+  }
+
+  if (
+    typeof formattedExtra.ls_metadata === "object" &&
+    formattedExtra.ls_metadata !== null
+  ) {
+    formattedExtra.metadata = {
+      ...formattedExtra.ls_metadata,
+      ...formattedExtra.metadata,
+    };
+    delete formattedExtra.ls_metadata;
+  }
+  return runExtra;
 }

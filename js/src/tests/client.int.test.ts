@@ -1176,10 +1176,6 @@ test("Test push and pull prompt", async () => {
   await client.deletePrompt(promptName);
 });
 
-test.only("thing", async () => {
-  const model = new ChatOpenAI({}).invoke("hi");
-});
-
 // This test requires OPENAI_API_KEY to be set and valid
 test("Test pull prompt include model", async () => {
   // eslint-disable-next-line no-process-env
