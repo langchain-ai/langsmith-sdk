@@ -610,7 +610,7 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.updates).toEqual({ reroot: true });
 });
 
-test("_convertToCreate merges invocation_params and ls_metadata into metadata", () => {
+test("_formatExtraFields merges invocation_params and ls_metadata into metadata", () => {
   // Priority: metadata > ls_metadata > invocation_params
   // ls_metadata is deleted from extra; invocation_params is kept
   const rt = new RunTree({
@@ -624,15 +624,13 @@ test("_convertToCreate merges invocation_params and ls_metadata into metadata", 
   });
   const created = (rt as any)._convertToCreate(rt, undefined, true);
 
-  // merge priority: metadata > invocation_params > ls_metadata
-  expect(created.extra.metadata.a).toBe("meta");
-  expect(created.extra.metadata.b).toBe("ip");
-  expect(created.extra.metadata.c).toBe("ip");
-  // ls_metadata deleted, invocation_params kept
-  expect(created.extra.ls_metadata).toBeUndefined();
-  expect(created.extra.invocation_params).toBeDefined();
+  expect(created.extra.metadata.a).toBe("meta"); // from metadata (highest priority)
+  expect(created.extra.metadata.b).toBe("ip"); // from invocation_params
+  expect(created.extra.metadata.c).toBe("ip"); // from invocation_params
+  expect(created.extra.ls_metadata).toBeUndefined(); // deleted
+  expect(created.extra.invocation_params).toBeDefined(); // kept
 
-  // non-dict values are ignored
+  // non-dict values are ignored (not merged)
   const rt2 = new RunTree({
     name: "test2",
     client: new Client({ apiKey: "test" }),
@@ -644,5 +642,102 @@ test("_convertToCreate merges invocation_params and ls_metadata into metadata", 
   });
   const created2 = (rt2 as any)._convertToCreate(rt2, undefined, true);
   expect(created2.extra.metadata).toEqual({ key: "val" });
-  expect(created2.extra.ls_metadata).toBe(123);
+  expect(created2.extra.ls_metadata).toBe(123); // preserved since not a dict
+
+  // only invocation_params
+  const rt3 = new RunTree({
+    name: "test3",
+    client: new Client({ apiKey: "test" }),
+    extra: { invocation_params: { key: "value" } },
+  });
+  const created3 = (rt3 as any)._convertToCreate(rt3, undefined, true);
+  expect(created3.extra.metadata).toEqual({ key: "value" });
+
+  // only ls_metadata
+  const rt4 = new RunTree({
+    name: "test4",
+    client: new Client({ apiKey: "test" }),
+    extra: { ls_metadata: { key: "value" } },
+  });
+  const created4 = (rt4 as any)._convertToCreate(rt4, undefined, true);
+  expect(created4.extra.metadata).toEqual({ key: "value" });
+  expect(created4.extra.ls_metadata).toBeUndefined();
+
+  // null values are ignored
+  const rt5 = new RunTree({
+    name: "test5",
+    client: new Client({ apiKey: "test" }),
+    extra: {
+      invocation_params: null,
+      ls_metadata: null,
+      metadata: { key: "val" },
+    },
+  });
+  const created5 = (rt5 as any)._convertToCreate(rt5, undefined, true);
+  expect(created5.extra.metadata).toEqual({ key: "val" });
+  expect(created5.extra.invocation_params).toBeNull();
+
+  // other keys are preserved
+  const rt6 = new RunTree({
+    name: "test6",
+    client: new Client({ apiKey: "test" }),
+    extra: {
+      invocation_params: { a: 1 },
+      other_key: "preserved",
+    },
+  });
+  const created6 = (rt6 as any)._convertToCreate(rt6, undefined, true);
+  expect(created6.extra.other_key).toBe("preserved");
+
+  // original extra is not modified
+  const originalExtra = {
+    invocation_params: { a: 1 },
+    ls_metadata: { b: 2 },
+  };
+  const rt7 = new RunTree({
+    name: "test7",
+    client: new Client({ apiKey: "test" }),
+    extra: originalExtra,
+  });
+  const created7 = (rt7 as any)._convertToCreate(rt7, undefined, true);
+  expect(originalExtra.ls_metadata).toEqual({ b: 2 }); // original unchanged
+  expect(created7.extra.ls_metadata).toBeUndefined(); // result has it deleted
+});
+
+test("patch uses formatted extra with merged metadata", async () => {
+  const { client, callSpy } = mockClient();
+  const rt = new RunTree({
+    name: "test",
+    client,
+    extra: {
+      invocation_params: { model: "gpt-4", temp: 0.7 },
+      ls_metadata: { model: "claude", version: "2" },
+      metadata: { model: "custom" },
+    },
+  });
+
+  await rt.end({ result: "done" });
+  await rt.patchRun();
+
+  // Find the update run call
+  const updateCall = callSpy.mock.calls.find(
+    (call: any[]) => (call[1] as any).method === "PATCH"
+  );
+  expect(updateCall).toBeDefined();
+
+  const rawBody = (updateCall as any[])[1].body;
+  const body =
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    rawBody instanceof Uint8Array
+      ? JSON.parse(new TextDecoder().decode(rawBody))
+      : JSON.parse(rawBody);
+
+  // Check that extra is present and has the merged metadata
+  expect(body.extra).toBeDefined();
+  expect(body.extra.metadata).toBeDefined();
+  // Priority: metadata > ls_metadata > invocation_params
+  expect(body.extra.metadata.model).toBe("custom");
+  expect(body.extra.metadata.temp).toBe(0.7);
+  expect(body.extra.metadata.version).toBe("2");
+  expect(body.extra.ls_metadata).toBeUndefined();
 });

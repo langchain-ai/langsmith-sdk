@@ -1249,5 +1249,5 @@ function _formatExtraFields(runExtra: Record<string, unknown>) {
     };
     delete formattedExtra.ls_metadata;
   }
-  return runExtra;
+  return formattedExtra;
 }

@@ -686,6 +686,7 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                run_dict.pop("extra", None)
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
@@ -1221,19 +1222,20 @@ def _create_current_dotted_order(
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
+
 def _format_extra_fields(run_extra: dict) -> dict:
     formatted_run_extra = {**run_extra}
     # TODO: pop invocation_params off extra next minor bump
     if isinstance(formatted_run_extra.get("invocation_params"), dict):
         formatted_run_extra["metadata"] = {
-          **formatted_run_extra.get("invocation_params", {}),
-          **formatted_run_extra.get("metadata", {}),
+            **formatted_run_extra.get("invocation_params", {}),
+            **formatted_run_extra.get("metadata", {}),
         }
     if isinstance(formatted_run_extra.get("ls_metadata"), dict):
-      formatted_run_extra["metadata"] = {
-        **formatted_run_extra.pop("ls_metadata"),
-        **formatted_run_extra.get("metadata", {}),
-      }
+        formatted_run_extra["metadata"] = {
+            **formatted_run_extra.pop("ls_metadata"),
+            **formatted_run_extra.get("metadata", {}),
+        }
     return formatted_run_extra
 
 
