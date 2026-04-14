@@ -59,6 +59,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     SandboxTemplate,
     ServiceURL,
+    Snapshot,
     Volume,
     VolumeMountSpec,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "Volume",
     "VolumeMountSpec",
     "Pool",
+    "Snapshot",
     "ServiceURL",
     "AsyncServiceURL",
     # WebSocket streaming models

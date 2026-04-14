@@ -43,13 +43,18 @@ class Sandbox:
             Only functional when status is "ready".
         id: Unique identifier (UUID). Remains constant even if name changes.
             May be None for resources created before ID support was added.
-        status: Sandbox lifecycle status. One of "provisioning", "ready", "failed".
+        status: Sandbox lifecycle status. One of "provisioning", "ready",
+            "failed", "stopped".
         status_message: Human-readable details when status is "failed", None otherwise.
         created_at: Timestamp when the sandbox was created.
         updated_at: Timestamp when the sandbox was last updated.
         ttl_seconds: Maximum lifetime TTL in seconds (0 means disabled).
         idle_ttl_seconds: Idle timeout TTL in seconds (0 means disabled).
         expires_at: Computed expiration timestamp, or None if no TTL is set.
+        snapshot_id: Snapshot ID used to create this sandbox.
+        vcpus: Number of vCPUs allocated.
+        mem_bytes: Memory allocation in bytes.
+        fs_capacity_bytes: Root filesystem capacity in bytes.
 
     Example:
         with client.sandbox(template_name="python-sandbox") as sandbox:
@@ -59,7 +64,7 @@ class Sandbox:
 
     # Data fields (from API response)
     name: str
-    template_name: str
+    template_name: Optional[str] = None
     dataplane_url: Optional[str] = None
     id: Optional[str] = None
     status: str = "ready"
@@ -69,6 +74,10 @@ class Sandbox:
     ttl_seconds: Optional[int] = None
     idle_ttl_seconds: Optional[int] = None
     expires_at: Optional[str] = None
+    snapshot_id: Optional[str] = None
+    vcpus: Optional[int] = None
+    mem_bytes: Optional[int] = None
+    fs_capacity_bytes: Optional[int] = None
 
     # Internal fields (not from API)
     _client: SandboxClient = field(repr=False, default=None)  # type: ignore
@@ -93,7 +102,7 @@ class Sandbox:
         """
         return cls(
             name=data.get("name", ""),
-            template_name=data.get("template_name", ""),
+            template_name=data.get("template_name"),
             dataplane_url=data.get("dataplane_url"),
             id=data.get("id"),
             status=data.get("status", "ready"),
@@ -103,6 +112,10 @@ class Sandbox:
             ttl_seconds=data.get("ttl_seconds"),
             idle_ttl_seconds=data.get("idle_ttl_seconds"),
             expires_at=data.get("expires_at"),
+            snapshot_id=data.get("snapshot_id"),
+            vcpus=data.get("vcpus"),
+            mem_bytes=data.get("mem_bytes"),
+            fs_capacity_bytes=data.get("fs_capacity_bytes"),
             _client=client,
             _auto_delete=auto_delete,
         )
@@ -629,3 +642,44 @@ class Sandbox:
             expires_in_seconds=expires_in_seconds,
             headers=headers,
         )
+
+    def start(
+        self,
+        *,
+        timeout: int = 120,
+        headers: RequestHeaders = None,
+    ) -> None:
+        """Start a stopped sandbox and wait until ready.
+
+        After starting, the sandbox's status and dataplane_url are updated
+        in place.
+
+        Args:
+            timeout: Timeout in seconds when waiting for ready.
+            headers: Optional per-request header overrides.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceCreationError: If sandbox fails during startup.
+            ResourceTimeoutError: If sandbox doesn't become ready within timeout.
+            SandboxClientError: For other errors.
+        """
+        refreshed = self._client.start_sandbox(
+            self.name, timeout=timeout, headers=headers
+        )
+        self.status = refreshed.status
+        self.dataplane_url = refreshed.dataplane_url
+
+    def stop(self, *, headers: RequestHeaders = None) -> None:
+        """Stop a running sandbox (preserves rootfs for later restart).
+
+        Args:
+            headers: Optional per-request header overrides.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        self._client.stop_sandbox(self.name, headers=headers)
+        self.status = "stopped"
+        self.dataplane_url = None

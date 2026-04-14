@@ -191,6 +191,63 @@ class Pool:
         )
 
 
+@dataclass
+class Snapshot:
+    """Represents a sandbox snapshot (ext4 rootfs image).
+
+    Snapshots are built from Docker images or captured from running sandboxes.
+    They are used to create new sandboxes.
+
+    Attributes:
+        id: Unique identifier (UUID).
+        name: Display name.
+        status: Build status. One of "building", "ready", "failed".
+        fs_capacity_bytes: Filesystem capacity in bytes.
+        docker_image: Source Docker image (for build snapshots).
+        image_digest: Docker image digest after pull.
+        source_sandbox_id: Source sandbox (for capture snapshots).
+        status_message: Human-readable details when status is "failed".
+        fs_used_bytes: Actual bytes used on the filesystem.
+        created_by: User or service that created the snapshot.
+        registry_id: Private registry ID, if applicable.
+        created_at: Timestamp when the snapshot was created.
+        updated_at: Timestamp when the snapshot was last updated.
+    """
+
+    id: str
+    name: str
+    status: str
+    fs_capacity_bytes: int
+    docker_image: Optional[str] = None
+    image_digest: Optional[str] = None
+    source_sandbox_id: Optional[str] = None
+    status_message: Optional[str] = None
+    fs_used_bytes: Optional[int] = None
+    created_by: Optional[str] = None
+    registry_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Snapshot:
+        """Create a Snapshot from API response dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            status=data.get("status", "building"),
+            fs_capacity_bytes=data.get("fs_capacity_bytes", 0),
+            docker_image=data.get("docker_image"),
+            image_digest=data.get("image_digest"),
+            source_sandbox_id=data.get("source_sandbox_id"),
+            status_message=data.get("status_message"),
+            fs_used_bytes=data.get("fs_used_bytes"),
+            created_by=data.get("created_by"),
+            registry_id=data.get("registry_id"),
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"),
+        )
+
+
 # =============================================================================
 # Service URL Models
 # =============================================================================

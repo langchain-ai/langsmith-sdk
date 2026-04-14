@@ -12,6 +12,7 @@ from langsmith.sandbox import (
     ResourceStatus,
     SandboxTemplate,
     ServiceURL,
+    Snapshot,
     Volume,
     VolumeMountSpec,
 )
@@ -469,3 +470,73 @@ class TestAsyncServiceURL:
         svc = AsyncServiceURL.from_dict(data, _refresher=mock_refresher)
         token = await svc.get_token()
         assert token == "new-async-token"
+
+
+class TestSnapshot:
+    """Tests for Snapshot model."""
+
+    def test_from_dict_full(self):
+        """Test creating from full API response dict."""
+        data = {
+            "id": "550e8400-e29b-41d4-a716-446655440099",
+            "name": "my-python-env",
+            "status": "ready",
+            "fs_capacity_bytes": 4294967296,
+            "docker_image": "python:3.12-slim",
+            "image_digest": "sha256:abc123",
+            "source_sandbox_id": None,
+            "status_message": None,
+            "fs_used_bytes": 1073741824,
+            "created_by": "user@example.com",
+            "registry_id": "reg-123",
+            "created_at": "2025-06-01T00:00:00Z",
+            "updated_at": "2025-06-01T00:05:00Z",
+        }
+        snap = Snapshot.from_dict(data)
+
+        assert snap.id == "550e8400-e29b-41d4-a716-446655440099"
+        assert snap.name == "my-python-env"
+        assert snap.status == "ready"
+        assert snap.fs_capacity_bytes == 4294967296
+        assert snap.docker_image == "python:3.12-slim"
+        assert snap.image_digest == "sha256:abc123"
+        assert snap.fs_used_bytes == 1073741824
+        assert snap.created_by == "user@example.com"
+        assert snap.registry_id == "reg-123"
+        assert snap.created_at == "2025-06-01T00:00:00Z"
+        assert snap.updated_at == "2025-06-01T00:05:00Z"
+
+    def test_from_dict_minimal(self):
+        """Test creating from minimal dict with defaults."""
+        data = {
+            "id": "snap-1",
+            "name": "test",
+            "status": "building",
+            "fs_capacity_bytes": 1073741824,
+        }
+        snap = Snapshot.from_dict(data)
+
+        assert snap.id == "snap-1"
+        assert snap.name == "test"
+        assert snap.status == "building"
+        assert snap.fs_capacity_bytes == 1073741824
+        assert snap.docker_image is None
+        assert snap.image_digest is None
+        assert snap.source_sandbox_id is None
+        assert snap.status_message is None
+        assert snap.fs_used_bytes is None
+        assert snap.created_by is None
+
+    def test_from_dict_capture_snapshot(self):
+        """Test creating from a capture (has source_sandbox_id, no docker_image)."""
+        data = {
+            "id": "snap-2",
+            "name": "captured",
+            "status": "ready",
+            "fs_capacity_bytes": 4294967296,
+            "source_sandbox_id": "box-abc",
+        }
+        snap = Snapshot.from_dict(data)
+
+        assert snap.source_sandbox_id == "box-abc"
+        assert snap.docker_image is None

@@ -1556,3 +1556,331 @@ class TestService:
         assert svc._refresher is not None
         fresh = svc._refresher()
         assert fresh._token == "token-2"
+
+
+class TestSnapshotOperations:
+    """Tests for snapshot operations."""
+
+    def test_create_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test building a snapshot from a Docker image."""
+        # First response: POST /snapshots returns building snapshot
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/snapshots",
+            json={
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "building",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "python:3.12-slim",
+            },
+            status_code=201,
+        )
+        # Second response: GET /snapshots/snap-1 returns ready
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-1",
+            json={
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "python:3.12-slim",
+            },
+        )
+
+        snapshot = client.create_snapshot(
+            "my-env", "python:3.12-slim", 4294967296
+        )
+
+        assert snapshot.id == "snap-1"
+        assert snapshot.status == "ready"
+
+    def test_capture_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test capturing a snapshot from a running sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "building",
+                "fs_capacity_bytes": 4294967296,
+                "source_sandbox_id": "my-vm",
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-2",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "source_sandbox_id": "my-vm",
+            },
+        )
+
+        snapshot = client.capture_snapshot("my-vm", "captured")
+
+        assert snapshot.id == "snap-2"
+        assert snapshot.status == "ready"
+        assert snapshot.source_sandbox_id == "my-vm"
+
+    def test_capture_snapshot_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test capturing from a non-existent sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/snapshot",
+            json={"detail": {"error": "not_found", "message": "not found"}},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.capture_snapshot("nonexistent", "snap")
+
+    def test_get_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test getting a snapshot by ID."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-1",
+            json={
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+            },
+        )
+
+        snapshot = client.get_snapshot("snap-1")
+
+        assert snapshot.id == "snap-1"
+        assert snapshot.name == "my-env"
+
+    def test_get_snapshot_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test getting a non-existent snapshot."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/nonexistent",
+            json={"detail": {"error": "not_found", "message": "not found"}},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.get_snapshot("nonexistent")
+
+    def test_list_snapshots(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test listing snapshots."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots",
+            json={
+                "snapshots": [
+                    {
+                        "id": "snap-1",
+                        "name": "env-1",
+                        "status": "ready",
+                        "fs_capacity_bytes": 4294967296,
+                    },
+                    {
+                        "id": "snap-2",
+                        "name": "env-2",
+                        "status": "building",
+                        "fs_capacity_bytes": 8589934592,
+                    },
+                ],
+                "offset": 0,
+            },
+        )
+
+        snapshots = client.list_snapshots()
+
+        assert len(snapshots) == 2
+        assert snapshots[0].name == "env-1"
+        assert snapshots[1].status == "building"
+
+    def test_delete_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test deleting a snapshot."""
+        httpx_mock.add_response(
+            method="DELETE",
+            url="http://test-server:8080/snapshots/snap-1",
+            status_code=204,
+        )
+
+        client.delete_snapshot("snap-1")
+
+    def test_delete_snapshot_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test deleting a non-existent snapshot."""
+        httpx_mock.add_response(
+            method="DELETE",
+            url="http://test-server:8080/snapshots/nonexistent",
+            json={"detail": {"error": "not_found", "message": "not found"}},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.delete_snapshot("nonexistent")
+
+    def test_wait_for_snapshot_immediate_ready(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test waiting for an already-ready snapshot."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-1",
+            json={
+                "id": "snap-1",
+                "name": "env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+            },
+        )
+
+        snapshot = client.wait_for_snapshot("snap-1")
+        assert snapshot.status == "ready"
+
+    def test_wait_for_snapshot_failed(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test waiting for a snapshot that fails."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-1",
+            json={
+                "id": "snap-1",
+                "name": "env",
+                "status": "failed",
+                "status_message": "Docker pull failed",
+                "fs_capacity_bytes": 4294967296,
+            },
+        )
+
+        with pytest.raises(ResourceCreationError, match="Docker pull failed"):
+            client.wait_for_snapshot("snap-1")
+
+
+class TestStartStopOperations:
+    """Tests for sandbox start/stop lifecycle."""
+
+    def test_start_sandbox(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test starting a stopped sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/start",
+            json={},
+            status_code=202,
+        )
+        # wait_for_sandbox polls status then gets full sandbox
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-vm/status",
+            json={"status": "ready"},
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/boxes/my-vm",
+            json={
+                "name": "my-vm",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+        )
+
+        sandbox = client.start_sandbox("my-vm")
+
+        assert sandbox.name == "my-vm"
+        assert sandbox.status == "ready"
+        assert sandbox.dataplane_url == "https://dp.example.com/my-vm"
+
+    def test_start_sandbox_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test starting a non-existent sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/start",
+            json={"detail": {"error": "not_found", "message": "not found"}},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.start_sandbox("nonexistent")
+
+    def test_stop_sandbox(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test stopping a sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/stop",
+            status_code=204,
+        )
+
+        client.stop_sandbox("my-vm")
+
+    def test_stop_sandbox_not_found(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test stopping a non-existent sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/stop",
+            json={"detail": {"error": "not_found", "message": "not found"}},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.stop_sandbox("nonexistent")
+
+    def test_create_sandbox_with_snapshot_id(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test creating a sandbox from a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "snapshot_id": "snap-1",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+                "vcpus": 4,
+                "mem_bytes": 1073741824,
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(snapshot_id="snap-1", name="my-vm")
+
+        assert sandbox.name == "my-vm"
+        assert sandbox.snapshot_id == "snap-1"
+        assert sandbox.vcpus == 4
+        assert sandbox.mem_bytes == 1073741824
+
+        import json
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["snapshot_id"] == "snap-1"
+        assert "template_name" not in body
+
+    def test_create_sandbox_requires_template_or_snapshot(
+        self, client: SandboxClient
+    ):
+        """Test that either template_name or snapshot_id is required."""
+        with pytest.raises(ValueError, match="Either template_name or snapshot_id"):
+            client.create_sandbox()
+
+    def test_create_sandbox_rejects_both_template_and_snapshot(
+        self, client: SandboxClient
+    ):
+        """Test that both template_name and snapshot_id are rejected."""
+        with pytest.raises(ValueError, match="Cannot specify both"):
+            client.create_sandbox(
+                template_name="my-template", snapshot_id="snap-1"
+            )
