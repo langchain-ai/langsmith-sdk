@@ -1589,9 +1589,7 @@ class TestSnapshotOperations:
             },
         )
 
-        snapshot = client.create_snapshot(
-            "my-env", "python:3.12-slim", 4294967296
-        )
+        snapshot = client.create_snapshot("my-env", "python:3.12-slim", 4294967296)
 
         assert snapshot.id == "snap-1"
         assert snapshot.status == "ready"
@@ -1660,9 +1658,7 @@ class TestSnapshotOperations:
         assert snapshot.id == "snap-1"
         assert snapshot.name == "my-env"
 
-    def test_get_snapshot_not_found(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
+    def test_get_snapshot_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
         """Test getting a non-existent snapshot."""
         httpx_mock.add_response(
             method="GET",
@@ -1823,9 +1819,7 @@ class TestStartStopOperations:
 
         client.stop_sandbox("my-vm")
 
-    def test_stop_sandbox_not_found(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
+    def test_stop_sandbox_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
         """Test stopping a non-existent sandbox."""
         httpx_mock.add_response(
             method="POST",
@@ -1869,9 +1863,7 @@ class TestStartStopOperations:
         assert body["snapshot_id"] == "snap-1"
         assert "template_name" not in body
 
-    def test_create_sandbox_requires_template_or_snapshot(
-        self, client: SandboxClient
-    ):
+    def test_create_sandbox_requires_template_or_snapshot(self, client: SandboxClient):
         """Test that either template_name or snapshot_id is required."""
         with pytest.raises(ValueError, match="Either template_name or snapshot_id"):
             client.create_sandbox()
@@ -1881,6 +1873,4 @@ class TestStartStopOperations:
     ):
         """Test that both template_name and snapshot_id are rejected."""
         with pytest.raises(ValueError, match="Cannot specify both"):
-            client.create_sandbox(
-                template_name="my-template", snapshot_id="snap-1"
-            )
+            client.create_sandbox(template_name="my-template", snapshot_id="snap-1")

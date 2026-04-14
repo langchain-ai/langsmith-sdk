@@ -1208,9 +1208,7 @@ class AsyncSandboxClient:
 
         return await self.wait_for_sandbox(name, timeout=timeout, headers=headers)
 
-    async def stop_sandbox(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    async def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Stop a running sandbox (preserves rootfs for later restart).
 
         Args:
@@ -1374,9 +1372,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/snapshots/{snapshot_id}"
 
         try:
-            response = await self._http.get(
-                url, headers=self._request_headers(headers)
-            )
+            response = await self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return Snapshot.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -1387,9 +1383,7 @@ class AsyncSandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    async def list_snapshots(
-        self, *, headers: RequestHeaders = None
-    ) -> list[Snapshot]:
+    async def list_snapshots(self, *, headers: RequestHeaders = None) -> list[Snapshot]:
         """List all snapshots.
 
         Returns:
@@ -1398,9 +1392,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/snapshots"
 
         try:
-            response = await self._http.get(
-                url, headers=self._request_headers(headers)
-            )
+            response = await self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]

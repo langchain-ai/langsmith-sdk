@@ -1184,9 +1184,7 @@ class SandboxClient:
 
         return self.wait_for_sandbox(name, timeout=timeout, headers=headers)
 
-    def stop_sandbox(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
+    def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Stop a running sandbox (preserves rootfs for later restart).
 
         Args:
@@ -1275,9 +1273,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-        return self.wait_for_snapshot(
-            snapshot.id, timeout=timeout, headers=headers
-        )
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
 
     def capture_snapshot(
         self,
@@ -1328,9 +1324,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-        return self.wait_for_snapshot(
-            snapshot.id, timeout=timeout, headers=headers
-        )
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
 
     def get_snapshot(
         self, snapshot_id: str, *, headers: RequestHeaders = None
@@ -1361,9 +1355,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_snapshots(
-        self, *, headers: RequestHeaders = None
-    ) -> list[Snapshot]:
+    def list_snapshots(self, *, headers: RequestHeaders = None) -> list[Snapshot]:
         """List all snapshots.
 
         Returns:
@@ -1400,9 +1392,7 @@ class SandboxClient:
         url = f"{self._base_url}/snapshots/{snapshot_id}"
 
         try:
-            response = self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
