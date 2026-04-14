@@ -1029,4 +1029,98 @@ describe("Client", () => {
       expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
     });
   });
+
+  describe("_filterNewTokenEvents", () => {
+    it("should strip kwargs from new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "sensitive streaming data" },
+          time: "2024-01-01T00:00:00Z",
+        },
+        {
+          name: "other_event",
+          kwargs: { data: "keep this" },
+          time: "2024-01-01T00:00:01Z",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].kwargs).toBeUndefined();
+      expect(filtered[1].kwargs).toEqual({ data: "keep this" });
+    });
+
+    it("should handle empty events array", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents([]);
+      expect(filtered).toEqual([]);
+    });
+
+    it("should handle undefined events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents(undefined);
+      expect(filtered).toBeUndefined();
+    });
+
+    it("should handle events without kwargs", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", time: "2024-01-01T00:00:00Z" },
+        { name: "other_event", time: "2024-01-01T00:00:01Z" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0]).toEqual({
+        name: "new_token",
+        time: "2024-01-01T00:00:00Z",
+      });
+      expect(filtered[1]).toEqual({
+        name: "other_event",
+        time: "2024-01-01T00:00:01Z",
+      });
+    });
+
+    it("should preserve other event properties", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "data" },
+          time: "2024-01-01T00:00:00Z",
+          message: "token received",
+          custom_field: "custom_value",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].message).toBe("token received");
+      expect(filtered[0].custom_field).toBe("custom_value");
+      expect(filtered[0].kwargs).toBeUndefined();
+    });
+
+    it("should filter multiple new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", kwargs: { token: "chunk1" }, time: "t1" },
+        { name: "new_token", kwargs: { token: "chunk2" }, time: "t2" },
+        { name: "new_token", kwargs: { token: "chunk3" }, time: "t3" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered).toHaveLength(3);
+      filtered.forEach((event: any) => {
+        expect(event.kwargs).toBeUndefined();
+        expect(event.name).toBe("new_token");
+      });
+    });
+  });
 });

@@ -1946,6 +1946,8 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
+        if "events" in run_create and run_create["events"] is not None:
+            run_create["events"] = self._filter_new_token_events(run_create["events"])
         # Hide metadata in extra if present
         if "extra" in run_create and isinstance(run_create["extra"], dict):
             extra = run_create["extra"]
@@ -2379,6 +2381,28 @@ class Client:
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
+
+    @staticmethod
+    def _filter_new_token_events(
+        events: Optional[Sequence[dict]],
+    ) -> Optional[list[dict]]:
+        """Filter content from new_token events to prevent streaming LLM output
+        from being uploaded via events.
+
+        Args:
+            events: The events to filter.
+
+        Returns:
+            The filtered events with kwargs removed from new_token events.
+        """
+        if not events:
+            return events
+        return [
+            {k: v for k, v in event.items() if k != "kwargs"}
+            if event.get("name") == "new_token"
+            else event
+            for event in events
+        ]
 
     def _should_flush_run_ops_buffer(self) -> bool:
         """Check if the run ops buffer should be flushed based on size or time."""
@@ -3290,7 +3314,7 @@ class Client:
                 outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
-            data["events"] = events
+            data["events"] = self._filter_new_token_events(events)
         if data["extra"]:
             self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
