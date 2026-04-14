@@ -6,8 +6,10 @@ import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { _getFetchImplementation } from "../../singletons/fetch.js";
 import { AsyncCaller } from "../../utils/async_caller.js";
 import type {
+  CaptureSnapshotOptions,
   CreatePoolOptions,
   CreateSandboxOptions,
+  CreateSnapshotOptions,
   CreateTemplateOptions,
   CreateVolumeOptions,
   Pool,
@@ -15,12 +17,14 @@ import type {
   SandboxClientConfig,
   SandboxData,
   SandboxTemplate,
+  Snapshot,
   UpdatePoolOptions,
   UpdateSandboxOptions,
   UpdateTemplateOptions,
   UpdateVolumeOptions,
   Volume,
   WaitForSandboxOptions,
+  WaitForSnapshotOptions,
 } from "./types.js";
 import { Sandbox } from "./sandbox.js";
 import {
@@ -681,25 +685,42 @@ export class SandboxClient {
    * ```
    */
   async createSandbox(
-    templateName: string,
-    options: CreateSandboxOptions = {}
+    templateName?: string,
+    options: CreateSandboxOptions & { snapshotId?: string } = {}
   ): Promise<Sandbox> {
     const {
+      snapshotId,
       name,
       timeout = 30,
       waitForReady = true,
       ttlSeconds,
       idleTtlSeconds,
+      vcpus,
+      memBytes,
+      fsCapacityBytes,
     } = options;
+
+    if (!templateName && !snapshotId) {
+      throw new Error("Either templateName or snapshotId is required");
+    }
+    if (templateName && snapshotId) {
+      throw new Error("Cannot specify both templateName and snapshotId");
+    }
+
     validateTtl(ttlSeconds, "ttlSeconds");
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
 
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
-      template_name: templateName,
       wait_for_ready: waitForReady,
     };
+    if (templateName) {
+      payload.template_name = templateName;
+    }
+    if (snapshotId) {
+      payload.snapshot_id = snapshotId;
+    }
     if (waitForReady) {
       payload.timeout = timeout;
     }
@@ -711,6 +732,15 @@ export class SandboxClient {
     }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (vcpus !== undefined) {
+      payload.vcpus = vcpus;
+    }
+    if (memBytes !== undefined) {
+      payload.mem_bytes = memBytes;
+    }
+    if (fsCapacityBytes !== undefined) {
+      payload.fs_capacity_bytes = fsCapacityBytes;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
@@ -965,6 +995,277 @@ export class SandboxClient {
     throw new LangSmithResourceTimeoutError(
       `Sandbox '${name}' did not become ready within ${timeout}s`,
       "sandbox",
+      lastStatus
+    );
+  }
+
+  /**
+   * Start a stopped sandbox and wait until ready.
+   *
+   * @param name - Sandbox name.
+   * @param options - Options with timeout.
+   * @returns Sandbox in "ready" status.
+   */
+  async startSandbox(
+    name: string,
+    options: { timeout?: number } = {}
+  ): Promise<Sandbox> {
+    const { timeout = 120 } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
+
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return this.waitForSandbox(name, { timeout });
+  }
+
+  /**
+   * Stop a running sandbox (preserves sandbox files for later restart).
+   *
+   * @param name - Sandbox name.
+   */
+  async stopSandbox(name: string): Promise<void> {
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
+
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+  }
+
+  // =========================================================================
+  // Snapshot Operations
+  // =========================================================================
+
+  /**
+   * Build a snapshot from a Docker image.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param name - Snapshot name.
+   * @param dockerImage - Docker image to build from (e.g., "python:3.12-slim").
+   * @param fsCapacityBytes - Filesystem capacity in bytes.
+   * @param options - Additional options (registry credentials, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async createSnapshot(
+    name: string,
+    dockerImage: string,
+    fsCapacityBytes: number,
+    options: CreateSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const {
+      registryId,
+      registryUrl,
+      registryUsername,
+      registryPassword,
+      timeout = 60,
+    } = options;
+    const url = `${this._baseUrl}/snapshots`;
+
+    const payload: Record<string, unknown> = {
+      name,
+      docker_image: dockerImage,
+      fs_capacity_bytes: fsCapacityBytes,
+    };
+    if (registryId !== undefined) {
+      payload.registry_id = registryId;
+    }
+    if (registryUrl !== undefined) {
+      payload.registry_url = registryUrl;
+    }
+    if (registryUsername !== undefined) {
+      payload.registry_username = registryUsername;
+    }
+    if (registryPassword !== undefined) {
+      payload.registry_password = registryPassword;
+    }
+
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout });
+  }
+
+  /**
+   * Capture a snapshot from a running sandbox.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param sandboxName - Name of the sandbox to capture from.
+   * @param name - Snapshot name.
+   * @param options - Capture options (checkpoint, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async captureSnapshot(
+    sandboxName: string,
+    name: string,
+    options: CaptureSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { checkpoint, timeout = 60 } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(sandboxName)}/snapshot`;
+
+    const payload: Record<string, unknown> = { name };
+    if (checkpoint !== undefined) {
+      payload.checkpoint = checkpoint;
+    }
+
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Sandbox '${sandboxName}' not found`,
+          "sandbox"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout });
+  }
+
+  /**
+   * Get a snapshot by ID.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @returns Snapshot.
+   */
+  async getSnapshot(snapshotId: string): Promise<Snapshot> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Snapshot '${snapshotId}' not found`,
+          "snapshot"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return (await response.json()) as Snapshot;
+  }
+
+  /**
+   * List all snapshots.
+   *
+   * @returns List of Snapshots.
+   */
+  async listSnapshots(): Promise<Snapshot[]> {
+    const url = `${this._baseUrl}/snapshots`;
+
+    const response = await this._fetch(url);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithSandboxAPIError(
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    const data = await response.json();
+    return (data.snapshots ?? []) as Snapshot[];
+  }
+
+  /**
+   * Delete a snapshot.
+   *
+   * @param snapshotId - Snapshot UUID.
+   */
+  async deleteSnapshot(snapshotId: string): Promise<void> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url, { method: "DELETE" });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Snapshot '${snapshotId}' not found`,
+          "snapshot"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+  }
+
+  /**
+   * Poll until a snapshot reaches "ready" or "failed" status.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @param options - Polling options (timeout, pollInterval).
+   * @returns Snapshot in "ready" status.
+   */
+  async waitForSnapshot(
+    snapshotId: string,
+    options: WaitForSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { timeout = 300, pollInterval = 2.0 } = options;
+    const deadline = Date.now() + timeout * 1000;
+    let lastStatus = "building";
+
+    while (Date.now() < deadline) {
+      const snapshot = await this.getSnapshot(snapshotId);
+      lastStatus = snapshot.status;
+
+      if (snapshot.status === "ready") {
+        return snapshot;
+      }
+
+      if (snapshot.status === "failed") {
+        throw new LangSmithResourceCreationError(
+          snapshot.status_message ?? `Snapshot '${snapshotId}' build failed`,
+          "snapshot"
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
+    }
+
+    throw new LangSmithResourceTimeoutError(
+      `Snapshot '${snapshotId}' did not become ready within ${timeout}s`,
+      "snapshot",
       lastStatus
     );
   }

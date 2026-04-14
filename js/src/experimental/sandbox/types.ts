@@ -82,12 +82,35 @@ export interface ResourceStatus {
 }
 
 /**
+ * Represents a sandbox snapshot.
+ *
+ * Snapshots are built from Docker images or captured from running sandboxes.
+ * They are used to create new sandboxes.
+ */
+export interface Snapshot {
+  id: string;
+  name: string;
+  /** One of "building", "ready", "failed". */
+  status: string;
+  fs_capacity_bytes: number;
+  docker_image?: string;
+  image_digest?: string;
+  source_sandbox_id?: string;
+  status_message?: string;
+  fs_used_bytes?: number;
+  created_by?: string;
+  registry_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
  * Data representing a sandbox instance from the API.
  */
 export interface SandboxData {
   id?: string;
   name: string;
-  template_name: string;
+  template_name?: string;
   dataplane_url?: string;
   status?: string;
   status_message?: string;
@@ -99,6 +122,14 @@ export interface SandboxData {
   idle_ttl_seconds?: number;
   /** Computed expiration timestamp when a TTL is active, else omitted/`undefined`. */
   expires_at?: string;
+  /** Snapshot ID used to create this sandbox. */
+  snapshot_id?: string;
+  /** Number of vCPUs allocated. */
+  vcpus?: number;
+  /** Memory allocation in bytes. */
+  mem_bytes?: number;
+  /** Root filesystem capacity in bytes. */
+  fs_capacity_bytes?: number;
 }
 
 /**
@@ -278,6 +309,48 @@ export interface CreateSandboxOptions {
    * Must be a multiple of 60, or `0`/`undefined` to disable or omit.
    */
   idleTtlSeconds?: number;
+  /** Number of vCPUs. */
+  vcpus?: number;
+  /** Memory in bytes. */
+  memBytes?: number;
+  /** Root filesystem capacity in bytes. */
+  fsCapacityBytes?: number;
+}
+
+/**
+ * Options for creating a snapshot from a Docker image.
+ */
+export interface CreateSnapshotOptions {
+  /** Private registry ID (alternative to URL/credentials). */
+  registryId?: string;
+  /** Registry URL for private images. */
+  registryUrl?: string;
+  /** Registry username. */
+  registryUsername?: string;
+  /** Registry password. */
+  registryPassword?: string;
+  /** Timeout in seconds when waiting for ready. Default: 60. */
+  timeout?: number;
+}
+
+/**
+ * Options for capturing a snapshot from a running sandbox.
+ */
+export interface CaptureSnapshotOptions {
+  /** Checkpoint timestamp to use. If omitted, creates a fresh checkpoint. */
+  checkpoint?: string;
+  /** Timeout in seconds when waiting for ready. Default: 60. */
+  timeout?: number;
+}
+
+/**
+ * Options for waiting for a snapshot to become ready.
+ */
+export interface WaitForSnapshotOptions {
+  /** Maximum time in seconds to wait. Default: 300. */
+  timeout?: number;
+  /** Time in seconds between status polls. Default: 2.0. */
+  pollInterval?: number;
 }
 
 /**
