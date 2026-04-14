@@ -787,10 +787,13 @@ export class SandboxClient {
    * @returns Sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
-  async getSandbox(name: string): Promise<Sandbox> {
+  async getSandbox(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -945,10 +948,13 @@ export class SandboxClient {
    * @returns ResourceStatus with status and optional status_message.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
-  async getSandboxStatus(name: string): Promise<ResourceStatus> {
+  async getSandboxStatus(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<ResourceStatus> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -994,11 +1000,11 @@ export class SandboxClient {
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
 
-      const statusResult = await this.getSandboxStatus(name);
+      const statusResult = await this.getSandboxStatus(name, { signal });
       lastStatus = statusResult.status;
 
       if (statusResult.status === "ready") {
-        return this.getSandbox(name);
+        return this.getSandbox(name, { signal });
       }
 
       if (statusResult.status === "failed") {
