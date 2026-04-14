@@ -987,11 +987,13 @@ export class SandboxClient {
     name: string,
     options: WaitForSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { timeout = 120, pollInterval = 1.0 } = options;
+    const { timeout = 120, pollInterval = 1.0, signal } = options;
     const deadline = Date.now() + timeout * 1000;
     let lastStatus = "provisioning";
 
     while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+
       const statusResult = await this.getSandboxStatus(name);
       lastStatus = statusResult.status;
 
@@ -1043,7 +1045,7 @@ export class SandboxClient {
       await handleClientHttpError(response);
     }
 
-    return this.waitForSandbox(name, { timeout });
+    return this.waitForSandbox(name, { timeout, signal });
   }
 
   /**
@@ -1173,10 +1175,13 @@ export class SandboxClient {
    * @param snapshotId - Snapshot UUID.
    * @returns Snapshot.
    */
-  async getSnapshot(snapshotId: string): Promise<Snapshot> {
+  async getSnapshot(
+    snapshotId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Snapshot> {
     const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -1242,7 +1247,7 @@ export class SandboxClient {
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
 
-      const snapshot = await this.getSnapshot(snapshotId);
+      const snapshot = await this.getSnapshot(snapshotId, { signal });
       lastStatus = snapshot.status;
 
       if (snapshot.status === "ready") {

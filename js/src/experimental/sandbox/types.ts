@@ -405,6 +405,8 @@ export interface WaitForSandboxOptions {
    * Default: 1.0.
    */
   pollInterval?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
 }
 
 /**
