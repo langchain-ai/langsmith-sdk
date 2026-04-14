@@ -1066,6 +1066,27 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
+  /**
+   * Filter content from new_token events to prevent streaming LLM output
+   * from being uploaded via events.
+   */
+  private _filterNewTokenEvents(
+    events: KVMap[] | undefined
+  ): KVMap[] | undefined {
+    if (!events || events.length === 0) {
+      return events;
+    }
+    return events.map((event) => {
+      if (event.name === "new_token") {
+        // Remove the kwargs containing the token data
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { kwargs: _, ...rest } = event;
+        return rest;
+      }
+      return event;
+    });
+  }
+
   private async prepareRunCreateOrUpdateInputs(
     run: RunUpdate
   ): Promise<RunUpdate>;
@@ -1081,6 +1102,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
+    }
+    if (runParams.events !== undefined) {
+      runParams.events = this._filterNewTokenEvents(runParams.events);
     }
     return runParams;
   }
@@ -2188,6 +2212,10 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
+    }
+
+    if (run.events) {
+      run.events = this._filterNewTokenEvents(run.events);
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };

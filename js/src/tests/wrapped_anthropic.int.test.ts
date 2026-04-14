@@ -143,8 +143,7 @@ describe.skip("Requires Anthropic API key", () => {
     expect(tokenEvents.length).toBeGreaterThan(0);
     tokenEvents.forEach((event: any) => {
       expect(event.name).toBe("new_token");
-      expect(event.kwargs).toBeDefined();
-      expect(event.kwargs.token).toBeDefined();
+      expect(event.kwargs).toBeUndefined();
       expect(event.time).toBeDefined();
     });
 

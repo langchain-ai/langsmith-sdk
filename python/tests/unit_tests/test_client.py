@@ -5508,3 +5508,88 @@ class TestWriteTraceToFallbackDir:
         )
         assert client._failed_traces_dir is None
         _clear_env_cache()
+
+    def test_filter_new_token_events_strips_kwargs(self):
+        """Test that _filter_new_token_events strips kwargs from new_token events."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        events = [
+            {
+                "name": "new_token",
+                "kwargs": {"token": "sensitive streaming data"},
+                "time": "2024-01-01T00:00:00Z",
+            },
+            {
+                "name": "other_event",
+                "kwargs": {"data": "keep this"},
+                "time": "2024-01-01T00:00:01Z",
+            },
+        ]
+
+        filtered = client._filter_new_token_events(events)
+
+        assert filtered[0]["name"] == "new_token"
+        assert filtered[0]["time"] == "2024-01-01T00:00:00Z"
+        assert "kwargs" not in filtered[0]
+        assert filtered[1]["kwargs"] == {"data": "keep this"}
+
+    def test_filter_new_token_events_empty_events(self):
+        """Test that _filter_new_token_events handles empty events list."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        filtered = client._filter_new_token_events([])
+        assert filtered == []
+
+    def test_filter_new_token_events_none_events(self):
+        """Test that _filter_new_token_events handles None events."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        filtered = client._filter_new_token_events(None)
+        assert filtered is None
+
+    def test_filter_new_token_events_without_kwargs(self):
+        """Test that _filter_new_token_events handles events without kwargs."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        events = [
+            {"name": "new_token", "time": "2024-01-01T00:00:00Z"},
+            {"name": "other_event", "time": "2024-01-01T00:00:01Z"},
+        ]
+
+        filtered = client._filter_new_token_events(events)
+
+        assert filtered[0] == {"name": "new_token", "time": "2024-01-01T00:00:00Z"}
+        assert filtered[1] == {"name": "other_event", "time": "2024-01-01T00:00:01Z"}
+
+    def test_filter_new_token_events_preserves_other_properties(self):
+        """Test that _filter_new_token_events preserves other event properties."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        events = [
+            {
+                "name": "new_token",
+                "kwargs": {"token": "data"},
+                "time": "2024-01-01T00:00:00Z",
+                "message": "token received",
+                "custom_field": "custom_value",
+            }
+        ]
+
+        filtered = client._filter_new_token_events(events)
+
+        assert filtered[0]["name"] == "new_token"
+        assert filtered[0]["time"] == "2024-01-01T00:00:00Z"
+        assert filtered[0]["message"] == "token received"
+        assert filtered[0]["custom_field"] == "custom_value"
+        assert "kwargs" not in filtered[0]
+
+    def test_filter_new_token_events_multiple_new_token_events(self):
+        """Test that _filter_new_token_events filters multiple new_token events."""
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        events = [
+            {"name": "new_token", "kwargs": {"token": "chunk1"}, "time": "t1"},
+            {"name": "new_token", "kwargs": {"token": "chunk2"}, "time": "t2"},
+            {"name": "new_token", "kwargs": {"token": "chunk3"}, "time": "t3"},
+        ]
+
+        filtered = client._filter_new_token_events(events)
+
+        assert len(filtered) == 3
+        for event in filtered:
+            assert "kwargs" not in event
+            assert event["name"] == "new_token"
