@@ -758,8 +758,7 @@ class AsyncSandboxClient:
                 a multiple of 60. 0 or None disables this TTL.
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
-            fs_capacity_bytes: Root filesystem capacity in bytes
-               .
+            fs_capacity_bytes: Root filesystem capacity in bytes.
 
         Returns:
             AsyncSandbox instance.
@@ -825,8 +824,7 @@ class AsyncSandboxClient:
                 a multiple of 60. 0 or None disables this TTL.
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
-            fs_capacity_bytes: Root filesystem capacity in bytes
-               .
+            fs_capacity_bytes: Root filesystem capacity in bytes.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
