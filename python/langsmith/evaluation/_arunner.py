@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
+import datetime
 import io
 import logging
 import pathlib
@@ -1285,7 +1286,12 @@ async def _aforward(
         project_name=experiment_name,
         metadata={
             **metadata,
-            "example_version": (example.modified_at or example.created_at).isoformat(),
+            # Add 1ms so the server's exclusive upper-bound version resolution
+            # returns the state AT modified_at rather than the state before it.
+            "example_version": (
+                (example.modified_at or example.created_at)
+                + datetime.timedelta(milliseconds=1)
+            ).isoformat(),
         },
         client=client,
     )
