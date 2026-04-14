@@ -19,6 +19,7 @@ from langsmith.sandbox._models import (
     CommandHandle,
     ExecutionResult,
     ServiceURL,
+    Snapshot,
 )
 from langsmith.sandbox._tunnel import Tunnel
 
@@ -671,7 +672,7 @@ class Sandbox:
         self.dataplane_url = refreshed.dataplane_url
 
     def stop(self, *, headers: RequestHeaders = None) -> None:
-        """Stop a running sandbox (preserves rootfs for later restart).
+        """Stop a running sandbox (preserves sandbox files for later restart).
 
         Args:
             headers: Optional per-request header overrides.
@@ -683,3 +684,49 @@ class Sandbox:
         self._client.stop_sandbox(self.name, headers=headers)
         self.status = "stopped"
         self.dataplane_url = None
+
+    def delete(self, *, headers: RequestHeaders = None) -> None:
+        """Delete this sandbox.
+
+        Args:
+            headers: Optional per-request header overrides.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        self._client.delete_sandbox(self.name, headers=headers)
+
+    def capture_snapshot(
+        self,
+        name: str,
+        *,
+        checkpoint: Optional[str] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Capture a snapshot from this sandbox.
+
+        Args:
+            name: Snapshot name.
+            checkpoint: Checkpoint timestamp to use. If omitted, creates a
+                fresh checkpoint from the current state.
+            timeout: Timeout in seconds when waiting for ready.
+            headers: Optional per-request header overrides.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceTimeoutError: If snapshot doesn't become ready within timeout.
+            ResourceCreationError: If snapshot capture fails.
+            SandboxClientError: For other errors.
+        """
+        return self._client.capture_snapshot(
+            self.name,
+            name,
+            checkpoint=checkpoint,
+            timeout=timeout,
+            headers=headers,
+        )

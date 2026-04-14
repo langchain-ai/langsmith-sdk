@@ -193,7 +193,7 @@ class Pool:
 
 @dataclass
 class Snapshot:
-    """Represents a sandbox snapshot (ext4 rootfs image).
+    """Represents a sandbox snapshot.
 
     Snapshots are built from Docker images or captured from running sandboxes.
     They are used to create new sandboxes.

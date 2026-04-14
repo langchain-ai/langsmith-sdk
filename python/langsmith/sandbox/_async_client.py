@@ -1209,7 +1209,7 @@ class AsyncSandboxClient:
         return await self.wait_for_sandbox(name, timeout=timeout, headers=headers)
 
     async def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
-        """Stop a running sandbox (preserves rootfs for later restart).
+        """Stop a running sandbox (preserves sandbox files for later restart).
 
         Args:
             name: Sandbox name.

@@ -559,8 +559,8 @@ async with await client.sandbox(template_name="my-sandbox") as sb:
 
 ## Snapshots
 
-Snapshots are rootfs images built from Docker images or captured from running
-sandboxes. Use snapshots to create sandboxes with persistent state.
+Snapshots are built from Docker images or captured from running sandboxes.
+Use snapshots to create sandboxes with persistent state.
 
 ### Build a Snapshot from a Docker Image
 
@@ -591,9 +591,9 @@ sb = client.create_sandbox(snapshot_id=base_snapshot_id, name="setup-box")
 sb.run("pip install numpy pandas scikit-learn")
 
 # Capture current state as a new snapshot
-snapshot = client.capture_snapshot("setup-box", "ml-ready")
+snapshot = sb.capture_snapshot("ml-ready")
 
-client.delete_sandbox("setup-box")
+sb.delete()
 
 # Later: spin up sandboxes from the captured snapshot
 with client.sandbox(snapshot_id=snapshot.id) as sb:
@@ -623,14 +623,14 @@ snapshot = client.create_snapshot(
 
 ## Start / Stop
 
-Snapshot-based sandboxes can be stopped and restarted. The rootfs is preserved
-across stop/start cycles.
+Snapshot-based sandboxes can be stopped and restarted. The sandbox files are
+preserved across stop/start cycles.
 
 ```python
 sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
 sb.run("echo 'hello' > /tmp/state.txt")
 
-# Stop the sandbox (preserves rootfs)
+# Stop the sandbox (preserves sandbox files)
 sb.stop()
 
 # Later: restart it
@@ -947,7 +947,7 @@ except SandboxClientError as e:
 | `update_sandbox(name, *, new_name=None, ttl_seconds=None, idle_ttl_seconds=None)` | Update a sandbox's name or TTL settings |
 | `delete_sandbox(name)` | Delete a sandbox |
 | `start_sandbox(name, *, timeout=120)` | Start a stopped sandbox, poll until ready |
-| `stop_sandbox(name)` | Stop a running sandbox (preserves rootfs) |
+| `stop_sandbox(name)` | Stop a running sandbox (preserves sandbox files) |
 | `create_snapshot(name, docker_image, fs_capacity_bytes, *, timeout=60)` | Build a snapshot from a Docker image |
 | `capture_snapshot(sandbox_name, name, *, timeout=60)` | Capture a snapshot from a running sandbox |
 | `get_snapshot(snapshot_id)` | Get a snapshot by ID |
@@ -992,7 +992,9 @@ except SandboxClientError as e:
 | `tunnel(remote_port, *, local_port=0)` | Open a TCP tunnel. Returns `Tunnel` (context manager). |
 | `service(port, *, expires_in_seconds=600)` | Get a `ServiceURL` for an HTTP service. Auto-refreshes token. |
 | `start(*, timeout=120)` | Start a stopped sandbox and wait until ready. |
-| `stop()` | Stop a running sandbox (preserves rootfs for later restart). |
+| `stop()` | Stop a running sandbox (preserves sandbox files for later restart). |
+| `delete()` | Delete this sandbox. |
+| `capture_snapshot(name, *, timeout=60)` | Capture a snapshot from this sandbox. |
 
 ### ExecutionResult
 
