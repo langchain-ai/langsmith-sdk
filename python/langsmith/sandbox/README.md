@@ -557,6 +557,96 @@ async with await client.sandbox(template_name="my-sandbox") as sb:
     url = await svc.get_service_url()
 ```
 
+## Snapshots
+
+Snapshots are built from Docker images or captured from running sandboxes.
+Use snapshots to create sandboxes with persistent state.
+
+### Build a Snapshot from a Docker Image
+
+```python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+# Build a snapshot — blocks until ready (default timeout=60s)
+snapshot = client.create_snapshot(
+    "my-python-env",
+    docker_image="python:3.12-slim",
+    fs_capacity_bytes=4 * 1024**3,  # 4 GB
+)
+
+# Create a sandbox from the snapshot
+with client.sandbox(snapshot_id=snapshot.id) as sb:
+    result = sb.run("python --version")
+    print(result.stdout)
+```
+
+### Capture a Running Sandbox
+
+Install packages or configure state, then capture it as a reusable snapshot:
+
+```python
+sb = client.create_sandbox(snapshot_id=base_snapshot_id, name="setup-box")
+sb.run("pip install numpy pandas scikit-learn")
+
+# Capture current state as a new snapshot
+snapshot = sb.capture_snapshot("ml-ready")
+
+sb.delete()
+
+# Later: spin up sandboxes from the captured snapshot
+with client.sandbox(snapshot_id=snapshot.id) as sb:
+    sb.run("python -c 'import numpy; print(numpy.__version__)'")
+```
+
+### Snapshot CRUD
+
+```python
+# List all snapshots
+snapshots = client.list_snapshots()
+
+# Get a snapshot by ID
+snapshot = client.get_snapshot("550e8400-...")
+
+# Delete a snapshot
+client.delete_snapshot("550e8400-...")
+
+# Build with longer timeout for large images
+snapshot = client.create_snapshot(
+    "heavy-image",
+    docker_image="nvidia/cuda:12.0-devel-ubuntu22.04",
+    fs_capacity_bytes=16 * 1024**3,
+    timeout=600,
+)
+```
+
+## Start / Stop
+
+Snapshot-based sandboxes can be stopped and restarted. The sandbox files are
+preserved across stop/start cycles.
+
+```python
+sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
+sb.run("echo 'hello' > /tmp/state.txt")
+
+# Stop the sandbox (preserves sandbox files)
+sb.stop()
+
+# Later: restart it
+sb.start()  # blocks until ready (default timeout=120s)
+
+result = sb.run("cat /tmp/state.txt")
+assert result.stdout.strip() == "hello"
+```
+
+You can also use the client methods directly:
+
+```python
+client.stop_sandbox("my-vm")
+sandbox = client.start_sandbox("my-vm")
+```
+
 ## Templates
 
 Templates define the container image and resources for sandboxes. **You must create a template before you can create sandboxes.**
@@ -847,8 +937,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(template_name, *, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit) |
-| `create_sandbox(template_name, *, wait_for_ready=True, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (requires explicit delete). Pass `wait_for_ready=False` for async creation. |
+| `sandbox(template_name=None, *, snapshot_id=None, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Provide `template_name` or `snapshot_id`. |
+| `create_sandbox(template_name=None, *, snapshot_id=None, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Provide `template_name` or `snapshot_id`. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
@@ -856,6 +946,14 @@ except SandboxClientError as e:
 | `list_sandboxes()` | List all sandboxes |
 | `update_sandbox(name, *, new_name=None, ttl_seconds=None, idle_ttl_seconds=None)` | Update a sandbox's name or TTL settings |
 | `delete_sandbox(name)` | Delete a sandbox |
+| `start_sandbox(name, *, timeout=120)` | Start a stopped sandbox, poll until ready |
+| `stop_sandbox(name)` | Stop a running sandbox (preserves sandbox files) |
+| `create_snapshot(name, docker_image, fs_capacity_bytes, *, timeout=60)` | Build a snapshot from a Docker image |
+| `capture_snapshot(sandbox_name, name, *, timeout=60)` | Capture a snapshot from a running sandbox |
+| `get_snapshot(snapshot_id)` | Get a snapshot by ID |
+| `list_snapshots()` | List all snapshots |
+| `delete_snapshot(snapshot_id)` | Delete a snapshot |
+| `wait_for_snapshot(snapshot_id, *, timeout=300)` | Poll until snapshot is ready or failed |
 | `create_template(name, image, ...)` | Create a template |
 | `list_templates()` | List all templates |
 | `get_template(name)` | Get template by name |
@@ -876,7 +974,8 @@ except SandboxClientError as e:
 |----------|-------------|
 | `name` | Display name |
 | `template_name` | Template used to create this sandbox |
-| `status` | Lifecycle status: `"provisioning"`, `"ready"`, or `"failed"` |
+| `snapshot_id` | Snapshot ID used to create this sandbox |
+| `status` | Lifecycle status: `"provisioning"`, `"ready"`, `"failed"`, or `"stopped"` |
 | `status_message` | Human-readable details when status is `"failed"`, `None` otherwise |
 | `dataplane_url` | URL for runtime operations (only functional when status is `"ready"`) |
 | `id` | Unique identifier (UUID) |
@@ -892,6 +991,10 @@ except SandboxClientError as e:
 | `read(path)` | Read file (returns bytes) |
 | `tunnel(remote_port, *, local_port=0)` | Open a TCP tunnel. Returns `Tunnel` (context manager). |
 | `service(port, *, expires_in_seconds=600)` | Get a `ServiceURL` for an HTTP service. Auto-refreshes token. |
+| `start(*, timeout=120)` | Start a stopped sandbox and wait until ready. |
+| `stop()` | Stop a running sandbox (preserves sandbox files for later restart). |
+| `delete()` | Delete this sandbox. |
+| `capture_snapshot(name, *, timeout=60)` | Capture a snapshot from this sandbox. |
 
 ### ExecutionResult
 

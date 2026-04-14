@@ -32,6 +32,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     SandboxTemplate,
     ServiceURL,
+    Snapshot,
     Volume,
     VolumeMountSpec,
 )
@@ -707,12 +708,16 @@ class SandboxClient:
 
     def sandbox(
         self,
-        template_name: str,
+        template_name: Optional[str] = None,
         *,
+        snapshot_id: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        fs_capacity_bytes: Optional[int] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
@@ -723,11 +728,17 @@ class SandboxClient:
             with client.sandbox(template_name="my-template") as sandbox:
                 result = sandbox.run("echo hello")
 
+            with client.sandbox(snapshot_id="<uuid>") as sandbox:
+                result = sandbox.run("echo hello")
+
         The sandbox is automatically deleted when exiting the context manager.
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
             template_name: Name of the SandboxTemplate to use.
+                Mutually exclusive with snapshot_id.
+            snapshot_id: Snapshot ID to boot from.
+                Mutually exclusive with template_name.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
@@ -736,6 +747,9 @@ class SandboxClient:
             idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
                 automatically deleted after this duration of inactivity. Must be
                 a multiple of 60. 0 or None disables this TTL.
+            vcpus: Number of vCPUs.
+            mem_bytes: Memory in bytes.
+            fs_capacity_bytes: Root filesystem capacity in bytes.
 
         Returns:
             Sandbox instance.
@@ -744,14 +758,19 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid or neither template_name
+                nor snapshot_id is provided.
         """
         sb = self.create_sandbox(
             template_name=template_name,
+            snapshot_id=snapshot_id,
             name=name,
             timeout=timeout,
             ttl_seconds=ttl_seconds,
             idle_ttl_seconds=idle_ttl_seconds,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
+            fs_capacity_bytes=fs_capacity_bytes,
             headers=headers,
         )
         sb._auto_delete = True
@@ -759,13 +778,17 @@ class SandboxClient:
 
     def create_sandbox(
         self,
-        template_name: str,
+        template_name: Optional[str] = None,
         *,
+        snapshot_id: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
         ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        fs_capacity_bytes: Optional[int] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -775,6 +798,9 @@ class SandboxClient:
 
         Args:
             template_name: Name of the SandboxTemplate to use.
+                Mutually exclusive with snapshot_id.
+            snapshot_id: Snapshot ID to boot from.
+                Mutually exclusive with template_name.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -787,6 +813,9 @@ class SandboxClient:
             idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
                 automatically deleted after this duration of inactivity. Must be
                 a multiple of 60. 0 or None disables this TTL.
+            vcpus: Number of vCPUs.
+            mem_bytes: Memory in bytes.
+            fs_capacity_bytes: Root filesystem capacity in bytes.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -796,17 +825,26 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid or neither template_name
+                nor snapshot_id is provided.
         """
+        if not template_name and not snapshot_id:
+            raise ValueError("Either template_name or snapshot_id is required")
+        if template_name and snapshot_id:
+            raise ValueError("Cannot specify both template_name and snapshot_id")
+
         validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
 
         url = f"{self._base_url}/boxes"
 
         payload: dict[str, Any] = {
-            "template_name": template_name,
             "wait_for_ready": wait_for_ready,
         }
+        if template_name:
+            payload["template_name"] = template_name
+        if snapshot_id:
+            payload["snapshot_id"] = snapshot_id
         if wait_for_ready:
             payload["timeout"] = timeout
         if name:
@@ -815,6 +853,12 @@ class SandboxClient:
             payload["ttl_seconds"] = ttl_seconds
         if idle_ttl_seconds is not None:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
+        if vcpus is not None:
+            payload["vcpus"] = vcpus
+        if mem_bytes is not None:
+            payload["mem_bytes"] = mem_bytes
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -1099,5 +1143,305 @@ class SandboxClient:
                     f"Sandbox '{name}' not ready after {timeout}s",
                     resource_type="sandbox",
                     last_status=status.status,
+                )
+            time.sleep(min(poll_interval, remaining))
+
+    def start_sandbox(
+        self,
+        name: str,
+        *,
+        timeout: int = 120,
+        headers: RequestHeaders = None,
+    ) -> Sandbox:
+        """Start a stopped sandbox and wait until ready.
+
+        Args:
+            name: Sandbox name.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Sandbox in "ready" status.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceCreationError: If sandbox fails during startup.
+            ResourceTimeoutError: If sandbox doesn't become ready within timeout.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{name}/start"
+
+        try:
+            response = self._http.post(
+                url, json={}, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+
+        return self.wait_for_sandbox(name, timeout=timeout, headers=headers)
+
+    def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
+        """Stop a running sandbox (preserves sandbox files for later restart).
+
+        Args:
+            name: Sandbox name.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{name}/stop"
+
+        try:
+            response = self._http.post(
+                url, json={}, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+
+    # ========================================================================
+    # Snapshot Operations
+    # ========================================================================
+
+    def create_snapshot(
+        self,
+        name: str,
+        docker_image: str,
+        fs_capacity_bytes: int,
+        *,
+        registry_id: Optional[str] = None,
+        registry_url: Optional[str] = None,
+        registry_username: Optional[str] = None,
+        registry_password: Optional[str] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a Docker image.
+
+        Blocks until the snapshot is ready (polls with 2s interval).
+
+        Args:
+            name: Snapshot name.
+            docker_image: Docker image to build from (e.g., "python:3.12-slim").
+            fs_capacity_bytes: Filesystem capacity in bytes.
+            registry_id: Private registry ID (alternative to URL/credentials).
+            registry_url: Registry URL for private images.
+            registry_username: Registry username.
+            registry_password: Registry password.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceTimeoutError: If snapshot doesn't become ready within timeout.
+            ResourceCreationError: If snapshot build fails.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots"
+
+        payload: dict[str, Any] = {
+            "name": name,
+            "docker_image": docker_image,
+            "fs_capacity_bytes": fs_capacity_bytes,
+        }
+        if registry_id is not None:
+            payload["registry_id"] = registry_id
+        if registry_url is not None:
+            payload["registry_url"] = registry_url
+        if registry_username is not None:
+            payload["registry_username"] = registry_username
+        if registry_password is not None:
+            payload["registry_password"] = registry_password
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            snapshot = Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
+
+    def capture_snapshot(
+        self,
+        sandbox_name: str,
+        name: str,
+        *,
+        checkpoint: Optional[str] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Capture a snapshot from a running sandbox.
+
+        Blocks until the snapshot is ready (polls with 2s interval).
+
+        Args:
+            sandbox_name: Name of the sandbox to capture from.
+            name: Snapshot name.
+            checkpoint: Checkpoint timestamp to use. If omitted, creates a
+                fresh checkpoint from the running VM's current state.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceTimeoutError: If snapshot doesn't become ready within timeout.
+            ResourceCreationError: If snapshot capture fails.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
+
+        payload: dict[str, Any] = {"name": name}
+        if checkpoint is not None:
+            payload["checkpoint"] = checkpoint
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            snapshot = Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{sandbox_name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
+
+    def get_snapshot(
+        self, snapshot_id: str, *, headers: RequestHeaders = None
+    ) -> Snapshot:
+        """Get a snapshot by ID.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+
+        Returns:
+            Snapshot.
+
+        Raises:
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots/{snapshot_id}"
+
+        try:
+            response = self._http.get(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+            return Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def list_snapshots(self, *, headers: RequestHeaders = None) -> list[Snapshot]:
+        """List all snapshots.
+
+        Returns:
+            List of Snapshots.
+        """
+        url = f"{self._base_url}/snapshots"
+
+        try:
+            response = self._http.get(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+            data = response.json()
+            return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise SandboxAPIError(
+                    f"API endpoint not found: {url}. "
+                    f"Check that api_endpoint is correct."
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def delete_snapshot(
+        self, snapshot_id: str, *, headers: RequestHeaders = None
+    ) -> None:
+        """Delete a snapshot.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+
+        Raises:
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots/{snapshot_id}"
+
+        try:
+            response = self._http.delete(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+
+    def wait_for_snapshot(
+        self,
+        snapshot_id: str,
+        *,
+        timeout: int = 300,
+        poll_interval: float = 2.0,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Poll until a snapshot reaches "ready" or "failed" status.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+            timeout: Maximum time to wait in seconds.
+            poll_interval: Time between status checks in seconds.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceCreationError: If snapshot status becomes "failed".
+            ResourceTimeoutError: If timeout expires.
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while True:
+            snapshot = self.get_snapshot(snapshot_id, headers=headers)
+            if snapshot.status == "ready":
+                return snapshot
+            if snapshot.status == "failed":
+                raise ResourceCreationError(
+                    snapshot.status_message or "Snapshot build failed",
+                    resource_type="snapshot",
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResourceTimeoutError(
+                    f"Snapshot '{snapshot_id}' not ready after {timeout}s",
+                    resource_type="snapshot",
+                    last_status=snapshot.status,
                 )
             time.sleep(min(poll_interval, remaining))
