@@ -1142,7 +1142,9 @@ export class SandboxClient {
     options: CaptureSnapshotOptions = {}
   ): Promise<Snapshot> {
     const { checkpoint, timeout = 60, signal } = options;
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(sandboxName)}/snapshot`;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
+      sandboxName
+    )}/snapshot`;
 
     const payload: Record<string, unknown> = { name };
     if (checkpoint !== undefined) {
