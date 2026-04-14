@@ -2386,8 +2386,9 @@ class Client:
     def _filter_new_token_events(
         events: Optional[Sequence[dict]],
     ) -> Optional[list[dict]]:
-        """Filter content from new_token events to prevent streaming LLM output
-        from being uploaded via events.
+        """Filter content from new_token events.
+
+        This prevents streaming LLM output from being uploaded via events.
 
         Args:
             events: The events to filter.
@@ -2396,7 +2397,7 @@ class Client:
             The filtered events with kwargs removed from new_token events.
         """
         if not events:
-            return events
+            return events  # type: ignore[return-value]
         return [
             {k: v for k, v in event.items() if k != "kwargs"}
             if event.get("name") == "new_token"
