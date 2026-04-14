@@ -9,6 +9,7 @@ import type {
   RunOptions,
   SandboxData,
   Snapshot,
+  StartSandboxOptions,
 } from "./types.js";
 import {
   LangSmithDataplaneNotConfiguredError,
@@ -438,8 +439,8 @@ export class Sandbox {
    *
    * @param timeout - Timeout in seconds when waiting for ready. Default: 120.
    */
-  async start(timeout = 120): Promise<void> {
-    const refreshed = await this._client.startSandbox(this.name, { timeout });
+  async start(options: StartSandboxOptions = {}): Promise<void> {
+    const refreshed = await this._client.startSandbox(this.name, options);
     this.status = refreshed.status;
     this.dataplane_url = refreshed.dataplane_url;
   }

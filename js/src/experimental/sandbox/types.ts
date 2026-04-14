@@ -285,6 +285,11 @@ export interface RunOptions {
  */
 export interface CreateSandboxOptions {
   /**
+   * Snapshot ID to boot from.
+   * Mutually exclusive with the `templateName` positional arg.
+   */
+  snapshotId?: string;
+  /**
    * Optional sandbox name (auto-generated if not provided).
    */
   name?: string;
@@ -331,6 +336,8 @@ export interface CreateSnapshotOptions {
   registryPassword?: string;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -341,6 +348,8 @@ export interface CaptureSnapshotOptions {
   checkpoint?: string;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -351,6 +360,18 @@ export interface WaitForSnapshotOptions {
   timeout?: number;
   /** Time in seconds between status polls. Default: 2.0. */
   pollInterval?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Options for starting a stopped sandbox.
+ */
+export interface StartSandboxOptions {
+  /** Timeout in seconds when waiting for ready. Default: 120. */
+  timeout?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
 }
 
 /**

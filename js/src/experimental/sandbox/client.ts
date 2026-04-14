@@ -18,6 +18,7 @@ import type {
   SandboxData,
   SandboxTemplate,
   Snapshot,
+  StartSandboxOptions,
   UpdatePoolOptions,
   UpdateSandboxOptions,
   UpdateTemplateOptions,
@@ -139,6 +140,23 @@ export class SandboxClient {
    */
   getApiKey(): string | undefined {
     return this._apiKey;
+  }
+
+  /**
+   * JSON POST helper. Sends JSON body, returns parsed response.
+   * @internal
+   */
+  private async _postJson(
+    url: string,
+    body: Record<string, unknown>,
+    options?: { signal?: AbortSignal }
+  ): Promise<Response> {
+    return this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
   }
 
   // =========================================================================
@@ -686,7 +704,7 @@ export class SandboxClient {
    */
   async createSandbox(
     templateName?: string,
-    options: CreateSandboxOptions & { snapshotId?: string } = {}
+    options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
     const {
       snapshotId,
@@ -1008,16 +1026,12 @@ export class SandboxClient {
    */
   async startSandbox(
     name: string,
-    options: { timeout?: number } = {}
+    options: StartSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { timeout = 120 } = options;
+    const { timeout = 120, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
 
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const response = await this._postJson(url, {}, { signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -1040,11 +1054,7 @@ export class SandboxClient {
   async stopSandbox(name: string): Promise<void> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
 
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const response = await this._postJson(url, {});
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -1084,6 +1094,7 @@ export class SandboxClient {
       registryUsername,
       registryPassword,
       timeout = 60,
+      signal,
     } = options;
     const url = `${this._baseUrl}/snapshots`;
 
@@ -1105,18 +1116,14 @@ export class SandboxClient {
       payload.registry_password = registryPassword;
     }
 
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await this._postJson(url, payload, { signal });
 
     if (!response.ok) {
       await handleClientHttpError(response);
     }
 
     const snapshot = (await response.json()) as Snapshot;
-    return this.waitForSnapshot(snapshot.id, { timeout });
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
   }
 
   /**
@@ -1134,7 +1141,7 @@ export class SandboxClient {
     name: string,
     options: CaptureSnapshotOptions = {}
   ): Promise<Snapshot> {
-    const { checkpoint, timeout = 60 } = options;
+    const { checkpoint, timeout = 60, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(sandboxName)}/snapshot`;
 
     const payload: Record<string, unknown> = { name };
@@ -1142,11 +1149,7 @@ export class SandboxClient {
       payload.checkpoint = checkpoint;
     }
 
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await this._postJson(url, payload, { signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -1159,7 +1162,7 @@ export class SandboxClient {
     }
 
     const snapshot = (await response.json()) as Snapshot;
-    return this.waitForSnapshot(snapshot.id, { timeout });
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
   }
 
   /**
@@ -1241,11 +1244,13 @@ export class SandboxClient {
     snapshotId: string,
     options: WaitForSnapshotOptions = {}
   ): Promise<Snapshot> {
-    const { timeout = 300, pollInterval = 2.0 } = options;
+    const { timeout = 300, pollInterval = 2.0, signal } = options;
     const deadline = Date.now() + timeout * 1000;
     let lastStatus = "building";
 
     while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+
       const snapshot = await this.getSnapshot(snapshotId);
       lastStatus = snapshot.status;
 

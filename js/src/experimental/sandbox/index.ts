@@ -48,6 +48,7 @@ export type {
   CreateSnapshotOptions,
   CaptureSnapshotOptions,
   WaitForSnapshotOptions,
+  StartSandboxOptions,
   UpdateSandboxOptions,
   WaitForSandboxOptions,
   CreateVolumeOptions,
