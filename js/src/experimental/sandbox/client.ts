@@ -1200,11 +1200,6 @@ export class SandboxClient {
     const response = await this._fetch(url);
 
     if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithSandboxAPIError(
-          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-        );
-      }
       await handleClientHttpError(response);
     }
 
@@ -1223,12 +1218,6 @@ export class SandboxClient {
     const response = await this._fetch(url, { method: "DELETE" });
 
     if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Snapshot '${snapshotId}' not found`,
-          "snapshot"
-        );
-      }
       await handleClientHttpError(response);
     }
   }
