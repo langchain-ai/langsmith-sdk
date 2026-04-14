@@ -21,8 +21,7 @@
 - Sandbox server infrastructure -- the SDK is a client to the sandbox service
 - Deployment infrastructure, CI/CD, container security
 - `tests/`, `bench/`, `docs/`, `examples/` -- not shipped code
-- Third-party dependencies beyond their API contracts
-- `node_modules/` contents
+- Third-party dependencies beyond their API contracts (vendored source in `node_modules/` and `.venv/` is not reviewed, but dependency selection and interface usage are considered in component analysis)
 
 ### Assumptions
 
@@ -120,7 +119,7 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 - **Encryption**: In transit via HTTPS. Fallback files on disk are not encrypted.
 - **Retention**: In memory until batch flush (~100ms or size threshold). Fallback files: up to `_failed_traces_max_bytes` on disk.
 - **Logging exposure**: Trace data may contain PII, credentials, or sensitive business data depending on the user's application. The `hide_inputs`, `hide_outputs`, `hide_metadata` callbacks and the `anonymizer` parameter on `Client.__init__` provide opt-in redaction.
-- **Gaps**: Fallback trace files written to disk are not encrypted. Default `_failed_traces_dir` is `~/.langsmith/.runs/` (if writable) with a 100MB cap.
+- **Gaps**: Fallback trace files are permission-restricted (`0o600`) but not encrypted at rest. Fallback is opt-in (`LANGSMITH_FAILED_TRACES_DIR` env var must be set).
 
 ---
 
@@ -168,7 +167,7 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 | DF6 | Sandbox Dataplane | User Application (C5) | Command stdout/stderr, file content, exit codes | DC6 | TB3 | HTTPS response, WebSocket messages |
 | DF7 | Environment Variables | SDK Configuration (C1, C2, C5) | API keys, endpoint URLs, feature flags | DC1 | TB2 | `os.environ` / `process.env` reads |
 | DF8 | User Application | SDK (C6) | Raw trace data for anonymization | DC2 | TB2 | Python/JS function call |
-| DF9 | SDK (C3) | Local Filesystem | Failed trace data (fallback on API errors) | DC2 | -- | File write to `~/.langsmith/.runs/` |
+| DF9 | SDK (C3) | Local Filesystem | Failed trace data (opt-in fallback on API errors, requires `LANGSMITH_FAILED_TRACES_DIR`) | DC2 | -- | File write with 0o600 permissions |
 | DF10 | User Application (C5) | Sandbox Dataplane (via Tunnel) | Arbitrary TCP traffic tunneled through WebSocket | DC6 | TB3 | TCP over yamux over WebSocket |
 
 ### Flow Details
@@ -187,9 +186,9 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 
 #### DF9: Failed Trace Fallback to Disk
 
-- **Data**: Serialized trace data (JSON, potentially containing PII).
-- **Validation**: Capped at `_failed_traces_max_bytes` (default 100MB). Written to `~/.langsmith/.runs/` or system temp directory.
-- **Trust assumption**: The local filesystem is trusted. No encryption at rest.
+- **Data**: Serialized trace data (base64-encoded JSON envelope, potentially containing PII).
+- **Validation**: Opt-in via `LANGSMITH_FAILED_TRACES_DIR` env var (no fallback if unset). Capped at `_failed_traces_max_bytes` (configurable via `LANGSMITH_FAILED_TRACES_MAX_MB`, default 100MB). Written with `0o600` owner-only permissions via atomic temp+rename.
+- **Trust assumption**: The local filesystem is trusted. Files are permission-restricted but not encrypted at rest.
 
 ---
 
@@ -199,9 +198,8 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 |----|-----------|----------------|--------|----------|----------|------------|----------------|
 | T1 | DF3 | DC4 | Unsafe deserialization via `pull_prompt()` with outdated `langchain_core` | TB5 | Medium | Likely | `client.py:_process_prompt_manifest`, `client.py:_lc_load_allowed_objects_arg_supported` |
 | T2 | DF3 | DC4 | Expanded attack surface when `include_model=True` allows partner integration class instantiation | TB5 | Medium | Verified | `client.py:_process_prompt_manifest` (line 338) |
-| T3 | DF4 | DC5 | Data integrity manipulation via `updates` field in header-supplied replicas | TB4 | Low | Verified | `run_trees.py:_Baggage.from_header` (line 1019-1024), `run_trees.py:_remap_for_project` |
-| T4 | DF9 | DC2 | Sensitive trace data written unencrypted to disk on API failure | -- | Low | Verified | `client.py:Client._failed_traces_dir` |
-| T5 | DF1 | DC2 | Inadvertent PII/credential capture in trace data | TB1 | Info | Unverified | `run_helpers.py:traceable`, `_internal/_serde.py:dumps_json` |
+| T3 | DF4 | DC5 | Data integrity manipulation via `updates` field in header-supplied replicas (limited practical impact — see details) | TB4 | Low | Verified | `run_trees.py:_Baggage.from_header`, `run_trees.py:_remap_for_project` |
+| T4 | DF1 | DC2 | Inadvertent PII/credential capture in trace data | TB1 | Info | Unverified | `run_helpers.py:traceable`, `_internal/_serde.py:dumps_json` |
 
 ### Threat Details
 
@@ -222,12 +220,7 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 - **Flow**: DF4 (Distributed tracing headers)
 - **Description**: The `updates` field passes through `_filter_replica_for_headers` (it is in `_HEADER_SAFE_REPLICA_FIELDS`). When applied via `dup.update(updates)`, an attacker who controls the `baggage` header can overwrite arbitrary keys in the run dict (e.g., `session_name`, `inputs`, `outputs`), potentially polluting trace data sent to replica endpoints.
 - **Preconditions**: Attacker can send HTTP requests with crafted `baggage` header to a service using `TracingMiddleware` or `RunTree.from_headers`. Tracing replicas are configured.
-
-#### T4: Sensitive trace data written unencrypted to disk
-
-- **Flow**: DF9 (Failed traces to local filesystem)
-- **Description**: When the SDK cannot reach the LangSmith API, trace data (which may contain PII, credentials, or sensitive business data) is written unencrypted to `~/.langsmith/.runs/` or a system temp directory, capped at 100MB. On shared systems, other users may be able to read these files.
-- **Preconditions**: LangSmith API is unreachable. Trace data contains sensitive information. Filesystem permissions allow other users to read the fallback directory.
+- **Practical impact note**: `TracingMiddleware` (C7) is explicit opt-in. The impact is trace data integrity pollution, not data exfiltration or code execution. An attacker with HTTP access to the service already has significant leverage — trace pollution via `updates` is a marginal escalation over what header control already provides. Keeping as Low severity for completeness.
 
 ---
 
@@ -235,7 +228,7 @@ The LangSmith SDK provides Python and JavaScript/TypeScript client libraries for
 
 | Input Source | Data Flows | Threats | Validation Points | Responsibility | Gaps |
 |-------------|-----------|---------|-------------------|----------------|------|
-| User direct input (SDK API calls) | DF1, DF2, DF5, DF8 | T5 | `client.py:Client.__init__` (anonymizer, hide_inputs, hide_outputs params) | User | User must configure anonymizer for PII redaction |
+| User direct input (SDK API calls) | DF1, DF2, DF5, DF8 | T4 | `client.py:Client.__init__` (anonymizer, hide_inputs, hide_outputs params) | User | User must configure anonymizer for PII redaction |
 | LangSmith API responses | DF3 | T1, T2 | `client.py:_process_prompt_manifest` (allowed_objects, secrets_from_env) | Shared (SDK validates deserialization, API authenticates users) | Version gap for langchain-core 1.0.0-1.2.4 |
 | HTTP headers (distributed tracing) | DF4 | T3 | `run_trees.py:_filter_replica_for_headers` (allowlist filter) | Project | `updates` field passes through filter |
 | Configuration (env vars) | DF7 | -- | `utils.py:get_env_var`, `utils.py:get_api_key` (strip/trim) | User (deployer) | -- |
@@ -276,6 +269,7 @@ Threats that appear valid in isolation but fall outside project responsibility b
 | D1 | SSRF via tracing header injection (GHSA-v34v-rq6j-cj6p) | Verified that `_filter_replica_for_headers` strips `api_url`, `api_key`, and `auth` from header-supplied replicas. Legacy tuple format hardcodes `api_url=None`. Env var path correctly allows `api_url` (deployer-controlled). Replicas not re-serialized in outgoing headers. | `run_trees.py:_filter_replica_for_headers` (lines 63-70), `run_trees.py:_Baggage.from_header` (lines 1003-1030), `run_trees.py:_Baggage.to_header` (lines 1047-1064) | Fix is complete. Attacker cannot redirect trace data to an arbitrary endpoint via the `baggage` header. All header-reachable code paths are covered. |
 | D2 | API key exfiltration via crafted prompt secret fields | Verified that `secrets_from_env` defaults to `False` in both `Client.pull_prompt()` and `AsyncClient.pull_prompt()`. When `False`, `langchain_core.load.load()` does not read environment variables for secret fields. | `client.py:Client.pull_prompt` (line 9191, `secrets_from_env: bool = False`), `async_client.py:AsyncClient.pull_prompt` | Fix is complete for GHSA-c67j-w6g6-q2cm. Environment variables are not exfiltrated by default. |
 | D3 | Arbitrary Python object deserialization via prompt pull (default path) | Verified that `allowed_objects="core"` restricts deserialization to `langchain_core` types only. Combined with jinja2 template blocking and `Serializable` subclass check in `langchain_core.load.load()`, the default path has a narrow attack surface. | `client.py:_process_prompt_manifest` (line 338), `langchain_core/load/load.py:Reviver.__call__` (allowlist check) | Default path (`include_model=False`) is adequately protected with current `langchain_core` versions. Residual risk limited to theoretical side effects in core type constructors. |
+| D4 | Sensitive trace data written unencrypted to disk on API failure | Fallback trace writing is now opt-in via `LANGSMITH_FAILED_TRACES_DIR` env var — if unset, `_dump_failed_trace` returns immediately. When enabled: files use `0o600` owner-only permissions, atomic writes via temp+rename, base64-encoded JSON envelope, and configurable size budget (`LANGSMITH_FAILED_TRACES_MAX_MB`). | `client.py:Client._dump_failed_trace` (returns early if dir unset), `client.py:Client._write_trace_to_fallback_dir` (0o600 chmod, atomic rename) | Original threat (unencrypted traces written to a world-readable default directory) no longer applies. Fallback is opt-in with adequate protections. |
 
 ---
 
@@ -283,4 +277,5 @@ Threats that appear valid in isolation but fall outside project responsibility b
 
 | Date | Author | Changes |
 |------|--------|---------|
+| 2026-04-14 | langster-threat-model (quick update) | Addressed review feedback from jacoblee93: (1) Clarified `node_modules/` scope — dependency selection is in scope, vendored source is not; (2) T3 (`updates` passthrough) — added practical impact note acknowledging limited attack value per reviewer feedback; (3) Former T4 (unencrypted fallback traces) moved to Investigated and Dismissed (D4) — fallback is now opt-in with 0o600 permissions; threats renumbered (old T5 → T4); updated DF9 and DC2 details to reflect current protections |
 | 2026-04-07 | generated by langster-threat-model (deep mode) | Initial threat model |
