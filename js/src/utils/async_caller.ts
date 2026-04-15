@@ -147,7 +147,11 @@ export class AsyncCaller {
                 throw error;
               }
 
-              if ("name" in error && error.name === "TimeoutError") {
+              if (
+                "name" in error &&
+                (error.name === "TimeoutError" ||
+                  error.name === "AbortError")
+              ) {
                 throw error;
               }
 
