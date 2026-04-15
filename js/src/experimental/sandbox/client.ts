@@ -46,6 +46,28 @@ import {
 } from "./helpers.js";
 
 /**
+ * Sleep that can be interrupted by an AbortSignal.
+ * Resolves after `ms` milliseconds or rejects immediately if the signal fires.
+ */
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
  * Get the default sandbox API endpoint from environment.
  *
  * Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
@@ -1014,8 +1036,8 @@ export class SandboxClient {
         );
       }
 
-      // Wait before polling again
-      await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
+      // Wait before polling again, abort-aware
+      await sleepWithSignal(pollInterval * 1000, signal);
     }
 
     throw new LangSmithResourceTimeoutError(
@@ -1267,7 +1289,7 @@ export class SandboxClient {
         );
       }
 
-      await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
+      await sleepWithSignal(pollInterval * 1000, signal);
     }
 
     throw new LangSmithResourceTimeoutError(
