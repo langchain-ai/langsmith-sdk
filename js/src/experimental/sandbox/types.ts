@@ -315,7 +315,7 @@ export interface CreateSandboxOptions {
    */
   idleTtlSeconds?: number;
   /** Number of vCPUs. */
-  vcpus?: number;
+  vCpus?: number;
   /** Memory in bytes. */
   memBytes?: number;
   /** Root filesystem capacity in bytes. */

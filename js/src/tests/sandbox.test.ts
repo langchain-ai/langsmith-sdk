@@ -1064,7 +1064,7 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     const client = createClientWithMock(mockFetch);
     const sandbox = await client.createSandbox(undefined, {
       snapshotId: "snap-1",
-      vcpus: 4,
+      vCpus: 4,
       memBytes: 1073741824,
       fsCapacityBytes: 4294967296,
     });
@@ -1074,7 +1074,7 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     expect(body.vcpus).toBe(4);
     expect(body.mem_bytes).toBe(1073741824);
     expect(body.fs_capacity_bytes).toBe(4294967296);
-    expect(sandbox.vcpus).toBe(4);
+    expect(sandbox.vCpus).toBe(4);
     expect(sandbox.mem_bytes).toBe(1073741824);
   });
 

@@ -65,7 +65,7 @@ export class Sandbox {
   /** Snapshot ID used to create this sandbox. */
   readonly snapshot_id?: string;
   /** Number of vCPUs allocated. */
-  readonly vcpus?: number;
+  readonly vCpus?: number;
   /** Memory allocation in bytes. */
   readonly mem_bytes?: number;
   /** Root filesystem capacity in bytes. */
@@ -87,7 +87,7 @@ export class Sandbox {
     this.idle_ttl_seconds = data.idle_ttl_seconds;
     this.expires_at = data.expires_at;
     this.snapshot_id = data.snapshot_id;
-    this.vcpus = data.vcpus;
+    this.vCpus = data.vcpus;
     this.mem_bytes = data.mem_bytes;
     this.fs_capacity_bytes = data.fs_capacity_bytes;
     this._client = client;

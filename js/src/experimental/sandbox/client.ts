@@ -165,7 +165,10 @@ export class SandboxClient {
   }
 
   /**
-   * JSON POST helper. Sends JSON body, returns parsed response.
+   * JSON POST helper. Sends JSON body, checks response status,
+   * and returns the Response for further processing.
+   * Throws on non-ok responses via handleClientHttpError.
+   * Callers can add specific status checks (e.g. 404) before calling this.
    * @internal
    */
   private async _postJson(
@@ -173,12 +176,16 @@ export class SandboxClient {
     body: Record<string, unknown>,
     options?: { signal?: AbortSignal }
   ): Promise<Response> {
-    return this._fetch(url, {
+    const response = await this._fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: options?.signal,
     });
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+    return response;
   }
 
   // =========================================================================
@@ -735,7 +742,7 @@ export class SandboxClient {
       waitForReady = true,
       ttlSeconds,
       idleTtlSeconds,
-      vcpus,
+      vCpus,
       memBytes,
       fsCapacityBytes,
     } = options;
@@ -773,8 +780,8 @@ export class SandboxClient {
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
     }
-    if (vcpus !== undefined) {
-      payload.vcpus = vcpus;
+    if (vCpus !== undefined) {
+      payload.vcpus = vCpus;
     }
     if (memBytes !== undefined) {
       payload.mem_bytes = memBytes;
@@ -1036,8 +1043,13 @@ export class SandboxClient {
         );
       }
 
-      // Wait before polling again, abort-aware
-      await sleepWithSignal(pollInterval * 1000, signal);
+      // Wait before polling again, capped to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
     }
 
     throw new LangSmithResourceTimeoutError(
@@ -1061,18 +1073,7 @@ export class SandboxClient {
     const { timeout = 120, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
 
-    const response = await this._postJson(url, {}, { signal });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Sandbox '${name}' not found`,
-          "sandbox"
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
+    await this._postJson(url, {}, { signal });
     return this.waitForSandbox(name, { timeout, signal });
   }
 
@@ -1083,18 +1084,7 @@ export class SandboxClient {
    */
   async stopSandbox(name: string): Promise<void> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
-
-    const response = await this._postJson(url, {});
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Sandbox '${name}' not found`,
-          "sandbox"
-        );
-      }
-      await handleClientHttpError(response);
-    }
+    await this._postJson(url, {});
   }
 
   // =========================================================================
@@ -1147,11 +1137,6 @@ export class SandboxClient {
     }
 
     const response = await this._postJson(url, payload, { signal });
-
-    if (!response.ok) {
-      await handleClientHttpError(response);
-    }
-
     const snapshot = (await response.json()) as Snapshot;
     return this.waitForSnapshot(snapshot.id, { timeout, signal });
   }
@@ -1182,17 +1167,6 @@ export class SandboxClient {
     }
 
     const response = await this._postJson(url, payload, { signal });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Sandbox '${sandboxName}' not found`,
-          "sandbox"
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
     const snapshot = (await response.json()) as Snapshot;
     return this.waitForSnapshot(snapshot.id, { timeout, signal });
   }
@@ -1289,7 +1263,13 @@ export class SandboxClient {
         );
       }
 
-      await sleepWithSignal(pollInterval * 1000, signal);
+      // Cap sleep to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
     }
 
     throw new LangSmithResourceTimeoutError(
