@@ -3,7 +3,14 @@
  */
 
 import type { SandboxClient } from "./client.js";
-import type { ExecutionResult, RunOptions, SandboxData } from "./types.js";
+import type {
+  CaptureSnapshotOptions,
+  ExecutionResult,
+  RunOptions,
+  SandboxData,
+  Snapshot,
+  StartSandboxOptions,
+} from "./types.js";
 import {
   LangSmithDataplaneNotConfiguredError,
   LangSmithSandboxNotReadyError,
@@ -36,11 +43,11 @@ export class Sandbox {
   /** Display name (can be updated). */
   readonly name: string;
   /** Name of the template used to create this sandbox. */
-  readonly template_name: string;
+  readonly template_name?: string;
   /** URL for data plane operations (file I/O, command execution). */
-  readonly dataplane_url?: string;
-  /** Provisioning status ("provisioning", "ready", "failed"). */
-  readonly status?: string;
+  dataplane_url?: string;
+  /** Provisioning status ("provisioning", "ready", "failed", "stopped"). */
+  status?: string;
   /** Human-readable status message (e.g., error details when failed). */
   readonly status_message?: string;
   /** Unique identifier (UUID). Remains constant even if name changes. */
@@ -55,6 +62,14 @@ export class Sandbox {
   readonly idle_ttl_seconds?: number;
   /** Computed expiration timestamp when a TTL is active. */
   readonly expires_at?: string;
+  /** Snapshot ID used to create this sandbox. */
+  readonly snapshot_id?: string;
+  /** Number of vCPUs allocated. */
+  readonly vCpus?: number;
+  /** Memory allocation in bytes. */
+  readonly mem_bytes?: number;
+  /** Root filesystem capacity in bytes. */
+  readonly fs_capacity_bytes?: number;
 
   private _client: SandboxClient;
 
@@ -71,6 +86,10 @@ export class Sandbox {
     this.ttl_seconds = data.ttl_seconds;
     this.idle_ttl_seconds = data.idle_ttl_seconds;
     this.expires_at = data.expires_at;
+    this.snapshot_id = data.snapshot_id;
+    this.vCpus = data.vcpus;
+    this.mem_bytes = data.mem_bytes;
+    this.fs_capacity_bytes = data.fs_capacity_bytes;
     this._client = client;
   }
 
@@ -411,5 +430,41 @@ export class Sandbox {
    */
   async delete(): Promise<void> {
     await this._client.deleteSandbox(this.name);
+  }
+
+  /**
+   * Start a stopped sandbox and wait until ready.
+   *
+   * Updates this sandbox's status and dataplane_url in place.
+   *
+   * @param timeout - Timeout in seconds when waiting for ready. Default: 120.
+   */
+  async start(options: StartSandboxOptions = {}): Promise<void> {
+    const refreshed = await this._client.startSandbox(this.name, options);
+    this.status = refreshed.status;
+    this.dataplane_url = refreshed.dataplane_url;
+  }
+
+  /**
+   * Stop a running sandbox (preserves sandbox files for later restart).
+   */
+  async stop(): Promise<void> {
+    await this._client.stopSandbox(this.name);
+    this.status = "stopped";
+    this.dataplane_url = undefined;
+  }
+
+  /**
+   * Capture a snapshot from this sandbox.
+   *
+   * @param name - Snapshot name.
+   * @param options - Capture options (checkpoint, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async captureSnapshot(
+    name: string,
+    options: CaptureSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    return this._client.captureSnapshot(this.name, name, options);
   }
 }
