@@ -321,19 +321,19 @@ describe.each(ENDPOINT_TYPES)(
 
     it.each([
       [true, {}], // should hide metadata
-      [false, { LANGSMITH_TRACING: "true", random: 123 }], // should keep metadata
-      [undefined, { LANGSMITH_TRACING: "true", random: 123 }], // should keep metadata
+      [false, { random: 123 }], // should keep metadata
+      [undefined, { random: 123 }], // should keep metadata
       [
         function syncFn(metadata: KVMap) {
           return { ...metadata, hidden: "metadata" };
         },
-        { LANGSMITH_TRACING: "true", random: 123, hidden: "metadata" },
+        { random: 123, hidden: "metadata" },
       ], // should hide metadata
       [
         async function asyncFn(metadata: KVMap) {
           return { ...metadata, hidden: "metadata" };
         },
-        { LANGSMITH_TRACING: "true", random: 123, hidden: "metadata" },
+        { random: 123, hidden: "metadata" },
       ], // should hide metadata
     ])("should hide metadata: %p", async (hideMetadata, expectedMetadata) => {
       const calls: any[] = [];
