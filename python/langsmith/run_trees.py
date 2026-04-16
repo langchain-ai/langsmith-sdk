@@ -670,16 +670,19 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
+        run_extra = _format_extra_fields(self.extra)
         if self.replicas:
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                run_dict.pop("extra", None)
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
                 self.client.create_run(
                     **run_dict,
+                    extra=run_extra,
                     api_key=api_key,
                     api_url=api_url,
                     service_key=service_key,
@@ -689,7 +692,8 @@ class RunTree(ls_schemas.RunBase):
                 )
         else:
             kwargs = self._get_dicts_safe()
-            self.client.create_run(**kwargs)
+            kwargs.pop("extra", None)
+            self.client.create_run(**kwargs, extra=run_extra)
         if self.attachments:
             keys = [str(name) for name in self.attachments]
             self.events.append(
@@ -757,7 +761,7 @@ class RunTree(ls_schemas.RunBase):
                     trace_id=run_dict.get("trace_id"),
                     events=run_dict.get("events"),
                     tags=run_dict.get("tags"),
-                    extra=run_dict.get("extra"),
+                    extra=_format_extra_fields(run_dict.get("extra", {})),
                     attachments=attachments,
                     api_key=api_key,
                     api_url=api_url,
@@ -787,7 +791,7 @@ class RunTree(ls_schemas.RunBase):
                 trace_id=self.trace_id,
                 events=self.events,
                 tags=self.tags,
-                extra=self.extra,
+                extra=_format_extra_fields(self.extra or {}),
                 attachments=attachments,
             )
 
@@ -1207,6 +1211,22 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
+
+
+def _format_extra_fields(run_extra: dict) -> dict:
+    formatted_run_extra = {**run_extra}
+    # TODO: pop invocation_params off extra next minor bump
+    if isinstance(formatted_run_extra.get("invocation_params"), dict):
+        formatted_run_extra["metadata"] = {
+            **formatted_run_extra.get("invocation_params", {}),
+            **formatted_run_extra.get("metadata", {}),
+        }
+    if isinstance(formatted_run_extra.get("ls_metadata"), dict):
+        formatted_run_extra["metadata"] = {
+            **formatted_run_extra.pop("ls_metadata"),
+            **formatted_run_extra.get("metadata", {}),
+        }
+    return formatted_run_extra
 
 
 class ReplicaAuth(NamedTuple):

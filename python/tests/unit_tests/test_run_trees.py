@@ -550,3 +550,171 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_post_merges_invocation_params_and_ls_metadata_into_metadata():
+    """Test that post() merges invocation_params and ls_metadata into metadata.
+
+    Priority: metadata > ls_metadata > invocation_params.
+    ls_metadata is popped off extra; invocation_params is kept.
+    Non-dict values are ignored.
+    """
+    mock_client = MagicMock(spec=Client)
+    rt = RunTree(
+        name="test",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": {"a": "ip", "b": "ip", "c": "ip"},
+            "ls_metadata": {"a": "ls", "b": "ls"},
+            "metadata": {"a": "meta"},
+        },
+    )
+    rt.post()
+    post_extra = mock_client.create_run.call_args.kwargs["extra"]
+
+    # merge priority: metadata > ls_metadata > invocation_params
+    assert post_extra["metadata"]["a"] == "meta"
+    assert post_extra["metadata"]["b"] == "ip"
+    assert post_extra["metadata"]["c"] == "ip"
+    # ls_metadata popped, invocation_params kept
+    assert "ls_metadata" not in post_extra
+    assert "invocation_params" in post_extra
+
+    # non-dict values are ignored
+    mock_client.reset_mock()
+    rt2 = RunTree(
+        name="test2",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": "bad",
+            "ls_metadata": 123,
+            "metadata": {"key": "val"},
+        },
+    )
+    rt2.post()
+    extra2 = mock_client.create_run.call_args.kwargs["extra"]
+    assert extra2["metadata"] == {"key": "val"}
+    assert extra2["ls_metadata"] == 123
+
+
+def test_format_extra_fields():
+    """Test the _format_extra_fields function directly."""
+    from langsmith.run_trees import _format_extra_fields
+
+    # Test basic merge - priority: metadata > ls_metadata > invocation_params
+    result = _format_extra_fields(
+        {
+            "invocation_params": {"a": 1, "b": 2},
+            "ls_metadata": {"a": 10, "c": 3},
+            "metadata": {"a": 100, "d": 4},
+        }
+    )
+    assert result["metadata"]["a"] == 100  # from metadata (highest priority)
+    assert result["metadata"]["b"] == 2  # from invocation_params
+    assert result["metadata"]["c"] == 3  # from ls_metadata
+    assert result["metadata"]["d"] == 4  # from metadata
+    assert "ls_metadata" not in result  # popped
+    assert "invocation_params" in result  # kept
+
+    # Test with only invocation_params
+    result = _format_extra_fields({"invocation_params": {"key": "value"}})
+    assert result["metadata"] == {"key": "value"}
+
+    # Test with only ls_metadata
+    result = _format_extra_fields({"ls_metadata": {"key": "value"}})
+    assert result["metadata"] == {"key": "value"}
+    assert "ls_metadata" not in result
+
+    # Test with empty dict
+    assert _format_extra_fields({}) == {}
+
+    # Test with None/non-dict values (should be ignored, not merged)
+    result = _format_extra_fields(
+        {
+            "invocation_params": None,
+            "ls_metadata": "bad",
+            "metadata": {"key": "val"},
+        }
+    )
+    assert result["metadata"] == {"key": "val"}
+    assert result["invocation_params"] is None
+    assert result["ls_metadata"] == "bad"
+
+    # Test that original dict is not modified
+    original = {"invocation_params": {"a": 1}, "ls_metadata": {"b": 2}}
+    result = _format_extra_fields(original)
+    assert original["ls_metadata"] == {"b": 2}  # original unchanged
+    assert "ls_metadata" not in result
+
+    # Test that other keys are preserved
+    result = _format_extra_fields(
+        {
+            "invocation_params": {"a": 1},
+            "other_key": "preserved",
+        }
+    )
+    assert result["other_key"] == "preserved"
+
+
+def test_patch_and_replicas_merge_extra():
+    """Test patch() and replicas path merge invocation_params and ls_metadata."""
+    mock_client = MagicMock(spec=Client)
+
+    # Test patch() merges extra
+    rt = RunTree(
+        name="test",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": {"model": "gpt-4"},
+            "ls_metadata": {"version": "2"},
+            "metadata": {"model": "custom"},
+        },
+    )
+    rt.end(outputs={"result": "done"})
+    rt.patch()
+    patch_extra = mock_client.update_run.call_args.kwargs["extra"]
+    assert patch_extra["metadata"]["model"] == "custom"
+    assert patch_extra["metadata"]["version"] == "2"
+    assert "ls_metadata" not in patch_extra
+
+    # Test post() with replicas merges extra
+    mock_client.reset_mock()
+    rt_replica = RunTree(
+        name="test",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": {"a": "ip"},
+            "ls_metadata": {"b": "ls"},
+            "metadata": {"c": "meta"},
+        },
+        replicas=[{"project_name": "replica-project", "auth": {"api_key": "key"}}],
+    )
+    rt_replica.post()
+    call_kwargs = mock_client.create_run.call_args.kwargs
+    assert call_kwargs["extra"]["metadata"]["a"] == "ip"
+    assert call_kwargs["extra"]["metadata"]["b"] == "ls"
+    assert call_kwargs["extra"]["metadata"]["c"] == "meta"
+    assert "ls_metadata" not in call_kwargs["extra"]
+
+    # Test patch() with replicas merges extra
+    mock_client.reset_mock()
+    rt_replica2 = RunTree(
+        name="test",
+        inputs={"x": 1},
+        client=mock_client,
+        extra={
+            "invocation_params": {"a": "ip"},
+            "ls_metadata": {"b": "ls"},
+        },
+        replicas=[{"project_name": "replica-project", "auth": {"api_key": "key"}}],
+    )
+    rt_replica2.end(outputs={"done": True})
+    rt_replica2.patch()
+    call_kwargs = mock_client.update_run.call_args.kwargs
+    assert call_kwargs["extra"]["metadata"]["a"] == "ip"
+    assert call_kwargs["extra"]["metadata"]["b"] == "ls"
+    assert "ls_metadata" not in call_kwargs["extra"]
