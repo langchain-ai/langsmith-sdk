@@ -110,6 +110,9 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
     **kwargs: Any,
 ) -> ExperimentResults: ...
 
@@ -130,6 +133,9 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
     **kwargs: Any,
 ) -> ComparativeExperimentResults: ...
 
@@ -152,6 +158,8 @@ def evaluate(
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
     error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
     r"""Evaluate a target system on a given dataset.
@@ -177,6 +185,18 @@ def evaluate(
         description (str | None): A free-form text description for the experiment.
         max_concurrency (int | None): The maximum number of concurrent
             evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
+        target_concurrency (int | None): The maximum number of concurrent
+            predictions to run. If not provided, defaults to `max_concurrency`.
+            Note: in sync mode, predictions run to completion before
+            evaluations begin (no pipelining).
+
+            If `None` then no limit is set. If `0` then no concurrency.
+        evaluation_concurrency (int | None): The maximum number of concurrent
+            evaluators to run. If not provided, defaults to `max_concurrency`.
+            Note: in sync mode, evaluations run after all predictions
+            complete.
 
             If `None` then no limit is set. If `0` then no concurrency.
         client (langsmith.Client | None): The LangSmith client to use.
@@ -273,7 +293,16 @@ def evaluate(
         >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
 
+        Setting separate concurrency limits for predictions and evaluators:
 
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     target_concurrency=2,
+        ...     evaluation_concurrency=4,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
 
         Evaluating a LangChain object:
 
@@ -412,6 +441,8 @@ def evaluate(
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            target_concurrency=target_concurrency,
+            evaluation_concurrency=evaluation_concurrency,
         )
 
 
@@ -1077,11 +1108,23 @@ def _evaluate(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
     error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
     experiment_, runs = _resolve_experiment(experiment, runs, client)
+
+    # Resolve concurrency settings: specific overrides general
+    target_concurrency = (
+        target_concurrency if target_concurrency is not None else max_concurrency
+    )
+    evaluation_concurrency = (
+        evaluation_concurrency
+        if evaluation_concurrency is not None
+        else max_concurrency
+    )
 
     manager = _ExperimentManager(
         data,
@@ -1101,16 +1144,19 @@ def _evaluate(
         cache_path = pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
     else:
         cache_path = None
+    # TODO: Consider pipelining predictions and evaluations in the sync path
+    # (like the async awith_predictions_and_evaluators) so evaluators can run
+    # as predictions stream in, rather than waiting for all predictions first.
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if _is_callable(target):
             # Add predictions to the experiment.
             manager = manager.with_predictions(
-                cast(TARGET_T, target), max_concurrency=max_concurrency
+                cast(TARGET_T, target), max_concurrency=target_concurrency
             )
         if evaluators:
             # Apply evaluators to the predictions.
             manager = manager.with_evaluators(
-                evaluators, max_concurrency=max_concurrency
+                evaluators, max_concurrency=evaluation_concurrency
             )
         if summary_evaluators:
             # Apply the experiment-level summary evaluators.
