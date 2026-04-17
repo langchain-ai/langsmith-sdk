@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -1960,6 +1960,10 @@ dependencies = [
 claude-agent-sdk = [
     { name = "claude-agent-sdk" },
 ]
+cli = [
+    { name = "click" },
+    { name = "rich" },
+]
 google-adk = [
     { name = "google-adk" },
     { name = "wrapt" },
@@ -1991,6 +1995,7 @@ vcr = [
 dev = [
     { name = "bump2version" },
     { name = "claude-agent-sdk" },
+    { name = "click" },
     { name = "dataclasses-json" },
     { name = "debugpy" },
     { name = "fastapi" },
@@ -2018,6 +2023,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-dotenv" },
     { name = "pytest-httpx" },
+    { name = "pytest-mock" },
     { name = "pytest-rerunfailures" },
     { name = "pytest-retry" },
     { name = "pytest-socket" },
@@ -2046,6 +2052,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10' and extra == 'claude-agent-sdk'", specifier = ">=0.1.0" },
+    { name = "click", marker = "extra == 'cli'", specifier = ">=8.0" },
     { name = "google-adk", marker = "extra == 'google-adk'", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
@@ -2059,6 +2066,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
     { name = "requests", specifier = ">=2.0.0" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0" },
     { name = "rich", marker = "extra == 'pytest'", specifier = ">=13.9.4" },
     { name = "uuid-utils", specifier = ">=0.12.0,<1.0" },
     { name = "vcrpy", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
@@ -2068,12 +2076,13 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "google-adk", "langsmith-pyo3", "openai-agents", "otel", "pytest", "sandbox", "vcr"]
+provides-extras = ["claude-agent-sdk", "cli", "google-adk", "langsmith-pyo3", "openai-agents", "otel", "pytest", "sandbox", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "bump2version", specifier = ">=1.0.1" },
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10'", specifier = ">=0.1.0" },
+    { name = "click", specifier = ">=8.0" },
     { name = "dataclasses-json", specifier = ">=0.6.4" },
     { name = "debugpy", specifier = ">=1.8.17" },
     { name = "fastapi", specifier = ">=0.115.4" },
@@ -2100,6 +2109,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=4.1.0" },
     { name = "pytest-dotenv", specifier = ">=0.5.2" },
     { name = "pytest-httpx", specifier = ">=0.30.0" },
+    { name = "pytest-mock", specifier = ">=3.12" },
     { name = "pytest-rerunfailures", specifier = ">=14.0" },
     { name = "pytest-retry", specifier = ">=1.7.0" },
     { name = "pytest-socket", specifier = ">=0.7.0" },
@@ -3837,6 +3847,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4e/42/f53c58570e80d503ade9dd42ce57f2915d14bcbe25f6308138143950d1d6/pytest_httpx-0.36.2.tar.gz", hash = "sha256:05a56527484f7f4e8c856419ea379b8dc359c36801c4992fdb330f294c690356", size = 57683, upload-time = "2026-04-09T13:57:19.837Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/55/1fa65f8e4fceb19dd6daa867c162ad845d547f6058cd92b4b02384a44777/pytest_httpx-0.36.2-py3-none-any.whl", hash = "sha256:d42ebd5679442dc7bfb0c48e0767b6562e9bc4534d805127b0084171886a5e22", size = 20315, upload-time = "2026-04-09T13:57:18.587Z" },
+]
+
+[[package]]
+name = "pytest-mock"
+version = "3.15.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/14/eb014d26be205d38ad5ad20d9a80f7d201472e08167f0bb4361e251084a9/pytest_mock-3.15.1.tar.gz", hash = "sha256:1849a238f6f396da19762269de72cb1814ab44416fa73a8686deac10b0d87a0f", size = 34036, upload-time = "2025-09-16T16:37:27.081Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/cc/06253936f4a7fa2e0f48dfe6d851d9c56df896a9ab09ac019d70b760619c/pytest_mock-3.15.1-py3-none-any.whl", hash = "sha256:0a25e2eb88fe5168d535041d09a4529a188176ae608a6d249ee65abc0949630d", size = 10095, upload-time = "2025-09-16T16:37:25.734Z" },
 ]
 
 [[package]]
