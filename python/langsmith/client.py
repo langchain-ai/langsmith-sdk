@@ -508,6 +508,36 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
+_SENSITIVE_REDIRECT_HEADERS = frozenset(
+    {"x-api-key", "x-tenant-id", "x-organization-id", "cookie"}
+)
+
+
+def _install_safe_redirect_hook(session: requests.Session) -> None:
+    """Strip sensitive headers on cross-origin redirects.
+
+    `requests` only strips `Authorization` by default; LangSmith also uses
+    `x-api-key` (and workspace/cookie headers) which must not leak to
+    third-party hosts via open redirects.
+    """
+    original_rebuild_auth = session.rebuild_auth
+
+    def rebuild_auth(prepared_request: Any, response: Any) -> None:
+        original_rebuild_auth(prepared_request, response)
+        headers = prepared_request.headers
+        try:
+            original_host = urllib_parse.urlparse(response.request.url).hostname
+            redirect_host = urllib_parse.urlparse(prepared_request.url).hostname
+        except Exception:
+            return
+        if original_host != redirect_host:
+            for header in list(headers.keys()):
+                if header.lower() in _SENSITIVE_REDIRECT_HEADERS:
+                    del headers[header]
+
+    session.rebuild_auth = rebuild_auth  # type: ignore[method-assign]
+
+
 def close_session(session: requests.Session) -> None:
     """Close the session.
 
@@ -974,6 +1004,7 @@ class Client:
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
+        _install_safe_redirect_hook(session_)
         self.session = session_
         self._info = (
             info

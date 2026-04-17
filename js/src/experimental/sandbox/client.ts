@@ -4,6 +4,7 @@
 
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { _getFetchImplementation } from "../../singletons/fetch.js";
+import { _wrapFetchWithSafeRedirects } from "../../utils/safe_fetch.js";
 import { AsyncCaller } from "../../utils/async_caller.js";
 import type {
   CaptureSnapshotOptions,
@@ -128,7 +129,7 @@ export class SandboxClient {
       ""
     );
     this._apiKey = config.apiKey ?? getDefaultApiKey();
-    this._fetchImpl = _getFetchImplementation();
+    this._fetchImpl = _wrapFetchWithSafeRedirects(_getFetchImplementation());
     this._caller = new AsyncCaller({
       maxRetries: config.maxRetries ?? 3,
       maxConcurrency: config.maxConcurrency ?? Infinity,

@@ -5593,3 +5593,57 @@ class TestWriteTraceToFallbackDir:
         for event in filtered:
             assert "kwargs" not in event
             assert event["name"] == "new_token"
+
+
+class TestLangSmithSessionRedirectHeaders:
+    """Tests for stripping sensitive headers on cross-origin redirects."""
+
+    def _make_prepared(self, url: str, headers: dict) -> requests.PreparedRequest:
+        prepared = requests.PreparedRequest()
+        prepared.prepare(method="POST", url=url, headers=headers, data="{}")
+        return prepared
+
+    def _make_response(self, url: str) -> requests.Response:
+        response = requests.Response()
+        response.url = url
+        response.request = requests.PreparedRequest()
+        response.request.prepare(method="POST", url=url, headers={}, data="{}")
+        return response
+
+    def _make_session(self) -> requests.Session:
+        from langsmith.client import _install_safe_redirect_hook
+
+        session = requests.Session()
+        _install_safe_redirect_hook(session)
+        return session
+
+    def test_strips_x_api_key_on_cross_origin_redirect(self) -> None:
+        session = self._make_session()
+        response = self._make_response("https://api.smith.langchain.com/runs")
+        prepared = self._make_prepared(
+            "https://evil.example.com/steal",
+            {"x-api-key": "secret", "X-Tenant-Id": "ws"},
+        )
+        session.rebuild_auth(prepared, response)
+        assert "x-api-key" not in {k.lower() for k in prepared.headers}
+        assert "x-tenant-id" not in {k.lower() for k in prepared.headers}
+
+    def test_preserves_x_api_key_on_same_origin_redirect(self) -> None:
+        session = self._make_session()
+        response = self._make_response("https://api.smith.langchain.com/runs")
+        prepared = self._make_prepared(
+            "https://api.smith.langchain.com/runs/v2",
+            {"x-api-key": "secret"},
+        )
+        session.rebuild_auth(prepared, response)
+        assert prepared.headers.get("x-api-key") == "secret"
+
+    def test_default_session_has_safe_redirect_hook(self) -> None:
+        client = Client(api_url="http://localhost:1984", api_key="test")
+        response = self._make_response("http://localhost:1984/runs")
+        prepared = self._make_prepared(
+            "https://evil.example.com/steal",
+            {"x-api-key": "test"},
+        )
+        client.session.rebuild_auth(prepared, response)
+        assert "x-api-key" not in {k.lower() for k in prepared.headers}

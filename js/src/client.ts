@@ -81,6 +81,7 @@ import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
+import { _wrapFetchWithSafeRedirects } from "./utils/safe_fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -818,7 +819,9 @@ export class Client implements LangSmithTracingClientInterface {
   private _promptCache?: PromptCache;
 
   private get _fetch(): typeof fetch {
-    return this.fetchImplementation || _getFetchImplementation(this.debug);
+    return _wrapFetchWithSafeRedirects(
+      this.fetchImplementation || _getFetchImplementation(this.debug)
+    );
   }
 
   private multipartStreamingDisabled = false;
