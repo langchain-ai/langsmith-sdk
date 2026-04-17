@@ -23,9 +23,10 @@ module.exports = {
     ],
   },
   setupFiles: ["dotenv/config"],
+  // Retry flaky integration tests up to 3 times. `jest.retryTimes` is a
+  // runtime API, not a config option, so it must be called from a file
+  // loaded after the test framework is installed.
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.cjs"],
   testTimeout: 20_000,
   maxConcurrency: 2,
-  // Retry flaky integration tests up to 3 times
-  retryTimes: 3,
-  retryImmediately: false,
 };
