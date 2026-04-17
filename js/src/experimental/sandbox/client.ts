@@ -6,8 +6,10 @@ import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { _getFetchImplementation } from "../../singletons/fetch.js";
 import { AsyncCaller } from "../../utils/async_caller.js";
 import type {
+  CaptureSnapshotOptions,
   CreatePoolOptions,
   CreateSandboxOptions,
+  CreateSnapshotOptions,
   CreateTemplateOptions,
   CreateVolumeOptions,
   Pool,
@@ -15,12 +17,15 @@ import type {
   SandboxClientConfig,
   SandboxData,
   SandboxTemplate,
+  Snapshot,
+  StartSandboxOptions,
   UpdatePoolOptions,
   UpdateSandboxOptions,
   UpdateTemplateOptions,
   UpdateVolumeOptions,
   Volume,
   WaitForSandboxOptions,
+  WaitForSnapshotOptions,
 } from "./types.js";
 import { Sandbox } from "./sandbox.js";
 import {
@@ -39,6 +44,28 @@ import {
   handleVolumeCreationError,
   validateTtl,
 } from "./helpers.js";
+
+/**
+ * Sleep that can be interrupted by an AbortSignal.
+ * Resolves after `ms` milliseconds or rejects immediately if the signal fires.
+ */
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Get the default sandbox API endpoint from environment.
@@ -135,6 +162,30 @@ export class SandboxClient {
    */
   getApiKey(): string | undefined {
     return this._apiKey;
+  }
+
+  /**
+   * JSON POST helper. Sends JSON body, checks response status,
+   * and returns the Response for further processing.
+   * Throws on non-ok responses via handleClientHttpError.
+   * Callers can add specific status checks (e.g. 404) before calling this.
+   * @internal
+   */
+  private async _postJson(
+    url: string,
+    body: Record<string, unknown>,
+    options?: { signal?: AbortSignal }
+  ): Promise<Response> {
+    const response = await this._fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+    return response;
   }
 
   // =========================================================================
@@ -681,25 +732,42 @@ export class SandboxClient {
    * ```
    */
   async createSandbox(
-    templateName: string,
+    templateName?: string,
     options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
     const {
+      snapshotId,
       name,
       timeout = 30,
       waitForReady = true,
       ttlSeconds,
       idleTtlSeconds,
+      vCpus,
+      memBytes,
+      fsCapacityBytes,
     } = options;
+
+    if (!templateName && !snapshotId) {
+      throw new Error("Either templateName or snapshotId is required");
+    }
+    if (templateName && snapshotId) {
+      throw new Error("Cannot specify both templateName and snapshotId");
+    }
+
     validateTtl(ttlSeconds, "ttlSeconds");
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
 
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
-      template_name: templateName,
       wait_for_ready: waitForReady,
     };
+    if (templateName) {
+      payload.template_name = templateName;
+    }
+    if (snapshotId) {
+      payload.snapshot_id = snapshotId;
+    }
     if (waitForReady) {
       payload.timeout = timeout;
     }
@@ -711,6 +779,15 @@ export class SandboxClient {
     }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (vCpus !== undefined) {
+      payload.vcpus = vCpus;
+    }
+    if (memBytes !== undefined) {
+      payload.mem_bytes = memBytes;
+    }
+    if (fsCapacityBytes !== undefined) {
+      payload.fs_capacity_bytes = fsCapacityBytes;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
@@ -739,10 +816,13 @@ export class SandboxClient {
    * @returns Sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
-  async getSandbox(name: string): Promise<Sandbox> {
+  async getSandbox(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -897,10 +977,13 @@ export class SandboxClient {
    * @returns ResourceStatus with status and optional status_message.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
-  async getSandboxStatus(name: string): Promise<ResourceStatus> {
+  async getSandboxStatus(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<ResourceStatus> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -939,16 +1022,18 @@ export class SandboxClient {
     name: string,
     options: WaitForSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { timeout = 120, pollInterval = 1.0 } = options;
+    const { timeout = 120, pollInterval = 1.0, signal } = options;
     const deadline = Date.now() + timeout * 1000;
     let lastStatus = "provisioning";
 
     while (Date.now() < deadline) {
-      const statusResult = await this.getSandboxStatus(name);
+      signal?.throwIfAborted();
+
+      const statusResult = await this.getSandboxStatus(name, { signal });
       lastStatus = statusResult.status;
 
       if (statusResult.status === "ready") {
-        return this.getSandbox(name);
+        return this.getSandbox(name, { signal });
       }
 
       if (statusResult.status === "failed") {
@@ -958,13 +1043,238 @@ export class SandboxClient {
         );
       }
 
-      // Wait before polling again
-      await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
+      // Wait before polling again, capped to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
     }
 
     throw new LangSmithResourceTimeoutError(
       `Sandbox '${name}' did not become ready within ${timeout}s`,
       "sandbox",
+      lastStatus
+    );
+  }
+
+  /**
+   * Start a stopped sandbox and wait until ready.
+   *
+   * @param name - Sandbox name.
+   * @param options - Options with timeout.
+   * @returns Sandbox in "ready" status.
+   */
+  async startSandbox(
+    name: string,
+    options: StartSandboxOptions = {}
+  ): Promise<Sandbox> {
+    const { timeout = 120, signal } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
+
+    await this._postJson(url, {}, { signal });
+    return this.waitForSandbox(name, { timeout, signal });
+  }
+
+  /**
+   * Stop a running sandbox (preserves sandbox files for later restart).
+   *
+   * @param name - Sandbox name.
+   */
+  async stopSandbox(name: string): Promise<void> {
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
+    await this._postJson(url, {});
+  }
+
+  // =========================================================================
+  // Snapshot Operations
+  // =========================================================================
+
+  /**
+   * Build a snapshot from a Docker image.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param name - Snapshot name.
+   * @param dockerImage - Docker image to build from (e.g., "python:3.12-slim").
+   * @param fsCapacityBytes - Filesystem capacity in bytes.
+   * @param options - Additional options (registry credentials, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async createSnapshot(
+    name: string,
+    dockerImage: string,
+    fsCapacityBytes: number,
+    options: CreateSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const {
+      registryId,
+      registryUrl,
+      registryUsername,
+      registryPassword,
+      timeout = 60,
+      signal,
+    } = options;
+    const url = `${this._baseUrl}/snapshots`;
+
+    const payload: Record<string, unknown> = {
+      name,
+      docker_image: dockerImage,
+      fs_capacity_bytes: fsCapacityBytes,
+    };
+    if (registryId !== undefined) {
+      payload.registry_id = registryId;
+    }
+    if (registryUrl !== undefined) {
+      payload.registry_url = registryUrl;
+    }
+    if (registryUsername !== undefined) {
+      payload.registry_username = registryUsername;
+    }
+    if (registryPassword !== undefined) {
+      payload.registry_password = registryPassword;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
+  }
+
+  /**
+   * Capture a snapshot from a running sandbox.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param sandboxName - Name of the sandbox to capture from.
+   * @param name - Snapshot name.
+   * @param options - Capture options (checkpoint, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async captureSnapshot(
+    sandboxName: string,
+    name: string,
+    options: CaptureSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { checkpoint, timeout = 60, signal } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
+      sandboxName
+    )}/snapshot`;
+
+    const payload: Record<string, unknown> = { name };
+    if (checkpoint !== undefined) {
+      payload.checkpoint = checkpoint;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
+  }
+
+  /**
+   * Get a snapshot by ID.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @returns Snapshot.
+   */
+  async getSnapshot(
+    snapshotId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Snapshot> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url, { signal: options?.signal });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Snapshot '${snapshotId}' not found`,
+          "snapshot"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return (await response.json()) as Snapshot;
+  }
+
+  /**
+   * List all snapshots.
+   *
+   * @returns List of Snapshots.
+   */
+  async listSnapshots(): Promise<Snapshot[]> {
+    const url = `${this._baseUrl}/snapshots`;
+
+    const response = await this._fetch(url);
+
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+
+    const data = await response.json();
+    return (data.snapshots ?? []) as Snapshot[];
+  }
+
+  /**
+   * Delete a snapshot.
+   *
+   * @param snapshotId - Snapshot UUID.
+   */
+  async deleteSnapshot(snapshotId: string): Promise<void> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url, { method: "DELETE" });
+
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+  }
+
+  /**
+   * Poll until a snapshot reaches "ready" or "failed" status.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @param options - Polling options (timeout, pollInterval).
+   * @returns Snapshot in "ready" status.
+   */
+  async waitForSnapshot(
+    snapshotId: string,
+    options: WaitForSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { timeout = 300, pollInterval = 2.0, signal } = options;
+    const deadline = Date.now() + timeout * 1000;
+    let lastStatus = "building";
+
+    while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+
+      const snapshot = await this.getSnapshot(snapshotId, { signal });
+      lastStatus = snapshot.status;
+
+      if (snapshot.status === "ready") {
+        return snapshot;
+      }
+
+      if (snapshot.status === "failed") {
+        throw new LangSmithResourceCreationError(
+          snapshot.status_message ?? `Snapshot '${snapshotId}' build failed`,
+          "snapshot"
+        );
+      }
+
+      // Cap sleep to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
+    }
+
+    throw new LangSmithResourceTimeoutError(
+      `Snapshot '${snapshotId}' did not become ready within ${timeout}s`,
+      "snapshot",
       lastStatus
     );
   }
