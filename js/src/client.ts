@@ -119,6 +119,7 @@ export interface ClientConfig {
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
+  hideMetadata?: boolean | ((metadata: KVMap) => KVMap | Promise<KVMap>);
   /**
    * Whether to omit runtime information from traced runs.
    * If true, runtime information (SDK version, platform, etc.) and
@@ -775,6 +776,10 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
+  private hideMetadata?:
+    | boolean
+    | ((metadata: KVMap) => KVMap | Promise<KVMap>);
+
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
@@ -898,6 +903,8 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+    this.hideMetadata = config.hideMetadata ?? defaultConfig.hideMetadata;
+
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
@@ -954,6 +961,7 @@ export class Client implements LangSmithTracingClientInterface {
     webUrl?: string;
     hideInputs?: boolean;
     hideOutputs?: boolean;
+    hideMetadata?: boolean;
   } {
     const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
@@ -962,12 +970,15 @@ export class Client implements LangSmithTracingClientInterface {
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
       getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
+    const hideMetadata =
+      getLangSmithEnvironmentVariable("HIDE_METADATA") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
       webUrl: undefined,
       hideInputs: hideInputs,
       hideOutputs: hideOutputs,
+      hideMetadata: hideMetadata,
     };
   }
 
@@ -1066,6 +1077,19 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
+  private async processMetadata(metadata: KVMap): Promise<KVMap> {
+    if (this.hideMetadata === false) {
+      return metadata;
+    }
+    if (this.hideMetadata === true) {
+      return {};
+    }
+    if (typeof this.hideMetadata === "function") {
+      return this.hideMetadata(metadata);
+    }
+    return metadata;
+  }
+
   /**
    * Filter content from new_token events to prevent streaming LLM output
    * from being uploaded via events.
@@ -1102,6 +1126,11 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
+    }
+    if (runParams.extra != null && "metadata" in runParams.extra) {
+      runParams.extra.metadata = await this.processMetadata(
+        runParams.extra.metadata
+      );
     }
     if (runParams.events !== undefined) {
       runParams.events = this._filterNewTokenEvents(runParams.events);
@@ -2212,6 +2241,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
+    }
+    if (run.extra != null && "metadata" in run.extra) {
+      run.extra.metadata = await this.processMetadata(run.extra.metadata);
     }
 
     if (run.events) {
