@@ -346,7 +346,7 @@ class Context:
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
-        """Fetch the raw directory payload."""
+        """Fetch the raw directory payload, merged with owner/repo from the identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
         target = version if version is not None else (
             commit if commit != "latest" else None
@@ -359,7 +359,7 @@ class Context:
             f"{_PLATFORM_HUB}/{owner}/{name}/directories",
             params=params,
         )
-        return response.json()
+        return {**response.json(), "owner": owner, "repo": name}
 
     def _push_directory(
         self,
@@ -852,7 +852,7 @@ class AsyncContext:
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
-        """Fetch the raw directory payload."""
+        """Fetch the raw directory payload, merged with owner/repo from the identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
         target = version if version is not None else (
             commit if commit != "latest" else None
@@ -865,7 +865,7 @@ class AsyncContext:
             f"{_PLATFORM_HUB}/{owner}/{name}/directories",
             params=params,
         )
-        return response.json()
+        return {**response.json(), "owner": owner, "repo": name}
 
     async def _push_directory(
         self,
