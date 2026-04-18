@@ -58,6 +58,9 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     updates: Optional[dict]
+    client: Any  # Optional Client override — if set, uses this client for
+    # create_run/update_run instead of the parent RunTree's client.
+    # Useful when replicas need different hide_inputs/hide_outputs settings.
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
@@ -678,7 +681,8 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.create_run(
+                replica_client = replica.get("client") or self.client
+                replica_client.create_run(
                     **run_dict,
                     api_key=api_key,
                     api_url=api_url,
@@ -741,7 +745,8 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.update_run(
+                replica_client = replica.get("client") or self.client
+                replica_client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
                     run_type=run_dict.get("run_type"),
