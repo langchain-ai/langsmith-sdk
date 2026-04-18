@@ -34,8 +34,8 @@ importers:
         specifier: ^0.2.83
         version: 0.2.92(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@anthropic-ai/sdk':
-        specifier: ^0.89.0
-        version: 0.89.0(zod@3.25.76)
+        specifier: ^0.90.0
+        version: 0.90.0(zod@3.25.76)
       '@babel/preset-env':
         specifier: ^7.22.4
         version: 7.29.2(@babel/core@7.29.0)
@@ -226,8 +226,8 @@ packages:
       zod:
         optional: true
 
-  '@anthropic-ai/sdk@0.89.0':
-    resolution: {integrity: sha512-nyGau0zex62EpU91hsHa0zod973YEoiMgzWZ9hC55WdiOLrE4AGpcg4wXI7lFqtvMLqMcLfewQU9sHgQB6psow==}
+  '@anthropic-ai/sdk@0.90.0':
+    resolution: {integrity: sha512-MzZtPabJF1b0FTDl6Z6H5ljphPwACLGP13lu8MTiB8jXaW/YXlpOp+Po2cVou3MPM5+f5toyLnul9whKCy7fBg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -5001,7 +5001,7 @@ snapshots:
     optionalDependencies:
       zod: 3.25.76
 
-  '@anthropic-ai/sdk@0.89.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.90.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
