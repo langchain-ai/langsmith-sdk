@@ -1,9 +1,10 @@
-"""Context class for pulling and pushing non-prompt Hub repos (agents, skills, files)."""
+"""Context class for non-prompt Hub repos (agents, skills, files)."""
 
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Literal, Optional, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -39,8 +40,8 @@ class Context:
         """Pull an agent from Hub.
 
         Args:
-            identifier: The identifier of the agent (owner/name:hash, owner/name, or name).
-            version: The commit hash or tag to pull. Overrides the hash in the identifier.
+            identifier: The identifier (owner/name:hash, owner/name, or name).
+            version: Commit hash or tag to pull. Overrides the identifier hash.
 
         Returns:
             AgentContext: The agent snapshot.
@@ -346,7 +347,7 @@ class Context:
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
-        """Fetch the raw directory payload, merged with owner/repo from the identifier."""
+        """Fetch directory payload, merged with owner/repo from identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
         target = version if version is not None else (
             commit if commit != "latest" else None
@@ -852,7 +853,7 @@ class AsyncContext:
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
-        """Fetch the raw directory payload, merged with owner/repo from the identifier."""
+        """Fetch directory payload, merged with owner/repo from identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
         target = version if version is not None else (
             commit if commit != "latest" else None
