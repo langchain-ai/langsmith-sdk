@@ -100,6 +100,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith.context import Context
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -712,6 +713,7 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
+        "_context",
         "_manual_cleanup",
         "_pyo3_client",
         "compressed_traces",
@@ -980,6 +982,7 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
+        self._context = None
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
@@ -1417,6 +1420,17 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
+
+    @property
+    def context(self) -> Context:
+        """The Hub context API for agent/skill/file operations.
+
+        Returns:
+            Context: A Context instance bound to this client.
+        """
+        if self._context is None:
+            self._context = Context(self)
+        return self._context
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.

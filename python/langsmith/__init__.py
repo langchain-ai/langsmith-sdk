@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client
+    from langsmith.context import AsyncContext, Context
     from langsmith.evaluation import (
         aevaluate,
         aevaluate_existing,
@@ -145,6 +146,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import AsyncCache
 
         return AsyncCache
+    elif name == "Context":
+        from langsmith.context import Context
+
+        return Context
+    elif name == "AsyncContext":
+        from langsmith.context import AsyncContext
+
+        return AsyncContext
 
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
@@ -162,6 +171,8 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "Client",
     "AsyncClient",
+    "Context",
+    "AsyncContext",
     "PromptCache",
     "AsyncPromptCache",
     "Cache",
