@@ -1,0 +1,159 @@
+"""Integration tests for Context and AsyncContext against a live LangSmith backend.
+
+Prerequisites:
+- LANGSMITH_API_KEY and (optionally) LANGSMITH_ENDPOINT env vars set.
+- The backend must have the `agent_builder_hub_endpoints` feature flag enabled.
+"""
+
+import uuid
+
+import pytest
+
+from langsmith import AsyncClient, Client
+from langsmith import schemas as ls_schemas
+from tests.integration_tests.conftest import skip_if_rate_limited
+
+
+@pytest.fixture
+def langsmith_client() -> Client:
+    return Client(timeout_ms=(50_000, 90_000))
+
+
+@pytest.fixture
+def agent_identifier() -> str:
+    """A unique agent identifier for this test run."""
+    return f"-/ctx-test-agent-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def skill_identifier() -> str:
+    """A unique skill identifier for this test run."""
+    return f"-/ctx-test-skill-{uuid.uuid4().hex[:8]}"
+
+
+@skip_if_rate_limited
+def test_push_and_pull_agent_roundtrip(
+    langsmith_client: Client, agent_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        url = ctx.push_agent(
+            agent_identifier,
+            files={"AGENTS.md": ls_schemas.FileEntry(content="# Test Agent\n")},
+            description="integration test agent",
+        )
+        assert "/hub/" in url
+
+        agent = ctx.pull_agent(agent_identifier)
+        assert isinstance(agent, ls_schemas.AgentContext)
+        assert "AGENTS.md" in agent.files
+        entry = agent.files["AGENTS.md"]
+        assert isinstance(entry, ls_schemas.FileEntry)
+        assert entry.content == "# Test Agent\n"
+    finally:
+        try:
+            ctx.delete_agent(agent_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+def test_push_and_pull_skill_roundtrip(
+    langsmith_client: Client, skill_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        url = ctx.push_skill(
+            skill_identifier,
+            files={"SKILL.md": ls_schemas.FileEntry(content="# Test Skill\n")},
+            description="integration test skill",
+        )
+        assert "/hub/" in url
+
+        skill = ctx.pull_skill(skill_identifier)
+        assert isinstance(skill, ls_schemas.SkillContext)
+        assert "SKILL.md" in skill.files
+        entry = skill.files["SKILL.md"]
+        assert isinstance(entry, ls_schemas.FileEntry)
+        assert entry.content == "# Test Skill\n"
+    finally:
+        try:
+            ctx.delete_skill(skill_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+def test_push_agent_null_entry_deletes_file(
+    langsmith_client: Client, agent_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        ctx.push_agent(
+            agent_identifier,
+            files={
+                "keep.md": ls_schemas.FileEntry(content="keep"),
+                "remove.md": ls_schemas.FileEntry(content="remove"),
+            },
+        )
+        agent = ctx.pull_agent(agent_identifier)
+        assert "keep.md" in agent.files
+        assert "remove.md" in agent.files
+
+        ctx.push_agent(agent_identifier, files={"remove.md": None})
+        agent = ctx.pull_agent(agent_identifier)
+        assert "keep.md" in agent.files
+        assert "remove.md" not in agent.files
+    finally:
+        try:
+            ctx.delete_agent(agent_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+def test_push_agent_second_commit_updates_content(
+    langsmith_client: Client, agent_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        ctx.push_agent(
+            agent_identifier,
+            files={"AGENTS.md": ls_schemas.FileEntry(content="v1")},
+        )
+        ctx.push_agent(
+            agent_identifier,
+            files={"AGENTS.md": ls_schemas.FileEntry(content="v2")},
+        )
+
+        agent = ctx.pull_agent(agent_identifier)
+        entry = agent.files["AGENTS.md"]
+        assert isinstance(entry, ls_schemas.FileEntry)
+        assert entry.content == "v2"
+    finally:
+        try:
+            ctx.delete_agent(agent_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+async def test_async_push_and_pull_agent_roundtrip() -> None:
+    client = AsyncClient(timeout_ms=(50_000, 90_000))
+    identifier = f"-/ctx-test-async-agent-{uuid.uuid4().hex[:8]}"
+    try:
+        url = await client.context.push_agent(
+            identifier,
+            files={"AGENTS.md": ls_schemas.FileEntry(content="# Async Test\n")},
+        )
+        assert "/hub/" in url
+
+        agent = await client.context.pull_agent(identifier)
+        assert isinstance(agent, ls_schemas.AgentContext)
+        assert "AGENTS.md" in agent.files
+    finally:
+        try:
+            await client.context.delete_agent(identifier)
+        except Exception:
+            pass
+        await client.aclose()
