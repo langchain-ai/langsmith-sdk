@@ -52,6 +52,10 @@ import {
   AnnotationQueueWithDetails,
   AnnotationQueueRubricItem,
   FeedbackConfigSchema,
+  AgentContext,
+  SkillContext,
+  Entry,
+  DirectoryCommitResponse,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -6196,6 +6200,380 @@ export class Client implements LangSmithTracingClientInterface {
       description: options?.commitDescription,
     });
     return url;
+  }
+
+  /**
+   * Check if an agent repo exists.
+   */
+  public async agentExists(identifier: string): Promise<boolean> {
+    const [owner, name] = parsePromptIdentifier(identifier);
+    return this._repoExists(owner, name);
+  }
+
+  /**
+   * Check if a skill repo exists.
+   */
+  public async skillExists(identifier: string): Promise<boolean> {
+    const [owner, name] = parsePromptIdentifier(identifier);
+    return this._repoExists(owner, name);
+  }
+
+  /**
+   * Pull an agent directory from Hub.
+   * @param identifier The identifier (owner/name[:version]).
+   * @param options.version Commit hash or tag; overrides identifier's version.
+   */
+  public async pullAgent(
+    identifier: string,
+    options?: { version?: string }
+  ): Promise<AgentContext> {
+    return (await this._pullDirectory(
+      identifier,
+      options?.version
+    )) as AgentContext;
+  }
+
+  /**
+   * Pull a skill directory from Hub.
+   */
+  public async pullSkill(
+    identifier: string,
+    options?: { version?: string }
+  ): Promise<SkillContext> {
+    return (await this._pullDirectory(
+      identifier,
+      options?.version
+    )) as SkillContext;
+  }
+
+  /**
+   * Push an agent to Hub. Creates the repo if missing, patches metadata if
+   * provided, then commits the given files.
+   * @returns The URL of the resulting commit.
+   */
+  public async pushAgent(
+    identifier: string,
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<string> {
+    return this._pushDirectory(identifier, "agent", options);
+  }
+
+  /**
+   * Push a skill to Hub.
+   */
+  public async pushSkill(
+    identifier: string,
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<string> {
+    return this._pushDirectory(identifier, "skill", options);
+  }
+
+  /**
+   * Delete an agent and all its owned child file repos.
+   */
+  public async deleteAgent(identifier: string): Promise<void> {
+    return this._deleteDirectory(identifier);
+  }
+
+  /**
+   * Delete a skill and all its owned child file repos.
+   */
+  public async deleteSkill(identifier: string): Promise<void> {
+    return this._deleteDirectory(identifier);
+  }
+
+  /**
+   * List agent repos. Yields one at a time, auto-paginating.
+   */
+  public async *listAgents(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    yield* this._listReposByType("agent", options);
+  }
+
+  /**
+   * List skill repos. Yields one at a time, auto-paginating.
+   */
+  public async *listSkills(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    yield* this._listReposByType("skill", options);
+  }
+
+  private async *_listReposByType(
+    repoType: "agent" | "skill",
+    options?: { isPublic?: boolean; isArchived?: boolean; query?: string }
+  ): AsyncIterableIterator<Prompt> {
+    const params = new URLSearchParams();
+    params.append("repo_type", repoType);
+    params.append("is_archived", (!!options?.isArchived).toString());
+    if (options?.isPublic !== undefined) {
+      params.append("is_public", options.isPublic.toString());
+    }
+    if (options?.query) {
+      params.append("query", options.query);
+    }
+
+    for await (const repos of this._getPaginated<Prompt, ListPromptsResponse>(
+      "/repos",
+      params,
+      (res) => res.repos
+    )) {
+      yield* repos;
+    }
+  }
+
+  private async _pullDirectory(
+    identifier: string,
+    version?: string
+  ): Promise<AgentContext | SkillContext> {
+    const [owner, name, parsedVersion] = parsePromptIdentifier(identifier);
+    const resolvedVersion =
+      version ?? (parsedVersion !== "latest" ? parsedVersion : undefined);
+
+    const url = new URL(
+      `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`
+    );
+    if (resolvedVersion) {
+      url.searchParams.set("commit", resolvedVersion);
+    }
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(url.toString(), {
+        method: "GET",
+        headers: this._mergedHeaders,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+      await raiseForStatus(res, "pull directory");
+      return res;
+    });
+    const data = (await response.json()) as Partial<AgentContext> & {
+      files: Record<string, Entry>;
+      commit_hash: string;
+    };
+    return {
+      owner: data.owner ?? owner,
+      repo: data.repo ?? name,
+      commit_hash: data.commit_hash,
+      files: data.files,
+    };
+  }
+
+  private async _pushDirectory(
+    identifier: string,
+    repoType: "agent" | "skill",
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<string> {
+    const fileCount = Object.keys(options.files).length;
+    if (fileCount > 500) {
+      throw new Error(`Too many files (${fileCount} > 500)`);
+    }
+    if (
+      options.parentCommit !== undefined &&
+      (options.parentCommit.length < 8 || options.parentCommit.length > 64)
+    ) {
+      throw new Error("parent_commit must be 8-64 characters");
+    }
+
+    const [owner, name] = parsePromptIdentifier(identifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError(`push ${repoType}`, owner);
+    }
+
+    if (await this._repoExists(owner, name)) {
+      if (
+        options.description !== undefined ||
+        options.readme !== undefined ||
+        options.tags !== undefined ||
+        options.isPublic !== undefined
+      ) {
+        await this._updateRepoMetadata(owner, name, options);
+      }
+    } else {
+      if (!/^[a-z][a-z0-9-_]*$/.test(name)) {
+        throw new Error(
+          `Invalid repo_handle ${JSON.stringify(
+            name
+          )}: must match /^[a-z][a-z0-9-_]*$/`
+        );
+      }
+      await this._createRepo(name, repoType, options);
+    }
+
+    const body: Record<string, unknown> = { files: options.files };
+    if (options.parentCommit) {
+      body.parent_commit = options.parentCommit;
+    }
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories/commits`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: JSON.stringify(body),
+        }
+      );
+      await raiseForStatus(res, `push ${repoType}`);
+      return res;
+    });
+    const data = (await response.json()) as DirectoryCommitResponse;
+    const commitHash = data.commit.commit_hash;
+    return `${this.getHostUrl()}/hub/${owner}/${name}:${commitHash.slice(
+      0,
+      8
+    )}`;
+  }
+
+  private async _deleteDirectory(identifier: string): Promise<void> {
+    const [owner, name] = parsePromptIdentifier(identifier);
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
+        {
+          method: "DELETE",
+          headers: this._mergedHeaders,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete directory");
+      return res;
+    });
+  }
+
+  private async _repoExists(owner: string, name: string): Promise<boolean> {
+    try {
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}/repos/${owner}/${name}`, {
+          method: "GET",
+          headers: this._mergedHeaders,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, "check repo exists");
+        return res;
+      });
+      return true;
+    } catch (e) {
+      if (isLangSmithNotFoundError(e)) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  private async _createRepo(
+    name: string,
+    repoType: "agent" | "skill",
+    options: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<void> {
+    const body: Record<string, unknown> = {
+      repo_handle: name,
+      repo_type: repoType,
+      is_public: !!options.isPublic,
+    };
+    if (options.description !== undefined)
+      body.description = options.description;
+    if (options.readme !== undefined) body.readme = options.readme;
+    if (options.tags !== undefined) body.tags = options.tags;
+
+    try {
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}/repos/`, {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: JSON.stringify(body),
+        });
+        await raiseForStatus(res, `create ${repoType}`);
+        return res;
+      });
+    } catch (e) {
+      if (
+        e != null &&
+        typeof e === "object" &&
+        "name" in e &&
+        (e as { name?: string }).name === "LangSmithConflictError"
+      ) {
+        return;
+      }
+      throw e;
+    }
+  }
+
+  private async _updateRepoMetadata(
+    owner: string,
+    name: string,
+    options: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (options.description !== undefined)
+      body.description = options.description;
+    if (options.readme !== undefined) body.readme = options.readme;
+    if (options.tags !== undefined) body.tags = options.tags;
+    if (options.isPublic !== undefined) body.is_public = options.isPublic;
+    if (Object.keys(body).length === 0) return;
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/repos/${owner}/${name}`, {
+        method: "PATCH",
+        headers: {
+          ...this._mergedHeaders,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: JSON.stringify(body),
+      });
+      await raiseForStatus(res, "update repo metadata");
+      return res;
+    });
   }
 
   /**
