@@ -543,6 +543,51 @@ export interface LikePromptResponse {
   likes: number;
 }
 
+export interface FileEntry {
+  type: "file";
+  content: string;
+}
+
+export interface AgentEntry {
+  type: "agent";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export interface SkillEntry {
+  type: "skill";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export type Entry = FileEntry | AgentEntry | SkillEntry;
+
+export interface AgentContext {
+  owner: string;
+  repo: string;
+  commit_hash: string;
+  files: Record<string, Entry>;
+}
+
+export interface SkillContext {
+  owner: string;
+  repo: string;
+  commit_hash: string;
+  files: Record<string, Entry>;
+}
+
+export interface DirectoryCommitResponse {
+  commit: {
+    id: string;
+    commit_hash: string;
+    created_at?: string;
+  };
+}
+
 export interface LangSmithSettings {
   id: string;
   display_name: string;

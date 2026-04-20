@@ -1117,6 +1117,92 @@ class PromptSortField(str, Enum):
     """Number of likes."""
 
 
+MAX_CONTEXT_ENTRIES = 500
+"""The maximum number of entries per directory commit."""
+
+
+class FileEntry(BaseModel):
+    """A file with inline content."""
+
+    type: Literal["file"] = "file"
+    """The entry type."""
+    content: str
+    """The file content."""
+
+
+class AgentEntry(BaseModel):
+    """A link to another agent repo."""
+
+    type: Literal["agent"] = "agent"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+class SkillEntry(BaseModel):
+    """A link to a skill repo."""
+
+    type: Literal["skill"] = "skill"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator="type")]
+"""A hub directory entry, discriminated by `type`."""
+
+
+class AgentContext(BaseModel):
+    """An agent pulled from hub."""
+
+    owner: str
+    """The handle of the owner."""
+    repo: str
+    """The name of the repo."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the agent."""
+
+
+class SkillContext(BaseModel):
+    """A skill pulled from hub."""
+
+    owner: str
+    """The handle of the owner."""
+    repo: str
+    """The name of the repo."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the skill."""
+
+
+class FileContext(BaseModel):
+    """A file repo pulled from hub."""
+
+    owner: str
+    """The handle of the owner."""
+    repo: str
+    """The name of the repo."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, FileEntry]
+    """The files in the repo."""
+
+
 class InputTokenDetails(TypedDict, total=False):
     """Breakdown of input token counts.
 
