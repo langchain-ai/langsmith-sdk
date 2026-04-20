@@ -76,7 +76,11 @@ import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
+import {
+  raiseForStatus,
+  isLangSmithNotFoundError,
+  isLangSmithConflictError,
+} from "./utils/error.js";
 import {
   PromptCache,
   promptCacheSingleton,
@@ -6460,11 +6464,12 @@ export class Client implements LangSmithTracingClientInterface {
         await this._updateRepoMetadata(owner, name, options);
       }
     } else {
-      if (!/^[a-z][a-z0-9-_]*$/.test(name)) {
+      const REPO_HANDLE_PATTERN = /^[a-z][a-z0-9-_]*$/;
+      if (!REPO_HANDLE_PATTERN.test(name)) {
         throw new Error(
           `Invalid repo_handle ${JSON.stringify(
             name,
-          )}: must match /^[a-z][a-z0-9-_]*$/`,
+          )}: must match ${REPO_HANDLE_PATTERN}`,
         );
       }
       await this._createRepo(name, repoType, options);
@@ -6502,6 +6507,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _deleteDirectory(identifier: string): Promise<void> {
     const [owner, name] = parsePromptIdentifier(identifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("delete", owner);
+    }
     await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
@@ -6574,12 +6582,7 @@ export class Client implements LangSmithTracingClientInterface {
         return res;
       });
     } catch (e) {
-      if (
-        e != null &&
-        typeof e === "object" &&
-        "name" in e &&
-        (e as { name?: string }).name === "LangSmithConflictError"
-      ) {
+      if (isLangSmithConflictError(e)) {
         return;
       }
       throw e;

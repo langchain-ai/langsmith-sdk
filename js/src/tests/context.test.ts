@@ -285,6 +285,18 @@ describe("Context (agent/skill) on Client", () => {
       expect(url).toContain("/v1/platform/hub/repos/-/old-agent/directories");
       expect(init.method).toBe("DELETE");
     });
+
+    it("throws owner conflict before calling DELETE", async () => {
+      const client = _mockClient();
+      jest
+        .spyOn(client as any, "_currentTenantIsOwner")
+        .mockResolvedValue(false);
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+      await expect(client.deleteAgent("other/repo")).rejects.toThrow(
+        /owner mismatch/
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe("agentExists / skillExists", () => {
