@@ -18,7 +18,46 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     for attr in ("status_code", "code", "status"):
         if getattr(exc, attr, None) == 429:
             return True
-    return False
+    # Last-ditch: some libraries embed the 429 only in the message.
+    msg = str(exc)
+    return "RESOURCE_EXHAUSTED" in msg or ("429" in msg and "rate" in msg.lower())
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Convert background-thread rate-limit errors into skips.
+
+    Some client libraries (e.g. google.adk) run network calls in a worker
+    thread; a 429 there surfaces to the test as a silently-empty response
+    and an ``assert X is not None`` failure, not as the 429 itself. Record
+    thread exceptions during the test and, if the test fails with one of
+    them being a rate-limit error, skip instead of failing.
+    """
+    import threading
+
+    captured: list = []
+    original = threading.excepthook
+
+    def _capture(args):
+        captured.append(args)
+        return original(args)
+
+    threading.excepthook = _capture
+    try:
+        outcome = yield
+    finally:
+        threading.excepthook = original
+
+    # Only rewrite failing outcomes.
+    if outcome.excinfo is None:
+        return
+    for args in captured:
+        exc = getattr(args, "exc_value", None)
+        if exc is not None and _is_rate_limit_error(exc):
+            outcome.force_exception(
+                pytest.skip.Exception(f"Rate limited in background thread: {exc}")
+            )
+            return
 
 
 def skip_if_rate_limited(fn):
