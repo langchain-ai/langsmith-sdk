@@ -104,7 +104,7 @@ def test_pull_agent_hits_correct_url_and_parses() -> None:
     ctx = Context(client)
     agent = ctx.pull_agent("owner/my-agent")
     call = client.request_with_retries.call_args
-    assert call.args == ("GET", "/api/v1/platform/hub/repos/owner/my-agent/directories")
+    assert call.args == ("GET", "/v1/platform/hub/repos/owner/my-agent/directories")
     assert call.kwargs.get("params") == {}
     assert isinstance(agent, ls_schemas.AgentContext)
     assert agent.owner == "owner"
@@ -172,7 +172,7 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     commit_call = client.request_with_retries.call_args_list[2]
     assert commit_call.args == (
         "POST",
-        "/api/v1/platform/hub/repos/-/my-agent/directories/commits",
+        "/v1/platform/hub/repos/-/my-agent/directories/commits",
     )
     assert commit_call.kwargs["json"]["files"] == {
         "main.py": {"type": "file", "content": "x"}
@@ -263,7 +263,7 @@ def test_delete_agent_hits_directories_delete() -> None:
     call = client.request_with_retries.call_args
     assert call.args == (
         "DELETE",
-        "/api/v1/platform/hub/repos/-/old-agent/directories",
+        "/v1/platform/hub/repos/-/old-agent/directories",
     )
 
 
@@ -298,7 +298,7 @@ async def test_async_pull_agent_parses_and_merges_identifier() -> None:
     assert agent.repo == "my-agent"
     client._arequest_with_retries.assert_awaited_once_with(
         "GET",
-        "/api/v1/platform/hub/repos/owner/my-agent/directories",
+        "/v1/platform/hub/repos/owner/my-agent/directories",
         params={},
     )
 
@@ -332,7 +332,7 @@ async def test_async_delete_agent_hits_directories_delete() -> None:
     await ctx.delete_agent("-/old-agent")
     client._arequest_with_retries.assert_awaited_once_with(
         "DELETE",
-        "/api/v1/platform/hub/repos/-/old-agent/directories",
+        "/v1/platform/hub/repos/-/old-agent/directories",
     )
 
 

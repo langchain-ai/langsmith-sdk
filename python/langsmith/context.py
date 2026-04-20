@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 _RepoType = Literal["agent", "skill", "file"]
 _REPO_HANDLE_PATTERN = re.compile(r"^[a-z][a-z0-9-_]*$")
-_PLATFORM_HUB = "/api/v1/platform/hub/repos"
+_PLATFORM_HUB = "/v1/platform/hub/repos"
 _HUB = "/api/v1/hub/repos"
 
 
