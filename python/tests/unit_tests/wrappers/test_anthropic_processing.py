@@ -1,5 +1,6 @@
 """Unit tests for Anthropic wrapper processing functions."""
 
+import warnings
 from unittest.mock import MagicMock
 
 from langsmith._internal._orjson import loads as _loads
@@ -180,3 +181,65 @@ class TestMessageToOutputsToolCalls:
         assert result["tool_calls"][1]["index"] == 1
         assert result["tool_calls"][0]["function"]["name"] == "get_weather"
         assert result["tool_calls"][1]["function"]["name"] == "get_stock"
+
+
+class TestMessageToOutputsParsedMessage:
+    """Test that _message_to_outputs suppresses Pydantic warnings for parsed messages."""
+
+    def test_no_pydantic_warning_for_parsed_beta_message(self):
+        """ParsedBetaMessage triggers PydanticSerializationUnexpectedValue when
+        model_dump() is called directly. Verify no warnings leak out."""
+        msg = MagicMock()
+        # Simulate ParsedBetaMessage: has parsed_output and emits warning on model_dump
+        msg.parsed_output = MagicMock()
+
+        def _model_dump_with_warning():
+            warnings.warn(
+                "PydanticSerializationUnexpectedValue: serialized value may not be as expected",
+                UserWarning,
+                stacklevel=2,
+            )
+            return {
+                "id": "msg_beta_123",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello"}],
+                "model": "claude-sonnet-4-20250514",
+                "stop_reason": "end_turn",
+                "type": "message",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            }
+
+        msg.model_dump.side_effect = _model_dump_with_warning
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _message_to_outputs(msg)
+
+        assert len(caught) == 0, f"Expected no warnings, got: {[str(w.message) for w in caught]}"
+        assert result["content"] == [{"type": "text", "text": "Hello"}]
+
+    def test_regular_message_warnings_not_suppressed(self):
+        """For regular (non-parsed) messages, warnings from model_dump are not suppressed."""
+        msg = MagicMock()
+        del msg.parsed_output  # ensure attribute does not exist
+
+        def _model_dump_with_warning():
+            warnings.warn("some other warning", UserWarning, stacklevel=2)
+            return {
+                "id": "msg_123",
+                "role": "assistant",
+                "content": "Hello",
+                "model": "claude-sonnet-4-20250514",
+                "stop_reason": "end_turn",
+                "type": "message",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            }
+
+        msg.model_dump.side_effect = _model_dump_with_warning
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = _message_to_outputs(msg)
+
+        assert len(caught) == 1
+        assert "some other warning" in str(caught[0].message)
