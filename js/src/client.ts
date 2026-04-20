@@ -1128,9 +1128,10 @@ export class Client implements LangSmithTracingClientInterface {
       runParams.outputs = await this.processOutputs(runParams.outputs);
     }
     if (runParams.extra != null && "metadata" in runParams.extra) {
-      runParams.extra.metadata = await this.processMetadata(
-        runParams.extra.metadata
-      );
+      runParams.extra = {
+        ...runParams.extra,
+        metadata: await this.processMetadata(runParams.extra.metadata),
+      };
     }
     if (runParams.events !== undefined) {
       runParams.events = this._filterNewTokenEvents(runParams.events);
@@ -2243,7 +2244,10 @@ export class Client implements LangSmithTracingClientInterface {
       run.outputs = await this.processOutputs(run.outputs);
     }
     if (run.extra != null && "metadata" in run.extra) {
-      run.extra.metadata = await this.processMetadata(run.extra.metadata);
+      run.extra = {
+        ...run.extra,
+        metadata: await this.processMetadata(run.extra.metadata),
+      };
     }
 
     if (run.events) {
