@@ -982,7 +982,7 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-        self._context = None
+        self._context: Optional[Context] = None
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
