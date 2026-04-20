@@ -497,7 +497,7 @@ class Context:
         if tags is not None:
             body["tags"] = list(tags)
         try:
-            self._client.request_with_retries("POST", "/api/v1/repos/", json=body)
+            self._client.request_with_retries("POST", "/repos/", json=body)
         except ls_utils.LangSmithConflictError:
             pass
 
@@ -1004,9 +1004,7 @@ class AsyncContext:
         if tags is not None:
             body["tags"] = list(tags)
         try:
-            await self._client._arequest_with_retries(
-                "POST", "/api/v1/repos/", json=body
-            )
+            await self._client._arequest_with_retries("POST", "/repos/", json=body)
         except ls_utils.LangSmithConflictError:
             pass
 
