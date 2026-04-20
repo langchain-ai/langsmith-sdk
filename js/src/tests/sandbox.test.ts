@@ -363,6 +363,47 @@ describe("SandboxClient - createSandbox", () => {
     ).rejects.toThrow(LangSmithValidationError);
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it("should forward proxyConfig in the request body under proxy_config", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        template_name: "python-sandbox",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const proxyConfig = {
+      access_control: {
+        allow_list: ["github.com", "*.example.com"],
+      },
+    };
+    await client.createSandbox("python-sandbox", { proxyConfig });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toEqual(proxyConfig);
+  });
+
+  it("should omit proxy_config from the request body when not provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        template_name: "python-sandbox",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.createSandbox("python-sandbox");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toBeUndefined();
+  });
 });
 
 describe("validateTtl", () => {

@@ -45,6 +45,8 @@ export type {
   SandboxClientConfig,
   RunOptions,
   CreateSandboxOptions,
+  SandboxAccessControl,
+  SandboxProxyConfig,
   CreateSnapshotOptions,
   CaptureSnapshotOptions,
   WaitForSnapshotOptions,

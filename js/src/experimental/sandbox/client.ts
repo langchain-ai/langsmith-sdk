@@ -745,6 +745,7 @@ export class SandboxClient {
       vCpus,
       memBytes,
       fsCapacityBytes,
+      proxyConfig,
     } = options;
 
     if (!templateName && !snapshotId) {
@@ -788,6 +789,9 @@ export class SandboxClient {
     }
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
+    }
+    if (proxyConfig !== undefined) {
+      payload.proxy_config = proxyConfig;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;

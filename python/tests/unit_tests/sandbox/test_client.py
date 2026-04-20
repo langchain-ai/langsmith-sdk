@@ -357,6 +357,54 @@ class TestSandboxOperations:
         assert sandbox.id == "550e8400-e29b-41d4-a716-446655440003"
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
+    def test_create_sandbox_forwards_proxy_config(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """proxy_config should appear verbatim in the POST body."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+                "template_name": "python-sandbox",
+            },
+            status_code=201,
+        )
+
+        proxy_config = {
+            "access_control": {"allow_list": ["github.com", "*.example.com"]},
+        }
+        client.create_sandbox(
+            template_name="python-sandbox",
+            proxy_config=proxy_config,
+        )
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["proxy_config"] == proxy_config
+
+    def test_create_sandbox_omits_proxy_config_when_none(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """proxy_config must not appear in the payload when not provided."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+                "template_name": "python-sandbox",
+            },
+            status_code=201,
+        )
+
+        client.create_sandbox(template_name="python-sandbox")
+        body = json.loads(httpx_mock.get_request().content)
+        assert "proxy_config" not in body
+
     def test_create_sandbox_merges_custom_headers(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):

@@ -281,6 +281,35 @@ export interface RunOptions {
 }
 
 /**
+ * Network access-control rules for a sandbox's proxy sidecar.
+ *
+ * Supported pattern types: exact domains, globs (e.g. `*.example.com`),
+ * IPs, CIDR ranges (e.g. `10.0.0.0/8`), and regex (`~pattern`).
+ *
+ * Only one of `allow_list` and `deny_list` may be populated.
+ */
+export interface SandboxAccessControl {
+  /** Hosts the sandbox is allowed to reach. */
+  allow_list?: string[];
+  /** Hosts the sandbox is blocked from reaching. */
+  deny_list?: string[];
+}
+
+/**
+ * Full proxy configuration forwarded to the sandbox server as-is (snake_case
+ * so it's wire-compatible with the backend). Mirrors the server's
+ * `ProxyConfig` type.
+ */
+export interface SandboxProxyConfig {
+  /** Header-injection rules keyed by host pattern. */
+  rules?: unknown[];
+  /** Hosts that bypass the proxy entirely. */
+  no_proxy?: string[];
+  /** Allow/deny list enforced at the proxy sidecar. */
+  access_control?: SandboxAccessControl;
+}
+
+/**
  * Options for creating a sandbox.
  */
 export interface CreateSandboxOptions {
@@ -320,6 +349,13 @@ export interface CreateSandboxOptions {
   memBytes?: number;
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
+  /**
+   * Per-sandbox proxy configuration. Use
+   * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
+   * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
+   * server as-is on the wire.
+   */
+  proxyConfig?: SandboxProxyConfig;
 }
 
 /**

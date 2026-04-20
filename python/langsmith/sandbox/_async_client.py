@@ -727,6 +727,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        proxy_config: Optional[dict[str, Any]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -759,6 +760,14 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            proxy_config: Per-sandbox proxy configuration forwarded to the
+                server as-is. Shape matches the backend `proxy_config` field:
+                ``{"rules": [...], "no_proxy": [...], "access_control":
+                {"allow_list": [...]}}`` or ``{"access_control":
+                {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
+                restrict outbound HTTPS to a set of host patterns (exact
+                domains, globs like ``*.example.com``, IPs, CIDRs, or
+                ``~regex``).
 
         Returns:
             AsyncSandbox instance.
@@ -780,6 +789,7 @@ class AsyncSandboxClient:
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
+            proxy_config=proxy_config,
             headers=headers,
         )
         sb._auto_delete = True
@@ -798,6 +808,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        proxy_config: Optional[dict[str, Any]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -825,6 +836,14 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            proxy_config: Per-sandbox proxy configuration forwarded to the
+                server as-is. Shape matches the backend `proxy_config` field:
+                ``{"rules": [...], "no_proxy": [...], "access_control":
+                {"allow_list": [...]}}`` or ``{"access_control":
+                {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
+                restrict outbound HTTPS to a set of host patterns (exact
+                domains, globs like ``*.example.com``, IPs, CIDRs, or
+                ``~regex``).
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -868,6 +887,8 @@ class AsyncSandboxClient:
             payload["mem_bytes"] = mem_bytes
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if proxy_config is not None:
+            payload["proxy_config"] = proxy_config
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
