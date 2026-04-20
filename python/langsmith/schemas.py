@@ -1165,8 +1165,7 @@ Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator=
 
 
 class AgentContext(BaseModel):
-    """An agent pulled from hub.
-    """
+    """An agent pulled from hub."""
 
     owner: str
     """The handle of the owner."""
