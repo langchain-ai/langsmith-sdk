@@ -23,6 +23,7 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith.context import AsyncContext
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
@@ -39,6 +40,7 @@ class AsyncClient:
         "_cache",
         "_custom_headers",
         "_api_key",
+        "_context",
     )
 
     _custom_headers: dict[str, str]
@@ -134,6 +136,7 @@ class AsyncClient:
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
+        self._context: Optional[AsyncContext] = None
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -196,6 +199,17 @@ class AsyncClient:
     def _host_url(self) -> str:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self._api_url)
+
+    @property
+    def context(self) -> AsyncContext:
+        """The async Hub context API for agent/skill/file operations.
+
+        Returns:
+            AsyncContext: An AsyncContext instance bound to this client.
+        """
+        if self._context is None:
+            self._context = AsyncContext(self)
+        return self._context
 
     async def _arequest_with_retries(
         self,
