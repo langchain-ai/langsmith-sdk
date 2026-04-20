@@ -1195,21 +1195,6 @@ class SkillContext(BaseModel):
     """The files in the skill."""
 
 
-class FileContext(BaseModel):
-    """A file repo pulled from hub."""
-
-    owner: str
-    """The handle of the owner."""
-    repo: str
-    """The name of the repo."""
-    commit_id: UUID
-    """The commit ID."""
-    commit_hash: str
-    """The commit hash."""
-    files: dict[str, FileEntry]
-    """The files in the repo."""
-
-
 class DirectoryCommitInfo(BaseModel):
     """Commit details returned from a directory commit."""
 
