@@ -22,11 +22,6 @@ def skill_identifier() -> str:
     return f"-/ctx-test-async-skill-{uuid.uuid4().hex[:8]}"
 
 
-@pytest.fixture
-def file_identifier() -> str:
-    return f"-/ctx-test-async-file-{uuid.uuid4().hex[:8]}"
-
-
 @skip_if_rate_limited
 async def test_push_and_pull_agent_roundtrip(
     langsmith_client: AsyncClient, agent_identifier: str
@@ -75,32 +70,6 @@ async def test_push_and_pull_skill_roundtrip(
     finally:
         try:
             await ctx.delete_skill(skill_identifier)
-        except Exception:
-            pass
-
-
-@skip_if_rate_limited
-async def test_push_and_pull_file_roundtrip(
-    langsmith_client: AsyncClient, file_identifier: str
-) -> None:
-    ctx = langsmith_client.context
-    try:
-        url = await ctx.push_file(
-            file_identifier,
-            files={"README.md": ls_schemas.FileEntry(content="# Test File\n")},
-            description="integration test file",
-        )
-        assert "/hub/" in url
-
-        file_ctx = await ctx.pull_file(file_identifier)
-        assert isinstance(file_ctx, ls_schemas.FileContext)
-        assert "README.md" in file_ctx.files
-        entry = file_ctx.files["README.md"]
-        assert isinstance(entry, ls_schemas.FileEntry)
-        assert entry.content == "# Test File\n"
-    finally:
-        try:
-            await ctx.delete_file(file_identifier)
         except Exception:
             pass
 

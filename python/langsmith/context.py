@@ -496,7 +496,10 @@ class Context:
             body["readme"] = readme
         if tags is not None:
             body["tags"] = list(tags)
-        self._client.request_with_retries("POST", "/api/v1/repos/", json=body)
+        try:
+            self._client.request_with_retries("POST", "/api/v1/repos/", json=body)
+        except ls_utils.LangSmithConflictError:
+            pass
 
     def _update_repo_metadata(
         self,
@@ -1000,7 +1003,12 @@ class AsyncContext:
             body["readme"] = readme
         if tags is not None:
             body["tags"] = list(tags)
-        await self._client._arequest_with_retries("POST", "/api/v1/repos/", json=body)
+        try:
+            await self._client._arequest_with_retries(
+                "POST", "/api/v1/repos/", json=body
+            )
+        except ls_utils.LangSmithConflictError:
+            pass
 
     async def _update_repo_metadata(
         self,
