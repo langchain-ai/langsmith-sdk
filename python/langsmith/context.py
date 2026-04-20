@@ -184,6 +184,30 @@ class Context:
         """
         self._delete_directory(identifier)
 
+    def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists.
+
+        Args:
+            identifier: The identifier of the agent.
+
+        Returns:
+            bool: True if the repo exists, False otherwise.
+        """
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return self._repo_exists(owner, name)
+
+    def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists.
+
+        Args:
+            identifier: The identifier of the skill.
+
+        Returns:
+            bool: True if the repo exists, False otherwise.
+        """
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return self._repo_exists(owner, name)
+
     def list_agents(
         self,
         *,
@@ -588,6 +612,30 @@ class AsyncContext:
             HTTPError: If the server request fails.
         """
         await self._delete_directory(identifier)
+
+    async def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists.
+
+        Args:
+            identifier: The identifier of the agent.
+
+        Returns:
+            bool: True if the repo exists, False otherwise.
+        """
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return await self._repo_exists(owner, name)
+
+    async def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists.
+
+        Args:
+            identifier: The identifier of the skill.
+
+        Returns:
+            bool: True if the repo exists, False otherwise.
+        """
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return await self._repo_exists(owner, name)
 
     async def list_agents(
         self,

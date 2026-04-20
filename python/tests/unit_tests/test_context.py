@@ -283,6 +283,29 @@ def test_delete_agent_hits_directories_delete() -> None:
     )
 
 
+def test_agent_exists_returns_true_on_200() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.return_value = _response({})
+    ctx = Context(client)
+    assert ctx.agent_exists("-/my-agent") is True
+
+
+def test_agent_exists_returns_false_on_not_found() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
+        "not found"
+    )
+    ctx = Context(client)
+    assert ctx.agent_exists("-/nope") is False
+
+
+def test_skill_exists_returns_true_on_200() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.return_value = _response({})
+    ctx = Context(client)
+    assert ctx.skill_exists("-/my-skill") is True
+
+
 def test_list_agents_passes_repo_type_filter() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({"repos": [], "total": 0})
@@ -372,6 +395,22 @@ async def test_async_delete_agent_hits_directories_delete() -> None:
         "DELETE",
         "/v1/platform/hub/repos/-/old-agent/directories",
     )
+
+
+async def test_async_agent_exists_returns_true_on_200() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.return_value = _response({})
+    ctx = AsyncContext(client)
+    assert await ctx.agent_exists("-/my-agent") is True
+
+
+async def test_async_skill_exists_returns_false_on_not_found() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
+        "not found"
+    )
+    ctx = AsyncContext(client)
+    assert await ctx.skill_exists("-/nope") is False
 
 
 async def test_async_list_skills_passes_filter() -> None:
