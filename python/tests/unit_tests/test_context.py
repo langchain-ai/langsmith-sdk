@@ -165,7 +165,7 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     assert client.request_with_retries.call_count == 3
 
     create_call = client.request_with_retries.call_args_list[1]
-    assert create_call.args == ("POST", "/api/v1/platform/hub/repos/")
+    assert create_call.args == ("POST", "/api/v1/repos/")
     assert create_call.kwargs["json"]["repo_type"] == "agent"
     assert create_call.kwargs["json"]["repo_handle"] == "my-agent"
 

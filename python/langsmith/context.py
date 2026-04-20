@@ -496,7 +496,7 @@ class Context:
             body["readme"] = readme
         if tags is not None:
             body["tags"] = list(tags)
-        self._client.request_with_retries("POST", f"{_PLATFORM_HUB}/", json=body)
+        self._client.request_with_retries("POST", "/api/v1/repos/", json=body)
 
     def _update_repo_metadata(
         self,
@@ -1001,7 +1001,7 @@ class AsyncContext:
         if tags is not None:
             body["tags"] = list(tags)
         await self._client._arequest_with_retries(
-            "POST", f"{_PLATFORM_HUB}/", json=body
+            "POST", "/api/v1/repos/", json=body
         )
 
     async def _update_repo_metadata(
