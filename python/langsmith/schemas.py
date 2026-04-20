@@ -1165,12 +1165,15 @@ Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator=
 
 
 class AgentContext(BaseModel):
-    """An agent pulled from hub."""
+    """An agent pulled from hub.
+    """
 
     owner: str
     """The handle of the owner."""
     repo: str
     """The name of the repo."""
+    commit_id: UUID
+    """The commit ID."""
     commit_hash: str
     """The commit hash."""
     files: dict[str, Entry]
@@ -1184,6 +1187,8 @@ class SkillContext(BaseModel):
     """The handle of the owner."""
     repo: str
     """The name of the repo."""
+    commit_id: UUID
+    """The commit ID."""
     commit_hash: str
     """The commit hash."""
     files: dict[str, Entry]
@@ -1197,10 +1202,30 @@ class FileContext(BaseModel):
     """The handle of the owner."""
     repo: str
     """The name of the repo."""
+    commit_id: UUID
+    """The commit ID."""
     commit_hash: str
     """The commit hash."""
     files: dict[str, FileEntry]
     """The files in the repo."""
+
+
+class DirectoryCommitInfo(BaseModel):
+    """Commit details returned from a directory commit."""
+
+    id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    created_at: datetime
+    """When the commit was created."""
+
+
+class DirectoryCommitResponse(BaseModel):
+    """Response body for ``POST /directories/commits``."""
+
+    commit: DirectoryCommitInfo
+    """The created commit."""
 
 
 class InputTokenDetails(TypedDict, total=False):
