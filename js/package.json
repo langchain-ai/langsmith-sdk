@@ -452,7 +452,12 @@
   },
   "pnpm": {
     "overrides": {
-      "js-yaml": "^4.1.1"
+      "js-yaml": "^4.1.1",
+      "vite": ">=7.3.2 <8.0.0",
+      "hono": ">=4.12.12",
+      "@hono/node-server": ">=1.19.13",
+      "@anthropic-ai/sdk": ">=0.81.0",
+      "langsmith": ">=0.5.18"
     }
   },
   "browser": {
