@@ -87,6 +87,12 @@ class TracingQueueItem:
     authorization: Optional[str]
     cookie: Optional[str]
     otel_context: Optional[Context]
+    destination: Optional[str]
+    """Per-run routing override: one of ``"langsmith"``, ``"otel"``, ``"hybrid"``.
+
+    ``None`` means "use the global tracing mode" (see :func:`get_tracing_mode`),
+    preserving legacy behaviour for every item not carrying a per-run override.
+    """
 
     __slots__ = (
         "priority",
@@ -98,6 +104,7 @@ class TracingQueueItem:
         "authorization",
         "cookie",
         "otel_context",
+        "destination",
     )
 
     def __init__(
@@ -111,6 +118,7 @@ class TracingQueueItem:
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
         otel_context: Optional[Context] = None,
+        destination: Optional[str] = None,
     ) -> None:
         self.priority = priority
         self.item = item
@@ -121,6 +129,7 @@ class TracingQueueItem:
         self.authorization = authorization
         self.cookie = cookie
         self.otel_context = otel_context
+        self.destination = destination
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
@@ -594,6 +603,60 @@ def get_tracing_mode() -> tuple[bool, bool]:
     return hybrid_otel_and_langsmith, is_otel_only
 
 
+def _dispatch_batch(
+    client: Client,
+    tracing_queue: Queue,
+    batch: list[TracingQueueItem],
+    use_multipart: bool,
+) -> None:
+    """Dispatch a batch, honouring per-item ``destination`` overrides.
+
+    Items with ``destination=None`` follow the global :func:`get_tracing_mode`
+    result, so callers that never set an override get exactly the pre-feature
+    behaviour. When every item agrees on a destination (the common case) this
+    collapses to a single handler call with no grouping overhead.
+    """
+    hybrid_mode, otel_only = get_tracing_mode()
+
+    # Fast path: no per-run overrides anywhere in the batch.
+    if all(item.destination is None for item in batch):
+        if hybrid_mode:
+            _hybrid_tracing_thread_handle_batch(
+                client, tracing_queue, batch, use_multipart
+            )
+        elif otel_only:
+            _otel_tracing_thread_handle_batch(client, tracing_queue, batch)
+        else:
+            _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart)
+        return
+
+    # Slow path: partition by resolved destination.
+    default = "hybrid" if hybrid_mode else "otel" if otel_only else "langsmith"
+    ls_items: list[TracingQueueItem] = []
+    otel_items: list[TracingQueueItem] = []
+    hybrid_items: list[TracingQueueItem] = []
+    for item in batch:
+        dest = item.destination or default
+        if dest == "otel":
+            otel_items.append(item)
+        elif dest == "hybrid":
+            hybrid_items.append(item)
+        else:
+            # Anything unrecognised falls back to LangSmith-only; the client
+            # validates overrides before stamping them, so this is defence
+            # in depth for the background thread.
+            ls_items.append(item)
+
+    if ls_items:
+        _tracing_thread_handle_batch(client, tracing_queue, ls_items, use_multipart)
+    if otel_items:
+        _otel_tracing_thread_handle_batch(client, tracing_queue, otel_items)
+    if hybrid_items:
+        _hybrid_tracing_thread_handle_batch(
+            client, tracing_queue, hybrid_items, use_multipart
+        )
+
+
 def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
@@ -692,7 +755,6 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             sub_threads.append(new_thread)
             new_thread.start()
 
-        hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
         max_batch_size = (
             client._max_batch_size_bytes
             or batch_ingest_config.get("size_limit_bytes")
@@ -701,48 +763,20 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if next_batch := _tracing_thread_drain_queue(
             tracing_queue, limit=size_limit, max_size_bytes=max_batch_size
         ):
-            if hybrid_otel_and_langsmith:
-                # Hybrid mode: both OTEL and LangSmith
-                _hybrid_tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch, use_multipart
-                )
-            elif is_otel_only:
-                # OTEL-only mode
-                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-            else:
-                # LangSmith-only mode
-                _tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch, use_multipart
-                )
+            _dispatch_batch(client, tracing_queue, next_batch, use_multipart)
 
     # drain the queue on exit - apply same logic
     logger.debug(
         "Tracing thread draining queue on exit: qsize=%d",
         tracing_queue.qsize(),
     )
-    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     max_batch_size = (
         client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
     )
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
-        if hybrid_otel_and_langsmith:
-            # Hybrid mode cleanup
-            logger.debug("Hybrid mode cleanup")
-            _hybrid_tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-        elif is_otel_only:
-            # OTEL-only cleanup
-            logger.debug("OTEL-only cleanup")
-            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-        else:
-            # LangSmith-only cleanup
-            logger.debug("LangSmith-only cleanup")
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
+        _dispatch_batch(client, tracing_queue, next_batch, use_multipart)
     logger.debug("Tracing control thread is shutting down")
 
 
@@ -953,44 +987,16 @@ def _tracing_sub_thread_func(
         ):
             seen_successive_empty_queues = 0
 
-            hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
-            if hybrid_otel_and_langsmith:
-                # Hybrid mode: both OTEL and LangSmith
-                _hybrid_tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch, use_multipart
-                )
-            elif is_otel_only:
-                # OTEL-only mode
-                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-            else:
-                # LangSmith-only mode
-                _tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch, use_multipart
-                )
+            _dispatch_batch(client, tracing_queue, next_batch, use_multipart)
         else:
             seen_successive_empty_queues += 1
 
     # drain the queue on exit - apply same logic
-    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     max_batch_size = (
         client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
     )
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
-        if hybrid_otel_and_langsmith:
-            # Hybrid mode cleanup
-            _hybrid_tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-        elif is_otel_only:
-            # OTEL-only cleanup
-            logger.debug("OTEL-only cleanup")
-            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-        else:
-            # LangSmith-only cleanup
-            logger.debug("LangSmith-only cleanup")
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
+        _dispatch_batch(client, tracing_queue, next_batch, use_multipart)
     logger.debug("Tracing control sub-thread is shutting down")

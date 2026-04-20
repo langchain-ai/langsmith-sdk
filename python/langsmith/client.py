@@ -729,6 +729,7 @@ class Client:
         "_cache",
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
+        "_otel_missing_warned",
     ]
 
     _api_key: Optional[str]
@@ -1036,6 +1037,8 @@ class Client:
                 self.otel_exporter = None
         else:
             self.otel_exporter = None
+
+        self._otel_missing_warned: bool = False
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -2036,6 +2039,47 @@ class Client:
                     sampled.append(run)
             return sampled
 
+    _VALID_TRACING_DESTINATIONS = frozenset({"langsmith", "otel", "hybrid"})
+
+    def _resolve_tracing_destination(
+        self,
+        tracing_destinations: Optional[str],
+    ) -> Optional[str]:
+        """Validate and resolve a per-run tracing destination override.
+
+        Returns the destination to stamp onto the outgoing
+        :class:`TracingQueueItem`, or ``None`` if no per-run override applies
+        (in which case the background thread's global
+        :func:`langsmith._internal._background_thread.get_tracing_mode` kicks
+        in, exactly as before this feature existed).
+
+        ``"otel"`` / ``"hybrid"`` require an OTEL exporter on the client; if
+        none is configured, we warn once per client and fall back to ``None``
+        so the item routes via the client's default mode. A bogus value raises
+        ``ValueError`` synchronously so typos never make it onto the queue.
+        """
+        if tracing_destinations is None:
+            return None
+        if tracing_destinations not in self._VALID_TRACING_DESTINATIONS:
+            raise ValueError(
+                f"Invalid tracing_destinations value "
+                f"{tracing_destinations!r}; expected one of "
+                f"{sorted(self._VALID_TRACING_DESTINATIONS)}."
+            )
+        if tracing_destinations in ("otel", "hybrid") and self.otel_exporter is None:
+            if not self._otel_missing_warned:
+                logger.warning(
+                    "langsmith_extra['tracing_destinations']=%r was requested "
+                    "for a run, but this client has no OpenTelemetry exporter "
+                    "configured; falling back to the client's default mode. "
+                    "Pass `otel_enabled=True` (or set LANGSMITH_OTEL_ENABLED=true) "
+                    "and install `langsmith[otel]` to enable OTEL export.",
+                    tracing_destinations,
+                )
+                self._otel_missing_warned = True
+            return None
+        return tracing_destinations
+
     def _put_tracing_queue(self, item: TracingQueueItem) -> None:
         """Put an item on the tracing queue, dropping if full."""
         assert self.tracing_queue is not None
@@ -2109,6 +2153,7 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
+        tracing_destinations: Optional[str] = kwargs.pop("tracing_destinations", None)
         project_name = project_name or kwargs.pop(
             "session_name",
             # if the project is not provided, use the environment's project
@@ -2152,6 +2197,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "tracing_destinations": tracing_destinations,
                         },
                     )
                 )
@@ -2168,6 +2214,7 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                tracing_destinations=tracing_destinations,
             )
 
     def _create_run(
@@ -2180,6 +2227,7 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        tracing_destinations: Optional[str] = None,
     ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -2232,6 +2280,9 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
+                resolved_destination = self._resolve_tracing_destination(
+                    tracing_destinations
+                )
                 if self.otel_exporter is not None:
                     self._put_tracing_queue(
                         TracingQueueItem(
@@ -2246,6 +2297,7 @@ class Client:
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
+                            destination=resolved_destination,
                         )
                     )
                 else:
@@ -2259,6 +2311,7 @@ class Client:
                             tenant_id=tenant_id,
                             authorization=authorization,
                             cookie=cookie,
+                            destination=resolved_destination,
                         )
                     )
             else:
@@ -3323,6 +3376,8 @@ class Client:
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
+        tracing_destinations: Optional[str] = kwargs.pop("tracing_destinations", None)
+
         # If process_buffered_run_ops is enabled, collect runs in batches
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
             with self._run_ops_buffer_lock:
@@ -3337,6 +3392,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "tracing_destinations": tracing_destinations,
                         },
                     )
                 )
@@ -3353,6 +3409,7 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                tracing_destinations=tracing_destinations,
             )
 
     def _update_run(
@@ -3365,6 +3422,7 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        tracing_destinations: Optional[str] = None,
     ):
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
@@ -3417,6 +3475,9 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
+                resolved_destination = self._resolve_tracing_destination(
+                    tracing_destinations
+                )
                 if self.otel_exporter is not None:
                     self._put_tracing_queue(
                         TracingQueueItem(
@@ -3431,6 +3492,7 @@ class Client:
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
+                            destination=resolved_destination,
                         )
                     )
                 else:
@@ -3444,6 +3506,7 @@ class Client:
                             tenant_id=tenant_id,
                             authorization=authorization,
                             cookie=cookie,
+                            destination=resolved_destination,
                         )
                     )
         else:

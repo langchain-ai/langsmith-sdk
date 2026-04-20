@@ -257,6 +257,14 @@ class RunTree(ls_schemas.RunBase):
         default=None,
         description="Projects to replicate this run to with optional updates.",
     )
+    tracing_destinations: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "Per-run routing override: one of 'langsmith', 'otel', 'hybrid'. "
+            "Propagated to descendants via create_child. Excluded from API payloads."
+        ),
+    )
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -559,6 +567,7 @@ class RunTree(ls_schemas.RunBase):
             tags=tags,
             attachments=attachments or {},  # type: ignore
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
+            tracing_destinations=self.tracing_destinations,
         )
 
         return run
@@ -686,10 +695,13 @@ class RunTree(ls_schemas.RunBase):
                     tenant_id=tenant_id,
                     authorization=authorization,
                     cookie=cookie,
+                    tracing_destinations=self.tracing_destinations,
                 )
         else:
             kwargs = self._get_dicts_safe()
-            self.client.create_run(**kwargs)
+            self.client.create_run(
+                **kwargs, tracing_destinations=self.tracing_destinations
+            )
         if self.attachments:
             keys = [str(name) for name in self.attachments]
             self.events.append(
@@ -765,6 +777,7 @@ class RunTree(ls_schemas.RunBase):
                     tenant_id=tenant_id,
                     authorization=authorization,
                     cookie=cookie,
+                    tracing_destinations=self.tracing_destinations,
                 )
         else:
             self.client.update_run(
@@ -789,6 +802,7 @@ class RunTree(ls_schemas.RunBase):
                 tags=self.tags,
                 extra=self.extra,
                 attachments=attachments,
+                tracing_destinations=self.tracing_destinations,
             )
 
     def wait(self) -> None:

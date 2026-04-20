@@ -278,6 +278,17 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional ID for the run."""
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
+    tracing_destinations: Optional[Literal["langsmith", "otel", "hybrid"]]
+    """Route this run (and its descendants) to a specific destination.
+
+    One of ``"langsmith"``, ``"otel"``, or ``"hybrid"``. When unset the run
+    follows the client's default tracing mode (driven by
+    ``LANGSMITH_OTEL_ENABLED`` / ``LANGSMITH_OTEL_ONLY`` env vars). Set on a
+    root ``@traceable`` call, the override propagates to child runs created
+    via :meth:`RunTree.create_child`. If ``"otel"``/``"hybrid"`` is requested
+    on a client with no OpenTelemetry exporter configured, the override is
+    silently ignored after a one-time warning per client.
+    """
     # Optional callback function to be called if the run succeeds and before it is sent.
     _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
@@ -1642,6 +1653,7 @@ def _setup_run(
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_context._TAGS.set, tags_)
     tags_ += tags or []
+    tracing_destinations_override = langsmith_extra.get("tracing_destinations")
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
             name=name_,
@@ -1652,6 +1664,9 @@ def _setup_run(
             run_id=id_,
             attachments=attachments,
         )
+        # Per-call override beats any value inherited from the parent.
+        if tracing_destinations_override is not None:
+            new_run.tracing_destinations = tracing_destinations_override
     else:
         # Create RunTree kwargs conditionally to let RunTree generate id from start_time
         run_tree_kwargs = {
@@ -1669,6 +1684,8 @@ def _setup_run(
             "attachments": attachments,
             "dangerously_allow_filesystem": dangerously_allow_filesystem,
         }
+        if tracing_destinations_override is not None:
+            run_tree_kwargs["tracing_destinations"] = tracing_destinations_override
         # Only pass id if user explicitly provided one
         if id_ is not None:
             run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
