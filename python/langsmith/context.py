@@ -349,8 +349,8 @@ class Context:
     ) -> dict[str, Any]:
         """Fetch directory payload, merged with owner/repo from identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
-        target = version if version is not None else (
-            commit if commit != "latest" else None
+        target = (
+            version if version is not None else (commit if commit != "latest" else None)
         )
         params: dict[str, Any] = {}
         if target:
@@ -381,9 +381,7 @@ class Context:
                 f"max is {ls_schemas.MAX_CONTEXT_ENTRIES}."
             )
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
-            raise ls_utils.LangSmithUserError(
-                "parent_commit must be 8-64 characters."
-            )
+            raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 
         owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
         if not self._client._current_tenant_is_owner(owner):
@@ -855,8 +853,8 @@ class AsyncContext:
     ) -> dict[str, Any]:
         """Fetch directory payload, merged with owner/repo from identifier."""
         owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
-        target = version if version is not None else (
-            commit if commit != "latest" else None
+        target = (
+            version if version is not None else (commit if commit != "latest" else None)
         )
         params: dict[str, Any] = {}
         if target:
@@ -887,15 +885,11 @@ class AsyncContext:
                 f"max is {ls_schemas.MAX_CONTEXT_ENTRIES}."
             )
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
-            raise ls_utils.LangSmithUserError(
-                "parent_commit must be 8-64 characters."
-            )
+            raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 
         owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
         if not (await self._client._current_tenant_is_owner(owner)):
-            raise (
-                await self._client._owner_conflict_error(f"push {repo_type}", owner)
-            )
+            raise (await self._client._owner_conflict_error(f"push {repo_type}", owner))
 
         if await self._repo_exists(owner, name):
             if any(v is not None for v in (description, readme, tags, is_public)):
@@ -973,17 +967,13 @@ class AsyncContext:
         if query:
             params["query"] = query
             params["match_prefix"] = "true"
-        response = await self._client._arequest_with_retries(
-            "GET", _HUB, params=params
-        )
+        response = await self._client._arequest_with_retries("GET", _HUB, params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
     async def _repo_exists(self, owner: str, name: str) -> bool:
         """Check if a repo exists."""
         try:
-            await self._client._arequest_with_retries(
-                "GET", f"{_HUB}/{owner}/{name}"
-            )
+            await self._client._arequest_with_retries("GET", f"{_HUB}/{owner}/{name}")
             return True
         except ls_utils.LangSmithNotFoundError:
             return False

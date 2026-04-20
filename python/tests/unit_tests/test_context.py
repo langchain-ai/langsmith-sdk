@@ -68,9 +68,7 @@ def test_agent_entry_exclude_none_strips_response_only_fields() -> None:
 
 def test_push_agent_rejects_too_many_files() -> None:
     ctx = Context(_mock_sync_client())
-    too_many = {
-        f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)
-    }
+    too_many = {f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)}
     with pytest.raises(ls_utils.LangSmithUserError, match="Too many files"):
         ctx.push_agent("-/repo", files=too_many)
 
@@ -340,9 +338,7 @@ async def test_async_delete_agent_hits_directories_delete() -> None:
 
 async def test_async_list_skills_passes_filter() -> None:
     client = _mock_async_client()
-    client._arequest_with_retries.return_value = _response(
-        {"repos": [], "total": 0}
-    )
+    client._arequest_with_retries.return_value = _response({"repos": [], "total": 0})
     ctx = AsyncContext(client)
     await ctx.list_skills(limit=25)
     call = client._arequest_with_retries.call_args
@@ -353,8 +349,6 @@ async def test_async_list_skills_passes_filter() -> None:
 
 async def test_async_push_agent_rejects_too_many_files() -> None:
     ctx = AsyncContext(_mock_async_client())
-    too_many = {
-        f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)
-    }
+    too_many = {f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)}
     with pytest.raises(ls_utils.LangSmithUserError, match="Too many files"):
         await ctx.push_agent("-/repo", files=too_many)

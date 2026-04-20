@@ -1160,9 +1160,7 @@ class SkillEntry(BaseModel):
     """The commit hash of the linked repo."""
 
 
-Entry = Annotated[
-    Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator="type")
-]
+Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator="type")]
 """A hub directory entry, discriminated by `type`."""
 
 
