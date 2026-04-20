@@ -11,6 +11,7 @@ import pytest
 from langsmith import Client
 from langsmith.wrappers import wrap_gemini
 from langsmith.wrappers._gemini import _process_generate_content_response
+from tests.integration_tests.conftest import skip_if_rate_limited
 from tests.unit_tests.test_run_helpers import _get_calls
 
 if TYPE_CHECKING:
@@ -55,6 +56,7 @@ def patched_client(mock_ls_client: Client) -> genai.Client:
     return wrap_gemini(genai.Client(), tracing_extra={"client": mock_ls_client})
 
 
+@skip_if_rate_limited
 def test_generate_content_sync(
     original_client: genai.Client,
     patched_client: genai.Client,
@@ -94,6 +96,7 @@ def test_generate_content_sync(
     assert outputs
 
 
+@skip_if_rate_limited
 def test_generate_content_stream_sync(
     original_client: genai.Client,
     patched_client: genai.Client,
@@ -140,6 +143,7 @@ def test_generate_content_stream_sync(
     assert outputs
 
 
+@skip_if_rate_limited
 @pytest.mark.asyncio
 async def test_generate_content_async():
     """Test async generate_content."""
@@ -174,6 +178,7 @@ async def test_generate_content_async():
     assert calls
 
 
+@skip_if_rate_limited
 @pytest.mark.asyncio
 async def test_generate_content_stream_async():
     """Test async streaming generate_content_stream."""
@@ -215,6 +220,7 @@ async def test_generate_content_stream_async():
     assert calls
 
 
+@skip_if_rate_limited
 def test_custom_config(patched_client: genai.Client, mock_ls_client: Client):
     """Test with custom configuration."""
     from google.genai import types
@@ -241,6 +247,7 @@ def test_custom_config(patched_client: genai.Client, mock_ls_client: Client):
     assert calls
 
 
+@skip_if_rate_limited
 def test_finish_reason(patched_client: genai.Client, mock_ls_client: Client):
     """Test finish reason."""
     from google.genai.types import FinishReason
@@ -252,6 +259,7 @@ def test_finish_reason(patched_client: genai.Client, mock_ls_client: Client):
     assert response.candidates[0].finish_reason == FinishReason.STOP
 
 
+@skip_if_rate_limited
 def test_multimodal_image_generation(
     patched_client: genai.Client, mock_ls_client: Client
 ):
@@ -309,6 +317,7 @@ def test_multimodal_image_generation(
     assert "content" in outputs or "role" in outputs
 
 
+@skip_if_rate_limited
 def test_multimodal_input_with_text_only(
     patched_client: genai.Client, mock_ls_client: Client
 ):
@@ -345,6 +354,7 @@ def test_multimodal_input_with_text_only(
                 break
 
 
+@skip_if_rate_limited
 def test_function_calling(patched_client: genai.Client, mock_ls_client: Client):
     """Test function calling with manual function declaration."""
     from google.genai import types

@@ -9,10 +9,24 @@ import vcr
 from langsmith import utils as ls_utils
 
 
-def skip_if_rate_limited(fn):
-    """Decorator to skip a test if it raises LangSmithRateLimitError.
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Return True if ``exc`` represents an external-API rate-limit response."""
+    if isinstance(exc, ls_utils.LangSmithRateLimitError):
+        return True
+    # HTTP 429 surfaced by other SDKs (google.genai, openai, etc.) via a
+    # status-carrying attribute on the exception.
+    for attr in ("status_code", "code", "status"):
+        if getattr(exc, attr, None) == 429:
+            return True
+    return False
 
-    Works for both sync and async tests.
+
+def skip_if_rate_limited(fn):
+    """Decorator to skip a test when an external API rate-limits us.
+
+    Handles LangSmith's ``LangSmithRateLimitError`` and HTTP 429 from other
+    API client libraries (e.g. ``google.genai``). Works for both sync and
+    async tests.
     """
 
     if inspect.iscoroutinefunction(fn):
@@ -21,8 +35,10 @@ def skip_if_rate_limited(fn):
         async def _async_wrapped(*args, **kwargs):
             try:
                 return await fn(*args, **kwargs)
-            except ls_utils.LangSmithRateLimitError as e:
-                pytest.skip(f"LangSmith rate limited: {e}")
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    pytest.skip(f"Rate limited: {e}")
+                raise
 
         return _async_wrapped
 
@@ -30,8 +46,10 @@ def skip_if_rate_limited(fn):
     def _wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except ls_utils.LangSmithRateLimitError as e:
-            pytest.skip(f"LangSmith rate limited: {e}")
+        except Exception as e:
+            if _is_rate_limit_error(e):
+                pytest.skip(f"Rate limited: {e}")
+            raise
 
     return _wrapped
 

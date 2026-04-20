@@ -12,6 +12,7 @@ import pytest
 from langsmith import Client
 from langsmith.integrations.google_adk import configure_google_adk
 from langsmith.run_helpers import tracing_context
+from tests.integration_tests.conftest import skip_if_rate_limited
 from tests.unit_tests.test_run_helpers import _get_calls
 
 pytest.importorskip("google.adk", reason="google-adk not installed")
@@ -99,6 +100,7 @@ async def _extract_response_async(events) -> Optional[str]:
     return None
 
 
+@skip_if_rate_limited
 def test_runner_run_sync_with_tool(mock_ls_client: Client):
     """Test that Runner.run creates traces for sync execution with tool calls."""
     from google.adk import agents
@@ -138,6 +140,7 @@ def test_runner_run_sync_with_tool(mock_ls_client: Client):
     assert len(calls) > 0, "Expected trace calls to be made"
 
 
+@skip_if_rate_limited
 @pytest.mark.asyncio
 async def test_runner_run_async(mock_ls_client: Client):
     """Test that Runner.run_async creates traces for async execution."""
@@ -172,6 +175,7 @@ async def test_runner_run_async(mock_ls_client: Client):
     assert len(calls) > 0, "Expected trace calls for async execution"
 
 
+@skip_if_rate_limited
 def test_sequential_agent(mock_ls_client: Client):
     """Test that sequential agents with sub-agents are traced."""
     from google.adk import agents
