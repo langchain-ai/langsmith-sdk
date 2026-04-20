@@ -1,16 +1,13 @@
+import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { AgentContext, FileEntry, SkillContext } from "../schemas.js";
 
-function shortId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 function agentIdentifier(): string {
-  return `-/ctx-test-js-agent-${shortId()}`;
+  return `-/ctx-test-js-agent-${uuidv4().slice(0, 8)}`;
 }
 
 function skillIdentifier(): string {
-  return `-/ctx-test-js-skill-${shortId()}`;
+  return `-/ctx-test-js-skill-${uuidv4().slice(0, 8)}`;
 }
 
 describe("Context integration (agent/skill)", () => {
