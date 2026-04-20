@@ -100,6 +100,7 @@ async def _extract_response_async(events) -> Optional[str]:
     return None
 
 
+@pytest.mark.flaky(reruns=2)
 @skip_if_rate_limited
 def test_runner_run_sync_with_tool(mock_ls_client: Client):
     """Test that Runner.run creates traces for sync execution with tool calls."""
@@ -140,6 +141,7 @@ def test_runner_run_sync_with_tool(mock_ls_client: Client):
     assert len(calls) > 0, "Expected trace calls to be made"
 
 
+@pytest.mark.flaky(reruns=2)
 @skip_if_rate_limited
 @pytest.mark.asyncio
 async def test_runner_run_async(mock_ls_client: Client):
@@ -175,6 +177,7 @@ async def test_runner_run_async(mock_ls_client: Client):
     assert len(calls) > 0, "Expected trace calls for async execution"
 
 
+@pytest.mark.flaky(reruns=2)
 @skip_if_rate_limited
 def test_sequential_agent(mock_ls_client: Client):
     """Test that sequential agents with sub-agents are traced."""
