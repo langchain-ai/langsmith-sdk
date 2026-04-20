@@ -1,4 +1,4 @@
-"""Context class for non-prompt Hub repos (agents, skills, files)."""
+"""Context class for non-prompt Hub repos (agents, skills)."""
 
 from __future__ import annotations
 
@@ -20,8 +20,13 @@ _PLATFORM_HUB = "/v1/platform/hub/repos"
 _HUB = "/repos"
 
 
+def _build_context_url(host: str, owner: str, name: str, commit_hash: str) -> str:
+    """Build a URL for a pushed context commit."""
+    return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
+
+
 class Context:
-    """Hub operations for non-prompt repos (agents, skills, files)."""
+    """Hub operations for non-prompt repos (agents, skills)."""
 
     def __init__(self, client: Client) -> None:
         """Initialize with a LangSmith client.
@@ -246,7 +251,7 @@ class Context:
         version: Optional[str],
     ) -> dict[str, Any]:
         """Fetch directory payload, merged with owner/repo from identifier."""
-        owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, commit = ls_utils.parse_hub_identifier(identifier)
         target = (
             version if version is not None else (commit if commit != "latest" else None)
         )
@@ -281,7 +286,7 @@ class Context:
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
             raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not self._client._current_tenant_is_owner(owner):
             raise self._client._owner_conflict_error(f"push {repo_type}", owner)
 
@@ -327,11 +332,11 @@ class Context:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return self._get_context_url(owner, name, commit_hash)
+        return _build_context_url(self._client._host_url, owner, name, commit_hash)
 
     def _delete_directory(self, identifier: str) -> None:
         """Delete a directory repo."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not self._client._current_tenant_is_owner(owner):
             raise self._client._owner_conflict_error("delete", owner)
         self._client.request_with_retries(
@@ -349,7 +354,11 @@ class Context:
         is_archived: Optional[bool],
         query: Optional[str],
     ) -> ls_schemas.ListPromptsResponse:
-        """List repos filtered by type."""
+        """List repos filtered by type.
+
+        Returns ``ListPromptsResponse`` because ``/repos`` is polymorphic — the
+        list shape is shared across prompt, agent, and skill repos.
+        """
         params: dict[str, Any] = {
             "limit": limit,
             "offset": offset,
@@ -424,13 +433,9 @@ class Context:
                 "PATCH", f"{_HUB}/{owner}/{name}", json=body
             )
 
-    def _get_context_url(self, owner: str, name: str, commit_hash: str) -> str:
-        """Build a URL for a pushed context commit."""
-        return f"{self._client._host_url}/hub/{owner}/{name}:{commit_hash[:8]}"
-
 
 class AsyncContext:
-    """Async Hub operations for non-prompt repos (agents, skills, files)."""
+    """Async Hub operations for non-prompt repos (agents, skills)."""
 
     def __init__(self, client: AsyncClient) -> None:
         """Initialize with an async LangSmith client.
@@ -651,7 +656,7 @@ class AsyncContext:
         version: Optional[str],
     ) -> dict[str, Any]:
         """Fetch directory payload, merged with owner/repo from identifier."""
-        owner, name, commit = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, commit = ls_utils.parse_hub_identifier(identifier)
         target = (
             version if version is not None else (commit if commit != "latest" else None)
         )
@@ -686,7 +691,7 @@ class AsyncContext:
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
             raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not (await self._client._current_tenant_is_owner(owner)):
             raise (await self._client._owner_conflict_error(f"push {repo_type}", owner))
 
@@ -732,11 +737,11 @@ class AsyncContext:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return self._get_context_url(owner, name, commit_hash)
+        return _build_context_url(self._client._host_url, owner, name, commit_hash)
 
     async def _delete_directory(self, identifier: str) -> None:
         """Delete a directory repo."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not (await self._client._current_tenant_is_owner(owner)):
             raise (await self._client._owner_conflict_error("delete", owner))
         await self._client._arequest_with_retries(
@@ -754,7 +759,11 @@ class AsyncContext:
         is_archived: Optional[bool],
         query: Optional[str],
     ) -> ls_schemas.ListPromptsResponse:
-        """List repos filtered by type."""
+        """List repos filtered by type.
+
+        Returns ``ListPromptsResponse`` because ``/repos`` is polymorphic — the
+        list shape is shared across prompt, agent, and skill repos.
+        """
         params: dict[str, Any] = {
             "limit": limit,
             "offset": offset,
@@ -828,7 +837,3 @@ class AsyncContext:
             await self._client._arequest_with_retries(
                 "PATCH", f"{_HUB}/{owner}/{name}", json=body
             )
-
-    def _get_context_url(self, owner: str, name: str, commit_hash: str) -> str:
-        """Build a URL for a pushed context commit."""
-        return f"{self._client._host_url}/hub/{owner}/{name}:{commit_hash[:8]}"

@@ -341,6 +341,28 @@ async def test_async_push_agent_creates_and_commits() -> None:
     assert client._arequest_with_retries.await_count == 3
 
 
+async def test_async_create_repo_swallows_conflict() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.side_effect = [
+        ls_utils.LangSmithNotFoundError("not found"),  # _repo_exists
+        ls_utils.LangSmithConflictError("already exists"),  # _create_repo race
+        _response(
+            {
+                "commit": {
+                    "id": "00000000-0000-0000-0000-000000000000",
+                    "commit_hash": "abc12345",
+                }
+            }
+        ),
+    ]
+    ctx = AsyncContext(client)
+    url = await ctx.push_agent(
+        "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
+    )
+    assert url == "https://smith.langchain.com/hub/-/my-agent:abc12345"
+    assert client._arequest_with_retries.await_count == 3
+
+
 async def test_async_delete_agent_hits_directories_delete() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.return_value = _response({})
