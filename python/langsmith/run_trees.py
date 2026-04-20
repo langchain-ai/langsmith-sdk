@@ -11,7 +11,7 @@ import threading
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, NamedTuple, Optional, Union, cast
+from typing import Any, Callable, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, model_validator
@@ -58,6 +58,14 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     updates: Optional[dict]
+    process_run: NotRequired[Callable[[dict], Optional[dict]]]
+    # Optional pre-send processor. Receives the run-like dict that would be
+    # sent (post-remap, pre-auth merge — shape follows `RunLikeDict`: name,
+    # id, inputs, outputs, trace_id, session_name, etc.) and returns a
+    # transformed dict, or None to skip this replica for this event. Applied
+    # to both create and update events. Enables per-replica redaction,
+    # tagging, or selective routing when different replicas need different
+    # data-handling policies.
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
@@ -675,11 +683,14 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                processed = _apply_replica_process_run(replica, run_dict)
+                if processed is None:
+                    continue
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
                 self.client.create_run(
-                    **run_dict,
+                    **processed,
                     api_key=api_key,
                     api_url=api_url,
                     service_key=service_key,
@@ -738,26 +749,29 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                processed = _apply_replica_process_run(replica, run_dict)
+                if processed is None:
+                    continue
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
                 self.client.update_run(
-                    name=run_dict["name"],
-                    run_id=run_dict["id"],
-                    run_type=run_dict.get("run_type"),
-                    start_time=run_dict.get("start_time"),
-                    inputs=None if exclude_inputs else run_dict["inputs"],
-                    outputs=run_dict["outputs"],
-                    error=run_dict.get("error"),
-                    parent_run_id=run_dict.get("parent_run_id"),
-                    session_name=run_dict.get("session_name"),
-                    reference_example_id=run_dict.get("reference_example_id"),
-                    end_time=run_dict.get("end_time"),
-                    dotted_order=run_dict.get("dotted_order"),
-                    trace_id=run_dict.get("trace_id"),
-                    events=run_dict.get("events"),
-                    tags=run_dict.get("tags"),
-                    extra=run_dict.get("extra"),
+                    name=processed["name"],
+                    run_id=processed["id"],
+                    run_type=processed.get("run_type"),
+                    start_time=processed.get("start_time"),
+                    inputs=None if exclude_inputs else processed.get("inputs"),
+                    outputs=processed.get("outputs"),
+                    error=processed.get("error"),
+                    parent_run_id=processed.get("parent_run_id"),
+                    session_name=processed.get("session_name"),
+                    reference_example_id=processed.get("reference_example_id"),
+                    end_time=processed.get("end_time"),
+                    dotted_order=processed.get("dotted_order"),
+                    trace_id=processed.get("trace_id"),
+                    events=processed.get("events"),
+                    tags=processed.get("tags"),
+                    extra=processed.get("extra"),
                     attachments=attachments,
                     api_key=api_key,
                     api_url=api_url,
@@ -1249,3 +1263,26 @@ def _extract_replica_auth(
         authorization=None,
         cookie=None,
     )
+
+
+def _apply_replica_process_run(
+    replica: WriteReplica,
+    run_dict: dict,
+) -> Optional[dict]:
+    """Apply a replica's process_run callback, if any.
+
+    Returns the transformed run dict, or None to skip this replica. If the
+    callback raises, the replica is skipped and a warning is logged — a bad
+    processor shouldn't take down tracing for other replicas.
+    """
+    processor = replica.get("process_run")
+    if processor is None:
+        return run_dict
+    try:
+        return processor(run_dict)
+    except Exception:
+        logger.warning(
+            "Replica process_run callback raised; skipping replica",
+            exc_info=True,
+        )
+        return None

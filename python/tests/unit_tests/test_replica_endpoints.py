@@ -1120,3 +1120,198 @@ class TestTracingContextReplicas:
         # This should not raise a type error
         with tracing_context(replicas=replicas):
             pass  # Just testing that the context manager works
+
+
+class TestReplicaProcessCallback:
+    """Tests for the per-replica ``process`` pre-send callback."""
+
+    def test_process_transforms_payload_per_replica(self):
+        """Each replica's process callback sees and can mutate its own payload."""
+        client = Mock()
+
+        def redact(run_dict: dict) -> dict:
+            return {**run_dict, "inputs": {}, "outputs": {}}
+
+        def passthrough(run_dict: dict) -> dict:
+            return run_dict
+
+        replicas = [
+            WriteReplica(
+                api_url="https://primary.example.com",
+                auth=ApiKeyAuth(api_key="primary-key"),
+                project_name="primary",
+                process_run=redact,
+            ),
+            WriteReplica(
+                api_url="https://debug.example.com",
+                auth=ApiKeyAuth(api_key="debug-key"),
+                project_name="debug-unredacted",
+                process_run=passthrough,
+            ),
+        ]
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"secret": "sensitive"},
+            outputs={"answer": "also sensitive"},
+            client=client,
+            project_name="default",
+            replicas=replicas,
+        )
+        run_tree.post()
+
+        assert client.create_run.call_count == 2
+        first, second = client.create_run.call_args_list
+        assert first.kwargs["inputs"] == {}
+        assert first.kwargs["outputs"] == {}
+        assert second.kwargs["inputs"] == {"secret": "sensitive"}
+        assert second.kwargs["outputs"] == {"answer": "also sensitive"}
+
+    def test_process_returning_none_skips_replica(self):
+        """Returning None from process suppresses the write for that replica only."""
+        client = Mock()
+
+        replicas = [
+            WriteReplica(
+                api_url="https://drop.example.com",
+                auth=ApiKeyAuth(api_key="drop-key"),
+                project_name="drop",
+                process_run=lambda _d: None,
+            ),
+            WriteReplica(
+                api_url="https://keep.example.com",
+                auth=ApiKeyAuth(api_key="keep-key"),
+                project_name="keep",
+            ),
+        ]
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"x": 1},
+            client=client,
+            project_name="default",
+            replicas=replicas,
+        )
+        run_tree.post()
+
+        assert client.create_run.call_count == 1
+        assert client.create_run.call_args.kwargs["api_key"] == "keep-key"
+
+    def test_process_applied_on_patch(self):
+        """process runs on update_run as well as create_run."""
+        client = Mock()
+
+        seen: list[dict] = []
+
+        def record_and_redact(run_dict: dict) -> dict:
+            seen.append(run_dict)
+            return {**run_dict, "outputs": {}}
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"x": 1},
+            outputs={"y": 2},
+            client=client,
+            project_name="default",
+            replicas=[
+                WriteReplica(
+                    project_name="primary",
+                    process_run=record_and_redact,
+                )
+            ],
+        )
+        run_tree.patch()
+
+        assert client.update_run.call_count == 1
+        assert client.update_run.call_args.kwargs["outputs"] == {}
+        assert len(seen) == 1
+
+    def test_process_exception_skips_replica_without_breaking_others(self):
+        """A raising processor is isolated; other replicas still receive their write."""
+        client = Mock()
+
+        def blow_up(_d: dict) -> dict:
+            raise RuntimeError("bad processor")
+
+        replicas = [
+            WriteReplica(
+                api_url="https://bad.example.com",
+                auth=ApiKeyAuth(api_key="bad-key"),
+                project_name="bad",
+                process_run=blow_up,
+            ),
+            WriteReplica(
+                api_url="https://good.example.com",
+                auth=ApiKeyAuth(api_key="good-key"),
+                project_name="good",
+            ),
+        ]
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"x": 1},
+            client=client,
+            project_name="default",
+            replicas=replicas,
+        )
+        run_tree.post()
+
+        assert client.create_run.call_count == 1
+        assert client.create_run.call_args.kwargs["api_key"] == "good-key"
+
+    def test_process_run_receives_run_like_dict(self):
+        """process_run is invoked with a RunLikeDict-shaped payload."""
+        client = Mock()
+        captured: list[dict] = []
+
+        def capture(run_dict: dict) -> dict:
+            captured.append(run_dict)
+            return run_dict
+
+        run_tree = RunTree(
+            name="my_run",
+            run_type="chain",
+            inputs={"x": 1},
+            outputs={"y": 2},
+            tags=["a", "b"],
+            client=client,
+            project_name="default",
+            replicas=[
+                WriteReplica(project_name="target", process_run=capture),
+            ],
+        )
+        run_tree.post()
+
+        assert len(captured) == 1
+        payload = captured[0]
+        # Core RunLikeDict fields the processor should see.
+        assert payload["name"] == "my_run"
+        assert payload["run_type"] == "chain"
+        assert payload["inputs"] == {"x": 1}
+        assert payload["outputs"] == {"y": 2}
+        assert payload["tags"] == ["a", "b"]
+        assert payload["session_name"] == "target"
+        assert "id" in payload
+        assert "trace_id" in payload
+
+    def test_exclude_inputs_wins_over_process_run_on_patch(self):
+        """patch(exclude_inputs=True) must drop inputs even if process_run sets them."""
+        client = Mock()
+
+        def revive_inputs(run_dict: dict) -> dict:
+            return {**run_dict, "inputs": {"sneaky": "value"}}
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"x": 1},
+            outputs={"y": 2},
+            client=client,
+            project_name="default",
+            replicas=[
+                WriteReplica(project_name="primary", process_run=revive_inputs),
+            ],
+        )
+        run_tree.patch(exclude_inputs=True)
+
+        assert client.update_run.call_count == 1
+        assert client.update_run.call_args.kwargs["inputs"] is None
