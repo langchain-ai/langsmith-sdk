@@ -201,7 +201,7 @@ def test_push_agent_updates_metadata_when_repo_exists() -> None:
     )
     assert client.request_with_retries.call_count == 3
     patch_call = client.request_with_retries.call_args_list[1]
-    assert patch_call.args == ("PATCH", "/api/v1/hub/repos/-/my-agent")
+    assert patch_call.args == ("PATCH", "/repos/-/my-agent")
     assert patch_call.kwargs["json"] == {"description": "new desc"}
 
 
@@ -273,7 +273,7 @@ def test_list_agents_passes_repo_type_filter() -> None:
     ctx = Context(client)
     ctx.list_agents(limit=50, is_public=True, query="foo")
     call = client.request_with_retries.call_args
-    assert call.args == ("GET", "/api/v1/hub/repos")
+    assert call.args == ("GET", "/repos")
     params = call.kwargs["params"]
     assert params["repo_type"] == "agent"
     assert params["limit"] == 50
@@ -342,7 +342,7 @@ async def test_async_list_skills_passes_filter() -> None:
     ctx = AsyncContext(client)
     await ctx.list_skills(limit=25)
     call = client._arequest_with_retries.call_args
-    assert call.args == ("GET", "/api/v1/hub/repos")
+    assert call.args == ("GET", "/repos")
     assert call.kwargs["params"]["repo_type"] == "skill"
     assert call.kwargs["params"]["limit"] == 25
 
