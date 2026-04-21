@@ -171,6 +171,44 @@ describe("Context (agent/skill) on Client", () => {
       });
     });
 
+    it("accepts tools.json as a normal file entry", async () => {
+      const client = _mockClient();
+      const fetchSpy = _setFetchSequence(client, [
+        _response({ detail: "Not Found" }, 404),
+        _response({ repo: { id: "r1" } }),
+        _response({
+          commit: {
+            id: "00000000-0000-0000-0000-000000000000",
+            commit_hash: "abc12345",
+          },
+        }),
+      ]);
+
+      await client.pushAgent("-/my-agent", {
+        files: {
+          "tools.json": {
+            type: "file",
+            content: JSON.stringify({
+              tools: [{ name: "read_file", type: "builtin" }],
+              interrupt_config: {},
+            }),
+          },
+        },
+      });
+
+      const calls = fetchSpy.mock.calls as [string, any][];
+      const commitBody = JSON.parse(calls[2][1].body);
+      expect(commitBody.files).toEqual({
+        "tools.json": {
+          type: "file",
+          content: JSON.stringify({
+            tools: [{ name: "read_file", type: "builtin" }],
+            interrupt_config: {},
+          }),
+        },
+      });
+    });
+
     it("patches metadata when repo exists and metadata fields are provided", async () => {
       const client = _mockClient();
       const fetchSpy = _setFetchSequence(client, [

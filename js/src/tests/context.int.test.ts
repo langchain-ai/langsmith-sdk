@@ -10,6 +10,11 @@ function skillIdentifier(): string {
   return `-/ctx-test-js-skill-${uuidv4().slice(0, 8)}`;
 }
 
+const TOOLS_JSON = JSON.stringify({
+  tools: [{ name: "read_file", type: "builtin" }],
+  interrupt_config: {},
+});
+
 describe("Context integration (agent/skill)", () => {
   const client = new Client();
 
@@ -67,6 +72,26 @@ describe("Context integration (agent/skill)", () => {
       expect(entry.content).toBe("# Test Skill\n");
     } finally {
       await cleanupSkill(identifier);
+    }
+  });
+
+  test("pushAgent + pullAgent roundtrip for tools.json", async () => {
+    const identifier = agentIdentifier();
+    try {
+      const url = await client.pushAgent(identifier, {
+        files: {
+          "tools.json": { type: "file", content: TOOLS_JSON },
+        },
+      });
+      expect(url).toContain("/hub/");
+
+      const agent: AgentContext = await client.pullAgent(identifier);
+      expect(agent.files["tools.json"]).toBeDefined();
+      const entry = agent.files["tools.json"] as FileEntry;
+      expect(entry.type).toBe("file");
+      expect(entry.content).toBe(TOOLS_JSON);
+    } finally {
+      await cleanupAgent(identifier);
     }
   });
 
