@@ -164,7 +164,9 @@ describe("OpenAIAgentsTracingProcessor - Real API Integration", () => {
     const agent = new Agent({
       name: "CustomAgent",
       instructions: "You are a helpful assistant.",
-      model: "gpt-5-nano",
+      // gpt-5-nano is a reasoning model and does not accept `temperature`,
+      // so use a non-reasoning model here.
+      model: "gpt-4.1-mini",
       modelSettings: {
         temperature: 0,
       },
