@@ -77,17 +77,6 @@ describe("Context (agent/skill) on Client", () => {
   });
 
   describe("pushAgent", () => {
-    it("rejects more than 500 files", async () => {
-      const client = _mockClient();
-      const tooMany: Record<string, any> = {};
-      for (let i = 0; i < 501; i++) {
-        tooMany[`p_${i}.py`] = { type: "file", content: "x" };
-      }
-      await expect(
-        client.pushAgent("-/repo", { files: tooMany })
-      ).rejects.toThrow(/Too many files/);
-    });
-
     it("rejects short parentCommit", async () => {
       const client = _mockClient();
       await expect(
@@ -300,16 +289,28 @@ describe("Context (agent/skill) on Client", () => {
   });
 
   describe("agentExists / skillExists", () => {
-    it("returns true on 200", async () => {
+    it("agentExists returns true on 200", async () => {
       const client = _mockClient();
       _setFetchSequence(client, [_response({ repo: { id: "r1" } })]);
       expect(await client.agentExists("-/my-agent")).toBe(true);
     });
 
-    it("returns false on 404", async () => {
+    it("agentExists returns false on 404", async () => {
       const client = _mockClient();
       _setFetchSequence(client, [_response({ detail: "Not Found" }, 404)]);
       expect(await client.agentExists("-/nope")).toBe(false);
+    });
+
+    it("skillExists returns true on 200", async () => {
+      const client = _mockClient();
+      _setFetchSequence(client, [_response({ repo: { id: "r1" } })]);
+      expect(await client.skillExists("-/my-skill")).toBe(true);
+    });
+
+    it("skillExists returns false on 404", async () => {
+      const client = _mockClient();
+      _setFetchSequence(client, [_response({ detail: "Not Found" }, 404)]);
+      expect(await client.skillExists("-/nope")).toBe(false);
     });
   });
 

@@ -56,7 +56,6 @@ import {
   SkillContext,
   Entry,
   DirectoryCommitResponse,
-  MAX_CONTEXT_ENTRIES,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -6436,12 +6435,6 @@ export class Client implements LangSmithTracingClientInterface {
       isPublic?: boolean;
     },
   ): Promise<string> {
-    const fileCount = Object.keys(options.files).length;
-    if (fileCount > MAX_CONTEXT_ENTRIES) {
-      throw new Error(
-        `Too many files (${fileCount}); max is ${MAX_CONTEXT_ENTRIES}.`,
-      );
-    }
     if (
       options.parentCommit !== undefined &&
       (options.parentCommit.length < 8 || options.parentCommit.length > 64)

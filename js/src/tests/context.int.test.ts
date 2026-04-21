@@ -70,6 +70,40 @@ describe("Context integration (agent/skill)", () => {
     }
   });
 
+  test("agentExists reflects create/delete lifecycle", async () => {
+    const identifier = agentIdentifier();
+    try {
+      expect(await client.agentExists(identifier)).toBe(false);
+
+      await client.pushAgent(identifier, {
+        files: { "AGENTS.md": { type: "file", content: "x" } },
+      });
+      expect(await client.agentExists(identifier)).toBe(true);
+
+      await client.deleteAgent(identifier);
+      expect(await client.agentExists(identifier)).toBe(false);
+    } finally {
+      await cleanupAgent(identifier);
+    }
+  });
+
+  test("skillExists reflects create/delete lifecycle", async () => {
+    const identifier = skillIdentifier();
+    try {
+      expect(await client.skillExists(identifier)).toBe(false);
+
+      await client.pushSkill(identifier, {
+        files: { "SKILL.md": { type: "file", content: "x" } },
+      });
+      expect(await client.skillExists(identifier)).toBe(true);
+
+      await client.deleteSkill(identifier);
+      expect(await client.skillExists(identifier)).toBe(false);
+    } finally {
+      await cleanupSkill(identifier);
+    }
+  });
+
   test("pushAgent with null entry deletes that file", async () => {
     const identifier = agentIdentifier();
     try {
