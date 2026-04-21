@@ -739,6 +739,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           if (typeof body === "string") {
             return JSON.parse(body);
           }
+          // eslint-disable-next-line no-instanceof/no-instanceof
           if (body instanceof Uint8Array) {
             return JSON.parse(new TextDecoder().decode(body));
           }
