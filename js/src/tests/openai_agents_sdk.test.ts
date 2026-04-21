@@ -732,16 +732,19 @@ describe("OpenAIAgentsTracingProcessor", () => {
       await Promise.resolve();
       await client.awaitPendingTraceBatches();
 
-      const postedRuns = callSpy.mock.calls
-        .map((call) => {
+      const postedRuns = (callSpy.mock.calls as unknown[][])
+        .map((call): Record<string, unknown> | undefined => {
           const fetchArgs = call.at(-1) as { body?: string | Uint8Array };
           const body = fetchArgs?.body;
           if (typeof body === "string") {
-            return JSON.parse(body);
+            return JSON.parse(body) as Record<string, unknown>;
           }
           // eslint-disable-next-line no-instanceof/no-instanceof
           if (body instanceof Uint8Array) {
-            return JSON.parse(new TextDecoder().decode(body));
+            return JSON.parse(new TextDecoder().decode(body)) as Record<
+              string,
+              unknown
+            >;
           }
           return undefined;
         })
