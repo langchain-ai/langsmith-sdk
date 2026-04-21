@@ -729,28 +729,30 @@ describe("OpenAIAgentsTracingProcessor", () => {
       await processor.onTraceEnd(trace);
 
       await client.awaitPendingTraceBatches();
+      await Promise.resolve();
+      await client.awaitPendingTraceBatches();
 
-      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-      const nestedNode = tree.nodes.find((n) => n.includes("nested_traceable"));
-      const toolNode = tree.nodes.find((n) => n.includes("get_weather"));
-      expect(nestedNode).toBeDefined();
-      expect(toolNode).toBeDefined();
-
-      // Walk child edges from the function (tool) span; the nested traceable
-      // must be reachable from it, not from the root only.
-      if (nestedNode && toolNode) {
-        const reachableFromTool = new Set<string>();
-        const stack = [toolNode];
-        while (stack.length > 0) {
-          const current = stack.pop()!;
-          if (reachableFromTool.has(current)) continue;
-          reachableFromTool.add(current);
-          for (const [parent, child] of tree.edges) {
-            if (parent === current) stack.push(child);
+      const postedRuns = callSpy.mock.calls
+        .map((call) => {
+          const fetchArgs = call.at(-1) as { body?: string | Uint8Array };
+          const body = fetchArgs?.body;
+          if (typeof body === "string") {
+            return JSON.parse(body);
           }
-        }
-        expect(reachableFromTool.has(nestedNode)).toBe(true);
-      }
+          if (body instanceof Uint8Array) {
+            return JSON.parse(new TextDecoder().decode(body));
+          }
+          return undefined;
+        })
+        .filter((run): run is Record<string, unknown> => run != null);
+
+      const nestedRun = postedRuns.find(
+        (run) => run.name === "nested_traceable"
+      );
+      const toolRun = postedRuns.find((run) => run.name === "get_weather");
+      expect(nestedRun).toBeDefined();
+      expect(toolRun).toBeDefined();
+      expect(nestedRun?.parent_run_id).toBe(toolRun?.id);
     });
   });
 
