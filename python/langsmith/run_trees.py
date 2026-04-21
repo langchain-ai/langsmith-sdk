@@ -64,8 +64,8 @@ class WriteReplica(TypedDict, total=False):
     When set, the replica's runs are enqueued on this client's tracing queue
     (and dispatched by its background thread) instead of the RunTree's default
     client.  This lets each replica use a different tracing mode — for example,
-    one replica with ``Client(otel_enabled=True, otel_only=True)`` and another
-    with the default LangSmith-only client.
+    one replica with ``Client(tracing_mode="otel")`` and another with the
+    default LangSmith-only client.
 
     The field is **not** propagated in distributed-tracing baggage (each service
     must construct its own clients).
