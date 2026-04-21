@@ -6,29 +6,41 @@ Sandboxed code execution for LangSmith. Run untrusted code safely in isolated co
 
 ## Quick Start
 
+Sandboxes are created from **snapshots**. A snapshot is a filesystem image you
+build once from a Docker image (or capture from a running sandbox) and then
+reuse to boot as many sandboxes as you need.
+
 ```typescript
 import { SandboxClient } from "langsmith/experimental/sandbox";
 
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
 
-// First, create a template (defines the container image)
-await client.createTemplate("python-sandbox", { image: "python:3.12-slim" });
+// Build a snapshot from a Docker image (do this once)
+const snapshot = await client.createSnapshot(
+  "python",
+  "python:3.12-slim",
+  1_073_741_824, // 1 GiB filesystem
+);
 
-// Now create a sandbox from the template and run code
-const sandbox = await client.createSandbox("python-sandbox");
+// Create a sandbox from the snapshot and run code
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   const result = await sandbox.run("python -c 'print(2 + 2)'");
-  console.log(result.stdout);    // "4\n"
+  console.log(result.stdout); // "4\n"
   console.log(result.exit_code); // 0
 } finally {
   await sandbox.delete();
 }
 
-// Or use an existing sandbox by name
+// Or reuse an existing sandbox by name
 const existingSb = await client.getSandbox("your-sandbox");
 const res = await existingSb.run("python -c 'print(2 + 2)'");
 ```
+
+If you already have a snapshot ID (for example, listed with
+`client.listSnapshots()`), you can skip the `createSnapshot` step and call
+`client.createSandbox(snapshotId)` directly.
 
 ## Configuration
 
@@ -52,8 +64,7 @@ const client = new SandboxClient({
 ## Running Commands
 
 ```typescript
-// Assuming you've created a template called "my-sandbox"
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Run a command
   const result = await sandbox.run("echo 'Hello, World!'");
@@ -173,7 +184,7 @@ period. During this window you can still reconnect to retrieve output. After the
 TTL expires, the session is cleaned up and `reconnect()` will throw an error.
 
 ```typescript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   const handle = await sandbox.run("make build", { wait: false });
   const commandId = handle.commandId;
@@ -200,7 +211,7 @@ Set to `-1` for no idle timeout (the command runs indefinitely until explicitly
 killed or it exits on its own).
 
 ```typescript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Start a long-running command with a 30-minute idle timeout
   const handle = await sandbox.run("python server.py", {
@@ -229,7 +240,7 @@ reconnected to later. Set `killOnDisconnect: true` to kill the command
 immediately when the last client disconnects:
 
 ```typescript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Command is killed as soon as the client disconnects
   const handle = await sandbox.run("python server.py", {
@@ -252,7 +263,7 @@ try {
 All lifecycle options can be combined:
 
 ```typescript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Long-running task: 30-min idle timeout, 1-hour session TTL
   const handle = await sandbox.run("python train.py", {
@@ -280,7 +291,7 @@ Set `pty: true` to allocate a pseudo-terminal for the command. This is useful
 for interactive programs and commands that detect terminal capabilities:
 
 ```typescript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Run an interactive Python REPL with PTY
   const handle = await sandbox.run("python", { pty: true, wait: false });
@@ -316,8 +327,7 @@ try {
 Read and write files in the sandbox:
 
 ```typescript
-// Assuming you've created a Python template
-const sandbox = await client.createSandbox("my-python");
+const sandbox = await client.createSandbox(snapshot.id);
 try {
   // Write a file (string content)
   await sandbox.write("/app/script.py", "print('Hello from file!')");
@@ -337,121 +347,58 @@ try {
 }
 ```
 
-## Templates
+## Snapshots
 
-Templates define the container image and resources for sandboxes. **You must create a template before you can create sandboxes.**
+Snapshots are the filesystem images sandboxes boot from. You can build one from
+a Docker image or capture the state of a running sandbox.
 
 ```typescript
-// Create a template (required before creating sandboxes)
-const template = await client.createTemplate("my-python-env", {
-  image: "python:3.12-slim",  // Any Docker image
-  cpu: "1",        // CPU limit (default: "500m")
-  memory: "1Gi",   // Memory limit (default: "512Mi")
+// Build a snapshot from a public Docker image
+const snapshot = await client.createSnapshot(
+  "python",
+  "python:3.12-slim",
+  1_073_741_824, // 1 GiB
+);
+
+// Build from a private registry (use registryId or explicit credentials)
+const privateSnapshot = await client.createSnapshot(
+  "internal-python",
+  "registry.example.com/internal/python:3.12",
+  2_147_483_648,
+  {
+    registryUrl: "https://registry.example.com",
+    registryUsername: "me",
+    registryPassword: process.env.REGISTRY_PASSWORD,
+  },
+);
+
+// Capture the state of a running sandbox for later reuse
+const running = await client.createSandbox(snapshot.id);
+await running.write("/data/prepared.txt", "preloaded");
+const captured = await client.captureSnapshot(running.name, "with-data");
+
+// Boot a new sandbox from the captured snapshot
+const resumed = await client.createSandbox(captured.id);
+
+// List / fetch / delete snapshots
+const snapshots = await client.listSnapshots();
+const loaded = await client.getSnapshot(snapshot.id);
+await client.deleteSnapshot(snapshot.id);
+```
+
+### Sizing and Resources
+
+`createSandbox` accepts optional per-sandbox resource limits. If omitted, the
+server-side defaults are used. `fsCapacityBytes` defaults to the snapshot's
+size.
+
+```typescript
+const sandbox = await client.createSandbox(snapshot.id, {
+  vCpus: 2,
+  memBytes: 2_147_483_648,        // 2 GiB
+  fsCapacityBytes: 5_368_709_120, // 5 GiB
 });
-
-// Now you can create sandboxes from this template
-const sandbox = await client.createSandbox("my-python-env");
-try {
-  const result = await sandbox.run("python --version");
-} finally {
-  await sandbox.delete();
-}
-
-// List all templates
-const templates = await client.listTemplates();
-
-// Get a specific template
-const tmpl = await client.getTemplate("my-python-env");
-
-// Update a template's name
-await client.updateTemplate("my-python-env", { newName: "python-env-v2" });
-
-// Delete a template (fails if sandboxes or pools are using it)
-await client.deleteTemplate("my-python-env");
 ```
-
-### Common Template Images
-
-```typescript
-// Python
-await client.createTemplate("python", { image: "python:3.12-slim" });
-
-// Node.js
-await client.createTemplate("node", { image: "node:20-slim" });
-
-// Ubuntu (general purpose)
-await client.createTemplate("ubuntu", { image: "ubuntu:24.04" });
-```
-
-## Persistent Volumes
-
-Use volumes to persist data across sandbox sessions:
-
-```typescript
-import { SandboxClient } from "langsmith/experimental/sandbox";
-import type { VolumeMountSpec } from "langsmith/experimental/sandbox";
-
-const client = new SandboxClient();
-
-// Create a volume
-const volume = await client.createVolume("my-data", { size: "1Gi" });
-
-// Create a template with the volume mounted
-const volumeMounts: VolumeMountSpec[] = [
-  { volume_name: "my-data", mount_path: "/data" }
-];
-
-const template = await client.createTemplate("stateful-sandbox", {
-  image: "python:3.12-slim",
-  volumeMounts,
-});
-
-// Data written to /data persists across sandbox sessions
-{
-  const sandbox = await client.createSandbox("stateful-sandbox");
-  await sandbox.write("/data/state.txt", "persistent data");
-  await sandbox.delete();
-}
-
-// Later, in a new sandbox...
-{
-  const sandbox = await client.createSandbox("stateful-sandbox");
-  const content = await sandbox.read("/data/state.txt");
-  console.log(new TextDecoder().decode(content));  // "persistent data"
-  await sandbox.delete();
-}
-```
-
-## Pools (Pre-warmed Sandboxes)
-
-Pools pre-provision sandboxes for faster startup:
-
-```typescript
-// First create a template (without volumes - pools don't support volumes)
-await client.createTemplate("fast-python", { image: "python:3.12-slim" });
-
-// Create a pool with 2 warm sandboxes
-const pool = await client.createPool("python-pool", {
-  templateName: "fast-python",
-  replicas: 2,
-});
-
-// Sandboxes from pooled templates start faster
-const sandbox = await client.createSandbox("fast-python");
-try {
-  const result = await sandbox.run("python --version");
-} finally {
-  await sandbox.delete();
-}
-
-// Scale the pool
-await client.updatePool("python-pool", { replicas: 3 });
-
-// Delete the pool
-await client.deletePool("python-pool");
-```
-
-> **Note:** Templates with volume mounts cannot be used in pools.
 
 ## Reusing Existing Sandboxes
 
@@ -459,7 +406,7 @@ Get a sandbox that's already running:
 
 ```typescript
 // Create a sandbox (requires explicit cleanup)
-const sb = await client.createSandbox("my-template");
+const sb = await client.createSandbox(snapshot.id);
 console.log(sb.name);  // e.g., "sandbox-abc123"
 
 // Later, get the same sandbox
@@ -490,12 +437,12 @@ import {
 const client = new SandboxClient();
 
 try {
-  // This will fail if "nonexistent" template doesn't exist
+  // This will fail if the snapshot doesn't exist
   const sandbox = await client.createSandbox("nonexistent");
   await sandbox.delete();
 } catch (e) {
   if (e instanceof LangSmithResourceNotFoundError) {
-    // e.resourceType tells you what wasn't found: "sandbox", "template", "volume", etc.
+    // e.resourceType tells you what wasn't found: "sandbox", "snapshot", "file"
     console.log(`${e.resourceType} not found: ${e.message}`);
   } else if (e instanceof LangSmithResourceTimeoutError) {
     console.log(`Timeout waiting for ${e.resourceType}: ${e.message}`);
@@ -511,25 +458,21 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(templateName, options?)` | Create a sandbox |
+| `createSandbox(snapshotId, options?)` | Create a sandbox from a snapshot |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
+| `updateSandbox(name, options)` | Rename or adjust TTLs on a sandbox |
 | `deleteSandbox(name)` | Delete a sandbox |
-| `createTemplate(name, options)` | Create a template |
-| `listTemplates()` | List all templates |
-| `getTemplate(name)` | Get template by name |
-| `updateTemplate(name, options)` | Update a template |
-| `deleteTemplate(name)` | Delete a template |
-| `createVolume(name, options)` | Create a persistent volume |
-| `listVolumes()` | List all volumes |
-| `getVolume(name)` | Get volume by name |
-| `updateVolume(name, options)` | Update a volume |
-| `deleteVolume(name)` | Delete a volume |
-| `createPool(name, options)` | Create a pool |
-| `listPools()` | List all pools |
-| `getPool(name)` | Get pool by name |
-| `updatePool(name, options)` | Update pool (rename or scale) |
-| `deletePool(name)` | Delete a pool |
+| `startSandbox(name, options?)` | Start a stopped sandbox and wait until ready |
+| `stopSandbox(name)` | Stop a running sandbox (preserves files) |
+| `getSandboxStatus(name)` | Lightweight status poll for async creation |
+| `waitForSandbox(name, options?)` | Poll until a sandbox becomes ready |
+| `createSnapshot(name, dockerImage, fsCapacityBytes, options?)` | Build a snapshot from a Docker image |
+| `captureSnapshot(sandboxName, name, options?)` | Capture a snapshot from a running sandbox |
+| `getSnapshot(snapshotId)` | Get a snapshot by ID |
+| `listSnapshots()` | List all snapshots |
+| `deleteSnapshot(snapshotId)` | Delete a snapshot |
+| `waitForSnapshot(snapshotId, options?)` | Poll until a snapshot becomes ready |
 
 ### Sandbox
 
@@ -539,6 +482,9 @@ try {
 | `reconnect(commandId, options?)` | Reconnect to a running command by ID |
 | `write(path, content, timeout?)` | Write file (string or Uint8Array) |
 | `read(path, timeout?)` | Read file (returns Uint8Array) |
+| `start(options?)` | Start this sandbox (if stopped) |
+| `stop()` | Stop this sandbox |
+| `captureSnapshot(name, options?)` | Capture a snapshot from this sandbox |
 | `delete()` | Delete the sandbox |
 
 ### CommandHandle
@@ -577,44 +523,32 @@ try {
 |----------|-------------|
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
+| `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
+| `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables) |
+| `vCpus?` | Number of vCPUs |
+| `memBytes?` | Memory allocation in bytes |
+| `fsCapacityBytes?` | Root filesystem capacity in bytes |
+| `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
 
-### CreateVolumeOptions
+### CreateSnapshotOptions
 
 | Property | Description |
 |----------|-------------|
-| `size` | Storage size (e.g., "1Gi") |
+| `registryId?` | Private registry ID |
+| `registryUrl?` | Registry URL for private images |
+| `registryUsername?` | Registry username |
+| `registryPassword?` | Registry password |
 | `timeout?` | Wait timeout in seconds (default: 60) |
+| `signal?` | `AbortSignal` for cancellation |
 
-### CreateTemplateOptions
-
-| Property | Description |
-|----------|-------------|
-| `image` | Container image (e.g., "python:3.12-slim") |
-| `cpu?` | CPU limit (default: "500m") |
-| `memory?` | Memory limit (default: "512Mi") |
-| `storage?` | Storage size |
-| `volumeMounts?` | Array of volume mount specs |
-
-### UpdateTemplateOptions
+### UpdateSandboxOptions
 
 | Property | Description |
 |----------|-------------|
-| `newName?` | New template name |
-
-### CreatePoolOptions
-
-| Property | Description |
-|----------|-------------|
-| `templateName` | Template to use for sandboxes |
-| `replicas` | Number of pre-warmed sandboxes (1-100) |
-| `timeout?` | Wait timeout in seconds (default: 30) |
-
-### UpdatePoolOptions
-
-| Property | Description |
-|----------|-------------|
-| `newName?` | New pool name |
-| `replicas?` | New replica count |
+| `newName?` | New display name |
+| `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables) |
 
 ### RunOptions
 

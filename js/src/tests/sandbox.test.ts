@@ -67,7 +67,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           // No dataplane_url
         },
         createMockClient(),
@@ -95,7 +94,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -126,7 +124,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -158,7 +155,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -184,7 +180,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -212,7 +207,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -240,7 +234,6 @@ describe("Sandbox", () => {
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient
@@ -270,14 +263,13 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         dataplane_url: "https://dp.example.com",
         status: "ready",
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    await client.createSandbox("python-sandbox");
+    await client.createSandbox("snap-123");
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -290,13 +282,12 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         status: "provisioning",
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox("python-sandbox", {
+    const sandbox = await client.createSandbox("snap-123", {
       waitForReady: false,
     });
 
@@ -312,13 +303,12 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         status: "provisioning",
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    await client.createSandbox("python-sandbox", { waitForReady: false });
+    await client.createSandbox("snap-123", { waitForReady: false });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     // The signal should be an AbortSignal with 30s timeout
@@ -330,7 +320,6 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         dataplane_url: "https://dp.example.com",
         status: "ready",
         ttl_seconds: 3600,
@@ -340,7 +329,7 @@ describe("SandboxClient - createSandbox", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox("python-sandbox", {
+    const sandbox = await client.createSandbox("snap-123", {
       ttlSeconds: 3600,
       idleTtlSeconds: 600,
     });
@@ -359,7 +348,7 @@ describe("SandboxClient - createSandbox", () => {
     const client = createClientWithMock(mockFetch);
 
     await expect(
-      client.createSandbox("python-sandbox", { ttlSeconds: 61 })
+      client.createSandbox("snap-123", { ttlSeconds: 61 })
     ).rejects.toThrow(LangSmithValidationError);
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -369,7 +358,6 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         status: "ready",
       }),
     } as Response);
@@ -380,7 +368,7 @@ describe("SandboxClient - createSandbox", () => {
         allow_list: ["github.com", "*.example.com"],
       },
     };
-    await client.createSandbox("python-sandbox", { proxyConfig });
+    await client.createSandbox("snap-123", { proxyConfig });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -392,13 +380,12 @@ describe("SandboxClient - createSandbox", () => {
       ok: true,
       json: async () => ({
         name: "test-sb",
-        template_name: "python-sandbox",
         status: "ready",
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    await client.createSandbox("python-sandbox");
+    await client.createSandbox("snap-123");
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -443,7 +430,6 @@ describe("SandboxClient - updateSandbox", () => {
       ok: true,
       json: async () => ({
         name: "sb-1",
-        template_name: "python-sandbox",
         status: "ready",
         ttl_seconds: 0,
         idle_ttl_seconds: 1800,
@@ -469,7 +455,6 @@ describe("SandboxClient - updateSandbox", () => {
       ok: true,
       json: async () => ({
         name: "sb-renamed",
-        template_name: "python-sandbox",
         status: "ready",
       }),
     } as Response);
@@ -487,7 +472,6 @@ describe("SandboxClient - updateSandbox", () => {
       ok: true,
       json: async () => ({
         name: "sb-1",
-        template_name: "python-sandbox",
         status: "ready",
       }),
     } as Response);
@@ -574,7 +558,6 @@ describe("SandboxClient - waitForSandbox", () => {
           ok: true,
           json: async () => ({
             name: "test-sb",
-            template_name: "python-sandbox",
             dataplane_url: "https://dp.example.com",
             status: "ready",
           }),
@@ -626,7 +609,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
-        template_name: "python-sandbox",
         status: "provisioning",
         status_message: "Waiting for resources",
       },
@@ -641,7 +623,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
-        template_name: "python-sandbox",
         dataplane_url: "https://dp.example.com",
         status: "provisioning",
       },
@@ -666,7 +647,6 @@ describe("Sandbox - status fields and not-ready guard", () => {
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
-        template_name: "python-sandbox",
         dataplane_url: "https://dp.example.com",
         status: "ready",
       },
@@ -1055,7 +1035,7 @@ describe("CommandHandle", () => {
   });
 });
 
-describe("SandboxClient - createSandbox with snapshotId", () => {
+describe("SandboxClient - createSandbox (snapshotId)", () => {
   const createClientWithMock = (mockFetch: any) => {
     const client = new SandboxClient({
       apiEndpoint: "https://api.example.com/v2/sandboxes",
@@ -1066,7 +1046,7 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     return client;
   };
 
-  it("should send snapshot_id instead of template_name", async () => {
+  it("should send snapshot_id in the request body", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -1078,9 +1058,7 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox(undefined, {
-      snapshotId: "snap-1",
-    });
+    const sandbox = await client.createSandbox("snap-1");
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -1103,8 +1081,7 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox(undefined, {
-      snapshotId: "snap-1",
+    const sandbox = await client.createSandbox("snap-1", {
       vCpus: 4,
       memBytes: 1073741824,
       fsCapacityBytes: 4294967296,
@@ -1117,26 +1094,6 @@ describe("SandboxClient - createSandbox with snapshotId", () => {
     expect(body.fs_capacity_bytes).toBe(4294967296);
     expect(sandbox.vCpus).toBe(4);
     expect(sandbox.mem_bytes).toBe(1073741824);
-  });
-
-  it("should reject when neither templateName nor snapshotId is provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
-    const client = createClientWithMock(mockFetch);
-
-    await expect(client.createSandbox()).rejects.toThrow(
-      "Either templateName or snapshotId is required"
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("should reject when both templateName and snapshotId are provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
-    const client = createClientWithMock(mockFetch);
-
-    await expect(
-      client.createSandbox("my-template", { snapshotId: "snap-1" })
-    ).rejects.toThrow("Cannot specify both templateName and snapshotId");
-    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 

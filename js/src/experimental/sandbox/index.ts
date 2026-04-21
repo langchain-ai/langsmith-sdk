@@ -11,7 +11,12 @@
  * // Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
  * const client = new SandboxClient();
  *
- * const sandbox = await client.createSandbox("python-sandbox");
+ * const snapshot = await client.createSnapshot(
+ *   "python",
+ *   "python:3.12-slim",
+ *   1_073_741_824
+ * );
+ * const sandbox = await client.createSandbox(snapshot.id);
  * try {
  *   const result = await sandbox.run("python --version");
  *   console.log(result.stdout);
@@ -34,13 +39,8 @@ export type {
   OutputChunk,
   WsMessage,
   WsRunOptions,
-  ResourceSpec,
   ResourceStatus,
   Snapshot,
-  VolumeMountSpec,
-  Volume,
-  SandboxTemplate,
-  Pool,
   SandboxData,
   SandboxClientConfig,
   RunOptions,
@@ -53,12 +53,6 @@ export type {
   StartSandboxOptions,
   UpdateSandboxOptions,
   WaitForSandboxOptions,
-  CreateVolumeOptions,
-  CreateTemplateOptions,
-  UpdateTemplateOptions,
-  CreatePoolOptions,
-  UpdateVolumeOptions,
-  UpdatePoolOptions,
 } from "./types.js";
 
 // Errors
