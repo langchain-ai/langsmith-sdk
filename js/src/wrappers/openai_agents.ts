@@ -4,6 +4,7 @@
  * This module provides tracing support for the OpenAI Agents SDK.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { RunTree } from "../run_trees.js";
 import type { ExtractedUsageMetadata } from "../schemas.js";
 import { Client } from "../client.js";
@@ -11,6 +12,7 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
+import type { ContextPlaceholder } from "../singletons/types.js";
 import type {
   AgentSpanData,
   CustomSpanData,
@@ -24,6 +26,10 @@ import type {
   SpanData,
   Trace as SDKTrace,
 } from "@openai/agents";
+
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
+);
 
 /**
  * Set the current AsyncLocalStorage store to the given RunTree without a
