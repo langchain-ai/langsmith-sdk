@@ -543,9 +543,6 @@ export interface LikePromptResponse {
   likes: number;
 }
 
-/** The maximum number of entries per directory commit. */
-export const MAX_CONTEXT_ENTRIES = 500;
-
 export interface FileEntry {
   type: "file";
   content: string;

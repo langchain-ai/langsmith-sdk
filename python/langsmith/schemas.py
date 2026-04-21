@@ -1117,10 +1117,6 @@ class PromptSortField(str, Enum):
     """Number of likes."""
 
 
-MAX_CONTEXT_ENTRIES = 500
-"""The maximum number of entries per directory commit."""
-
-
 class FileEntry(BaseModel):
     """A file with inline content."""
 
