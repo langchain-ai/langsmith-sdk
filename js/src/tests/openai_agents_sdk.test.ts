@@ -3,6 +3,7 @@ import { describe, test, expect, jest, beforeEach } from "@jest/globals";
 import { OpenAIAgentsTracingProcessor } from "../wrappers/openai_agents.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
+import { traceable } from "../traceable.js";
 
 // Mock types matching @openai/agents-core/tracing
 type MockSpanData =
@@ -682,6 +683,74 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
       expect(tree.nodes.some((n) => n.includes("orphan_tool"))).toBe(false);
       expect(tree.nodes.some((n) => n.includes("Orphan Trace"))).toBe(true);
+    });
+
+    test("nested traceable called inside a function (tool) span nests under the function span", async () => {
+      const trace = createMockTrace("trace-11f", "Agent With Traceable");
+      const agentSpan = createMockSpan(
+        "trace-11f",
+        "span-agent-traceable",
+        null,
+        {
+          type: "agent",
+          name: "TraceableParentAgent",
+        }
+      );
+      const functionSpan = createMockSpan(
+        "trace-11f",
+        "span-fn-traceable",
+        "span-agent-traceable",
+        {
+          type: "function",
+          name: "get_weather",
+          input: '{"city":"Tokyo"}',
+          output: "{}",
+        }
+      );
+
+      const innerTraceable = traceable(
+        async (city: string) => {
+          return `mock-${city}`;
+        },
+        { name: "nested_traceable", client }
+      );
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(agentSpan);
+      await processor.onSpanStart(functionSpan);
+
+      // Simulate a traceable() call happening during tool execution
+      // between the function span's onSpanStart and onSpanEnd.
+      const result = await innerTraceable("Tokyo");
+      expect(result).toBe("mock-Tokyo");
+
+      await processor.onSpanEnd(functionSpan);
+      await processor.onSpanEnd(agentSpan);
+      await processor.onTraceEnd(trace);
+
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const nestedNode = tree.nodes.find((n) => n.includes("nested_traceable"));
+      const toolNode = tree.nodes.find((n) => n.includes("get_weather"));
+      expect(nestedNode).toBeDefined();
+      expect(toolNode).toBeDefined();
+
+      // Walk child edges from the function (tool) span; the nested traceable
+      // must be reachable from it, not from the root only.
+      if (nestedNode && toolNode) {
+        const reachableFromTool = new Set<string>();
+        const stack = [toolNode];
+        while (stack.length > 0) {
+          const current = stack.pop()!;
+          if (reachableFromTool.has(current)) continue;
+          reachableFromTool.add(current);
+          for (const [parent, child] of tree.edges) {
+            if (parent === current) stack.push(child);
+          }
+        }
+        expect(reachableFromTool.has(nestedNode)).toBe(true);
+      }
     });
   });
 

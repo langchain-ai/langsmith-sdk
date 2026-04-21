@@ -13,6 +13,8 @@ import {
 import { z } from "zod";
 import { OpenAIAgentsTracingProcessor } from "../wrappers/openai_agents.js";
 import { Client } from "../client.js";
+import { traceable } from "../traceable.js";
+import { getCurrentRunTree } from "../singletons/traceable.js";
 
 // Note: These tests require an OPENAI_API_KEY environment variable.
 // They are skipped by default to avoid requiring API keys in CI.
@@ -194,6 +196,74 @@ describe("OpenAIAgentsTracingProcessor - Real API Integration", () => {
     });
 
     // Flush to ensure all traces are sent
+    await processor.forceFlush();
+  }, 60000);
+
+  test("traceable() called from inside an Agents tool nests under the agent run", async () => {
+    // A traceable helper invoked from inside a tool's execute. If context
+    // propagation works, its run should nest under the agent span; otherwise
+    // it would be a sibling root trace.
+    const capturedRunInfo: {
+      parentRunId?: string;
+      traceId?: string;
+      dottedOrder?: string;
+    } = {};
+
+    const innerTraceable = traceable(
+      async (city: string) => {
+        const currentRunTree = getCurrentRunTree();
+        capturedRunInfo.parentRunId = currentRunTree.parent_run?.id;
+        capturedRunInfo.traceId = currentRunTree.trace_id;
+        capturedRunInfo.dottedOrder = currentRunTree.dotted_order;
+        return `mock-lookup-for-${city}`;
+      },
+      { name: "nested_traceable_lookup", client }
+    );
+
+    const weatherTool = tool({
+      name: "get_weather",
+      description: "Get the current weather for a city",
+      parameters: z.object({
+        city: z.string().describe("The city to get weather for"),
+      }),
+      execute: async ({ city }: { city: string }) => {
+        // Call a traceable helper from inside the tool
+        const lookup = await innerTraceable(city);
+        return JSON.stringify({
+          city,
+          lookup,
+          temperature: "72°F",
+          condition: "sunny",
+        });
+      },
+    });
+
+    const agent = new Agent({
+      name: "NestedTraceableAgent",
+      instructions:
+        "You are a weather assistant. Use the get_weather tool when asked about weather.",
+      model: "gpt-4.1-mini",
+      tools: [weatherTool],
+    });
+
+    const result = await run(agent, "What's the weather in Tokyo?");
+
+    console.log("Nested traceable result:", {
+      finalOutput: result.finalOutput,
+      capturedRunInfo,
+    });
+
+    expect(result.finalOutput).toBeDefined();
+
+    // The traceable() helper must have observed a parent run, meaning
+    // AsyncLocalStorage context was propagated from the processor.
+    expect(capturedRunInfo.parentRunId).toBeDefined();
+    expect(capturedRunInfo.traceId).toBeDefined();
+    // Dotted order indicates a nested position in the tree, not a root.
+    expect(capturedRunInfo.dottedOrder?.split(".").length ?? 0).toBeGreaterThan(
+      1
+    );
+
     await processor.forceFlush();
   }, 60000);
 });

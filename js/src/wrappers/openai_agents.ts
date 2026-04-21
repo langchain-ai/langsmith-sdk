@@ -7,7 +7,41 @@
 import { RunTree } from "../run_trees.js";
 import type { ExtractedUsageMetadata } from "../schemas.js";
 import { Client } from "../client.js";
-import { getCurrentRunTree } from "../singletons/traceable.js";
+import {
+  AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
+} from "../singletons/traceable.js";
+
+/**
+ * Set the current AsyncLocalStorage store to the given RunTree without a
+ * callback. Uses `AsyncLocalStorage.enterWith` if available on the underlying
+ * instance (it is on Node's built-in ALS). This is required because the
+ * OpenAI Agents tracing processor receives `onSpanStart`/`onSpanEnd` callbacks
+ * at different points with no single function to wrap via `withRunTree`.
+ *
+ * Returns the previous store so callers can restore it on exit.
+ *
+ * Caveats of `enterWith` (inherent, not avoidable with this API shape):
+ *  - Replaces the ALS store for the current async task and all its
+ *    descendants. Concurrent async tasks spawned from the caller's scope
+ *    during the trace will see the installed store.
+ *  - `onTraceEnd`/`onSpanEnd` restoration only works when it runs on the
+ *    same async task as the matching start. This is guaranteed by the
+ *    OpenAI Agents SDK's span lifecycle (span.start / fn / span.end are
+ *    invoked on one task via `_withSpanFactory`).
+ */
+function enterRunTreeContext(
+  runTree: RunTree | undefined
+): RunTree | undefined {
+  const storage = AsyncLocalStorageProviderSingleton.getInstance();
+  const previous = storage.getStore() as RunTree | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const maybeEnterWith = (storage as any).enterWith;
+  if (typeof maybeEnterWith === "function") {
+    maybeEnterWith.call(storage, runTree);
+  }
+  return previous;
+}
 
 // Type definitions for @openai/agents-core tracing module
 // These are defined inline to avoid hard dependency issues
@@ -486,19 +520,6 @@ function createUsageMetadata(
 }
 
 /**
- * Get the package version for a given package name.
- */
-async function getPackageVersion(packageName: string): Promise<string | null> {
-  try {
-    // Try to get version from the package
-    const pkg = await import(packageName);
-    return pkg?.__version__ ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/).
  *
  * Traces all intermediate steps of your OpenAI Agent to LangSmith.
@@ -550,8 +571,11 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
   private _spanDataTypes: Map<string, string> = new Map();
   private _unpostedTraces: Set<string> = new Set();
   private _unpostedSpans: Set<string> = new Set();
-
-  private _agentsVersion: string | null = null;
+  // Previous AsyncLocalStorage store for each trace/span, so nested
+  // traceable() calls inside Agents tools correctly nest under the
+  // enclosing span and context can be restored when the span/trace ends.
+  private _previousStoreByTrace: Map<string, RunTree | undefined> = new Map();
+  private _previousStoreBySpan: Map<string, RunTree | undefined> = new Map();
 
   constructor(options?: {
     client?: Client;
@@ -565,11 +589,6 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._tags = options?.tags;
     this._projectName = options?.projectName;
     this._name = options?.name;
-
-    // Get package version asynchronously
-    void getPackageVersion("@openai/agents").then((v) => {
-      this._agentsVersion = v;
-    });
   }
 
   async onTraceStart(trace: Trace): Promise<void> {
@@ -596,7 +615,6 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       metadata: {
         ...(this._metadata ?? {}),
         ls_integration: "openai-agents-sdk",
-        ls_integration_version: this._agentsVersion,
         ls_agent_type: "root",
       },
     };
@@ -611,20 +629,16 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     }
 
     try {
+      let newRun: RunTree;
       if (currentRunTree !== undefined) {
         // Nest under existing trace
-        const newRun = currentRunTree.createChild({
+        newRun = currentRunTree.createChild({
           name: runName,
           run_type: "chain",
           inputs: {},
           extra: runExtra,
           tags: this._tags,
         });
-
-        // Delay posting until first response/generation span ends
-        // so inputs can be included in the POST.
-        this._unpostedTraces.add(trace.traceId);
-        this._runs.set(trace.traceId, newRun);
       } else {
         // Create new root trace
         const runTreeConfig: ConstructorParameters<typeof RunTree>[0] = {
@@ -640,12 +654,19 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           runTreeConfig.project_name = this._projectName;
         }
 
-        const newRun = new RunTree(runTreeConfig);
-
-        // Delay posting until first response/generation span ends
-        this._unpostedTraces.add(trace.traceId);
-        this._runs.set(trace.traceId, newRun);
+        newRun = new RunTree(runTreeConfig);
       }
+
+      // Delay posting until first response/generation span ends
+      // so inputs can be included in the POST.
+      this._unpostedTraces.add(trace.traceId);
+      this._runs.set(trace.traceId, newRun);
+
+      // Set this run as the current context so nested traceable() calls
+      // invoked from inside Agents tools nest under it. Remember the previous
+      // store so we can restore it in onTraceEnd.
+      const previousStore = enterRunTreeContext(newRun);
+      this._previousStoreByTrace.set(trace.traceId, previousStore);
     } catch (e) {
       console.error("Error creating trace run:", e);
     }
@@ -690,13 +711,21 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         this._unpostedTraces.delete(trace.traceId);
         await run.postRun();
       } else {
-        delete this._firstResponseInputs[trace.traceId];
         await run.patchRun({ excludeInputs: true });
       }
 
+      delete this._firstResponseInputs[trace.traceId];
       delete this._lastResponseOutputs[trace.traceId];
     } catch (e) {
       console.error("Error updating trace run:", e);
+    } finally {
+      // Restore the previous AsyncLocalStorage store so contexts outside
+      // this trace are not polluted.
+      if (this._previousStoreByTrace.has(trace.traceId)) {
+        const previousStore = this._previousStoreByTrace.get(trace.traceId);
+        this._previousStoreByTrace.delete(trace.traceId);
+        enterRunTreeContext(previousStore);
+      }
     }
   }
 
@@ -729,9 +758,15 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     const runType = getRunType(span);
     const extracted = extractSpanData(span);
 
+    // Create child run and install it into AsyncLocalStorage SYNCHRONOUSLY,
+    // before any `await`. The OpenAI Agents runtime invokes `span.start()`
+    // (which calls this method without awaiting) right before it executes
+    // the tool/agent body in the same async task. Setting ALS via
+    // `enterWith` here ensures nested `traceable()` calls inside tool
+    // `execute` functions see this span's RunTree as their parent.
+    let childRun: RunTree;
     try {
-      // Create child run
-      const childRun = parentRun.createChild({
+      childRun = parentRun.createChild({
         name: runName,
         run_type: runType,
         inputs: (extracted.inputs as Record<string, unknown>) ?? {},
@@ -740,32 +775,45 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           ? new Date(span.startedAt).getTime()
           : undefined,
       });
+    } catch (e) {
+      console.error("Error creating span run:", e);
+      return;
+    }
 
-      // Add ls_agent_type metadata for agent spans that are children of
-      // function spans (i.e., agents used as tools).
-      // Handoff agents are not considered subagents.
-      if (spanData.type === "agent") {
-        const parentSpanType = parentId
-          ? this._spanDataTypes.get(parentId)
-          : undefined;
-        if (parentSpanType === "function") {
-          if (!childRun.extra) {
-            childRun.extra = {};
-          }
-          if (!childRun.extra.metadata) {
-            childRun.extra.metadata = {};
-          }
-          childRun.extra.metadata = {
-            ...childRun.extra.metadata,
-            ls_agent_type: "subagent",
-          };
+    // Add ls_agent_type metadata for agent spans that are children of
+    // function spans (i.e., agents used as tools).
+    // Handoff agents are not considered subagents.
+    if (spanData.type === "agent") {
+      const parentSpanType = parentId
+        ? this._spanDataTypes.get(parentId)
+        : undefined;
+      if (parentSpanType === "function") {
+        if (!childRun.extra) {
+          childRun.extra = {};
         }
+        if (!childRun.extra.metadata) {
+          childRun.extra.metadata = {};
+        }
+        childRun.extra.metadata = {
+          ...childRun.extra.metadata,
+          ls_agent_type: "subagent",
+        };
       }
+    }
 
-      // Track span data type for parent lookups
-      this._spanDataTypes.set(span.spanId, spanData.type);
+    // Track span data type for parent lookups
+    this._spanDataTypes.set(span.spanId, spanData.type);
+    this._runs.set(span.spanId, childRun);
 
-      // Delay posting for spans whose complete inputs/outputs aren't available at start
+    // Enter AsyncLocalStorage context synchronously so nested traceable()
+    // calls inside the span's body nest under this run. Remember the
+    // previous store so we can restore it in onSpanEnd.
+    const previousStore = enterRunTreeContext(childRun);
+    this._previousStoreBySpan.set(span.spanId, previousStore);
+
+    try {
+      // Delay posting for spans whose complete inputs/outputs aren't
+      // available at start.
       if (
         spanData.type === "generation" ||
         spanData.type === "response" ||
@@ -776,14 +824,22 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       } else {
         await childRun.postRun();
       }
-
-      this._runs.set(span.spanId, childRun);
     } catch (e) {
-      console.error("Error creating span run:", e);
+      console.error("Error posting span run:", e);
     }
   }
 
   async onSpanEnd(span: Span): Promise<void> {
+    // Restore the previous AsyncLocalStorage store synchronously so any
+    // further async work in the enclosing scope doesn't see this span's
+    // run as its parent. Done before any await to match span.end()
+    // which fires onSpanEnd without awaiting.
+    if (this._previousStoreBySpan.has(span.spanId)) {
+      const previousStore = this._previousStoreBySpan.get(span.spanId);
+      this._previousStoreBySpan.delete(span.spanId);
+      enterRunTreeContext(previousStore);
+    }
+
     const run = this._runs.get(span.spanId);
     this._spanDataTypes.delete(span.spanId);
 
