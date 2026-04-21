@@ -86,7 +86,7 @@ class ExampleBase(BaseModel):
     outputs: Optional[dict[str, Any]] = Field(default=None)
     metadata: Optional[dict[str, Any]] = Field(default=None)
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, defer_build=True)
 
 
 class _AttachmentDict(TypedDict):
@@ -870,9 +870,6 @@ class LangSmithInfo(BaseModel):
     batch_ingest_config: Optional[BatchIngestConfig] = None
     """The instance flags."""
     instance_flags: Optional[dict[str, Any]] = None
-
-
-Example.model_rebuild()
 
 
 class LangSmithSettings(BaseModel):
