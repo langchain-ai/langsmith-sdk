@@ -185,6 +185,7 @@ export async function handleSandboxCreationError(
   response: Response
 ): Promise<never> {
   const status = response.status;
+  const clonedResponse = response.clone();
   const data = await parseErrorResponse(response);
 
   if (status === 408) {
@@ -192,7 +193,6 @@ export async function handleSandboxCreationError(
     throw new LangSmithResourceTimeoutError(data.message, "sandbox");
   } else if (status === 422) {
     // Check if this is a Pydantic validation error (bad input) vs creation error
-    const clonedResponse = response.clone();
     const details = await parseValidationError(clonedResponse);
     if (details.length > 0 && details.some((d) => d.type === "value_error")) {
       // Pydantic validation error (bad input - exceeds server limits)
@@ -213,8 +213,8 @@ export async function handleSandboxCreationError(
       data.errorType || "Unschedulable"
     );
   }
-  // Fall through to generic handling
-  return handleClientHttpError(response);
+  // Fall through to generic handling — pass clone since body is already consumed
+  return handleClientHttpError(clonedResponse);
 }
 
 /**
@@ -230,6 +230,7 @@ export async function handleVolumeCreationError(
   response: Response
 ): Promise<never> {
   const status = response.status;
+  const clonedResponse = response.clone();
   const data = await parseErrorResponse(response);
 
   if (status === 429) {
@@ -243,8 +244,8 @@ export async function handleVolumeCreationError(
     // Timeout - volume didn't become ready in time
     throw new LangSmithResourceTimeoutError(data.message, "volume");
   }
-  // Fall through to generic handling
-  return handleClientHttpError(response);
+  // Fall through to generic handling — pass clone since body is already consumed
+  return handleClientHttpError(clonedResponse);
 }
 
 /**
@@ -259,6 +260,7 @@ export async function handleVolumeCreationError(
  */
 export async function handlePoolError(response: Response): Promise<never> {
   const status = response.status;
+  const clonedResponse = response.clone();
   const data = await parseErrorResponse(response);
   const errorType = data.errorType;
 
@@ -287,8 +289,8 @@ export async function handlePoolError(response: Response): Promise<never> {
     // Timeout waiting for pool to be ready
     throw new LangSmithResourceTimeoutError(data.message, "pool");
   }
-  // Fall through to generic handling
-  return handleClientHttpError(response);
+  // Fall through to generic handling — pass clone since body is already consumed
+  return handleClientHttpError(clonedResponse);
 }
 
 /**
@@ -297,6 +299,7 @@ export async function handlePoolError(response: Response): Promise<never> {
 export async function handleClientHttpError(
   response: Response
 ): Promise<never> {
+  const clonedResponse = response.clone();
   const data = await parseErrorResponse(response);
   const message = data.message;
   const errorType = data.errorType;
@@ -311,7 +314,6 @@ export async function handleClientHttpError(
 
   // Handle validation errors (invalid resource values, formats, etc.)
   if (status === 422) {
-    const clonedResponse = response.clone();
     const details = await parseValidationError(clonedResponse);
     const field = details[0]?.loc?.slice(-1)[0] as string | undefined;
     throw new LangSmithValidationError(message, field, details);
