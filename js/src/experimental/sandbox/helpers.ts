@@ -299,11 +299,13 @@ export async function handlePoolError(response: Response): Promise<never> {
 export async function handleClientHttpError(
   response: Response
 ): Promise<never> {
-  const clonedResponse = response.clone();
+  const status = response.status;
+  // Only clone when we need to read the body twice (status 422 reads it again
+  // for structured validation details after parseErrorResponse consumes it).
+  const clonedResponse = status === 422 ? response.clone() : null;
   const data = await parseErrorResponse(response);
   const message = data.message;
   const errorType = data.errorType;
-  const status = response.status;
 
   if (status === 401 || status === 403) {
     throw new LangSmithSandboxAuthenticationError(message);
@@ -313,7 +315,7 @@ export async function handleClientHttpError(
   }
 
   // Handle validation errors (invalid resource values, formats, etc.)
-  if (status === 422) {
+  if (status === 422 && clonedResponse) {
     const details = await parseValidationError(clonedResponse);
     const field = details[0]?.loc?.slice(-1)[0] as string | undefined;
     throw new LangSmithValidationError(message, field, details);
