@@ -39,7 +39,6 @@ class Sandbox:
 
     Attributes:
         name: Display name (can be updated).
-        template_name: Name of the template used to create this sandbox.
         dataplane_url: URL for data plane operations (file I/O, command execution).
             Only functional when status is "ready".
         id: Unique identifier (UUID). Remains constant even if name changes.
@@ -58,14 +57,13 @@ class Sandbox:
         fs_capacity_bytes: Root filesystem capacity in bytes.
 
     Example:
-        with client.sandbox(template_name="python-sandbox") as sandbox:
+        with client.sandbox(snapshot_id="<snapshot-uuid>") as sandbox:
             result = sandbox.run("python --version")
             print(result.stdout)
     """
 
     # Data fields (from API response)
     name: str
-    template_name: Optional[str] = None
     dataplane_url: Optional[str] = None
     id: Optional[str] = None
     status: str = "ready"
@@ -103,7 +101,6 @@ class Sandbox:
         """
         return cls(
             name=data.get("name", ""),
-            template_name=data.get("template_name"),
             dataplane_url=data.get("dataplane_url"),
             id=data.get("id"),
             status=data.get("status", "ready"),
