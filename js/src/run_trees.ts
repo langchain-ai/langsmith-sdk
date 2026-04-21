@@ -165,6 +165,13 @@ type WriteReplica = {
   updates?: KVMap | undefined;
   fromEnv?: boolean;
   reroot?: boolean;
+  /**
+   * Optional dedicated Client for this replica.
+   * When set, the replica's runs are dispatched through this client
+   * (and its tracing mode) instead of the RunTree's default client.
+   * Not serialized in distributed-tracing baggage headers.
+   */
+  client?: Client;
 };
 type Replica = ProjectReplica | WriteReplica;
 
@@ -783,8 +790,14 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
-          .replicas) {
+        for (const {
+          projectName,
+          apiKey,
+          apiUrl,
+          workspaceId,
+          reroot,
+          client: replicaClient,
+        } of this.replicas) {
           const runCreate = this._remapForProject({
             projectName: projectName ?? this.project_name,
             runtimeEnv,
@@ -795,7 +808,8 @@ export class RunTree implements BaseRun {
             apiKey,
             workspaceId,
           });
-          await this.client.createRun(runCreate, {
+          const targetClient = replicaClient ?? this.client;
+          await targetClient.createRun(runCreate, {
             apiKey,
             apiUrl,
             workspaceId,
@@ -834,6 +848,7 @@ export class RunTree implements BaseRun {
         workspaceId,
         updates,
         reroot,
+        client: replicaClient,
       } of this.replicas) {
         const runData = this._remapForProject({
           projectName: projectName ?? this.project_name,
@@ -870,7 +885,8 @@ export class RunTree implements BaseRun {
         if (!options?.excludeInputs) {
           updatePayload.inputs = runData.inputs;
         }
-        await this.client.updateRun(runData.id, updatePayload, {
+        const targetClient = replicaClient ?? this.client;
+        await targetClient.updateRun(runData.id, updatePayload, {
           apiKey,
           apiUrl,
           workspaceId,
