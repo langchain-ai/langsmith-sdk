@@ -493,6 +493,12 @@ function createResponsesUsageMetadata(
  *
  * Requirements: Make sure to install `npm install @openai/agents`.
  *
+ * Installing this processor is itself an explicit opt-in to tracing,
+ * so traces will be posted regardless of the `LANGSMITH_TRACING` env
+ * variable. Any nested `traceable()` calls made from within an agent
+ * run (e.g. inside a tool handler) will inherit this and also post,
+ * even if `LANGSMITH_TRACING` is not set.
+ *
  * @param client - An instance of `langsmith.Client`. If not provided, a default client is created.
  * @param metadata - Metadata to associate with all traces.
  * @param tags - Tags to associate with all traces.
@@ -607,7 +613,11 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           tags: this._tags,
         });
       } else {
-        // Create new root trace
+        // Create new root trace. Force `tracingEnabled: true` because
+        // installing this processor is itself an explicit opt-in to
+        // tracing; this ensures nested `traceable()` calls inside tools
+        // (which otherwise gate on LANGSMITH_TRACING) also post their
+        // runs. The setting propagates to children via createChild.
         const runTreeConfig: ConstructorParameters<typeof RunTree>[0] = {
           name: runName,
           run_type: "chain",
@@ -615,6 +625,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           extra: runExtra,
           tags: this._tags,
           client: this.client,
+          tracingEnabled: true,
         };
 
         if (this._projectName !== undefined) {

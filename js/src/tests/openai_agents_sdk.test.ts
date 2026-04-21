@@ -728,25 +728,36 @@ describe("OpenAIAgentsTracingProcessor", () => {
       await processor.onSpanEnd(agentSpan);
       await processor.onTraceEnd(trace);
 
-      await client.awaitPendingTraceBatches();
-      await Promise.resolve();
-      await client.awaitPendingTraceBatches();
+      // traceable() schedules its POST/PATCH via fire-and-forget promise
+      // chains. Drain the microtask queue a few times and wait for any
+      // pending batches so all run bodies make it into callSpy.
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await client.awaitPendingTraceBatches();
+      }
 
       const postedRuns = (callSpy.mock.calls as unknown[][])
         .map((call): Record<string, unknown> | undefined => {
-          const fetchArgs = call.at(-1) as { body?: string | Uint8Array };
-          const body = fetchArgs?.body;
+          const [url, fetchArgs] = call.slice(-2) as [
+            string,
+            { method?: string; body?: string | Uint8Array } | undefined
+          ];
+          if (!fetchArgs || fetchArgs.method !== "POST") return undefined;
+          if (!url.includes("/runs")) return undefined;
+          const body = fetchArgs.body;
+          let decoded: string | undefined;
           if (typeof body === "string") {
-            return JSON.parse(body) as Record<string, unknown>;
+            decoded = body;
+            // eslint-disable-next-line no-instanceof/no-instanceof
+          } else if (body instanceof Uint8Array) {
+            decoded = new TextDecoder().decode(body);
           }
-          // eslint-disable-next-line no-instanceof/no-instanceof
-          if (body instanceof Uint8Array) {
-            return JSON.parse(new TextDecoder().decode(body)) as Record<
-              string,
-              unknown
-            >;
+          if (!decoded || !decoded.trim().startsWith("{")) return undefined;
+          try {
+            return JSON.parse(decoded) as Record<string, unknown>;
+          } catch {
+            return undefined;
           }
-          return undefined;
         })
         .filter((run): run is Record<string, unknown> => run != null);
 
