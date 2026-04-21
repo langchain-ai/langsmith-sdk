@@ -794,7 +794,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
   });
 
   describe("usage metadata", () => {
-    test("extracts usage from generation span", async () => {
+    test("extracts usage from generation span (details shape)", async () => {
       const trace = createMockTrace("trace-13", "Test Agent");
       const generationSpan = createMockSpan("trace-13", "span-gen", null, {
         type: "generation",
@@ -805,6 +805,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           details: {
             cached_tokens: 20,
             reasoning_tokens: 10,
+            audio_tokens: 5,
           },
         },
       });
@@ -816,9 +817,56 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
       await client.awaitPendingTraceBatches();
 
-      // Check that calls were made
-      const calls = callSpy.mock.calls;
-      expect(calls.length).toBeGreaterThan(0);
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const generationNode = tree.nodes.find((n) => n.includes("Generation"));
+      expect(generationNode).toBeDefined();
+      expect(
+        tree.data[generationNode!].extra?.metadata?.usage_metadata
+      ).toEqual({
+        input_tokens: 100,
+        output_tokens: 50,
+        total_tokens: 150,
+        input_token_details: { cache_read: 20, audio: 5 },
+        output_token_details: { reasoning: 10 },
+      });
+    });
+
+    test("extracts usage from response span (Responses API shape)", async () => {
+      const trace = createMockTrace("trace-13b", "Test Agent");
+      const responseSpan = createMockSpan("trace-13b", "span-resp", null, {
+        type: "response",
+        response_id: "resp-usage",
+        _input: "hello",
+        _response: {
+          model: "gpt-4.1-mini",
+          output: [{ type: "message", content: "hi" }],
+          usage: {
+            input_tokens: 80,
+            output_tokens: 40,
+            total_tokens: 120,
+            input_tokens_details: { cached_tokens: 30 },
+            output_tokens_details: { reasoning_tokens: 7 },
+          },
+        },
+      });
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(responseSpan);
+      await processor.onSpanEnd(responseSpan);
+      await processor.onTraceEnd(trace);
+
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const responseNode = tree.nodes.find((n) => n.includes("Response"));
+      expect(responseNode).toBeDefined();
+      expect(tree.data[responseNode!].extra?.metadata?.usage_metadata).toEqual({
+        input_tokens: 80,
+        output_tokens: 40,
+        total_tokens: 120,
+        input_token_details: { cache_read: 30 },
+        output_token_details: { reasoning: 7 },
+      });
     });
   });
 

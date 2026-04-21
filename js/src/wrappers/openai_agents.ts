@@ -11,6 +11,19 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
+import type {
+  AgentSpanData,
+  CustomSpanData,
+  FunctionSpanData,
+  GenerationSpanData,
+  GenerationUsageData,
+  GuardrailSpanData,
+  HandoffSpanData,
+  ResponseSpanData,
+  Span as SDKSpan,
+  SpanData,
+  Trace as SDKTrace,
+} from "@openai/agents";
 
 /**
  * Set the current AsyncLocalStorage store to the given RunTree without a
@@ -43,141 +56,26 @@ function enterRunTreeContext(
   return previous;
 }
 
-// Type definitions for @openai/agents-core tracing module
-// These are defined inline to avoid hard dependency issues
-type SpanDataBase = {
-  type: string;
-};
-
-type AgentSpanData = SpanDataBase & {
-  type: "agent";
-  name: string;
-  handoffs?: string[];
-  tools?: string[];
-  output_type?: string;
-};
-
-type FunctionSpanData = SpanDataBase & {
-  type: "function";
-  name: string;
-  input: string;
-  output: string;
-  mcp_data?: string;
-};
-
-type GenerationUsageData = {
-  input_tokens?: number;
-  output_tokens?: number;
-  details?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-type GenerationSpanData = SpanDataBase & {
-  type: "generation";
-  input?: Array<Record<string, unknown>>;
-  output?: Array<Record<string, unknown>>;
-  model?: string;
-  model_config?: Record<string, unknown>;
-  usage?: GenerationUsageData;
-};
-
-type ResponseSpanData = SpanDataBase & {
-  type: "response";
-  response_id?: string;
-  _input?: string | Record<string, unknown>[];
-  _response?: Record<string, unknown>;
-};
-
-type HandoffSpanData = SpanDataBase & {
-  type: "handoff";
-  from_agent?: string;
-  to_agent?: string;
-};
-
-type CustomSpanData = SpanDataBase & {
-  type: "custom";
-  name: string;
-  data: Record<string, unknown>;
-};
-
-type GuardrailSpanData = SpanDataBase & {
-  type: "guardrail";
-  name: string;
-  triggered: boolean;
-};
-
-type TranscriptionSpanData = SpanDataBase & {
-  type: "transcription";
-  input: {
-    data: string;
-    format: "pcm" | (string & Record<string, never>);
-  };
-  output?: string;
-  model?: string;
-  model_config?: Record<string, unknown>;
-};
-
-type SpeechSpanData = SpanDataBase & {
-  type: "speech";
-  input?: string;
-  output: {
-    data: string;
-    format: "pcm" | (string & Record<string, never>);
-  };
-  model?: string;
-  model_config?: Record<string, unknown>;
-};
-
-type SpeechGroupSpanData = SpanDataBase & {
-  type: "speech_group";
-  input?: string;
-};
-
-type MCPListToolsSpanData = SpanDataBase & {
-  type: "mcp_tools";
-  server?: string;
-  result?: string[];
-};
-
-type SpanData =
-  | AgentSpanData
-  | FunctionSpanData
-  | GenerationSpanData
-  | ResponseSpanData
-  | HandoffSpanData
-  | CustomSpanData
-  | GuardrailSpanData
-  | TranscriptionSpanData
-  | SpeechSpanData
-  | SpeechGroupSpanData
-  | MCPListToolsSpanData;
-
-type SpanError = {
-  message: string;
-  data?: Record<string, unknown>;
-};
-
-interface Span<TData extends SpanData = SpanData> {
-  type: "trace.span";
-  traceId: string;
-  spanData: TData;
-  traceMetadata?: Record<string, unknown>;
-  spanId: string;
-  parentId: string | null;
-  error: SpanError | null;
-  startedAt: string | null;
-  endedAt: string | null;
-  toJSON(): object | null;
-}
-
-interface Trace {
-  type: "trace";
-  traceId: string;
-  name: string;
-  groupId: string | null;
-  metadata?: Record<string, unknown>;
-  toJSON(): object | null;
-}
+// `Span` and `Trace` from the SDK are classes with `#private` fields, which
+// TypeScript treats as nominally typed — plain mock objects cannot satisfy
+// them. We narrow to the subset of public members actually read by the
+// processor via `Pick`, which also strips the private brand and lets test
+// mocks be plain objects.
+type Span<TData extends SpanData = SpanData> = Pick<
+  SDKSpan<TData>,
+  | "traceId"
+  | "spanData"
+  | "spanId"
+  | "parentId"
+  | "error"
+  | "startedAt"
+  | "endedAt"
+  | "toJSON"
+>;
+type Trace = Pick<
+  SDKTrace,
+  "traceId" | "name" | "groupId" | "metadata" | "toJSON"
+>;
 
 interface TracingProcessor {
   start?(): void;
@@ -440,7 +338,7 @@ function extractSpanData(span: Span): Record<string, unknown> {
       metadata.ls_provider = "openai";
 
       if (response.usage) {
-        metadata.usage_metadata = createUsageMetadata(
+        metadata.usage_metadata = createResponsesUsageMetadata(
           response.usage as Record<string, unknown>
         );
       }
@@ -477,10 +375,16 @@ function extractSpanData(span: Span): Record<string, unknown> {
 }
 
 /**
- * Create usage metadata from generation usage data.
+ * Create usage metadata from a `generation` span's `GenerationUsageData`.
+ *
+ * The Agents SDK's generation-span usage shape is intentionally flexible and
+ * puts token breakdowns under `usage.details` (e.g. `cached_tokens`,
+ * `reasoning_tokens`, `audio_tokens`). This is distinct from the OpenAI
+ * Responses API shape used by `response` spans (see
+ * {@link createResponsesUsageMetadata}).
  */
 function createUsageMetadata(
-  usage: GenerationUsageData | Record<string, unknown>
+  usage: GenerationUsageData
 ): ExtractedUsageMetadata {
   const inputTokens = (usage.input_tokens as number) ?? 0;
   const outputTokens = (usage.output_tokens as number) ?? 0;
@@ -514,6 +418,63 @@ function createUsageMetadata(
     if (Object.keys(outputTokenDetails).length > 0) {
       result.output_token_details = outputTokenDetails;
     }
+  }
+
+  return result;
+}
+
+/**
+ * Create usage metadata from a `response` span's embedded OpenAI Responses API
+ * usage object.
+ *
+ * Shape:
+ * ```
+ * {
+ *   input_tokens, output_tokens, total_tokens,
+ *   input_tokens_details: { cached_tokens },
+ *   output_tokens_details: { reasoning_tokens },
+ * }
+ * ```
+ *
+ * This is distinct from {@link createUsageMetadata}, which handles the
+ * Agents SDK `GenerationUsageData` shape (with breakdowns under `details`).
+ */
+function createResponsesUsageMetadata(
+  usage: Record<string, unknown>
+): ExtractedUsageMetadata {
+  const inputTokens = (usage.input_tokens as number) ?? 0;
+  const outputTokens = (usage.output_tokens as number) ?? 0;
+  const totalTokens =
+    (usage.total_tokens as number) ?? inputTokens + outputTokens;
+
+  const result: ExtractedUsageMetadata = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
+  };
+
+  const inputTokenDetails: Record<string, number> = {};
+  const outputTokenDetails: Record<string, number> = {};
+
+  const inputDetails = usage.input_tokens_details as
+    | Record<string, unknown>
+    | undefined;
+  if (inputDetails && typeof inputDetails.cached_tokens === "number") {
+    inputTokenDetails.cache_read = inputDetails.cached_tokens;
+  }
+
+  const outputDetails = usage.output_tokens_details as
+    | Record<string, unknown>
+    | undefined;
+  if (outputDetails && typeof outputDetails.reasoning_tokens === "number") {
+    outputTokenDetails.reasoning = outputDetails.reasoning_tokens;
+  }
+
+  if (Object.keys(inputTokenDetails).length > 0) {
+    result.input_token_details = inputTokenDetails;
+  }
+  if (Object.keys(outputTokenDetails).length > 0) {
+    result.output_token_details = outputTokenDetails;
   }
 
   return result;
@@ -613,7 +574,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     // Build metadata
     const runExtra: Record<string, unknown> = {
       metadata: {
-        ...(this._metadata ?? {}),
+        ...this._metadata,
         ls_integration: "openai-agents-sdk",
         ls_agent_type: "root",
       },
@@ -682,8 +643,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
     const metadata = {
-      ...((traceDict.metadata as Record<string, unknown>) ?? {}),
-      ...(this._metadata ?? {}),
+      ...(traceDict.metadata as Record<string, unknown>),
+      ...this._metadata,
     };
 
     try {
