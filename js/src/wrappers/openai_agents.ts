@@ -878,12 +878,12 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         this._firstResponseInputs[span.traceId] =
           this._firstResponseInputs[span.traceId] ?? inputs;
         this._lastResponseOutputs[span.traceId] = outputs;
-        this._maybePostTrace(span.traceId, inputs);
+        await this._maybePostTrace(span.traceId, inputs);
       } else if (spanData.type === "generation") {
         this._firstResponseInputs[span.traceId] =
           this._firstResponseInputs[span.traceId] ?? inputs;
         this._lastResponseOutputs[span.traceId] = outputs;
-        this._maybePostTrace(span.traceId, inputs);
+        await this._maybePostTrace(span.traceId, inputs);
       }
 
       // End the run
@@ -906,15 +906,19 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     }
   }
 
-  private _maybePostTrace(
+  private async _maybePostTrace(
     traceId: string,
     inputs: Record<string, unknown>
-  ): void {
+  ): Promise<void> {
     if (this._unpostedTraces.has(traceId)) {
       const traceRun = this._runs.get(traceId);
       if (traceRun) {
         traceRun.inputs = inputs;
-        void traceRun.postRun();
+        try {
+          await traceRun.postRun();
+        } catch (e) {
+          console.error("Error posting trace:", e);
+        }
         this._unpostedTraces.delete(traceId);
       }
     }
