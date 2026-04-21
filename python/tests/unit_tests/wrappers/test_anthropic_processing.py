@@ -1,6 +1,9 @@
 """Unit tests for Anthropic wrapper processing functions."""
 
+import warnings
 from unittest.mock import MagicMock
+
+import pytest
 
 from langsmith._internal._orjson import loads as _loads
 from langsmith.wrappers._anthropic import _create_usage_metadata, _message_to_outputs
@@ -180,3 +183,84 @@ class TestMessageToOutputsToolCalls:
         assert result["tool_calls"][1]["index"] == 1
         assert result["tool_calls"][0]["function"]["name"] == "get_weather"
         assert result["tool_calls"][1]["function"]["name"] == "get_stock"
+
+
+class TestParsedMessageSerialization:
+    """Anthropic's ParsedMessage / ParsedBetaMessage trigger Pydantic
+    serializer warnings when dumped because ``parsed_output`` and the
+    parsed content-block union do not match the base class's field types.
+
+    The wrapper should suppress those warnings while still preserving the
+    parsed output values."""
+
+    def test_parsed_message_does_not_emit_pydantic_warnings(self):
+        anthropic_types = pytest.importorskip("anthropic.types")
+        pydantic_mod = pytest.importorskip("pydantic")
+
+        ParsedMessage = anthropic_types.ParsedMessage
+        ParsedTextBlock = anthropic_types.ParsedTextBlock
+
+        class WeatherResponse(pydantic_mod.BaseModel):
+            city: str
+            temp: str
+
+        parsed = WeatherResponse(city="SF", temp="62F")
+        block = ParsedTextBlock.model_construct(
+            type="text",
+            text='{"city": "SF", "temp": "62F"}',
+            parsed_output=parsed,
+            citations=None,
+        )
+        msg = ParsedMessage.model_construct(
+            id="msg_1",
+            role="assistant",
+            content=[block],
+            model="claude-opus-4-6",
+            stop_reason="end_turn",
+            stop_sequence=None,
+            type="message",
+            usage={"input_tokens": 10, "output_tokens": 5},
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            outputs = _message_to_outputs(msg)
+
+        pydantic_warnings = [
+            w
+            for w in caught
+            if "PydanticSerializationUnexpectedValue" in str(w.message)
+            or "Pydantic serializer warnings" in str(w.message)
+        ]
+        assert not pydantic_warnings, (
+            f"Expected no Pydantic serializer warnings, got: "
+            f"{[str(w.message) for w in pydantic_warnings]}"
+        )
+
+        assert outputs["content"][0]["parsed_output"] == {
+            "city": "SF",
+            "temp": "62F",
+        }
+        assert outputs["usage_metadata"]["input_tokens"] == 10
+        assert outputs["usage_metadata"]["output_tokens"] == 5
+
+    def test_model_dump_without_warnings_kwarg_falls_back(self):
+        """Older pydantic/anthropic models without warnings kwarg still work."""
+
+        class LegacyMessage:
+            def model_dump(self, **kwargs):
+                if "warnings" in kwargs:
+                    raise TypeError("unexpected kwarg 'warnings'")
+                return {
+                    "id": "msg_legacy",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "hi"}],
+                    "model": "claude-x",
+                    "stop_reason": "end_turn",
+                    "type": "message",
+                    "usage": {"input_tokens": 1, "output_tokens": 2},
+                }
+
+        outputs = _message_to_outputs(LegacyMessage())
+        assert outputs["content"] == [{"type": "text", "text": "hi"}]
+        assert outputs["usage_metadata"]["input_tokens"] == 1

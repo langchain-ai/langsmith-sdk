@@ -144,9 +144,23 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     return result
 
 
+def _model_dump(message: Any) -> dict:
+    """Dump an Anthropic message model, suppressing spurious Pydantic warnings.
+
+    Parsed response models (e.g. ``ParsedMessage`` / ``ParsedBetaMessage``) emit
+    ``PydanticSerializationUnexpectedValue`` warnings when serialized through
+    their base class's field types. The values are still serialized correctly,
+    so we silence the warnings to avoid noisy logs.
+    """
+    try:
+        return message.model_dump(warnings=False)
+    except TypeError:
+        return message.model_dump()
+
+
 def _message_to_outputs(message: Any) -> dict:
     """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
-    outputs = message.model_dump()
+    outputs = _model_dump(message)
     anthropic_token_usage = outputs.pop("usage", None)
     if anthropic_token_usage:
         outputs["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
