@@ -455,7 +455,7 @@ export class Sandbox {
    * Capture a snapshot from this sandbox.
    *
    * @param name - Snapshot name.
-   * @param options - Capture options (checkpoint, timeout).
+   * @param options - Capture options (timeout).
    * @returns Snapshot in "ready" status.
    */
   async captureSnapshot(

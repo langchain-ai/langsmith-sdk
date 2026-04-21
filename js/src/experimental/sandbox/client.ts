@@ -621,7 +621,7 @@ export class SandboxClient {
    *
    * @param sandboxName - Name of the sandbox to capture from.
    * @param name - Snapshot name.
-   * @param options - Capture options (checkpoint, timeout).
+   * @param options - Capture options (timeout).
    * @returns Snapshot in "ready" status.
    */
   async captureSnapshot(
@@ -629,15 +629,12 @@ export class SandboxClient {
     name: string,
     options: CaptureSnapshotOptions = {}
   ): Promise<Snapshot> {
-    const { checkpoint, timeout = 60, signal } = options;
+    const { timeout = 60, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(
       sandboxName
     )}/snapshot`;
 
     const payload: Record<string, unknown> = { name };
-    if (checkpoint !== undefined) {
-      payload.checkpoint = checkpoint;
-    }
 
     const response = await this._postJson(url, payload, { signal });
     const snapshot = (await response.json()) as Snapshot;

@@ -372,10 +372,18 @@ const privateSnapshot = await client.createSnapshot(
   },
 );
 
-// Capture the state of a running sandbox for later reuse
+// Capture the state of a running sandbox for later reuse. Persistent paths
+// (`/usr/local`, `/root`, `/opt`, the home directory, etc.) are preserved;
+// `/tmp` is a tmpfs and is NOT part of the capture.
 const running = await client.createSandbox(snapshot.id);
-await running.write("/data/prepared.txt", "preloaded");
-const captured = await client.captureSnapshot(running.name, "with-data");
+await running.run("pip install --quiet requests", { timeout: 180 });
+await running.write("/opt/prepared.txt", "preloaded");
+
+// Either form works; the instance method just forwards to the client.
+const captured = await running.captureSnapshot("with-data", { timeout: 300 });
+// const captured = await client.captureSnapshot(running.name, "with-data");
+
+console.log(captured.id, captured.source_sandbox_id);
 
 // Boot a new sandbox from the captured snapshot
 const resumed = await client.createSandbox(captured.id);
@@ -385,6 +393,10 @@ const snapshots = await client.listSnapshots();
 const loaded = await client.getSnapshot(snapshot.id);
 await client.deleteSnapshot(snapshot.id);
 ```
+
+> **Note:** `captureSnapshot` preserves only the persistent filesystem. Running
+> processes, open sockets, in-memory state, and anything under `/tmp` are not
+> carried over — restart the processes you need in the new sandbox.
 
 ### Sizing and Resources
 

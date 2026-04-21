@@ -316,8 +316,6 @@ export interface CreateSnapshotOptions {
  * Options for capturing a snapshot from a running sandbox.
  */
 export interface CaptureSnapshotOptions {
-  /** Checkpoint timestamp to use. If omitted, creates a fresh checkpoint. */
-  checkpoint?: string;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */
