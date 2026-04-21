@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pytest
@@ -6,6 +7,14 @@ import langsmith.schemas as ls_schemas
 import langsmith.utils as ls_utils
 from langsmith.client import Client
 from tests.integration_tests.conftest import skip_if_rate_limited
+
+
+TOOLS_JSON = json.dumps(
+    {
+        "tools": [{"name": "read_file", "type": "builtin"}],
+        "interrupt_config": {},
+    }
+)
 
 
 @pytest.fixture
@@ -42,6 +51,32 @@ def test_push_and_pull_agent_roundtrip(
         entry = agent.files["AGENTS.md"]
         assert isinstance(entry, ls_schemas.FileEntry)
         assert entry.content == "# Test Agent\n"
+    finally:
+        try:
+            ctx.delete_agent(agent_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+def test_push_and_pull_agent_tools_json_roundtrip(
+    langsmith_client: Client, agent_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        url = ctx.push_agent(
+            agent_identifier,
+            files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
+            description="integration test agent tools",
+        )
+        assert "/hub/" in url
+
+        agent = ctx.pull_agent(agent_identifier)
+        assert isinstance(agent, ls_schemas.AgentContext)
+        assert "tools.json" in agent.files
+        entry = agent.files["tools.json"]
+        assert isinstance(entry, ls_schemas.FileEntry)
+        assert entry.content == TOOLS_JSON
     finally:
         try:
             ctx.delete_agent(agent_identifier)

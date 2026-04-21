@@ -1,5 +1,7 @@
 """Test the Context and AsyncContext classes for Hub non-prompt repos."""
 
+import json
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pydantic
@@ -8,6 +10,14 @@ import pytest
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith.context import AsyncContext, Context
+
+
+TOOLS_JSON = json.dumps(
+    {
+        "tools": [{"name": "read_file", "type": "builtin"}],
+        "interrupt_config": {},
+    }
+)
 
 
 def _mock_sync_client() -> MagicMock:
@@ -241,6 +251,30 @@ def test_push_agent_null_entry_serializes_as_delete() -> None:
     assert body["files"]["remove.py"] is None
 
 
+def test_push_agent_accepts_tools_json_as_normal_file_entry() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.side_effect = [
+        _response({}),
+        _response(
+            {
+                "commit": {
+                    "id": "00000000-0000-0000-0000-000000000000",
+                    "commit_hash": "abc12345",
+                }
+            }
+        ),
+    ]
+    ctx = Context(client)
+    ctx.push_agent(
+        "-/my-agent",
+        files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
+    )
+    commit_call = client.request_with_retries.call_args_list[1]
+    assert commit_call.kwargs["json"]["files"] == {
+        "tools.json": {"type": "file", "content": TOOLS_JSON}
+    }
+
+
 def test_push_agent_passes_parent_commit_when_provided() -> None:
     client = _mock_sync_client()
     client.request_with_retries.side_effect = [
@@ -364,6 +398,31 @@ async def test_async_push_agent_creates_and_commits() -> None:
     )
     assert url == "https://smith.langchain.com/hub/-/my-agent:abc12345"
     assert client._arequest_with_retries.await_count == 3
+
+
+async def test_async_push_agent_accepts_tools_json_as_normal_file_entry() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.side_effect = [
+        ls_utils.LangSmithNotFoundError("not found"),
+        _response({}),
+        _response(
+            {
+                "commit": {
+                    "id": "00000000-0000-0000-0000-000000000000",
+                    "commit_hash": "abc12345",
+                }
+            }
+        ),
+    ]
+    ctx = AsyncContext(client)
+    await ctx.push_agent(
+        "-/my-agent",
+        files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
+    )
+    commit_call = client._arequest_with_retries.call_args_list[2]
+    assert commit_call.kwargs["json"]["files"] == {
+        "tools.json": {"type": "file", "content": TOOLS_JSON}
+    }
 
 
 async def test_async_create_repo_swallows_conflict() -> None:
