@@ -600,21 +600,35 @@ with client.sandbox(snapshot_id=snapshot.id) as sb:
 
 ### Capture a Running Sandbox
 
-Install packages or configure state, then capture it as a reusable snapshot:
+Install packages or prepare files on a running sandbox, then capture the
+result as a reusable snapshot. The returned snapshot has `source_sandbox_id`
+set to the sandbox it was captured from, and can be used as the
+`snapshot_id` for any later `create_sandbox` / `sandbox(...)` call.
 
 ```python
 sb = client.create_sandbox(snapshot_id=base_snapshot_id, name="setup-box")
-sb.run("pip install numpy pandas scikit-learn")
+sb.run("pip install numpy pandas scikit-learn", timeout=180)
+sb.write("/opt/config.yaml", "model: gpt-5\n")
 
-# Capture current state as a new snapshot
-snapshot = sb.capture_snapshot("ml-ready")
+# Either form works; the instance method just forwards to the client.
+snapshot = sb.capture_snapshot("ml-ready", timeout=300)
+# snapshot = client.capture_snapshot(sb.name, "ml-ready", timeout=300)
+print(snapshot.id, snapshot.source_sandbox_id)
 
 sb.delete()
 
 # Later: spin up sandboxes from the captured snapshot
 with client.sandbox(snapshot_id=snapshot.id) as sb:
     sb.run("python -c 'import numpy; print(numpy.__version__)'")
+    assert sb.read("/opt/config.yaml") == b"model: gpt-5\n"
 ```
+
+> **Note:** `capture_snapshot` preserves only the **persistent filesystem**.
+> Installed packages (under `/usr/local`, `/root`, `/opt`, the home
+> directory, etc.) and files you wrote to those paths are kept. Running
+> processes, open sockets, in-memory state, and anything under `/tmp`
+> (which is a tmpfs) are **not** carried over — restart the processes you
+> need in the new sandbox.
 
 ### Snapshot CRUD
 

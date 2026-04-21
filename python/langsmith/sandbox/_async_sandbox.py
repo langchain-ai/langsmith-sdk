@@ -695,7 +695,6 @@ class AsyncSandbox:
         self,
         name: str,
         *,
-        checkpoint: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -703,8 +702,6 @@ class AsyncSandbox:
 
         Args:
             name: Snapshot name.
-            checkpoint: Checkpoint timestamp to use. If omitted, creates a
-                fresh checkpoint from the current state.
             timeout: Timeout in seconds when waiting for ready.
             headers: Optional per-request header overrides.
 
@@ -720,7 +717,6 @@ class AsyncSandbox:
         return await self._client.capture_snapshot(
             self.name,
             name,
-            checkpoint=checkpoint,
             timeout=timeout,
             headers=headers,
         )

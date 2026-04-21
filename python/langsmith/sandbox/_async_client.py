@@ -734,7 +734,6 @@ class AsyncSandboxClient:
         sandbox_name: str,
         name: str,
         *,
-        checkpoint: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -745,8 +744,6 @@ class AsyncSandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
-            checkpoint: Checkpoint timestamp to use. If omitted, creates a
-                fresh checkpoint from the running VM's current state.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -761,8 +758,6 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
-        if checkpoint is not None:
-            payload["checkpoint"] = checkpoint
 
         try:
             response = await self._http.post(
