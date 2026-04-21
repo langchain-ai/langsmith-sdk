@@ -31,6 +31,8 @@ from typing import (
     overload,
 )
 
+from langsmith import tracing_offload as _tracing_offload
+
 T = TypeVar("T")
 
 _no_default = object()
@@ -344,11 +346,23 @@ async def aio_to_thread(
     allowing context variables from the main thread to be accessed in the
     separate thread.
 
+    If a :class:`~langsmith.tracing_offload.TracingOffload` is installed in
+    the current context (see :mod:`langsmith.tracing_offload`), it is used
+    to dispatch the call instead of ``loop.run_in_executor``. This lets
+    frameworks whose event loop cannot support thread-pool dispatch (e.g.
+    Temporal workflow loops) choose a compatible strategy.
+
     Return a coroutine that can be awaited to get the eventual result of *func*.
     """
-    loop = asyncio.get_running_loop()
     ctx = __ctx or contextvars.copy_context()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
+    offload = _tracing_offload.get_tracing_offload()
+    if offload is not None:
+        call = _tracing_offload.TracingCall(
+            op=func_call, func=func, args=args, kwargs=kwargs, context=ctx
+        )
+        return await offload(call)
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, func_call)
 
 
