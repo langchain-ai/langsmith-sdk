@@ -302,11 +302,6 @@ class Context:
         is_public: Optional[bool],
     ) -> str:
         """Create a directory commit, creating the repo if it does not exist."""
-        if len(files) > ls_schemas.MAX_CONTEXT_ENTRIES:
-            raise ls_utils.LangSmithUserError(
-                f"Too many files ({len(files)}); "
-                f"max is {ls_schemas.MAX_CONTEXT_ENTRIES}."
-            )
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
             raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 
@@ -731,11 +726,6 @@ class AsyncContext:
         is_public: Optional[bool],
     ) -> str:
         """Create a directory commit, creating the repo if it does not exist."""
-        if len(files) > ls_schemas.MAX_CONTEXT_ENTRIES:
-            raise ls_utils.LangSmithUserError(
-                f"Too many files ({len(files)}); "
-                f"max is {ls_schemas.MAX_CONTEXT_ENTRIES}."
-            )
         if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
             raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
 

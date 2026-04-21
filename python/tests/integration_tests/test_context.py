@@ -76,6 +76,52 @@ def test_push_and_pull_skill_roundtrip(
 
 
 @skip_if_rate_limited
+def test_agent_exists_reflects_create_delete_lifecycle(
+    langsmith_client: Client, agent_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        assert ctx.agent_exists(agent_identifier) is False
+
+        ctx.push_agent(
+            agent_identifier,
+            files={"AGENTS.md": ls_schemas.FileEntry(content="x")},
+        )
+        assert ctx.agent_exists(agent_identifier) is True
+
+        ctx.delete_agent(agent_identifier)
+        assert ctx.agent_exists(agent_identifier) is False
+    finally:
+        try:
+            ctx.delete_agent(agent_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
+def test_skill_exists_reflects_create_delete_lifecycle(
+    langsmith_client: Client, skill_identifier: str
+) -> None:
+    ctx = langsmith_client.context
+    try:
+        assert ctx.skill_exists(skill_identifier) is False
+
+        ctx.push_skill(
+            skill_identifier,
+            files={"SKILL.md": ls_schemas.FileEntry(content="x")},
+        )
+        assert ctx.skill_exists(skill_identifier) is True
+
+        ctx.delete_skill(skill_identifier)
+        assert ctx.skill_exists(skill_identifier) is False
+    finally:
+        try:
+            ctx.delete_skill(skill_identifier)
+        except Exception:
+            pass
+
+
+@skip_if_rate_limited
 def test_push_agent_null_entry_deletes_file(
     langsmith_client: Client, agent_identifier: str
 ) -> None:

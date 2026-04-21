@@ -66,13 +66,6 @@ def test_agent_entry_exclude_none_strips_response_only_fields() -> None:
     assert "commit_id" not in dumped
 
 
-def test_push_agent_rejects_too_many_files() -> None:
-    ctx = Context(_mock_sync_client())
-    too_many = {f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)}
-    with pytest.raises(ls_utils.LangSmithUserError, match="Too many files"):
-        ctx.push_agent("-/repo", files=too_many)
-
-
 def test_push_agent_rejects_short_parent_commit() -> None:
     ctx = Context(_mock_sync_client())
     with pytest.raises(ls_utils.LangSmithUserError, match="8-64"):
@@ -306,6 +299,15 @@ def test_skill_exists_returns_true_on_200() -> None:
     assert ctx.skill_exists("-/my-skill") is True
 
 
+def test_skill_exists_returns_false_on_not_found() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
+        "not found"
+    )
+    ctx = Context(client)
+    assert ctx.skill_exists("-/nope") is False
+
+
 def test_list_agents_passes_repo_type_filter() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({"repos": [], "total": 0})
@@ -404,6 +406,22 @@ async def test_async_agent_exists_returns_true_on_200() -> None:
     assert await ctx.agent_exists("-/my-agent") is True
 
 
+async def test_async_agent_exists_returns_false_on_not_found() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
+        "not found"
+    )
+    ctx = AsyncContext(client)
+    assert await ctx.agent_exists("-/nope") is False
+
+
+async def test_async_skill_exists_returns_true_on_200() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.return_value = _response({})
+    ctx = AsyncContext(client)
+    assert await ctx.skill_exists("-/my-skill") is True
+
+
 async def test_async_skill_exists_returns_false_on_not_found() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
@@ -422,10 +440,3 @@ async def test_async_list_skills_passes_filter() -> None:
     assert call.args == ("GET", "/repos")
     assert call.kwargs["params"]["repo_type"] == "skill"
     assert call.kwargs["params"]["limit"] == 25
-
-
-async def test_async_push_agent_rejects_too_many_files() -> None:
-    ctx = AsyncContext(_mock_async_client())
-    too_many = {f"p_{i}.py": ls_schemas.FileEntry(content="x") for i in range(501)}
-    with pytest.raises(ls_utils.LangSmithUserError, match="Too many files"):
-        await ctx.push_agent("-/repo", files=too_many)
