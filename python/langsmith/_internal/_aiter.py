@@ -31,7 +31,7 @@ from typing import (
     overload,
 )
 
-from langsmith import tracing_offload as _tracing_offload
+from langsmith import aio as _aio
 
 T = TypeVar("T")
 
@@ -346,23 +346,30 @@ async def aio_to_thread(
     allowing context variables from the main thread to be accessed in the
     separate thread.
 
-    If a :class:`~langsmith.tracing_offload.TracingOffload` is installed in
-    the current context (see :mod:`langsmith.tracing_offload`), it is used
-    to dispatch the call instead of ``loop.run_in_executor``. This lets
-    frameworks whose event loop cannot support thread-pool dispatch (e.g.
-    Temporal workflow loops) choose a compatible strategy.
+    If a :class:`~langsmith.aio.SyncRunner` is registered on the running
+    event loop (see :mod:`langsmith.aio`), it is invoked instead of
+    ``loop.run_in_executor``. This lets frameworks whose event loop cannot
+    support thread-pool dispatch (e.g. Temporal workflow loops) choose a
+    compatible strategy.
 
     Return a coroutine that can be awaited to get the eventual result of *func*.
     """
-    ctx = __ctx or contextvars.copy_context()
+    ctx = __ctx if __ctx is not None else contextvars.copy_context()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
-    offload = _tracing_offload.get_tracing_offload()
-    if offload is not None:
-        call = _tracing_offload.TracingCall(
-            op=func_call, func=func, args=args, kwargs=kwargs, context=ctx
-        )
-        return await offload(call)
     loop = asyncio.get_running_loop()
+    runner = _aio.get_loop_sync_runner(loop)
+    if runner is not None:
+        raw_func = func
+        raw_args = args
+        if __ctx is not None:
+            # Preserve the explicit snapshot for runners that use the documented
+            # raw form `call.func(*call.args, **call.kwargs)`.
+            raw_func = ctx.run
+            raw_args = (func, *args)
+        call = _aio.TracingCall(
+            op=func_call, func=raw_func, args=raw_args, kwargs=kwargs, context=ctx
+        )
+        return await runner(call)
     return await loop.run_in_executor(None, func_call)
 
 

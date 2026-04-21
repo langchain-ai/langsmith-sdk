@@ -32,6 +32,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith.aio import set_loop_sync_runner
 from langsmith.run_helpers import (
     _attachment_args_cache,
     _cached_attachment_args,
@@ -1609,6 +1610,37 @@ async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
         assert len(mock_calls) >= 1
     else:
         assert not mock_calls
+
+
+async def test_async_trace_preserves_context_with_raw_sync_runner():
+    loop = asyncio.get_running_loop()
+
+    async def raw_runner(call):
+        return call.func(*call.args, **call.kwargs)
+
+    set_loop_sync_runner(loop, raw_runner)
+    try:
+        with tracing_context(enabled="local"):
+            assert get_current_run_tree() is None
+
+            async with trace(name="outer", inputs={"step": "outer"}) as outer:
+                current_outer = get_current_run_tree()
+                assert current_outer is not None
+                assert current_outer.id == outer.id
+
+                async with trace(name="inner", inputs={"step": "inner"}) as inner:
+                    current_inner = get_current_run_tree()
+                    assert current_inner is not None
+                    assert current_inner.id == inner.id
+                    assert inner.parent_run_id == outer.id
+
+                restored_outer = get_current_run_tree()
+                assert restored_outer is not None
+                assert restored_outer.id == outer.id
+
+            assert get_current_run_tree() is None
+    finally:
+        set_loop_sync_runner(loop, None)
 
 
 async def test_process_inputs_outputs():
