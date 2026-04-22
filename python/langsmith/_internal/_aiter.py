@@ -5,6 +5,8 @@ https://github.com/maxfischer2781/asyncstdlib/blob/master/asyncstdlib/itertools.
 MIT License
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextvars
 import functools
@@ -30,6 +32,8 @@ from typing import (
     cast,
     overload,
 )
+
+from langsmith._runtime_overrides import get_runtime_overrides
 
 T = TypeVar("T")
 
@@ -197,7 +201,7 @@ class Tee(Generic[T]):
     def __iter__(self) -> Iterator[AsyncIterator[T]]:
         yield from self._children
 
-    async def __aenter__(self) -> "Tee[T]":
+    async def __aenter__(self) -> Tee[T]:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
@@ -346,6 +350,9 @@ async def aio_to_thread(
 
     Return a coroutine that can be awaited to get the eventual result of *func*.
     """
+    overrides = get_runtime_overrides()
+    if overrides.aio_to_thread is not None:
+        return await overrides.aio_to_thread(func, *args, __ctx=__ctx, **kwargs)
     loop = asyncio.get_running_loop()
     ctx = __ctx or contextvars.copy_context()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
