@@ -101,15 +101,18 @@ def filter_response_data(response):
 
 
 # Create a custom VCR instance with our configuration
-def create_vcr_instance(record_mode):
+def create_vcr_instance(record_mode, match_on=None):
     """Create a configured VCR instance."""
     cassette_dir = os.path.join(os.path.dirname(__file__), "cassettes")
+
+    if match_on is None:
+        match_on = ["method", "scheme", "host", "port", "path", "query", "body"]
 
     # Configure VCR
     my_vcr = vcr.VCR(
         cassette_library_dir=cassette_dir,
         record_mode=record_mode,
-        match_on=["method", "scheme", "host", "port", "path", "query", "body"],
+        match_on=match_on,
         filter_headers=[
             "Authorization",
             "X-Api-Key",
@@ -137,11 +140,20 @@ def vcr_fixture(request):
     # Get the record mode from command line
     record_mode = request.config.getoption("--vcr-mode")
 
+    # Check if this is a Google ADK test - use more lenient matching
+    # since the request body format can change between versions
+    module_name = request.module.__name__.split(".")[-1]
+    is_google_adk_test = module_name == "test_google_adk"
+
+    # For Google ADK tests, don't match on body since the format can change
+    match_on = None
+    if is_google_adk_test:
+        match_on = ["method", "scheme", "host", "port", "path", "query"]
+
     # Create the VCR instance
-    my_vcr = create_vcr_instance(record_mode)
+    my_vcr = create_vcr_instance(record_mode, match_on=match_on)
 
     # Create a cassette name based on the test function
-    module_name = request.module.__name__.split(".")[-1]
     test_name = request.function.__name__
     cassette_name = f"{module_name}_{test_name}"
 
