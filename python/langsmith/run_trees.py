@@ -104,6 +104,18 @@ _DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
 
 _SENTINEL = cast(None, object())
 
+
+def _coerce_to_dict(value):
+    if isinstance(value, dict):
+        return value
+    if (
+        not isinstance(value, type)
+        and hasattr(value, 'model_dump')
+        and callable(value.model_dump)
+    ):
+        return value.model_dump()
+    return dict(value)
+
 TIMESTAMP_LENGTH = 36
 
 
@@ -316,6 +328,10 @@ class RunTree(ls_schemas.RunBase):
             values["tags"] = []
         if values.get("outputs") is None:
             values["outputs"] = {}
+        for _key in ("inputs", "outputs"):
+            _val = values.get(_key)
+            if _val is not None and not isinstance(_val, dict):
+                values[_key] = _coerce_to_dict(_val)
         if values.get("attachments") is None:
             values["attachments"] = {}
         if values.get("replicas") is None:
@@ -404,13 +420,13 @@ class RunTree(ls_schemas.RunBase):
             if inputs is None:
                 self.inputs = {}
             else:
-                self.inputs = dict(inputs)
+                self.inputs = _coerce_to_dict(inputs)
         if outputs is not NOT_PROVIDED:
             self.extra[OVERRIDE_OUTPUTS] = True
             if outputs is None:
                 self.outputs = {}
             else:
-                self.outputs = dict(outputs)
+                self.outputs = _coerce_to_dict(outputs)
         if usage_metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {})["usage_metadata"] = (
                 validate_extracted_usage_metadata(usage_metadata)
@@ -503,10 +519,11 @@ class RunTree(ls_schemas.RunBase):
         # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
+                dict_outputs = _coerce_to_dict(outputs)
                 if not self.outputs:
-                    self.outputs = outputs
+                    self.outputs = dict_outputs
                 else:
-                    self.outputs.update(outputs)
+                    self.outputs.update(dict_outputs)
         if error is not None:
             self.error = error
         if events is not None:
