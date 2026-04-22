@@ -221,6 +221,26 @@ def validate_extracted_usage_metadata(
     return data  # type: ignore
 
 
+def _coerce_to_dict(value: Any) -> dict:
+    """Coerce a value to a dict, handling Pydantic BaseModel instances."""
+    if isinstance(value, dict):
+        return value
+    if (
+        value is not None
+        and not isinstance(value, type)
+        and hasattr(value, "model_dump")
+        and callable(value.model_dump)
+    ):
+        try:
+            return value.model_dump(exclude_none=True, mode="json")
+        except Exception as e:
+            logger.debug(
+                f"Failed to use model_dump to serialize {type(value)} to JSON: {e}"
+            )
+            return {"output": value}
+    return {"output": value}
+
+
 class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
@@ -302,8 +322,12 @@ class RunTree(ls_schemas.RunBase):
             values["events"] = []
         if values.get("tags") is None:
             values["tags"] = []
+        if values.get("inputs") is not None and not isinstance(values["inputs"], dict):
+            values["inputs"] = _coerce_to_dict(values["inputs"])
         if values.get("outputs") is None:
             values["outputs"] = {}
+        elif not isinstance(values["outputs"], dict):
+            values["outputs"] = _coerce_to_dict(values["outputs"])
         if values.get("attachments") is None:
             values["attachments"] = {}
         if values.get("replicas") is None:
@@ -392,13 +416,13 @@ class RunTree(ls_schemas.RunBase):
             if inputs is None:
                 self.inputs = {}
             else:
-                self.inputs = dict(inputs)
+                self.inputs = _coerce_to_dict(inputs)
         if outputs is not NOT_PROVIDED:
             self.extra[OVERRIDE_OUTPUTS] = True
             if outputs is None:
                 self.outputs = {}
             else:
-                self.outputs = dict(outputs)
+                self.outputs = _coerce_to_dict(outputs)
         if usage_metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {})["usage_metadata"] = (
                 validate_extracted_usage_metadata(usage_metadata)
@@ -427,7 +451,7 @@ class RunTree(ls_schemas.RunBase):
         """
         if self.outputs is None:
             self.outputs = {}
-        self.outputs.update(outputs)
+        self.outputs.update(_coerce_to_dict(outputs))
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given inputs into the run.
@@ -437,7 +461,7 @@ class RunTree(ls_schemas.RunBase):
         """
         if self.inputs is None:
             self.inputs = {}
-        self.inputs.update(inputs)
+        self.inputs.update(_coerce_to_dict(inputs))
         # Set to False so LangChain things it needs to
         # re-upload inputs
         self.extra["inputs_is_truthy"] = False
@@ -491,10 +515,11 @@ class RunTree(ls_schemas.RunBase):
         # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
+                outputs_dict = _coerce_to_dict(outputs)
                 if not self.outputs:
-                    self.outputs = outputs
+                    self.outputs = outputs_dict
                 else:
-                    self.outputs.update(outputs)
+                    self.outputs.update(outputs_dict)
         if error is not None:
             self.error = error
         if events is not None:

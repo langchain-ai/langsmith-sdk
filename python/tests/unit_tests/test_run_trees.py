@@ -550,3 +550,53 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_run_tree_accepts_pydantic_model_inputs_outputs():
+    """Pydantic BaseModel instances should be coerced to dicts."""
+    from pydantic import BaseModel
+
+    class MyInput(BaseModel):
+        query: str
+
+    class MyOutput(BaseModel):
+        answer: str
+
+    rt = RunTree(
+        name="test",
+        run_type="chain",
+        inputs=MyInput(query="hello"),
+        outputs=MyOutput(answer="hi"),
+    )
+    assert rt.inputs == {"query": "hello"}
+    assert rt.outputs == {"answer": "hi"}
+
+
+def test_run_tree_end_accepts_pydantic_model():
+    """end(outputs=BaseModel) should coerce to dict."""
+    from pydantic import BaseModel
+
+    class MyOutput(BaseModel):
+        answer: str
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.end(outputs=MyOutput(answer="hello"))
+    assert isinstance(rt.outputs, dict)
+    assert rt.outputs == {"answer": "hello"}
+
+
+def test_run_tree_set_coerces_nested_pydantic_models():
+    """set(inputs/outputs=BaseModel) should fully coerce nested models to dicts."""
+    from pydantic import BaseModel
+
+    class Inner(BaseModel):
+        val: int
+
+    class MyNestedInput(BaseModel):
+        query: str
+        nested: Inner
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.set(inputs=MyNestedInput(query="hello", nested=Inner(val=42)))
+    assert rt.inputs == {"query": "hello", "nested": {"val": 42}}
+    assert isinstance(rt.inputs["nested"], dict)
