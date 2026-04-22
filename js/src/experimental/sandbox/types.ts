@@ -255,6 +255,12 @@ export interface SandboxProxyConfig {
  */
 export interface CreateSandboxOptions {
   /**
+   * Snapshot name to boot from. Mutually exclusive with the positional
+   * `snapshotId` argument on `createSandbox`; exactly one must be provided.
+   * Resolved server-side to a snapshot owned by the caller's tenant.
+   */
+  snapshotName?: string;
+  /**
    * Optional sandbox name (auto-generated if not provided).
    */
   name?: string;
@@ -318,6 +324,28 @@ export interface CreateSnapshotOptions {
 export interface CaptureSnapshotOptions {
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Options for listing snapshots. All fields are optional and independent;
+ * omitting them returns all snapshots visible to the caller's tenant.
+ */
+export interface ListSnapshotsOptions {
+  /**
+   * Server-side substring filter applied to snapshot names.
+   */
+  nameContains?: string;
+  /**
+   * Maximum number of snapshots to return.
+   */
+  limit?: number;
+  /**
+   * Number of snapshots to skip before returning results. Useful for
+   * paginating through large result sets in combination with `limit`.
+   */
+  offset?: number;
   /** AbortSignal for cancellation. */
   signal?: AbortSignal;
 }

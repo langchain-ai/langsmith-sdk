@@ -1095,6 +1095,53 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     expect(sandbox.vCpus).toBe(4);
     expect(sandbox.mem_bytes).toBe(1073741824);
   });
+
+  it("should send snapshot_name (and no snapshot_id) when resolved by name", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        snapshot_id: "snap-1",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox(undefined, {
+      snapshotName: "my-snap",
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.snapshot_name).toBe("my-snap");
+    expect(body.snapshot_id).toBeUndefined();
+    expect(body.template_name).toBeUndefined();
+    expect(sandbox.snapshot_id).toBe("snap-1");
+  });
+
+  it("should throw when neither snapshotId nor snapshotName is provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(client.createSandbox()).rejects.toThrow(
+      LangSmithValidationError
+    );
+    await expect(client.createSandbox()).rejects.toThrow(
+      /Exactly one of snapshotId or options\.snapshotName must be set/
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should throw when both snapshotId and snapshotName are provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.createSandbox("snap-1", { snapshotName: "my-snap" })
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("SandboxClient - snapshot operations", () => {
@@ -1236,6 +1283,42 @@ describe("SandboxClient - snapshot operations", () => {
     expect(snapshots).toHaveLength(2);
     expect(snapshots[0].name).toBe("env-1");
     expect(snapshots[1].status).toBe("building");
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).search).toBe("");
+  });
+
+  it("listSnapshots should forward nameContains, limit, and offset as query params", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "env-1",
+            status: "ready",
+          },
+        ],
+        offset: 5,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshots = await client.listSnapshots({
+      nameContains: "env",
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].name).toBe("env-1");
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname.endsWith("/snapshots")).toBe(true);
+    expect(parsed.searchParams.get("name_contains")).toBe("env");
+    expect(parsed.searchParams.get("limit")).toBe("10");
+    expect(parsed.searchParams.get("offset")).toBe("5");
   });
 
   it("deleteSnapshot should send DELETE request", async () => {

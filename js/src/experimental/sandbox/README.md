@@ -388,8 +388,21 @@ console.log(captured.id, captured.source_sandbox_id);
 // Boot a new sandbox from the captured snapshot
 const resumed = await client.createSandbox(captured.id);
 
-// List / fetch / delete snapshots
+// Or resolve by snapshot name instead of ID — the server looks up the
+// snapshot owned by your tenant. Exactly one of the positional `snapshotId`
+// or `options.snapshotName` must be provided.
+const byName = await client.createSandbox(undefined, {
+  snapshotName: "with-data",
+});
+
+// List / fetch / delete snapshots. listSnapshots() accepts optional
+// server-side filters and pagination; omit them to return everything.
 const snapshots = await client.listSnapshots();
+const firstPython = await client.listSnapshots({
+  nameContains: "python",
+  limit: 10,
+  offset: 0,
+});
 const loaded = await client.getSnapshot(snapshot.id);
 await client.deleteSnapshot(snapshot.id);
 ```
@@ -470,7 +483,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(snapshotId, options?)` | Create a sandbox from a snapshot |
+| `createSandbox(snapshotId?, options?)` | Create a sandbox from a snapshot. Exactly one of the positional `snapshotId` or `options.snapshotName` must be provided. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
 | `updateSandbox(name, options)` | Rename or adjust TTLs on a sandbox |
@@ -482,7 +495,7 @@ try {
 | `createSnapshot(name, dockerImage, fsCapacityBytes, options?)` | Build a snapshot from a Docker image |
 | `captureSnapshot(sandboxName, name, options?)` | Capture a snapshot from a running sandbox |
 | `getSnapshot(snapshotId)` | Get a snapshot by ID |
-| `listSnapshots()` | List all snapshots |
+| `listSnapshots(options?)` | List snapshots with optional server-side filters and pagination (`nameContains`, `limit`, `offset`). |
 | `deleteSnapshot(snapshotId)` | Delete a snapshot |
 | `waitForSnapshot(snapshotId, options?)` | Poll until a snapshot becomes ready |
 
@@ -533,6 +546,7 @@ try {
 
 | Property | Description |
 |----------|-------------|
+| `snapshotName?` | Snapshot name to boot from. Mutually exclusive with the positional `snapshotId` argument on `createSandbox`; exactly one must be set. |
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
@@ -542,6 +556,15 @@ try {
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
+
+### ListSnapshotsOptions
+
+| Property | Description |
+|----------|-------------|
+| `nameContains?` | Server-side substring filter applied to snapshot names |
+| `limit?` | Maximum number of snapshots to return |
+| `offset?` | Number of snapshots to skip before returning results (pairs with `limit`) |
+| `signal?` | `AbortSignal` for cancellation |
 
 ### CreateSnapshotOptions
 
