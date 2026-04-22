@@ -47,10 +47,11 @@ def pytest_collection_modifyitems(config, items):
 
 
 def is_ai_api_request(request):
-    """Check if the request is to OpenAI or Anthropic APIs."""
+    """Check if the request is to OpenAI, Anthropic, or Gemini APIs."""
     ai_domains = [
         "api.openai.com",
         "api.anthropic.com",
+        "generativelanguage.googleapis.com",
     ]
 
     return any(domain in request.host for domain in ai_domains)
@@ -112,6 +113,8 @@ def create_vcr_instance(record_mode):
         filter_headers=[
             "Authorization",
             "X-Api-Key",
+            "x-goog-api-key",
+            "x-goog-api-client",
             "OpenAI-Organization",
             "Anthropic-Version",
             "User-Agent",
@@ -128,7 +131,7 @@ def create_vcr_instance(record_mode):
 def vcr_fixture(request):
     """Global VCR fixture that's automatically used for all tests.
 
-    This will record/replay only OpenAI and Anthropic API calls.
+    This will record/replay only OpenAI, Anthropic, and Gemini API calls.
     """
 
     # Get the record mode from command line

@@ -16,7 +16,7 @@ from tests.unit_tests.test_run_helpers import _get_calls
 if TYPE_CHECKING:
     from google import genai
 
-model_name = "gemini-2.0-flash-001"
+model_name = "gemini-2.5-flash"
 prompt = "Say 'foo'"
 
 
@@ -367,7 +367,7 @@ def test_function_calling(patched_client: genai.Client, mock_ls_client: Client):
 
     response = patched_client.models.generate_content(
         model=model_name,
-        contents="What is the weather like in Boston?",
+        contents="What is the weather like in Boston? Call provided tools.",
         config=types.GenerateContentConfig(
             tools=[types.Tool(function_declarations=[get_weather_func])],
         ),
