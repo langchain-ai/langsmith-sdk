@@ -2,9 +2,14 @@ import io
 import threading
 from typing import Optional
 
-from zstandard import ZstdCompressor  # type: ignore[import]
-
 from langsmith import utils as ls_utils
+
+try:
+    from zstandard import ZstdCompressor  # type: ignore[import]
+
+    ZSTD_AVAILABLE = True
+except ImportError:
+    ZSTD_AVAILABLE = False
 
 compression_level = int(ls_utils.get_env_var("RUN_COMPRESSION_LEVEL") or 1)
 compression_threads = int(ls_utils.get_env_var("RUN_COMPRESSION_THREADS") or -1)
@@ -14,6 +19,13 @@ DEFAULT_MAX_UNCOMPRESSED_QUEUE_BYTES = 1024 * 1024 * 1024  # 1GB
 
 class CompressedTraces:
     def __init__(self, max_uncompressed_size_bytes: Optional[int] = None) -> None:
+        if not ZSTD_AVAILABLE:
+            raise ImportError(
+                "zstandard is required for compressed trace ingestion. "
+                "Install it with `pip install zstandard` or set the environment "
+                "variable LANGSMITH_DISABLE_RUN_COMPRESSION=true to disable "
+                "compression."
+            )
         # Configure the maximum total uncompressed size for the in-memory queue.
         if max_uncompressed_size_bytes is None:
             max_bytes_str = ls_utils.get_env_var("MAX_INGEST_MEMORY_BYTES")

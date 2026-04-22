@@ -2,13 +2,16 @@
 
 This module provides automatic tracing for the Claude Agent SDK by instrumenting
 `ClaudeSDKClient` and injecting hooks to trace all tool calls.
+
+Instrumentation is applied **in place** on the original ``ClaudeSDKClient`` class
+so that callers who imported the class *before* ``configure_claude_agent_sdk()``
+was called still get traced.
 """
 
 import logging
-import sys
 from typing import Optional
 
-from ._client import instrument_claude_client
+from ._client import instrument_claude_client, instrument_sdk_mcp_tool
 from ._config import set_tracing_config
 
 logger = logging.getLogger(__name__)
@@ -29,7 +32,11 @@ def configure_claude_agent_sdk(
     - Model runs for each assistant turn
     - All tool calls including built-in tools, external MCP tools, and SDK MCP tools
 
-    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks
+    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks.
+
+    The class is patched **in place**, so references obtained via
+    ``from claude_agent_sdk import ClaudeSDKClient`` before this call
+    will still be instrumented.
 
     Args:
         name: Name of the root trace.
@@ -48,7 +55,7 @@ def configure_claude_agent_sdk(
         ...     project_name="my-project", tags=["production"]
         ... )  # doctest: +SKIP
         >>> # Now use claude_agent_sdk as normal - tracing is automatic
-    """  # noqa: E501
+    """
     try:
         import claude_agent_sdk  # type: ignore[import-not-found]
     except ImportError:
@@ -66,18 +73,12 @@ def configure_claude_agent_sdk(
         tags=tags,
     )
 
-    original = getattr(claude_agent_sdk, "ClaudeSDKClient", None)
-    if not original:
-        return False
+    instrument_claude_client(claude_agent_sdk.ClaudeSDKClient)
 
-    wrapped = instrument_claude_client(original)
-    setattr(claude_agent_sdk, "ClaudeSDKClient", wrapped)
-
-    for module in list(sys.modules.values()):
-        try:
-            if module and getattr(module, "ClaudeSDKClient", None) is original:
-                setattr(module, "ClaudeSDKClient", wrapped)
-        except Exception:
-            continue
+    # Patch SdkMcpTool so that tool handlers are lazily wrapped with
+    # run-context propagation, regardless of import order.
+    sdk_mcp_tool_cls = getattr(claude_agent_sdk, "SdkMcpTool", None)
+    if sdk_mcp_tool_cls:
+        instrument_sdk_mcp_tool(sdk_mcp_tool_cls)
 
     return True

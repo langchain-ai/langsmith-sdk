@@ -142,7 +142,6 @@ export class LangSmithResourceNameConflictError extends LangSmithSandboxError {
  * - Resource values exceeding server-defined limits (CPU, memory, storage)
  * - Invalid resource units
  * - Invalid name formats
- * - Pool validation failures (e.g., template has volumes)
  */
 export class LangSmithValidationError extends LangSmithSandboxError {
   field?: string;
@@ -179,8 +178,36 @@ export class LangSmithQuotaExceededError extends LangSmithSandboxError {
 }
 
 // =============================================================================
-// Sandbox Creation Errors
+// Resource Creation Errors
 // =============================================================================
+
+/**
+ * Raised when resource provisioning fails (general-purpose).
+ */
+export class LangSmithResourceCreationError extends LangSmithSandboxError {
+  /**
+   * Type of resource that failed (e.g., "sandbox", "snapshot").
+   */
+  resourceType?: string;
+  /**
+   * Machine-readable error type (ImagePull, CrashLoop, SandboxConfig, Unschedulable).
+   */
+  errorType?: string;
+
+  constructor(message: string, resourceType?: string, errorType?: string) {
+    super(message);
+    this.name = "LangSmithResourceCreationError";
+    this.resourceType = resourceType;
+    this.errorType = errorType;
+  }
+
+  override toString(): string {
+    if (this.errorType) {
+      return `${super.toString()} [${this.errorType}]`;
+    }
+    return super.toString();
+  }
+}
 
 /**
  * Raised when sandbox creation fails.
@@ -256,5 +283,30 @@ export class LangSmithSandboxOperationError extends LangSmithSandboxError {
       return `${super.toString()} [${this.errorType}]`;
     }
     return super.toString();
+  }
+}
+
+/**
+ * Raised when a command exceeds its timeout.
+ */
+export class LangSmithCommandTimeoutError extends LangSmithSandboxOperationError {
+  timeout?: number;
+
+  constructor(message: string, timeout?: number) {
+    super(message, "command", "CommandTimeout");
+    this.name = "LangSmithCommandTimeoutError";
+    this.timeout = timeout;
+  }
+}
+
+/**
+ * Raised when the sandbox server is reloading (close code 1001).
+ *
+ * Subclass of connection error that signals immediate reconnect (no backoff).
+ */
+export class LangSmithSandboxServerReloadError extends LangSmithSandboxConnectionError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxServerReloadError";
   }
 }

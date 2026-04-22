@@ -1,0 +1,322 @@
+interactions:
+- request:
+    body: '{"include":[],"input":[{"content":"Use the call_openai_helper tool to answer:
+      What is 2+2?","role":"user"}],"instructions":"You are a helpful assistant.","model":"gpt-4.1","tools":[{"name":"call_openai_helper","parameters":{"properties":{"query":{"title":"Query","type":"string"}},"required":["query"],"title":"call_openai_helper_args","type":"object","additionalProperties":false},"strict":true,"type":"function","description":"A
+      helper function that calls OpenAI using wrap_openai."}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '487'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=.kJo58m33H9881DHeZswdUMKXNF6xlVFlKNkAc1Z.dw-1775777793.1441417-1.0.1.1-8cVdfxP2IlQslVNlC9hL3qQno0rlC5WKNtixyZrhI1PtueTv1v2qOamTvYe00MEMdEg_mq8GK0eoIc4FzUFSex9x1Mq2MSd5.a.UD0KQBGIFkmt5VFQjN_IsF9WE_O8r
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_0fc627cf2f3468150069d8380a86848194af3b87fcfd709bb2\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775777802,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775777803,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a helpful assistant.\",\n  \"max_output_tokens\": null,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\":
+        \"fc_0fc627cf2f3468150069d8380b39208194b7a16be8167cb4f8\",\n      \"type\":
+        \"function_call\",\n      \"status\": \"completed\",\n      \"arguments\":
+        \"{\\\"query\\\":\\\"What is 2+2?\\\"}\",\n      \"call_id\": \"call_VRcvl3Jp8u8wVN1SBPF4pF8t\",\n
+        \     \"name\": \"call_openai_helper\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [\n    {\n      \"type\":
+        \"function\",\n      \"description\": \"A helper function that calls OpenAI
+        using wrap_openai.\",\n      \"name\": \"call_openai_helper\",\n      \"parameters\":
+        {\n        \"properties\": {\n          \"query\": {\n            \"title\":
+        \"Query\",\n            \"type\": \"string\"\n          }\n        },\n        \"required\":
+        [\n          \"query\"\n        ],\n        \"title\": \"call_openai_helper_args\",\n
+        \       \"type\": \"object\",\n        \"additionalProperties\": false\n      },\n
+        \     \"strict\": true\n    }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\":
+        1.0,\n  \"truncation\": \"disabled\",\n  \"usage\": {\n    \"input_tokens\":
+        82,\n    \"input_tokens_details\": {\n      \"cached_tokens\": 0\n    },\n
+        \   \"output_tokens\": 23,\n    \"output_tokens_details\": {\n      \"reasoning_tokens\":
+        0\n    },\n    \"total_tokens\": 105\n  },\n  \"user\": null,\n  \"metadata\":
+        {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d55e178d20c77-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:36:43 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2003'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1054'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_bd8d3f41e0834e27bf1910a9f28f5ddc
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"user","content":"What is 2+2?"}],"model":"gpt-4o-mini"}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '77'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - 'false'
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n    \"error\": {\n        \"message\": \"Incorrect API key provided:
+        test-key. You can find your API key at https://platform.openai.com/account/api-keys.\",\n
+        \       \"type\": \"invalid_request_error\",\n        \"param\": null,\n        \"code\":
+        \"invalid_api_key\"\n    }\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-Ray:
+      - 9e9d55e8db0b8b3c-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '258'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Thu, 09 Apr 2026 23:36:43 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Vary:
+      - Origin
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      set-cookie:
+      - __cf_bm=_QrV3IMZxu8aghDOU2R6HlDUkncONXoPQ1ytGSt9Gk4-1775777803.6576748-1.0.1.1-Qd.tSJuIwgo.Ij8HzUKgTkcXKlA1ZAM7ixL6VPr_ixDvok4zRCNOSz8XZtjK_.8GV7yhZM.ZXJiZVWj3W6y46KfRoyfu4UrmjxTcc9_QdXbkTakur8GXF9JQoMUCYx60;
+        HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Fri, 10 Apr 2026
+        00:06:43 GMT
+      - _cfuvid=TB5NBDEG6pHyfeDW55tCenb2IYUBKIjfLHbV0SFl0os-1775777803.6576748-1.0.1.1-Flqt3FF9auruClMvhkTCnAamoRLDVrFilvkt9ZQCeK0;
+        HttpOnly; SameSite=None; Secure; Path=/; Domain=api.openai.com
+      x-openai-proxy-wasm:
+      - v0.1
+      x-request-id:
+      - req_4ce6e6e8944c42f1990e59e80597f2ea
+    status:
+      code: 401
+      message: Unauthorized
+- request:
+    body: '{"include":[],"input":[{"content":"Use the call_openai_helper tool to answer:
+      What is 2+2?","role":"user"},{"arguments":"{\"query\":\"What is 2+2?\"}","call_id":"call_VRcvl3Jp8u8wVN1SBPF4pF8t","name":"call_openai_helper","type":"function_call","id":"fc_0fc627cf2f3468150069d8380b39208194b7a16be8167cb4f8","status":"completed"},{"call_id":"call_VRcvl3Jp8u8wVN1SBPF4pF8t","output":"Error:
+      Error code: 401 - {''error'': {''message'': ''Incorrect API key provided: test-key.
+      You can find your API key at https://platform.openai.com/account/api-keys.'',
+      ''type'': ''invalid_request_error'', ''param'': None, ''code'': ''invalid_api_key''}}","type":"function_call_output"}],"instructions":"You
+      are a helpful assistant.","model":"gpt-4.1","tools":[{"name":"call_openai_helper","parameters":{"properties":{"query":{"title":"Query","type":"string"}},"required":["query"],"title":"call_openai_helper_args","type":"object","additionalProperties":false},"strict":true,"type":"function","description":"A
+      helper function that calls OpenAI using wrap_openai."}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '1031'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=.kJo58m33H9881DHeZswdUMKXNF6xlVFlKNkAc1Z.dw-1775777793.1441417-1.0.1.1-8cVdfxP2IlQslVNlC9hL3qQno0rlC5WKNtixyZrhI1PtueTv1v2qOamTvYe00MEMdEg_mq8GK0eoIc4FzUFSex9x1Mq2MSd5.a.UD0KQBGIFkmt5VFQjN_IsF9WE_O8r
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_0fc627cf2f3468150069d8380bd3ec819494367a9cae0c0aa1\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775777803,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775777804,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a helpful assistant.\",\n  \"max_output_tokens\": null,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\":
+        \"msg_0fc627cf2f3468150069d8380c29288194ba412f70db4e62c0\",\n      \"type\":
+        \"message\",\n      \"status\": \"completed\",\n      \"content\": [\n        {\n
+        \         \"type\": \"output_text\",\n          \"annotations\": [],\n          \"logprobs\":
+        [],\n          \"text\": \"It looks like there was an issue accessing the
+        tool to process your question, but I can still answer it for you:\\n\\n2 +
+        2 equals 4. If you have any other questions, feel free to ask!\"\n        }\n
+        \     ],\n      \"role\": \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [\n    {\n      \"type\":
+        \"function\",\n      \"description\": \"A helper function that calls OpenAI
+        using wrap_openai.\",\n      \"name\": \"call_openai_helper\",\n      \"parameters\":
+        {\n        \"properties\": {\n          \"query\": {\n            \"title\":
+        \"Query\",\n            \"type\": \"string\"\n          }\n        },\n        \"required\":
+        [\n          \"query\"\n        ],\n        \"title\": \"call_openai_helper_args\",\n
+        \       \"type\": \"object\",\n        \"additionalProperties\": false\n      },\n
+        \     \"strict\": true\n    }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\":
+        1.0,\n  \"truncation\": \"disabled\",\n  \"usage\": {\n    \"input_tokens\":
+        177,\n    \"input_tokens_details\": {\n      \"cached_tokens\": 0\n    },\n
+        \   \"output_tokens\": 46,\n    \"output_tokens_details\": {\n      \"reasoning_tokens\":
+        0\n    },\n    \"total_tokens\": 223\n  },\n  \"user\": null,\n  \"metadata\":
+        {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d55e99a7dd4f9-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:36:44 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2228'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '952'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_d209c3bae8ca41cdbe0d7c05992ce1f4
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -1,21 +1,45 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
+import { inspect } from "node:util";
 import { SandboxClient } from "../experimental/sandbox/client.js";
 import { Sandbox } from "../experimental/sandbox/sandbox.js";
+import { CommandHandle } from "../experimental/sandbox/command_handle.js";
 import {
+  buildWsUrl,
+  buildAuthHeaders,
+  WSStreamControl,
+  raiseForWsError,
+} from "../experimental/sandbox/ws_execute.js";
+import {
+  LangSmithResourceCreationError,
   LangSmithResourceNotFoundError,
   LangSmithDataplaneNotConfiguredError,
   LangSmithQuotaExceededError,
   LangSmithValidationError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxCreationError,
+  LangSmithSandboxNotReadyError,
+  LangSmithSandboxOperationError,
+  LangSmithCommandTimeoutError,
+  LangSmithSandboxServerReloadError,
 } from "../experimental/sandbox/errors.js";
+import type { WsMessage, OutputChunk } from "../experimental/sandbox/types.js";
+import { validateTtl } from "../experimental/sandbox/helpers.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
   jest
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(response);
+
+// Helper to create a mock SandboxClient with the required methods
+const createMockClient = (overrides: Record<string, any> = {}) =>
+  ({
+    _fetch: createMockFetch({}),
+    getApiKey: () => "test-key",
+    deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ...overrides,
+  } as unknown as SandboxClient);
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -35,27 +59,73 @@ describe("SandboxClient", () => {
       expect((client as any)._baseUrl).toBe("https://custom.api.com/sandboxes");
     });
   });
+
+  describe("toString", () => {
+    it("should not expose sensitive information like API keys", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "super-secret-sandbox-api-key-12345",
+      });
+
+      const str = client.toString();
+      expect(str).not.toContain("super-secret-sandbox-api-key-12345");
+      expect(str).toContain("https://custom.api.com/sandboxes");
+      expect(str).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
+    });
+
+    it("should be called when converting to string", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const str = String(client);
+      expect(str).not.toContain("secret-key");
+      expect(str).toContain("https://custom.api.com/sandboxes");
+    });
+
+    it("should be called by Node.js inspect", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const inspectResult = inspect(client);
+      expect(inspectResult).not.toContain("secret-key");
+      expect(inspectResult).toContain("https://custom.api.com/sandboxes");
+      expect(inspectResult).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
+    });
+
+    it("should expose the Node.js custom inspect hook", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+      const inspectFn = (client as any)[inspectSymbol];
+      expect(typeof inspectFn).toBe("function");
+      expect(inspectFn.call(client)).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
+    });
+  });
 });
 
 describe("Sandbox", () => {
   describe("run", () => {
     it("should throw DataplaneNotConfiguredError when dataplane_url is missing", async () => {
-      // Create a minimal mock client
-      const mockClient = {
-        _fetch: createMockFetch({}),
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
-
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           // No dataplane_url
         },
-        mockClient,
+        createMockClient(),
         false
       );
 
@@ -74,18 +144,12 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -110,18 +174,12 @@ describe("Sandbox", () => {
         }),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -147,18 +205,12 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -178,18 +230,12 @@ describe("Sandbox", () => {
         json: async () => ({}),
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -211,18 +257,12 @@ describe("Sandbox", () => {
         arrayBuffer: async () => new TextEncoder().encode(testContent).buffer,
       });
 
-      const mockClient = {
-        _fetch: mockFetch,
-        deleteSandbox: jest
-          .fn<() => Promise<void>>()
-          .mockResolvedValue(undefined),
-      } as unknown as SandboxClient;
+      const mockClient = createMockClient({ _fetch: mockFetch });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
@@ -242,16 +282,14 @@ describe("Sandbox", () => {
         .fn<(name: string) => Promise<void>>()
         .mockResolvedValue(undefined);
 
-      const mockClient = {
-        _fetch: createMockFetch({}),
+      const mockClient = createMockClient({
         deleteSandbox: mockDeleteSandbox,
-      } as unknown as SandboxClient;
+      });
 
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          template_name: "python-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient
@@ -261,6 +299,418 @@ describe("Sandbox", () => {
 
       expect(mockDeleteSandbox).toHaveBeenCalledWith("test-sandbox");
     });
+  });
+});
+
+describe("SandboxClient - createSandbox", () => {
+  // Helper to create a SandboxClient with a mocked fetch
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should send wait_for_ready: true and include timeout by default", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.createSandbox("snap-123");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.wait_for_ready).toBe(true);
+    expect(body.timeout).toBe(30);
+  });
+
+  it("should send wait_for_ready: false and omit timeout when waitForReady is false", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "provisioning",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox("snap-123", {
+      waitForReady: false,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.wait_for_ready).toBe(false);
+    expect(body.timeout).toBeUndefined();
+    expect(sandbox.status).toBe("provisioning");
+  });
+
+  it("should use 30s HTTP timeout when waitForReady is false", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "provisioning",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.createSandbox("snap-123", { waitForReady: false });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    // The signal should be an AbortSignal with 30s timeout
+    expect(init.signal).toBeDefined();
+  });
+
+  it("should include ttl_seconds and idle_ttl_seconds in the request body when set", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+        ttl_seconds: 3600,
+        idle_ttl_seconds: 600,
+        expires_at: "2026-03-24T15:00:00Z",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox("snap-123", {
+      ttlSeconds: 3600,
+      idleTtlSeconds: 600,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.ttl_seconds).toBe(3600);
+    expect(body.idle_ttl_seconds).toBe(600);
+    expect(sandbox.ttl_seconds).toBe(3600);
+    expect(sandbox.idle_ttl_seconds).toBe(600);
+    expect(sandbox.expires_at).toBe("2026-03-24T15:00:00Z");
+  });
+
+  it("should reject invalid TTL values before calling the API", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.createSandbox("snap-123", { ttlSeconds: 61 })
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should forward proxyConfig in the request body under proxy_config", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const proxyConfig = {
+      access_control: {
+        allow_list: ["github.com", "*.example.com"],
+      },
+    };
+    await client.createSandbox("snap-123", { proxyConfig });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toEqual(proxyConfig);
+  });
+
+  it("should omit proxy_config from the request body when not provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.createSandbox("snap-123");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toBeUndefined();
+  });
+});
+
+describe("validateTtl", () => {
+  it("accepts undefined, 0, and positive multiples of 60", () => {
+    expect(() => validateTtl(undefined, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(0, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(60, "ttlSeconds")).not.toThrow();
+    expect(() => validateTtl(3600, "idleTtlSeconds")).not.toThrow();
+  });
+
+  it("rejects negative values and non-multiples of 60", () => {
+    expect(() => validateTtl(-1, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+    expect(() => validateTtl(30, "ttlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+    expect(() => validateTtl(61, "idleTtlSeconds")).toThrow(
+      LangSmithValidationError
+    );
+  });
+});
+
+describe("SandboxClient - updateSandbox", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should PATCH ttl fields when provided in options", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        status: "ready",
+        ttl_seconds: 0,
+        idle_ttl_seconds: 1800,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", {
+      ttlSeconds: 0,
+      idleTtlSeconds: 1800,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("PATCH");
+    const body = JSON.parse(init.body as string);
+    expect(body.ttl_seconds).toBe(0);
+    expect(body.idle_ttl_seconds).toBe(1800);
+    expect(body.name).toBeUndefined();
+  });
+
+  it("should still support rename via string second argument", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-renamed",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", "sb-renamed");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.name).toBe("sb-renamed");
+  });
+
+  it("should GET sandbox when update options object is empty", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sb = await client.updateSandbox("sb-1", {});
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/sb-1");
+    expect(init.method).toBeUndefined();
+    expect(sb.name).toBe("sb-1");
+  });
+});
+
+describe("SandboxClient - getSandboxStatus", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should return ResourceStatus", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const result = await client.getSandboxStatus("test-sb");
+
+    expect(result.status).toBe("ready");
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toContain("/boxes/test-sb/status");
+  });
+
+  it("should throw LangSmithResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(client.getSandboxStatus("nonexistent")).rejects.toThrow(
+      LangSmithResourceNotFoundError
+    );
+  });
+});
+
+describe("SandboxClient - waitForSandbox", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should poll until ready and return sandbox", async () => {
+    let callCount = 0;
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      .mockImplementation(async (url: any) => {
+        const urlStr = typeof url === "string" ? url : url.toString();
+        if (urlStr.includes("/status")) {
+          callCount++;
+          return {
+            ok: true,
+            json: async () => ({
+              status: callCount < 3 ? "provisioning" : "ready",
+            }),
+          } as Response;
+        }
+        // getSandbox call
+        return {
+          ok: true,
+          json: async () => ({
+            name: "test-sb",
+            dataplane_url: "https://dp.example.com",
+            status: "ready",
+          }),
+        } as Response;
+      });
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.waitForSandbox("test-sb", {
+      pollInterval: 0.01,
+    });
+
+    expect(sandbox.status).toBe("ready");
+    expect(sandbox.dataplane_url).toBe("https://dp.example.com");
+    expect(callCount).toBe(3);
+  });
+
+  it("should throw LangSmithResourceCreationError on failed status", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "failed",
+        status_message: "Image pull failed",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.waitForSandbox("test-sb", { pollInterval: 0.01 })
+    ).rejects.toThrow(LangSmithResourceCreationError);
+  });
+
+  it("should throw LangSmithResourceTimeoutError on timeout", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "provisioning",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.waitForSandbox("test-sb", { timeout: 0.05, pollInterval: 0.01 })
+    ).rejects.toThrow(LangSmithResourceTimeoutError);
+  });
+});
+
+describe("Sandbox - status fields and not-ready guard", () => {
+  it("should populate status and status_message from SandboxData", () => {
+    const sandbox = new (Sandbox as any)(
+      {
+        name: "test-sandbox",
+        status: "provisioning",
+        status_message: "Waiting for resources",
+      },
+      createMockClient()
+    );
+
+    expect(sandbox.status).toBe("provisioning");
+    expect(sandbox.status_message).toBe("Waiting for resources");
+  });
+
+  it("should throw LangSmithSandboxNotReadyError when status is not ready", async () => {
+    const sandbox = new (Sandbox as any)(
+      {
+        name: "test-sandbox",
+        dataplane_url: "https://dp.example.com",
+        status: "provisioning",
+      },
+      createMockClient()
+    );
+
+    await expect(sandbox.run("echo hello")).rejects.toThrow(
+      LangSmithSandboxNotReadyError
+    );
+  });
+
+  it("should allow operations when status is ready", async () => {
+    const mockFetch = createMockFetch({
+      ok: true,
+      json: async () => ({
+        stdout: "hello\n",
+        stderr: "",
+        exit_code: 0,
+      }),
+    });
+
+    const sandbox = new (Sandbox as any)(
+      {
+        name: "test-sandbox",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      },
+      createMockClient({ _fetch: mockFetch })
+    );
+
+    const result = await sandbox.run("echo hello");
+    expect(result.stdout).toBe("hello\n");
   });
 });
 
@@ -316,5 +766,817 @@ describe("Error classes", () => {
   it("LangSmithDataplaneNotConfiguredError should be a LangSmithSandboxError", () => {
     const error = new LangSmithDataplaneNotConfiguredError("No dataplane");
     expect(error.name).toBe("LangSmithDataplaneNotConfiguredError");
+  });
+
+  it("LangSmithResourceCreationError should have resourceType and errorType", () => {
+    const error = new LangSmithResourceCreationError(
+      "Provisioning failed",
+      "sandbox",
+      "ImagePull"
+    );
+    expect(error.name).toBe("LangSmithResourceCreationError");
+    expect(error.resourceType).toBe("sandbox");
+    expect(error.errorType).toBe("ImagePull");
+    expect(error.toString()).toContain("ImagePull");
+  });
+
+  it("LangSmithCommandTimeoutError should extend SandboxOperationError", () => {
+    const error = new LangSmithCommandTimeoutError("Command timed out", 60);
+    expect(error.name).toBe("LangSmithCommandTimeoutError");
+    expect(error.timeout).toBe(60);
+    expect(error.operation).toBe("command");
+    expect(error.errorType).toBe("CommandTimeout");
+    expect(error).toBeInstanceOf(LangSmithSandboxOperationError);
+  });
+
+  it("LangSmithSandboxServerReloadError should extend SandboxConnectionError", () => {
+    const error = new LangSmithSandboxServerReloadError("Server reloading");
+    expect(error.name).toBe("LangSmithSandboxServerReloadError");
+    expect(error.message).toBe("Server reloading");
+  });
+});
+
+// =============================================================================
+// WebSocket Execute Tests
+// =============================================================================
+
+describe("buildWsUrl", () => {
+  it("should convert https to wss and append /execute/ws", () => {
+    expect(buildWsUrl("https://dataplane.example.com")).toBe(
+      "wss://dataplane.example.com/execute/ws"
+    );
+  });
+
+  it("should convert http to ws", () => {
+    expect(buildWsUrl("http://localhost:8080")).toBe(
+      "ws://localhost:8080/execute/ws"
+    );
+  });
+
+  it("should handle URLs with paths", () => {
+    expect(buildWsUrl("https://dataplane.example.com/some/path")).toBe(
+      "wss://dataplane.example.com/some/path/execute/ws"
+    );
+  });
+});
+
+describe("buildAuthHeaders", () => {
+  it("should return X-Api-Key header when key is provided", () => {
+    expect(buildAuthHeaders("test-key")).toEqual({ "X-Api-Key": "test-key" });
+  });
+
+  it("should return empty headers when no key", () => {
+    expect(buildAuthHeaders(undefined)).toEqual({});
+  });
+});
+
+describe("WSStreamControl", () => {
+  it("should track killed state", () => {
+    const control = new WSStreamControl();
+    expect(control.killed).toBe(false);
+    control.sendKill();
+    expect(control.killed).toBe(true);
+  });
+
+  it("should not throw when sending on unbound control", () => {
+    const control = new WSStreamControl();
+    // Should not throw
+    control.sendKill();
+    control.sendInput("hello");
+  });
+});
+
+describe("raiseForWsError", () => {
+  it("should throw LangSmithCommandTimeoutError for CommandTimeout", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "CommandTimeout",
+      error: "Command timed out after 60s",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithCommandTimeoutError);
+  });
+
+  it("should throw SandboxOperationError for CommandNotFound", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "CommandNotFound",
+      error: "Not found",
+    };
+    expect(() => raiseForWsError(msg, "cmd-123")).toThrow(
+      LangSmithSandboxOperationError
+    );
+    try {
+      raiseForWsError(msg, "cmd-123");
+    } catch (e: any) {
+      expect(e.message).toContain("cmd-123");
+      expect(e.operation).toBe("reconnect");
+    }
+  });
+
+  it("should throw SandboxOperationError for SessionExpired", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "SessionExpired",
+      error: "Expired",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithSandboxOperationError);
+  });
+
+  it("should throw SandboxOperationError for unknown error types", () => {
+    const msg: WsMessage = {
+      type: "error",
+      error_type: "UnknownError",
+      error: "Something went wrong",
+    };
+    expect(() => raiseForWsError(msg)).toThrow(LangSmithSandboxOperationError);
+  });
+});
+
+// =============================================================================
+// CommandHandle Tests
+// =============================================================================
+
+describe("CommandHandle", () => {
+  // Helper to create an async iterator from an array of WsMessages
+  function createMockStream(
+    messages: WsMessage[]
+  ): AsyncIterableIterator<WsMessage> {
+    let index = 0;
+    return {
+      next: async () => {
+        if (index < messages.length) {
+          return { value: messages[index++], done: false };
+        }
+        return { value: undefined as any, done: true };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  }
+
+  function createMockSandbox(): Sandbox {
+    return {
+      _client: { getApiKey: () => "test-key" },
+      dataplane_url: "https://dp.example.com",
+      name: "test-sandbox",
+      reconnect: jest.fn<any>(),
+    } as unknown as Sandbox;
+  }
+
+  describe("construction and _ensureStarted", () => {
+    it("should read 'started' message and populate commandId/pid", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      expect(handle.commandId).toBe("cmd-123");
+      expect(handle.pid).toBe(42);
+    });
+
+    it("should throw if stream ends before started message", async () => {
+      const stream = createMockStream([]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        LangSmithSandboxOperationError
+      );
+    });
+
+    it("should throw if first message is not 'started'", async () => {
+      const stream = createMockStream([
+        { type: "stdout", data: "hello\n", offset: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        "Expected 'started' message"
+      );
+    });
+
+    it("should skip _ensureStarted for reconnections (commandId set)", async () => {
+      const stream = createMockStream([
+        { type: "stdout", data: "hello\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+      // Should already be started
+      expect(handle.commandId).toBe("cmd-123");
+    });
+  });
+
+  describe("iteration", () => {
+    it("should yield OutputChunk objects", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello ", offset: 0 },
+        { type: "stderr", data: "warn\n", offset: 0 },
+        { type: "stdout", data: "world\n", offset: 6 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      const chunks: OutputChunk[] = [];
+      for await (const chunk of handle) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toHaveLength(3);
+      expect(chunks[0]).toEqual({
+        stream: "stdout",
+        data: "hello ",
+        offset: 0,
+      });
+      expect(chunks[1]).toEqual({
+        stream: "stderr",
+        data: "warn\n",
+        offset: 0,
+      });
+      expect(chunks[2]).toEqual({
+        stream: "stdout",
+        data: "world\n",
+        offset: 6,
+      });
+    });
+
+    it("should track offsets", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello", offset: 0 },
+        { type: "stderr", data: "err", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      for await (const _chunk of handle) {
+        // drain
+      }
+
+      expect(handle.lastStdoutOffset).toBe(5);
+      expect(handle.lastStderrOffset).toBe(3);
+    });
+  });
+
+  describe("result", () => {
+    it("should drain stream and return ExecutionResult", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello ", offset: 0 },
+        { type: "stdout", data: "world\n", offset: 6 },
+        { type: "stderr", data: "warning\n", offset: 0 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      const result = await handle.result;
+
+      expect(result.stdout).toBe("hello world\n");
+      expect(result.stderr).toBe("warning\n");
+      expect(result.exit_code).toBe(0);
+    });
+
+    it("should throw if stream ends without exit message", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "hello\n", offset: 0 },
+      ]);
+
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await handle._ensureStarted();
+
+      await expect(handle.result).rejects.toThrow(
+        "Command stream ended without exit message"
+      );
+    });
+  });
+
+  describe("kill", () => {
+    it("should call sendKill on control", () => {
+      const control = new WSStreamControl();
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, control, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+
+      handle.kill();
+
+      expect(control.killed).toBe(true);
+    });
+  });
+
+  describe("sendInput", () => {
+    it("should not throw when control is null", () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+
+      // Should not throw
+      handle.sendInput("test input");
+    });
+  });
+});
+
+describe("SandboxClient - createSandbox (snapshotId)", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should send snapshot_id in the request body", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        snapshot_id: "snap-1",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox("snap-1");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.snapshot_id).toBe("snap-1");
+    expect(body.template_name).toBeUndefined();
+    expect(sandbox.snapshot_id).toBe("snap-1");
+  });
+
+  it("should include vcpus, mem_bytes, fs_capacity_bytes when provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        snapshot_id: "snap-1",
+        status: "ready",
+        vcpus: 4,
+        mem_bytes: 1073741824,
+        fs_capacity_bytes: 4294967296,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox("snap-1", {
+      vCpus: 4,
+      memBytes: 1073741824,
+      fsCapacityBytes: 4294967296,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.vcpus).toBe(4);
+    expect(body.mem_bytes).toBe(1073741824);
+    expect(body.fs_capacity_bytes).toBe(4294967296);
+    expect(sandbox.vCpus).toBe(4);
+    expect(sandbox.mem_bytes).toBe(1073741824);
+  });
+
+  it("should send snapshot_name (and no snapshot_id) when resolved by name", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        snapshot_id: "snap-1",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.createSandbox(undefined, {
+      snapshotName: "my-snap",
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.snapshot_name).toBe("my-snap");
+    expect(body.snapshot_id).toBeUndefined();
+    expect(body.template_name).toBeUndefined();
+    expect(sandbox.snapshot_id).toBe("snap-1");
+  });
+
+  it("should throw when neither snapshotId nor snapshotName is provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(client.createSandbox()).rejects.toThrow(
+      LangSmithValidationError
+    );
+    await expect(client.createSandbox()).rejects.toThrow(
+      /Exactly one of snapshotId or options\.snapshotName must be set/
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should throw when both snapshotId and snapshotName are provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.createSandbox("snap-1", { snapshotName: "my-snap" })
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("SandboxClient - snapshot operations", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("createSnapshot should POST and poll until ready", async () => {
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      // POST /snapshots -> building
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "snap-1",
+          name: "my-env",
+          status: "building",
+          fs_capacity_bytes: 4294967296,
+        }),
+      } as Response)
+      // GET /snapshots/snap-1 -> ready
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "snap-1",
+          name: "my-env",
+          status: "ready",
+          fs_capacity_bytes: 4294967296,
+        }),
+      } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshot = await client.createSnapshot(
+      "my-env",
+      "python:3.12-slim",
+      4294967296
+    );
+
+    expect(snapshot.id).toBe("snap-1");
+    expect(snapshot.status).toBe("ready");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "snap-2",
+          name: "captured",
+          status: "building",
+          fs_capacity_bytes: 4294967296,
+          source_sandbox_id: "my-vm",
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "snap-2",
+          name: "captured",
+          status: "ready",
+          fs_capacity_bytes: 4294967296,
+        }),
+      } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshot = await client.captureSnapshot("my-vm", "captured");
+
+    expect(snapshot.id).toBe("snap-2");
+    expect(snapshot.status).toBe("ready");
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/my-vm/snapshot");
+  });
+
+  it("getSnapshot should return snapshot data", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "snap-1",
+        name: "my-env",
+        status: "ready",
+        fs_capacity_bytes: 4294967296,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshot = await client.getSnapshot("snap-1");
+
+    expect(snapshot.id).toBe("snap-1");
+    expect(snapshot.name).toBe("my-env");
+  });
+
+  it("getSnapshot should throw ResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      text: async () => "not found",
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(client.getSnapshot("nonexistent")).rejects.toThrow(
+      LangSmithResourceNotFoundError
+    );
+  });
+
+  it("listSnapshots should return array", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "env-1",
+            status: "ready",
+            fs_capacity_bytes: 4294967296,
+          },
+          {
+            id: "snap-2",
+            name: "env-2",
+            status: "building",
+            fs_capacity_bytes: 8589934592,
+          },
+        ],
+        offset: 0,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshots = await client.listSnapshots();
+
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0].name).toBe("env-1");
+    expect(snapshots[1].status).toBe("building");
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).search).toBe("");
+  });
+
+  it("listSnapshots should forward nameContains, limit, and offset as query params", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "env-1",
+            status: "ready",
+          },
+        ],
+        offset: 5,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshots = await client.listSnapshots({
+      nameContains: "env",
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].name).toBe("env-1");
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname.endsWith("/snapshots")).toBe(true);
+    expect(parsed.searchParams.get("name_contains")).toBe("env");
+    expect(parsed.searchParams.get("limit")).toBe("10");
+    expect(parsed.searchParams.get("offset")).toBe("5");
+  });
+
+  it("deleteSnapshot should send DELETE request", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.deleteSnapshot("snap-1");
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/snapshots/snap-1");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("waitForSnapshot should return immediately if already ready", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "snap-1",
+        name: "env",
+        status: "ready",
+        fs_capacity_bytes: 4294967296,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const snapshot = await client.waitForSnapshot("snap-1");
+    expect(snapshot.status).toBe("ready");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("waitForSnapshot should throw on failed status", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "snap-1",
+        name: "env",
+        status: "failed",
+        status_message: "Docker pull failed",
+        fs_capacity_bytes: 4294967296,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(client.waitForSnapshot("snap-1")).rejects.toThrow(
+      LangSmithResourceCreationError
+    );
+  });
+});
+
+describe("SandboxClient - start/stop", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("startSandbox should POST to /start and poll until ready", async () => {
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      // POST /boxes/my-vm/start -> 202
+      .mockResolvedValueOnce({ ok: true } as Response)
+      // GET /boxes/my-vm/status -> ready
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ status: "ready" }),
+      } as Response)
+      // GET /boxes/my-vm -> full sandbox
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          name: "my-vm",
+          status: "ready",
+          dataplane_url: "https://dp.example.com/my-vm",
+        }),
+      } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const sandbox = await client.startSandbox("my-vm");
+
+    expect(sandbox.name).toBe("my-vm");
+    expect(sandbox.status).toBe("ready");
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/my-vm/start");
+  });
+
+  it("startSandbox should throw ResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      text: async () => "not found",
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(client.startSandbox("nonexistent")).rejects.toThrow(
+      LangSmithResourceNotFoundError
+    );
+  });
+
+  it("stopSandbox should POST to /stop", async () => {
+    const mockFetch = jest
+      .fn<typeof fetch>()
+      .mockResolvedValue({ ok: true } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.stopSandbox("my-vm");
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/my-vm/stop");
+  });
+
+  it("stopSandbox should throw ResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      text: async () => "not found",
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(client.stopSandbox("nonexistent")).rejects.toThrow(
+      LangSmithResourceNotFoundError
+    );
+  });
+});
+
+describe("Sandbox - start/stop/captureSnapshot", () => {
+  it("start should update status and dataplane_url", async () => {
+    const mockClient = createMockClient({
+      startSandbox: jest
+        .fn<(name: string, opts?: any) => Promise<any>>()
+        .mockResolvedValue({
+          name: "my-vm",
+          status: "ready",
+          dataplane_url: "https://dp.example.com/my-vm",
+        }),
+    });
+
+    const sandbox = new (Sandbox as any)(
+      { name: "my-vm", status: "stopped", snapshot_id: "snap-1" },
+      mockClient
+    );
+
+    await sandbox.start();
+
+    expect(sandbox.status).toBe("ready");
+    expect(sandbox.dataplane_url).toBe("https://dp.example.com/my-vm");
+  });
+
+  it("stop should set status to stopped and clear dataplane_url", async () => {
+    const mockClient = createMockClient({
+      stopSandbox: jest
+        .fn<(name: string) => Promise<void>>()
+        .mockResolvedValue(undefined),
+    });
+
+    const sandbox = new (Sandbox as any)(
+      {
+        name: "my-vm",
+        status: "ready",
+        dataplane_url: "https://dp.example.com/my-vm",
+      },
+      mockClient
+    );
+
+    await sandbox.stop();
+
+    expect(sandbox.status).toBe("stopped");
+    expect(sandbox.dataplane_url).toBeUndefined();
+  });
+
+  it("captureSnapshot should delegate to client", async () => {
+    const mockSnapshot = {
+      id: "snap-1",
+      name: "captured",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    };
+    const mockClient = createMockClient({
+      captureSnapshot: jest
+        .fn<(sandboxName: string, name: string, opts?: any) => Promise<any>>()
+        .mockResolvedValue(mockSnapshot),
+    });
+
+    const sandbox = new (Sandbox as any)(
+      { name: "my-vm", status: "ready" },
+      mockClient
+    );
+
+    const snapshot = await sandbox.captureSnapshot("captured");
+
+    expect(snapshot).toEqual(mockSnapshot);
+    expect(mockClient.captureSnapshot).toHaveBeenCalledWith(
+      "my-vm",
+      "captured",
+      {}
+    );
   });
 });

@@ -12,11 +12,11 @@ from typing import (
     Union,
 )
 
-from pydantic import TypeAdapter
 from typing_extensions import Self, TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith._internal._orjson import dumps as _dumps
 from langsmith.schemas import InputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -70,6 +70,7 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
     allowed_invocation_keys = {
         "mcp_servers",
         "service_tier",
+        "tool_choice",
         "top_k",
         "top_p",
         "stream",
@@ -95,76 +96,105 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
     }
 
 
-def _accumulate_event(
-    *, event: MessageStreamEvent, current_snapshot: Message | None
-) -> Message | None:
+@functools.lru_cache
+def _get_sdk_accumulate_event() -> Optional[Callable]:
     try:
-        from anthropic.types import ContentBlock
+        from anthropic.lib.streaming._messages import accumulate_event
+
+        return accumulate_event
     except ImportError:
-        logger.debug("Error importing ContentBlock")
-        return current_snapshot
-
-    if current_snapshot is None:
-        if event.type == "message_start":
-            return event.message
-
-        raise RuntimeError(
-            f'Unexpected event order, got {event.type} before "message_start"'
-        )
-
-    if event.type == "content_block_start":
-        # TODO: check index <-- from anthropic SDK :)
-        adapter: TypeAdapter = TypeAdapter(ContentBlock)
-        content_block_instance = adapter.validate_python(
-            event.content_block.model_dump()
-        )
-        current_snapshot.content.append(
-            content_block_instance,  # type: ignore[attr-defined]
-        )
-    elif event.type == "content_block_delta":
-        content = current_snapshot.content[event.index]
-        if content.type == "text" and event.delta.type == "text_delta":
-            content.text += event.delta.text
-    elif event.type == "message_delta":
-        current_snapshot.stop_reason = event.delta.stop_reason
-        current_snapshot.stop_sequence = event.delta.stop_sequence
-        current_snapshot.usage.output_tokens = event.usage.output_tokens
-
-    return current_snapshot
-
-
-def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
-    full_message = None
-    for chunk in all_chunks:
-        try:
-            full_message = _accumulate_event(event=chunk, current_snapshot=full_message)
-        except RuntimeError as e:
-            logger.debug(f"Error accumulating event in Anthropic Wrapper: {e}")
-            return {"output": all_chunks}
-    if full_message is None:
-        return {"output": all_chunks}
-    d = full_message.model_dump()
-    d["usage_metadata"] = _create_usage_metadata(d.pop("usage", {}))
-    d.pop("type", None)
-    return {"message": d}
+        return None
 
 
 def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     input_tokens = anthropic_token_usage.get("input_tokens") or 0
     output_tokens = anthropic_token_usage.get("output_tokens") or 0
-    total_tokens = input_tokens + output_tokens
-    input_token_details: dict = {
-        "cache_read": anthropic_token_usage.get("cache_creation_input_tokens", 0)
-        + anthropic_token_usage.get("cache_read_input_tokens", 0)
-    }
-    return UsageMetadata(
-        input_tokens=input_tokens,
+
+    input_token_details: dict = {}
+    cache_read = anthropic_token_usage.get("cache_read_input_tokens") or 0
+    if cache_read:
+        input_token_details["cache_read"] = cache_read
+
+    cache_creation_obj = anthropic_token_usage.get("cache_creation") or {}
+    if cache_creation_obj:
+        ephemeral_5m = cache_creation_obj.get("ephemeral_5m_input_tokens") or 0
+        ephemeral_1h = cache_creation_obj.get("ephemeral_1h_input_tokens") or 0
+        if ephemeral_5m:
+            input_token_details["ephemeral_5m_input_tokens"] = ephemeral_5m
+        if ephemeral_1h:
+            input_token_details["ephemeral_1h_input_tokens"] = ephemeral_1h
+    else:
+        cache_creation = anthropic_token_usage.get("cache_creation_input_tokens") or 0
+        if cache_creation:
+            input_token_details["cache_creation"] = cache_creation
+
+    # Anthropic cache tokens are ADDITIVE (not subsets of input_tokens like OpenAI).
+    # Sum them into input_tokens so the backend cost calculation is correct.
+    cache_token_sum = sum(input_token_details.values())
+    adjusted_input = input_tokens + cache_token_sum
+    adjusted_total = adjusted_input + output_tokens
+
+    result = UsageMetadata(
+        input_tokens=adjusted_input,
         output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        input_token_details=InputTokenDetails(
-            **{k: v for k, v in input_token_details.items() if v is not None}
-        ),
+        total_tokens=adjusted_total,
     )
+    if input_token_details:
+        result["input_token_details"] = InputTokenDetails(**input_token_details)
+    return result
+
+
+def _message_to_outputs(message: Any) -> dict:
+    """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
+    outputs = message.model_dump()
+    anthropic_token_usage = outputs.pop("usage", None)
+    if anthropic_token_usage:
+        outputs["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
+    outputs.pop("type", None)
+
+    content = outputs.get("content") or []
+    tool_use_blocks = [
+        b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"
+    ]
+    if tool_use_blocks:
+        text_parts = [
+            b.get("text", "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        outputs["content"] = "".join(text_parts) or None
+        outputs["tool_calls"] = [
+            {
+                "id": block.get("id", f"call_{i}"),
+                "type": "function",
+                "index": i,
+                "function": {
+                    "name": block.get("name", ""),
+                    "arguments": _dumps(block.get("input", {})).decode(),
+                },
+            }
+            for i, block in enumerate(tool_use_blocks)
+        ]
+    return outputs
+
+
+def _reduce_chat_chunks(all_chunks: Sequence) -> dict:
+    accumulate = _get_sdk_accumulate_event()
+    if accumulate is None:
+        return {"output": all_chunks}
+    full_message = None
+    for chunk in all_chunks:
+        try:
+            full_message = accumulate(
+                event=chunk,
+                current_snapshot=full_message,
+            )
+        except RuntimeError as e:
+            logger.debug(f"Error accumulating event in Anthropic Wrapper: {e}")
+            return {"output": all_chunks}
+    if full_message is None:
+        return {"output": all_chunks}
+    return _message_to_outputs(full_message)
 
 
 def _reduce_completions(all_chunks: list[Completion]) -> dict:
@@ -194,16 +224,7 @@ def _process_chat_completion(outputs: Any):
                 outputs = outputs.parse()
             except Exception:
                 pass
-
-        rdict = outputs.model_dump()
-        anthropic_token_usage = rdict.pop("usage", None)
-        rdict["usage_metadata"] = (
-            _create_usage_metadata(anthropic_token_usage)
-            if anthropic_token_usage
-            else None
-        )
-        rdict.pop("type", None)
-        return {"message": rdict}
+        return _message_to_outputs(outputs)
     except BaseException as e:
         logger.debug(f"Error processing chat completion: {e}")
         return {"output": outputs}
@@ -302,7 +323,10 @@ def _get_stream_wrapper(
                         yield chunk
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = await self._wrapped.get_final_message()
-                    run_tree.outputs = _process_chat_completion(final_message)
+                    outputs = _message_to_outputs(final_message)
+                    run_tree.outputs = outputs
+                    if usage := outputs.get("usage_metadata"):
+                        run_tree.metadata["usage_metadata"] = usage
 
                 return _text_stream(**self._kwargs)
 
@@ -388,7 +412,10 @@ def _get_stream_wrapper(
                     yield from self._wrapped.text_stream
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = self._wrapped.get_final_message()
-                    run_tree.outputs = _process_chat_completion(final_message)
+                    outputs = _message_to_outputs(final_message)
+                    run_tree.outputs = outputs
+                    if usage := outputs.get("usage_metadata"):
+                        run_tree.metadata["usage_metadata"] = usage
 
                 return _text_stream(**self._kwargs)
 
@@ -550,6 +577,19 @@ def wrap_anthropic(
     ):
         client.beta.messages.create = _get_wrapper(  # type: ignore[method-assign]
             client.beta.messages.create,  # type: ignore
+            chat_name,
+            _reduce_chat_chunks,
+            prepopulated_invocation_params,
+            tracing_extra_rest,
+        )
+
+    if (
+        hasattr(client, "beta")
+        and hasattr(client.beta, "messages")
+        and hasattr(client.beta.messages, "parse")
+    ):
+        client.beta.messages.parse = _get_wrapper(  # type: ignore[method-assign]
+            client.beta.messages.parse,  # type: ignore
             chat_name,
             _reduce_chat_chunks,
             prepopulated_invocation_params,

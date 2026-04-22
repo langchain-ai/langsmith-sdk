@@ -44,6 +44,24 @@ class SandboxConnectionError(SandboxClientError):
     pass
 
 
+class SandboxServerReloadError(SandboxConnectionError):
+    """Raised when the server sends a 1001 Going Away close frame.
+
+    This indicates a server hot-reload, not a true connection failure.
+    The command is still running on the server.
+
+    This is a subclass of SandboxConnectionError, so the auto-reconnect
+    logic in CommandHandle catches it along with all other
+    connection errors. The distinction matters for retry strategy:
+    SandboxServerReloadError triggers immediate reconnect (no backoff),
+    while other SandboxConnectionError triggers exponential backoff.
+
+    Users typically never see this exception — it's handled internally.
+    """
+
+    pass
+
+
 # =============================================================================
 # Resource Errors (type-based, with resource_type attribute)
 # =============================================================================
@@ -53,7 +71,7 @@ class ResourceNotFoundError(SandboxClientError):
     """Raised when a resource is not found.
 
     Attributes:
-        resource_type: Type of resource (sandbox, template, volume, pool, file).
+        resource_type: Type of resource (sandbox, snapshot, file).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -66,7 +84,7 @@ class ResourceTimeoutError(SandboxClientError):
     """Raised when an operation times out.
 
     Attributes:
-        resource_type: Type of resource (sandbox, volume, pool).
+        resource_type: Type of resource (sandbox, snapshot).
         last_status: The last known status before timeout (for sandboxes).
     """
 
@@ -93,7 +111,7 @@ class ResourceInUseError(SandboxClientError):
     """Raised when deleting a resource that is still in use.
 
     Attributes:
-        resource_type: Type of resource (template, volume).
+        resource_type: Type of resource (snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -106,7 +124,7 @@ class ResourceAlreadyExistsError(SandboxClientError):
     """Raised when creating a resource that already exists.
 
     Attributes:
-        resource_type: Type of resource (e.g., pool).
+        resource_type: Type of resource (e.g., snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -119,7 +137,7 @@ class ResourceNameConflictError(SandboxClientError):
     """Raised when updating a resource name to one that already exists.
 
     Attributes:
-        resource_type: Type of resource (volume, template, pool, sandbox).
+        resource_type: Type of resource (sandbox, snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -140,7 +158,6 @@ class ValidationError(SandboxClientError):
     - Resource values exceeding server-defined limits (CPU, memory, storage)
     - Invalid resource units
     - Invalid name formats
-    - Pool validation failures (e.g., template has volumes)
 
     Attributes:
         field: The field that failed validation (e.g., "cpu", "memory").
@@ -178,21 +195,28 @@ class QuotaExceededError(SandboxClientError):
 
 
 # =============================================================================
-# Sandbox Creation Errors
+# Resource Creation Errors
 # =============================================================================
 
 
-class SandboxCreationError(SandboxClientError):
-    """Raised when sandbox creation fails.
+class ResourceCreationError(SandboxClientError):
+    """Raised when resource provisioning fails.
 
     Attributes:
+        resource_type: Type of resource (sandbox, snapshot).
         error_type: Machine-readable error type (ImagePull, CrashLoop,
             SandboxConfig, Unschedulable).
     """
 
-    def __init__(self, message: str, error_type: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        resource_type: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ):
         """Initialize the error."""
         super().__init__(message)
+        self.resource_type = resource_type
         self.error_type = error_type
 
     def __str__(self) -> str:
@@ -246,3 +270,59 @@ class SandboxOperationError(SandboxClientError):
         if self.error_type:
             return f"{super().__str__()} [{self.error_type}]"
         return super().__str__()
+
+
+class CommandTimeoutError(SandboxOperationError):
+    """Raised when a command exceeds its timeout.
+
+    Attributes:
+        timeout: The timeout value in seconds that was exceeded.
+    """
+
+    def __init__(self, message: str, timeout: Optional[int] = None):
+        """Initialize the error."""
+        super().__init__(message, operation="command", error_type="CommandTimeout")
+        self.timeout = timeout
+
+
+# ========================================================================
+# Tunnel Errors
+# ========================================================================
+
+
+class TunnelError(SandboxClientError):
+    """Base exception for TCP tunnel errors."""
+
+    pass
+
+
+class TunnelPortNotAllowedError(TunnelError):
+    """The daemon rejected the port as not allowed.
+
+    Attributes:
+        port: The port that was rejected.
+    """
+
+    def __init__(self, message: str, *, port: int):
+        """Initialize the error."""
+        super().__init__(message)
+        self.port = port
+
+
+class TunnelConnectionRefusedError(TunnelError):
+    """Nothing is listening on the target port inside the sandbox.
+
+    Attributes:
+        port: The port that could not be reached.
+    """
+
+    def __init__(self, message: str, *, port: int):
+        """Initialize the error."""
+        super().__init__(message)
+        self.port = port
+
+
+class TunnelUnsupportedVersionError(TunnelError):
+    """Protocol version mismatch between the tunnel client and the daemon."""
+
+    pass

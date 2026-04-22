@@ -34,7 +34,8 @@ async def fake_server():
 @traceable
 async def the_parent_function():
     async with httpx.AsyncClient(
-        app=fake_app, base_url="http://localhost:8000"
+        transport=httpx.ASGITransport(app=fake_app),
+        base_url="http://localhost:8000",
     ) as http_client:
         headers = {}
         if span := get_current_run_tree():

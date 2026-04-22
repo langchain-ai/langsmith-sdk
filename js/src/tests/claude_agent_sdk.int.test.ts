@@ -30,7 +30,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of wrappedSDK.query({
       prompt: "Say 'Hello from LangSmith!' and nothing else.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     })) {
@@ -80,7 +80,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       prompt:
         "I need to calculate 25 * 4 + 100. Please delegate this to the calculator subagent.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 10,
         agents: {
           calculator: {
@@ -164,7 +164,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       prompt:
         "Use the calculator tool to compute 42 + 17, then tell me the result.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 5,
         allowDangerouslySkipPermissions: true,
         permissionMode: "bypassPermissions",
@@ -216,7 +216,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of wrappedSDK.query({
       prompt: longPrompt,
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     })) {
@@ -243,7 +243,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         allowDangerouslySkipPermissions: true,
         permissionMode: "bypassPermissions",
         includePartialMessages: true,
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     })) {
@@ -274,7 +274,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of customWrappedSDK.query({
       prompt: "Say hello.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     })) {
@@ -305,7 +305,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of wrappedSDK.query({
       prompt: "Try to use the error-tool from the error-server.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 5,
         allowDangerouslySkipPermissions: true,
         permissionMode: "bypassPermissions",
@@ -374,7 +374,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       prompt:
         "IMPORTANT: You MUST use the calculator tool to compute 42 + 17. Do not calculate yourself. Call the tool with operation='add', a=42, b=17, then report the result you get back.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 3,
         tools: [calculator] as any,
       },
@@ -427,7 +427,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const query = wrappedSDK.query({
       prompt: "Write a haiku about programming.",
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     });
@@ -453,7 +453,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         } as unknown as claudeSDK.SDKUserMessage;
       })(),
       options: {
-        model: "claude-3-5-haiku-20241022",
+        model: "haiku",
         maxTurns: 1,
       },
     });

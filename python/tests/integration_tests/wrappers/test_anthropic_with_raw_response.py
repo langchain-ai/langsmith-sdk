@@ -36,7 +36,7 @@ def test_messages_with_raw_response_sync(stream: bool):
             messages=messages,
             max_tokens=100,
             temperature=0,
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5",
             langsmith_extra={"on_end": collect},
         )
 
@@ -54,8 +54,8 @@ def test_messages_with_raw_response_sync(stream: bool):
     # Verify the run captured the parsed output, not the raw response wrapper
     assert collect.run is not None
     outputs = collect.run.outputs
-    assert "message" in outputs
-    assert outputs["message"]["content"][0]["text"].lower().strip(" .") == "foo"
+    assert "content" in outputs
+    assert outputs["content"][0]["text"].lower().strip(" .") == "foo"
 
 
 @pytest.mark.parametrize("stream", [False])
@@ -76,7 +76,7 @@ async def test_messages_with_raw_response_async(stream: bool):
             messages=messages,
             max_tokens=100,
             temperature=0,
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5",
             langsmith_extra={"on_end": collect},
         )
 
@@ -94,5 +94,5 @@ async def test_messages_with_raw_response_async(stream: bool):
     # Verify the run captured the parsed output, not the raw response wrapper
     assert collect.run is not None
     outputs = collect.run.outputs
-    assert "message" in outputs
-    assert outputs["message"]["content"][0]["text"].lower().strip(" .") == "foo"
+    assert "content" in outputs
+    assert outputs["content"][0]["text"].lower().strip(" .") == "foo"

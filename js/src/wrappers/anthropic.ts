@@ -22,6 +22,8 @@ type MessagesNamespace = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   create: (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parse?: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stream: (...args: any[]) => any;
 };
 
@@ -63,7 +65,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
 /**
  * Create usage metadata from Anthropic's token usage format.
  */
-function createUsageMetadata(
+export function createUsageMetadata(
   anthropicUsage: Partial<Anthropic.Messages.Usage>
 ): KVMap | undefined {
   if (!anthropicUsage) {
@@ -78,7 +80,6 @@ function createUsageMetadata(
     typeof anthropicUsage.output_tokens === "number"
       ? anthropicUsage.output_tokens
       : 0;
-  const totalTokens = inputTokens + outputTokens;
 
   const inputTokenDetails: Record<string, number> =
     convertAnthropicUsageToInputTokenDetails(
@@ -86,10 +87,19 @@ function createUsageMetadata(
       anthropicUsage as Record<string, any>
     );
 
+  // Anthropic cache tokens are ADDITIVE (not subsets of input_tokens like OpenAI).
+  // Sum them into input_tokens so the backend cost calculation is correct.
+  const cacheTokenSum = Object.values(inputTokenDetails).reduce(
+    (sum, v) => sum + (v ?? 0),
+    0
+  );
+  const adjustedInputTokens = inputTokens + cacheTokenSum;
+  const adjustedTotalTokens = adjustedInputTokens + outputTokens;
+
   return {
-    input_tokens: inputTokens,
+    input_tokens: adjustedInputTokens,
     output_tokens: outputTokens,
-    total_tokens: totalTokens,
+    total_tokens: adjustedTotalTokens,
     ...(Object.keys(inputTokenDetails).length > 0 && {
       input_token_details: inputTokenDetails,
     }),
@@ -466,6 +476,14 @@ export const wrapAnthropic = <T extends AnthropicType>(
       anthropic.beta.messages.create.bind(anthropic.beta.messages),
       messagesCreateConfig
     );
+
+    // Wrap beta.messages.parse if it exists
+    if (typeof anthropic.beta.messages.parse === "function") {
+      tracedBeta.messages.parse = traceable(
+        anthropic.beta.messages.parse.bind(anthropic.beta.messages),
+        messagesCreateConfig
+      );
+    }
 
     // Wrap beta.messages.stream if it exists
     if (typeof anthropic.beta.messages.stream === "function") {

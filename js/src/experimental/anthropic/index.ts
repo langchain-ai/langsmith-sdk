@@ -152,7 +152,11 @@ function wrapClaudeAgentQuery<
       name: "claude.conversation",
       run_type: "chain",
       ...baseConfig,
-      metadata: { ...baseConfig?.metadata },
+      metadata: {
+        ls_integration: "claude-agent-sdk-js",
+        ls_agent_type: "root",
+        ...baseConfig?.metadata,
+      },
       __deferredSerializableArgOptions: { maxDepth: 1 },
       processInputs,
       processOutputs,

@@ -7,7 +7,7 @@ import {
 
 import { SimpleEvaluationResult } from "../types.js";
 import { RunTree, RunTreeConfig } from "../../../run_trees.js";
-import { v4 } from "uuid";
+import { v7 } from "uuid";
 
 export type SimpleEvaluatorParams = {
   inputs: Record<string, any>;
@@ -47,7 +47,7 @@ export function wrapEvaluator<
         ].join("\n")
       );
     }
-    let evalRunId = config?.runId ?? config?.id ?? v4();
+    let evalRunId = config?.runId ?? config?.id ?? v7();
     let evalResult: O;
     if (trackingEnabled(context)) {
       const wrappedEvaluator = traceable(
@@ -113,7 +113,7 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
     );
   }
   const wrappedEvaluator = wrapEvaluator(evaluator);
-  const evalRunId = v4();
+  const evalRunId = v7();
   const evalResult = await wrappedEvaluator(
     {
       inputs: context.currentExample?.inputs ?? {},

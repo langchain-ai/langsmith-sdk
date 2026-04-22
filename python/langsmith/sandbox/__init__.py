@@ -9,7 +9,10 @@ Example:
     # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
     client = SandboxClient()
 
-    with client.sandbox(template_name="python-sandbox") as sb:
+    snapshot = client.create_snapshot(
+        docker_image="python:3.12-slim", name="python-snapshot"
+    )
+    with client.sandbox(snapshot_id=snapshot.id) as sb:
         result = sb.run("python --version")
         print(result.stdout)
 
@@ -17,7 +20,10 @@ Example:
     from langsmith.sandbox import AsyncSandboxClient
 
     async with AsyncSandboxClient() as client:
-        async with await client.sandbox(template_name="python-sandbox") as sb:
+        snapshot = await client.create_snapshot(
+            docker_image="python:3.12-slim", name="python-snapshot"
+        )
+        async with await client.sandbox(snapshot_id=snapshot.id) as sb:
             result = await sb.run("python --version")
             print(result.stdout)
 """
@@ -26,9 +32,11 @@ from langsmith.sandbox._async_client import AsyncSandboxClient
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import SandboxClient
 from langsmith.sandbox._exceptions import (
+    CommandTimeoutError,
     DataplaneNotConfiguredError,
     QuotaExceededError,
     ResourceAlreadyExistsError,
+    ResourceCreationError,
     ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
@@ -37,20 +45,27 @@ from langsmith.sandbox._exceptions import (
     SandboxAuthenticationError,
     SandboxClientError,
     SandboxConnectionError,
-    SandboxCreationError,
     SandboxNotReadyError,
     SandboxOperationError,
+    SandboxServerReloadError,
+    TunnelConnectionRefusedError,
+    TunnelError,
+    TunnelPortNotAllowedError,
+    TunnelUnsupportedVersionError,
     ValidationError,
 )
 from langsmith.sandbox._models import (
+    AsyncCommandHandle,
+    AsyncServiceURL,
+    CommandHandle,
     ExecutionResult,
-    Pool,
-    ResourceSpec,
-    SandboxTemplate,
-    Volume,
-    VolumeMountSpec,
+    OutputChunk,
+    ResourceStatus,
+    ServiceURL,
+    Snapshot,
 )
 from langsmith.sandbox._sandbox import Sandbox
+from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
 
 __all__ = [
     # Main classes
@@ -59,18 +74,23 @@ __all__ = [
     "Sandbox",
     "AsyncSandbox",
     # Models
-    "SandboxTemplate",
-    "ResourceSpec",
+    "ResourceStatus",
     "ExecutionResult",
-    "Volume",
-    "VolumeMountSpec",
-    "Pool",
+    "Snapshot",
+    "ServiceURL",
+    "AsyncServiceURL",
+    # WebSocket streaming models
+    "CommandHandle",
+    "AsyncCommandHandle",
+    "OutputChunk",
     # Base and connection errors
     "SandboxClientError",
     "SandboxAPIError",
     "SandboxAuthenticationError",
     "SandboxConnectionError",
+    "SandboxServerReloadError",
     # Resource errors (type-based with resource_type attribute)
+    "ResourceCreationError",
     "ResourceNotFoundError",
     "ResourceTimeoutError",
     "ResourceInUseError",
@@ -80,10 +100,17 @@ __all__ = [
     "ValidationError",
     "QuotaExceededError",
     # Sandbox-specific errors
-    "SandboxCreationError",
     "SandboxNotReadyError",
     "SandboxOperationError",
+    "CommandTimeoutError",
     "DataplaneNotConfiguredError",
+    # Tunnel
+    "Tunnel",
+    "AsyncTunnel",
+    "TunnelError",
+    "TunnelPortNotAllowedError",
+    "TunnelConnectionRefusedError",
+    "TunnelUnsupportedVersionError",
 ]
 
 # Emit warning on import

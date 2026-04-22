@@ -134,6 +134,40 @@ test("should trace calls to langsmith", async () => {
   callSpy.mockClear();
 });
 
+test("should include model in traced inputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const geminiClient = wrapGemini(
+    new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || "test-key",
+    }),
+    {
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  await geminiClient.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: "Say 'hello'",
+  });
+
+  await client.awaitPendingTraceBatches();
+
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call: any) => (call[1] as any).method === "POST"
+  );
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  const body = parseRequestBody((postCalls[0][1] as any).body);
+  expect(body.inputs).toBeDefined();
+  expect(body.inputs.model).toBe("gemini-2.5-flash");
+
+  callSpy.mockClear();
+});
+
 test("should extract usage metadata in outputs", async () => {
   const { client, callSpy } = mockClient();
 
@@ -259,7 +293,7 @@ test("should handle function calling", async () => {
 
   // Find the PATCH call
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH"
   );
 
   if (patchCalls.length > 0) {
@@ -428,7 +462,7 @@ test("prepopulated invocation params are passed through", async () => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST"
   );
 
   expect(postCalls.length).toBeGreaterThan(0);

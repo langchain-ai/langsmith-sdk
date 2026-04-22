@@ -7,6 +7,7 @@ from langsmith.wrappers._gemini import (
     _process_generate_content_response,
     _reduce_generate_content_chunks,
     _strip_none,
+    _to_dict,
 )
 
 
@@ -328,7 +329,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["type"] == "function"
         assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
+        assert tool_call["function"]["arguments"] == '{"location":"Boston"}'
         assert result["role"] == "assistant"
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
@@ -371,7 +372,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["type"] == "function"
         assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
+        assert tool_call["function"]["arguments"] == '{"location":"Boston"}'
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
@@ -624,3 +625,87 @@ class TestCreateUsageMetadata:
 
         # Should calculate total if missing
         assert result["total_tokens"] == 30
+
+
+class TestToDict:
+    """Test _to_dict generic serialization helper."""
+
+    def test_dict_passthrough(self):
+        d = {"key": "value"}
+        assert _to_dict(d) is d
+
+    def test_string_passthrough(self):
+        assert _to_dict("hello") == "hello"
+
+    def test_model_dump(self):
+        class FakeModel:
+            def model_dump(self):
+                return {"role": "user", "parts": [{"text": "hello"}]}
+
+        assert _to_dict(FakeModel()) == {"role": "user", "parts": [{"text": "hello"}]}
+
+    def test_to_dict_method(self):
+        class FakeModel:
+            def to_dict(self):
+                return {"role": "model", "parts": []}
+
+        assert _to_dict(FakeModel()) == {"role": "model", "parts": []}
+
+    def test_unknown_object_returned_as_is(self):
+        obj = 42
+        assert _to_dict(obj) == 42
+
+
+class TestProcessGeminiInputsWithObjects:
+    """Test _process_gemini_inputs with non-dict Content/Part objects."""
+
+    def test_content_objects_normalized(self):
+        class FakeContent:
+            def model_dump(self):
+                return {"role": "user", "parts": [{"text": "hello from object"}]}
+
+        inputs = {"contents": [FakeContent()], "model": "gemini-pro"}
+        result = _process_gemini_inputs(inputs)
+
+        assert len(result["messages"]) == 1
+        assert result["messages"][0]["role"] == "user"
+        assert result["messages"][0]["content"] == "hello from object"
+
+    def test_function_call_with_model_dump(self):
+        class FakeContent:
+            def model_dump(self):
+                return {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "function_call": {
+                                "name": "search",
+                                "args": {"q": "weather"},
+                            }
+                        }
+                    ],
+                }
+
+        inputs = {"contents": [FakeContent()], "model": "gemini-pro"}
+        result = _process_gemini_inputs(inputs)
+
+        msg = result["messages"][0]
+        assert msg["role"] == "model"
+        assert isinstance(msg["content"], list)
+        fc = msg["content"][0]
+        assert fc["type"] == "function_call"
+        assert fc["function_call"]["name"] == "search"
+        assert fc["function_call"]["arguments"] == {"q": "weather"}
+
+    def test_part_objects_normalized(self):
+        class FakePart:
+            def model_dump(self):
+                return {"text": "from part object"}
+
+        inputs = {
+            "contents": [{"role": "user", "parts": [FakePart()]}],
+            "model": "gemini-pro",
+        }
+        result = _process_gemini_inputs(inputs)
+
+        assert result["messages"][0]["content"] == "from part object"

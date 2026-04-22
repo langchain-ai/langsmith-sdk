@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
+import contextvars
 import io
 import logging
 import pathlib
@@ -437,12 +438,22 @@ async def aevaluate_existing(
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
-        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
+        else (
+            await aitertools.aio_to_thread(
+                contextvars.copy_context(), _load_experiment, experiment, client
+            )
+        )
     )
     runs = await aitertools.aio_to_thread(
-        _load_traces, experiment, client, load_nested=load_nested
+        contextvars.copy_context(),
+        _load_traces,
+        experiment,
+        client,
+        load_nested=load_nested,
     )
-    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data_map = await aitertools.aio_to_thread(
+        contextvars.copy_context(), _load_examples_map, client, project
+    )
     data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
@@ -482,6 +493,7 @@ async def _aevaluate(
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
+        contextvars.copy_context(),
         _resolve_experiment,
         experiment,
         runs,
@@ -1089,6 +1101,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             feedback = result.model_dump(exclude={"target_run_id"})
                             evaluator_info = feedback.pop("evaluator_info", None)
                             await aitertools.aio_to_thread(
+                                contextvars.copy_context(),
                                 self.client.create_feedback,
                                 **feedback,
                                 run_id=None,
@@ -1174,43 +1187,69 @@ class AsyncExperimentResults:
     ):
         self._manager = experiment_manager
         self._results: list[ExperimentResultRow] = []
-        self._lock = asyncio.Lock()
+        self._condition = asyncio.Condition()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
+        self._comparison_url: Optional[str] = None
 
     @property
     def experiment_name(self) -> str:
         return self._manager.experiment_name
 
+    @property
+    def experiment_id(self) -> uuid.UUID:
+        """The ID of the experiment."""
+        return self._manager._get_experiment().id
+
+    @property
+    def url(self) -> Optional[str]:
+        """The URL of the experiment in the LangSmith UI."""
+        return self._manager._get_experiment().url
+
+    async def get_dataset_id(self) -> str:
+        """Get the ID of the dataset associated with this experiment."""
+        return await self._manager.get_dataset_id()
+
+    async def get_comparison_url(self) -> Optional[str]:
+        """Get the URL to the comparison view for this experiment."""
+        experiment = self._manager._get_experiment()
+        if not self._comparison_url and experiment.url:
+            dataset_id = await self._manager.get_dataset_id()
+            project_url = experiment.url.split("?")[0]
+            base_url = project_url.split("/projects/p/")[0]
+            self._comparison_url = (
+                f"{base_url}/datasets/{dataset_id}/compare?"
+                f"selectedSessions={experiment.id}"
+            )
+        return self._comparison_url
+
     def __aiter__(self) -> AsyncIterator[ExperimentResultRow]:
         return self
 
     async def __anext__(self) -> ExperimentResultRow:
-        async def _wait_until_index(index: int) -> None:
-            while self._processed_count < index:
-                await asyncio.sleep(0.05)
-
-        while True:
-            async with self._lock:
+        async with self._condition:
+            while True:
                 if self._processed_count < len(self._results):
                     result = self._results[self._processed_count]
                     self._processed_count += 1
                     return result
                 elif self._task.done():
+                    exc = self._task.exception()
+                    if exc is not None:
+                        raise exc
                     raise StopAsyncIteration
-
-            await asyncio.shield(
-                asyncio.wait_for(_wait_until_index(len(self._results)), timeout=None)
-            )
+                await self._condition.wait()
 
     async def _process_data(self, manager: _AsyncExperimentManager) -> None:
         tqdm = _load_tqdm()
         async for item in tqdm(manager.aget_results()):
-            async with self._lock:
+            async with self._condition:
                 self._results.append(item)
+                self._condition.notify()
         summary_scores = await manager.aget_summary_scores()
-        async with self._lock:
+        async with self._condition:
             self._summary_results = summary_scores
+            self._condition.notify_all()
 
     def to_pandas(
         self, start: Optional[int] = 0, end: Optional[int] = None

@@ -6,5 +6,6 @@
   "python.formatting.provider": "ruff",
   "eslint.workingDirectories": [
     "./js"
-  ]
+  ],
+  "python.defaultInterpreterPath": "${workspaceFolder}/python/.venv/bin/python"
 }

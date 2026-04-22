@@ -157,7 +157,7 @@ export async function waitUntilProjectFound(
         return false;
       }
     },
-    10_000,
+    15_000,
     5_000,
     `Waiting for project "${projectName}"`
   );
@@ -168,6 +168,7 @@ export function sanitizePresignedUrls(payload: unknown) {
     if (key === "presigned_url") {
       try {
         const url = new URL(value);
+        url.searchParams.set("jwt", "[JWT]");
         url.searchParams.set("Signature", "[SIGNATURE]");
         url.searchParams.set("Expires", "[EXPIRES]");
         return url.toString();

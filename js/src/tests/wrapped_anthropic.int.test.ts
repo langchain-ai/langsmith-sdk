@@ -59,7 +59,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata was set correctly
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -72,7 +72,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify usage_metadata was captured
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -130,7 +130,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -143,8 +143,7 @@ describe.skip("Requires Anthropic API key", () => {
     expect(tokenEvents.length).toBeGreaterThan(0);
     tokenEvents.forEach((event: any) => {
       expect(event.name).toBe("new_token");
-      expect(event.kwargs).toBeDefined();
-      expect(event.kwargs.token).toBeDefined();
+      expect(event.kwargs).toBeUndefined();
       expect(event.time).toBeDefined();
     });
 
@@ -154,7 +153,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     const postBody = parseRequestBody((postCalls[0][1] as any).body);
     expect(postBody.extra.metadata).toMatchObject({
@@ -285,7 +284,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -298,7 +297,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -349,7 +348,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -362,7 +361,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -477,7 +476,7 @@ describe.skip("Requires Anthropic API key", () => {
     expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     const patchBody = parseRequestBody((patchCalls[0][1] as any).body);
     expect(patchBody.outputs).toBeDefined();
@@ -530,7 +529,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify the aggregated output contains tool_use
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     const lastPatchCall = patchCalls[patchCalls.length - 1];
     const body = parseRequestBody((lastPatchCall[1] as any).body);
@@ -588,7 +587,61 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata was set correctly
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
+    );
+    expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+    const postBody = parseRequestBody((postCalls[0][1] as any).body);
+    expect(postBody.extra.metadata).toMatchObject({
+      ls_model_name: "claude-haiku-4-5",
+      ls_model_type: "chat",
+      ls_provider: "anthropic",
+    });
+
+    callSpy.mockClear();
+  });
+
+  test("beta.messages.parse", async () => {
+    const { client, callSpy } = mockClient();
+
+    const originalClient = new Anthropic();
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      client,
+      tracingEnabled: true,
+    });
+
+    expect(patchedClient.beta.messages.parse).toBeDefined();
+
+    const original = await originalClient.beta.messages.parse({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: "Alice and Bob are going to a science fair on Friday.",
+        },
+      ],
+    });
+
+    const patched = await patchedClient.beta.messages.parse({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: "Alice and Bob are going to a science fair on Friday.",
+        },
+      ],
+    });
+
+    expect(patched.content).toBeDefined();
+    expect(patched.role).toBe("assistant");
+    expect(original.role).toBe("assistant");
+
+    expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+    const postCalls = callSpy.mock.calls.filter(
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -628,7 +681,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     const postBody = parseRequestBody((postCalls[0][1] as any).body);
     expect(postBody.extra.metadata).toMatchObject({
@@ -684,7 +737,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -697,7 +750,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -750,7 +803,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST"
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -763,7 +816,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH"
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -1203,7 +1256,7 @@ test("prepopulated invocation params are merged and runtime params override", as
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST"
   );
 
   expect(postCalls.length).toBeGreaterThan(0);

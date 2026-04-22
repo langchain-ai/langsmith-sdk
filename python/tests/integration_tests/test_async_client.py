@@ -3,7 +3,6 @@ import datetime
 import uuid
 
 import pytest
-from pydantic import BaseModel
 
 from langsmith import utils as ls_utils
 from langsmith import uuid7
@@ -13,68 +12,6 @@ from langsmith.utils import LangSmithRateLimitError
 from tests.integration_tests.conftest import skip_if_rate_limited
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky")
-async def test_indexed_datasets():
-    class InputsSchema(BaseModel):
-        name: str  # type: ignore[annotation-unchecked]
-        age: int  # type: ignore[annotation-unchecked]
-
-    dataset = None
-    async with AsyncClient() as client:
-        # Create a new dataset
-        try:
-            dataset = await client.create_dataset(
-                "test_dataset_for_integration_tests_" + uuid.uuid4().hex,
-                inputs_schema_definition=InputsSchema.model_json_schema(),
-            )
-
-            example = await client.create_example(
-                inputs={"name": "Alice", "age": 30},
-                outputs={"hi": "hello"},
-                dataset_id=dataset.id,
-            )
-
-            await client.index_dataset(dataset_id=dataset.id)
-
-            async def check_similar_examples():
-                examples = await client.similar_examples(
-                    {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
-                )
-                return len(examples) == 1
-
-            await wait_for(check_similar_examples, timeout=20)
-            examples = await client.similar_examples(
-                {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
-            )
-            assert examples[0].id == example.id
-
-            example2 = await client.create_example(
-                inputs={"name": "Bobby", "age": 30},
-                outputs={"hi": "there"},
-                dataset_id=dataset.id,
-            )
-
-            await client.sync_indexed_dataset(dataset_id=dataset.id)
-
-            async def check_similar_examples():
-                examples = await client.similar_examples(
-                    {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
-                )
-                return len(examples) == 2
-
-            await wait_for(check_similar_examples, timeout=20)
-            examples = await client.similar_examples(
-                {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
-            )
-            assert examples[0].id == example2.id
-            assert examples[1].id == example.id
-        finally:
-            if dataset:
-                await client.delete_dataset(dataset_id=dataset.id)
-
-
-# Helper function to wait for a condition
 async def wait_for(condition, timeout=10, **kwargs):
     start_time = asyncio.get_event_loop().time()
     while True:
@@ -414,6 +351,49 @@ async def test_annotation_queue_crud(async_client: AsyncClient):
         async for queue in async_client.list_annotation_queues(queue_ids=[queue_id])
     ]
     assert len(queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_feedback_config_crud(async_client: AsyncClient):
+    """Test basic CRUD operations for feedback configurations."""
+    feedback_key = f"test_config_{uuid.uuid4().hex[:8]}"
+
+    # Test creation
+    config = await async_client.create_feedback_config(
+        feedback_key=feedback_key,
+        feedback_config={
+            "type": "continuous",
+            "min": 0.0,
+            "max": 1.0,
+        },
+        is_lower_score_better=False,
+    )
+    assert config.feedback_key == feedback_key
+    assert config.feedback_config["type"] == "continuous"
+    assert config.is_lower_score_better is False
+
+    # Test listing with filter
+    configs = [
+        c async for c in async_client.list_feedback_configs(feedback_key=[feedback_key])
+    ]
+    assert len(configs) == 1
+    assert configs[0].feedback_key == feedback_key
+
+    # Test update
+    updated = await async_client.update_feedback_config(
+        feedback_key,
+        is_lower_score_better=True,
+    )
+    assert updated.is_lower_score_better is True
+
+    # Test deletion
+    await async_client.delete_feedback_config(feedback_key)
+
+    # Verify deletion
+    configs = [
+        c async for c in async_client.list_feedback_configs(feedback_key=[feedback_key])
+    ]
+    assert len(configs) == 0
 
 
 @pytest.mark.asyncio

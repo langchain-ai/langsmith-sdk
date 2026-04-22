@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal._compressed_traces import CompressedTraces
+from langsmith._internal._compressed_traces import ZSTD_AVAILABLE, CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -612,10 +612,16 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 
-    # Disable compression if explicitly set or if using OpenTelemetry
+    # Disable compression if explicitly set, using OpenTelemetry, or zstd unavailable
+    if not ZSTD_AVAILABLE:
+        logger.debug(
+            "zstandard package is not installed. "
+            "Falling back to uncompressed multipart ingestion."
+        )
     disable_compression = (
         ls_utils.is_env_var_truish("DISABLE_RUN_COMPRESSION")
         or client.otel_exporter is not None
+        or not ZSTD_AVAILABLE
     )
     if not disable_compression and use_multipart:
         if not (client.info.instance_flags or {}).get(
@@ -652,13 +658,16 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-            should_keep_thread = sys.getrefcount(client) > num_known_refs + len(
-                sub_threads
-            )
+            refcount = sys.getrefcount(client)
+            threshold = num_known_refs + len(sub_threads)
+            should_keep_thread = refcount > threshold
             if not should_keep_thread:
                 logger.debug(
                     "Client refs count indicates we're the only remaining reference "
-                    "to the client, stopping tracing thread",
+                    "to the client, stopping tracing thread "
+                    "(refcount=%d, threshold=%d)",
+                    refcount,
+                    threshold,
                 )
             return should_keep_thread
         else:
@@ -707,6 +716,10 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 )
 
     # drain the queue on exit - apply same logic
+    logger.debug(
+        "Tracing thread draining queue on exit: qsize=%d",
+        tracing_queue.qsize(),
+    )
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     max_batch_size = (
         client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
@@ -775,11 +788,15 @@ def tracing_control_thread_func_compress_parallel(
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-            should_keep_thread = sys.getrefcount(client) > num_known_refs
+            refcount = sys.getrefcount(client)
+            should_keep_thread = refcount > num_known_refs
             if not should_keep_thread:
                 logger.debug(
                     "Client refs count indicates we're the only remaining reference "
-                    "to the client, stopping compression thread",
+                    "to the client, stopping compression thread "
+                    "(refcount=%d, threshold=%d)",
+                    refcount,
+                    num_known_refs,
                 )
             return should_keep_thread
         else:
@@ -845,6 +862,15 @@ def tracing_control_thread_func_compress_parallel(
 
     # Drain the buffer on exit (final flush)
     try:
+        trace_count = (
+            client.compressed_traces.trace_count
+            if client.compressed_traces is not None
+            else 0
+        )
+        logger.debug(
+            "Compression thread final flush: trace_count=%d",
+            trace_count,
+        )
         (
             final_data_stream,
             compressed_traces_info,
@@ -852,6 +878,10 @@ def tracing_control_thread_func_compress_parallel(
             client, size_limit=1, size_limit_bytes=1
         )
         if final_data_stream is not None:
+            logger.debug(
+                "Compression thread final flush: sending %d bytes",
+                final_data_stream.getbuffer().nbytes,
+            )
             try:
                 cf.wait(
                     [
@@ -862,11 +892,19 @@ def tracing_control_thread_func_compress_parallel(
                         )
                     ]
                 )
+                logger.debug("Compression thread final flush: send completed")
             except RuntimeError:
+                logger.debug(
+                    "Compression thread final flush: thread pool shutdown, "
+                    "sending synchronously"
+                )
                 client._send_compressed_multipart_req(
                     final_data_stream,
                     compressed_traces_info,
                 )
+                logger.debug("Compression thread final flush: sync send completed")
+        else:
+            logger.debug("Compression thread final flush: no data to send")
 
     except Exception:
         logger.error(

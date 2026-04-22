@@ -550,6 +550,7 @@ class ExperimentResults:
         self._results: list[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
+        self._processing_error: Optional[BaseException] = None
         if not blocking:
             self._thread: Optional[threading.Thread] = threading.Thread(
                 target=self._process_data
@@ -562,6 +563,33 @@ class ExperimentResults:
     @property
     def experiment_name(self) -> str:
         return self._manager.experiment_name
+
+    @property
+    def experiment_id(self) -> uuid.UUID:
+        """The ID of the experiment."""
+        return self._manager._get_experiment().id
+
+    @property
+    def url(self) -> Optional[str]:
+        """The URL of the experiment in the LangSmith UI."""
+        experiment = self._manager._get_experiment()
+        if experiment.url:
+            project_url = experiment.url.split("?")[0]
+            base_url = project_url.split("/projects/p/")[0]
+            return (
+                f"{base_url}/datasets/{self._manager.dataset_id}/compare?"
+                f"selectedSessions={experiment.id}"
+            )
+        return None
+
+    def get_dataset_id(self) -> str:
+        """Get the ID of the dataset associated with this experiment."""
+        return self._manager.dataset_id
+
+    @property
+    def comparison_url(self) -> Optional[str]:
+        """The URL to the comparison view for this experiment."""
+        return self.url
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         ix = 0
@@ -577,19 +605,26 @@ class ExperimentResults:
                 else:
                     self._queue.get(block=True, timeout=0.1)
             except queue.Empty:
+                if self._processing_error is not None:
+                    raise self._processing_error
                 continue
+        if self._processing_error is not None:
+            raise self._processing_error
 
     def _process_data(self) -> None:
         tqdm = _load_tqdm()
-        results = self._manager.get_results()
-        for item in tqdm(results):
-            self._queue.put(item)
-            self._results.append(item)
+        try:
+            results = self._manager.get_results()
+            for item in tqdm(results):
+                self._queue.put(item)
+                self._results.append(item)
 
-        summary_scores = self._manager.get_summary_scores()
-        self._summary_results = summary_scores
-
-        self._processing_complete.set()
+            summary_scores = self._manager.get_summary_scores()
+            self._summary_results = summary_scores
+        except BaseException as e:
+            self._processing_error = e
+        finally:
+            self._processing_complete.set()
 
     def __len__(self) -> int:
         return len(self._results)
@@ -619,6 +654,8 @@ class ExperimentResults:
         """
         if self._thread:
             self._thread.join()
+        if self._processing_error is not None:
+            raise self._processing_error
 
 
 ## Public API for Comparison Experiments
@@ -1254,7 +1291,6 @@ class _ExperimentManagerMixin:
         self, project: Optional[schemas.TracerSession], first_example: schemas.Example
     ) -> None:
         if project and project.url:
-            # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
             base_url = project_url.split("/projects/p/")[0]

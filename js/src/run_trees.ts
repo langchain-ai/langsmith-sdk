@@ -423,6 +423,16 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
+    // Propagate all parent metadata; child metadata takes precedence.
+    const parentMeta = this.extra?.metadata ?? {};
+    const childMeta = child.extra?.metadata ?? {};
+    if (Object.keys(parentMeta).length > 0) {
+      child.extra = {
+        ...child.extra,
+        metadata: { ...parentMeta, ...childMeta },
+      };
+    }
+
     // Copy context vars over into the new run tree.
     if (_LC_CONTEXT_VARIABLES_KEY in this) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -513,15 +523,13 @@ export class RunTree implements BaseRun {
       }
     }
 
+    const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
     let child_runs: (RunCreate & { id: string })[];
-    let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
       child_runs = run.child_runs.map((child_run) =>
         this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
       );
-      parent_run_id = undefined;
     } else {
-      parent_run_id = run.parent_run?.id ?? run.parent_run_id;
       child_runs = [];
     }
     return {

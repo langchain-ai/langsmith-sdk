@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "22.4.1"
+  NODE_VERSION: "24.x"
 
 jobs:
   # ============================================================================
@@ -39,7 +39,7 @@ jobs:
       js: ${{ steps.filter.outputs.js }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -120,16 +120,20 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: pnpm install --frozen-lockfile
       - name: Check formatting
-        run: yarn run format:check
+        run: pnpm run format:check
 
   js-lint:
     name: "JS Check linting"
@@ -141,16 +145,20 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: pnpm install --frozen-lockfile
       - name: Check linting
-        run: yarn run lint
+        run: pnpm run lint
 
   js-build:
     name: "JS Build and check types"
@@ -162,16 +170,20 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build and check types
-        run: yarn run build
+        run: pnpm run build
 
   js-test:
     name: "JS Unit Tests (${{ matrix.os }}, ${{ matrix.node-version }})"
@@ -180,34 +192,38 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [20.x, "22.4.1"]
+        node-version: ["22.x", "24.x"]
         include:
           - os: windows-latest
-            node-version: 20.x
+            node-version: 24.x
           - os: macos-latest
-            node-version: 20.x
+            node-version: 24.x
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
-        run: yarn run build
+        run: pnpm run build
       - name: Check version
-        run: yarn run check-version
+        run: pnpm run check-version
       - name: Test
-        run: yarn run test
+        run: pnpm run test
       - name: Test Vitest
-        run: yarn run test:vitest
+        run: pnpm run test:vitest
 
   # ============================================================================
   # JS Environment Tests
@@ -219,18 +235,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test ESM exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esm
 
@@ -241,18 +261,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test CJS exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cjs
 
@@ -263,18 +287,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test Cloudflare exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cf
 
@@ -285,18 +313,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test Vite exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-vite
 
@@ -307,18 +339,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test Webpack exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-webpack
 
@@ -329,18 +365,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test esbuild exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esbuild
 
@@ -351,18 +391,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
-          cache-dependency-path: js/yarn.lock
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: js
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: js
-        run: yarn build
+        run: pnpm build
       - name: Test Metro exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
 
@@ -418,7 +462,7 @@ jobs:
             shard_total: 6
             shard_index: 2
           - test-type: integration
-            shard_total: 6 
+            shard_total: 6
             shard_index: 3
           - test-type: integration
             shard_total: 6
@@ -466,18 +510,22 @@ jobs:
         working-directory: js
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Run JS integration tests
         uses: ./.github/actions/js-integration-tests
         with:
-          node-version: 20.x
+          node-version: 24.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
@@ -499,18 +547,22 @@ jobs:
         working-directory: js
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js 20.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
       - name: Install dependencies
-        run: yarn install --immutable
+        run: pnpm install --frozen-lockfile
       - name: Run JS Vitest eval runner test
         uses: ./.github/actions/js-vitest-eval-test
         with:
-          node-version: 20.x
+          node-version: 24.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 

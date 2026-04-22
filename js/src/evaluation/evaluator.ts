@@ -5,7 +5,7 @@ import {
   ScoreType,
   ValueType,
 } from "../schemas.js";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { TraceableFunction, traceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 
@@ -214,7 +214,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     example?: Example,
     options?: Partial<RunTreeConfig>
   ): Promise<EvaluationResult | EvaluationResults> {
-    let sourceRunId = uuidv4();
+    let sourceRunId = uuidv7();
     const metadata: Record<string, any> = {
       targetRunId: run.id,
     };

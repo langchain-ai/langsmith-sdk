@@ -6,33 +6,55 @@ import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { _getFetchImplementation } from "../../singletons/fetch.js";
 import { AsyncCaller } from "../../utils/async_caller.js";
 import type {
-  CreatePoolOptions,
+  CaptureSnapshotOptions,
   CreateSandboxOptions,
-  CreateTemplateOptions,
-  CreateVolumeOptions,
-  Pool,
+  CreateSnapshotOptions,
+  ListSnapshotsOptions,
+  ResourceStatus,
   SandboxClientConfig,
   SandboxData,
-  SandboxTemplate,
-  UpdatePoolOptions,
-  UpdateTemplateOptions,
-  UpdateVolumeOptions,
-  Volume,
+  Snapshot,
+  StartSandboxOptions,
+  UpdateSandboxOptions,
+  WaitForSandboxOptions,
+  WaitForSnapshotOptions,
 } from "./types.js";
 import { Sandbox } from "./sandbox.js";
 import {
+  LangSmithResourceCreationError,
   LangSmithResourceNameConflictError,
   LangSmithResourceNotFoundError,
+  LangSmithResourceTimeoutError,
   LangSmithSandboxAPIError,
+  LangSmithValidationError,
 } from "./errors.js";
 import {
   handleClientHttpError,
-  handleConflictError,
-  handlePoolError,
-  handleResourceInUseError,
   handleSandboxCreationError,
-  handleVolumeCreationError,
+  validateTtl,
 } from "./helpers.js";
+
+/**
+ * Sleep that can be interrupted by an AbortSignal.
+ * Resolves after `ms` milliseconds or rejects immediately if the signal fires.
+ */
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Get the default sandbox API endpoint from environment.
@@ -56,7 +78,7 @@ function getDefaultApiKey(): string | undefined {
 /**
  * Client for interacting with the Sandbox Server API.
  *
- * This client provides a simple interface for managing sandboxes and templates.
+ * This client provides a simple interface for managing sandboxes and snapshots.
  *
  * @example
  * ```typescript
@@ -71,8 +93,13 @@ function getDefaultApiKey(): string | undefined {
  *   apiKey: "your-api-key",
  * });
  *
- * // Create a sandbox and run commands
- * const sandbox = await client.createSandbox("python-sandbox");
+ * // Build a snapshot, then create a sandbox from it
+ * const snapshot = await client.createSnapshot(
+ *   "python",
+ *   "python:3.12-slim",
+ *   1_073_741_824 // 1 GiB
+ * );
+ * const sandbox = await client.createSandbox(snapshot.id);
  * try {
  *   const result = await sandbox.run("python --version");
  *   console.log(result.stdout);
@@ -80,6 +107,8 @@ function getDefaultApiKey(): string | undefined {
  *   await sandbox.delete();
  * }
  * ```
+ *
+ * @experimental This feature is experimental, and breaking changes are expected.
  */
 export class SandboxClient {
   private _baseUrl: string;
@@ -121,520 +150,36 @@ export class SandboxClient {
     );
   }
 
-  // =========================================================================
-  // Volume Operations
-  // =========================================================================
+  /**
+   * Get the API key for WebSocket authentication.
+   * @internal
+   */
+  getApiKey(): string | undefined {
+    return this._apiKey;
+  }
 
   /**
-   * Create a new persistent volume.
-   *
-   * Creates a persistent storage volume that can be referenced in templates.
-   *
-   * @param name - Volume name.
-   * @param options - Creation options including size and optional timeout.
-   * @returns Created Volume.
-   * @throws SandboxCreationError if volume provisioning fails.
-   * @throws ResourceTimeoutError if volume doesn't become ready within timeout.
+   * JSON POST helper. Sends JSON body, checks response status,
+   * and returns the Response for further processing.
+   * Throws on non-ok responses via handleClientHttpError.
+   * Callers can add specific status checks (e.g. 404) before calling this.
+   * @internal
    */
-  async createVolume(
-    name: string,
-    options: CreateVolumeOptions
-  ): Promise<Volume> {
-    const { size, timeout = 60 } = options;
-    const url = `${this._baseUrl}/volumes`;
-    const payload = {
-      name,
-      size,
-      wait_for_ready: true,
-      timeout,
-    };
-
+  private async _postJson(
+    url: string,
+    body: Record<string, unknown>,
+    options?: { signal?: AbortSignal }
+  ): Promise<Response> {
     const response = await this._fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout((timeout + 30) * 1000),
+      body: JSON.stringify(body),
+      signal: options?.signal,
     });
-
-    if (!response.ok) {
-      await handleVolumeCreationError(response);
-    }
-
-    return (await response.json()) as Volume;
-  }
-
-  /**
-   * Get a volume by name.
-   *
-   * @param name - Volume name.
-   * @returns Volume.
-   * @throws LangSmithResourceNotFoundError if volume not found.
-   */
-  async getVolume(name: string): Promise<Volume> {
-    const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Volume '${name}' not found`,
-          "volume"
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    return (await response.json()) as Volume;
-  }
-
-  /**
-   * List all volumes.
-   *
-   * @returns List of Volumes.
-   */
-  async listVolumes(): Promise<Volume[]> {
-    const url = `${this._baseUrl}/volumes`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithSandboxAPIError(
-          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    const data = await response.json();
-    return (data.volumes ?? []) as Volume[];
-  }
-
-  /**
-   * Delete a volume.
-   *
-   * @param name - Volume name.
-   * @throws LangSmithResourceNotFoundError if volume not found.
-   * @throws ResourceInUseError if volume is referenced by templates.
-   */
-  async deleteVolume(name: string): Promise<void> {
-    const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url, { method: "DELETE" });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Volume '${name}' not found`,
-          "volume"
-        );
-      }
-      if (response.status === 409) {
-        await handleResourceInUseError(response, "volume");
-      }
-      await handleClientHttpError(response);
-    }
-  }
-
-  /**
-   * Update a volume's name and/or size.
-   *
-   * You can update the display name, size, or both in a single request.
-   * Only storage size increases are allowed (storage backend limitation).
-   *
-   * @param name - Current volume name.
-   * @param options - Update options.
-   * @returns Updated Volume.
-   * @throws LangSmithResourceNotFoundError if volume not found.
-   * @throws ValidationError if storage decrease attempted.
-   * @throws LangSmithResourceNameConflictError if newName is already in use.
-   */
-  async updateVolume(
-    name: string,
-    options: UpdateVolumeOptions
-  ): Promise<Volume> {
-    const { newName, size } = options;
-
-    if (newName === undefined && size === undefined) {
-      // Nothing to update, just return the current volume
-      return this.getVolume(name);
-    }
-
-    const url = `${this._baseUrl}/volumes/${encodeURIComponent(name)}`;
-    const payload: Record<string, unknown> = {};
-    if (newName !== undefined) {
-      payload.name = newName;
-    }
-    if (size !== undefined) {
-      payload.size = size;
-    }
-
-    const response = await this._fetch(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Volume '${name}' not found`,
-          "volume"
-        );
-      }
-      if (response.status === 409) {
-        await handleConflictError(response, "volume");
-      }
-      await handleClientHttpError(response);
-    }
-
-    return (await response.json()) as Volume;
-  }
-
-  // =========================================================================
-  // Template Operations
-  // =========================================================================
-
-  /**
-   * Create a new SandboxTemplate.
-   *
-   * Only the container image, resource limits, and volume mounts can be
-   * configured. All other container details are handled by the server.
-   *
-   * @param name - Template name.
-   * @param options - Creation options including image and resource limits.
-   * @returns Created SandboxTemplate.
-   */
-  async createTemplate(
-    name: string,
-    options: CreateTemplateOptions
-  ): Promise<SandboxTemplate> {
-    const {
-      image,
-      cpu = "500m",
-      memory = "512Mi",
-      storage,
-      volumeMounts,
-    } = options;
-    const url = `${this._baseUrl}/templates`;
-
-    const payload: Record<string, unknown> = {
-      name,
-      image,
-      resources: {
-        cpu,
-        memory,
-      },
-    };
-    if (storage) {
-      (payload.resources as Record<string, unknown>).storage = storage;
-    }
-    if (volumeMounts && volumeMounts.length > 0) {
-      payload.volume_mounts = volumeMounts.map((vm) => ({
-        volume_name: vm.volume_name,
-        mount_path: vm.mount_path,
-      }));
-    }
-
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
     if (!response.ok) {
       await handleClientHttpError(response);
     }
-
-    return (await response.json()) as SandboxTemplate;
-  }
-
-  /**
-   * Get a SandboxTemplate by name.
-   *
-   * @param name - Template name.
-   * @returns SandboxTemplate.
-   * @throws LangSmithResourceNotFoundError if template not found.
-   */
-  async getTemplate(name: string): Promise<SandboxTemplate> {
-    const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Template '${name}' not found`,
-          "template"
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    return (await response.json()) as SandboxTemplate;
-  }
-
-  /**
-   * List all SandboxTemplates.
-   *
-   * @returns List of SandboxTemplates.
-   */
-  async listTemplates(): Promise<SandboxTemplate[]> {
-    const url = `${this._baseUrl}/templates`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithSandboxAPIError(
-          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    const data = await response.json();
-    return (data.templates ?? []) as SandboxTemplate[];
-  }
-
-  /**
-   * Update a template.
-   *
-   * @param name - Current template name.
-   * @param options - Update options (e.g., newName).
-   * @returns Updated SandboxTemplate.
-   * @throws LangSmithResourceNotFoundError if template not found.
-   * @throws LangSmithResourceNameConflictError if newName is already in use.
-   */
-  async updateTemplate(
-    name: string,
-    options: UpdateTemplateOptions
-  ): Promise<SandboxTemplate> {
-    const { newName } = options;
-
-    if (newName === undefined) {
-      // Nothing to update, just return the current template
-      return this.getTemplate(name);
-    }
-
-    const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
-    const payload = { name: newName };
-
-    const response = await this._fetch(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Template '${name}' not found`,
-          "template"
-        );
-      }
-      if (response.status === 409) {
-        await handleConflictError(response, "template");
-      }
-      await handleClientHttpError(response);
-    }
-
-    return (await response.json()) as SandboxTemplate;
-  }
-
-  /**
-   * Delete a SandboxTemplate.
-   *
-   * @param name - Template name.
-   * @throws LangSmithResourceNotFoundError if template not found.
-   * @throws ResourceInUseError if template is referenced by sandboxes or pools.
-   */
-  async deleteTemplate(name: string): Promise<void> {
-    const url = `${this._baseUrl}/templates/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url, { method: "DELETE" });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Template '${name}' not found`,
-          "template"
-        );
-      }
-      if (response.status === 409) {
-        await handleResourceInUseError(response, "template");
-      }
-      await handleClientHttpError(response);
-    }
-  }
-
-  // =========================================================================
-  // Pool Operations
-  // =========================================================================
-
-  /**
-   * Create a new Sandbox Pool.
-   *
-   * Pools pre-provision sandboxes from a template for faster startup.
-   *
-   * @param name - Pool name (lowercase letters, numbers, hyphens; max 63 chars).
-   * @param options - Creation options including templateName, replicas, and optional timeout.
-   * @returns Created Pool.
-   * @throws LangSmithResourceNotFoundError if template not found.
-   * @throws ValidationError if template has volumes attached.
-   * @throws ResourceAlreadyExistsError if pool with this name already exists.
-   * @throws ResourceTimeoutError if pool doesn't reach ready state within timeout.
-   * @throws QuotaExceededError if organization quota is exceeded.
-   */
-  async createPool(name: string, options: CreatePoolOptions): Promise<Pool> {
-    const { templateName, replicas, timeout = 30 } = options;
-    const url = `${this._baseUrl}/pools`;
-    const payload = {
-      name,
-      template_name: templateName,
-      replicas,
-      wait_for_ready: true,
-      timeout,
-    };
-
-    const response = await this._fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout((timeout + 30) * 1000),
-    });
-
-    if (!response.ok) {
-      await handlePoolError(response);
-    }
-
-    return (await response.json()) as Pool;
-  }
-
-  /**
-   * Get a Pool by name.
-   *
-   * @param name - Pool name.
-   * @returns Pool.
-   * @throws LangSmithResourceNotFoundError if pool not found.
-   */
-  async getPool(name: string): Promise<Pool> {
-    const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Pool '${name}' not found`,
-          "pool"
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    return (await response.json()) as Pool;
-  }
-
-  /**
-   * List all Pools.
-   *
-   * @returns List of Pools.
-   */
-  async listPools(): Promise<Pool[]> {
-    const url = `${this._baseUrl}/pools`;
-
-    const response = await this._fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithSandboxAPIError(
-          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
-        );
-      }
-      await handleClientHttpError(response);
-    }
-
-    const data = await response.json();
-    return (data.pools ?? []) as Pool[];
-  }
-
-  /**
-   * Update a Pool's name and/or replica count.
-   *
-   * You can update the display name, replica count, or both.
-   * The template reference cannot be changed after creation.
-   *
-   * @param name - Current pool name.
-   * @param options - Update options.
-   * @returns Updated Pool.
-   * @throws LangSmithResourceNotFoundError if pool not found.
-   * @throws ValidationError if template was deleted.
-   * @throws LangSmithResourceNameConflictError if newName is already in use.
-   * @throws QuotaExceededError if quota exceeded when scaling up.
-   */
-  async updatePool(name: string, options: UpdatePoolOptions): Promise<Pool> {
-    const { newName, replicas } = options;
-
-    if (newName === undefined && replicas === undefined) {
-      // Nothing to update, just return the current pool
-      return this.getPool(name);
-    }
-
-    const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
-    const payload: Record<string, unknown> = {};
-    if (newName !== undefined) {
-      payload.name = newName;
-    }
-    if (replicas !== undefined) {
-      payload.replicas = replicas;
-    }
-
-    const response = await this._fetch(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Pool '${name}' not found`,
-          "pool"
-        );
-      }
-      if (response.status === 409) {
-        await handleConflictError(response, "pool");
-      }
-      await handlePoolError(response);
-    }
-
-    return (await response.json()) as Pool;
-  }
-
-  /**
-   * Delete a Pool.
-   *
-   * This will terminate all sandboxes in the pool.
-   *
-   * @param name - Pool name.
-   * @throws LangSmithResourceNotFoundError if pool not found.
-   */
-  async deletePool(name: string): Promise<void> {
-    const url = `${this._baseUrl}/pools/${encodeURIComponent(name)}`;
-
-    const response = await this._fetch(url, { method: "DELETE" });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new LangSmithResourceNotFoundError(
-          `Pool '${name}' not found`,
-          "pool"
-        );
-      }
-      await handleClientHttpError(response);
-    }
+    return response;
   }
 
   // =========================================================================
@@ -642,19 +187,37 @@ export class SandboxClient {
   // =========================================================================
 
   /**
-   * Create a new Sandbox.
+   * Create a new Sandbox from a snapshot.
    *
    * Remember to call `sandbox.delete()` when done to clean up resources.
    *
-   * @param templateName - Name of the SandboxTemplate to use.
-   * @param options - Creation options.
+   * Exactly one of `snapshotId` (positional) or `options.snapshotName` must
+   * be provided. When `snapshotName` is used, the server resolves it to a
+   * snapshot owned by the caller's tenant.
+   *
+   * @param snapshotId - ID of the snapshot to boot from. Create one with
+   *   `createSnapshot()` or `captureSnapshot()`, or pass an existing snapshot ID.
+   *   Pass `undefined` when booting by name via `options.snapshotName`.
+   * @param options - Creation options. Use `options.snapshotName` to boot
+   *   by snapshot name instead of ID.
    * @returns Created Sandbox.
    * @throws ResourceTimeoutError if timeout waiting for sandbox to be ready.
    * @throws SandboxCreationError if sandbox creation fails.
+   * @throws LangSmithValidationError if TTL values are invalid, or if neither
+   *   (or both) of `snapshotId` / `options.snapshotName` are provided.
    *
    * @example
    * ```typescript
-   * const sandbox = await client.createSandbox("python-sandbox");
+   * const snapshot = await client.createSnapshot(
+   *   "python",
+   *   "python:3.12-slim",
+   *   1_073_741_824
+   * );
+   * const sandbox = await client.createSandbox(snapshot.id);
+   * // Or, resolve by snapshot name:
+   * const sandbox = await client.createSandbox(undefined, {
+   *   snapshotName: "python",
+   * });
    * try {
    *   const result = await sandbox.run("echo hello");
    *   console.log(result.stdout);
@@ -664,26 +227,75 @@ export class SandboxClient {
    * ```
    */
   async createSandbox(
-    templateName: string,
+    snapshotId?: string,
     options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
-    const { name, timeout = 30 } = options;
+    const {
+      snapshotName,
+      name,
+      timeout = 30,
+      waitForReady = true,
+      ttlSeconds,
+      idleTtlSeconds,
+      vCpus,
+      memBytes,
+      fsCapacityBytes,
+      proxyConfig,
+    } = options;
+
+    if (!!snapshotId === !!snapshotName) {
+      throw new LangSmithValidationError(
+        "Exactly one of snapshotId or options.snapshotName must be set",
+        "snapshotId"
+      );
+    }
+
+    validateTtl(ttlSeconds, "ttlSeconds");
+    validateTtl(idleTtlSeconds, "idleTtlSeconds");
+
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
-      template_name: templateName,
-      wait_for_ready: true,
-      timeout,
+      wait_for_ready: waitForReady,
     };
+    if (snapshotId) {
+      payload.snapshot_id = snapshotId;
+    }
+    if (snapshotName) {
+      payload.snapshot_name = snapshotName;
+    }
+    if (waitForReady) {
+      payload.timeout = timeout;
+    }
     if (name) {
       payload.name = name;
     }
+    if (ttlSeconds !== undefined) {
+      payload.ttl_seconds = ttlSeconds;
+    }
+    if (idleTtlSeconds !== undefined) {
+      payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (vCpus !== undefined) {
+      payload.vcpus = vCpus;
+    }
+    if (memBytes !== undefined) {
+      payload.mem_bytes = memBytes;
+    }
+    if (fsCapacityBytes !== undefined) {
+      payload.fs_capacity_bytes = fsCapacityBytes;
+    }
+    if (proxyConfig !== undefined) {
+      payload.proxy_config = proxyConfig;
+    }
+
+    const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
 
     const response = await this._fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout((timeout + 30) * 1000),
+      signal: AbortSignal.timeout(httpTimeout),
     });
 
     if (!response.ok) {
@@ -703,10 +315,13 @@ export class SandboxClient {
    * @returns Sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
-  async getSandbox(name: string): Promise<Sandbox> {
+  async getSandbox(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
-    const response = await this._fetch(url);
+    const response = await this._fetch(url, { signal: options?.signal });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -752,13 +367,54 @@ export class SandboxClient {
    *
    * @param name - Current sandbox name.
    * @param newName - New display name.
-   * @returns Updated Sandbox.
+   */
+  async updateSandbox(name: string, newName: string): Promise<Sandbox>;
+  /**
+   * Update a sandbox's name and/or TTL settings.
+   *
+   * @param name - Current sandbox name.
+   * @param options - Fields to update. Omit a field to leave it unchanged.
+   * @returns Updated Sandbox. If no fields are provided, returns the current sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
+   * @throws LangSmithValidationError if TTL values are invalid.
    */
-  async updateSandbox(name: string, newName: string): Promise<Sandbox> {
+  async updateSandbox(
+    name: string,
+    options: UpdateSandboxOptions
+  ): Promise<Sandbox>;
+  async updateSandbox(
+    name: string,
+    newNameOrOptions: string | UpdateSandboxOptions
+  ): Promise<Sandbox> {
+    const options: UpdateSandboxOptions =
+      typeof newNameOrOptions === "string"
+        ? { newName: newNameOrOptions }
+        : newNameOrOptions;
+
+    const { newName, ttlSeconds, idleTtlSeconds } = options;
+    validateTtl(ttlSeconds, "ttlSeconds");
+    validateTtl(idleTtlSeconds, "idleTtlSeconds");
+
+    if (
+      newName === undefined &&
+      ttlSeconds === undefined &&
+      idleTtlSeconds === undefined
+    ) {
+      return this.getSandbox(name);
+    }
+
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
-    const payload = { name: newName };
+    const payload: Record<string, unknown> = {};
+    if (newName !== undefined) {
+      payload.name = newName;
+    }
+    if (ttlSeconds !== undefined) {
+      payload.ttl_seconds = ttlSeconds;
+    }
+    if (idleTtlSeconds !== undefined) {
+      payload.idle_ttl_seconds = idleTtlSeconds;
+    }
 
     const response = await this._fetch(url, {
       method: "PATCH",
@@ -775,7 +431,9 @@ export class SandboxClient {
       }
       if (response.status === 409) {
         throw new LangSmithResourceNameConflictError(
-          `Sandbox name '${newName}' already in use`,
+          newName !== undefined
+            ? `Sandbox name '${newName}' already in use`
+            : "Sandbox update conflict (name may already be in use)",
           "sandbox"
         );
       }
@@ -806,5 +464,377 @@ export class SandboxClient {
       }
       await handleClientHttpError(response);
     }
+  }
+
+  /**
+   * Get the provisioning status of a sandbox.
+   *
+   * This is a lightweight endpoint designed for polling during async creation.
+   * Use this instead of getSandbox() when you only need the status.
+   *
+   * @param name - Sandbox name.
+   * @returns ResourceStatus with status and optional status_message.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
+   */
+  async getSandboxStatus(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<ResourceStatus> {
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
+
+    const response = await this._fetch(url, { signal: options?.signal });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Sandbox '${name}' not found`,
+          "sandbox"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return (await response.json()) as ResourceStatus;
+  }
+
+  /**
+   * Wait for a sandbox to become ready.
+   *
+   * Polls getSandboxStatus() until the sandbox reaches "ready" or "failed" status,
+   * then returns the full Sandbox object.
+   *
+   * @param name - Sandbox name.
+   * @param options - Polling options (timeout, pollInterval).
+   * @returns Ready Sandbox.
+   * @throws LangSmithResourceCreationError if sandbox status becomes "failed".
+   * @throws LangSmithResourceTimeoutError if timeout expires while still provisioning.
+   * @throws LangSmithResourceNotFoundError if sandbox not found.
+   *
+   * @example
+   * ```typescript
+   * const sandbox = await client.createSandbox(snapshot.id, { waitForReady: false });
+   * // ... do other work ...
+   * const readySandbox = await client.waitForSandbox(sandbox.name);
+   * ```
+   */
+  async waitForSandbox(
+    name: string,
+    options: WaitForSandboxOptions = {}
+  ): Promise<Sandbox> {
+    const { timeout = 120, pollInterval = 1.0, signal } = options;
+    const deadline = Date.now() + timeout * 1000;
+    let lastStatus = "provisioning";
+
+    while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+
+      const statusResult = await this.getSandboxStatus(name, { signal });
+      lastStatus = statusResult.status;
+
+      if (statusResult.status === "ready") {
+        return this.getSandbox(name, { signal });
+      }
+
+      if (statusResult.status === "failed") {
+        throw new LangSmithResourceCreationError(
+          statusResult.status_message ?? `Sandbox '${name}' creation failed`,
+          "sandbox"
+        );
+      }
+
+      // Wait before polling again, capped to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
+    }
+
+    throw new LangSmithResourceTimeoutError(
+      `Sandbox '${name}' did not become ready within ${timeout}s`,
+      "sandbox",
+      lastStatus
+    );
+  }
+
+  /**
+   * Start a stopped sandbox and wait until ready.
+   *
+   * @param name - Sandbox name.
+   * @param options - Options with timeout.
+   * @returns Sandbox in "ready" status.
+   */
+  async startSandbox(
+    name: string,
+    options: StartSandboxOptions = {}
+  ): Promise<Sandbox> {
+    const { timeout = 120, signal } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
+
+    await this._postJson(url, {}, { signal });
+    return this.waitForSandbox(name, { timeout, signal });
+  }
+
+  /**
+   * Stop a running sandbox (preserves sandbox files for later restart).
+   *
+   * @param name - Sandbox name.
+   */
+  async stopSandbox(name: string): Promise<void> {
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
+    await this._postJson(url, {});
+  }
+
+  // =========================================================================
+  // Snapshot Operations
+  // =========================================================================
+
+  /**
+   * Build a snapshot from a Docker image.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param name - Snapshot name.
+   * @param dockerImage - Docker image to build from (e.g., "python:3.12-slim").
+   * @param fsCapacityBytes - Filesystem capacity in bytes.
+   * @param options - Additional options (registry credentials, timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async createSnapshot(
+    name: string,
+    dockerImage: string,
+    fsCapacityBytes: number,
+    options: CreateSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const {
+      registryId,
+      registryUrl,
+      registryUsername,
+      registryPassword,
+      timeout = 60,
+      signal,
+    } = options;
+    const url = `${this._baseUrl}/snapshots`;
+
+    const payload: Record<string, unknown> = {
+      name,
+      docker_image: dockerImage,
+      fs_capacity_bytes: fsCapacityBytes,
+    };
+    if (registryId !== undefined) {
+      payload.registry_id = registryId;
+    }
+    if (registryUrl !== undefined) {
+      payload.registry_url = registryUrl;
+    }
+    if (registryUsername !== undefined) {
+      payload.registry_username = registryUsername;
+    }
+    if (registryPassword !== undefined) {
+      payload.registry_password = registryPassword;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
+  }
+
+  /**
+   * Capture a snapshot from a running sandbox.
+   *
+   * Blocks until the snapshot is ready (polls with 2s interval).
+   *
+   * @param sandboxName - Name of the sandbox to capture from.
+   * @param name - Snapshot name.
+   * @param options - Capture options (timeout).
+   * @returns Snapshot in "ready" status.
+   */
+  async captureSnapshot(
+    sandboxName: string,
+    name: string,
+    options: CaptureSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { timeout = 60, signal } = options;
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
+      sandboxName
+    )}/snapshot`;
+
+    const payload: Record<string, unknown> = { name };
+
+    const response = await this._postJson(url, payload, { signal });
+    const snapshot = (await response.json()) as Snapshot;
+    return this.waitForSnapshot(snapshot.id, { timeout, signal });
+  }
+
+  /**
+   * Get a snapshot by ID.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @returns Snapshot.
+   */
+  async getSnapshot(
+    snapshotId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Snapshot> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url, { signal: options?.signal });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new LangSmithResourceNotFoundError(
+          `Snapshot '${snapshotId}' not found`,
+          "snapshot"
+        );
+      }
+      await handleClientHttpError(response);
+    }
+
+    return (await response.json()) as Snapshot;
+  }
+
+  /**
+   * List snapshots, optionally filtered and paginated server-side.
+   *
+   * The backend always paginates this endpoint. When `limit` is omitted the
+   * server applies a default page size (currently 50), so a single call is
+   * not guaranteed to return every snapshot visible to the tenant. To iterate
+   * through all results, repeat the call with increasing `offset` values (or
+   * an explicit `limit`) until fewer than `limit` snapshots come back.
+   *
+   * @param options - Optional filter/pagination options.
+   *   - `nameContains`: case-insensitive substring match on snapshot name.
+   *   - `limit`: page size; must be between 1 and 500 (inclusive). Defaults
+   *     to 50 server-side when omitted.
+   *   - `offset`: number of snapshots to skip; must be `>= 0`.
+   *
+   *   Values outside those ranges are rejected by the server.
+   * @returns A single page of Snapshots matching the provided filters.
+   *
+   * @example
+   * ```typescript
+   * const firstPage = await client.listSnapshots();
+   * const page = await client.listSnapshots({
+   *   nameContains: "python",
+   *   limit: 100,
+   *   offset: 0,
+   * });
+   * ```
+   */
+  async listSnapshots(options: ListSnapshotsOptions = {}): Promise<Snapshot[]> {
+    const { nameContains, limit, offset, signal } = options;
+
+    const params = new URLSearchParams();
+    if (nameContains !== undefined) {
+      params.set("name_contains", nameContains);
+    }
+    if (limit !== undefined) {
+      params.set("limit", String(limit));
+    }
+    if (offset !== undefined) {
+      params.set("offset", String(offset));
+    }
+
+    const query = params.toString();
+    const url = query
+      ? `${this._baseUrl}/snapshots?${query}`
+      : `${this._baseUrl}/snapshots`;
+
+    const response = await this._fetch(url, { signal });
+
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+
+    const data = await response.json();
+    return (data.snapshots ?? []) as Snapshot[];
+  }
+
+  /**
+   * Delete a snapshot.
+   *
+   * @param snapshotId - Snapshot UUID.
+   */
+  async deleteSnapshot(snapshotId: string): Promise<void> {
+    const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
+
+    const response = await this._fetch(url, { method: "DELETE" });
+
+    if (!response.ok) {
+      await handleClientHttpError(response);
+    }
+  }
+
+  /**
+   * Poll until a snapshot reaches "ready" or "failed" status.
+   *
+   * @param snapshotId - Snapshot UUID.
+   * @param options - Polling options (timeout, pollInterval).
+   * @returns Snapshot in "ready" status.
+   */
+  async waitForSnapshot(
+    snapshotId: string,
+    options: WaitForSnapshotOptions = {}
+  ): Promise<Snapshot> {
+    const { timeout = 300, pollInterval = 2.0, signal } = options;
+    const deadline = Date.now() + timeout * 1000;
+    let lastStatus = "building";
+
+    while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+
+      const snapshot = await this.getSnapshot(snapshotId, { signal });
+      lastStatus = snapshot.status;
+
+      if (snapshot.status === "ready") {
+        return snapshot;
+      }
+
+      if (snapshot.status === "failed") {
+        throw new LangSmithResourceCreationError(
+          snapshot.status_message ?? `Snapshot '${snapshotId}' build failed`,
+          "snapshot"
+        );
+      }
+
+      // Cap sleep to remaining time + jitter
+      const remaining = deadline - Date.now();
+      const jitter = pollInterval * 200 * (Math.random() - 0.5); // ±10%
+      const delay = Math.min(pollInterval * 1000 + jitter, remaining);
+      if (delay > 0) {
+        await sleepWithSignal(delay, signal);
+      }
+    }
+
+    throw new LangSmithResourceTimeoutError(
+      `Snapshot '${snapshotId}' did not become ready within ${timeout}s`,
+      "snapshot",
+      lastStatus
+    );
+  }
+
+  /**
+   * Returns a string representation of the SandboxClient instance.
+   * This method is called when the object is converted to a string
+   * or logged, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the SandboxClient.
+   */
+  public toString(): string {
+    return `[LangSmithSandboxClient apiEndpoint=${JSON.stringify(
+      this._baseUrl
+    )}]`;
+  }
+
+  /**
+   * Custom inspect method for Node.js.
+   * This method is called when the object is inspected in the Node.js REPL
+   * or with console.log, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the SandboxClient for inspection.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return this.toString();
   }
 }

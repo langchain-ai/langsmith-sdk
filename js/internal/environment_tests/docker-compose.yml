@@ -6,49 +6,49 @@ services:
     working_dir: /app/js/internal/environment_tests/test-exports-esm
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-cjs:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-cjs
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-cf:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-cf
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-vite:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-vite
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-webpack:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-webpack
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-esbuild:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-esbuild
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   test-exports-metro:
     image: node:22
     working_dir: /app/js/internal/environment_tests/test-exports-metro
     volumes:
       - ../../..:/app
-    command: bash -c "yarn install && yarn test"
+    command: bash -c "corepack enable && pnpm install && pnpm test"
 
   success:
     image: alpine:3.14
