@@ -77,9 +77,9 @@ describe("handleSandboxCreationError body consumption", () => {
 
     const client = makeClient();
 
-    await expect(
-      client.createSandbox(undefined, { snapshotId: "snap-123" })
-    ).rejects.toThrow(LangSmithValidationError);
+    await expect(client.createSandbox("snap-123")).rejects.toThrow(
+      LangSmithValidationError
+    );
   });
 
   it("handles 422 runtime creation error during sandbox creation", async () => {
@@ -95,8 +95,8 @@ describe("handleSandboxCreationError body consumption", () => {
 
     const client = makeClient();
 
-    await expect(
-      client.createSandbox(undefined, { snapshotId: "snap-123" })
-    ).rejects.toThrow(LangSmithSandboxCreationError);
+    await expect(client.createSandbox("snap-123")).rejects.toThrow(
+      LangSmithSandboxCreationError
+    );
   });
 });
