@@ -1030,6 +1030,7 @@ test("Prompt CRUD lifecycle (push, get, exists, update, commit, like/unlike, pul
     try {
       await client.pushPrompt(promptName, { object: updatedTemplate });
     } catch (e) {
+      // eslint-disable-next-line no-instanceof/no-instanceof
       if (!(e instanceof LangSmithConflictError)) {
         throw e;
       }
