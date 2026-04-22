@@ -140,8 +140,9 @@ class SandboxClient:
 
     def sandbox(
         self,
-        snapshot_id: str,
+        snapshot_id: Optional[str] = None,
         *,
+        snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         ttl_seconds: Optional[int] = None,
@@ -160,11 +161,19 @@ class SandboxClient:
             with client.sandbox(snapshot_id="<uuid>") as sandbox:
                 result = sandbox.run("echo hello")
 
+            # Resolve by snapshot name instead of ID:
+            with client.sandbox(snapshot_name="my-snap") as sandbox:
+                result = sandbox.run("echo hello")
+
         The sandbox is automatically deleted when exiting the context manager.
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            snapshot_id: Snapshot ID to boot from.
+            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
+                ``snapshot_name``; exactly one must be provided.
+            snapshot_name: Snapshot name to boot from. Resolved server-side to a
+                snapshot owned by the caller's tenant. Mutually exclusive with
+                ``snapshot_id``; exactly one must be provided.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
@@ -192,10 +201,12 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid, or if neither/both of
+                ``snapshot_id`` and ``snapshot_name`` are provided.
         """
         sb = self.create_sandbox(
             snapshot_id,
+            snapshot_name=snapshot_name,
             name=name,
             timeout=timeout,
             ttl_seconds=ttl_seconds,
@@ -211,8 +222,9 @@ class SandboxClient:
 
     def create_sandbox(
         self,
-        snapshot_id: str,
+        snapshot_id: Optional[str] = None,
         *,
+        snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
@@ -230,7 +242,11 @@ class SandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            snapshot_id: Snapshot ID to boot from.
+            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
+                ``snapshot_name``; exactly one must be provided.
+            snapshot_name: Snapshot name to boot from. Resolved server-side to a
+                snapshot owned by the caller's tenant. Mutually exclusive with
+                ``snapshot_id``; exactly one must be provided.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -263,10 +279,11 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid, or if neither/both of
+                ``snapshot_id`` and ``snapshot_name`` are provided.
         """
-        if not snapshot_id:
-            raise ValueError("snapshot_id is required")
+        if bool(snapshot_id) == bool(snapshot_name):
+            raise ValueError("Exactly one of snapshot_id or snapshot_name must be set")
 
         validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
@@ -275,8 +292,11 @@ class SandboxClient:
 
         payload: dict[str, Any] = {
             "wait_for_ready": wait_for_ready,
-            "snapshot_id": snapshot_id,
         }
+        if snapshot_id:
+            payload["snapshot_id"] = snapshot_id
+        if snapshot_name:
+            payload["snapshot_name"] = snapshot_name
         if wait_for_ready:
             payload["timeout"] = timeout
         if name:
@@ -784,16 +804,45 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_snapshots(self, *, headers: RequestHeaders = None) -> list[Snapshot]:
-        """List all snapshots.
+    def list_snapshots(
+        self,
+        *,
+        name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        headers: RequestHeaders = None,
+    ) -> list[Snapshot]:
+        """List snapshots.
+
+        Args:
+            name_contains: Optional substring filter applied to snapshot names
+                server-side (case sensitivity follows the backend
+                implementation).
+            limit: Optional maximum number of snapshots to return.
+            offset: Optional number of snapshots to skip before returning
+                results. Useful for paginating through large result sets in
+                combination with ``limit``.
 
         Returns:
-            List of Snapshots.
+            List of Snapshots matching the provided filters (or all snapshots
+            when no filters are supplied).
         """
         url = f"{self._base_url}/snapshots"
 
+        params: dict[str, Any] = {}
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+
         try:
-            response = self._http.get(url, headers=self._request_headers(headers))
+            response = self._http.get(
+                url,
+                params=params or None,
+                headers=self._request_headers(headers),
+            )
             response.raise_for_status()
             data = response.json()
             return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]

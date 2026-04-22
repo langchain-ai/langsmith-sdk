@@ -668,6 +668,107 @@ class TestAsyncSandboxOperations:
         assert sandboxes[0].status == "ready"
         assert sandboxes[1].status == "provisioning"
 
+    async def test_create_sandbox_with_snapshot_name(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test creating a sandbox by snapshot name (server-side resolution)."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "snapshot_id": "snap-1",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+            status_code=201,
+        )
+
+        sandbox = await client.create_sandbox(snapshot_name="my-snap", name="my-vm")
+
+        assert sandbox.name == "my-vm"
+        assert sandbox.snapshot_id == "snap-1"
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["snapshot_name"] == "my-snap"
+        assert "snapshot_id" not in body
+        assert "template_name" not in body
+
+    async def test_create_sandbox_requires_exactly_one_identifier(
+        self, client: AsyncSandboxClient
+    ):
+        """Test that exactly one of snapshot_id / snapshot_name must be set."""
+        with pytest.raises(
+            ValueError,
+            match="Exactly one of snapshot_id or snapshot_name must be set",
+        ):
+            await client.create_sandbox()
+
+        with pytest.raises(
+            ValueError,
+            match="Exactly one of snapshot_id or snapshot_name must be set",
+        ):
+            await client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
+
+    async def test_list_snapshots(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test listing snapshots with no filters."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots",
+            json={
+                "snapshots": [
+                    {
+                        "id": "snap-1",
+                        "name": "env-1",
+                        "status": "ready",
+                    },
+                ],
+                "offset": 0,
+            },
+        )
+
+        snapshots = await client.list_snapshots()
+
+        assert len(snapshots) == 1
+        assert snapshots[0].name == "env-1"
+
+        request = httpx_mock.get_request()
+        assert request.url.query == b""
+
+    async def test_list_snapshots_with_filters(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test listing snapshots forwards name_contains/limit/offset."""
+        httpx_mock.add_response(
+            method="GET",
+            url=(
+                "http://test-server:8080/snapshots?name_contains=env&limit=10&offset=5"
+            ),
+            json={
+                "snapshots": [
+                    {
+                        "id": "snap-1",
+                        "name": "env-1",
+                        "status": "ready",
+                    }
+                ],
+                "offset": 5,
+            },
+        )
+
+        snapshots = await client.list_snapshots(name_contains="env", limit=10, offset=5)
+
+        assert len(snapshots) == 1
+        assert snapshots[0].name == "env-1"
+
+        request = httpx_mock.get_request()
+        params = dict(request.url.params)
+        assert params == {"name_contains": "env", "limit": "10", "offset": "5"}
+
 
 class TestAsyncConnectionErrors:
     """Tests for async connection error handling."""

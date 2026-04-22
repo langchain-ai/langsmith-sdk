@@ -965,6 +965,39 @@ class TestSnapshotOperations:
         assert snapshots[0].name == "env-1"
         assert snapshots[1].status == "building"
 
+        request = httpx_mock.get_request()
+        assert request.url.query == b""
+
+    def test_list_snapshots_with_filters(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test listing snapshots forwards name_contains/limit/offset."""
+        httpx_mock.add_response(
+            method="GET",
+            url=(
+                "http://test-server:8080/snapshots?name_contains=env&limit=10&offset=5"
+            ),
+            json={
+                "snapshots": [
+                    {
+                        "id": "snap-1",
+                        "name": "env-1",
+                        "status": "ready",
+                    }
+                ],
+                "offset": 5,
+            },
+        )
+
+        snapshots = client.list_snapshots(name_contains="env", limit=10, offset=5)
+
+        assert len(snapshots) == 1
+        assert snapshots[0].name == "env-1"
+
+        request = httpx_mock.get_request()
+        params = dict(request.url.params)
+        assert params == {"name_contains": "env", "limit": "10", "offset": "5"}
+
     def test_delete_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
         """Test deleting a snapshot."""
         httpx_mock.add_response(
@@ -1126,9 +1159,50 @@ class TestStartStopOperations:
         request = httpx_mock.get_request()
         body = json.loads(request.content)
         assert body["snapshot_id"] == "snap-1"
+        assert "snapshot_name" not in body
         assert "template_name" not in body
 
-    def test_create_sandbox_requires_snapshot_id(self, client: SandboxClient):
-        """Test that snapshot_id is required."""
-        with pytest.raises(TypeError):
-            client.create_sandbox()  # type: ignore[call-arg]
+    def test_create_sandbox_with_snapshot_name(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test creating a sandbox by snapshot name (server-side resolution)."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "snapshot_id": "snap-1",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(snapshot_name="my-snap", name="my-vm")
+
+        assert sandbox.name == "my-vm"
+        assert sandbox.snapshot_id == "snap-1"
+
+        import json
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["snapshot_name"] == "my-snap"
+        assert "snapshot_id" not in body
+        assert "template_name" not in body
+
+    def test_create_sandbox_requires_exactly_one_identifier(
+        self, client: SandboxClient
+    ):
+        """Test that exactly one of snapshot_id / snapshot_name must be set."""
+        with pytest.raises(
+            ValueError,
+            match="Exactly one of snapshot_id or snapshot_name must be set",
+        ):
+            client.create_sandbox()
+
+        with pytest.raises(
+            ValueError,
+            match="Exactly one of snapshot_id or snapshot_name must be set",
+        ):
+            client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
