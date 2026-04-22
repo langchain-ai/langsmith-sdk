@@ -144,14 +144,63 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     return result
 
 
-def _model_dump(message: Any) -> dict:
-    """Dump an Anthropic message model, suppressing spurious Pydantic warnings.
+def _is_parsed_message(message: Any) -> bool:
+    """Check if message is an Anthropic ``ParsedMessage`` / ``ParsedBetaMessage``."""
+    cls_name = type(message).__name__
+    return cls_name.startswith("ParsedMessage") or cls_name.startswith(
+        "ParsedBetaMessage"
+    )
 
-    Parsed response models (e.g. ``ParsedMessage`` / ``ParsedBetaMessage``) emit
-    ``PydanticSerializationUnexpectedValue`` warnings when serialized through
-    their base class's field types. The values are still serialized correctly,
-    so we silence the warnings to avoid noisy logs.
+
+def _dump_parsed_output(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "model_dump"):
+        try:
+            return value.model_dump()
+        except Exception:
+            pass
+    if hasattr(value, "to_dict"):
+        try:
+            return value.to_dict()
+        except Exception:
+            pass
+    return value
+
+
+def _dump_parsed_message(message: Any) -> dict:
+    """Serialize a ``ParsedMessage`` / ``ParsedBetaMessage`` without Pydantic warnings.
+
+    The parsed types parameterize ``parsed_output`` and ``content`` with a
+    ``ResponseFormatT`` TypeVar that the Anthropic SDK leaves unspecialized at
+    runtime, so dumping through the base model's field types triggers spurious
+    ``PydanticSerializationUnexpectedValue`` warnings. We dump the content
+    blocks individually (using each block's own ``__api_exclude__``) and
+    re-attach ``parsed_output`` values via their own serializer.
     """
+    base = message.model_dump(exclude={"content"})
+    content_dumps = []
+    for block in message.content:
+        api_exclude = getattr(block, "__api_exclude__", None) or set()
+        block_dict = block.model_dump(exclude=api_exclude)
+        parsed_output = getattr(block, "parsed_output", None)
+        if parsed_output is not None:
+            block_dict["parsed_output"] = _dump_parsed_output(parsed_output)
+        content_dumps.append(block_dict)
+    base["content"] = content_dumps
+    parsed_output = getattr(message, "parsed_output", None)
+    if parsed_output is not None:
+        base["parsed_output"] = _dump_parsed_output(parsed_output)
+    return base
+
+
+def _model_dump(message: Any) -> dict:
+    """Dump an Anthropic message model to a dict for tracing."""
+    if _is_parsed_message(message):
+        try:
+            return _dump_parsed_message(message)
+        except Exception as e:
+            logger.debug(f"Falling back to default dump for parsed message: {e}")
     try:
         return message.model_dump(warnings=False)
     except TypeError:

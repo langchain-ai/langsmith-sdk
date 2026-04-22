@@ -185,15 +185,79 @@ class TestMessageToOutputsToolCalls:
         assert result["tool_calls"][1]["function"]["name"] == "get_stock"
 
 
+def _collect_pydantic_warnings(caught):
+    return [
+        w
+        for w in caught
+        if "PydanticSerializationUnexpectedValue" in str(w.message)
+        or "Pydantic serializer warnings" in str(w.message)
+    ]
+
+
 class TestParsedMessageSerialization:
     """Anthropic's ParsedMessage / ParsedBetaMessage trigger Pydantic
     serializer warnings when dumped because ``parsed_output`` and the
     parsed content-block union do not match the base class's field types.
 
-    The wrapper should suppress those warnings while still preserving the
-    parsed output values."""
+    The wrapper handles them via a dedicated path that dumps each content
+    block with its ``__api_exclude__`` and re-attaches ``parsed_output``,
+    avoiding the warnings entirely while preserving the parsed values.
+    """
 
-    def test_parsed_message_does_not_emit_pydantic_warnings(self):
+    def test_parsed_beta_message_from_real_anthropic_parser(self):
+        """End-to-end check using Anthropic's own ``parse_beta_response``.
+
+        This produces the exact ``ParsedBetaMessage[TypeVar]`` shape the SDK
+        returns from ``client.beta.messages.parse(...)`` and is what the LSDK-166
+        bug report originally reproduced.
+        """
+        pydantic_mod = pytest.importorskip("pydantic")
+        parse_module = pytest.importorskip("anthropic.lib._parse._response")
+        beta_message_module = pytest.importorskip("anthropic.types.beta.beta_message")
+        beta_text_block_module = pytest.importorskip(
+            "anthropic.types.beta.beta_text_block"
+        )
+
+        class WeatherResponse(pydantic_mod.BaseModel):
+            city: str
+            temp: str
+
+        text_block = beta_text_block_module.BetaTextBlock(
+            type="text",
+            text='{"city": "SF", "temp": "62F"}',
+            citations=None,
+        )
+        beta_msg = beta_message_module.BetaMessage(
+            id="msg_1",
+            role="assistant",
+            content=[text_block],
+            model="claude-opus-4-6",
+            stop_reason="end_turn",
+            stop_sequence=None,
+            type="message",
+            usage={"input_tokens": 10, "output_tokens": 5},
+        )
+        parsed_msg = parse_module.parse_beta_response(
+            output_format=WeatherResponse, response=beta_msg
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            outputs = _message_to_outputs(parsed_msg)
+
+        assert not _collect_pydantic_warnings(caught), [
+            str(w.message) for w in _collect_pydantic_warnings(caught)
+        ]
+        assert outputs["content"][0]["type"] == "text"
+        assert outputs["content"][0]["parsed_output"] == {
+            "city": "SF",
+            "temp": "62F",
+        }
+        assert outputs["parsed_output"] == {"city": "SF", "temp": "62F"}
+        assert outputs["usage_metadata"]["input_tokens"] == 10
+        assert outputs["usage_metadata"]["output_tokens"] == 5
+
+    def test_parsed_message_constructed_directly(self):
         anthropic_types = pytest.importorskip("anthropic.types")
         pydantic_mod = pytest.importorskip("pydantic")
 
@@ -226,26 +290,35 @@ class TestParsedMessageSerialization:
             warnings.simplefilter("always")
             outputs = _message_to_outputs(msg)
 
-        pydantic_warnings = [
-            w
-            for w in caught
-            if "PydanticSerializationUnexpectedValue" in str(w.message)
-            or "Pydantic serializer warnings" in str(w.message)
-        ]
-        assert not pydantic_warnings, (
-            f"Expected no Pydantic serializer warnings, got: "
-            f"{[str(w.message) for w in pydantic_warnings]}"
-        )
-
+        assert not _collect_pydantic_warnings(caught)
         assert outputs["content"][0]["parsed_output"] == {
             "city": "SF",
             "temp": "62F",
         }
-        assert outputs["usage_metadata"]["input_tokens"] == 10
-        assert outputs["usage_metadata"]["output_tokens"] == 5
+        assert outputs["content"][0]["type"] == "text"
+
+    def test_non_parsed_message_uses_default_dump(self):
+        """Regular Anthropic Messages should still go through ``model_dump``."""
+
+        msg = MagicMock()
+        msg.model_dump.return_value = {
+            "id": "msg_1",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi"}],
+            "model": "claude-x",
+            "stop_reason": "end_turn",
+            "type": "message",
+            "usage": {"input_tokens": 1, "output_tokens": 2},
+        }
+        type(msg).__name__ = "Message"
+
+        outputs = _message_to_outputs(msg)
+        assert outputs["content"] == [{"type": "text", "text": "hi"}]
+        assert outputs["usage_metadata"]["input_tokens"] == 1
+        msg.model_dump.assert_called_once()
 
     def test_model_dump_without_warnings_kwarg_falls_back(self):
-        """Older pydantic/anthropic models without warnings kwarg still work."""
+        """Older pydantic models without ``warnings`` kwarg still work."""
 
         class LegacyMessage:
             def model_dump(self, **kwargs):
