@@ -813,4 +813,28 @@ export class SandboxClient {
       lastStatus
     );
   }
+
+  /**
+   * Returns a string representation of the SandboxClient instance.
+   * This method is called when the object is converted to a string
+   * or logged, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the SandboxClient.
+   */
+  public toString(): string {
+    return `[LangSmithSandboxClient apiEndpoint=${JSON.stringify(
+      this._baseUrl
+    )}]`;
+  }
+
+  /**
+   * Custom inspect method for Node.js.
+   * This method is called when the object is inspected in the Node.js REPL
+   * or with console.log, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the SandboxClient for inspection.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return this.toString();
+  }
 }
