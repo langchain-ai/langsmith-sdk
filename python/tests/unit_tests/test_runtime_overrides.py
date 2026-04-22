@@ -42,7 +42,7 @@ async def test_override_is_invoked():
     """When an override is set, it should be called instead of the default."""
     calls = []
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         calls.append((ctx, func, args, kwargs))
         return ctx.run(func, *args, **kwargs)
 
@@ -68,7 +68,7 @@ async def test_override_does_not_use_run_in_executor():
     main_thread_id = threading.get_ident()
     captured_thread_id = None
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         return ctx.run(func, *args, **kwargs)
 
     set_runtime_overrides(aio_to_thread=my_override)
@@ -87,7 +87,7 @@ async def test_override_receives_explicit_ctx():
     """Override should receive the Context passed through aio_to_thread."""
     received_ctx = None
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         nonlocal received_ctx
         received_ctx = ctx
         return ctx.run(func, *args, **kwargs)
@@ -106,7 +106,7 @@ async def test_override_receives_explicit_ctx():
 async def test_reset_to_default():
     """Calling set_runtime_overrides() with no args resets to defaults."""
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         return "overridden"
 
     set_runtime_overrides(aio_to_thread=my_override)
@@ -124,7 +124,7 @@ async def test_override_propagates_exceptions():
     class MyError(Exception):
         pass
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         raise MyError("boom")
 
     set_runtime_overrides(aio_to_thread=my_override)
@@ -140,7 +140,7 @@ def test_get_runtime_overrides_returns_instance():
 
 
 def test_set_runtime_overrides_updates_instance():
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         return ctx.run(func, *args, **kwargs)
 
     set_runtime_overrides(aio_to_thread=my_override)
@@ -159,7 +159,7 @@ async def test_async_trace_context_propagates_under_override():
     produce correct parent/child linkage inside an async context manager."""
     from langsmith import get_current_run_tree, trace, tracing_context
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         return ctx.run(func, *args, **kwargs)
 
     set_runtime_overrides(aio_to_thread=my_override)
@@ -185,7 +185,7 @@ async def test_traceable_uses_override():
 
     override_calls = 0
 
-    async def my_override(ctx, func, /, *args, **kwargs):
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
         nonlocal override_calls
         override_calls += 1
         return ctx.run(func, *args, **kwargs)
@@ -204,3 +204,32 @@ async def test_traceable_uses_override():
 
     assert result == 2
     assert override_calls > 0
+
+
+async def test_override_can_delegate_to_default():
+    """Override can delegate to the default implementation for fallback."""
+    import threading
+
+    main_thread_id = threading.get_ident()
+    default_thread_id = None
+    received_default = None
+
+    async def my_override(default_aio_to_thread, ctx, func, /, *args, **kwargs):
+        nonlocal received_default
+        received_default = default_aio_to_thread
+        # Delegate to the default implementation
+        return await default_aio_to_thread(ctx, func, *args, **kwargs)
+
+    set_runtime_overrides(aio_to_thread=my_override)
+
+    def sync_func(x):
+        nonlocal default_thread_id
+        default_thread_id = threading.get_ident()
+        return x * 3
+
+    result = await aitertools.aio_to_thread(contextvars.copy_context(), sync_func, 5)
+    assert result == 15
+    assert received_default is not None
+    # Default implementation runs in a separate thread
+    assert default_thread_id is not None
+    assert default_thread_id != main_thread_id

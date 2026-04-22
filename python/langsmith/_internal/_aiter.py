@@ -357,7 +357,20 @@ async def aio_to_thread(
     """
     overrides = get_runtime_overrides()
     if overrides.aio_to_thread is not None:
-        return await overrides.aio_to_thread(ctx, func, *args, **kwargs)
+        return await overrides.aio_to_thread(
+            _default_aio_to_thread, ctx, func, *args, **kwargs
+        )
+    return await _default_aio_to_thread(ctx, func, *args, **kwargs)
+
+
+async def _default_aio_to_thread(
+    ctx: contextvars.Context,
+    func,
+    /,
+    *args,
+    **kwargs,
+):
+    """Default implementation of aio_to_thread using run_in_executor."""
     loop = asyncio.get_running_loop()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
     return await loop.run_in_executor(None, func_call)

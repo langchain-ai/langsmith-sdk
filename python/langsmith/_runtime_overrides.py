@@ -30,7 +30,9 @@ class RuntimeOverrides:
         import contextvars
 
 
-        async def my_aio_to_thread(ctx, func, /, *args, **kwargs):
+        async def my_aio_to_thread(
+            default_aio_to_thread, ctx, func, /, *args, **kwargs
+        ):
             # Custom implementation
             return ctx.run(func, *args, **kwargs)
 
@@ -51,7 +53,10 @@ class RuntimeOverrides:
 
         Args:
             aio_to_thread: Custom async-to-thread implementation, with signature
-                ``async def (ctx, func, /, *args, **kwargs)``. ``ctx`` is the
+                ``async def (default_aio_to_thread, ctx, func, /, *args, **kwargs)``.
+                ``default_aio_to_thread`` is LangSmith's default implementation, which
+                the override can call to fall back to default behavior (e.g., when
+                outside a constrained runtime context). ``ctx`` is the
                 ``contextvars.Context`` LangSmith wants ``func`` to run inside;
                 tracing state will be read back from this Context after the call.
                 Override for runtimes like Temporal that don't support
@@ -75,11 +80,15 @@ def set_runtime_overrides(
     Args:
         aio_to_thread: Custom async function to run sync functions
             asynchronously. Should have signature:
-            ``async def aio_to_thread(ctx, func, /, *args, **kwargs)``.
-            The implementation must invoke ``func`` inside ``ctx`` (e.g.
-            ``ctx.run(func, *args, **kwargs)``) so that LangSmith's tracing
-            state, which is read back from ``ctx`` after the call, is visible
-            to downstream code. Pass ``None`` to use the default implementation.
+            ``async def aio_to_thread(
+                default_aio_to_thread, ctx, func, /, *args, **kwargs
+            )``.
+            ``default_aio_to_thread`` is LangSmith's default implementation, which
+            the override can call to fall back to default behavior. The
+            implementation must invoke ``func`` inside ``ctx`` (e.g.
+            ``ctx.run(func, *args, **kwargs)``) so that LangSmith's tracing state,
+            which is read back from ``ctx`` after the call, is visible to downstream
+            code. Pass ``None`` to use the default implementation.
 
     Example:
         For Temporal or similar runtimes:
@@ -88,12 +97,12 @@ def set_runtime_overrides(
         import langsmith
 
 
-        async def temporal_aio_to_thread(ctx, func, /, *args, **kwargs):
+        async def temporal_aio_to_thread(
+            default_aio_to_thread, ctx, func, /, *args, **kwargs
+        ):
+            # Use the default implementation when not in a workflow
             if not temporalio.workflow.in_workflow():
-                loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(
-                    None, functools.partial(ctx.run, func, *args, **kwargs)
-                )
+                return await default_aio_to_thread(ctx, func, *args, **kwargs)
             with temporalio.workflow.unsafe.sandbox_unrestricted():
                 return ctx.run(func, *args, **kwargs)
 
