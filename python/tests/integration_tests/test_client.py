@@ -3992,6 +3992,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
+@pytest.mark.skip(reason="Relies on external config and resources")
 def test_create_insights_job(langchain_client: Client) -> None:
     chat_histories = [
         [
