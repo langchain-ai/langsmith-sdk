@@ -116,6 +116,7 @@ dev = [
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
+    "pytest-timeout>=2.3.1",
 ]
 
 # Linting dependencies
@@ -194,3 +195,5 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
+timeout = 60
+timeout_method = "thread"

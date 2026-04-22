@@ -71,7 +71,7 @@ class ResourceNotFoundError(SandboxClientError):
     """Raised when a resource is not found.
 
     Attributes:
-        resource_type: Type of resource (sandbox, template, volume, pool, file).
+        resource_type: Type of resource (sandbox, snapshot, file).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -84,7 +84,7 @@ class ResourceTimeoutError(SandboxClientError):
     """Raised when an operation times out.
 
     Attributes:
-        resource_type: Type of resource (sandbox, volume, pool).
+        resource_type: Type of resource (sandbox, snapshot).
         last_status: The last known status before timeout (for sandboxes).
     """
 
@@ -111,7 +111,7 @@ class ResourceInUseError(SandboxClientError):
     """Raised when deleting a resource that is still in use.
 
     Attributes:
-        resource_type: Type of resource (template, volume).
+        resource_type: Type of resource (snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -124,7 +124,7 @@ class ResourceAlreadyExistsError(SandboxClientError):
     """Raised when creating a resource that already exists.
 
     Attributes:
-        resource_type: Type of resource (e.g., pool).
+        resource_type: Type of resource (e.g., snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -137,7 +137,7 @@ class ResourceNameConflictError(SandboxClientError):
     """Raised when updating a resource name to one that already exists.
 
     Attributes:
-        resource_type: Type of resource (volume, template, pool, sandbox).
+        resource_type: Type of resource (sandbox, snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -158,7 +158,6 @@ class ValidationError(SandboxClientError):
     - Resource values exceeding server-defined limits (CPU, memory, storage)
     - Invalid resource units
     - Invalid name formats
-    - Pool validation failures (e.g., template has volumes)
 
     Attributes:
         field: The field that failed validation (e.g., "cpu", "memory").
@@ -204,9 +203,9 @@ class ResourceCreationError(SandboxClientError):
     """Raised when resource provisioning fails.
 
     Attributes:
-        resource_type: Type of resource (sandbox, volume, pool).
+        resource_type: Type of resource (sandbox, snapshot).
         error_type: Machine-readable error type (ImagePull, CrashLoop,
-            SandboxConfig, Unschedulable, VolumeProvisioning).
+            SandboxConfig, Unschedulable).
     """
 
     def __init__(

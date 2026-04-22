@@ -7,9 +7,6 @@
 
 import {
   LangSmithQuotaExceededError,
-  LangSmithResourceAlreadyExistsError,
-  LangSmithResourceInUseError,
-  LangSmithResourceNameConflictError,
   LangSmithResourceNotFoundError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxAPIError,
@@ -154,13 +151,6 @@ export function extractQuotaType(message: string): string | undefined {
     return "cpu";
   } else if (messageLower.includes("memory")) {
     return "memory";
-  }
-  // Check for volume count quota
-  else if (
-    messageLower.includes("volume") &&
-    (messageLower.includes("count") || messageLower.includes("limit"))
-  ) {
-    return "volume_count";
   } else if (messageLower.includes("storage")) {
     return "storage";
   }
@@ -212,82 +202,6 @@ export async function handleSandboxCreationError(
       data.message,
       data.errorType || "Unschedulable"
     );
-  }
-  // Fall through to generic handling — pass clone since body is already consumed
-  return handleClientHttpError(clonedResponse);
-}
-
-/**
- * Handle HTTP errors specific to volume creation.
- *
- * Maps API error responses to specific exception types:
- * - 429: LangSmithQuotaExceededError (org limits exceeded)
- * - 503: LangSmithSandboxCreationError (provisioning failed)
- * - 504: LangSmithResourceTimeoutError (volume didn't become ready in time)
- * - Other: Falls through to generic error handling
- */
-export async function handleVolumeCreationError(
-  response: Response
-): Promise<never> {
-  const status = response.status;
-  const clonedResponse = response.clone();
-  const data = await parseErrorResponse(response);
-
-  if (status === 429) {
-    // Organization quota exceeded - extract type or default to volume_count
-    const quotaType = extractQuotaType(data.message) ?? "unknown";
-    throw new LangSmithQuotaExceededError(data.message, quotaType);
-  } else if (status === 503) {
-    // Provisioning failed (invalid storage class, quota exceeded)
-    throw new LangSmithSandboxCreationError(data.message, "VolumeProvisioning");
-  } else if (status === 504) {
-    // Timeout - volume didn't become ready in time
-    throw new LangSmithResourceTimeoutError(data.message, "volume");
-  }
-  // Fall through to generic handling — pass clone since body is already consumed
-  return handleClientHttpError(clonedResponse);
-}
-
-/**
- * Handle HTTP errors specific to pool creation/update.
- *
- * Maps API error responses to specific exception types:
- * - 400: LangSmithResourceNotFoundError or LangSmithValidationError (template has volumes)
- * - 409: LangSmithResourceAlreadyExistsError
- * - 429: LangSmithQuotaExceededError (org limits exceeded)
- * - 504: LangSmithResourceTimeoutError (timeout waiting for ready replicas)
- * - Other: Falls through to generic error handling
- */
-export async function handlePoolError(response: Response): Promise<never> {
-  const status = response.status;
-  const clonedResponse = response.clone();
-  const data = await parseErrorResponse(response);
-  const errorType = data.errorType;
-
-  if (status === 400) {
-    // Check the error type to determine the specific exception
-    if (errorType === "TemplateNotFound") {
-      throw new LangSmithResourceNotFoundError(data.message, "template");
-    } else if (errorType === "LangSmithValidationError") {
-      // Template has volumes attached
-      throw new LangSmithValidationError(
-        data.message,
-        undefined,
-        undefined,
-        errorType
-      );
-    }
-    // Generic bad request - fall through to generic handling
-  } else if (status === 409) {
-    // Pool already exists
-    throw new LangSmithResourceAlreadyExistsError(data.message, "pool");
-  } else if (status === 429) {
-    // Organization quota exceeded - extract type or default to pool_count
-    const quotaType = extractQuotaType(data.message) ?? "unknown";
-    throw new LangSmithQuotaExceededError(data.message, quotaType);
-  } else if (status === 504) {
-    // Timeout waiting for pool to be ready
-    throw new LangSmithResourceTimeoutError(data.message, "pool");
   }
   // Fall through to generic handling — pass clone since body is already consumed
   return handleClientHttpError(clonedResponse);
@@ -394,26 +308,4 @@ export async function handleSandboxHttpError(
   }
 
   throw new LangSmithSandboxError(message);
-}
-
-/**
- * Handle 409 Conflict errors for resource name conflicts.
- */
-export async function handleConflictError(
-  response: Response,
-  resourceType: string
-): Promise<never> {
-  const data = await parseErrorResponse(response);
-  throw new LangSmithResourceNameConflictError(data.message, resourceType);
-}
-
-/**
- * Handle 409 Conflict errors for resources in use.
- */
-export async function handleResourceInUseError(
-  response: Response,
-  resourceType: string
-): Promise<never> {
-  const data = await parseErrorResponse(response);
-  throw new LangSmithResourceInUseError(data.message, resourceType);
 }
