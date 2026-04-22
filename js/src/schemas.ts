@@ -543,6 +543,73 @@ export interface LikePromptResponse {
   likes: number;
 }
 
+export interface FileEntry {
+  type: "file";
+  content: string;
+}
+
+export interface AgentEntry {
+  type: "agent";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export interface SkillEntry {
+  type: "skill";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export type Entry = FileEntry | AgentEntry | SkillEntry;
+
+/**
+ * An agent pulled from hub.
+ */
+export interface AgentContext {
+  /** The handle of the owner. */
+  owner: string;
+  /** The name of the repo. */
+  repo: string;
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the agent. */
+  files: Record<string, Entry>;
+}
+
+/**
+ * A skill pulled from hub.
+ */
+export interface SkillContext {
+  /** The handle of the owner. */
+  owner: string;
+  /** The name of the repo. */
+  repo: string;
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the skill. */
+  files: Record<string, Entry>;
+}
+
+/** Response body for `POST /directories/commits`. */
+export interface DirectoryCommitResponse {
+  commit: {
+    /** The commit ID. */
+    id: string;
+    /** The commit hash. */
+    commit_hash: string;
+    /** When the commit was created. */
+    created_at: string;
+  };
+}
+
 export interface LangSmithSettings {
   id: string;
   display_name: string;
