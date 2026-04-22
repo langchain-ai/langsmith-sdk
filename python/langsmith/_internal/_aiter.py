@@ -339,22 +339,26 @@ def accepts_context(callable: Callable[..., Any]) -> bool:
 
 # Ported from Python 3.9+ to support Python 3.8
 async def aio_to_thread(
-    func, /, *args, __ctx: Optional[contextvars.Context] = None, **kwargs
+    ctx: contextvars.Context,
+    func,
+    /,
+    *args,
+    **kwargs,
 ):
-    """Asynchronously run function *func* in a separate thread.
+    """Run ``func`` in a separate thread, inside ``ctx``.
 
-    Any *args and **kwargs supplied for this function are directly passed
-    to *func*. Also, the current :class:`contextvars.Context` is propagated,
-    allowing context variables from the main thread to be accessed in the
-    separate thread.
+    ``ctx`` is the :class:`~contextvars.Context` in which ``func`` is invoked.
+    Callers that want default isolation should pass
+    ``contextvars.copy_context()``; callers with a specific Context
+    (e.g. :func:`trace`) pass it directly so subsequent reads from that
+    Context see the mutations.
 
-    Return a coroutine that can be awaited to get the eventual result of *func*.
+    Return a coroutine that can be awaited to get the eventual result of ``func``.
     """
     overrides = get_runtime_overrides()
     if overrides.aio_to_thread is not None:
-        return await overrides.aio_to_thread(func, *args, __ctx=__ctx, **kwargs)
+        return await overrides.aio_to_thread(ctx, func, *args, **kwargs)
     loop = asyncio.get_running_loop()
-    ctx = __ctx or contextvars.copy_context()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
     return await loop.run_in_executor(None, func_call)
 
