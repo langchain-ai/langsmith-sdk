@@ -46,6 +46,9 @@ import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._runtime_overrides import (
+    _aio_to_thread_override_active as _runtime_override_active,
+)
 from langsmith.env import _runtime_env
 from langsmith.run_trees import WriteReplica
 
@@ -602,6 +605,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -618,30 +622,29 @@ def traceable(
                 otel_context_manager = _maybe_create_otel_context(
                     run_container["new_run"]
                 )
+                use_ctx_task = accepts_context and not _runtime_override_active()
                 if otel_context_manager:
 
                     async def run_with_otel_context():
                         with otel_context_manager:
                             return await func(*args, **kwargs)
 
-                    if accepts_context:
+                    if use_ctx_task:
                         function_result = await asyncio.create_task(  # type: ignore[call-arg]
                             run_with_otel_context(), context=run_container["context"]
                         )
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
                             function_result = await run_with_otel_context()
                 else:
                     fr_coro = func(*args, **kwargs)
-                    if accepts_context:
+                    if use_ctx_task:
                         function_result = await asyncio.create_task(  # type: ignore[call-arg]
                             fr_coro, context=run_container["context"]
                         )
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
@@ -650,11 +653,13 @@ def traceable(
                 # shield from cancellation, given we're catching all exceptions
                 _cleanup_traceback(e)
                 await asyncio.shield(
-                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
+                    aitertools.aio_to_thread(
+                        copy_context(), _on_run_end, run_container, error=e
+                    )
                 )
                 raise
             await aitertools.aio_to_thread(
-                _on_run_end, run_container, outputs=function_result
+                copy_context(), _on_run_end, run_container, outputs=function_result
             )
             return function_result
 
@@ -665,6 +670,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -687,13 +693,13 @@ def traceable(
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.asyncio_accepts_context()
+                use_ctx_task = accepts_context and not _runtime_override_active()
                 if inspect.iscoroutine(async_gen_result):
-                    if accepts_context:
+                    if use_ctx_task:
                         async_gen_result = await asyncio.create_task(
                             async_gen_result, context=run_container["context"]
                         )  # type: ignore
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
@@ -707,7 +713,7 @@ def traceable(
                         if run_container["new_run"]
                         else False
                     ),
-                    accepts_context=accepts_context,
+                    accepts_context=use_ctx_task,
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
                     otel_context_manager=otel_context_manager,
@@ -717,6 +723,7 @@ def traceable(
                 _cleanup_traceback(e)
                 await asyncio.shield(
                     aitertools.aio_to_thread(
+                        copy_context(),
                         _on_run_end,
                         run_container,
                         error=e,
@@ -725,6 +732,7 @@ def traceable(
                 )
                 raise
             await aitertools.aio_to_thread(
+                copy_context(),
                 _on_run_end,
                 run_container,
                 outputs=_get_function_result(results, reduce_fn),
@@ -872,6 +880,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             trace_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -885,7 +894,9 @@ def traceable(
                     kwargs["run_tree"] = trace_container["new_run"]
                 stream = await func(*args, **kwargs)
             except Exception as e:
-                await aitertools.aio_to_thread(_on_run_end, trace_container, error=e)
+                await aitertools.aio_to_thread(
+                    copy_context(), _on_run_end, trace_container, error=e
+                )
                 raise
 
             if hasattr(stream, "__aiter__"):
@@ -895,7 +906,9 @@ def traceable(
                 return _TracedStream(stream, trace_container, reduce_fn)
 
             # If it's not iterable, end the trace immediately
-            await aitertools.aio_to_thread(_on_run_end, trace_container, outputs=stream)
+            await aitertools.aio_to_thread(
+                copy_context(), _on_run_end, trace_container, outputs=stream
+            )
             return stream
 
         if inspect.isasyncgenfunction(func):
@@ -1208,7 +1221,7 @@ class trace:
             run_trees.RunTree: The newly created run.
         """
         ctx = copy_context()
-        result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
+        result = await aitertools.aio_to_thread(ctx, self._setup)
         # Set the context for the current thread
         _set_tracing_context(get_tracing_context(ctx))
         return result
@@ -1230,12 +1243,12 @@ class trace:
         if exc_type is not None:
             await asyncio.shield(
                 aitertools.aio_to_thread(
-                    self._teardown, exc_type, exc_value, traceback, __ctx=ctx
+                    ctx, self._teardown, exc_type, exc_value, traceback
                 )
             )
         else:
             await aitertools.aio_to_thread(
-                self._teardown, exc_type, exc_value, traceback, __ctx=ctx
+                ctx, self._teardown, exc_type, exc_value, traceback
             )
         _set_tracing_context(get_tracing_context(ctx))
 
@@ -2149,9 +2162,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
 
     async def _aend_trace(self, error: Optional[BaseException] = None):
         ctx = copy_context()
-        await asyncio.shield(
-            aitertools.aio_to_thread(self._end_trace, error, __ctx=ctx)
-        )
+        await asyncio.shield(aitertools.aio_to_thread(ctx, self._end_trace, error))
         _set_tracing_context(get_tracing_context(ctx))
 
     async def __anext__(self) -> T:
