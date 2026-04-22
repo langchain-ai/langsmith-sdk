@@ -697,17 +697,28 @@ export class SandboxClient {
   /**
    * List snapshots, optionally filtered and paginated server-side.
    *
-   * @param options - Optional filter/pagination options. When omitted,
-   *   returns all snapshots visible to the caller's tenant.
-   * @returns List of Snapshots.
+   * The backend always paginates this endpoint. When `limit` is omitted the
+   * server applies a default page size (currently 50), so a single call is
+   * not guaranteed to return every snapshot visible to the tenant. To iterate
+   * through all results, repeat the call with increasing `offset` values (or
+   * an explicit `limit`) until fewer than `limit` snapshots come back.
+   *
+   * @param options - Optional filter/pagination options.
+   *   - `nameContains`: case-insensitive substring match on snapshot name.
+   *   - `limit`: page size; must be between 1 and 500 (inclusive). Defaults
+   *     to 50 server-side when omitted.
+   *   - `offset`: number of snapshots to skip; must be `>= 0`.
+   *
+   *   Values outside those ranges are rejected by the server.
+   * @returns A single page of Snapshots matching the provided filters.
    *
    * @example
    * ```typescript
-   * const all = await client.listSnapshots();
+   * const firstPage = await client.listSnapshots();
    * const page = await client.listSnapshots({
    *   nameContains: "python",
-   *   limit: 10,
-   *   offset: 20,
+   *   limit: 100,
+   *   offset: 0,
    * });
    * ```
    */

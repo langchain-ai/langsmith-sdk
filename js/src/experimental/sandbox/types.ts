@@ -329,21 +329,28 @@ export interface CaptureSnapshotOptions {
 }
 
 /**
- * Options for listing snapshots. All fields are optional and independent;
- * omitting them returns all snapshots visible to the caller's tenant.
+ * Options for listing snapshots. All fields are optional and independent.
+ *
+ * The backend always paginates: when `limit` is omitted the server applies
+ * a default page size (currently 50), so a single call will not necessarily
+ * return every snapshot visible to the caller's tenant.
  */
 export interface ListSnapshotsOptions {
   /**
-   * Server-side substring filter applied to snapshot names.
+   * Case-insensitive substring filter applied server-side to snapshot
+   * names.
    */
   nameContains?: string;
   /**
-   * Maximum number of snapshots to return.
+   * Maximum number of snapshots to return for a single request. Must be
+   * between 1 and 500 (inclusive); the server rejects values outside that
+   * range. Defaults to 50 server-side when omitted.
    */
   limit?: number;
   /**
-   * Number of snapshots to skip before returning results. Useful for
-   * paginating through large result sets in combination with `limit`.
+   * Number of snapshots to skip before returning results. Must be `>= 0`.
+   * Useful for paginating through large result sets in combination with
+   * `limit`.
    */
   offset?: number;
   /** AbortSignal for cancellation. */

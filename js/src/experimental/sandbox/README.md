@@ -396,11 +396,14 @@ const byName = await client.createSandbox(undefined, {
 });
 
 // List / fetch / delete snapshots. listSnapshots() accepts optional
-// server-side filters and pagination; omit them to return everything.
-const snapshots = await client.listSnapshots();
+// server-side filters and pagination; when omitted the server applies a
+// default page size of 50, so calling it once will not necessarily return
+// every snapshot. `limit` must be between 1 and 500 and `offset` must be
+// >= 0.
+const firstPage = await client.listSnapshots();
 const firstPython = await client.listSnapshots({
   nameContains: "python",
-  limit: 10,
+  limit: 100,
   offset: 0,
 });
 const loaded = await client.getSnapshot(snapshot.id);
@@ -495,7 +498,7 @@ try {
 | `createSnapshot(name, dockerImage, fsCapacityBytes, options?)` | Build a snapshot from a Docker image |
 | `captureSnapshot(sandboxName, name, options?)` | Capture a snapshot from a running sandbox |
 | `getSnapshot(snapshotId)` | Get a snapshot by ID |
-| `listSnapshots(options?)` | List snapshots with optional server-side filters and pagination (`nameContains`, `limit`, `offset`). |
+| `listSnapshots(options?)` | List a page of snapshots with optional server-side filters and pagination (server paginates, default limit 50, max 500). |
 | `deleteSnapshot(snapshotId)` | Delete a snapshot |
 | `waitForSnapshot(snapshotId, options?)` | Poll until a snapshot becomes ready |
 
@@ -561,9 +564,9 @@ try {
 
 | Property | Description |
 |----------|-------------|
-| `nameContains?` | Server-side substring filter applied to snapshot names |
-| `limit?` | Maximum number of snapshots to return |
-| `offset?` | Number of snapshots to skip before returning results (pairs with `limit`) |
+| `nameContains?` | Case-insensitive substring filter applied server-side to snapshot names |
+| `limit?` | Page size; must be in `[1, 500]`. Server defaults to 50 when omitted |
+| `offset?` | Number of snapshots to skip before returning results (must be `>= 0`, pairs with `limit`) |
 | `signal?` | `AbortSignal` for cancellation |
 
 ### CreateSnapshotOptions
