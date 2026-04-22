@@ -814,18 +814,25 @@ class SandboxClient:
     ) -> list[Snapshot]:
         """List snapshots.
 
+        The backend always paginates this endpoint. When ``limit`` is omitted
+        the server applies a default page size (currently 50), so a single
+        call is not guaranteed to return every snapshot. To iterate through
+        all results, repeat the call with increasing ``offset`` values (or an
+        explicit ``limit``) until fewer than ``limit`` snapshots come back.
+
         Args:
-            name_contains: Optional substring filter applied to snapshot names
-                server-side (case sensitivity follows the backend
-                implementation).
-            limit: Optional maximum number of snapshots to return.
+            name_contains: Optional case-insensitive substring filter applied
+                to snapshot names server-side.
+            limit: Optional maximum number of snapshots to return for a single
+                request. Must be between 1 and 500 (inclusive); the server
+                rejects values outside that range. Defaults to 50 server-side
+                when omitted.
             offset: Optional number of snapshots to skip before returning
-                results. Useful for paginating through large result sets in
-                combination with ``limit``.
+                results. Must be ``>= 0``. Useful for paginating through
+                large result sets in combination with ``limit``.
 
         Returns:
-            List of Snapshots matching the provided filters (or all snapshots
-            when no filters are supplied).
+            A single page of Snapshots matching the provided filters.
         """
         url = f"{self._base_url}/snapshots"
 

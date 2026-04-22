@@ -640,14 +640,15 @@ with client.sandbox(snapshot_id=snapshot.id) as sb:
 ### Snapshot CRUD
 
 ```python
-# List all snapshots
+# List snapshots (server paginates with a default page size of 50)
 snapshots = client.list_snapshots()
 
-# Filter and paginate — all three kwargs are optional and independent
+# Filter and paginate — all three kwargs are optional and independent.
+# `limit` must be between 1 and 500 (inclusive); `offset` must be >= 0.
 snapshots = client.list_snapshots(
-    name_contains="python",  # server-side substring match on name
-    limit=10,
-    offset=20,
+    name_contains="python",  # case-insensitive substring match on name
+    limit=100,
+    offset=0,
 )
 
 # Get a snapshot by ID
@@ -899,7 +900,7 @@ except SandboxClientError as e:
 | `create_snapshot(name, docker_image, fs_capacity_bytes, *, timeout=60)` | Build a snapshot from a Docker image |
 | `capture_snapshot(sandbox_name, name, *, timeout=60)` | Capture a snapshot from a running sandbox |
 | `get_snapshot(snapshot_id)` | Get a snapshot by ID |
-| `list_snapshots(*, name_contains=None, limit=None, offset=None)` | List snapshots (optional server-side substring filter and pagination) |
+| `list_snapshots(*, name_contains=None, limit=None, offset=None)` | List a page of snapshots (server paginates, default limit 50, max 500; `name_contains` is a case-insensitive substring match) |
 | `delete_snapshot(snapshot_id)` | Delete a snapshot |
 | `wait_for_snapshot(snapshot_id, *, timeout=300)` | Poll until snapshot is ready or failed |
 
