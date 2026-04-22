@@ -31,7 +31,6 @@ def sandbox(client: AsyncSandboxClient):
     return AsyncSandbox.from_dict(
         data={
             "name": "test-sandbox",
-            "template_name": "test-template",
             "dataplane_url": "https://sandbox-router.example.com/sb-123",
         },
         client=client,
@@ -46,10 +45,6 @@ class TestAsyncSandboxProperties:
         """Test name property."""
         assert sandbox.name == "test-sandbox"
 
-    def test_template_name_property(self, sandbox):
-        """Test template_name property."""
-        assert sandbox.template_name == "test-template"
-
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
@@ -63,7 +58,6 @@ class TestAsyncSandboxTTLFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "ttl_seconds": 3600,
                 "idle_ttl_seconds": 600,
                 "expires_at": "2026-03-24T12:00:00Z",
@@ -80,7 +74,6 @@ class TestAsyncSandboxTTLFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
@@ -94,7 +87,6 @@ class TestAsyncSandboxTTLFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "ttl_seconds": 0,
                 "idle_ttl_seconds": 0,
                 "expires_at": None,
@@ -115,7 +107,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "status": "provisioning",
                 "status_message": None,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
@@ -131,7 +122,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
@@ -144,7 +134,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "status": "provisioning",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
@@ -159,7 +148,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "status": "provisioning",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
@@ -174,7 +162,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "status": "provisioning",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
@@ -238,7 +225,6 @@ class TestAsyncSandboxRun:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -418,7 +404,6 @@ class TestAsyncSandboxWrite:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -480,7 +465,6 @@ class TestAsyncSandboxRead:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -509,7 +493,6 @@ class TestAsyncSandboxContextManager:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=True,
@@ -530,7 +513,6 @@ class TestAsyncSandboxContextManager:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
@@ -560,7 +542,6 @@ class TestAsyncSandboxService:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             client=client,

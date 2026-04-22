@@ -165,6 +165,11 @@ def __getattr__(name: str) -> Any:
 
         return configure_global_async_prompt_cache
 
+    elif name == "set_runtime_overrides":
+        from langsmith._runtime_overrides import set_runtime_overrides
+
+        return set_runtime_overrides
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -201,4 +206,5 @@ __all__ = [
     "ContextThreadPoolExecutor",
     "uuid7",
     "uuid7_from_datetime",
+    "set_runtime_overrides",
 ]

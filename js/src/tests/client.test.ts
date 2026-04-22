@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
+import { inspect } from "node:util";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
@@ -1121,6 +1122,64 @@ describe("Client", () => {
         expect(event.kwargs).toBeUndefined();
         expect(event.name).toBe("new_token");
       });
+    });
+  });
+
+  describe("toString", () => {
+    it("should not expose sensitive information like API keys", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "super-secret-api-key-12345",
+      });
+
+      const str = client.toString();
+      // Ensure API key is NOT in the string representation
+      expect(str).not.toContain("super-secret-api-key-12345");
+      // Ensure the string shows the API URL
+      expect(str).toContain("https://api.smith.langchain.com");
+      // Ensure it's properly formatted
+      expect(str).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
+    });
+
+    it("should be called when converting to string", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const str = String(client);
+      expect(str).not.toContain("secret-key");
+      expect(str).toContain("https://api.smith.langchain.com");
+    });
+
+    it("should be called by Node.js inspect", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectResult = inspect(client);
+      expect(inspectResult).not.toContain("secret-key");
+      expect(inspectResult).toContain("https://api.smith.langchain.com");
+      expect(inspectResult).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
+    });
+
+    it("should expose the Node.js custom inspect hook", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+      const inspectFn = (client as any)[inspectSymbol];
+      expect(typeof inspectFn).toBe("function");
+      expect(inspectFn.call(client)).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
     });
   });
 });

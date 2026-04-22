@@ -343,3 +343,25 @@ async def test_push_prompt_forwards_commit_tags(
     mock_create_commit.assert_awaited_once()
     _, kwargs = mock_create_commit.call_args
     assert kwargs["tags"] == commit_tags
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_repr_hides_sensitive_info(mock_client_cls: mock.Mock) -> None:
+    """Test that __repr__ does not expose sensitive information like API keys."""
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.base_url = "https://api.smith.langchain.com"
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="https://api.smith.langchain.com",
+        api_key="super-secret-api-key-12345",
+    )
+
+    repr_str = repr(client)
+    # Ensure API key is NOT in the repr
+    assert "super-secret-api-key-12345" not in repr_str
+    # Ensure the repr shows the API URL
+    assert "https://api.smith.langchain.com" in repr_str
+    # Ensure it's properly formatted
+    assert repr_str == "AsyncClient (API URL: https://api.smith.langchain.com)"
