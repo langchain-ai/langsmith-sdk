@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
+import { inspect } from "node:util";
 import { SandboxClient } from "../experimental/sandbox/client.js";
 import { Sandbox } from "../experimental/sandbox/sandbox.js";
 import { CommandHandle } from "../experimental/sandbox/command_handle.js";
@@ -56,6 +57,61 @@ describe("SandboxClient", () => {
         apiKey: "test-key",
       });
       expect((client as any)._baseUrl).toBe("https://custom.api.com/sandboxes");
+    });
+  });
+
+  describe("toString", () => {
+    it("should not expose sensitive information like API keys", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "super-secret-sandbox-api-key-12345",
+      });
+
+      const str = client.toString();
+      expect(str).not.toContain("super-secret-sandbox-api-key-12345");
+      expect(str).toContain("https://custom.api.com/sandboxes");
+      expect(str).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
+    });
+
+    it("should be called when converting to string", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const str = String(client);
+      expect(str).not.toContain("secret-key");
+      expect(str).toContain("https://custom.api.com/sandboxes");
+    });
+
+    it("should be called by Node.js inspect", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const inspectResult = inspect(client);
+      expect(inspectResult).not.toContain("secret-key");
+      expect(inspectResult).toContain("https://custom.api.com/sandboxes");
+      expect(inspectResult).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
+    });
+
+    it("should expose the Node.js custom inspect hook", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "secret-key",
+      });
+
+      const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+      const inspectFn = (client as any)[inspectSymbol];
+      expect(typeof inspectFn).toBe("function");
+      expect(inspectFn.call(client)).toBe(
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+      );
     });
   });
 });
