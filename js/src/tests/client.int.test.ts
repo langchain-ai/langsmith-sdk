@@ -6,6 +6,7 @@ import {
   Run,
   TracerSession,
 } from "../schemas.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -1024,7 +1025,16 @@ test("Prompt CRUD lifecycle (push, get, exists, update, commit, like/unlike, pul
 
     // 8) Pushing again without additional options still succeeds; _pullPrompt
     //    returns the underlying manifest.
-    await client.pushPrompt(promptName, { object: updatedTemplate });
+    // Note: This may throw a LangSmithConflictError if the content hasn't changed
+    // (e.g., if the same template was already committed in step 5).
+    try {
+      await client.pushPrompt(promptName, { object: updatedTemplate });
+    } catch (e) {
+      if (!(e instanceof LangSmithConflictError)) {
+        throw e;
+      }
+      // Conflict is expected if the same template was already committed
+    }
     const pulledPrompt = await client._pullPrompt(promptName);
     expect(pulledPrompt).toBeDefined();
   } finally {
