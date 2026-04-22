@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
+import contextvars
 import io
 import logging
 import pathlib
@@ -437,12 +438,22 @@ async def aevaluate_existing(
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
-        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
+        else (
+            await aitertools.aio_to_thread(
+                contextvars.copy_context(), _load_experiment, experiment, client
+            )
+        )
     )
     runs = await aitertools.aio_to_thread(
-        _load_traces, experiment, client, load_nested=load_nested
+        contextvars.copy_context(),
+        _load_traces,
+        experiment,
+        client,
+        load_nested=load_nested,
     )
-    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data_map = await aitertools.aio_to_thread(
+        contextvars.copy_context(), _load_examples_map, client, project
+    )
     data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
@@ -482,6 +493,7 @@ async def _aevaluate(
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
+        contextvars.copy_context(),
         _resolve_experiment,
         experiment,
         runs,
@@ -1089,6 +1101,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             feedback = result.model_dump(exclude={"target_run_id"})
                             evaluator_info = feedback.pop("evaluator_info", None)
                             await aitertools.aio_to_thread(
+                                contextvars.copy_context(),
                                 self.client.create_feedback,
                                 **feedback,
                                 run_id=None,
