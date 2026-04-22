@@ -1206,3 +1206,25 @@ class TestStartStopOperations:
             match="Exactly one of snapshot_id or snapshot_name must be set",
         ):
             client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
+
+
+class TestSandboxClientRepr:
+    """Tests for __repr__ method to ensure sensitive info is not exposed."""
+
+    def test_repr_hides_api_key(self):
+        """Test that __repr__ does not expose API key."""
+        client = SandboxClient(
+            api_endpoint="https://api.smith.langchain.com/v2/sandboxes",
+            api_key="super-secret-api-key-12345",
+        )
+        repr_str = repr(client)
+        # Ensure API key is NOT in the repr
+        assert "super-secret-api-key-12345" not in repr_str
+        # Ensure the repr shows the API URL
+        assert "https://api.smith.langchain.com/v2/sandboxes" in repr_str
+        # Ensure it's properly formatted
+        assert (
+            repr_str
+            == "SandboxClient (API URL: https://api.smith.langchain.com/v2/sandboxes)"
+        )
+        client.close()
