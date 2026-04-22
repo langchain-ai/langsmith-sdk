@@ -1,7 +1,5 @@
 """Integration tests for Claude Agent SDK tracing."""
 
-import shutil
-
 import pytest
 
 try:
@@ -18,16 +16,8 @@ from langsmith.integrations.claude_agent_sdk._hooks import (
     _subagent_runs,
 )
 
-
-def _claude_cli_available() -> bool:
-    """Check if the Claude CLI is available."""
-    return shutil.which("claude") is not None
-
-
-# Skip if SDK not installed OR CLI not available (can't run without CLI)
 pytestmark = pytest.mark.skipif(
-    not CLAUDE_SDK_AVAILABLE or not _claude_cli_available(),
-    reason="Claude Agent SDK not installed or Claude CLI not available",
+    not CLAUDE_SDK_AVAILABLE, reason="Claude Agent SDK not installed"
 )
 
 
@@ -52,7 +42,6 @@ async def _allow_all(tool_name, tool_input, context):  # type: ignore[no-untyped
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires live Claude CLI subprocess, hangs in CI")
 async def test_tool_failure_creates_error_trace():
     """Failing Bash command -> errored tool run via PostToolUseFailure."""
     from langsmith.integrations.claude_agent_sdk import (
@@ -84,7 +73,6 @@ async def test_tool_failure_creates_error_trace():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires live Claude CLI subprocess, hangs in CI")
 @pytest.mark.flaky(reruns=2)
 async def test_subagent():
     """Subagent chain nested under Agent tool via live hooks."""
@@ -192,7 +180,6 @@ async def test_subagent():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires live Claude CLI subprocess, hangs in CI")
 @pytest.mark.flaky(reruns=2)
 async def test_continue_session():
     """Continuing a prior session should not duplicate LLM runs from old turns."""
@@ -266,7 +253,6 @@ async def test_continue_session():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires live Claude CLI subprocess, hangs in CI")
 async def test_custom_tool_permission_denied():
     """MCP tool denied by default permissions -> closed from stream."""
     from langsmith.integrations.claude_agent_sdk import (
@@ -309,7 +295,6 @@ async def test_custom_tool_permission_denied():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires live Claude CLI subprocess, hangs in CI")
 async def test_custom_tool_permission_granted():
     """MCP tool granted via can_use_tool; @traceable inside handler nests."""
     from claude_agent_sdk import (
