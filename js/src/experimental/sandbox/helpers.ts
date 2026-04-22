@@ -175,6 +175,7 @@ export async function handleSandboxCreationError(
   response: Response
 ): Promise<never> {
   const status = response.status;
+  const clonedResponse = response.clone();
   const data = await parseErrorResponse(response);
 
   if (status === 408) {
@@ -182,7 +183,6 @@ export async function handleSandboxCreationError(
     throw new LangSmithResourceTimeoutError(data.message, "sandbox");
   } else if (status === 422) {
     // Check if this is a Pydantic validation error (bad input) vs creation error
-    const clonedResponse = response.clone();
     const details = await parseValidationError(clonedResponse);
     if (details.length > 0 && details.some((d) => d.type === "value_error")) {
       // Pydantic validation error (bad input - exceeds server limits)
@@ -203,8 +203,8 @@ export async function handleSandboxCreationError(
       data.errorType || "Unschedulable"
     );
   }
-  // Fall through to generic handling
-  return handleClientHttpError(response);
+  // Fall through to generic handling — pass clone since body is already consumed
+  return handleClientHttpError(clonedResponse);
 }
 
 /**
@@ -213,10 +213,13 @@ export async function handleSandboxCreationError(
 export async function handleClientHttpError(
   response: Response
 ): Promise<never> {
+  const status = response.status;
+  // Only clone when we need to read the body twice (status 422 reads it again
+  // for structured validation details after parseErrorResponse consumes it).
+  const clonedResponse = status === 422 ? response.clone() : null;
   const data = await parseErrorResponse(response);
   const message = data.message;
   const errorType = data.errorType;
-  const status = response.status;
 
   if (status === 401 || status === 403) {
     throw new LangSmithSandboxAuthenticationError(message);
@@ -226,8 +229,7 @@ export async function handleClientHttpError(
   }
 
   // Handle validation errors (invalid resource values, formats, etc.)
-  if (status === 422) {
-    const clonedResponse = response.clone();
+  if (status === 422 && clonedResponse) {
     const details = await parseValidationError(clonedResponse);
     const field = details[0]?.loc?.slice(-1)[0] as string | undefined;
     throw new LangSmithValidationError(message, field, details);
