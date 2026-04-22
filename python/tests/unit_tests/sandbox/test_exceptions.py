@@ -67,8 +67,8 @@ class TestResourceNotFoundError:
 
     def test_with_resource_type(self):
         """Test error with resource_type."""
-        error = ResourceNotFoundError("Template not found", resource_type="template")
-        assert error.resource_type == "template"
+        error = ResourceNotFoundError("Snapshot not found", resource_type="snapshot")
+        assert error.resource_type == "snapshot"
 
 
 class TestValidationError:
@@ -128,11 +128,11 @@ class TestResourceCreationError:
         """Test error with resource_type."""
         error = ResourceCreationError(
             "Provisioning failed",
-            resource_type="volume",
-            error_type="VolumeProvisioning",
+            resource_type="sandbox",
+            error_type="ImagePull",
         )
-        assert error.resource_type == "volume"
-        assert error.error_type == "VolumeProvisioning"
+        assert error.resource_type == "sandbox"
+        assert error.error_type == "ImagePull"
 
 
 class TestSandboxOperationError:
@@ -169,8 +169,10 @@ class TestResourceNameConflictError:
 
     def test_with_resource_type(self):
         """Test error with resource_type."""
-        error = ResourceNameConflictError("Name already exists", resource_type="volume")
-        assert error.resource_type == "volume"
+        error = ResourceNameConflictError(
+            "Name already exists", resource_type="snapshot"
+        )
+        assert error.resource_type == "snapshot"
 
 
 class TestCommandTimeoutError:

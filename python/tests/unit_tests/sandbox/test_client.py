@@ -6,10 +6,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
-    QuotaExceededError,
-    ResourceAlreadyExistsError,
     ResourceCreationError,
-    ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
     ResourceStatus,
@@ -17,7 +14,6 @@ from langsmith.sandbox import (
     SandboxClient,
     SandboxConnectionError,
     ServiceURL,
-    ValidationError,
 )
 
 
@@ -140,200 +136,6 @@ class TestSandboxClientInit:
         client.close()
 
 
-class TestTemplateOperations:
-    """Tests for template operations."""
-
-    def test_create_template(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test creating a template."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/templates",
-            json={
-                "name": "python-sandbox",
-                "image": "python:3.12-slim",
-                "resources": {"cpu": "500m", "memory": "512Mi"},
-            },
-            status_code=201,
-        )
-
-        template = client.create_template(
-            name="python-sandbox",
-            image="python:3.12-slim",
-        )
-
-        assert template.name == "python-sandbox"
-        assert template.image == "python:3.12-slim"
-
-    def test_create_template_with_resources(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating a template with custom resources."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/templates",
-            json={
-                "name": "python-sandbox",
-                "image": "python:3.12-slim",
-                "resources": {"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
-            },
-            status_code=201,
-        )
-
-        template = client.create_template(
-            name="python-sandbox",
-            image="python:3.12-slim",
-            cpu="2",
-            memory="4Gi",
-            storage="10Gi",
-        )
-
-        assert template.resources.cpu == "2"
-        assert template.resources.memory == "4Gi"
-        assert template.resources.storage == "10Gi"
-
-    def test_list_templates(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test listing templates."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/templates",
-            json={
-                "templates": [
-                    {
-                        "name": "template-1",
-                        "image": "python:3.12",
-                        "resources": {"cpu": "500m", "memory": "512Mi"},
-                    },
-                    {
-                        "name": "template-2",
-                        "image": "node:20",
-                        "resources": {"cpu": "1", "memory": "1Gi"},
-                    },
-                ]
-            },
-        )
-
-        templates = client.list_templates()
-
-        assert len(templates) == 2
-        assert templates[0].name == "template-1"
-        assert templates[1].name == "template-2"
-
-    def test_get_template(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test getting a template."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/templates/python-sandbox",
-            json={
-                "name": "python-sandbox",
-                "image": "python:3.12-slim",
-                "resources": {"cpu": "500m", "memory": "512Mi"},
-            },
-        )
-
-        template = client.get_template("python-sandbox")
-
-        assert template.name == "python-sandbox"
-
-    def test_get_template_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test getting non-existent template."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/templates/nonexistent",
-            json={"detail": "Template 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.get_template("nonexistent")
-
-    def test_update_template(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating a template's name."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/templates/python-sandbox",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440001",
-                "name": "python-sandbox-renamed",
-                "image": "python:3.12-slim",
-                "resources": {"cpu": "500m", "memory": "512Mi"},
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        template = client.update_template(
-            "python-sandbox", new_name="python-sandbox-renamed"
-        )
-
-        assert template.name == "python-sandbox-renamed"
-        assert template.id == "550e8400-e29b-41d4-a716-446655440001"
-        assert template.updated_at == "2026-01-19T14:00:00Z"
-
-    def test_update_template_not_found(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a non-existent template."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/templates/nonexistent",
-            json={"detail": "Template 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.update_template("nonexistent", new_name="new-name")
-
-    def test_update_template_name_conflict(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a template to a name that already exists."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/templates/python-sandbox",
-            json={
-                "detail": {
-                    "error": "Conflict",
-                    "message": "Template name 'existing-template' is already in use",
-                }
-            },
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceNameConflictError) as exc_info:
-            client.update_template("python-sandbox", new_name="existing-template")
-        assert exc_info.value.resource_type == "template"
-
-    def test_delete_template(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test deleting a template."""
-        httpx_mock.add_response(
-            method="DELETE",
-            url="http://test-server:8080/templates/python-sandbox",
-            status_code=204,
-        )
-
-        # Should not raise
-        client.delete_template("python-sandbox")
-
-    def test_delete_template_in_use(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test deleting a template that is in use by sandboxes or pools."""
-        httpx_mock.add_response(
-            method="DELETE",
-            url="http://test-server:8080/templates/python-sandbox",
-            json={
-                "detail": {
-                    "error": "Conflict",
-                    "message": (
-                        "Template 'python-sandbox' is in use by sandboxes: sandbox-1; "
-                        "pools: pool-1. Delete the dependent resources first."
-                    ),
-                }
-            },
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceInUseError):
-            client.delete_template("python-sandbox")
-
-
 class TestSandboxOperations:
     """Tests for sandbox operations."""
 
@@ -345,13 +147,12 @@ class TestSandboxOperations:
             json={
                 "id": "550e8400-e29b-41d4-a716-446655440003",
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             status_code=201,
         )
 
-        sandbox = client.create_sandbox(template_name="python-sandbox")
+        sandbox = client.create_sandbox(snapshot_id="snap-1")
 
         assert sandbox.name == "test-sandbox"
         assert sandbox.id == "550e8400-e29b-41d4-a716-446655440003"
@@ -368,7 +169,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
             },
             status_code=201,
         )
@@ -377,7 +177,7 @@ class TestSandboxOperations:
             "access_control": {"allow_list": ["github.com", "*.example.com"]},
         }
         client.create_sandbox(
-            template_name="python-sandbox",
+            snapshot_id="snap-1",
             proxy_config=proxy_config,
         )
 
@@ -396,12 +196,11 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
             },
             status_code=201,
         )
 
-        client.create_sandbox(template_name="python-sandbox")
+        client.create_sandbox(snapshot_id="snap-1")
         body = json.loads(httpx_mock.get_request().content)
         assert "proxy_config" not in body
 
@@ -414,14 +213,13 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             status_code=201,
         )
 
         client.create_sandbox(
-            template_name="python-sandbox",
+            snapshot_id="snap-1",
             headers={
                 "X-Api-Key": "override-key",
                 "X-Test-Header": "sandbox-client",
@@ -441,7 +239,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
             },
             status_code=201,
         )
@@ -451,7 +248,7 @@ class TestSandboxOperations:
             status_code=204,
         )
 
-        with client.sandbox(template_name="python-sandbox") as sandbox:
+        with client.sandbox(snapshot_id="snap-1") as sandbox:
             assert sandbox.name == "test-sandbox"
 
         # Verify delete was called
@@ -468,7 +265,7 @@ class TestSandboxOperations:
         )
 
         with pytest.raises(ResourceTimeoutError):
-            client.create_sandbox(template_name="python-sandbox")
+            client.create_sandbox(snapshot_id="snap-1")
 
     def test_list_sandboxes(self, client: SandboxClient, httpx_mock: HTTPXMock):
         """Test listing sandboxes."""
@@ -479,7 +276,6 @@ class TestSandboxOperations:
                 "sandboxes": [
                     {
                         "name": "sandbox-1",
-                        "template_name": "template-1",
                     },
                 ]
             },
@@ -509,7 +305,6 @@ class TestSandboxOperations:
             json={
                 "id": "550e8400-e29b-41d4-a716-446655440003",
                 "name": "my-sandbox-renamed",
-                "template_name": "python-sandbox",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
         )
@@ -559,7 +354,6 @@ class TestSandboxOperations:
             json={
                 "id": "550e8400-e29b-41d4-a716-446655440003",
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "status": "provisioning",
                 "status_message": None,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
@@ -567,9 +361,7 @@ class TestSandboxOperations:
             status_code=201,
         )
 
-        sandbox = client.create_sandbox(
-            template_name="python-sandbox", wait_for_ready=False
-        )
+        sandbox = client.create_sandbox(snapshot_id="snap-1", wait_for_ready=False)
 
         assert sandbox.name == "test-sandbox"
         assert sandbox.status == "provisioning"
@@ -592,7 +384,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "status": "ready",
                 "status_message": None,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
@@ -600,7 +391,7 @@ class TestSandboxOperations:
             status_code=201,
         )
 
-        sandbox = client.create_sandbox(template_name="python-sandbox")
+        sandbox = client.create_sandbox(snapshot_id="snap-1")
 
         assert sandbox.status == "ready"
         assert sandbox.status_message is None
@@ -668,7 +459,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes/my-sandbox",
             json={
                 "name": "my-sandbox",
-                "template_name": "python-sandbox",
                 "status": "ready",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
@@ -723,7 +513,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "ttl_seconds": 3600,
                 "idle_ttl_seconds": 600,
                 "expires_at": "2026-03-24T12:00:00Z",
@@ -733,7 +522,7 @@ class TestSandboxOperations:
         )
 
         sandbox = client.create_sandbox(
-            template_name="python-sandbox",
+            snapshot_id="snap-1",
             ttl_seconds=3600,
             idle_ttl_seconds=600,
         )
@@ -758,13 +547,12 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             status_code=201,
         )
 
-        client.create_sandbox(template_name="python-sandbox")
+        client.create_sandbox(snapshot_id="snap-1")
 
         import json
 
@@ -776,14 +564,14 @@ class TestSandboxOperations:
     def test_create_sandbox_ttl_validation_negative(self, client: SandboxClient):
         """Test that negative TTL values raise ValueError."""
         with pytest.raises(ValueError, match="must be >= 0"):
-            client.create_sandbox(template_name="python-sandbox", ttl_seconds=-1)
+            client.create_sandbox(snapshot_id="snap-1", ttl_seconds=-1)
 
     def test_create_sandbox_ttl_validation_not_multiple_of_60(
         self, client: SandboxClient
     ):
         """Test that non-multiple-of-60 TTL values raise ValueError."""
         with pytest.raises(ValueError, match="must be a multiple of 60"):
-            client.create_sandbox(template_name="python-sandbox", ttl_seconds=90)
+            client.create_sandbox(snapshot_id="snap-1", ttl_seconds=90)
 
     def test_create_sandbox_ttl_zero_allowed(
         self, client: SandboxClient, httpx_mock: HTTPXMock
@@ -794,7 +582,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "template_name": "python-sandbox",
                 "ttl_seconds": 0,
                 "idle_ttl_seconds": 0,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
@@ -803,7 +590,7 @@ class TestSandboxOperations:
         )
 
         sandbox = client.create_sandbox(
-            template_name="python-sandbox",
+            snapshot_id="snap-1",
             ttl_seconds=0,
             idle_ttl_seconds=0,
         )
@@ -820,7 +607,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes/my-sandbox",
             json={
                 "name": "my-sandbox",
-                "template_name": "python-sandbox",
                 "ttl_seconds": 7200,
                 "idle_ttl_seconds": 1200,
                 "expires_at": "2026-03-24T14:00:00Z",
@@ -860,7 +646,6 @@ class TestSandboxOperations:
             url="http://test-server:8080/boxes/my-sandbox",
             json={
                 "name": "my-sandbox-renamed",
-                "template_name": "python-sandbox",
                 "ttl_seconds": 3600,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
@@ -893,12 +678,10 @@ class TestSandboxOperations:
                 "sandboxes": [
                     {
                         "name": "sandbox-ready",
-                        "template_name": "template-1",
                         "status": "ready",
                     },
                     {
                         "name": "sandbox-provisioning",
-                        "template_name": "template-1",
                         "status": "provisioning",
                     },
                 ]
@@ -912,414 +695,8 @@ class TestSandboxOperations:
         assert sandboxes[1].status == "provisioning"
 
 
-class TestPoolOperations:
-    """Tests for pool operations."""
-
-    def test_create_pool(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test creating a pool."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "name": "python-pool",
-                "template_name": "python-sandbox",
-                "replicas": 5,
-                "created_at": "2026-01-16T12:00:00Z",
-            },
-            status_code=201,
-        )
-
-        pool = client.create_pool(
-            name="python-pool",
-            template_name="python-sandbox",
-            replicas=5,
-        )
-
-        assert pool.name == "python-pool"
-        assert pool.template_name == "python-sandbox"
-        assert pool.replicas == 5
-
-    def test_create_pool_template_not_found(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating pool with non-existent template."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "detail": {
-                    "error": "TemplateNotFound",
-                    "message": "Template 'nonexistent' not found.",
-                }
-            },
-            status_code=400,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.create_pool(
-                name="python-pool",
-                template_name="nonexistent",
-                replicas=5,
-            )
-
-    def test_create_pool_template_has_volumes(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating pool with template that has volumes."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "detail": {
-                    "error": "ValidationError",
-                    "message": (
-                        "Template 'stateful-template' has volumes attached. "
-                        "Pools only support stateless templates."
-                    ),
-                }
-            },
-            status_code=400,
-        )
-
-        with pytest.raises(ValidationError) as exc_info:
-            client.create_pool(
-                name="python-pool",
-                template_name="stateful-template",
-                replicas=5,
-            )
-        assert exc_info.value.error_type == "ValidationError"
-
-    def test_create_pool_already_exists(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating pool that already exists."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={"detail": "Pool 'python-pool' already exists"},
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceAlreadyExistsError):
-            client.create_pool(
-                name="python-pool",
-                template_name="python-sandbox",
-                replicas=5,
-            )
-
-    def test_create_pool_quota_exceeded(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating pool when quota is exceeded."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "detail": (
-                    "Limit of 10 sandbox(es) per organization exceeded. "
-                    "Current usage: 8 sandboxes, Requested: 5 additional."
-                )
-            },
-            status_code=429,
-        )
-
-        with pytest.raises(QuotaExceededError) as exc_info:
-            client.create_pool(
-                name="python-pool",
-                template_name="python-sandbox",
-                replicas=5,
-            )
-        assert exc_info.value.quota_type == "sandbox_count"
-
-    def test_create_pool_with_timeout(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test creating pool sends wait_for_ready and timeout in payload."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "name": "python-pool",
-                "template_name": "python-sandbox",
-                "replicas": 5,
-                "created_at": "2026-01-16T12:00:00Z",
-            },
-            status_code=201,
-        )
-
-        pool = client.create_pool(
-            name="python-pool",
-            template_name="python-sandbox",
-            replicas=5,
-            timeout=60,
-        )
-
-        assert pool.name == "python-pool"
-        assert pool.replicas == 5
-
-        # Verify the request payload includes wait_for_ready (hardcoded) and timeout
-        request = httpx_mock.get_request()
-        import json
-
-        body = json.loads(request.content)
-        assert body["wait_for_ready"] is True
-        assert body["timeout"] == 60
-
-    def test_create_pool_timeout(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test creating pool timeout when waiting for ready."""
-        httpx_mock.add_response(
-            method="POST",
-            url="http://test-server:8080/pools",
-            json={
-                "detail": {
-                    "error": "Timeout",
-                    "message": (
-                        "Pool 'python-pool' did not reach 1 ready replica(s) "
-                        "within 30 seconds"
-                    ),
-                }
-            },
-            status_code=504,
-        )
-
-        with pytest.raises(ResourceTimeoutError):
-            client.create_pool(
-                name="python-pool",
-                template_name="python-sandbox",
-                replicas=5,
-            )
-
-    def test_get_pool(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test getting a pool."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "name": "python-pool",
-                "template_name": "python-sandbox",
-                "replicas": 5,
-                "created_at": "2026-01-16T12:00:00Z",
-            },
-        )
-
-        pool = client.get_pool("python-pool")
-
-        assert pool.name == "python-pool"
-        assert pool.replicas == 5
-
-    def test_get_pool_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test getting non-existent pool."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/pools/nonexistent",
-            json={"detail": "Pool 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.get_pool("nonexistent")
-
-    def test_list_pools(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test listing pools."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/pools",
-            json={
-                "pools": [
-                    {
-                        "name": "pool-1",
-                        "template_name": "python-sandbox",
-                        "replicas": 5,
-                    },
-                    {
-                        "name": "pool-2",
-                        "template_name": "node-sandbox",
-                        "replicas": 3,
-                    },
-                ]
-            },
-        )
-
-        pools = client.list_pools()
-
-        assert len(pools) == 2
-        assert pools[0].name == "pool-1"
-        assert pools[1].name == "pool-2"
-
-    def test_list_pools_empty(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test listing pools when none exist."""
-        httpx_mock.add_response(
-            method="GET",
-            url="http://test-server:8080/pools",
-            json={"pools": []},
-        )
-
-        pools = client.list_pools()
-
-        assert len(pools) == 0
-
-    def test_update_pool_replicas(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating pool replicas."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440002",
-                "name": "python-pool",
-                "template_name": "python-sandbox",
-                "replicas": 10,
-                "created_at": "2026-01-16T12:00:00Z",
-            },
-        )
-
-        pool = client.update_pool("python-pool", replicas=10)
-
-        assert pool.name == "python-pool"
-        assert pool.replicas == 10
-
-    def test_update_pool_name(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating pool name."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440002",
-                "name": "python-pool-renamed",
-                "template_name": "python-sandbox",
-                "replicas": 5,
-                "created_at": "2026-01-16T12:00:00Z",
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        pool = client.update_pool("python-pool", new_name="python-pool-renamed")
-
-        assert pool.name == "python-pool-renamed"
-        assert pool.id == "550e8400-e29b-41d4-a716-446655440002"
-
-    def test_update_pool_name_and_replicas(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating pool name and replicas in a single request."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440002",
-                "name": "python-pool-renamed",
-                "template_name": "python-sandbox",
-                "replicas": 10,
-                "created_at": "2026-01-16T12:00:00Z",
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        pool = client.update_pool(
-            "python-pool", new_name="python-pool-renamed", replicas=10
-        )
-
-        assert pool.name == "python-pool-renamed"
-        assert pool.replicas == 10
-
-    def test_update_pool_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating non-existent pool."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/nonexistent",
-            json={"detail": "Pool 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.update_pool("nonexistent", replicas=10)
-
-    def test_update_pool_quota_exceeded(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating pool when scaling up exceeds quota."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={"detail": "Limit of 10 sandbox(es) per organization exceeded."},
-            status_code=429,
-        )
-
-        with pytest.raises(QuotaExceededError):
-            client.update_pool("python-pool", replicas=20)
-
-    def test_update_pool_pause(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test pausing pool by setting replicas to 0."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "name": "python-pool",
-                "template_name": "python-sandbox",
-                "replicas": 0,
-            },
-        )
-
-        pool = client.update_pool("python-pool", replicas=0)
-
-        assert pool.replicas == 0
-
-    def test_update_pool_name_conflict(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a pool to a name that already exists."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/pools/python-pool",
-            json={
-                "detail": {
-                    "error": "Conflict",
-                    "message": "Pool name 'existing-pool' is already in use",
-                }
-            },
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceNameConflictError) as exc_info:
-            client.update_pool("python-pool", new_name="existing-pool")
-        assert exc_info.value.resource_type == "pool"
-
-    def test_delete_pool(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test deleting a pool."""
-        httpx_mock.add_response(
-            method="DELETE",
-            url="http://test-server:8080/pools/python-pool",
-            status_code=204,
-        )
-
-        # Should not raise
-        client.delete_pool("python-pool")
-
-    def test_delete_pool_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test deleting non-existent pool."""
-        httpx_mock.add_response(
-            method="DELETE",
-            url="http://test-server:8080/pools/nonexistent",
-            json={"detail": "Pool 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.delete_pool("nonexistent")
-
-
 class TestConnectionErrors:
     """Tests for connection error handling."""
-
-    def test_connection_error_on_template_create(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test connection error when creating template."""
-        import httpx
-
-        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
-
-        with pytest.raises(SandboxConnectionError):
-            client.create_template(name="test", image="python:3.12")
 
     def test_connection_error_on_sandbox_create(
         self, client: SandboxClient, httpx_mock: HTTPXMock
@@ -1330,167 +707,7 @@ class TestConnectionErrors:
         httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
 
         with pytest.raises(SandboxConnectionError):
-            client.create_sandbox(template_name="test")
-
-    def test_connection_error_on_pool_create(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test connection error when creating pool."""
-        import httpx
-
-        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
-
-        with pytest.raises(SandboxConnectionError):
-            client.create_pool(
-                name="python-pool",
-                template_name="python-sandbox",
-                replicas=5,
-            )
-
-
-class TestVolumeOperations:
-    """Tests for volume operations."""
-
-    def test_update_volume_size(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating a volume's size."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "my-volume",
-                "size": "20Gi",
-                "storage_class": "standard",
-                "created_at": "2026-01-19T12:00:00Z",
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        volume = client.update_volume("my-volume", size="20Gi")
-
-        assert volume.name == "my-volume"
-        assert volume.size == "20Gi"
-        assert volume.updated_at == "2026-01-19T14:00:00Z"
-
-    def test_update_volume_name(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test updating a volume's name."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "my-volume-renamed",
-                "size": "10Gi",
-                "storage_class": "standard",
-                "created_at": "2026-01-19T12:00:00Z",
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        volume = client.update_volume("my-volume", new_name="my-volume-renamed")
-
-        assert volume.name == "my-volume-renamed"
-        assert volume.id == "550e8400-e29b-41d4-a716-446655440000"
-
-    def test_update_volume_name_and_size(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating both volume name and size in a single request."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "my-volume-renamed",
-                "size": "20Gi",
-                "storage_class": "standard",
-                "created_at": "2026-01-19T12:00:00Z",
-                "updated_at": "2026-01-19T14:00:00Z",
-            },
-        )
-
-        volume = client.update_volume(
-            "my-volume", new_name="my-volume-renamed", size="20Gi"
-        )
-
-        assert volume.name == "my-volume-renamed"
-        assert volume.size == "20Gi"
-
-    def test_update_volume_not_found(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a non-existent volume."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/nonexistent",
-            json={"detail": "Volume 'nonexistent' not found"},
-            status_code=404,
-        )
-
-        with pytest.raises(ResourceNotFoundError):
-            client.update_volume("nonexistent", size="20Gi")
-
-    def test_update_volume_resize_error(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a volume with size decrease."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "detail": {
-                    "error": "ResizeError",
-                    "message": (
-                        "Volume 'my-volume' resize failed: Storage cannot be "
-                        "decreased. Current: 10.00Gi, Requested: 5.00Gi"
-                    ),
-                }
-            },
-            status_code=400,
-        )
-
-        with pytest.raises(ValidationError):
-            client.update_volume("my-volume", size="5Gi")
-
-    def test_update_volume_name_conflict(
-        self, client: SandboxClient, httpx_mock: HTTPXMock
-    ):
-        """Test updating a volume to a name that already exists."""
-        httpx_mock.add_response(
-            method="PATCH",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "detail": {
-                    "error": "Conflict",
-                    "message": "Volume name 'existing-volume' is already in use",
-                }
-            },
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceNameConflictError) as exc_info:
-            client.update_volume("my-volume", new_name="existing-volume")
-        assert exc_info.value.resource_type == "volume"
-
-    def test_delete_volume_in_use(self, client: SandboxClient, httpx_mock: HTTPXMock):
-        """Test deleting a volume that is in use by templates."""
-        httpx_mock.add_response(
-            method="DELETE",
-            url="http://test-server:8080/volumes/my-volume",
-            json={
-                "detail": {
-                    "error": "Conflict",
-                    "message": (
-                        "Volume 'my-volume' is in use by templates: template-1, "
-                        "template-2. Delete or update the templates first."
-                    ),
-                }
-            },
-            status_code=409,
-        )
-
-        with pytest.raises(ResourceInUseError):
-            client.delete_volume("my-volume")
+            client.create_sandbox(snapshot_id="snap-1")
 
 
 class TestService:
@@ -1911,14 +1128,7 @@ class TestStartStopOperations:
         assert body["snapshot_id"] == "snap-1"
         assert "template_name" not in body
 
-    def test_create_sandbox_requires_template_or_snapshot(self, client: SandboxClient):
-        """Test that either template_name or snapshot_id is required."""
-        with pytest.raises(ValueError, match="Either template_name or snapshot_id"):
-            client.create_sandbox()
-
-    def test_create_sandbox_rejects_both_template_and_snapshot(
-        self, client: SandboxClient
-    ):
-        """Test that both template_name and snapshot_id are rejected."""
-        with pytest.raises(ValueError, match="Cannot specify both"):
-            client.create_sandbox(template_name="my-template", snapshot_id="snap-1")
+    def test_create_sandbox_requires_snapshot_id(self, client: SandboxClient):
+        """Test that snapshot_id is required."""
+        with pytest.raises(TypeError):
+            client.create_sandbox()  # type: ignore[call-arg]

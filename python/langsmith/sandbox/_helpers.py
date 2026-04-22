@@ -13,7 +13,6 @@ import httpx
 
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
-    ResourceAlreadyExistsError,
     ResourceCreationError,
     ResourceNotFoundError,
     ResourceTimeoutError,
@@ -168,8 +167,7 @@ def parse_validation_error(error: httpx.HTTPStatusError) -> list[dict]:
 def extract_quota_type(message: str) -> Optional[str]:
     """Extract quota type from error message.
 
-    Returns one of: "sandbox_count", "cpu", "memory", "volume_count",
-    "storage", or None.
+    Returns one of: "sandbox_count", "cpu", "memory", "storage", or None.
     """
     message_lower = message.lower()
     # Check for sandbox count quota
@@ -181,11 +179,6 @@ def extract_quota_type(message: str) -> Optional[str]:
         return "cpu"
     elif "memory" in message_lower:
         return "memory"
-    # Check for volume count quota
-    elif "volume" in message_lower and (
-        "count" in message_lower or "limit" in message_lower
-    ):
-        return "volume_count"
     elif "storage" in message_lower:
         return "storage"
     return None
@@ -260,78 +253,6 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
             resource_type="sandbox",
             error_type=data.get("error_type") or "Unschedulable",
         ) from error
-    else:
-        # Fall through to generic handling
-        handle_client_http_error(error)
-
-
-def handle_volume_creation_error(error: httpx.HTTPStatusError) -> None:
-    """Handle HTTP errors specific to volume creation.
-
-    Maps API error responses to specific exception types:
-    - 503: ResourceCreationError (provisioning failed)
-    - 504: ResourceTimeoutError (volume didn't become ready in time)
-    - Other: Falls through to generic error handling
-    """
-    status = error.response.status_code
-    data = parse_error_response(error)
-
-    if status == 503:
-        # Provisioning failed (invalid storage class, quota exceeded)
-        raise ResourceCreationError(
-            data["message"],
-            resource_type="volume",
-            error_type="VolumeProvisioning",
-        ) from error
-    elif status == 504:
-        # Timeout - volume didn't become ready in time
-        raise ResourceTimeoutError(data["message"], resource_type="volume") from error
-    else:
-        # Fall through to generic handling
-        handle_client_http_error(error)
-
-
-def handle_pool_error(error: httpx.HTTPStatusError) -> None:
-    """Handle HTTP errors specific to pool creation/update.
-
-    Maps API error responses to specific exception types:
-    - 400: ResourceNotFoundError or ValidationError (template has volumes)
-    - 409: ResourceAlreadyExistsError
-    - 429: QuotaExceededError (org limits exceeded)
-    - 504: ResourceTimeoutError (timeout waiting for ready replicas)
-    - Other: Falls through to generic error handling
-    """
-    status = error.response.status_code
-    data = parse_error_response(error)
-    error_type = data.get("error_type")
-
-    if status == 400:
-        # Check the error type to determine the specific exception
-        if error_type == "TemplateNotFound":
-            raise ResourceNotFoundError(
-                data["message"], resource_type="template"
-            ) from error
-        elif error_type == "ValidationError":
-            # Template has volumes attached
-            raise ValidationError(data["message"], error_type=error_type) from error
-        else:
-            # Generic bad request
-            handle_client_http_error(error)
-    elif status == 409:
-        # Pool already exists
-        raise ResourceAlreadyExistsError(
-            data["message"], resource_type="pool"
-        ) from error
-    elif status == 429:
-        # Organization quota exceeded
-        quota_type = extract_quota_type(data["message"])
-        raise QuotaExceededError(
-            message=data["message"],
-            quota_type=quota_type,
-        ) from error
-    elif status == 504:
-        # Timeout waiting for pool to be ready
-        raise ResourceTimeoutError(data["message"], resource_type="pool") from error
     else:
         # Fall through to generic handling
         handle_client_http_error(error)

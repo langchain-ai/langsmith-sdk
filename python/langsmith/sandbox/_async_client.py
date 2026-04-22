@@ -12,31 +12,22 @@ from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
-    ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxAPIError,
-    ValidationError,
 )
 from langsmith.sandbox._helpers import (
     handle_client_http_error,
-    handle_pool_error,
     handle_sandbox_creation_error,
-    handle_volume_creation_error,
     merge_headers,
-    parse_error_response,
     validate_service_params,
     validate_ttl,
 )
 from langsmith.sandbox._models import (
     AsyncServiceURL,
-    Pool,
     ResourceStatus,
-    SandboxTemplate,
     Snapshot,
-    Volume,
-    VolumeMountSpec,
 )
 from langsmith.sandbox._transport import AsyncRetryTransport
 
@@ -61,13 +52,15 @@ RequestHeaders = Optional[Mapping[str, str]]
 class AsyncSandboxClient:
     """Async client for interacting with the Sandbox Server API.
 
-    This client provides an async interface for managing sandboxes and templates.
+    This client provides an async interface for managing sandboxes and snapshots.
 
     Example:
         # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
         async with AsyncSandboxClient() as client:
-            # Create a sandbox and run commands
-            async with await client.sandbox(template_name="python-sandbox") as sandbox:
+            # Create a sandbox from a snapshot and run commands
+            async with await client.sandbox(
+                snapshot_id="<snapshot-uuid>"
+            ) as sandbox:
                 result = await sandbox.run("python --version")
                 print(result.stdout)
     """
@@ -145,581 +138,13 @@ class AsyncSandboxClient:
         await self.aclose()
 
     # ========================================================================
-    # Volume Operations
-    # ========================================================================
-
-    async def create_volume(
-        self,
-        name: str,
-        size: str,
-        *,
-        timeout: int = 60,
-        headers: RequestHeaders = None,
-    ) -> Volume:
-        """Create a new persistent volume.
-
-        Creates a persistent storage volume that can be referenced in templates.
-
-        Args:
-            name: Volume name.
-            size: Storage size (e.g., "1Gi", "10Gi").
-            timeout: Timeout in seconds when waiting for ready (min: 5, max: 300).
-
-        Returns:
-            Created Volume.
-
-        Raises:
-            VolumeProvisioningError: If volume provisioning fails.
-            ResourceTimeoutError: If volume doesn't become ready within timeout.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes"
-
-        payload = {
-            "name": name,
-            "size": size,
-            "wait_for_ready": True,
-            "timeout": timeout,
-        }
-
-        try:
-            response = await self._http.post(
-                url,
-                json=payload,
-                timeout=timeout + 30,
-                headers=self._request_headers(headers),
-            )
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_volume_creation_error(e)
-            raise  # pragma: no cover
-
-    async def get_volume(self, name: str, *, headers: RequestHeaders = None) -> Volume:
-        """Get a volume by name.
-
-        Args:
-            name: Volume name.
-
-        Returns:
-            Volume.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def list_volumes(self, *, headers: RequestHeaders = None) -> list[Volume]:
-        """List all volumes.
-
-        Returns:
-            List of Volumes.
-        """
-        url = f"{self._base_url}/volumes"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            data = response.json()
-            return [Volume.from_dict(v) for v in data.get("volumes", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def delete_volume(self, name: str, *, headers: RequestHeaders = None) -> None:
-        """Delete a volume.
-
-        Args:
-            name: Volume name.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            ResourceInUseError: If volume is referenced by templates.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-
-        try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceInUseError(data["message"], resource_type="volume") from e
-            handle_client_http_error(e)
-
-    async def update_volume(
-        self,
-        name: str,
-        *,
-        new_name: Optional[str] = None,
-        size: Optional[str] = None,
-        headers: RequestHeaders = None,
-    ) -> Volume:
-        """Update a volume's name and/or size.
-
-        You can update the display name, size, or both in a single request.
-        Only storage size increases are allowed (storage backend limitation).
-
-        Args:
-            name: Current volume name.
-            new_name: New display name (optional).
-            size: New storage size (must be >= current size). Optional.
-
-        Returns:
-            Updated Volume.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            VolumeResizeError: If storage decrease attempted.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxQuotaExceededError: If storage quota would be exceeded.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-        payload: dict[str, Any] = {}
-        if new_name is not None:
-            payload["name"] = new_name
-        if size is not None:
-            payload["size"] = size
-
-        if not payload:
-            # Nothing to update, just return the current volume
-            return await self.get_volume(name, headers=headers)
-
-        try:
-            response = await self._http.patch(
-                url, json=payload, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            if e.response.status_code == 400:
-                data = parse_error_response(e)
-                raise ValidationError(data["message"], error_type="VolumeResize") from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="volume"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    # ========================================================================
-    # Template Operations
-    # ========================================================================
-
-    async def create_template(
-        self,
-        name: str,
-        image: str,
-        *,
-        cpu: str = "500m",
-        memory: str = "512Mi",
-        storage: Optional[str] = None,
-        volume_mounts: Optional[list[VolumeMountSpec]] = None,
-        headers: RequestHeaders = None,
-    ) -> SandboxTemplate:
-        """Create a new SandboxTemplate.
-
-        Only the container image, resource limits, and volume mounts can be
-        configured. All other container details are handled by the server.
-
-        Args:
-            name: Template name.
-            image: Container image (e.g., "python:3.12-slim").
-            cpu: CPU limit (e.g., "500m", "1", "2"). Default: "500m".
-            memory: Memory limit (e.g., "256Mi", "1Gi"). Default: "512Mi".
-            storage: Ephemeral storage limit (e.g., "1Gi"). Optional.
-            volume_mounts: List of volumes to mount in the sandbox. Optional.
-
-        Returns:
-            Created SandboxTemplate.
-
-        Raises:
-            SandboxClientError: If creation fails.
-        """
-        url = f"{self._base_url}/templates"
-
-        payload: dict[str, Any] = {
-            "name": name,
-            "image": image,
-            "resources": {
-                "cpu": cpu,
-                "memory": memory,
-            },
-        }
-        if storage:
-            payload["resources"]["storage"] = storage
-        if volume_mounts:
-            payload["volume_mounts"] = [
-                {"volume_name": vm.volume_name, "mount_path": vm.mount_path}
-                for vm in volume_mounts
-            ]
-
-        try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def get_template(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> SandboxTemplate:
-        """Get a SandboxTemplate by name.
-
-        Args:
-            name: Template name.
-
-        Returns:
-            SandboxTemplate.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def list_templates(
-        self, *, headers: RequestHeaders = None
-    ) -> list[SandboxTemplate]:
-        """List all SandboxTemplates.
-
-        Returns:
-            List of SandboxTemplates.
-        """
-        url = f"{self._base_url}/templates"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            data = response.json()
-            return [SandboxTemplate.from_dict(t) for t in data.get("templates", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def update_template(
-        self, name: str, *, new_name: str, headers: RequestHeaders = None
-    ) -> SandboxTemplate:
-        """Update a template's display name.
-
-        Args:
-            name: Current template name.
-            new_name: New display name.
-
-        Returns:
-            Updated SandboxTemplate.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-        payload = {"name": new_name}
-
-        try:
-            response = await self._http.patch(
-                url, json=payload, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def delete_template(
-        self, name: str, *, headers: RequestHeaders = None
-    ) -> None:
-        """Delete a SandboxTemplate.
-
-        Args:
-            name: Template name.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ResourceInUseError: If template is referenced by sandboxes or pools.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-
-        try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceInUseError(
-                    data["message"], resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-
-    # ========================================================================
-    # Pool Operations
-    # ========================================================================
-
-    async def create_pool(
-        self,
-        name: str,
-        template_name: str,
-        replicas: int,
-        *,
-        timeout: int = 30,
-        headers: RequestHeaders = None,
-    ) -> Pool:
-        """Create a new Sandbox Pool.
-
-        Pools pre-provision sandboxes from a template for faster startup.
-
-        Args:
-            name: Pool name (lowercase letters, numbers, hyphens; max 63 chars).
-            template_name: Name of the SandboxTemplate to use (no volume mounts).
-            replicas: Number of sandboxes to pre-provision (1-100).
-            timeout: Timeout in seconds when waiting for ready (10-600).
-
-        Returns:
-            Created Pool.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ValidationError: If template has volumes attached.
-            ResourceAlreadyExistsError: If pool with this name already exists.
-            ResourceTimeoutError: If pool doesn't reach ready state within timeout.
-            SandboxQuotaExceededError: If organization quota is exceeded.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools"
-
-        payload: dict[str, Any] = {
-            "name": name,
-            "template_name": template_name,
-            "replicas": replicas,
-            "wait_for_ready": True,
-            "timeout": timeout,
-        }
-
-        try:
-            http_timeout = timeout + 30
-            response = await self._http.post(
-                url,
-                json=payload,
-                timeout=http_timeout,
-                headers=self._request_headers(headers),
-            )
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_pool_error(e)
-            raise  # pragma: no cover
-
-    async def get_pool(self, name: str, *, headers: RequestHeaders = None) -> Pool:
-        """Get a Pool by name.
-
-        Args:
-            name: Pool name.
-
-        Returns:
-            Pool.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def list_pools(self, *, headers: RequestHeaders = None) -> list[Pool]:
-        """List all Pools.
-
-        Returns:
-            List of Pools.
-        """
-        url = f"{self._base_url}/pools"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            data = response.json()
-            return [Pool.from_dict(p) for p in data.get("pools", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    async def update_pool(
-        self,
-        name: str,
-        *,
-        new_name: Optional[str] = None,
-        replicas: Optional[int] = None,
-        headers: RequestHeaders = None,
-    ) -> Pool:
-        """Update a Pool's name and/or replica count.
-
-        You can update the display name, replica count, or both.
-        The template reference cannot be changed after creation.
-
-        Args:
-            name: Current pool name.
-            new_name: New display name (optional).
-            replicas: New number of replicas (0-100). Set to 0 to pause.
-
-        Returns:
-            Updated Pool.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            ValidationError: If template was deleted.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxQuotaExceededError: If quota exceeded when scaling up.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        payload: dict[str, Any] = {}
-        if new_name is not None:
-            payload["name"] = new_name
-        if replicas is not None:
-            payload["replicas"] = replicas
-
-        if not payload:
-            # Nothing to update, just return the current pool
-            return await self.get_pool(name, headers=headers)
-
-        try:
-            response = await self._http.patch(
-                url, json=payload, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="pool"
-                ) from e
-            handle_pool_error(e)
-            raise  # pragma: no cover
-
-    async def delete_pool(self, name: str, *, headers: RequestHeaders = None) -> None:
-        """Delete a Pool.
-
-        This will terminate all sandboxes in the pool.
-
-        Args:
-            name: Pool name.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            handle_client_http_error(e)
-
-    # ========================================================================
     # Sandbox Operations
     # ========================================================================
 
     async def sandbox(
         self,
-        template_name: Optional[str] = None,
+        snapshot_id: str,
         *,
-        snapshot_id: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         ttl_seconds: Optional[int] = None,
@@ -735,9 +160,6 @@ class AsyncSandboxClient:
         This is the primary method for creating sandboxes. Use it as an
         async context manager for automatic cleanup:
 
-            async with await client.sandbox(template_name="my-template") as sandbox:
-                result = await sandbox.run("echo hello")
-
             async with await client.sandbox(snapshot_id="<uuid>") as sandbox:
                 result = await sandbox.run("echo hello")
 
@@ -745,10 +167,7 @@ class AsyncSandboxClient:
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            template_name: Name of the SandboxTemplate to use.
-                Mutually exclusive with snapshot_id.
             snapshot_id: Snapshot ID to boot from.
-                Mutually exclusive with template_name.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
@@ -776,12 +195,10 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid or neither template_name
-                nor snapshot_id is provided.
+            ValueError: If TTL values are invalid.
         """
         sb = await self.create_sandbox(
-            template_name=template_name,
-            snapshot_id=snapshot_id,
+            snapshot_id,
             name=name,
             timeout=timeout,
             ttl_seconds=ttl_seconds,
@@ -797,9 +214,8 @@ class AsyncSandboxClient:
 
     async def create_sandbox(
         self,
-        template_name: Optional[str] = None,
+        snapshot_id: str,
         *,
-        snapshot_id: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
@@ -817,10 +233,7 @@ class AsyncSandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            template_name: Name of the SandboxTemplate to use.
-                Mutually exclusive with snapshot_id.
             snapshot_id: Snapshot ID to boot from.
-                Mutually exclusive with template_name.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -853,13 +266,10 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid or neither template_name
-                nor snapshot_id is provided.
+            ValueError: If TTL values are invalid.
         """
-        if not template_name and not snapshot_id:
-            raise ValueError("Either template_name or snapshot_id is required")
-        if template_name and snapshot_id:
-            raise ValueError("Cannot specify both template_name and snapshot_id")
+        if not snapshot_id:
+            raise ValueError("snapshot_id is required")
 
         validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
@@ -868,11 +278,8 @@ class AsyncSandboxClient:
 
         payload: dict[str, Any] = {
             "wait_for_ready": wait_for_ready,
+            "snapshot_id": snapshot_id,
         }
-        if template_name:
-            payload["template_name"] = template_name
-        if snapshot_id:
-            payload["snapshot_id"] = snapshot_id
         if wait_for_ready:
             payload["timeout"] = timeout
         if name:
@@ -1327,7 +734,6 @@ class AsyncSandboxClient:
         sandbox_name: str,
         name: str,
         *,
-        checkpoint: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1338,8 +744,6 @@ class AsyncSandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
-            checkpoint: Checkpoint timestamp to use. If omitted, creates a
-                fresh checkpoint from the running VM's current state.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -1354,8 +758,6 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
-        if checkpoint is not None:
-            payload["checkpoint"] = checkpoint
 
         try:
             response = await self._http.post(

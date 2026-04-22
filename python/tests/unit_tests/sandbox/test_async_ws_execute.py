@@ -593,7 +593,6 @@ class TestAsyncSandboxRunWs:
         return AsyncSandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
@@ -788,7 +787,6 @@ class TestAsyncSandboxReconnect:
         return AsyncSandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
