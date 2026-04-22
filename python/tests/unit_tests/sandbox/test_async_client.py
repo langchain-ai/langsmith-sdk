@@ -888,3 +888,25 @@ class TestService:
         assert svc._refresher is not None
         fresh = await svc._refresher()
         assert fresh._token == "token-2"
+
+
+class TestAsyncSandboxClientRepr:
+    """Tests for __repr__ method to ensure sensitive info is not exposed."""
+
+    async def test_repr_hides_api_key(self):
+        """Test that __repr__ does not expose API key."""
+        client = AsyncSandboxClient(
+            api_endpoint="https://api.smith.langchain.com/v2/sandboxes",
+            api_key="super-secret-api-key-12345",
+        )
+        repr_str = repr(client)
+        # Ensure API key is NOT in the repr
+        assert "super-secret-api-key-12345" not in repr_str
+        # Ensure the repr shows the API URL
+        assert "https://api.smith.langchain.com/v2/sandboxes" in repr_str
+        # Ensure it's properly formatted
+        assert (
+            repr_str
+            == "AsyncSandboxClient (API URL: https://api.smith.langchain.com/v2/sandboxes)"
+        )
+        await client.aclose()
