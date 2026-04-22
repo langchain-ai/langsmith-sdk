@@ -40,7 +40,6 @@ class AsyncSandbox:
 
     Attributes:
         name: Display name (can be updated).
-        template_name: Name of the template used to create this sandbox.
         dataplane_url: URL for data plane operations (file I/O, command execution).
             Only functional when status is "ready".
         id: Unique identifier (UUID). Remains constant even if name changes.
@@ -59,14 +58,15 @@ class AsyncSandbox:
         fs_capacity_bytes: Root filesystem capacity in bytes.
 
     Example:
-        async with await client.sandbox(template_name="python-sandbox") as sandbox:
+        async with await client.sandbox(
+            snapshot_id="<snapshot-uuid>"
+        ) as sandbox:
             result = await sandbox.run("python --version")
             print(result.stdout)
     """
 
     # Data fields (from API response)
     name: str
-    template_name: Optional[str] = None
     dataplane_url: Optional[str] = None
     id: Optional[str] = None
     status: str = "ready"
@@ -104,7 +104,6 @@ class AsyncSandbox:
         """
         return cls(
             name=data.get("name", ""),
-            template_name=data.get("template_name"),
             dataplane_url=data.get("dataplane_url"),
             id=data.get("id"),
             status=data.get("status", "ready"),
@@ -696,7 +695,6 @@ class AsyncSandbox:
         self,
         name: str,
         *,
-        checkpoint: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -704,8 +702,6 @@ class AsyncSandbox:
 
         Args:
             name: Snapshot name.
-            checkpoint: Checkpoint timestamp to use. If omitted, creates a
-                fresh checkpoint from the current state.
             timeout: Timeout in seconds when waiting for ready.
             headers: Optional per-request header overrides.
 
@@ -721,7 +717,6 @@ class AsyncSandbox:
         return await self._client.capture_snapshot(
             self.name,
             name,
-            checkpoint=checkpoint,
             timeout=timeout,
             headers=headers,
         )

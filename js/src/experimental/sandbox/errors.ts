@@ -142,7 +142,6 @@ export class LangSmithResourceNameConflictError extends LangSmithSandboxError {
  * - Resource values exceeding server-defined limits (CPU, memory, storage)
  * - Invalid resource units
  * - Invalid name formats
- * - Pool validation failures (e.g., template has volumes)
  */
 export class LangSmithValidationError extends LangSmithSandboxError {
   field?: string;
@@ -187,7 +186,7 @@ export class LangSmithQuotaExceededError extends LangSmithSandboxError {
  */
 export class LangSmithResourceCreationError extends LangSmithSandboxError {
   /**
-   * Type of resource that failed (e.g., "sandbox", "volume").
+   * Type of resource that failed (e.g., "sandbox", "snapshot").
    */
   resourceType?: string;
   /**

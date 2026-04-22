@@ -250,7 +250,6 @@ def mock_sandbox():
 
     sb = Sandbox(
         name="test",
-        template_name="t",
         dataplane_url="http://x",
         status="ready",
     )

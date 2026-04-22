@@ -568,7 +568,6 @@ class TestSandboxRunWs:
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
@@ -739,7 +738,6 @@ class TestSandboxReconnect:
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
