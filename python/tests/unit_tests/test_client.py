@@ -5593,3 +5593,20 @@ class TestWriteTraceToFallbackDir:
         for event in filtered:
             assert "kwargs" not in event
             assert event["name"] == "new_token"
+
+
+def test_client_repr_hides_sensitive_info() -> None:
+    """Test that __repr__ does not expose sensitive information like API keys."""
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="super-secret-api-key-12345",
+        auto_batch_tracing=False,
+    )
+
+    repr_str = repr(client)
+    # Ensure API key is NOT in the repr
+    assert "super-secret-api-key-12345" not in repr_str
+    # Ensure the repr shows the API URL
+    assert "https://api.smith.langchain.com" in repr_str
+    # Ensure it's properly formatted
+    assert repr_str == "Client (API URL: https://api.smith.langchain.com)"

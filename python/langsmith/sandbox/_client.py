@@ -134,6 +134,14 @@ class SandboxClient:
         """Exit context manager."""
         self.close()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the instance.
+
+        Returns:
+            The string representation of the instance.
+        """
+        return f"SandboxClient (API URL: {self._base_url})"
+
     # ========================================================================
     # Sandbox Operations
     # ========================================================================

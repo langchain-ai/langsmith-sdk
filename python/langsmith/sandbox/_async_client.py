@@ -137,6 +137,14 @@ class AsyncSandboxClient:
         """Exit async context manager."""
         await self.aclose()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the instance.
+
+        Returns:
+            The string representation of the instance.
+        """
+        return f"AsyncSandboxClient (API URL: {self._base_url})"
+
     # ========================================================================
     # Sandbox Operations
     # ========================================================================
