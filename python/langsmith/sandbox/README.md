@@ -592,8 +592,15 @@ snapshot = client.create_snapshot(
     fs_capacity_bytes=4 * 1024**3,  # 4 GB
 )
 
-# Create a sandbox from the snapshot
+# Create a sandbox from the snapshot (by ID)
 with client.sandbox(snapshot_id=snapshot.id) as sb:
+    result = sb.run("python --version")
+    print(result.stdout)
+
+# Or resolve by snapshot name — the server looks up the snapshot owned by
+# your tenant and boots from it. Exactly one of snapshot_id or snapshot_name
+# must be provided.
+with client.sandbox(snapshot_name="my-python-env") as sb:
     result = sb.run("python --version")
     print(result.stdout)
 ```
@@ -633,8 +640,16 @@ with client.sandbox(snapshot_id=snapshot.id) as sb:
 ### Snapshot CRUD
 
 ```python
-# List all snapshots
+# List snapshots (server paginates with a default page size of 50)
 snapshots = client.list_snapshots()
+
+# Filter and paginate — all three kwargs are optional and independent.
+# `limit` must be between 1 and 500 (inclusive); `offset` must be >= 0.
+snapshots = client.list_snapshots(
+    name_contains="python",  # case-insensitive substring match on name
+    limit=100,
+    offset=0,
+)
 
 # Get a snapshot by ID
 snapshot = client.get_snapshot("550e8400-...")
@@ -871,8 +886,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id, *, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). |
-| `create_sandbox(snapshot_id, *, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
@@ -885,7 +900,7 @@ except SandboxClientError as e:
 | `create_snapshot(name, docker_image, fs_capacity_bytes, *, timeout=60)` | Build a snapshot from a Docker image |
 | `capture_snapshot(sandbox_name, name, *, timeout=60)` | Capture a snapshot from a running sandbox |
 | `get_snapshot(snapshot_id)` | Get a snapshot by ID |
-| `list_snapshots()` | List all snapshots |
+| `list_snapshots(*, name_contains=None, limit=None, offset=None)` | List a page of snapshots (server paginates, default limit 50, max 500; `name_contains` is a case-insensitive substring match) |
 | `delete_snapshot(snapshot_id)` | Delete a snapshot |
 | `wait_for_snapshot(snapshot_id, *, timeout=300)` | Poll until snapshot is ready or failed |
 
