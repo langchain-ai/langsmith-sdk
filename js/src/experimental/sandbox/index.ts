@@ -49,6 +49,7 @@ export type {
   SandboxProxyConfig,
   CreateSnapshotOptions,
   CaptureSnapshotOptions,
+  ListSnapshotsOptions,
   WaitForSnapshotOptions,
   StartSandboxOptions,
   UpdateSandboxOptions,

@@ -9,6 +9,7 @@ import type {
   CaptureSnapshotOptions,
   CreateSandboxOptions,
   CreateSnapshotOptions,
+  ListSnapshotsOptions,
   ResourceStatus,
   SandboxClientConfig,
   SandboxData,
@@ -25,6 +26,7 @@ import {
   LangSmithResourceNotFoundError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxAPIError,
+  LangSmithValidationError,
 } from "./errors.js";
 import {
   handleClientHttpError,
@@ -189,13 +191,20 @@ export class SandboxClient {
    *
    * Remember to call `sandbox.delete()` when done to clean up resources.
    *
+   * Exactly one of `snapshotId` (positional) or `options.snapshotName` must
+   * be provided. When `snapshotName` is used, the server resolves it to a
+   * snapshot owned by the caller's tenant.
+   *
    * @param snapshotId - ID of the snapshot to boot from. Create one with
    *   `createSnapshot()` or `captureSnapshot()`, or pass an existing snapshot ID.
-   * @param options - Creation options.
+   *   Pass `undefined` when booting by name via `options.snapshotName`.
+   * @param options - Creation options. Use `options.snapshotName` to boot
+   *   by snapshot name instead of ID.
    * @returns Created Sandbox.
    * @throws ResourceTimeoutError if timeout waiting for sandbox to be ready.
    * @throws SandboxCreationError if sandbox creation fails.
-   * @throws LangSmithValidationError if TTL values are invalid.
+   * @throws LangSmithValidationError if TTL values are invalid, or if neither
+   *   (or both) of `snapshotId` / `options.snapshotName` are provided.
    *
    * @example
    * ```typescript
@@ -205,6 +214,10 @@ export class SandboxClient {
    *   1_073_741_824
    * );
    * const sandbox = await client.createSandbox(snapshot.id);
+   * // Or, resolve by snapshot name:
+   * const sandbox = await client.createSandbox(undefined, {
+   *   snapshotName: "python",
+   * });
    * try {
    *   const result = await sandbox.run("echo hello");
    *   console.log(result.stdout);
@@ -214,10 +227,11 @@ export class SandboxClient {
    * ```
    */
   async createSandbox(
-    snapshotId: string,
+    snapshotId?: string,
     options: CreateSandboxOptions = {}
   ): Promise<Sandbox> {
     const {
+      snapshotName,
       name,
       timeout = 30,
       waitForReady = true,
@@ -229,15 +243,27 @@ export class SandboxClient {
       proxyConfig,
     } = options;
 
+    if (!!snapshotId === !!snapshotName) {
+      throw new LangSmithValidationError(
+        "Exactly one of snapshotId or options.snapshotName must be set",
+        "snapshotId"
+      );
+    }
+
     validateTtl(ttlSeconds, "ttlSeconds");
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
 
     const url = `${this._baseUrl}/boxes`;
 
     const payload: Record<string, unknown> = {
-      snapshot_id: snapshotId,
       wait_for_ready: waitForReady,
     };
+    if (snapshotId) {
+      payload.snapshot_id = snapshotId;
+    }
+    if (snapshotName) {
+      payload.snapshot_name = snapshotName;
+    }
     if (waitForReady) {
       payload.timeout = timeout;
     }
@@ -669,14 +695,53 @@ export class SandboxClient {
   }
 
   /**
-   * List all snapshots.
+   * List snapshots, optionally filtered and paginated server-side.
    *
-   * @returns List of Snapshots.
+   * The backend always paginates this endpoint. When `limit` is omitted the
+   * server applies a default page size (currently 50), so a single call is
+   * not guaranteed to return every snapshot visible to the tenant. To iterate
+   * through all results, repeat the call with increasing `offset` values (or
+   * an explicit `limit`) until fewer than `limit` snapshots come back.
+   *
+   * @param options - Optional filter/pagination options.
+   *   - `nameContains`: case-insensitive substring match on snapshot name.
+   *   - `limit`: page size; must be between 1 and 500 (inclusive). Defaults
+   *     to 50 server-side when omitted.
+   *   - `offset`: number of snapshots to skip; must be `>= 0`.
+   *
+   *   Values outside those ranges are rejected by the server.
+   * @returns A single page of Snapshots matching the provided filters.
+   *
+   * @example
+   * ```typescript
+   * const firstPage = await client.listSnapshots();
+   * const page = await client.listSnapshots({
+   *   nameContains: "python",
+   *   limit: 100,
+   *   offset: 0,
+   * });
+   * ```
    */
-  async listSnapshots(): Promise<Snapshot[]> {
-    const url = `${this._baseUrl}/snapshots`;
+  async listSnapshots(options: ListSnapshotsOptions = {}): Promise<Snapshot[]> {
+    const { nameContains, limit, offset, signal } = options;
 
-    const response = await this._fetch(url);
+    const params = new URLSearchParams();
+    if (nameContains !== undefined) {
+      params.set("name_contains", nameContains);
+    }
+    if (limit !== undefined) {
+      params.set("limit", String(limit));
+    }
+    if (offset !== undefined) {
+      params.set("offset", String(offset));
+    }
+
+    const query = params.toString();
+    const url = query
+      ? `${this._baseUrl}/snapshots?${query}`
+      : `${this._baseUrl}/snapshots`;
+
+    const response = await this._fetch(url, { signal });
 
     if (!response.ok) {
       await handleClientHttpError(response);

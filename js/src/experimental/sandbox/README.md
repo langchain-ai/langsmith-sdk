@@ -388,8 +388,24 @@ console.log(captured.id, captured.source_sandbox_id);
 // Boot a new sandbox from the captured snapshot
 const resumed = await client.createSandbox(captured.id);
 
-// List / fetch / delete snapshots
-const snapshots = await client.listSnapshots();
+// Or resolve by snapshot name instead of ID — the server looks up the
+// snapshot owned by your tenant. Exactly one of the positional `snapshotId`
+// or `options.snapshotName` must be provided.
+const byName = await client.createSandbox(undefined, {
+  snapshotName: "with-data",
+});
+
+// List / fetch / delete snapshots. listSnapshots() accepts optional
+// server-side filters and pagination; when omitted the server applies a
+// default page size of 50, so calling it once will not necessarily return
+// every snapshot. `limit` must be between 1 and 500 and `offset` must be
+// >= 0.
+const firstPage = await client.listSnapshots();
+const firstPython = await client.listSnapshots({
+  nameContains: "python",
+  limit: 100,
+  offset: 0,
+});
 const loaded = await client.getSnapshot(snapshot.id);
 await client.deleteSnapshot(snapshot.id);
 ```
@@ -470,7 +486,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(snapshotId, options?)` | Create a sandbox from a snapshot |
+| `createSandbox(snapshotId?, options?)` | Create a sandbox from a snapshot. Exactly one of the positional `snapshotId` or `options.snapshotName` must be provided. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
 | `updateSandbox(name, options)` | Rename or adjust TTLs on a sandbox |
@@ -482,7 +498,7 @@ try {
 | `createSnapshot(name, dockerImage, fsCapacityBytes, options?)` | Build a snapshot from a Docker image |
 | `captureSnapshot(sandboxName, name, options?)` | Capture a snapshot from a running sandbox |
 | `getSnapshot(snapshotId)` | Get a snapshot by ID |
-| `listSnapshots()` | List all snapshots |
+| `listSnapshots(options?)` | List a page of snapshots with optional server-side filters and pagination (server paginates, default limit 50, max 500). |
 | `deleteSnapshot(snapshotId)` | Delete a snapshot |
 | `waitForSnapshot(snapshotId, options?)` | Poll until a snapshot becomes ready |
 
@@ -533,6 +549,7 @@ try {
 
 | Property | Description |
 |----------|-------------|
+| `snapshotName?` | Snapshot name to boot from. Mutually exclusive with the positional `snapshotId` argument on `createSandbox`; exactly one must be set. |
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
@@ -542,6 +559,15 @@ try {
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
+
+### ListSnapshotsOptions
+
+| Property | Description |
+|----------|-------------|
+| `nameContains?` | Case-insensitive substring filter applied server-side to snapshot names |
+| `limit?` | Page size; must be in `[1, 500]`. Server defaults to 50 when omitted |
+| `offset?` | Number of snapshots to skip before returning results (must be `>= 0`, pairs with `limit`) |
+| `signal?` | `AbortSignal` for cancellation |
 
 ### CreateSnapshotOptions
 
