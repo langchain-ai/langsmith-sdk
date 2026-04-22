@@ -1,0 +1,67 @@
+interactions:
+- request:
+    body: '{"contents": [{"parts": [{"text": "What is the weather like in Boston?
+      Call provided tools."}], "role": "user"}], "tools": [{"functionDeclarations":
+      [{"description": "Get the current weather in a given location", "name": "get_current_weather",
+      "parameters": {"properties": {"location": {"description": "The city and state,
+      e.g. San Francisco, CA", "type": "STRING"}}, "required": ["location"], "type":
+      "OBJECT"}}]}], "generationConfig": {}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '440'
+      Content-Type:
+      - application/json
+      Host:
+      - generativelanguage.googleapis.com
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"functionCall\": {\n              \"name\": \"get_current_weather\",\n
+        \             \"args\": {\n                \"location\": \"Boston, MA\"\n
+        \             }\n            },\n            \"thoughtSignature\": \"CoECAQw51seijqyQhSLMyePMQ0IpCqeB1Vl+FkYUu44Xuii2hwwraMUWnM/wbUiqICaGN4oY6YQcC9DKMV0HQad4tsJdBC0PzDOwrLnLlI0iN4nSVrnjcG791YiZQJCwNA0W173AOML8kz2HA8eY8sCduBot/UizYWiZdUPjX+9q6eOaQHGqe4rntRnbVTANdTSSiwPH3RvVSOOcsdJsP7hBympM667BGlykQdy3Ss6mOqhLfMqNn2LfW3Ad7iOPSIW3HHqCpadUyDmxWgfs70+3nOWUORXuzAVBIijZuKj/cn5e3cIR24am9bRTZzKeGTBkrZFHLQdoys0c5nl8c+o3/QU=\"\n
+        \         }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0,\n      \"finishMessage\": \"Model generated
+        function call(s).\"\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        67,\n    \"candidatesTokenCount\": 19,\n    \"totalTokenCount\": 140,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 67\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 54\n  },\n  \"modelVersion\":
+        \"gemini-2.5-flash\",\n  \"responseId\": \"0wzpabHiN8md_uMPipDU0Qk\"\n}\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Type:
+      - application/json; charset=UTF-8
+      Date:
+      - Wed, 22 Apr 2026 18:00:52 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=893
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Gemini-Service-Tier:
+      - standard
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '1134'
+    status:
+      code: 200
+      message: OK
+version: 1

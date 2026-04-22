@@ -1,0 +1,115 @@
+interactions:
+- request:
+    body: '{"contents": [{"parts": [{"text": "What is the weather in New York?"}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "You are an agent.
+      Your internal name is \"async_agent\".\n\n The description about you is \"Async
+      weather agent.\""}], "role": "user"}, "tools": [{"functionDeclarations": [{"description":
+      "Get weather for a city. Only supports New York.", "name": "get_weather", "parameters":
+      {"properties": {"city": {"type": "STRING"}}, "required": ["city"], "type": "OBJECT"}}]}],
+      "generationConfig": {}}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"functionCall\": {\n              \"name\": \"get_weather\",\n
+        \             \"args\": {\n                \"city\": \"New York\"\n              }\n
+        \           },\n            \"thoughtSignature\": \"CokCAQw51sdTEe46z+6chB5eFOlyc6NSvx9pDuIIfMhT5oQuTU8p2PoY3goCEOFn5z08DQxSsfVkCwBOgOykU1Kp8AybkhuFsW8Hj3Tr9gtsB8e4O2siLfWrUjvgodsn/7uCaFyYA8DnBagBwJ27DMgUH6UWwXKxJpW21dWNUA8n05Bd1oHWzHHi/kPGXNSTBzUGw10K6OKsRBmdIHB7R7ltwEG7/OFmseWhrzS4cF+VktzO8cCFX4Bu6NPOhxhsbVo/higiTb8+RkyGDcGNHAALGLTatV8a8XlDo9uiK9s2Wfp+E7NwNsuyHQeYVTlqjHUp3hr+ZOJfdin+YQjK/NLZ9oNfTBrzBncSZw==\"\n
+        \         }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0,\n      \"finishMessage\": \"Model generated
+        function call(s).\"\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        78,\n    \"candidatesTokenCount\": 16,\n    \"totalTokenCount\": 147,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 78\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 53\n  },\n  \"modelVersion\":
+        \"gemini-2.5-flash\",\n  \"responseId\": \"AA3pabHJIaPQ_uMPh6rxiQI\"\n}\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Type:
+      - application/json; charset=UTF-8
+      Date:
+      - Wed, 22 Apr 2026 18:01:37 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=1010
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Gemini-Service-Tier:
+      - standard
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '1132'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "What is the weather in New York?"}],
+      "role": "user"}, {"parts": [{"functionCall": {"args": {"city": "New York"},
+      "name": "get_weather"}, "thoughtSignature": "CokCAQw51sdTEe46z-6chB5eFOlyc6NSvx9pDuIIfMhT5oQuTU8p2PoY3goCEOFn5z08DQxSsfVkCwBOgOykU1Kp8AybkhuFsW8Hj3Tr9gtsB8e4O2siLfWrUjvgodsn_7uCaFyYA8DnBagBwJ27DMgUH6UWwXKxJpW21dWNUA8n05Bd1oHWzHHi_kPGXNSTBzUGw10K6OKsRBmdIHB7R7ltwEG7_OFmseWhrzS4cF-VktzO8cCFX4Bu6NPOhxhsbVo_higiTb8-RkyGDcGNHAALGLTatV8a8XlDo9uiK9s2Wfp-E7NwNsuyHQeYVTlqjHUp3hr-ZOJfdin-YQjK_NLZ9oNfTBrzBncSZw=="}],
+      "role": "model"}, {"parts": [{"functionResponse": {"name": "get_weather", "response":
+      {"status": "success", "report": "Sunny, 25C in New York."}}}], "role": "user"}],
+      "systemInstruction": {"parts": [{"text": "You are an agent. Your internal name
+      is \"async_agent\".\n\n The description about you is \"Async weather agent.\""}],
+      "role": "user"}, "tools": [{"functionDeclarations": [{"description": "Get weather
+      for a city. Only supports New York.", "name": "get_weather", "parameters": {"properties":
+      {"city": {"type": "STRING"}}, "required": ["city"], "type": "OBJECT"}}]}], "generationConfig":
+      {}}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"The weather in New York is Sunny,
+        25C.\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        123,\n    \"candidatesTokenCount\": 13,\n    \"totalTokenCount\": 136,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 123\n
+        \     }\n    ]\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\":
+        \"AQ3paerZIOGR_uMPrpiCsAs\"\n}\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Type:
+      - application/json; charset=UTF-8
+      Date:
+      - Wed, 22 Apr 2026 18:01:38 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=541
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Gemini-Service-Tier:
+      - standard
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '553'
+    status:
+      code: 200
+      message: OK
+version: 1
