@@ -65,6 +65,10 @@
     "wrappers/gemini.js",
     "wrappers/gemini.d.ts",
     "wrappers/gemini.d.cts",
+    "wrappers/openai_agents.cjs",
+    "wrappers/openai_agents.js",
+    "wrappers/openai_agents.d.ts",
+    "wrappers/openai_agents.d.cts",
     "singletons/traceable.cjs",
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
@@ -162,6 +166,7 @@
     "@langchain/core": "^0.3.72",
     "@langchain/langgraph": "^0.3.6",
     "@langchain/openai": "^0.5.16",
+    "@openai/agents": "^0.8.3",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.73.0",
     "@opentelemetry/context-async-hooks": "^2.6.1",
@@ -199,7 +204,7 @@
     "typescript": "^5.4.5",
     "vitest": "^3.1.3",
     "ws": "^8.19.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "@opentelemetry/api": "*",
@@ -375,6 +380,15 @@
       },
       "import": "./wrappers/gemini.js",
       "require": "./wrappers/gemini.cjs"
+    },
+    "./wrappers/openai_agents": {
+      "types": {
+        "import": "./wrappers/openai_agents.d.ts",
+        "require": "./wrappers/openai_agents.d.cts",
+        "default": "./wrappers/openai_agents.d.ts"
+      },
+      "import": "./wrappers/openai_agents.js",
+      "require": "./wrappers/openai_agents.cjs"
     },
     "./singletons/traceable": {
       "types": {

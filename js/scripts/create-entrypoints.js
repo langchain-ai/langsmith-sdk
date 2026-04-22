@@ -22,6 +22,7 @@ const entrypoints = {
   "wrappers/anthropic": "wrappers/anthropic",
   "wrappers/openai": "wrappers/openai",
   "wrappers/gemini": "wrappers/gemini",
+  "wrappers/openai_agents": "wrappers/openai_agents",
   "singletons/traceable": "singletons/traceable",
   "utils/jestlike": "utils/jestlike/index",
   "experimental/otel/setup": "experimental/otel/setup",
