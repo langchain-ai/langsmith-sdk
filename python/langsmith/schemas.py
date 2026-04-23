@@ -1163,10 +1163,6 @@ Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator=
 class AgentContext(BaseModel):
     """An agent pulled from hub."""
 
-    owner: str
-    """The handle of the owner."""
-    repo: str
-    """The name of the repo."""
     commit_id: UUID
     """The commit ID."""
     commit_hash: str
@@ -1178,10 +1174,6 @@ class AgentContext(BaseModel):
 class SkillContext(BaseModel):
     """A skill pulled from hub."""
 
-    owner: str
-    """The handle of the owner."""
-    repo: str
-    """The name of the repo."""
     commit_id: UUID
     """The commit ID."""
     commit_hash: str
