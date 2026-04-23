@@ -27,7 +27,7 @@ from langsmith._internal._hub import (
     HUB,
     PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
-    build_context_url,
+    build_commit_url,
     validate_parent_commit,
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
@@ -2249,7 +2249,7 @@ class AsyncClient:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return build_context_url(self._host_url, owner, name, commit_hash)
+        return build_commit_url(self._host_url, owner, name, commit_hash)
 
     async def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""

@@ -12,8 +12,8 @@ PLATFORM_HUB = "/v1/platform/hub/repos"
 HUB = "/repos"
 
 
-def build_context_url(host: str, owner: str, name: str, commit_hash: str) -> str:
-    """Build a URL for a pushed hub context commit."""
+def build_commit_url(host: str, owner: str, name: str, commit_hash: str) -> str:
+    """Build the URL for a hub directory commit."""
     return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
 
 
