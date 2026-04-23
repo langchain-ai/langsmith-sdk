@@ -1,4 +1,4 @@
-"""Context class for non-prompt Hub repos (agents, skills)."""
+"""HubClient class for non-prompt Hub repos (agents, skills)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _build_context_url(host: str, owner: str, name: str, commit_hash: str) -> st
     return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
 
 
-class Context:
+class HubClient:
     """Hub operations for non-prompt repos (agents, skills)."""
 
     def __init__(self, client: Client) -> None:
@@ -453,7 +453,7 @@ class Context:
             )
 
 
-class AsyncContext:
+class AsyncHubClient:
     """Async Hub operations for non-prompt repos (agents, skills)."""
 
     def __init__(self, client: AsyncClient) -> None:

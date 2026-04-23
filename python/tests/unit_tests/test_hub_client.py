@@ -1,4 +1,4 @@
-"""Test the Context and AsyncContext classes for Hub non-prompt repos."""
+"""Test the HubClient and AsyncHubClient classes for Hub non-prompt repos."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock
@@ -8,7 +8,7 @@ import pytest
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.context import AsyncContext, Context
+from langsmith.hub_client import AsyncHubClient, HubClient
 
 TOOLS_JSON = json.dumps(
     {
@@ -75,7 +75,7 @@ def test_agent_entry_exclude_none_strips_response_only_fields() -> None:
 
 
 def test_push_agent_rejects_short_parent_commit() -> None:
-    ctx = Context(_mock_sync_client())
+    ctx = HubClient(_mock_sync_client())
     with pytest.raises(ls_utils.LangSmithUserError, match="8-64"):
         ctx.push_agent("-/repo", files={}, parent_commit="abc")
 
@@ -85,7 +85,7 @@ def test_push_agent_rejects_invalid_handle_on_create() -> None:
     client.request_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
         "not found"
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     with pytest.raises(ls_utils.LangSmithUserError, match="Invalid repo_handle"):
         ctx.push_agent(
             "-/BadName",
@@ -105,7 +105,7 @@ def test_push_agent_rejects_invalid_handle_on_create() -> None:
     ],
 )
 def test_repo_handle_pattern(handle: str, valid: bool) -> None:
-    from langsmith.context import _REPO_HANDLE_PATTERN
+    from langsmith.hub_client import _REPO_HANDLE_PATTERN
 
     assert bool(_REPO_HANDLE_PATTERN.match(handle)) is valid
 
@@ -119,7 +119,7 @@ def test_pull_agent_hits_correct_url_and_parses() -> None:
             "files": {"main.py": {"type": "file", "content": "print('hi')"}},
         }
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     agent = ctx.pull_agent("owner/my-agent")
     call = client.request_with_retries.call_args
     assert call.args == ("GET", "/v1/platform/hub/repos/owner/my-agent/directories")
@@ -140,7 +140,7 @@ def test_pull_skill_returns_skill_context() -> None:
             "files": {},
         }
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     assert isinstance(ctx.pull_skill("o/s"), ls_schemas.SkillContext)
 
 
@@ -153,7 +153,7 @@ def test_pull_agent_with_version_passes_commit_param() -> None:
             "files": {},
         }
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.pull_agent("owner/repo", version="abc12345")
     assert client.request_with_retries.call_args.kwargs["params"] == {
         "commit": "abc12345"
@@ -174,7 +174,7 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
             }
         ),
     ]
-    ctx = Context(client)
+    ctx = HubClient(client)
     url = ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
@@ -210,7 +210,7 @@ def test_push_agent_updates_metadata_when_repo_exists() -> None:
             }
         ),
     ]
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.push_agent(
         "-/my-agent",
         files={"main.py": ls_schemas.FileEntry(content="x")},
@@ -235,7 +235,7 @@ def test_push_agent_null_entry_serializes_as_delete() -> None:
             }
         ),
     ]
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.push_agent(
         "-/my-agent",
         files={
@@ -262,7 +262,7 @@ def test_push_agent_accepts_tools_json_as_normal_file_entry() -> None:
             }
         ),
     ]
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.push_agent(
         "-/my-agent",
         files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
@@ -286,7 +286,7 @@ def test_push_agent_passes_parent_commit_when_provided() -> None:
             }
         ),
     ]
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.push_agent(
         "-/my-agent",
         files={"main.py": ls_schemas.FileEntry(content="x")},
@@ -299,7 +299,7 @@ def test_push_agent_passes_parent_commit_when_provided() -> None:
 def test_delete_agent_hits_directories_delete() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({})
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.delete_agent("-/old-agent")
     call = client.request_with_retries.call_args
     assert call.args == (
@@ -311,7 +311,7 @@ def test_delete_agent_hits_directories_delete() -> None:
 def test_agent_exists_returns_true_on_200() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({})
-    ctx = Context(client)
+    ctx = HubClient(client)
     assert ctx.agent_exists("-/my-agent") is True
 
 
@@ -320,14 +320,14 @@ def test_agent_exists_returns_false_on_not_found() -> None:
     client.request_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
         "not found"
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     assert ctx.agent_exists("-/nope") is False
 
 
 def test_skill_exists_returns_true_on_200() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({})
-    ctx = Context(client)
+    ctx = HubClient(client)
     assert ctx.skill_exists("-/my-skill") is True
 
 
@@ -336,14 +336,14 @@ def test_skill_exists_returns_false_on_not_found() -> None:
     client.request_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
         "not found"
     )
-    ctx = Context(client)
+    ctx = HubClient(client)
     assert ctx.skill_exists("-/nope") is False
 
 
 def test_list_agents_passes_repo_type_filter() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({"repos": [], "total": 0})
-    ctx = Context(client)
+    ctx = HubClient(client)
     ctx.list_agents(limit=50, is_public=True, query="foo")
     call = client.request_with_retries.call_args
     assert call.args == ("GET", "/repos")
@@ -364,7 +364,7 @@ async def test_async_pull_agent_parses_and_merges_identifier() -> None:
             "files": {"main.py": {"type": "file", "content": "hi"}},
         }
     )
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     agent = await ctx.pull_agent("owner/my-agent")
     assert isinstance(agent, ls_schemas.AgentContext)
     assert agent.owner == "owner"
@@ -390,7 +390,7 @@ async def test_async_push_agent_creates_and_commits() -> None:
             }
         ),
     ]
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
@@ -412,7 +412,7 @@ async def test_async_push_agent_accepts_tools_json_as_normal_file_entry() -> Non
             }
         ),
     ]
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     await ctx.push_agent(
         "-/my-agent",
         files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
@@ -437,7 +437,7 @@ async def test_async_create_repo_swallows_conflict() -> None:
             }
         ),
     ]
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
@@ -448,7 +448,7 @@ async def test_async_create_repo_swallows_conflict() -> None:
 async def test_async_delete_agent_hits_directories_delete() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.return_value = _response({})
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     await ctx.delete_agent("-/old-agent")
     client._arequest_with_retries.assert_awaited_once_with(
         "DELETE",
@@ -459,7 +459,7 @@ async def test_async_delete_agent_hits_directories_delete() -> None:
 async def test_async_agent_exists_returns_true_on_200() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.return_value = _response({})
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     assert await ctx.agent_exists("-/my-agent") is True
 
 
@@ -468,14 +468,14 @@ async def test_async_agent_exists_returns_false_on_not_found() -> None:
     client._arequest_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
         "not found"
     )
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     assert await ctx.agent_exists("-/nope") is False
 
 
 async def test_async_skill_exists_returns_true_on_200() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.return_value = _response({})
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     assert await ctx.skill_exists("-/my-skill") is True
 
 
@@ -484,14 +484,14 @@ async def test_async_skill_exists_returns_false_on_not_found() -> None:
     client._arequest_with_retries.side_effect = ls_utils.LangSmithNotFoundError(
         "not found"
     )
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     assert await ctx.skill_exists("-/nope") is False
 
 
 async def test_async_list_skills_passes_filter() -> None:
     client = _mock_async_client()
     client._arequest_with_retries.return_value = _response({"repos": [], "total": 0})
-    ctx = AsyncContext(client)
+    ctx = AsyncHubClient(client)
     await ctx.list_skills(limit=25)
     call = client._arequest_with_retries.call_args
     assert call.args == ("GET", "/repos")

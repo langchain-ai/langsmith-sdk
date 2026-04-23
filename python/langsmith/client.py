@@ -9217,9 +9217,9 @@ class Client:
         Returns:
             AgentContext: The agent snapshot.
         """
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).pull_agent(identifier, version=version)
+        return HubClient(self).pull_agent(identifier, version=version)
 
     def push_agent(
         self,
@@ -9233,9 +9233,9 @@ class Client:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push an agent to Hub, creating the repo if it does not exist."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).push_agent(
+        return HubClient(self).push_agent(
             identifier,
             files=files,
             parent_commit=parent_commit,
@@ -9252,9 +9252,9 @@ class Client:
         version: Optional[str] = None,
     ) -> ls_schemas.SkillContext:
         """Pull a skill from Hub."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).pull_skill(identifier, version=version)
+        return HubClient(self).pull_skill(identifier, version=version)
 
     def push_skill(
         self,
@@ -9268,9 +9268,9 @@ class Client:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push a skill to Hub."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).push_skill(
+        return HubClient(self).push_skill(
             identifier,
             files=files,
             parent_commit=parent_commit,
@@ -9282,27 +9282,27 @@ class Client:
 
     def delete_agent(self, identifier: str) -> None:
         """Delete an agent and its owned child file repos."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        Context(self).delete_agent(identifier)
+        HubClient(self).delete_agent(identifier)
 
     def delete_skill(self, identifier: str) -> None:
         """Delete a skill and its owned child file repos."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        Context(self).delete_skill(identifier)
+        HubClient(self).delete_skill(identifier)
 
     def agent_exists(self, identifier: str) -> bool:
         """Check if an agent repo exists."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).agent_exists(identifier)
+        return HubClient(self).agent_exists(identifier)
 
     def skill_exists(self, identifier: str) -> bool:
         """Check if a skill repo exists."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).skill_exists(identifier)
+        return HubClient(self).skill_exists(identifier)
 
     def list_agents(
         self,
@@ -9314,9 +9314,9 @@ class Client:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List agents with pagination."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).list_agents(
+        return HubClient(self).list_agents(
             limit=limit,
             offset=offset,
             is_public=is_public,
@@ -9334,9 +9334,9 @@ class Client:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List skills with pagination."""
-        from langsmith.context import Context  # noqa: PLC0415
+        from langsmith.hub_client import HubClient
 
-        return Context(self).list_skills(
+        return HubClient(self).list_skills(
             limit=limit,
             offset=offset,
             is_public=is_public,

@@ -2044,9 +2044,9 @@ class AsyncClient:
         Returns:
             AgentContext: The agent snapshot.
         """
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).pull_agent(identifier, version=version)
+        return await AsyncHubClient(self).pull_agent(identifier, version=version)
 
     async def push_agent(
         self,
@@ -2060,9 +2060,9 @@ class AsyncClient:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push an agent to Hub, creating the repo if it does not exist."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).push_agent(
+        return await AsyncHubClient(self).push_agent(
             identifier,
             files=files,
             parent_commit=parent_commit,
@@ -2079,9 +2079,9 @@ class AsyncClient:
         version: Optional[str] = None,
     ) -> ls_schemas.SkillContext:
         """Pull a skill from Hub."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).pull_skill(identifier, version=version)
+        return await AsyncHubClient(self).pull_skill(identifier, version=version)
 
     async def push_skill(
         self,
@@ -2095,9 +2095,9 @@ class AsyncClient:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push a skill to Hub."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).push_skill(
+        return await AsyncHubClient(self).push_skill(
             identifier,
             files=files,
             parent_commit=parent_commit,
@@ -2109,27 +2109,27 @@ class AsyncClient:
 
     async def delete_agent(self, identifier: str) -> None:
         """Delete an agent and its owned child file repos."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        await AsyncContext(self).delete_agent(identifier)
+        await AsyncHubClient(self).delete_agent(identifier)
 
     async def delete_skill(self, identifier: str) -> None:
         """Delete a skill and its owned child file repos."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        await AsyncContext(self).delete_skill(identifier)
+        await AsyncHubClient(self).delete_skill(identifier)
 
     async def agent_exists(self, identifier: str) -> bool:
         """Check if an agent repo exists."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).agent_exists(identifier)
+        return await AsyncHubClient(self).agent_exists(identifier)
 
     async def skill_exists(self, identifier: str) -> bool:
         """Check if a skill repo exists."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).skill_exists(identifier)
+        return await AsyncHubClient(self).skill_exists(identifier)
 
     async def list_agents(
         self,
@@ -2141,9 +2141,9 @@ class AsyncClient:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List agents with pagination."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).list_agents(
+        return await AsyncHubClient(self).list_agents(
             limit=limit,
             offset=offset,
             is_public=is_public,
@@ -2161,9 +2161,9 @@ class AsyncClient:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List skills with pagination."""
-        from langsmith.context import AsyncContext  # noqa: PLC0415
+        from langsmith.hub_client import AsyncHubClient
 
-        return await AsyncContext(self).list_skills(
+        return await AsyncHubClient(self).list_skills(
             limit=limit,
             offset=offset,
             is_public=is_public,
