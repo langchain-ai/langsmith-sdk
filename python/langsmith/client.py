@@ -27,7 +27,6 @@ import json
 import logging
 import os
 import random
-import re
 import threading
 import time
 import traceback
@@ -83,6 +82,13 @@ from langsmith._internal._constants import (
     _BOUNDARY,
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
+)
+from langsmith._internal._hub import (
+    HUB,
+    PLATFORM_HUB,
+    REPO_HANDLE_PATTERN,
+    build_context_url,
+    validate_parent_commit,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
@@ -223,19 +229,6 @@ EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
-
-# Hub non-prompt repos (agents, skills): constants + helpers shared by the
-# sync `Client.pull_agent` / `push_agent` / etc. methods and their async
-# counterparts on `AsyncClient` (which import these from this module).
-_REPO_HANDLE_PATTERN = re.compile(r"^[a-z][a-z0-9-_]*$")
-_PLATFORM_HUB = "/v1/platform/hub/repos"
-_HUB = "/repos"
-
-
-def _build_context_url(host: str, owner: str, name: str, commit_hash: str) -> str:
-    """Build a URL for a pushed hub context commit."""
-    return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
-
 
 _fallback_dirs_created: set[str] = set()
 
@@ -9363,7 +9356,7 @@ class Client:
             params["commit"] = target
         response = self.request_with_retries(
             "GET",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
             params=params,
         )
         return response.json()
@@ -9381,8 +9374,7 @@ class Client:
         is_public: Optional[bool],
     ) -> str:
         """Create a hub directory commit, creating the repo if it does not exist."""
-        if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
-            raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
+        validate_parent_commit(parent_commit)
 
         owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not self._current_tenant_is_owner(owner):
@@ -9399,10 +9391,10 @@ class Client:
                     is_public=is_public,
                 )
         else:
-            if not _REPO_HANDLE_PATTERN.match(name):
+            if not REPO_HANDLE_PATTERN.match(name):
                 raise ls_utils.LangSmithUserError(
                     f"Invalid repo_handle {name!r}: "
-                    f"must match {_REPO_HANDLE_PATTERN.pattern}."
+                    f"must match {REPO_HANDLE_PATTERN.pattern}."
                 )
             self._create_hub_repo(
                 name,
@@ -9426,11 +9418,11 @@ class Client:
 
         response = self.request_with_retries(
             "POST",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return _build_context_url(self._host_url, owner, name, commit_hash)
+        return build_context_url(self._host_url, owner, name, commit_hash)
 
     def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""
@@ -9439,7 +9431,7 @@ class Client:
             raise self._owner_conflict_error("delete", owner)
         self.request_with_retries(
             "DELETE",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
         )
 
     def _list_hub_repos(
@@ -9468,13 +9460,13 @@ class Client:
         if query:
             params["query"] = query
             params["match_prefix"] = "true"
-        response = self.request_with_retries("GET", _HUB, params=params)
+        response = self.request_with_retries("GET", HUB, params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
     def _hub_repo_exists(self, owner: str, name: str) -> bool:
         """Check if a hub repo exists."""
         try:
-            self.request_with_retries("GET", f"{_HUB}/{owner}/{name}")
+            self.request_with_retries("GET", f"{HUB}/{owner}/{name}")
             return True
         except ls_utils.LangSmithNotFoundError:
             return False
@@ -9527,7 +9519,7 @@ class Client:
         if is_public is not None:
             body["is_public"] = is_public
         if body:
-            self.request_with_retries("PATCH", f"{_HUB}/{owner}/{name}", json=body)
+            self.request_with_retries("PATCH", f"{HUB}/{owner}/{name}", json=body)
 
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""

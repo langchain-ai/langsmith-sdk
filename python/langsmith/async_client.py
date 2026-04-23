@@ -23,11 +23,12 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.client import (
-    _HUB,
-    _PLATFORM_HUB,
-    _REPO_HANDLE_PATTERN,
-    _build_context_url,
+from langsmith._internal._hub import (
+    HUB,
+    PLATFORM_HUB,
+    REPO_HANDLE_PATTERN,
+    build_context_url,
+    validate_parent_commit,
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
@@ -2182,7 +2183,7 @@ class AsyncClient:
             params["commit"] = target
         response = await self._arequest_with_retries(
             "GET",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
             params=params,
         )
         return response.json()
@@ -2200,8 +2201,7 @@ class AsyncClient:
         is_public: Optional[bool],
     ) -> str:
         """Create a hub directory commit, creating the repo if it does not exist."""
-        if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
-            raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
+        validate_parent_commit(parent_commit)
 
         owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         if not (await self._current_tenant_is_owner(owner)):
@@ -2218,10 +2218,10 @@ class AsyncClient:
                     is_public=is_public,
                 )
         else:
-            if not _REPO_HANDLE_PATTERN.match(name):
+            if not REPO_HANDLE_PATTERN.match(name):
                 raise ls_utils.LangSmithUserError(
                     f"Invalid repo_handle {name!r}: "
-                    f"must match {_REPO_HANDLE_PATTERN.pattern}."
+                    f"must match {REPO_HANDLE_PATTERN.pattern}."
                 )
             await self._create_hub_repo(
                 name,
@@ -2245,11 +2245,11 @@ class AsyncClient:
 
         response = await self._arequest_with_retries(
             "POST",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return _build_context_url(self._host_url, owner, name, commit_hash)
+        return build_context_url(self._host_url, owner, name, commit_hash)
 
     async def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""
@@ -2258,7 +2258,7 @@ class AsyncClient:
             raise (await self._owner_conflict_error("delete", owner))
         await self._arequest_with_retries(
             "DELETE",
-            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
         )
 
     async def _list_hub_repos(
@@ -2287,13 +2287,13 @@ class AsyncClient:
         if query:
             params["query"] = query
             params["match_prefix"] = "true"
-        response = await self._arequest_with_retries("GET", _HUB, params=params)
+        response = await self._arequest_with_retries("GET", HUB, params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
     async def _hub_repo_exists(self, owner: str, name: str) -> bool:
         """Check if a hub repo exists."""
         try:
-            await self._arequest_with_retries("GET", f"{_HUB}/{owner}/{name}")
+            await self._arequest_with_retries("GET", f"{HUB}/{owner}/{name}")
             return True
         except ls_utils.LangSmithNotFoundError:
             return False
@@ -2347,7 +2347,7 @@ class AsyncClient:
             body["is_public"] = is_public
         if body:
             await self._arequest_with_retries(
-                "PATCH", f"{_HUB}/{owner}/{name}", json=body
+                "PATCH", f"{HUB}/{owner}/{name}", json=body
             )
 
 

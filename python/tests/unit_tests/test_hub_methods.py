@@ -133,9 +133,9 @@ def test_push_agent_rejects_invalid_handle_on_create() -> None:
     ],
 )
 def test_repo_handle_pattern(handle: str, valid: bool) -> None:
-    from langsmith.client import _REPO_HANDLE_PATTERN
+    from langsmith._internal._hub import REPO_HANDLE_PATTERN
 
-    assert bool(_REPO_HANDLE_PATTERN.match(handle)) is valid
+    assert bool(REPO_HANDLE_PATTERN.match(handle)) is valid
 
 
 def test_pull_agent_hits_correct_url_and_parses() -> None:
