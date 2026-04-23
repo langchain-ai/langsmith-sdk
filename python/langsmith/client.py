@@ -9300,12 +9300,12 @@ class Client:
 
     def agent_exists(self, identifier: str) -> bool:
         """Check if an agent repo exists."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         return self._hub_repo_exists(owner, name)
 
     def skill_exists(self, identifier: str) -> bool:
         """Check if a skill repo exists."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         return self._hub_repo_exists(owner, name)
 
     def list_agents(

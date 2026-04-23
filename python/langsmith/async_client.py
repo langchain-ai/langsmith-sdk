@@ -2119,12 +2119,12 @@ class AsyncClient:
 
     async def agent_exists(self, identifier: str) -> bool:
         """Check if an agent repo exists."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         return await self._hub_repo_exists(owner, name)
 
     async def skill_exists(self, identifier: str) -> bool:
         """Check if a skill repo exists."""
-        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
         return await self._hub_repo_exists(owner, name)
 
     async def list_agents(
