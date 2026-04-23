@@ -2259,6 +2259,25 @@ class TestResolveTracingMode:
             warnings.simplefilter("error")
             assert _resolve_tracing_mode(None) == "otel"
 
+    def test_otel_enabled_true_maps_to_hybrid(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_otel_enabled_true_with_otel_only_envvar(self):
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "otel"
+
+    def test_otel_enabled_false_maps_to_langsmith(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=False) == "langsmith"
+
+    def test_tracing_mode_takes_precedence_over_otel_enabled(self):
+        result = _resolve_tracing_mode("otel", otel_enabled=True)
+        assert result == "otel"
+
 
 def _make_mock_otel():
     """Build a mock return value for _import_otel that satisfies Client.__init__."""

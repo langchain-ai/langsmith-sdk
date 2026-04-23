@@ -155,11 +155,16 @@ _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 
 def _resolve_tracing_mode(
     tracing_mode: Optional[TracingMode],
+    *,
+    otel_enabled: Optional[bool] = None,
 ) -> TracingMode:
     """Resolve the effective tracing mode from the constructor arg and env vars.
 
-    Priority: explicit argument > ``LANGSMITH_TRACING_MODE`` env var >
-    legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars > default ``"langsmith"``.
+    Priority: explicit ``tracing_mode`` argument >
+    deprecated ``otel_enabled`` argument >
+    ``LANGSMITH_TRACING_MODE`` env var >
+    legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars >
+    default ``"langsmith"``.
     """
     mode_envvar_name = "TRACING_MODE"
     otel_enabled_envvar_name = "OTEL_ENABLED"
@@ -175,6 +180,20 @@ def _resolve_tracing_mode(
                 f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
             )
         return tracing_mode  # type: ignore[return-value]
+
+    if otel_enabled is not None:
+        warnings.warn(
+            "The 'otel_enabled' parameter is deprecated and will be removed "
+            "in the next minor version. Use 'tracing_mode' instead, e.g. "
+            'Client(tracing_mode="hybrid") or Client(tracing_mode="otel").',
+            FutureWarning,
+            stacklevel=3,
+        )
+        if otel_enabled:
+            if ls_utils.is_env_var_truish(otel_only_envvar_name):
+                return "otel"
+            return "hybrid"
+        return "langsmith"
 
     if env_mode is not None:
         env_mode = env_mode.lower()
@@ -822,6 +841,7 @@ class Client:
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
         tracing_mode: Optional[TracingMode] = None,
+        otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
@@ -924,6 +944,11 @@ class Client:
                 Falls back to the ``LANGSMITH_TRACING_MODE`` env var, then to
                 the legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars, then to
                 ``"langsmith"``.
+            otel_enabled: *Deprecated.* Use ``tracing_mode`` instead.
+
+                When ``True``, interpreted as ``tracing_mode="hybrid"``
+                (or ``"otel"`` if the ``OTEL_ONLY`` env var is set).
+                Will be removed in the next minor version.
             tracing_sampling_rate: The sampling rate for tracing.
 
                 If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment
@@ -1015,7 +1040,7 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
-        resolved_mode = _resolve_tracing_mode(tracing_mode)
+        resolved_mode = _resolve_tracing_mode(tracing_mode, otel_enabled=otel_enabled)
         self._tracing_mode: TracingMode = resolved_mode
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
