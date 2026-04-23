@@ -75,7 +75,7 @@ import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { parseHubIdentifier, parsePromptIdentifier } from "./utils/prompts.js";
+import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
   isLangSmithNotFoundError,
@@ -5382,7 +5382,7 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     like: boolean
   ): Promise<LikePromptResponse> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const body = JSON.stringify({ like: like });
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
@@ -5406,7 +5406,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
     const [owner, promptName, commitHash] =
-      parsePromptIdentifier(promptIdentifier);
+      parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       if (commitHash !== "latest") {
         return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(
@@ -5513,7 +5513,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async *listCommits(
     promptIdentifier: string
   ): AsyncIterableIterator<PromptCommit> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     for await (const commits of this._getPaginated<
       PromptCommit,
       ListCommitsResponse
@@ -5597,7 +5597,7 @@ export class Client implements LangSmithTracingClientInterface {
    * ```
    */
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/repos/${owner}/${promptName}`,
@@ -5669,7 +5669,7 @@ export class Client implements LangSmithTracingClientInterface {
       );
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("create a prompt", owner);
     }
@@ -5739,7 +5739,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const resolvedParentCommitHash =
       options?.parentCommitHash === "latest" || !options?.parentCommitHash
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
@@ -6031,7 +6031,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName] = parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("update a prompt", owner);
     }
@@ -6077,7 +6077,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
 
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("delete a prompt", owner);
@@ -6119,7 +6119,7 @@ export class Client implements LangSmithTracingClientInterface {
     options?: { includeModel?: boolean }
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
-      parsePromptIdentifier(promptIdentifier);
+      parseHubIdentifier(promptIdentifier);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
