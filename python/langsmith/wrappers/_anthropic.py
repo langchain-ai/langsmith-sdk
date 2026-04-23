@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import warnings
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
@@ -146,7 +147,16 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
 
 def _message_to_outputs(message: Any) -> dict:
     """Convert an Anthropic Message to a flat outputs dict with usage_metadata."""
-    outputs = message.model_dump()
+    # ParsedBetaMessage/ParsedMessage (from beta.messages.parse()) carry user-defined
+    # Pydantic models in parsed_output and ParsedBetaTextBlock in content. These trigger
+    # PydanticSerializationUnexpectedValue warnings because the values do not match the
+    # declared union types in the base BetaMessage schema. Suppress for parsed types.
+    if hasattr(message, "parsed_output"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            outputs = message.model_dump()
+    else:
+        outputs = message.model_dump()
     anthropic_token_usage = outputs.pop("usage", None)
     if anthropic_token_usage:
         outputs["usage_metadata"] = _create_usage_metadata(anthropic_token_usage)
