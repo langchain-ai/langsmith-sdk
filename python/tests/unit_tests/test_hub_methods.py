@@ -153,8 +153,6 @@ def test_pull_agent_hits_correct_url_and_parses() -> None:
     assert call.args == ("GET", "/v1/platform/hub/repos/owner/my-agent/directories")
     assert call.kwargs.get("params") == {"repo_type": "agent"}
     assert isinstance(agent, ls_schemas.AgentContext)
-    assert agent.owner == "owner"
-    assert agent.repo == "my-agent"
     assert agent.commit_hash == "abc12345"
     assert isinstance(agent.files["main.py"], ls_schemas.FileEntry)
 
@@ -396,8 +394,6 @@ async def test_async_pull_agent_parses_and_merges_identifier() -> None:
     ctx = client
     agent = await ctx.pull_agent("owner/my-agent")
     assert isinstance(agent, ls_schemas.AgentContext)
-    assert agent.owner == "owner"
-    assert agent.repo == "my-agent"
     client._arequest_with_retries.assert_awaited_once_with(
         "GET",
         "/v1/platform/hub/repos/owner/my-agent/directories",

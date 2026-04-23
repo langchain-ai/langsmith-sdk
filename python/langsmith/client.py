@@ -9366,7 +9366,7 @@ class Client:
             f"{_PLATFORM_HUB}/{owner}/{name}/directories",
             params=params,
         )
-        return {**response.json(), "owner": owner, "repo": name}
+        return response.json()
 
     def _push_hub_directory(
         self,
