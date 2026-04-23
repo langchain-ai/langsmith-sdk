@@ -271,3 +271,114 @@ export function getSharedSerializeWorker(): SerializeWorker {
   if (sharedWorker === null) sharedWorker = new SerializeWorker();
   return sharedWorker;
 }
+
+/**
+ * Minimum string length (in UTF-16 code units) that justifies the overhead
+ * of dispatching serialization to a worker thread.
+ *
+ * Rationale: V8's postMessage / structuredClone fast-paths large strings
+ * across isolates by refcounting their underlying storage rather than
+ * copying the bytes. This makes worker offload a big win for payloads
+ * dominated by a handful of multi-hundred-KB strings (the classic case is
+ * base64-encoded images or audio in LLM messages), but a net loss for
+ * payloads whose bulk is structural -- thousands of keys, deep nesting,
+ * many small strings -- because every object node must still be walked
+ * and cloned.
+ *
+ * 64KB sits comfortably above typical "chunk of agent state" or "long
+ * prompt" values (a few KB) and below typical base64 media payloads
+ * (hundreds of KB to several MB).
+ */
+const LARGE_STRING_THRESHOLD = 64 * 1024;
+
+/**
+ * Maximum number of nodes to inspect before giving up and assuming the
+ * payload is not worth offloading. Prevents the check itself from becoming
+ * expensive on pathologically structural payloads (many thousands of small
+ * keys / array elements).
+ *
+ * When the budget is exhausted without finding a large string we return
+ * false (do not offload). This is the conservative choice: such payloads
+ * are structural by nature and worker offload empirically regresses them.
+ */
+const NODE_BUDGET = 2048;
+
+/**
+ * Cheap, short-circuiting walk that returns true iff the payload contains
+ * at least one string of length >= threshold anywhere in its graph.
+ *
+ * - Terminates immediately on the first qualifying string.
+ * - Caps total nodes visited at `nodeBudget` so cost is bounded for huge
+ *   structural payloads.
+ * - Avoids allocation in the common path: uses an array as a stack and a
+ *   Set only for cycle detection.
+ * - Uses `string.length` (UTF-16 units), not UTF-8 byte length, because
+ *   that's what V8's string-sharing fast path keys on and because it's
+ *   an O(1) property access. For ASCII content this is identical to the
+ *   UTF-8 byte count; for non-ASCII text the two differ by at most 4x,
+ *   well within the safety margin of the threshold.
+ */
+export function hasLargeString(
+  value: unknown,
+  threshold: number = LARGE_STRING_THRESHOLD,
+  nodeBudget: number = NODE_BUDGET
+): boolean {
+  if (value === null || typeof value !== "object") {
+    return typeof value === "string" && value.length >= threshold;
+  }
+  const stack: unknown[] = [value];
+  const seen = new Set<object>();
+  let visited = 0;
+  while (stack.length > 0) {
+    if (visited++ >= nodeBudget) return false;
+    const cur = stack.pop();
+    if (cur === null || cur === undefined) continue;
+    const t = typeof cur;
+    if (t === "string") {
+      if ((cur as string).length >= threshold) return true;
+      continue;
+    }
+    if (t !== "object") continue;
+    const obj = cur as object;
+    if (seen.has(obj)) continue;
+    seen.add(obj);
+    // Skip well-known opaque types -- none of their enumerable own
+    // properties produce large strings in practice, and ArrayBuffer views
+    // would inflate the node budget if iterated element by element.
+    /* eslint-disable no-instanceof/no-instanceof */
+    if (
+      obj instanceof Date ||
+      obj instanceof RegExp ||
+      obj instanceof Error ||
+      obj instanceof ArrayBuffer ||
+      ArrayBuffer.isView(obj)
+    ) {
+      continue;
+    }
+    if (Array.isArray(obj)) {
+      // Iterate in reverse so the first element is popped first (stable
+      // left-to-right discovery order, harmless but nice for predictable
+      // short-circuits in tests).
+      for (let i = obj.length - 1; i >= 0; i--) stack.push(obj[i]);
+      continue;
+    }
+    if (obj instanceof Map) {
+      for (const [, v] of obj) stack.push(v);
+      continue;
+    }
+    if (obj instanceof Set) {
+      for (const v of obj) stack.push(v);
+      continue;
+    }
+    /* eslint-enable no-instanceof/no-instanceof */
+    // Push keys in reverse so they pop in declared order. Combined with
+    // the similar reverse-push for arrays above, this makes discovery
+    // order a stable depth-first walk in source order -- which matters
+    // for predictable short-circuit behavior under a node budget.
+    const keys = Object.keys(obj);
+    for (let i = keys.length - 1; i >= 0; i--) {
+      stack.push((obj as Record<string, unknown>)[keys[i]]);
+    }
+  }
+  return false;
+}

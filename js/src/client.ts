@@ -88,6 +88,7 @@ import {
 } from "./utils/fast-safe-stringify/index.js";
 import {
   getSharedSerializeWorker,
+  hasLargeString,
   SerializeWorker,
 } from "./utils/serialize_worker.js";
 
@@ -695,7 +696,7 @@ export class AutoBatchQueue {
     // batch is assembled for sending.
     const size =
       getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true"
-        ? estimateSerializedSize(item.item)
+        ? estimateSerializedSize(item.item).size
         : serializePayloadForTracing(
             item.item,
             `Serializing run with id: ${item.item.id}`
@@ -884,6 +885,15 @@ export class Client implements LangSmithTracingClientInterface {
     const perfOptIn =
       getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true";
     if (!perfOptIn || this.manualFlushMode) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    // Shape-aware gate: worker offload pays for itself only when the
+    // payload is dominated by one or more large strings (V8 can refcount
+    // those across isolates instead of copying). For structure-heavy
+    // payloads -- many keys, deep nesting, lots of small strings -- the
+    // structuredClone walk plus thread-hop cost exceeds the JSON.stringify
+    // cost we would pay inline, so we fall through to sync serialize.
+    if (!hasLargeString(payload)) {
       return serializePayloadForTracing(payload, errorContext);
     }
     if (this._serializeWorker === undefined) {

@@ -93,12 +93,27 @@ function createDefaultReplacer(userReplacer?) {
  *   JSON.stringify will serialize them every time.
  * - No depth limit (JSON.stringify has none either).
  */
-export function estimateSerializedSize(value: unknown): number {
+export interface EstimatedSize {
+  /** Approximate serialized JSON byte size. */
+  size: number;
+  /**
+   * Length (in UTF-8 bytes) of the longest single string value encountered
+   * anywhere in the payload graph. Callers can use this as a shape-aware
+   * dispatch signal -- for example, to decide whether to offload serialize
+   * to a worker thread (which only pays off when a payload contains one
+   * or more large strings, since V8 shares string storage across isolates
+   * via refcount).
+   */
+  maxStringLen: number;
+}
+
+export function estimateSerializedSize(value: unknown): EstimatedSize {
   try {
     // Ancestor set for cycle detection. An object is only treated as
     // circular if it appears on the current recursion path, not merely
     // if it has been seen before elsewhere in the graph.
     const ancestors = new Set<object>();
+    let maxStringLen = 0;
 
     // In Node / Bun, Buffer.byteLength is a fast native way to get UTF-8
     // byte length without allocating an encoded copy. In other runtimes
@@ -111,7 +126,9 @@ export function estimateSerializedSize(value: unknown): number {
 
     function estimateString(s: string): number {
       // +2 for the surrounding quotes. Escape expansion is not counted.
-      return byteLen(s) + 2;
+      const n = byteLen(s);
+      if (n > maxStringLen) maxStringLen = n;
+      return n + 2;
     }
 
     // Size of a byte sequence when rendered as a JSON array of decimal
@@ -277,12 +294,15 @@ export function estimateSerializedSize(value: unknown): number {
       return size;
     }
 
-    return estimate(value);
+    const size = estimate(value);
+    return { size, maxStringLen };
   } catch {
     // If the estimator itself hits an unexpected edge case, fall back to the
     // exact serialized size. This preserves correctness of queue-size
     // accounting at the cost of a slower hot path for that one payload.
-    return serialize(value).length;
+    // We cannot cheaply recover maxStringLen here, so report 0: the worker
+    // gate will then fall back to sync serialization, which is safe.
+    return { size: serialize(value).length, maxStringLen: 0 };
   }
 }
 
