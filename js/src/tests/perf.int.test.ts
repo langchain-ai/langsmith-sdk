@@ -198,9 +198,7 @@ benchIt(
     const percentile = (values: number[], p: number) =>
       values.length === 0
         ? 0
-        : values[
-            Math.min(values.length - 1, Math.floor(values.length * p))
-          ];
+        : values[Math.min(values.length - 1, Math.floor(values.length * p))];
     const totalLag = lags.reduce((a, b) => a + b, 0);
     const maxLag = lags.length ? lags[lags.length - 1] : 0;
 
@@ -208,11 +206,17 @@ benchIt(
     updateTimes.sort((a, b) => a - b);
     const createTotal = createTimes.reduce((a, b) => a + b, 0);
     const updateTotal = updateTimes.reduce((a, b) => a + b, 0);
-    const createMax = createTimes.length ? createTimes[createTimes.length - 1] : 0;
-    const updateMax = updateTimes.length ? updateTimes[updateTimes.length - 1] : 0;
+    const createMax = createTimes.length
+      ? createTimes[createTimes.length - 1]
+      : 0;
+    const updateMax = updateTimes.length
+      ? updateTimes[updateTimes.length - 1]
+      : 0;
 
     console.log(`\nRuns traced: ${NUM_RUNS}`);
-    console.log(`Wall time (including batch drain): ${(wallEnd - wallStart).toFixed(1)}ms`);
+    console.log(
+      `Wall time (including batch drain): ${(wallEnd - wallStart).toFixed(1)}ms`
+    );
     console.log(`\ncreateRun sync time (ms):`);
     console.log(`  total:       ${createTotal.toFixed(2)}ms`);
     console.log(`  max:         ${createMax.toFixed(2)}ms`);
