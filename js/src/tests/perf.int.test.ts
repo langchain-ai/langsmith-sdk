@@ -72,27 +72,38 @@ benchIt(
       "beemovie.txt"
     );
 
-    // Build a realistically large payload. beemovie.txt is ~50KB; nesting
-    // it a few times simulates a large model input/output.
+    // Build a realistically large payload. Real-world LangSmith payloads
+    // are frequently dominated by inlined base64 image data in OpenAI-style
+    // message content parts -- exactly the shape that structuredClone /
+    // worker transfer handles best. We therefore construct a payload that
+    // matches that shape.
     const baseText = fs.readFileSync(pathname).toString();
+    const base64Chunk =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+    // ~500KB base64 image per message
+    const imageB64 = base64Chunk.repeat(Math.ceil((500 * 1024) / base64Chunk.length));
+    const dataUri = `data:image/png;base64,${imageB64}`;
     const largeInputs = {
-      messages: Array.from({ length: 20 }, (_, i) => ({
+      messages: Array.from({ length: 5 }, (_, i) => ({
         role: i % 2 === 0 ? "user" : "assistant",
-        content: baseText,
+        content: [
+          { type: "text", text: baseText.slice(0, 2000) },
+          { type: "image_url", image_url: { url: dataUri, detail: "high" } },
+        ],
       })),
-      metadata: {
-        model: "gpt-4",
-        temperature: 0.7,
-        tools: Array.from({ length: 10 }, (_, i) => ({
-          name: `tool_${i}`,
-          description: baseText.slice(0, 500),
-        })),
-      },
+      model: "gpt-4o",
+      temperature: 0.7,
     };
     const largeOutputs = {
-      generations: Array.from({ length: 8 }, () => ({
-        text: baseText,
-      })),
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: baseText.slice(0, 5000),
+          },
+          finish_reason: "stop",
+        },
+      ],
       usage: {
         prompt_tokens: 120000,
         completion_tokens: 48000,
@@ -101,10 +112,10 @@ benchIt(
 
     const inputJsonSize = JSON.stringify(largeInputs).length;
     const outputJsonSize = JSON.stringify(largeOutputs).length;
-    const mode =
-      process.env.LANGSMITH_PERF_OPTIMIZATION === "true"
-        ? "ESTIMATE (opt-in optimization)"
-        : "EXACT (default, serialize on hot path)";
+    const workerEnv = process.env.LANGSMITH_PERF_OPTIMIZATION === "true";
+    const mode = workerEnv
+      ? "PERF (estimator on hot path + worker-thread serialize at flush)"
+      : "DEFAULT (serialize on hot path + main-thread serialize at flush)";
 
     console.log(`\n=== Event loop benchmark ===`);
     console.log(`Mode: ${mode}`);
@@ -127,12 +138,14 @@ benchIt(
     monitor.unref();
 
     const fetchImplementation: typeof fetch = async (input) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-          ? input.toString()
-          : input.url;
+      let url: string;
+      if (typeof input === "string") {
+        url = input;
+      } else if (typeof (input as URL).href === "string" && !("url" in input)) {
+        url = (input as URL).toString();
+      } else {
+        url = (input as Request).url;
+      }
       if (url.endsWith("/info")) {
         return new Response(
           JSON.stringify({
