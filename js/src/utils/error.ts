@@ -110,6 +110,17 @@ export function isLangSmithNotFoundError(
   );
 }
 
+export function isLangSmithConflictError(
+  error: unknown
+): error is LangSmithConflictError {
+  return (
+    error != null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error?.name === "LangSmithConflictError"
+  );
+}
+
 /**
  * Throws an appropriate error based on the response status and body.
  *
