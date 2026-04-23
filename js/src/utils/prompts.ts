@@ -29,3 +29,9 @@ export function parsePromptIdentifier(
     return ["-", ownerNamePart, commit];
   }
 }
+
+export function parseHubIdentifier(
+  identifier: string
+): [string, string, string] {
+  return parsePromptIdentifier(identifier);
+}

@@ -32,7 +32,7 @@ function _setFetchSequence(client: Client, responses: any[]): jest.Mock {
 
 describe("Context (agent/skill) on Client", () => {
   describe("pullAgent", () => {
-    it("hits the directories GET URL and merges owner/repo into response", async () => {
+    it("hits the directories GET URL with repo_type query param", async () => {
       const client = _mockClient();
       const fetchSpy = _setFetchSequence(client, [
         _response({
@@ -48,9 +48,8 @@ describe("Context (agent/skill) on Client", () => {
       expect(url).toContain(
         "/v1/platform/hub/repos/owner/my-agent/directories"
       );
+      expect(url).toContain("repo_type=agent");
       expect(init.method).toBe("GET");
-      expect(agent.owner).toBe("owner");
-      expect(agent.repo).toBe("my-agent");
       expect(agent.commit_id).toBe("00000000-0000-0000-0000-000000000000");
       expect(agent.commit_hash).toBe("abc12345");
       expect(agent.files["main.py"]).toEqual({

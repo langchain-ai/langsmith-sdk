@@ -56,6 +56,7 @@ import {
   SkillContext,
   Entry,
   DirectoryCommitResponse,
+  HubRepoType,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -74,7 +75,10 @@ import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { parsePromptIdentifier } from "./utils/prompts.js";
+import {
+  parseHubIdentifier,
+  parsePromptIdentifier,
+} from "./utils/prompts.js";
 import {
   raiseForStatus,
   isLangSmithNotFoundError,
@@ -6246,7 +6250,7 @@ export class Client implements LangSmithTracingClientInterface {
    * Check if an agent repo exists.
    */
   public async agentExists(identifier: string): Promise<boolean> {
-    const [owner, name] = parsePromptIdentifier(identifier);
+    const [owner, name] = parseHubIdentifier(identifier);
     return this._repoExists(owner, name);
   }
 
@@ -6254,7 +6258,7 @@ export class Client implements LangSmithTracingClientInterface {
    * Check if a skill repo exists.
    */
   public async skillExists(identifier: string): Promise<boolean> {
-    const [owner, name] = parsePromptIdentifier(identifier);
+    const [owner, name] = parseHubIdentifier(identifier);
     return this._repoExists(owner, name);
   }
 
@@ -6269,6 +6273,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<AgentContext> {
     return (await this._pullDirectory(
       identifier,
+      "agent",
       options?.version
     )) as AgentContext;
   }
@@ -6282,6 +6287,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<SkillContext> {
     return (await this._pullDirectory(
       identifier,
+      "skill",
       options?.version
     )) as SkillContext;
   }
@@ -6359,7 +6365,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async *_listReposByType(
-    repoType: "agent" | "skill",
+    repoType: HubRepoType,
     options?: { isPublic?: boolean; isArchived?: boolean; query?: string }
   ): AsyncIterableIterator<Prompt> {
     const params = new URLSearchParams();
@@ -6383,15 +6389,17 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _pullDirectory(
     identifier: string,
+    repoType: HubRepoType,
     version?: string
   ): Promise<AgentContext | SkillContext> {
-    const [owner, name, parsedVersion] = parsePromptIdentifier(identifier);
+    const [owner, name, parsedVersion] = parseHubIdentifier(identifier);
     const resolvedVersion =
       version ?? (parsedVersion !== "latest" ? parsedVersion : undefined);
 
     const url = new URL(
       `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`
     );
+    url.searchParams.set("repo_type", repoType);
     if (resolvedVersion) {
       url.searchParams.set("commit", resolvedVersion);
     }
@@ -6406,23 +6414,12 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, "pull directory");
       return res;
     });
-    const data = (await response.json()) as Partial<AgentContext> & {
-      files: Record<string, Entry>;
-      commit_id: string;
-      commit_hash: string;
-    };
-    return {
-      owner: data.owner ?? owner,
-      repo: data.repo ?? name,
-      commit_id: data.commit_id,
-      commit_hash: data.commit_hash,
-      files: data.files,
-    };
+    return (await response.json()) as AgentContext | SkillContext;
   }
 
   private async _pushDirectory(
     identifier: string,
-    repoType: "agent" | "skill",
+    repoType: HubRepoType,
     options: {
       files: Record<string, Entry | null>;
       parentCommit?: string;
@@ -6439,7 +6436,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("parent_commit must be 8-64 characters");
     }
 
-    const [owner, name] = parsePromptIdentifier(identifier);
+    const [owner, name] = parseHubIdentifier(identifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError(`push ${repoType}`, owner);
     }
@@ -6496,7 +6493,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async _deleteDirectory(identifier: string): Promise<void> {
-    const [owner, name] = parsePromptIdentifier(identifier);
+    const [owner, name] = parseHubIdentifier(identifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("delete", owner);
     }
@@ -6538,7 +6535,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _createRepo(
     name: string,
-    repoType: "agent" | "skill",
+    repoType: HubRepoType,
     options: {
       description?: string;
       readme?: string;
