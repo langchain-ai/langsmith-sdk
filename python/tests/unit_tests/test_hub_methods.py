@@ -151,7 +151,7 @@ def test_pull_agent_hits_correct_url_and_parses() -> None:
     agent = ctx.pull_agent("owner/my-agent")
     call = client.request_with_retries.call_args
     assert call.args == ("GET", "/v1/platform/hub/repos/owner/my-agent/directories")
-    assert call.kwargs.get("params") == {}
+    assert call.kwargs.get("params") == {"repo_type": "agent"}
     assert isinstance(agent, ls_schemas.AgentContext)
     assert agent.owner == "owner"
     assert agent.repo == "my-agent"
@@ -184,7 +184,8 @@ def test_pull_agent_with_version_passes_commit_param() -> None:
     ctx = client
     ctx.pull_agent("owner/repo", version="abc12345")
     assert client.request_with_retries.call_args.kwargs["params"] == {
-        "commit": "abc12345"
+        "repo_type": "agent",
+        "commit": "abc12345",
     }
 
 
@@ -400,7 +401,7 @@ async def test_async_pull_agent_parses_and_merges_identifier() -> None:
     client._arequest_with_retries.assert_awaited_once_with(
         "GET",
         "/v1/platform/hub/repos/owner/my-agent/directories",
-        params={},
+        params={"repo_type": "agent"},
     )
 
 

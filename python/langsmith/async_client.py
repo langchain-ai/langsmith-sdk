@@ -2050,7 +2050,7 @@ class AsyncClient:
         Returns:
             AgentContext: The agent snapshot.
         """
-        data = await self._pull_hub_directory(identifier, version=version)
+        data = await self._pull_hub_directory(identifier, "agent", version=version)
         return ls_schemas.AgentContext.model_validate(data)
 
     async def push_agent(
@@ -2083,7 +2083,7 @@ class AsyncClient:
         version: Optional[str] = None,
     ) -> ls_schemas.SkillContext:
         """Pull a skill from Hub."""
-        data = await self._pull_hub_directory(identifier, version=version)
+        data = await self._pull_hub_directory(identifier, "skill", version=version)
         return ls_schemas.SkillContext.model_validate(data)
 
     async def push_skill(
@@ -2168,6 +2168,7 @@ class AsyncClient:
     async def _pull_hub_directory(
         self,
         identifier: str,
+        repo_type: Literal["agent", "skill"],
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
@@ -2176,7 +2177,7 @@ class AsyncClient:
         target = (
             version if version is not None else (commit if commit != "latest" else None)
         )
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = {"repo_type": repo_type}
         if target:
             params["commit"] = target
         response = await self._arequest_with_retries(

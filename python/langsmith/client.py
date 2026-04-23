@@ -9231,7 +9231,7 @@ class Client:
         Returns:
             AgentContext: The agent snapshot.
         """
-        data = self._pull_hub_directory(identifier, version=version)
+        data = self._pull_hub_directory(identifier, "agent", version=version)
         return ls_schemas.AgentContext.model_validate(data)
 
     def push_agent(
@@ -9264,7 +9264,7 @@ class Client:
         version: Optional[str] = None,
     ) -> ls_schemas.SkillContext:
         """Pull a skill from Hub."""
-        data = self._pull_hub_directory(identifier, version=version)
+        data = self._pull_hub_directory(identifier, "skill", version=version)
         return ls_schemas.SkillContext.model_validate(data)
 
     def push_skill(
@@ -9349,6 +9349,7 @@ class Client:
     def _pull_hub_directory(
         self,
         identifier: str,
+        repo_type: Literal["agent", "skill"],
         *,
         version: Optional[str],
     ) -> dict[str, Any]:
@@ -9357,7 +9358,7 @@ class Client:
         target = (
             version if version is not None else (commit if commit != "latest" else None)
         )
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = {"repo_type": repo_type}
         if target:
             params["commit"] = target
         response = self.request_with_retries(
