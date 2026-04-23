@@ -467,8 +467,9 @@ describe("estimateSerializedSize", () => {
   });
 
   it("reports zero maxStringLen for payloads with no strings", () => {
-    expect(estimateSerializedSize({ a: 1, b: [2, 3], c: true }).maxStringLen)
-      .toBe(0);
+    expect(
+      estimateSerializedSize({ a: 1, b: [2, 3], c: true }).maxStringLen
+    ).toBe(0);
     expect(estimateSerializedSize(null).maxStringLen).toBe(0);
     expect(estimateSerializedSize(42).maxStringLen).toBe(0);
   });
@@ -491,10 +492,7 @@ describe("hasLargeString", () => {
   it("finds a large string nested deep inside a payload", () => {
     const payload = {
       a: 1,
-      b: [
-        { c: "short" },
-        { d: { e: { f: "y".repeat(200) } } },
-      ],
+      b: [{ c: "short" }, { d: { e: { f: "y".repeat(200) } } }],
     };
     expect(hasLargeString(payload, 100)).toBe(true);
     expect(hasLargeString(payload, 1000)).toBe(false);

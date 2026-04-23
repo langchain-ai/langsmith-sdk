@@ -81,7 +81,9 @@ benchIt(
     const base64Chunk =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
     // ~500KB base64 image per message
-    const imageB64 = base64Chunk.repeat(Math.ceil((500 * 1024) / base64Chunk.length));
+    const imageB64 = base64Chunk.repeat(
+      Math.ceil((500 * 1024) / base64Chunk.length)
+    );
     const dataUri = `data:image/png;base64,${imageB64}`;
     const largeInputs = {
       messages: Array.from({ length: 5 }, (_, i) => ({

@@ -164,7 +164,12 @@ export class SerializeWorker {
       const worker = new WorkerCtor(WORKER_SOURCE, { eval: true });
       worker.on(
         "message",
-        (msg: { id: number; bytes?: ArrayBuffer; length?: number; error?: string }) => {
+        (msg: {
+          id: number;
+          bytes?: ArrayBuffer;
+          length?: number;
+          error?: string;
+        }) => {
           const p = this.pending.get(msg.id);
           if (!p) return;
           this.pending.delete(msg.id);
@@ -172,7 +177,11 @@ export class SerializeWorker {
             p.reject(new Error(msg.error));
           } else if (msg.bytes && typeof msg.length === "number") {
             p.resolve(
-              new Uint8Array(msg.bytes, 0, msg.length) as Uint8Array<ArrayBuffer>
+              new Uint8Array(
+                msg.bytes,
+                0,
+                msg.length
+              ) as Uint8Array<ArrayBuffer>
             );
           } else {
             p.reject(new Error("worker returned malformed message"));
@@ -213,9 +222,7 @@ export class SerializeWorker {
    * Resolves with null if the worker subsystem is unavailable entirely,
    * so the caller can fall back without paying try/catch overhead.
    */
-  async serialize(
-    payload: unknown
-  ): Promise<Uint8Array<ArrayBuffer> | null> {
+  async serialize(payload: unknown): Promise<Uint8Array<ArrayBuffer> | null> {
     const ok = await this.ensureStarted();
     if (!ok) return null;
     const id = this.nextId++;
