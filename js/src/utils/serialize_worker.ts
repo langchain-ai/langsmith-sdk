@@ -19,6 +19,12 @@
  * under webpack/esbuild/ncc without requiring a separate asset file.
  */
 
+import {
+  Worker as WorkerCtor,
+  WORKER_THREADS_AVAILABLE,
+  type WorkerLike,
+} from "./worker_threads.js";
+
 // The worker script: a self-contained mirror of the hot path of
 // src/utils/fast-safe-stringify/index.ts#serialize(). We deliberately
 // don't import the TS module -- the worker runs as a standalone script.
@@ -120,30 +126,8 @@ type Pending = {
   reject: (err: Error) => void;
 };
 
-/**
- * Synchronously obtain the `worker_threads` module in both CJS and ESM
- * Node builds. Throws if the runtime does not support it (browsers, edge
- * runtimes, Deno without compat). We can only do this synchronously in
- * CJS; ESM consumers pay a one-time async cost on the very first call
- * which is handled by making `ensureStarted()` async.
- */
-async function loadWorkerThreads(): Promise<
-  typeof import("node:worker_threads")
-> {
-  // CJS path: `require` is defined at module scope.
-  // Guard with `typeof` so ESM's ReferenceError becomes a falsy check.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const g = globalThis as any;
-  if (typeof g.require === "function") {
-    return g.require("node:worker_threads");
-  }
-  // ESM path: use a dynamic import (resolved by Node, skipped by
-  // browser bundlers that treat node: imports as externals).
-  return (await import("node:worker_threads")) as typeof import("node:worker_threads");
-}
-
 export class SerializeWorker {
-  private worker: unknown | null = null;
+  private worker: WorkerLike | null = null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private disabled = false;
@@ -152,8 +136,9 @@ export class SerializeWorker {
   /**
    * Try to construct the worker. Returns false if the runtime can't support
    * it -- in that case callers must fall back to synchronous serialization.
-   * Async because ESM's `import("node:worker_threads")` is a Promise; in
-   * practice CJS callers resolve synchronously.
+   * Kept async so callers don't have to branch on runtime -- the promise
+   * resolves synchronously on the microtask queue when the worker module
+   * is available, which is the common Node CJS/ESM path.
    */
   private async ensureStarted(): Promise<boolean> {
     if (this.disabled) return false;
@@ -168,15 +153,15 @@ export class SerializeWorker {
   }
 
   private async _start(): Promise<boolean> {
-    let wt: typeof import("node:worker_threads");
-    try {
-      wt = await loadWorkerThreads();
-    } catch {
+    // In browser / edge builds the `worker_threads` module is swapped with
+    // a stub that reports unavailability via the package.json `browser`
+    // field. Bail out before touching any Node-only surface.
+    if (!WORKER_THREADS_AVAILABLE || WorkerCtor === null) {
       this.disabled = true;
       return false;
     }
     try {
-      const worker = new wt.Worker(WORKER_SOURCE, { eval: true });
+      const worker = new WorkerCtor(WORKER_SOURCE, { eval: true });
       worker.on(
         "message",
         (msg: { id: number; bytes?: ArrayBuffer; length?: number; error?: string }) => {
