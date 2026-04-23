@@ -100,7 +100,6 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith.context import Context
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -713,7 +712,6 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
-        "_context",
         "_manual_cleanup",
         "_pyo3_client",
         "compressed_traces",
@@ -982,7 +980,6 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-        self._context: Optional[Context] = None
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
@@ -1420,17 +1417,6 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
-
-    @property
-    def context(self) -> Context:
-        """The Hub context API for agent/skill/file operations.
-
-        Returns:
-            Context: A Context instance bound to this client.
-        """
-        if self._context is None:
-            self._context = Context(self)
-        return self._context
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
@@ -9215,6 +9201,148 @@ class Client:
             description=commit_description,
         )
         return url
+
+    def pull_agent(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.AgentContext:
+        """Pull an agent from Hub.
+
+        Args:
+            identifier: Repo identifier (owner/name:hash, owner/name, or name).
+            version: Commit hash or tag; overrides any hash in identifier.
+
+        Returns:
+            AgentContext: The agent snapshot.
+        """
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).pull_agent(identifier, version=version)
+
+    def push_agent(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push an agent to Hub, creating the repo if it does not exist."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).push_agent(
+            identifier,
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    def pull_skill(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.SkillContext:
+        """Pull a skill from Hub."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).pull_skill(identifier, version=version)
+
+    def push_skill(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push a skill to Hub."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).push_skill(
+            identifier,
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    def delete_agent(self, identifier: str) -> None:
+        """Delete an agent and its owned child file repos."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        Context(self).delete_agent(identifier)
+
+    def delete_skill(self, identifier: str) -> None:
+        """Delete a skill and its owned child file repos."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        Context(self).delete_skill(identifier)
+
+    def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).agent_exists(identifier)
+
+    def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).skill_exists(identifier)
+
+    def list_agents(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List agents with pagination."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).list_agents(
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    def list_skills(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List skills with pagination."""
+        from langsmith.context import Context  # noqa: PLC0415
+
+        return Context(self).list_skills(
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
 
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""

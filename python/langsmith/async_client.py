@@ -23,7 +23,6 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.context import AsyncContext
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
@@ -40,7 +39,6 @@ class AsyncClient:
         "_cache",
         "_custom_headers",
         "_api_key",
-        "_context",
     )
 
     _custom_headers: dict[str, str]
@@ -136,7 +134,6 @@ class AsyncClient:
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
-        self._context: Optional[AsyncContext] = None
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -207,17 +204,6 @@ class AsyncClient:
     def _host_url(self) -> str:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self._api_url)
-
-    @property
-    def context(self) -> AsyncContext:
-        """The async Hub context API for agent/skill/file operations.
-
-        Returns:
-            AsyncContext: An AsyncContext instance bound to this client.
-        """
-        if self._context is None:
-            self._context = AsyncContext(self)
-        return self._context
 
     async def _arequest_with_retries(
         self,
@@ -2042,6 +2028,148 @@ class AsyncClient:
             description=commit_description,
         )
         return url
+
+    async def pull_agent(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.AgentContext:
+        """Pull an agent from Hub.
+
+        Args:
+            identifier: Repo identifier (owner/name:hash, owner/name, or name).
+            version: Commit hash or tag; overrides any hash in identifier.
+
+        Returns:
+            AgentContext: The agent snapshot.
+        """
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).pull_agent(identifier, version=version)
+
+    async def push_agent(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push an agent to Hub, creating the repo if it does not exist."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).push_agent(
+            identifier,
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    async def pull_skill(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.SkillContext:
+        """Pull a skill from Hub."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).pull_skill(identifier, version=version)
+
+    async def push_skill(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push a skill to Hub."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).push_skill(
+            identifier,
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    async def delete_agent(self, identifier: str) -> None:
+        """Delete an agent and its owned child file repos."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        await AsyncContext(self).delete_agent(identifier)
+
+    async def delete_skill(self, identifier: str) -> None:
+        """Delete a skill and its owned child file repos."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        await AsyncContext(self).delete_skill(identifier)
+
+    async def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).agent_exists(identifier)
+
+    async def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).skill_exists(identifier)
+
+    async def list_agents(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List agents with pagination."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).list_agents(
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    async def list_skills(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List skills with pagination."""
+        from langsmith.context import AsyncContext  # noqa: PLC0415
+
+        return await AsyncContext(self).list_skills(
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
 
 
 def _exclude_none(d: dict) -> dict:
