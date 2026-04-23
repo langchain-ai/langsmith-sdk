@@ -101,6 +101,10 @@
     "experimental/sandbox.js",
     "experimental/sandbox.d.ts",
     "experimental/sandbox.d.cts",
+    "experimental/opencode.cjs",
+    "experimental/opencode.js",
+    "experimental/opencode.d.ts",
+    "experimental/opencode.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -166,6 +170,8 @@
     "@langchain/langgraph": "^0.3.6",
     "@langchain/openai": "^0.5.16",
     "@openai/agents": "^0.8.3",
+    "@opencode-ai/plugin": "^1.14.19",
+    "@opencode-ai/sdk": "^1.14.19",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.73.0",
     "@opentelemetry/context-async-hooks": "^2.6.1",
@@ -461,6 +467,15 @@
       },
       "import": "./experimental/sandbox.js",
       "require": "./experimental/sandbox.cjs"
+    },
+    "./experimental/opencode": {
+      "types": {
+        "import": "./experimental/opencode.d.ts",
+        "require": "./experimental/opencode.d.cts",
+        "default": "./experimental/opencode.d.ts"
+      },
+      "import": "./experimental/opencode.js",
+      "require": "./experimental/opencode.cjs"
     },
     "./package.json": "./package.json"
   },

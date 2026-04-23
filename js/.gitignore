@@ -120,6 +120,10 @@ Chinook_Sqlite.sql
 /experimental/sandbox.js
 /experimental/sandbox.d.ts
 /experimental/sandbox.d.cts
+/experimental/opencode.cjs
+/experimental/opencode.js
+/experimental/opencode.d.ts
+/experimental/opencode.d.cts
 /index.cjs
 /index.js
 /index.d.ts
