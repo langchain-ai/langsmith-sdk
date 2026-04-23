@@ -8,7 +8,6 @@ import langsmith.utils as ls_utils
 from langsmith.client import Client
 from tests.integration_tests.conftest import skip_if_rate_limited
 
-
 TOOLS_JSON = json.dumps(
     {
         "tools": [{"name": "read_file", "type": "builtin"}],
