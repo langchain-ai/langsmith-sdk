@@ -36,7 +36,7 @@ def skill_identifier() -> str:
 def test_push_and_pull_agent_roundtrip(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         url = ctx.push_agent(
             agent_identifier,
@@ -62,7 +62,7 @@ def test_push_and_pull_agent_roundtrip(
 def test_push_and_pull_agent_tools_json_roundtrip(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         url = ctx.push_agent(
             agent_identifier,
@@ -88,7 +88,7 @@ def test_push_and_pull_agent_tools_json_roundtrip(
 def test_push_and_pull_skill_roundtrip(
     langsmith_client: Client, skill_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         url = ctx.push_skill(
             skill_identifier,
@@ -114,7 +114,7 @@ def test_push_and_pull_skill_roundtrip(
 def test_agent_exists_reflects_create_delete_lifecycle(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         assert ctx.agent_exists(agent_identifier) is False
 
@@ -137,7 +137,7 @@ def test_agent_exists_reflects_create_delete_lifecycle(
 def test_skill_exists_reflects_create_delete_lifecycle(
     langsmith_client: Client, skill_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         assert ctx.skill_exists(skill_identifier) is False
 
@@ -160,7 +160,7 @@ def test_skill_exists_reflects_create_delete_lifecycle(
 def test_push_agent_null_entry_deletes_file(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         ctx.push_agent(
             agent_identifier,
@@ -188,7 +188,7 @@ def test_push_agent_null_entry_deletes_file(
 def test_push_agent_second_commit_updates_content(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     try:
         ctx.push_agent(
             agent_identifier,
@@ -214,7 +214,7 @@ def test_push_agent_second_commit_updates_content(
 def test_delete_agent_removes_repo(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     ctx.push_agent(
         agent_identifier,
         files={"AGENTS.md": ls_schemas.FileEntry(content="x")},
@@ -232,7 +232,7 @@ def test_delete_agent_removes_repo(
 def test_list_agents_returns_pushed_agent(
     langsmith_client: Client, agent_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     _, handle = agent_identifier.split("/", 1)
     try:
         ctx.push_agent(
@@ -252,7 +252,7 @@ def test_list_agents_returns_pushed_agent(
 def test_delete_skill_removes_repo(
     langsmith_client: Client, skill_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     ctx.push_skill(
         skill_identifier,
         files={"SKILL.md": ls_schemas.FileEntry(content="x")},
@@ -269,7 +269,7 @@ def test_delete_skill_removes_repo(
 def test_list_skills_returns_pushed_skill(
     langsmith_client: Client, skill_identifier: str
 ) -> None:
-    ctx = langsmith_client.context
+    ctx = langsmith_client
     _, handle = skill_identifier.split("/", 1)
     try:
         ctx.push_skill(
