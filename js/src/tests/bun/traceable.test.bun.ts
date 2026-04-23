@@ -3,7 +3,7 @@ import { test, expect } from "bun:test";
 import { traceable } from "../../traceable.js";
 import { Client } from "../../client.js";
 import { waitUntilRunFound } from "../utils.js";
-import { v7 as uuidv7 } from "../utils/uuid/src/index.js";
+import { v7 as uuidv7 } from "../../utils/uuid/src/index.js";
 
 test("Simple Bun tracing integration test", async () => {
   const client = new Client();
