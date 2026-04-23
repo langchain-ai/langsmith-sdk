@@ -184,7 +184,8 @@ class TestMessageToOutputsToolCalls:
 
 
 class TestMessageToOutputsParsedMessage:
-    """Test that _message_to_outputs suppresses Pydantic warnings for parsed messages."""
+    """Test that _message_to_outputs suppresses Pydantic warnings for parsed
+    messages."""
 
     def test_no_pydantic_warning_for_parsed_beta_message(self):
         """ParsedBetaMessage triggers PydanticSerializationUnexpectedValue when
@@ -195,7 +196,7 @@ class TestMessageToOutputsParsedMessage:
 
         def _model_dump_with_warning():
             warnings.warn(
-                "PydanticSerializationUnexpectedValue: serialized value may not be as expected",
+                "PydanticSerializationUnexpectedValue",
                 UserWarning,
                 stacklevel=2,
             )
@@ -215,11 +216,14 @@ class TestMessageToOutputsParsedMessage:
             warnings.simplefilter("always")
             result = _message_to_outputs(msg)
 
-        assert len(caught) == 0, f"Expected no warnings, got: {[str(w.message) for w in caught]}"
+        assert len(caught) == 0, (
+            f"Expected no warnings, got: {[str(w.message) for w in caught]}"
+        )
         assert result["content"] == [{"type": "text", "text": "Hello"}]
 
     def test_regular_message_warnings_not_suppressed(self):
-        """For regular (non-parsed) messages, warnings from model_dump are not suppressed."""
+        """For regular (non-parsed) messages, warnings from model_dump are not
+        suppressed."""
         msg = MagicMock()
         del msg.parsed_output  # ensure attribute does not exist
 
@@ -239,7 +243,7 @@ class TestMessageToOutputsParsedMessage:
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = _message_to_outputs(msg)
+            _message_to_outputs(msg)
 
         assert len(caught) == 1
         assert "some other warning" in str(caught[0].message)
