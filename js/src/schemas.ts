@@ -570,6 +570,10 @@ export type Entry = FileEntry | AgentEntry | SkillEntry;
  * An agent pulled from hub.
  */
 export interface AgentContext {
+  /** The handle of the owner. */
+  owner: string;
+  /** The name of the repo. */
+  repo: string;
   /** The commit ID. */
   commit_id: string;
   /** The commit hash. */
@@ -582,6 +586,10 @@ export interface AgentContext {
  * A skill pulled from hub.
  */
 export interface SkillContext {
+  /** The handle of the owner. */
+  owner: string;
+  /** The name of the repo. */
+  repo: string;
   /** The commit ID. */
   commit_id: string;
   /** The commit hash. */
