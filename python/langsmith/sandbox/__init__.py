@@ -9,7 +9,10 @@ Example:
     # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
     client = SandboxClient()
 
-    with client.sandbox(template_name="python-sandbox") as sb:
+    snapshot = client.create_snapshot(
+        docker_image="python:3.12-slim", name="python-snapshot"
+    )
+    with client.sandbox(snapshot_id=snapshot.id) as sb:
         result = sb.run("python --version")
         print(result.stdout)
 
@@ -17,7 +20,10 @@ Example:
     from langsmith.sandbox import AsyncSandboxClient
 
     async with AsyncSandboxClient() as client:
-        async with await client.sandbox(template_name="python-sandbox") as sb:
+        snapshot = await client.create_snapshot(
+            docker_image="python:3.12-slim", name="python-snapshot"
+        )
+        async with await client.sandbox(snapshot_id=snapshot.id) as sb:
             result = await sb.run("python --version")
             print(result.stdout)
 """
@@ -54,14 +60,9 @@ from langsmith.sandbox._models import (
     CommandHandle,
     ExecutionResult,
     OutputChunk,
-    Pool,
-    ResourceSpec,
     ResourceStatus,
-    SandboxTemplate,
     ServiceURL,
     Snapshot,
-    Volume,
-    VolumeMountSpec,
 )
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
@@ -73,13 +74,8 @@ __all__ = [
     "Sandbox",
     "AsyncSandbox",
     # Models
-    "SandboxTemplate",
     "ResourceStatus",
-    "ResourceSpec",
     "ExecutionResult",
-    "Volume",
-    "VolumeMountSpec",
-    "Pool",
     "Snapshot",
     "ServiceURL",
     "AsyncServiceURL",

@@ -6772,6 +6772,35 @@ export class Client implements LangSmithTracingClientInterface {
       await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
     }
   }
+
+  /**
+   * Returns a string representation of the Client instance.
+   * This method is called when the object is converted to a string
+   * or logged, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the Client.
+   */
+  public toString(): string {
+    const params = [`apiUrl=${JSON.stringify(this.apiUrl)}`];
+    if (this.webUrl !== undefined) {
+      params.push(`webUrl=${JSON.stringify(this.webUrl)}`);
+    }
+    if (this.workspaceId !== undefined) {
+      params.push(`workspaceId=${JSON.stringify(this.workspaceId)}`);
+    }
+    return `[LangSmithClient ${params.join(" ")}]`;
+  }
+
+  /**
+   * Custom inspect method for Node.js.
+   * This method is called when the object is inspected in the Node.js REPL
+   * or with console.log, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the Client for inspection.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return this.toString();
+  }
 }
 
 export interface LangSmithTracingClientInterface {

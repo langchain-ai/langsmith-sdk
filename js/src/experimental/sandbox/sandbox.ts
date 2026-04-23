@@ -28,7 +28,7 @@ import { reconnectWsStream, runWsStream } from "./ws_execute.js";
  *
  * @example
  * ```typescript
- * const sandbox = await client.createSandbox("python-sandbox");
+ * const sandbox = await client.createSandbox(snapshot.id);
  * try {
  *   const result = await sandbox.run("python --version");
  *   console.log(result.stdout);
@@ -42,8 +42,6 @@ import { reconnectWsStream, runWsStream } from "./ws_execute.js";
 export class Sandbox {
   /** Display name (can be updated). */
   readonly name: string;
-  /** Name of the template used to create this sandbox. */
-  readonly template_name?: string;
   /** URL for data plane operations (file I/O, command execution). */
   dataplane_url?: string;
   /** Provisioning status ("provisioning", "ready", "failed", "stopped"). */
@@ -76,7 +74,6 @@ export class Sandbox {
   /** @internal */
   constructor(data: SandboxData, client: SandboxClient) {
     this.name = data.name;
-    this.template_name = data.template_name;
     this.dataplane_url = data.dataplane_url;
     this.status = data.status;
     this.status_message = data.status_message;
@@ -420,7 +417,7 @@ export class Sandbox {
    *
    * @example
    * ```typescript
-   * const sandbox = await client.createSandbox("python-sandbox");
+   * const sandbox = await client.createSandbox(snapshot.id);
    * try {
    *   await sandbox.run("echo hello");
    * } finally {
@@ -458,7 +455,7 @@ export class Sandbox {
    * Capture a snapshot from this sandbox.
    *
    * @param name - Snapshot name.
-   * @param options - Capture options (checkpoint, timeout).
+   * @param options - Capture options (timeout).
    * @returns Snapshot in "ready" status.
    */
   async captureSnapshot(

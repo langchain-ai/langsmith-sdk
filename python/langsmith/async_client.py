@@ -188,6 +188,14 @@ class AsyncClient:
             await self._cache.stop()
         await self._client.aclose()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the instance.
+
+        Returns:
+            The string representation of the instance.
+        """
+        return f"AsyncClient (API URL: {self._api_url})"
+
     @property
     def _api_url(self):
         return str(self._client.base_url)

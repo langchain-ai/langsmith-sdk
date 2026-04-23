@@ -565,6 +565,8 @@ export interface SkillEntry {
 }
 
 export type Entry = FileEntry | AgentEntry | SkillEntry;
+
+/** The type of a non-prompt hub repo. */
 export type HubRepoType = "agent" | "skill";
 
 /**
