@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "@jest/globals";
-import { serialize } from "../utils/fast-safe-stringify/index.js";
+import mongoose from "mongoose";
+import {
+  serialize,
+  estimateSerializedSize,
+} from "../utils/fast-safe-stringify/index.js";
 
 describe("serializeWellKnownTypes", () => {
   it("should handle Map objects", () => {
@@ -187,5 +191,255 @@ describe("serializeWellKnownTypes", () => {
 
     expect(parsed.prop).toBe("value");
     expect(parsed.circular).toEqual({ result: "[Circular]" });
+  });
+});
+
+describe("estimateSerializedSize", () => {
+  // Helper: estimate must be within a tolerance of the real size.
+  // Direction matters: for soft limits on the ingest queue, over-estimating
+  // is safer than under-estimating (we may flush slightly earlier than we
+  // would otherwise). We allow a wide band here because the point of the
+  // estimator is speed, not precision.
+  function expectClose(
+    value: unknown,
+    opts: { minRatio?: number; maxRatio?: number } = {}
+  ) {
+    const { minRatio = 0.9, maxRatio = 3.0 } = opts;
+    const real = serialize(value).length;
+    const estimate = estimateSerializedSize(value);
+    const ratio = estimate / real;
+    if (ratio < minRatio || ratio > maxRatio) {
+      throw new Error(
+        `estimate out of range: real=${real}, estimate=${estimate}, ratio=${ratio.toFixed(
+          3
+        )} (expected between ${minRatio} and ${maxRatio})`
+      );
+    }
+  }
+
+  it("handles shared references without treating them as circular", () => {
+    // The repeated `shared` object is serialized twice by JSON.stringify,
+    // so the estimate should count it twice.
+    const shared = { text: "x".repeat(1000) };
+    const payload = { a: shared, b: shared };
+    expectClose(payload, { minRatio: 0.95, maxRatio: 1.05 });
+  });
+
+  it("handles deeply shared subtrees (system prompt pattern)", () => {
+    const systemPrompt = "You are a helpful assistant. ".repeat(100);
+    const payload = {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: "hi" },
+      ],
+      metadata: { systemPrompt },
+    };
+    expectClose(payload, { minRatio: 0.95, maxRatio: 1.05 });
+  });
+
+  it("counts Buffer by its JSON representation, not a constant", () => {
+    const buf = Buffer.alloc(10000, "x");
+    expectClose(buf, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+
+  it("prefers Buffer's dedicated sizing path over generic toJSON duck-typing", () => {
+    const buf = Buffer.alloc(32, 7);
+    const originalToJSON = buf.toJSON.bind(buf);
+    let calls = 0;
+    buf.toJSON = (() => {
+      calls += 1;
+      return originalToJSON();
+    }) as typeof buf.toJSON;
+
+    const estimate = estimateSerializedSize(buf);
+    expect(estimate).toBeGreaterThan(0);
+    expect(calls).toBe(0);
+  });
+
+  it("counts typed arrays by their (expensive) JSON representation", () => {
+    // Uint8Array stringifies as {"0":v,"1":v,...}, not [v,v,...].
+    const arr = new Uint8Array(1000).fill(5);
+    expectClose(arr, { minRatio: 0.9, maxRatio: 2.0 });
+  });
+
+  it("counts ArrayBuffer as an empty object", () => {
+    // ArrayBuffer itself has no enumerable properties -> "{}"
+    const buf = new ArrayBuffer(1000);
+    expectClose(buf, { minRatio: 0.5, maxRatio: 1.5 });
+  });
+
+  it("invokes toJSON for custom types", () => {
+    class Money {
+      amount: number;
+      constructor(n: number) {
+        this.amount = n;
+      }
+      toJSON() {
+        return { amount: this.amount, currency: "USD" };
+      }
+    }
+    // Small object -> allow looser ratio for constant overheads.
+    expectClose(new Money(42), { minRatio: 0.5, maxRatio: 3.0 });
+  });
+
+  it("handles real mongoose documents via toJSON", () => {
+    // Mongoose documents carry extensive internal state ($__, $isNew,
+    // prototype methods, getters, etc.) but expose toJSON() for
+    // serialization. The estimator must invoke toJSON() to match
+    // JSON.stringify semantics.
+    const UserSchema = new mongoose.Schema({
+      name: String,
+      age: Number,
+      tags: [String],
+      nested: { city: String, active: Boolean },
+    });
+    const User =
+      mongoose.models.EstUser ?? mongoose.model("EstUser", UserSchema);
+
+    const doc = new User({
+      name: "Alice",
+      age: 30,
+      tags: ["admin", "beta"],
+      nested: { city: "SF", active: true },
+    });
+
+    expectClose(doc, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+
+  it("handles real mongoose documents with nested subdocuments and arrays", () => {
+    const PostSchema = new mongoose.Schema({
+      title: String,
+      body: String,
+      comments: [{ text: String, votes: Number }],
+    });
+    const Post =
+      mongoose.models.EstPost ?? mongoose.model("EstPost", PostSchema);
+
+    const post = new Post({
+      title: "Hello",
+      body: "x".repeat(500),
+      comments: [
+        { text: "nice", votes: 3 },
+        { text: "ok", votes: 1 },
+      ],
+    });
+
+    expectClose(post, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+
+  it("falls back to exact serialization if estimation throws", () => {
+    const originalKeys = Object.keys;
+    try {
+      // Simulate an unexpected edge case inside the estimator traversal.
+      Object.keys = ((obj: object) => {
+        if ((obj as any).__explode) {
+          throw new Error("boom");
+        }
+        return originalKeys(obj);
+      }) as typeof Object.keys;
+
+      const payload = {
+        ok: true,
+        nested: { __explode: true, value: "x".repeat(100) },
+      };
+
+      expect(estimateSerializedSize(payload)).toBe(serialize(payload).length);
+    } finally {
+      Object.keys = originalKeys;
+    }
+  });
+
+  it("falls back to exact serialization if byte-length calculation throws", () => {
+    if (typeof Buffer === "undefined") {
+      return;
+    }
+
+    const originalByteLength = Buffer.byteLength;
+    try {
+      Buffer.byteLength = ((str: string, encoding?: BufferEncoding) => {
+        if (str.includes("explode-byte-length")) {
+          throw new Error("boom");
+        }
+        return originalByteLength(str, encoding);
+      }) as typeof Buffer.byteLength;
+
+      const payload = { text: "explode-byte-length" };
+      expect(estimateSerializedSize(payload)).toBe(serialize(payload).length);
+    } finally {
+      Buffer.byteLength = originalByteLength;
+    }
+  });
+
+  it("counts UTF-8 byte length for non-ASCII strings", () => {
+    // Chinese: each character is 3 UTF-8 bytes but 1 code unit.
+    expectClose({ text: "你好世界".repeat(100) });
+    // Emoji outside BMP: 4 UTF-8 bytes, 2 code units.
+    expectClose({ text: "🎉".repeat(100) });
+  });
+
+  it("detects real cycles but not shared siblings", () => {
+    const shared = { x: 1 };
+    const cyc: any = { shared, other: shared };
+    cyc.self = cyc;
+    const real = serialize(cyc).length;
+    const estimate = estimateSerializedSize(cyc);
+    // Should be finite (no infinite recursion), and in the ballpark.
+    expect(Number.isFinite(estimate)).toBe(true);
+    expect(estimate).toBeGreaterThan(0);
+    // Cycle handling uses a placeholder; we just want sanity.
+    expect(estimate / real).toBeGreaterThan(0.5);
+    expect(estimate / real).toBeLessThan(3.0);
+  });
+
+  it("handles typical traced-run payloads accurately", () => {
+    const runish = {
+      id: "abc-123",
+      name: "test_run",
+      run_type: "llm",
+      inputs: {
+        messages: [{ role: "user", content: "hello " + "x".repeat(1000) }],
+      },
+      extra: { metadata: { model: "gpt-4", temperature: 0.7 } },
+    };
+    expectClose(runish, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+
+  it("handles well-known types (Map, Set, Date, RegExp, Error)", () => {
+    expectClose(
+      new Map([
+        ["a", 1],
+        ["b", 2],
+      ]),
+      {
+        minRatio: 0.5,
+        maxRatio: 2.0,
+      }
+    );
+    expectClose(new Set([1, 2, 3, "hi"]), { minRatio: 0.5, maxRatio: 3.0 });
+    expectClose(new Date(), { minRatio: 0.9, maxRatio: 1.2 });
+    expectClose(/foo/g, { minRatio: 0.5, maxRatio: 2.0 });
+    expectClose(new Error("boom"), { minRatio: 0.5, maxRatio: 3.0 });
+  });
+
+  it("does not throw on BigInt", () => {
+    expect(() =>
+      estimateSerializedSize({ big: 123456789012345678901234567890n })
+    ).not.toThrow();
+  });
+
+  it("treats undefined/function/symbol as dropped in object properties", () => {
+    const v = { a: 1, b: undefined, c: () => 1, d: Symbol(), e: 2 };
+    const real = serialize(v).length;
+    const estimate = estimateSerializedSize(v);
+    // Dropped keys shouldn't blow up the estimate significantly.
+    expect(estimate).toBeLessThan(real * 6);
+  });
+
+  it("treats undefined/function/symbol as null inside arrays", () => {
+    // JSON.stringify renders these as "null" in arrays.
+    const v = [1, undefined, () => 1, Symbol(), 2];
+    const real = serialize(v).length;
+    const estimate = estimateSerializedSize(v);
+    expect(estimate).toBeGreaterThan(real * 0.5);
   });
 });

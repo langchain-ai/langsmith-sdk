@@ -82,7 +82,10 @@ import {
   _getFetchImplementation,
 } from "./singletons/fetch.js";
 
-import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
+import {
+  serialize as serializePayloadForTracing,
+  estimateSerializedSize,
+} from "./utils/fast-safe-stringify/index.js";
 
 /**
  * Catches timestamps without a timezone suffix.
@@ -676,10 +679,23 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = serializePayloadForTracing(
-      item.item,
-      `Serializing run with id: ${item.item.id}`
-    ).length;
+    // By default we compute the exact serialized size here by stringifying
+    // the payload. This is expensive: JSON.stringify on large payloads
+    // blocks the event loop on the user's hot path.
+    //
+    // Opting into LANGSMITH_PERF_OPTIMIZATION=true switches to a cheap
+    // structural estimate instead. The estimate is only used for soft
+    // memory accounting (queue size limit and downstream async caller
+    // memory tracking), never for anything correctness-critical -- the
+    // real serialization still happens later, off the hot path, when the
+    // batch is assembled for sending.
+    const size =
+      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true"
+        ? estimateSerializedSize(item.item)
+        : serializePayloadForTracing(
+            item.item,
+            `Serializing run with id: ${item.item.id}`
+          ).length;
 
     // Check if adding this item would exceed the size limit
     // Allow the run if the queue is empty (to support large single traces)
