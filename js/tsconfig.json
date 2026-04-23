@@ -57,7 +57,8 @@
       "src/experimental/otel/processor.ts",
       "src/experimental/vercel/index.ts",
       "src/experimental/anthropic/index.ts",
-      "src/experimental/sandbox/index.ts"
+      "src/experimental/sandbox/index.ts",
+      "src/experimental/opencode/index.ts"
     ]
   }
 }
