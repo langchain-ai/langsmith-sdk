@@ -206,9 +206,10 @@ def _resolve_tracing_mode(
         legacy_only = ls_utils.is_env_var_truish(otel_only_envvar_name)
         if legacy_otel or legacy_only:
             warnings.warn(
-                f"Both {mode_envvar_name} and the legacy {otel_enabled_envvar_name} / "
-                f"{otel_only_envvar_name} env vars are set. {mode_envvar_name} takes "
-                "precedence.",
+                f"Both LANGSMITH_{mode_envvar_name} and the legacy "
+                f"LANGSMITH_{otel_enabled_envvar_name} / "
+                f"LANGSMITH_{otel_only_envvar_name} env vars are set. "
+                f"LANGSMITH_{mode_envvar_name} takes precedence.",
                 stacklevel=3,
             )
         return env_mode  # type: ignore[return-value]
@@ -7547,7 +7548,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
-                and self._tracing_mode != "otel"
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
