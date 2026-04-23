@@ -75,10 +75,7 @@ import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import {
-  parseHubIdentifier,
-  parsePromptIdentifier,
-} from "./utils/prompts.js";
+import { parseHubIdentifier, parsePromptIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
   isLangSmithNotFoundError,
