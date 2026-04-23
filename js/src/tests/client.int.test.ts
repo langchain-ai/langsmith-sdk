@@ -14,7 +14,7 @@ import {
 } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { ExampleCreate } from "../schemas.js";
 import * as fs from "node:fs";
 import * as path from "node:path";

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest, expect, test, describe, it } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import {

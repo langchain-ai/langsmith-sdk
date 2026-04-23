@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { v4 } from "uuid";
+import { v4 } from "../utils/uuid/src/index.js";
 import { createServer, Server } from "http";
 import { Client } from "../client.js";
 import { AsyncCaller } from "../utils/async_caller.js";

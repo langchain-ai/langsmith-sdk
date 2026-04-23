@@ -21,7 +21,7 @@ import {
   runEvaluator,
 } from "./evaluator.js";
 import { LangSmithConflictError } from "../utils/error.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import {
   evaluateComparative,
   ComparisonEvaluationResults,

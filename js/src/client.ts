@@ -1,4 +1,4 @@
-import * as uuid from "uuid";
+import * as uuid from "./utils/uuid/src/index.js";
 import type { OTELContext } from "./experimental/otel/types.js";
 import {
   LangSmithToOTELTranslator,

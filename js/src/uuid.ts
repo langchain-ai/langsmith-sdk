@@ -1,4 +1,4 @@
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "./utils/uuid/src/index.js";
 export { uuid7FromTime } from "./utils/_uuid.js";
 
 /**

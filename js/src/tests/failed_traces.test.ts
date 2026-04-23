@@ -11,7 +11,7 @@ import {
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client } from "../client.js";
 
 async function makeTmpDir(): Promise<string> {

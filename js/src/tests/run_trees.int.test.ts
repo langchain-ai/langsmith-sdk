@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import * as uuid from "uuid";
+import * as uuid from "../utils/uuid/src/index.js";
 import {
   RunTree,
   RunTreeConfig,

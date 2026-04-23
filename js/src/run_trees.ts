@@ -28,7 +28,7 @@ import {
   uuid7FromTime,
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
-import { v5 as uuidv5 } from "uuid";
+import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)

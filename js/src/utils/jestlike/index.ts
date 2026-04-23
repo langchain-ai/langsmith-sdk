@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 
 import crypto from "crypto";
-import { v4, v5 } from "uuid";
+import { v4, v5 } from "./uuid/src/index.js";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";

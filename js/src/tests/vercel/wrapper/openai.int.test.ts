@@ -2,7 +2,7 @@
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
-import { v4 } from "uuid";
+import { v4 } from "../../../utils/uuid/src/index.js";
 import * as fs from "fs/promises";
 import { fileURLToPath } from "url";
 import path from "path";
