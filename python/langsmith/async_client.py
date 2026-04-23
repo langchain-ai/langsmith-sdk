@@ -23,6 +23,12 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith.client import (
+    _HUB,
+    _PLATFORM_HUB,
+    _REPO_HANDLE_PATTERN,
+    _build_context_url,
+)
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 ID_TYPE = Union[uuid.UUID, str]
@@ -2044,9 +2050,8 @@ class AsyncClient:
         Returns:
             AgentContext: The agent snapshot.
         """
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).pull_agent(identifier, version=version)
+        data = await self._pull_hub_directory(identifier, version=version)
+        return ls_schemas.AgentContext.model_validate(data)
 
     async def push_agent(
         self,
@@ -2060,10 +2065,9 @@ class AsyncClient:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push an agent to Hub, creating the repo if it does not exist."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).push_agent(
+        return await self._push_hub_directory(
             identifier,
+            "agent",
             files=files,
             parent_commit=parent_commit,
             description=description,
@@ -2079,9 +2083,8 @@ class AsyncClient:
         version: Optional[str] = None,
     ) -> ls_schemas.SkillContext:
         """Pull a skill from Hub."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).pull_skill(identifier, version=version)
+        data = await self._pull_hub_directory(identifier, version=version)
+        return ls_schemas.SkillContext.model_validate(data)
 
     async def push_skill(
         self,
@@ -2095,10 +2098,9 @@ class AsyncClient:
         is_public: Optional[bool] = None,
     ) -> str:
         """Push a skill to Hub."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).push_skill(
+        return await self._push_hub_directory(
             identifier,
+            "skill",
             files=files,
             parent_commit=parent_commit,
             description=description,
@@ -2109,27 +2111,21 @@ class AsyncClient:
 
     async def delete_agent(self, identifier: str) -> None:
         """Delete an agent and its owned child file repos."""
-        from langsmith.hub_client import AsyncHubClient
-
-        await AsyncHubClient(self).delete_agent(identifier)
+        await self._delete_hub_directory(identifier)
 
     async def delete_skill(self, identifier: str) -> None:
         """Delete a skill and its owned child file repos."""
-        from langsmith.hub_client import AsyncHubClient
-
-        await AsyncHubClient(self).delete_skill(identifier)
+        await self._delete_hub_directory(identifier)
 
     async def agent_exists(self, identifier: str) -> bool:
         """Check if an agent repo exists."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).agent_exists(identifier)
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return await self._hub_repo_exists(owner, name)
 
     async def skill_exists(self, identifier: str) -> bool:
         """Check if a skill repo exists."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).skill_exists(identifier)
+        owner, name, _ = ls_utils.parse_prompt_identifier(identifier)
+        return await self._hub_repo_exists(owner, name)
 
     async def list_agents(
         self,
@@ -2141,9 +2137,8 @@ class AsyncClient:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List agents with pagination."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).list_agents(
+        return await self._list_hub_repos(
+            "agent",
             limit=limit,
             offset=offset,
             is_public=is_public,
@@ -2161,15 +2156,198 @@ class AsyncClient:
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List skills with pagination."""
-        from langsmith.hub_client import AsyncHubClient
-
-        return await AsyncHubClient(self).list_skills(
+        return await self._list_hub_repos(
+            "skill",
             limit=limit,
             offset=offset,
             is_public=is_public,
             is_archived=is_archived,
             query=query,
         )
+
+    async def _pull_hub_directory(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str],
+    ) -> dict[str, Any]:
+        """Fetch hub directory payload, merged with owner/repo from identifier."""
+        owner, name, commit = ls_utils.parse_hub_identifier(identifier)
+        target = (
+            version if version is not None else (commit if commit != "latest" else None)
+        )
+        params: dict[str, Any] = {}
+        if target:
+            params["commit"] = target
+        response = await self._arequest_with_retries(
+            "GET",
+            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+            params=params,
+        )
+        return {**response.json(), "owner": owner, "repo": name}
+
+    async def _push_hub_directory(
+        self,
+        identifier: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        files: dict[str, Any],
+        parent_commit: Optional[str],
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> str:
+        """Create a hub directory commit, creating the repo if it does not exist."""
+        if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
+            raise ls_utils.LangSmithUserError("parent_commit must be 8-64 characters.")
+
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not (await self._current_tenant_is_owner(owner)):
+            raise (await self._owner_conflict_error(f"push {repo_type}", owner))
+
+        if await self._hub_repo_exists(owner, name):
+            if any(v is not None for v in (description, readme, tags, is_public)):
+                await self._update_hub_repo_metadata(
+                    owner,
+                    name,
+                    description=description,
+                    readme=readme,
+                    tags=tags,
+                    is_public=is_public,
+                )
+        else:
+            if not _REPO_HANDLE_PATTERN.match(name):
+                raise ls_utils.LangSmithUserError(
+                    f"Invalid repo_handle {name!r}: "
+                    f"must match {_REPO_HANDLE_PATTERN.pattern}."
+                )
+            await self._create_hub_repo(
+                name,
+                repo_type,
+                description=description,
+                readme=readme,
+                tags=tags,
+                is_public=bool(is_public),
+            )
+
+        request_files: dict[str, Optional[dict[str, Any]]] = {}
+        for path, entry in files.items():
+            if entry is None:
+                request_files[path] = None
+            else:
+                request_files[path] = entry.model_dump(exclude_none=True)
+
+        body: dict[str, Any] = {"files": request_files}
+        if parent_commit is not None:
+            body["parent_commit"] = parent_commit
+
+        response = await self._arequest_with_retries(
+            "POST",
+            f"{_PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            json=body,
+        )
+        commit_hash = response.json()["commit"]["commit_hash"]
+        return _build_context_url(self._host_url, owner, name, commit_hash)
+
+    async def _delete_hub_directory(self, identifier: str) -> None:
+        """Delete a hub directory repo."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not (await self._current_tenant_is_owner(owner)):
+            raise (await self._owner_conflict_error("delete", owner))
+        await self._arequest_with_retries(
+            "DELETE",
+            f"{_PLATFORM_HUB}/{owner}/{name}/directories",
+        )
+
+    async def _list_hub_repos(
+        self,
+        repo_type: Literal["agent", "skill"],
+        *,
+        limit: int,
+        offset: int,
+        is_public: Optional[bool],
+        is_archived: Optional[bool],
+        query: Optional[str],
+    ) -> ls_schemas.ListPromptsResponse:
+        """List hub repos filtered by type.
+
+        Returns ``ListPromptsResponse`` because ``/repos`` is polymorphic — the
+        list shape is shared across prompt, agent, and skill repos.
+        """
+        params: dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+            "repo_type": repo_type,
+            "is_archived": "true" if is_archived else "false",
+        }
+        if is_public is not None:
+            params["is_public"] = "true" if is_public else "false"
+        if query:
+            params["query"] = query
+            params["match_prefix"] = "true"
+        response = await self._arequest_with_retries("GET", _HUB, params=params)
+        return ls_schemas.ListPromptsResponse(**response.json())
+
+    async def _hub_repo_exists(self, owner: str, name: str) -> bool:
+        """Check if a hub repo exists."""
+        try:
+            await self._arequest_with_retries("GET", f"{_HUB}/{owner}/{name}")
+            return True
+        except ls_utils.LangSmithNotFoundError:
+            return False
+
+    async def _create_hub_repo(
+        self,
+        name: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: bool,
+    ) -> None:
+        """Create a new hub repo of the given type."""
+        body: dict[str, Any] = {
+            "repo_handle": name,
+            "repo_type": repo_type,
+            "is_public": is_public,
+        }
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        try:
+            await self._arequest_with_retries("POST", "/repos/", json=body)
+        except ls_utils.LangSmithConflictError:
+            pass
+
+    async def _update_hub_repo_metadata(
+        self,
+        owner: str,
+        name: str,
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> None:
+        """Patch hub repo metadata fields that were explicitly provided."""
+        body: dict[str, Any] = {}
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        if is_public is not None:
+            body["is_public"] = is_public
+        if body:
+            await self._arequest_with_retries(
+                "PATCH", f"{_HUB}/{owner}/{name}", json=body
+            )
 
 
 def _exclude_none(d: dict) -> dict:
