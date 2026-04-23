@@ -1,3 +1,4 @@
+/* eslint-disable import/no-extraneous-dependencies */
 import { OpenCodeSessionTracer } from "../../experimental/opencode/tracer.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
