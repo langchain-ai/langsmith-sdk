@@ -223,6 +223,21 @@ def begin_llm_run_from_assistant_messages(
     return final_content, llm_run
 
 
+def _bind_hook_to_session(hook: Any, session: Optional[SessionState]) -> Any:
+    """Return a hook callable that runs with *session* bound, if provided."""
+    if session is None:
+        return hook
+
+    async def _bound(input_data: Any, tool_use_id: Any, context: Any) -> Any:
+        token = _current_session.set(session)
+        try:
+            return await hook(input_data, tool_use_id, context)
+        finally:
+            _current_session.reset(token)
+
+    return _bound
+
+
 def _inject_tracing_hooks(options: Any, session: Optional[SessionState] = None) -> None:
     """Inject LangSmith tracing hooks into ClaudeAgentOptions.
 
@@ -251,33 +266,21 @@ def _inject_tracing_hooks(options: Any, session: Optional[SessionState] = None) 
     try:
         from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
 
-        def bind_hook(hook: Any) -> Any:
-            if session is None:
-                return hook
-
-            async def _bound(input_data: Any, tool_use_id: Any, context: Any) -> Any:
-                token = _current_session.set(session)
-                try:
-                    return await hook(input_data, tool_use_id, context)
-                finally:
-                    _current_session.reset(token)
-
-            return _bound
-
         langsmith_pre_matcher = HookMatcher(
-            matcher=None, hooks=[bind_hook(pre_tool_use_hook)]
+            matcher=None, hooks=[_bind_hook_to_session(pre_tool_use_hook, session)]
         )
         langsmith_post_matcher = HookMatcher(
-            matcher=None, hooks=[bind_hook(post_tool_use_hook)]
+            matcher=None, hooks=[_bind_hook_to_session(post_tool_use_hook, session)]
         )
         langsmith_failure_matcher = HookMatcher(
-            matcher=None, hooks=[bind_hook(post_tool_use_failure_hook)]
+            matcher=None,
+            hooks=[_bind_hook_to_session(post_tool_use_failure_hook, session)],
         )
         langsmith_subagent_start_matcher = HookMatcher(
-            matcher=None, hooks=[bind_hook(subagent_start_hook)]
+            matcher=None, hooks=[_bind_hook_to_session(subagent_start_hook, session)]
         )
         langsmith_subagent_stop_matcher = HookMatcher(
-            matcher=None, hooks=[bind_hook(subagent_stop_hook)]
+            matcher=None, hooks=[_bind_hook_to_session(subagent_stop_hook, session)]
         )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
