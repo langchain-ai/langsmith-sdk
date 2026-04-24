@@ -96,6 +96,11 @@ import {
   serialize as serializePayloadForTracing,
   estimateSerializedSize,
 } from "./utils/fast-safe-stringify/index.js";
+import {
+  getSharedSerializeWorker,
+  hasLargeString,
+  SerializeWorker,
+} from "./utils/serialize_worker.js";
 
 /**
  * Catches timestamps without a timezone suffix.
@@ -713,7 +718,7 @@ export class AutoBatchQueue {
     // batch is assembled for sending.
     const size =
       getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true"
-        ? estimateSerializedSize(item.item)
+        ? estimateSerializedSize(item.item).size
         : serializePayloadForTracing(
             item.item,
             `Serializing run with id: ${item.item.id}`
@@ -852,6 +857,15 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
+  private _serializeWorker?: SerializeWorker | null;
+
+  /**
+   * Tracks in-flight drainAutoBatchQueue promises so awaitPendingTraceBatches
+   * can wait on them even if the flush involves async work (worker-thread
+   * serialize) that hasn't yet registered with batchIngestCaller.queue.
+   */
+  private _pendingDrains = new Set<Promise<unknown>>();
+
   private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
 
   private _tracingMode: TracingMode = "langsmith";
@@ -868,6 +882,66 @@ export class Client implements LangSmithTracingClientInterface {
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
+  }
+
+  /**
+   * Serialize a payload for tracing, optionally offloading the work to a
+   * Node worker thread when LANGSMITH_PERF_OPTIMIZATION=true and the runtime
+   * supports worker_threads.
+   *
+   * Falls back to synchronous serialization when:
+   *  - the perf flag is off
+   *  - manualFlushMode is enabled (serverless: worker boot cost > benefit)
+   *  - worker_threads is unavailable (non-Node runtimes)
+   *  - the payload contains values that can't be structured-cloned across
+   *    threads (functions, non-cloneable class instances, streams, etc.)
+   *  - the worker throws for any other reason
+   *
+   * In all fallback cases the returned bytes are identical to the sync path.
+   */
+  private _trackDrain(promise: Promise<unknown>): void {
+    this._pendingDrains.add(promise);
+    promise.finally(() => {
+      this._pendingDrains.delete(promise);
+    });
+  }
+
+  private async _serializeBody(
+    payload: unknown,
+    errorContext: string
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    const perfOptIn =
+      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true";
+    if (!perfOptIn || this.manualFlushMode) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    // Shape-aware gate: worker offload pays for itself only when the
+    // payload is dominated by one or more large strings (V8 can refcount
+    // those across isolates instead of copying). For structure-heavy
+    // payloads -- many keys, deep nesting, lots of small strings -- the
+    // structuredClone walk plus thread-hop cost exceeds the JSON.stringify
+    // cost we would pay inline, so we fall through to sync serialize.
+    if (!hasLargeString(payload)) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    if (this._serializeWorker === undefined) {
+      this._serializeWorker = getSharedSerializeWorker();
+    }
+    if (this._serializeWorker === null) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    try {
+      const bytes = await this._serializeWorker.serialize(payload);
+      if (bytes === null) {
+        // Worker subsystem unavailable; cache the null to skip re-entry.
+        this._serializeWorker = null;
+        return serializePayloadForTracing(payload, errorContext);
+      }
+      return bytes;
+    } catch {
+      // DataCloneError, worker crash, etc. Fall back silently.
+      return serializePayloadForTracing(payload, errorContext);
+    }
   }
 
   private multipartStreamingDisabled = false;
@@ -1604,18 +1678,22 @@ export class Client implements LangSmithTracingClientInterface {
       this.autoBatchQueue.sizeBytes > sizeLimitBytes ||
       this.autoBatchQueue.items.length > sizeLimit
     ) {
-      void this.drainAutoBatchQueue({
-        batchSizeLimitBytes: sizeLimitBytes,
-        batchSizeLimit: sizeLimit,
-      });
+      this._trackDrain(
+        this.drainAutoBatchQueue({
+          batchSizeLimitBytes: sizeLimitBytes,
+          batchSizeLimit: sizeLimit,
+        })
+      );
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        void this.drainAutoBatchQueue({
-          batchSizeLimitBytes: sizeLimitBytes,
-          batchSizeLimit: sizeLimit,
-        });
+        this._trackDrain(
+          this.drainAutoBatchQueue({
+            batchSizeLimitBytes: sizeLimitBytes,
+            batchSizeLimit: sizeLimit,
+          })
+        );
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -1842,7 +1920,7 @@ export class Client implements LangSmithTracingClientInterface {
         .concat(batchChunks.patch.map((item) => item.id))
         .join(",");
       await this._postBatchIngestRuns(
-        serializePayloadForTracing(
+        await this._serializeBody(
           batchChunks,
           `Ingesting runs with ids: ${runIds}`
         ),
@@ -2000,7 +2078,7 @@ export class Client implements LangSmithTracingClientInterface {
         } = originalPayload;
         const fields = { inputs, outputs, events, extra, error, serialized };
         // encode the main run payload
-        const stringifiedPayload = serializePayloadForTracing(
+        const stringifiedPayload = await this._serializeBody(
           payload,
           `Serializing for multipart ingestion of run with id: ${payload.id}`
         );
@@ -2015,7 +2093,7 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = serializePayloadForTracing(
+          const stringifiedValue = await this._serializeBody(
             value,
             `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`
           );
@@ -6797,6 +6875,12 @@ export class Client implements LangSmithTracingClientInterface {
      * ```
      */
     await new Promise((resolve) => setTimeout(resolve, 1));
+    // Wait for any in-flight drains (whose serialize work may still be
+    // in-progress on a worker thread and not yet registered with the
+    // batchIngestCaller queue) before checking queue idleness.
+    while (this._pendingDrains.size > 0) {
+      await Promise.all([...this._pendingDrains]);
+    }
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),

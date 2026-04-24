@@ -471,6 +471,7 @@
     }
   },
   "browser": {
-    "./dist/utils/fs.js": "./dist/utils/fs.browser.js"
+    "./dist/utils/fs.js": "./dist/utils/fs.browser.js",
+    "./dist/utils/worker_threads.js": "./dist/utils/worker_threads.browser.js"
   }
 }
