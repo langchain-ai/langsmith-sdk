@@ -46,8 +46,10 @@ jobs:
         env:
           LANGSMITH_RUN_PERF_BENCH: "true"
           LANGSMITH_TRACING: "false"
+          LANGSMITH_PERF_BENCH_DIR: ${{ github.workspace }}/base-results
         run: |
           set -o pipefail
+          mkdir -p "$LANGSMITH_PERF_BENCH_DIR"
           pnpm test:integration src/tests/perf.int.test.ts \
             -t "benchmark event loop" 2>&1 | tee "$GITHUB_WORKSPACE/base-bench.log"
 
@@ -60,8 +62,10 @@ jobs:
         env:
           LANGSMITH_RUN_PERF_BENCH: "true"
           LANGSMITH_TRACING: "false"
+          LANGSMITH_PERF_BENCH_DIR: ${{ github.workspace }}/pr-results
         run: |
           set -o pipefail
+          mkdir -p "$LANGSMITH_PERF_BENCH_DIR"
           pnpm test:integration src/tests/perf.int.test.ts \
             -t "benchmark event loop" 2>&1 | tee "$GITHUB_WORKSPACE/pr-bench.log"
 
@@ -71,35 +75,34 @@ jobs:
           script: |
             const fs = require("fs");
             const path = require("path");
-            const readLog = (name) => {
+
+            const readJson = (dir, file) => {
               try {
-                return fs.readFileSync(
-                  path.join(process.env.GITHUB_WORKSPACE, name),
-                  "utf8"
+                return JSON.parse(
+                  fs.readFileSync(path.join(dir, file), "utf8")
                 );
               } catch {
-                return "";
+                return null;
               }
             };
-            const baseLog = readLog("base-bench.log");
-            const prLog   = readLog("pr-bench.log");
 
-            const extract = (log) => {
-              const m = log.match(/<<PERF_BENCH_JSON>>(.*?)<<END_PERF_BENCH_JSON>>/s);
-              if (!m) return null;
-              try { return JSON.parse(m[1]); } catch { return null; }
-            };
+            const baseDir = path.join(process.env.GITHUB_WORKSPACE, "base-results");
+            const prDir   = path.join(process.env.GITHUB_WORKSPACE, "pr-results");
 
-            const base = extract(baseLog);
-            const pr   = extract(prLog);
-
-            if (!base || !pr) {
-              core.setFailed(
-                `Failed to parse benchmark output.\n` +
-                `base parsed: ${!!base}, pr parsed: ${!!pr}`
-              );
-              return;
-            }
+            const cases = [
+              {
+                title: "Base64-heavy payload",
+                description:
+                  "Single large base64 string per message — the shape the worker-offload path is optimized for.",
+                file: "bench-base64.json",
+              },
+              {
+                title: "Structural payload",
+                description:
+                  "Many small strings across a wide/nested object graph. Should bypass worker offload and use sync flush.",
+                file: "bench-structural.json",
+              },
+            ];
 
             const fmt = (n) => (typeof n === "number" ? n.toFixed(2) : String(n));
             const delta = (a, b) => {
@@ -107,13 +110,6 @@ jobs:
               const pct = ((b - a) / a) * 100;
               const sign = pct >= 0 ? "+" : "";
               return `${sign}${pct.toFixed(1)}%`;
-            };
-
-            const row = (label, path) => {
-              const get = (obj) => path.reduce((o, k) => (o ? o[k] : undefined), obj);
-              const a = get(base);
-              const b = get(pr);
-              return `| ${label} | ${fmt(a)} | ${fmt(b)} | ${delta(a, b)} |`;
             };
 
             const metrics = [
@@ -132,37 +128,44 @@ jobs:
               ["loop lag max (ms)",       ["loopLag", "max"]],
             ];
 
-            // Only include the tail of each log — the useful part is the
-            // human-readable table jest prints near the end.
-            const tail = (s, n = 2500) =>
-              s.length > n ? "…\n" + s.slice(-n) : s;
-            const safe = (s) => s.replace(/```/g, "``\u200b`").trim();
+            const renderCase = ({ title, description, file }) => {
+              const base = readJson(baseDir, file);
+              const pr   = readJson(prDir, file);
+              if (!base || !pr) {
+                return [
+                  `#### ${title}`,
+                  ``,
+                  `_Missing results_: base=${!!base}, pr=${!!pr}`,
+                ];
+              }
+              const get = (obj, p) =>
+                p.reduce((o, k) => (o ? o[k] : undefined), obj);
+              const rows = metrics.map(([label, p]) => {
+                const a = get(base, p);
+                const b = get(pr, p);
+                return `| ${label} | ${fmt(a)} | ${fmt(b)} | ${delta(a, b)} |`;
+              });
+              return [
+                `#### ${title}`,
+                ``,
+                description,
+                `Payload: ${(pr.inputBytes / 1024).toFixed(1)} KB in / ${(
+                  pr.outputBytes / 1024
+                ).toFixed(1)} KB out, ${pr.runs} runs.`,
+                ``,
+                `| metric | main | this PR | delta |`,
+                `| --- | ---: | ---: | ---: |`,
+                ...rows,
+                ``,
+              ];
+            };
 
             const body = [
               `### JS perf benchmark`,
               ``,
-              `Event-loop blocking benchmark (large base64-heavy payload, ${pr.runs} runs).`,
               `Lower is better. Noisy on shared runners — treat as a signal, not a gate.`,
               ``,
-              `| metric | main | this PR | delta |`,
-              `| --- | ---: | ---: | ---: |`,
-              ...metrics.map(([label, path]) => row(label, path)),
-              ``,
-              `<details><summary>Raw output (PR)</summary>`,
-              ``,
-              "```",
-              safe(tail(prLog)),
-              "```",
-              ``,
-              `</details>`,
-              ``,
-              `<details><summary>Raw output (main)</summary>`,
-              ``,
-              "```",
-              safe(tail(baseLog)),
-              "```",
-              ``,
-              `</details>`,
+              ...cases.flatMap(renderCase),
             ].join("\n");
 
             // PR comments have a 65536-char limit; leave headroom.
