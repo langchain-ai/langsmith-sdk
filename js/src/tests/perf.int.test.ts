@@ -1,7 +1,7 @@
 /* eslint-disable no-process-env, no-instanceof/no-instanceof */
 import { traceable } from "../traceable.js";
 import { Client } from "../client.js";
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "../utils/uuid/src/index.js";
 
 import * as fs from "fs";
 import path from "path";

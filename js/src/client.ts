@@ -6258,6 +6258,8 @@ export class Client implements LangSmithTracingClientInterface {
       commit_hash: result.commit_hash,
       manifest: result.manifest,
       examples: result.examples,
+      hub_model_config: result.model_config,
+      hub_model_provider: result.model_provider,
     };
   }
 

@@ -496,6 +496,10 @@ export interface PromptCommit {
   manifest: Record<string, any>;
   examples: Array<Record<any, any>>;
   description?: string;
+  /** The model configuration for the prompt. */
+  hub_model_config?: Record<string, any>;
+  /** The model provider (e.g. ChatOpenAI) */
+  hub_model_provider?: string;
 }
 
 export interface Prompt {
