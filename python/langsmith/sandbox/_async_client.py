@@ -191,8 +191,10 @@ class AsyncSandboxClient:
                 will be automatically deleted after this duration. Must be a
                 multiple of 60. 0 or None disables this TTL.
             idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+                automatically deleted after this duration of inactivity. Must
+                be a multiple of 60. ``0`` explicitly disables the idle
+                timeout. When omitted (``None``), the server applies a default
+                of ``600`` seconds (10 minutes).
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
@@ -268,8 +270,10 @@ class AsyncSandboxClient:
                 will be automatically deleted after this duration. Must be a
                 multiple of 60. 0 or None disables this TTL.
             idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+                automatically deleted after this duration of inactivity. Must
+                be a multiple of 60. ``0`` explicitly disables the idle
+                timeout. When omitted (``None``), the server applies a default
+                of ``600`` seconds (10 minutes).
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
@@ -418,8 +422,9 @@ class AsyncSandboxClient:
             new_name: New display name.
             ttl_seconds: Maximum lifetime in seconds from creation. Must be a
                 multiple of 60. 0 disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of 60.
-                0 disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of
+                60. ``0`` disables this TTL. ``None`` leaves the existing
+                value unchanged.
 
         Returns:
             Updated AsyncSandbox.

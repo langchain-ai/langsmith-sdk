@@ -700,7 +700,8 @@ Control how long a sandbox stays alive with two optional TTL parameters:
   deleted after this many seconds, regardless of activity.
 - **`idle_ttl_seconds`** — Idle timeout. The sandbox is automatically deleted after
   this many seconds of inactivity. Activity (command execution, file I/O) resets
-  the timer.
+  the timer. When omitted at creation, the server applies a default of `600`
+  seconds (10 minutes); pass `0` explicitly to disable the idle timeout.
 
 Both values must be multiples of 60 (minute-resolution). Pass `0` to explicitly
 disable a TTL. When both are set, whichever deadline comes first wins.
@@ -915,7 +916,7 @@ except SandboxClientError as e:
 | `dataplane_url` | URL for runtime operations (only functional when status is `"ready"`) |
 | `id` | Unique identifier (UUID) |
 | `ttl_seconds` | Maximum lifetime TTL in seconds (`0` means disabled, `None` means not set) |
-| `idle_ttl_seconds` | Idle timeout TTL in seconds (`0` means disabled, `None` means not set) |
+| `idle_ttl_seconds` | Idle timeout TTL in seconds (`0` means disabled, `None` means not set). New sandboxes get a server-side default of `600` (10 minutes) when not explicitly provided. |
 | `expires_at` | Computed expiration timestamp, or `None` if no TTL is active |
 
 | Method | Description |

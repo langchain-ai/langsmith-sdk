@@ -50,7 +50,10 @@ class AsyncSandbox:
         created_at: Timestamp when the sandbox was created.
         updated_at: Timestamp when the sandbox was last updated.
         ttl_seconds: Maximum lifetime TTL in seconds (0 means disabled).
-        idle_ttl_seconds: Idle timeout TTL in seconds (0 means disabled).
+        idle_ttl_seconds: Idle timeout TTL in seconds (``0`` means disabled).
+            Newly-created sandboxes receive a server-side default of ``600``
+            seconds (10 minutes) when the caller did not set ``idle_ttl_seconds``
+            explicitly.
         expires_at: Computed expiration timestamp, or None if no TTL is set.
         snapshot_id: Snapshot ID used to create this sandbox.
         vcpus: Number of vCPUs allocated.
