@@ -14,6 +14,7 @@ from langsmith.run_helpers import get_current_run_tree, trace
 from ._config import get_tracing_config
 from ._hooks import (
     SessionState,
+    _current_session,
     _register_session,
     _set_session_root,
     _unregister_session,
@@ -222,8 +223,14 @@ def begin_llm_run_from_assistant_messages(
     return final_content, llm_run
 
 
-def _inject_tracing_hooks(options: Any) -> None:
-    """Inject LangSmith tracing hooks into ClaudeAgentOptions."""
+def _inject_tracing_hooks(options: Any, session: Optional[SessionState] = None) -> None:
+    """Inject LangSmith tracing hooks into ClaudeAgentOptions.
+
+    If *session* is provided, injected hook callables bind that session around
+    each hook invocation. This is important because the Claude SDK may execute
+    hooks in async contexts that do not inherit the ``receive_response``
+    ContextVar; binding at hook injection time keeps each client isolated.
+    """
     if not hasattr(options, "hooks"):
         return
 
@@ -244,16 +251,33 @@ def _inject_tracing_hooks(options: Any) -> None:
     try:
         from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
 
-        langsmith_pre_matcher = HookMatcher(matcher=None, hooks=[pre_tool_use_hook])
-        langsmith_post_matcher = HookMatcher(matcher=None, hooks=[post_tool_use_hook])
+        def bind_hook(hook: Any) -> Any:
+            if session is None:
+                return hook
+
+            async def _bound(input_data: Any, tool_use_id: Any, context: Any) -> Any:
+                token = _current_session.set(session)
+                try:
+                    return await hook(input_data, tool_use_id, context)
+                finally:
+                    _current_session.reset(token)
+
+            return _bound
+
+        langsmith_pre_matcher = HookMatcher(
+            matcher=None, hooks=[bind_hook(pre_tool_use_hook)]
+        )
+        langsmith_post_matcher = HookMatcher(
+            matcher=None, hooks=[bind_hook(post_tool_use_hook)]
+        )
         langsmith_failure_matcher = HookMatcher(
-            matcher=None, hooks=[post_tool_use_failure_hook]
+            matcher=None, hooks=[bind_hook(post_tool_use_failure_hook)]
         )
         langsmith_subagent_start_matcher = HookMatcher(
-            matcher=None, hooks=[subagent_start_hook]
+            matcher=None, hooks=[bind_hook(subagent_start_hook)]
         )
         langsmith_subagent_stop_matcher = HookMatcher(
-            matcher=None, hooks=[subagent_stop_hook]
+            matcher=None, hooks=[bind_hook(subagent_stop_hook)]
         )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
@@ -325,8 +349,9 @@ def instrument_claude_client(original_class: Any) -> None:
     # ── patched __init__ ─────────────────────────────────────────────
     def _traced_init(self: Any, *args: Any, **kwargs: Any) -> None:
         options = kwargs.get("options") or (args[0] if args else None)
+        self._ls_session = SessionState()
         if options:
-            _inject_tracing_hooks(options)
+            _inject_tracing_hooks(options, self._ls_session)
         _orig_init(self, *args, **kwargs)
         self._ls_prompt = None
         self._ls_start_time = None
@@ -423,7 +448,9 @@ def instrument_claude_client(original_class: Any) -> None:
             # ClaudeSDKClient instances — eval runs, FastAPI handlers,
             # Celery workers, asyncio.gather — from corrupting each
             # other's correlation state.
-            session = SessionState()
+            session = getattr(self, "_ls_session", None)
+            if session is None:
+                session = self._ls_session = SessionState()
             session_token = _register_session(session)
             _set_session_root(session, run)
             parent_token = set_parent_run_tree(run)

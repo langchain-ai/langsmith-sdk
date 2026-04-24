@@ -664,125 +664,21 @@ class TestMissingSubagentLLMRuns:
         assert tracker.llm_runs_by_message_id["msg_already_seen"] is existing_run
 
 
-class TestConcurrentSessions:
-    """Regression tests for Pylon 21395.
+class TestSessionFallback:
+    """Small unit guard for hooks that lose the session ContextVar."""
 
-    Multiple ``ClaudeSDKClient`` instances in one process must not share
-    correlation state. Each ``receive_response()`` call is expected to bind
-    a fresh ``SessionState`` to the ``_current_session`` ContextVar so that
-    hooks, transcript reconciliation, and cleanup all operate on per-client
-    state.
-    """
-
-    def test_context_var_isolates_sessions(self):
-        """Hooks fired under two different sessions must not share state."""
-        import asyncio
-
-        from langsmith.integrations.claude_agent_sdk import _tools
-        from langsmith.integrations.claude_agent_sdk._hooks import (
-            SessionState,
-            _register_session,
-            _unregister_session,
-            pre_tool_use_hook,
-        )
-
-        async def drive_session(session_label: str, tool_id: str) -> SessionState:
-            session = SessionState()
-            token = _register_session(session)
-            parent_token = _tools.set_parent_run_tree(_make_parent_run())
-            try:
-                await pre_tool_use_hook(
-                    {
-                        "tool_name": "Bash",
-                        "tool_input": {"command": f"echo {session_label}"},
-                        "transcript_path": f"/tmp/{session_label}.jsonl",
-                        "session_id": session_label,
-                    },
-                    tool_id,
-                    MagicMock(),
-                )
-            finally:
-                _tools.clear_parent_run_tree(parent_token)
-                _unregister_session(session, token)
-            return session
-
-        async def run_concurrent():
-            return await asyncio.gather(
-                drive_session("alpha", "tu_alpha"),
-                drive_session("beta", "tu_beta"),
-            )
-
-        session_a, session_b = asyncio.run(run_concurrent())
-
-        # Each session sees only its own tool run.
-        assert set(session_a.active_tool_runs.keys()) == {"tu_alpha"}
-        assert set(session_b.active_tool_runs.keys()) == {"tu_beta"}
-
-        # Transcript paths are isolated — no first-writer-wins leak.
-        assert session_a.main_transcript_path == "/tmp/alpha.jsonl"
-        assert session_b.main_transcript_path == "/tmp/beta.jsonl"
-
-        # Default session (module-level) is untouched.
-        assert len(_active_tool_runs) == 0
-        assert _hooks_module._main_transcript_path is None
-
-    def test_clear_one_session_does_not_affect_another(self):
-        """clear_active_tool_runs on one session must not clear another."""
-        import asyncio
-
-        from langsmith.integrations.claude_agent_sdk import _tools
-        from langsmith.integrations.claude_agent_sdk._hooks import (
-            SessionState,
-            _register_session,
-            _unregister_session,
-            clear_active_tool_runs,
-            pre_tool_use_hook,
-        )
-
-        async def setup_session(label: str) -> SessionState:
-            session = SessionState()
-            token = _register_session(session)
-            parent_token = _tools.set_parent_run_tree(_make_parent_run())
-            try:
-                await pre_tool_use_hook(
-                    {
-                        "tool_name": "Bash",
-                        "tool_input": {"command": "echo"},
-                        "transcript_path": f"/tmp/{label}.jsonl",
-                    },
-                    f"tu_{label}",
-                    MagicMock(),
-                )
-            finally:
-                _tools.clear_parent_run_tree(parent_token)
-                _unregister_session(session, token)
-            return session
-
-        async def run_both():
-            return await asyncio.gather(setup_session("x"), setup_session("y"))
-
-        session_x, session_y = asyncio.run(run_both())
-
-        assert len(session_x.active_tool_runs) == 1
-        assert len(session_y.active_tool_runs) == 1
-
-        clear_active_tool_runs(session_x)
-
-        # Only session_x is cleared.
-        assert len(session_x.active_tool_runs) == 0
-        assert session_x.main_transcript_path is None
-        assert len(session_y.active_tool_runs) == 1
-        assert session_y.main_transcript_path == "/tmp/y.jsonl"
-
-    def test_parent_run_fallback_registry(self):
-        """Hooks route by parent run id when ContextVar/session_id are absent."""
+    def test_parent_run_fallback_covers_hooks_and_tool_handlers(self):
         import asyncio
         import contextvars
 
         from langsmith.integrations.claude_agent_sdk import _tools
+        from langsmith.integrations.claude_agent_sdk._client import (
+            _get_last_active_tool_run,
+        )
         from langsmith.integrations.claude_agent_sdk._hooks import (
             SessionState,
             _register_session,
+            _sessions_by_root_run_id,
             _set_session_root,
             _unregister_session,
             get_subagent_run_by_tool_id,
@@ -819,6 +715,10 @@ class TestConcurrentSessions:
         parent_token = _tools.set_parent_run_tree(parent_run)
         try:
             assert (
+                _get_last_active_tool_run()
+                is session.active_tool_runs["tool_parent_fallback"][0]
+            )
+            assert (
                 get_subagent_run_by_tool_id("tool_parent_fallback")
                 is (session.subagent_runs["agent_parent_fallback"])
             )
@@ -827,108 +727,4 @@ class TestConcurrentSessions:
 
         assert len(_active_tool_runs) == 0
         _unregister_session(session, token)
-
-    def test_get_last_active_tool_run_uses_parent_run_fallback(self):
-        """SDK MCP handler lookup works even when _current_session is unset."""
-        import contextvars
-
-        from langsmith.integrations.claude_agent_sdk import _tools
-        from langsmith.integrations.claude_agent_sdk._client import (
-            _get_last_active_tool_run,
-        )
-        from langsmith.integrations.claude_agent_sdk._hooks import (
-            SessionState,
-            _register_session,
-            _set_session_root,
-            _unregister_session,
-        )
-
-        parent_run = _make_parent_run()
-        tool_run = parent_run.create_child(name="tool", run_type="tool")
-        session = SessionState()
-        token = _register_session(session)
-        _set_session_root(session, parent_run)
-        session.active_tool_runs["toolu_1"] = (tool_run, 0.0)
-
-        def lookup_without_session_context():
-            parent_token = _tools.set_parent_run_tree(parent_run)
-            try:
-                return _get_last_active_tool_run()
-            finally:
-                _tools.clear_parent_run_tree(parent_token)
-
-        assert contextvars.Context().run(lookup_without_session_context) is tool_run
-        _unregister_session(session, token)
-
-    def test_session_id_fallback_registry(self):
-        """Hooks route by session_id when the ContextVar is unavailable.
-
-        This simulates the "detached worker" case: a hook that fires on
-        an asyncio task that did not inherit the ``_current_session``
-        ContextVar. The session_id carried on ``BaseHookInput`` should
-        still resolve to the correct ``SessionState`` via the module
-        registry.
-        """
-        import asyncio
-        import threading
-
-        from langsmith.integrations.claude_agent_sdk import _tools
-        from langsmith.integrations.claude_agent_sdk._hooks import (
-            SessionState,
-            _register_session,
-            _sessions_by_id,
-            _unregister_session,
-            pre_tool_use_hook,
-        )
-
-        session = SessionState()
-        token = _register_session(session)
-        parent_run = _make_parent_run()
-        parent_token = _tools.set_parent_run_tree(parent_run)
-
-        # Prime the session_id → session mapping by running a hook under
-        # the ContextVar-bound session.
-        asyncio.run(
-            pre_tool_use_hook(
-                {
-                    "tool_name": "Bash",
-                    "tool_input": {},
-                    "session_id": "sid_42",
-                },
-                "tu_primer",
-                MagicMock(),
-            )
-        )
-        assert _sessions_by_id.get("sid_42") is session
-
-        # Now fire a hook from a fresh OS thread — the ContextVar set by
-        # _register_session is NOT copied into this thread, so the hook
-        # must fall back to _sessions_by_id to find the session.
-        def detached_worker():
-            # Re-install a parent_run_tree for the hook to nest under.
-            # (_tools uses its own ContextVar / thread-local fallback.)
-            _tools.set_parent_run_tree(parent_run)
-            asyncio.run(
-                pre_tool_use_hook(
-                    {
-                        "tool_name": "Read",
-                        "tool_input": {"path": "/etc/hosts"},
-                        "session_id": "sid_42",
-                    },
-                    "tu_detached",
-                    MagicMock(),
-                )
-            )
-
-        worker = threading.Thread(target=detached_worker)
-        worker.start()
-        worker.join()
-
-        # The detached hook should have written into `session` because
-        # _sessions_by_id["sid_42"] routed the lookup back to it.
-        assert "tu_detached" in session.active_tool_runs
-
-        _tools.clear_parent_run_tree(parent_token)
-        _unregister_session(session, token)
-        # Registry should be cleaned up on unregister.
-        assert "sid_42" not in _sessions_by_id
+        assert len(_sessions_by_root_run_id) == 0

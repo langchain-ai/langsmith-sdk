@@ -89,8 +89,10 @@ class SessionState:
     # Claude SDK session ids (for fallback lookup when ContextVar is unset).
     session_ids: set[str] = field(default_factory=set)
 
-    # Root LangSmith run id (for fallback lookup when ContextVar is unset and
-    # the SDK did not include a Claude session_id on the hook input).
+    # Root LangSmith run (for parenting root-level hook spans) and its id
+    # (for fallback lookup when ContextVar is unset and the SDK did not include
+    # a Claude session_id on the hook input).
+    root_run: Optional[RunTree] = None
     root_run_id: Optional[str] = None
 
     @property
@@ -192,8 +194,9 @@ def _register_session(session: SessionState) -> object:
 
 
 def _set_session_root(session: SessionState, run_tree: RunTree) -> None:
-    """Register *session* under its root LangSmith run id."""
+    """Register *session* under its root LangSmith run."""
     root_run_id = str(run_tree.id)
+    session.root_run = run_tree
     session.root_run_id = root_run_id
     with _sessions_lock:
         _sessions_by_root_run_id[root_run_id] = session
@@ -299,7 +302,11 @@ async def pre_tool_use_hook(
         if agent_id and agent_id in session.subagent_runs:
             parent = session.subagent_runs[agent_id]
         else:
-            parent = get_parent_run_tree() or get_current_run_tree()
+            parent = (
+                session.root_run
+                if session is not _default_session
+                else get_parent_run_tree()
+            ) or get_current_run_tree()
 
         if not parent:
             return {}
@@ -496,7 +503,11 @@ async def subagent_start_hook(
                 parent = agent_tool_run
 
         if parent is None:
-            parent = get_parent_run_tree() or get_current_run_tree()
+            parent = (
+                session.root_run
+                if session is not _default_session
+                else get_parent_run_tree()
+            ) or get_current_run_tree()
 
         if not parent:
             return {}
