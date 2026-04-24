@@ -56,7 +56,11 @@ export class Sandbox {
   readonly updated_at?: string;
   /** Maximum lifetime TTL in seconds (`0` means disabled). */
   readonly ttl_seconds?: number;
-  /** Idle timeout TTL in seconds (`0` means disabled). */
+  /**
+   * Idle timeout TTL in seconds (`0` means disabled).
+   * New sandboxes receive a server-side default of `600` seconds (10 minutes)
+   * when the caller did not set `idleTtlSeconds` explicitly.
+   */
   readonly idle_ttl_seconds?: number;
   /** Computed expiration timestamp when a TTL is active. */
   readonly expires_at?: string;
