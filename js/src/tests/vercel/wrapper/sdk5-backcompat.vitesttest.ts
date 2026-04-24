@@ -419,9 +419,7 @@ describe("wrapAISDK", () => {
         fullText += textPart;
       }
 
-      expect(new Date().getTime() - start.getTime()).toBeGreaterThanOrEqual(
-        50
-      );
+      expect(new Date().getTime() - start.getTime()).toBeGreaterThanOrEqual(50);
 
       expect(fullText).toBe("Hello world");
 
