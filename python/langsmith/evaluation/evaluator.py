@@ -69,7 +69,7 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
-    feedback_config: Optional[Union[FeedbackConfig, dict]] = None
+    feedback_config: Optional[dict] = None
     """The configuration used to generate this feedback."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
