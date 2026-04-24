@@ -10,11 +10,7 @@ except ImportError:
     CLAUDE_SDK_AVAILABLE = False
 
 from langsmith import traceable
-from langsmith.integrations.claude_agent_sdk._hooks import (
-    _active_tool_runs,
-    _agent_to_tool_mapping,
-    _subagent_runs,
-)
+from langsmith.integrations.claude_agent_sdk import _hooks as _hooks_module
 
 pytestmark = pytest.mark.skipif(
     not CLAUDE_SDK_AVAILABLE, reason="Claude Agent SDK not installed"
@@ -69,7 +65,7 @@ async def test_tool_failure_creates_error_trace():
 
     assert len(tool_result_blocks) >= 1
     assert tool_result_blocks[0].is_error is True
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
 
 @pytest.mark.asyncio
@@ -130,9 +126,9 @@ async def test_subagent():
                 pass
 
     # All hook state should be cleaned up
-    assert len(_active_tool_runs) == 0
-    assert len(_subagent_runs) == 0
-    assert len(_agent_to_tool_mapping) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
+    assert len(_hooks_module._default_session.subagent_runs) == 0
+    assert len(_hooks_module._default_session.agent_to_tool_mapping) == 0
 
     # Verify the trace hierarchy was created
     run_names = [r["name"] for r in posted_runs]
@@ -239,7 +235,7 @@ async def test_continue_session():
             async for msg in client.receive_response():
                 pass
 
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
     # The continued session should only have LLM runs for the NEW
     # conversation, not duplicates from the first one.
@@ -291,7 +287,7 @@ async def test_custom_tool_permission_denied():
     assert any("get_weather" in n for n in tool_names_seen), (
         f"Expected get_weather tool call, saw: {tool_names_seen}"
     )
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
 
 @pytest.mark.asyncio
@@ -360,7 +356,7 @@ async def test_custom_tool_permission_granted():
     assert any("Foggy" in r for r in tool_results_seen), (
         f"Expected 'Foggy' in results, saw: {tool_results_seen}"
     )
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
     # @traceable inner_helper should nest under the tool run
     assert captured_parent_run_id is not None, (
@@ -385,14 +381,6 @@ async def test_concurrent_three_clients_are_isolated():
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
     from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
-    from langsmith.integrations.claude_agent_sdk._hooks import (
-        _agent_to_tool_mapping,
-        _ended_subagent_runs,
-        _pending_agent_tools,
-        _sessions_by_id,
-        _sessions_by_root_run_id,
-        _subagent_transcript_paths,
-    )
     from langsmith.run_trees import RunTree
 
     configure_claude_agent_sdk(name="test.concurrent_three_clients")
@@ -488,11 +476,9 @@ async def test_concurrent_three_clients_are_isolated():
     # Every per-conversation state container should have cleaned itself up;
     # nothing should leak into the legacy default-session globals or fallback
     # registries after all concurrent clients complete.
-    assert len(_active_tool_runs) == 0
-    assert len(_pending_agent_tools) == 0
-    assert len(_agent_to_tool_mapping) == 0
-    assert len(_ended_subagent_runs) == 0
-    assert len(_subagent_runs) == 0
-    assert len(_subagent_transcript_paths) == 0
-    assert len(_sessions_by_id) == 0
-    assert len(_sessions_by_root_run_id) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
+    assert len(_hooks_module._default_session.pending_agent_tools) == 0
+    assert len(_hooks_module._default_session.agent_to_tool_mapping) == 0
+    assert len(_hooks_module._default_session.ended_subagent_runs) == 0
+    assert len(_hooks_module._default_session.subagent_runs) == 0
+    assert len(_hooks_module._default_session.subagent_transcript_paths) == 0

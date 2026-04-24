@@ -8,12 +8,6 @@ import pytest
 
 from langsmith.integrations.claude_agent_sdk import _hooks as _hooks_module
 from langsmith.integrations.claude_agent_sdk._hooks import (
-    _active_tool_runs,
-    _agent_to_tool_mapping,
-    _ended_subagent_runs,
-    _pending_agent_tools,
-    _subagent_runs,
-    _subagent_transcript_paths,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
@@ -29,21 +23,15 @@ ERROR_MSG = "Exit code 1\ncat: /nonexistent: No such file or directory"
 
 @pytest.fixture(autouse=True)
 def _clear_state():
-    """Reset global hook state between tests.
-
-    The public surface exposes ``_active_tool_runs`` etc. as aliases of
-    the module-level *default* ``SessionState`` (see ``_hooks.py``).
-    Clearing the aliased containers is sufficient to reset both.
-    """
+    """Reset default hook state between tests."""
 
     def _reset():
-        _active_tool_runs.clear()
-        _subagent_runs.clear()
-        _pending_agent_tools.clear()
-        _agent_to_tool_mapping.clear()
-        _ended_subagent_runs.clear()
-        _subagent_transcript_paths.clear()
-        _hooks_module._main_transcript_path = None
+        _hooks_module._default_session.active_tool_runs.clear()
+        _hooks_module._default_session.subagent_runs.clear()
+        _hooks_module._default_session.pending_agent_tools.clear()
+        _hooks_module._default_session.agent_to_tool_mapping.clear()
+        _hooks_module._default_session.ended_subagent_runs.clear()
+        _hooks_module._default_session.subagent_transcript_paths.clear()
         _hooks_module._default_session.main_transcript_path = None
 
     _reset()
@@ -76,8 +64,8 @@ class TestToolUseSuccessFlow:
             )
         )
 
-        assert "tu_1" in _active_tool_runs
-        tool_run, _ = _active_tool_runs["tu_1"]
+        assert "tu_1" in _hooks_module._default_session.active_tool_runs
+        tool_run, _ = _hooks_module._default_session.active_tool_runs["tu_1"]
         assert tool_run.name == "Bash"
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
@@ -93,7 +81,7 @@ class TestToolUseSuccessFlow:
             )
         )
 
-        assert "tu_1" not in _active_tool_runs
+        assert "tu_1" not in _hooks_module._default_session.active_tool_runs
         assert tool_run.outputs == {"output": "hi", "is_error": False}
         assert tool_run.error is None
 
@@ -121,7 +109,7 @@ class TestToolUseFailureFlow:
             )
         )
 
-        assert "tu_2" in _active_tool_runs
+        assert "tu_2" in _hooks_module._default_session.active_tool_runs
 
         asyncio.run(
             post_tool_use_failure_hook(
@@ -131,7 +119,7 @@ class TestToolUseFailureFlow:
             )
         )
 
-        assert "tu_2" not in _active_tool_runs
+        assert "tu_2" not in _hooks_module._default_session.active_tool_runs
 
 
 class TestInjectTracingHooks:
@@ -187,12 +175,12 @@ class TestSubagentFlow:
             )
         )
 
-        assert "tool_1" in _active_tool_runs
-        agent_tool_run, _ = _active_tool_runs["tool_1"]
+        assert "tool_1" in _hooks_module._default_session.active_tool_runs
+        agent_tool_run, _ = _hooks_module._default_session.active_tool_runs["tool_1"]
         assert agent_tool_run.name == "Agent"
 
         # The Agent tool_use_id should be pending
-        assert "tool_1" in _pending_agent_tools
+        assert "tool_1" in _hooks_module._default_session.pending_agent_tools
 
         # SubagentStart — note: SDK passes a different tool_use_id
         asyncio.run(
@@ -204,8 +192,8 @@ class TestSubagentFlow:
         )
 
         # Subagent run should exist and be nested under Agent tool
-        assert "agent_123" in _subagent_runs
-        subagent_run = _subagent_runs["agent_123"]
+        assert "agent_123" in _hooks_module._default_session.subagent_runs
+        subagent_run = _hooks_module._default_session.subagent_runs["agent_123"]
         assert subagent_run.name == "foo"
         assert subagent_run.run_type == "chain"
         assert subagent_run.parent_run_id == agent_tool_run.id
@@ -214,11 +202,14 @@ class TestSubagentFlow:
         assert subagent_run.inputs == {"agent": "foo"}
 
         # Mappings should be set
-        assert _agent_to_tool_mapping["agent_123"] == "tool_1"
+        assert (
+            _hooks_module._default_session.agent_to_tool_mapping["agent_123"]
+            == "tool_1"
+        )
         assert get_subagent_run_by_tool_id("tool_1") == subagent_run
 
         # Pending should be consumed
-        assert "tool_1" not in _pending_agent_tools
+        assert "tool_1" not in _hooks_module._default_session.pending_agent_tools
 
     def test_tool_inside_subagent_nests_under_subagent(self):
         """Tools inside a subagent should nest under the subagent run."""
@@ -251,10 +242,13 @@ class TestSubagentFlow:
             )
         )
 
-        assert "tool_2" in _active_tool_runs
-        tool_run, _ = _active_tool_runs["tool_2"]
+        assert "tool_2" in _hooks_module._default_session.active_tool_runs
+        tool_run, _ = _hooks_module._default_session.active_tool_runs["tool_2"]
         assert tool_run.name == "Bash"
-        assert tool_run.parent_run_id == _subagent_runs["agent_123"].id
+        assert (
+            tool_run.parent_run_id
+            == _hooks_module._default_session.subagent_runs["agent_123"].id
+        )
 
     def test_subagent_findable_after_stop(self):
         """Subagent run is still findable via tool_use_id after SubagentStop."""
@@ -273,7 +267,7 @@ class TestSubagentFlow:
             )
         )
 
-        run = _subagent_runs["a1"]
+        run = _hooks_module._default_session.subagent_runs["a1"]
         assert get_subagent_run_by_tool_id("tool_1") is run
 
         # After SubagentStop, the run is stashed but still findable
@@ -284,7 +278,7 @@ class TestSubagentFlow:
                 MagicMock(),
             )
         )
-        assert "a1" not in _subagent_runs
+        assert "a1" not in _hooks_module._default_session.subagent_runs
         assert get_subagent_run_by_tool_id("tool_1") is run
 
     def test_subagent_stop_and_post_tool_use_set_outputs(self):
@@ -305,7 +299,7 @@ class TestSubagentFlow:
                 MagicMock(),
             )
         )
-        subagent_run = _subagent_runs["agent_123"]
+        subagent_run = _hooks_module._default_session.subagent_runs["agent_123"]
 
         # Subagent stop — run should be stashed, not ended yet
         asyncio.run(
@@ -316,9 +310,11 @@ class TestSubagentFlow:
             )
         )
 
-        assert "agent_123" not in _subagent_runs
-        assert "tool_1" in _ended_subagent_runs
-        assert _ended_subagent_runs["tool_1"] is subagent_run
+        assert "agent_123" not in _hooks_module._default_session.subagent_runs
+        assert "tool_1" in _hooks_module._default_session.ended_subagent_runs
+        assert (
+            _hooks_module._default_session.ended_subagent_runs["tool_1"] is subagent_run
+        )
         assert subagent_run.end_time is None
 
         # PostToolUse for Agent — sets outputs on subagent but doesn't end it
@@ -334,7 +330,7 @@ class TestSubagentFlow:
         )
 
         # Agent tool run should be ended
-        assert "tool_1" not in _active_tool_runs
+        assert "tool_1" not in _hooks_module._default_session.active_tool_runs
 
         # Subagent outputs should be set but run not yet ended
         assert subagent_run.outputs == {"output": "bar"}
@@ -346,7 +342,7 @@ class TestSubagentFlow:
         # clear_active_tool_runs finalises everything
         clear_active_tool_runs()
         assert subagent_run.end_time is not None
-        assert len(_ended_subagent_runs) == 0
+        assert len(_hooks_module._default_session.ended_subagent_runs) == 0
 
 
 class TestTranscriptPathCapture:
@@ -361,7 +357,7 @@ class TestTranscriptPathCapture:
         _tools.clear_parent_run_tree()
 
     def test_captures_transcript_path_from_first_hook(self):
-        assert _hooks_module._main_transcript_path is None
+        assert _hooks_module._default_session.main_transcript_path is None
 
         asyncio.run(
             pre_tool_use_hook(
@@ -375,13 +371,15 @@ class TestTranscriptPathCapture:
             )
         )
 
-        assert _hooks_module._main_transcript_path == "/tmp/sessions/abc.jsonl"
+        assert (
+            _hooks_module._default_session.main_transcript_path
+            == "/tmp/sessions/abc.jsonl"
+        )
 
     def test_does_not_overwrite_on_subsequent_hooks(self):
-        # Seed the default session's transcript path (the canonical store)
-        # so the "first writer wins" guard in pre_tool_use_hook kicks in.
+        # Seed the default session's transcript path so the "first writer wins"
+        # guard in pre_tool_use_hook kicks in.
         _hooks_module._default_session.main_transcript_path = "/first/path.jsonl"
-        _hooks_module._main_transcript_path = "/first/path.jsonl"
 
         asyncio.run(
             pre_tool_use_hook(
@@ -395,16 +393,13 @@ class TestTranscriptPathCapture:
             )
         )
 
-        assert _hooks_module._main_transcript_path == "/first/path.jsonl"
         assert (
             _hooks_module._default_session.main_transcript_path == "/first/path.jsonl"
         )
 
     def test_clear_active_tool_runs_resets_transcript_path(self):
         _hooks_module._default_session.main_transcript_path = "/some/path.jsonl"
-        _hooks_module._main_transcript_path = "/some/path.jsonl"
         clear_active_tool_runs()
-        assert _hooks_module._main_transcript_path is None
         assert _hooks_module._default_session.main_transcript_path is None
 
 
@@ -604,7 +599,9 @@ class TestMissingSubagentLLMRuns:
         tracker.llm_runs_by_message_id["msg_seen"] = existing_run
 
         # Register subagent transcript
-        _subagent_transcript_paths.append((str(transcript), subagent_run))
+        _hooks_module._default_session.subagent_transcript_paths.append(
+            (str(transcript), subagent_run)
+        )
 
         reconcile_from_transcripts(tracker)
 
@@ -656,7 +653,9 @@ class TestMissingSubagentLLMRuns:
         )
         tracker.llm_runs_by_message_id["msg_already_seen"] = existing_run
 
-        _subagent_transcript_paths.append((str(transcript), subagent_run))
+        _hooks_module._default_session.subagent_transcript_paths.append(
+            (str(transcript), subagent_run)
+        )
 
         reconcile_from_transcripts(tracker)
 
@@ -664,67 +663,36 @@ class TestMissingSubagentLLMRuns:
         assert tracker.llm_runs_by_message_id["msg_already_seen"] is existing_run
 
 
-class TestSessionFallback:
-    """Small unit guard for hooks that lose the session ContextVar."""
+class TestSessionBinding:
+    """Small unit guard for hooks bound to a client SessionState."""
 
-    def test_parent_run_fallback_covers_hooks_and_tool_handlers(self):
+    def test_bound_hook_uses_client_session(self):
         import asyncio
         import contextvars
 
-        from langsmith.integrations.claude_agent_sdk import _tools
         from langsmith.integrations.claude_agent_sdk._client import (
-            _get_last_active_tool_run,
+            _bind_hook_to_session,
         )
         from langsmith.integrations.claude_agent_sdk._hooks import (
             SessionState,
-            _register_session,
-            _sessions_by_root_run_id,
             _set_session_root,
-            _unregister_session,
-            get_subagent_run_by_tool_id,
             pre_tool_use_hook,
-            subagent_start_hook,
         )
 
         parent_run = _make_parent_run()
         session = SessionState()
-        token = _register_session(session)
         _set_session_root(session, parent_run)
+        bound_hook = _bind_hook_to_session(pre_tool_use_hook, session)
 
-        async def run_without_session_context():
-            parent_token = _tools.set_parent_run_tree(parent_run)
-            try:
-                await pre_tool_use_hook(
-                    {"tool_name": "Agent", "tool_input": {"agent": "foo"}},
-                    "tool_parent_fallback",
+        contextvars.Context().run(
+            lambda: asyncio.run(
+                bound_hook(
+                    {"tool_name": "Bash", "tool_input": {"command": "echo hi"}},
+                    "tool_bound_session",
                     MagicMock(),
                 )
-                await subagent_start_hook(
-                    {"agent_id": "agent_parent_fallback", "agent_type": "foo"},
-                    "sdk_session_id",
-                    MagicMock(),
-                )
-            finally:
-                _tools.clear_parent_run_tree(parent_token)
-
-        contextvars.Context().run(lambda: asyncio.run(run_without_session_context()))
-
-        assert "tool_parent_fallback" in session.active_tool_runs
-        assert "agent_parent_fallback" in session.subagent_runs
-
-        parent_token = _tools.set_parent_run_tree(parent_run)
-        try:
-            assert (
-                _get_last_active_tool_run()
-                is session.active_tool_runs["tool_parent_fallback"][0]
             )
-            assert (
-                get_subagent_run_by_tool_id("tool_parent_fallback")
-                is (session.subagent_runs["agent_parent_fallback"])
-            )
-        finally:
-            _tools.clear_parent_run_tree(parent_token)
+        )
 
-        assert len(_active_tool_runs) == 0
-        _unregister_session(session, token)
-        assert len(_sessions_by_root_run_id) == 0
+        assert "tool_bound_session" in session.active_tool_runs
+        assert len(_hooks_module._default_session.active_tool_runs) == 0

@@ -6,25 +6,16 @@ it to the context var so that hook functions — which run on the SDK's async
 event loop — look up the correct session's state regardless of how many
 ``ClaudeSDKClient`` instances are concurrently active in the process.
 
-Hooks fire in one of three contexts:
+Hooks injected by ``_client.py`` are bound to their owning ``SessionState`` so
+that hook callbacks use the correct state even if the SDK runs them in an async
+context that did not inherit ``receive_response``'s ContextVar.
 
-1. Inside the ``async with trace(...)`` block of ``_traced_receive_response``.
-   The ContextVar is set; state is read/written on the per-session instance.
-2. In a hook task spawned by the SDK on the *same* event loop — ``ContextVar``
-   values are copied into child tasks, so isolation still holds.
-3. In a detached worker where the ContextVar is unset (rare). A secondary
-   registry keyed by ``session_id`` (taken from ``BaseHookInput``) allows
-   hooks to still find the right session.
-
-For backward compatibility with code and tests that touch module-level names
-(``_active_tool_runs``, ``_main_transcript_path``, etc.), those names continue
-to refer to a module-level *default* session which is used when no ContextVar
-is active. Real concurrent traffic under ``receive_response`` never hits the
-default session.
+When no ContextVar is active, hooks use a module-level default session. This is
+primarily for direct unit tests; real traffic under ``receive_response`` uses a
+client-bound session.
 """
 
 import logging
-import threading
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -86,26 +77,8 @@ class SessionState:
     # on the first hook that fires (every hook inherits this field).
     main_transcript_path: Optional[str] = None
 
-    # Claude SDK session ids (for fallback lookup when ContextVar is unset).
-    session_ids: set[str] = field(default_factory=set)
-
-    # Root LangSmith run (for parenting root-level hook spans) and its id
-    # (for fallback lookup when ContextVar is unset and the SDK did not include
-    # a Claude session_id on the hook input).
+    # Root LangSmith run used for parenting root-level hook spans.
     root_run: Optional[RunTree] = None
-    root_run_id: Optional[str] = None
-
-    @property
-    def session_id(self) -> Optional[str]:
-        """Backward-compatible first session id, if any."""
-        return next(iter(self.session_ids), None)
-
-    @session_id.setter
-    def session_id(self, value: Optional[str]) -> None:
-        if value:
-            self.session_ids.add(value)
-        else:
-            self.session_ids.clear()
 
 
 # Module-level *default* session. Used when no ContextVar is set (e.g. tests
@@ -114,74 +87,29 @@ class SessionState:
 # names exposed below.
 _default_session: SessionState = SessionState()
 
-# ContextVar holding the active session for a conversation. When set, hooks
-# use this session; otherwise they fall back to the session registry
-# (``_sessions_by_id``) or finally the default session.
+# ContextVar holding the active session for a conversation. Injected hook
+# callables bind this explicitly before calling the shared hook function.
 _current_session: ContextVar[Optional[SessionState]] = ContextVar(
     "langsmith_claude_agent_session", default=None
 )
 
-# Fallback registries used when a hook fires on a task/thread where the
-# ContextVar was not propagated. Protected by ``_sessions_lock`` because
-# registration/lookup can race across threads.
-_sessions_by_id: dict[str, SessionState] = {}
-_sessions_by_root_run_id: dict[str, SessionState] = {}
-_sessions_lock = threading.Lock()
-
 
 def _current_session_or_default() -> SessionState:
-    """Return the best session for the current execution context."""
+    """Return the session bound to the current context, or the default."""
     session = _current_session.get()
     if session is not None:
         return session
-    parent = get_parent_run_tree()
-    parent_id = getattr(parent, "id", None)
-    if parent_id is not None:
-        with _sessions_lock:
-            session = _sessions_by_root_run_id.get(str(parent_id))
-        if session is not None:
-            return session
     return _default_session
 
 
 def _session_for_hook(data: dict[str, Any]) -> SessionState:
     """Resolve the session that owns the current hook invocation.
 
-    Preference order:
-
-    1. Session bound to the current ContextVar.
-    2. Session previously registered under the hook's ``session_id``.
-    3. The module-level default session (last resort; only safe when no
-       concurrent conversation is in flight).
+    Real Claude SDK hook invocations are wrapped by ``_bind_hook_to_session``
+    in ``_client.py``, so the ContextVar should be set. The default session is
+    only for tests or direct, unbound hook calls.
     """
-    session = _current_session.get()
-    if session is not None:
-        # Lazily remember this session_id → session mapping so tasks that
-        # lose the ContextVar can still find the right session.
-        sid = data.get("session_id")
-        if sid:
-            sid = str(sid)
-            session.session_ids.add(sid)
-            with _sessions_lock:
-                _sessions_by_id[sid] = session
-        return session
-
-    sid = data.get("session_id")
-    if sid:
-        with _sessions_lock:
-            existing = _sessions_by_id.get(str(sid))
-        if existing is not None:
-            return existing
-
-    parent = get_parent_run_tree()
-    parent_id = getattr(parent, "id", None)
-    if parent_id is not None:
-        with _sessions_lock:
-            existing = _sessions_by_root_run_id.get(str(parent_id))
-        if existing is not None:
-            return existing
-
-    return _default_session
+    return _current_session_or_default()
 
 
 def _register_session(session: SessionState) -> object:
@@ -194,48 +122,17 @@ def _register_session(session: SessionState) -> object:
 
 
 def _set_session_root(session: SessionState, run_tree: RunTree) -> None:
-    """Register *session* under its root LangSmith run."""
-    root_run_id = str(run_tree.id)
+    """Store the root LangSmith run for *session*."""
     session.root_run = run_tree
-    session.root_run_id = root_run_id
-    with _sessions_lock:
-        _sessions_by_root_run_id[root_run_id] = session
 
 
 def _unregister_session(session: SessionState, token: Any) -> None:
-    """Reset the ContextVar and deregister the session from fallback registries."""
+    """Reset the ContextVar for the current session."""
     try:
         _current_session.reset(token)
     except ValueError:
         # Token was created in a different context — fall back to clearing.
         _current_session.set(None)
-
-    with _sessions_lock:
-        for sid, value in list(_sessions_by_id.items()):
-            if value is session:
-                _sessions_by_id.pop(sid, None)
-        for root_run_id, value in list(_sessions_by_root_run_id.items()):
-            if value is session:
-                _sessions_by_root_run_id.pop(root_run_id, None)
-
-
-# ── Legacy module-level attribute shims ───────────────────────────────────────
-# These names are part of the historical public surface of this module
-# (tests import them directly). They now alias the *default* session's
-# fields. Real concurrent usage operates on per-session instances and is
-# unaffected by reads/writes here.
-
-_active_tool_runs = _default_session.active_tool_runs
-_subagent_runs = _default_session.subagent_runs
-_pending_agent_tools = _default_session.pending_agent_tools
-_agent_to_tool_mapping = _default_session.agent_to_tool_mapping
-_ended_subagent_runs = _default_session.ended_subagent_runs
-_subagent_transcript_paths = _default_session.subagent_transcript_paths
-
-# Mirrored from ``_default_session.main_transcript_path``. Kept in sync by
-# hook functions that operate on the default session, and by
-# ``clear_active_tool_runs``.
-_main_transcript_path: Optional[str] = None
 
 
 # ── Public helpers (used by _client.py) ───────────────────────────────────────
@@ -287,9 +184,6 @@ async def pre_tool_use_hook(
     # Capture main session transcript path from BaseHookInput
     if session.main_transcript_path is None and data.get("transcript_path"):
         session.main_transcript_path = str(data["transcript_path"])
-        if session is _default_session:
-            global _main_transcript_path
-            _main_transcript_path = session.main_transcript_path
 
     # If this is an Agent tool call, record it so SubagentStart can find it
     if tool_name == "Agent":
@@ -645,8 +539,3 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
     session.ended_subagent_runs.clear()
     session.subagent_transcript_paths.clear()
     session.main_transcript_path = None
-
-    if session is _default_session:
-        # Keep the legacy module-level mirror in sync.
-        global _main_transcript_path
-        _main_transcript_path = None
