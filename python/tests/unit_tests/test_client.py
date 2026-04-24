@@ -48,6 +48,7 @@ from langsmith.client import (
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
+    _resolve_tracing_mode,
 )
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
@@ -2177,6 +2178,223 @@ def test_validate_api_key_if_hosted_without_tracing(
             )
             if "unclosed event loop" not in str(w[0].message):
                 raise e
+
+
+class TestResolveTracingMode:
+    """Tests for _resolve_tracing_mode and the Client tracing_mode parameter."""
+
+    def teardown_method(self):
+        _clear_env_cache()
+
+    def test_default_is_langsmith(self):
+        assert _resolve_tracing_mode(None) == "langsmith"
+
+    @pytest.mark.parametrize("mode", ["langsmith", "otel", "hybrid"])
+    def test_explicit_arg_returned(self, mode: str):
+        assert _resolve_tracing_mode(mode) == mode  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("mode", ["Langsmith", "OTEL", "Hybrid", "OTel"])
+    def test_explicit_arg_case_insensitive(self, mode: str):
+        assert _resolve_tracing_mode(mode) == mode.lower()  # type: ignore[arg-type]
+
+    def test_explicit_arg_invalid_raises(self):
+        with pytest.raises(LangSmithUserError, match="Invalid tracing_mode='bad'"):
+            _resolve_tracing_mode("bad")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("mode", ["langsmith", "otel", "hybrid"])
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_fallback(self, mode: str):
+        os.environ["LANGSMITH_TRACING_MODE"] = mode
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == mode
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_case_insensitive(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "HYBRID"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_invalid_raises(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "nope"
+        _clear_env_cache()
+        with pytest.raises(LangSmithUserError, match="Invalid LANGSMITH_TRACING_MODE"):
+            _resolve_tracing_mode(None)
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_explicit_arg_takes_precedence_over_env_var(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "hybrid"
+        _clear_env_cache()
+        assert _resolve_tracing_mode("otel") == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_only_maps_to_otel(self):
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_enabled_maps_to_hybrid(self):
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_enabled_plus_otel_only(self):
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_conflict_warning_when_tracing_mode_and_legacy_set(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "langsmith"
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        _clear_env_cache()
+        with pytest.warns(UserWarning, match="legacy"):
+            _resolve_tracing_mode(None)
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_no_warning_when_only_tracing_mode_set(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "otel"
+        _clear_env_cache()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert _resolve_tracing_mode(None) == "otel"
+
+    def test_otel_enabled_true_maps_to_hybrid(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_otel_enabled_true_with_otel_only_envvar(self):
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "otel"
+
+    def test_otel_enabled_false_maps_to_langsmith(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=False) == "langsmith"
+
+    def test_tracing_mode_takes_precedence_over_otel_enabled(self):
+        result = _resolve_tracing_mode("otel", otel_enabled=True)
+        assert result == "otel"
+
+
+def _make_mock_otel():
+    """Build a mock return value for _import_otel that satisfies Client.__init__."""
+    mock_otel_trace = MagicMock()
+    mock_otel_trace.ProxyTracerProvider = type("ProxyTracerProvider", (), {})
+    mock_provider = MagicMock()
+    mock_provider.__class__ = type("RealProvider", (), {})
+    mock_otel_trace.get_tracer_provider.return_value = mock_provider
+    mock_set_span = MagicMock()
+    mock_get_provider = MagicMock()
+    mock_exporter_cls = MagicMock()
+    return mock_otel_trace, mock_set_span, mock_get_provider, mock_exporter_cls
+
+
+class TestClientTracingMode:
+    """Tests for Client(tracing_mode=...) via explicit arg and env var."""
+
+    def teardown_method(self):
+        _clear_env_cache()
+
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_default_mode_is_langsmith(self, _mock_session: mock.Mock):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "langsmith"
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_explicit_otel_mode(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="otel")
+        assert client.tracing_mode == "otel"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_explicit_hybrid_mode(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="hybrid")
+        assert client.tracing_mode == "hybrid"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "otel",
+        },
+        clear=True,
+    )
+    def test_otel_mode_via_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "otel"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "hybrid",
+        },
+        clear=True,
+    )
+    def test_hybrid_mode_via_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "hybrid"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "hybrid",
+        },
+        clear=True,
+    )
+    def test_explicit_arg_overrides_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="langsmith")
+        assert client.tracing_mode == "langsmith"
+        assert client.otel_exporter is None
 
 
 def test_parse_token_or_url():

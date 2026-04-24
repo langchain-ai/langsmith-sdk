@@ -67,8 +67,9 @@ import {
   getLangSmithEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
-  getOtelEnabled,
   getEnv,
+  resolveTracingMode,
+  type TracingMode,
 } from "./utils/env.js";
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
@@ -175,6 +176,18 @@ export interface ClientConfig {
    * By default, prompt caching is enabled globally.
    */
   disablePromptCache?: boolean;
+
+  /**
+   * Where to send traces.  One of:
+   *
+   * - `"langsmith"` (default) — LangSmith REST API only.
+   * - `"otel"` — OpenTelemetry export only.
+   *
+   * Falls back to the `LANGSMITH_TRACING_MODE` env var, then to the
+   * legacy `OTEL_ENABLED` / `LANGSMITH_OTEL_ENABLED` env vars, then to
+   * `"langsmith"`.
+   */
+  tracingMode?: TracingMode;
 
   /**
    * Additional HTTP headers to include in all requests.
@@ -841,6 +854,12 @@ export class Client implements LangSmithTracingClientInterface {
 
   private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
 
+  private _tracingMode: TracingMode = "langsmith";
+
+  public get tracingMode(): TracingMode {
+    return this._tracingMode;
+  }
+
   private fetchImplementation?: typeof fetch;
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
@@ -940,7 +959,8 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    if (getOtelEnabled()) {
+    this._tracingMode = resolveTracingMode(config.tracingMode);
+    if (this._tracingMode === "otel") {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env

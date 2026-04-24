@@ -49,6 +49,7 @@ from typing import (
     TypedDict,
     Union,
     cast,
+    get_args,
 )
 from urllib import parse as urllib_parse
 
@@ -116,6 +117,8 @@ _TRACING_DROP_LOG_INTERVAL_S = 60
 _tracing_drops_count = 0
 _tracing_drops_last_log_time = 0.0
 _tracing_drops_lock = threading.Lock()
+TracingMode = Literal["langsmith", "otel", "hybrid"]
+_VALID_TRACING_MODES: frozenset[str] = frozenset(get_args(TracingMode))
 
 
 def _log_tracing_drop(reason: str) -> None:
@@ -150,9 +153,73 @@ _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 
 
-def _check_otel_enabled() -> bool:
-    """Check if OTEL is enabled and imports are available."""
-    return ls_utils.is_env_var_truish("OTEL_ENABLED")
+def _resolve_tracing_mode(
+    tracing_mode: Optional[TracingMode],
+    *,
+    otel_enabled: Optional[bool] = None,
+) -> TracingMode:
+    """Resolve the effective tracing mode from the constructor arg and env vars.
+
+    Priority: explicit ``tracing_mode`` argument >
+    deprecated ``otel_enabled`` argument >
+    ``LANGSMITH_TRACING_MODE`` env var >
+    legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars >
+    default ``"langsmith"``.
+    """
+    mode_envvar_name = "TRACING_MODE"
+    otel_enabled_envvar_name = "OTEL_ENABLED"
+    otel_only_envvar_name = "OTEL_ONLY"
+
+    env_mode = ls_utils.get_env_var(mode_envvar_name)
+
+    if tracing_mode is not None:
+        tracing_mode = tracing_mode.lower()  # type: ignore[assignment]
+        if tracing_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid tracing_mode={tracing_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        return tracing_mode  # type: ignore[return-value]
+
+    if otel_enabled is not None:
+        warnings.warn(
+            "The 'otel_enabled' parameter is deprecated and will be removed "
+            "in the next minor version. Use 'tracing_mode' instead, e.g. "
+            'Client(tracing_mode="hybrid") or Client(tracing_mode="otel").',
+            FutureWarning,
+            stacklevel=3,
+        )
+        if otel_enabled:
+            if ls_utils.is_env_var_truish(otel_only_envvar_name):
+                return "otel"
+            return "hybrid"
+        return "langsmith"
+
+    if env_mode is not None:
+        env_mode = env_mode.lower()
+        if env_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid LANGSMITH_TRACING_MODE={env_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        legacy_otel = ls_utils.is_env_var_truish(otel_enabled_envvar_name)
+        legacy_only = ls_utils.is_env_var_truish(otel_only_envvar_name)
+        if legacy_otel or legacy_only:
+            warnings.warn(
+                f"Both LANGSMITH_{mode_envvar_name} and the legacy "
+                f"LANGSMITH_{otel_enabled_envvar_name} / "
+                f"LANGSMITH_{otel_only_envvar_name} env vars are set. "
+                f"LANGSMITH_{mode_envvar_name} takes precedence.",
+                stacklevel=3,
+            )
+        return env_mode  # type: ignore[return-value]
+
+    # Fall back to legacy env vars
+    if ls_utils.is_env_var_truish(otel_only_envvar_name):
+        return "otel"
+    if ls_utils.is_env_var_truish("OTEL_ENABLED"):
+        return "hybrid"
+    return "langsmith"
 
 
 def _import_otel():
@@ -525,21 +592,27 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
+def _validate_api_key_if_hosted(
+    api_url: str,
+    api_key: Optional[str],
+    *,
+    tracing_mode: TracingMode = "langsmith",
+) -> None:
     """Verify API key is provided if url not localhost.
 
     Args:
         api_url: The API URL.
         api_key: The API key.
+        tracing_mode: Resolved tracing mode; when ``"otel"`` the warning is
+            suppressed because no LangSmith REST calls are made.
 
     Raises:
         LangSmithUserError: If the API key is not provided when using the hosted service.
     """
-    # If the domain is langchain.com, raise error if no api_key
     if not api_key:
         if (
             _is_langchain_hosted(api_url)
-            and not ls_utils.is_env_var_truish("OTEL_ENABLED")
+            and tracing_mode != "otel"
             and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
@@ -736,6 +809,7 @@ class Client:
         "_cache",
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
+        "_tracing_mode",
     ]
 
     _api_key: Optional[str]
@@ -767,6 +841,7 @@ class Client:
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        tracing_mode: Optional[TracingMode] = None,
         otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
@@ -861,6 +936,20 @@ class Client:
                 integration.
 
                 If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_mode: Where to send traces.  One of:
+
+                - ``"langsmith"`` (default) — LangSmith only.
+                - ``"otel"`` — OpenTelemetry export only.
+                - ``"hybrid"`` — both OTel and LangSmith.
+
+                Falls back to the ``LANGSMITH_TRACING_MODE`` env var, then to
+                the legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars, then to
+                ``"langsmith"``.
+            otel_enabled: *Deprecated.* Use ``tracing_mode`` instead.
+
+                When ``True``, interpreted as ``tracing_mode="hybrid"``
+                (or ``"otel"`` if the ``OTEL_ONLY`` env var is set).
+                Will be removed in the next minor version.
             tracing_sampling_rate: The sampling rate for tracing.
 
                 If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment
@@ -952,6 +1041,9 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
+        resolved_mode = _resolve_tracing_mode(tracing_mode, otel_enabled=otel_enabled)
+        self._tracing_mode: TracingMode = resolved_mode
+
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
@@ -968,7 +1060,9 @@ class Client:
         else:
             self.api_url = ls_utils.get_api_url(api_url)
             self.api_key = ls_utils.get_api_key(api_key)
-            _validate_api_key_if_hosted(self.api_url, self.api_key)
+            _validate_api_key_if_hosted(
+                self.api_url, self.api_key, tracing_mode=resolved_mode
+            )
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
@@ -999,9 +1093,7 @@ class Client:
         self._multipart_disabled: bool = False
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
-        # Set OTEL exporter before starting the tracing thread so the thread sees it
-        # and disables compression in OTEL-only mode (avoids "Run compression is not enabled" warning).
-        if _check_otel_enabled() or otel_enabled:
+        if resolved_mode in ("otel", "hybrid"):
             try:
                 (
                     otel_trace,
@@ -1013,7 +1105,6 @@ class Client:
                 existing_provider = otel_trace.get_tracer_provider()
                 tracer = existing_provider.get_tracer(__name__)
                 if otel_tracer_provider is None:
-                    # Use existing global provider if available
                     if not (
                         isinstance(existing_provider, otel_trace.ProxyTracerProvider)
                         and hasattr(tracer, "_tracer")
@@ -1031,18 +1122,21 @@ class Client:
                         otel_trace.set_tracer_provider(otel_tracer_provider)
 
                 self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
-
-                # Store imports for later use
                 self._otel_trace = otel_trace
                 self._set_span_in_context = set_span_in_context
 
             except ImportError:
                 warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                    f"tracing_mode={resolved_mode!r} requires OpenTelemetry "
+                    "packages. Install with `pip install langsmith[otel]`. "
+                    "Falling back to LangSmith-only tracing.",
+                    stacklevel=2,
                 )
                 self.otel_exporter = None
-        else:
-            self.otel_exporter = None
+                self._tracing_mode = "langsmith"
+                _validate_api_key_if_hosted(
+                    self.api_url, self.api_key, tracing_mode="langsmith"
+                )
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -1157,8 +1251,6 @@ class Client:
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
         if cache is not None and disable_prompt_cache:
-            import warnings
-
             warnings.warn(
                 "Both 'cache' and 'disable_prompt_cache' were provided. "
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
@@ -1168,8 +1260,6 @@ class Client:
             )
 
         if cache is not None:
-            import warnings
-
             warnings.warn(
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
                 "Use 'configure_global_prompt_cache()' to configure the global cache, or "
@@ -1399,11 +1489,7 @@ class Client:
             return self._info
 
         # Skip API call when using OTEL-only mode
-        otel_only_mode = ls_utils.is_env_var_truish(
-            "OTEL_ENABLED"
-        ) and ls_utils.is_env_var_truish("OTEL_ONLY")
-
-        if otel_only_mode:
+        if self._tracing_mode == "otel" and self.otel_exporter is not None:
             self._info = ls_schemas.LangSmithInfo()
             return self._info
 
@@ -2042,6 +2128,11 @@ class Client:
                     # Child runs follow their trace's sampling decision
                     sampled.append(run)
             return sampled
+
+    @property
+    def tracing_mode(self) -> TracingMode:
+        """Per-client tracing mode."""
+        return self._tracing_mode
 
     def _put_tracing_queue(self, item: TracingQueueItem) -> None:
         """Put an item on the tracing queue, dropping if full."""

@@ -36,7 +36,6 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
-import { getOtelEnabled } from "./utils/env.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
@@ -60,7 +59,7 @@ function maybeCreateOtelContext<T>(
   tracer?: OTELTracer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
-  if (!runTree || !getOtelEnabled()) {
+  if (!runTree || runTree.client.tracingMode !== "otel") {
     return;
   }
 
