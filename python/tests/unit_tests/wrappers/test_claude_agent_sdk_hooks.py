@@ -697,3 +697,59 @@ class TestSessionBinding:
 
         assert "tool_bound_session" in session.active_tool_runs
         assert len(_hooks_module._default_session.active_tool_runs) == 0
+
+    def test_bound_tool_handler_uses_client_session(self):
+        from langsmith._internal import _context
+        from langsmith.integrations.claude_agent_sdk._client import _wrap_tool_handler
+        from langsmith.integrations.claude_agent_sdk._hooks import SessionState
+
+        session = SessionState()
+        tool_run = _make_parent_run().create_child(name="get_weather", run_type="tool")
+        session.active_tool_runs["tool_1"] = (tool_run, 0.0)
+        seen_parent = None
+
+        async def handler(args):
+            nonlocal seen_parent
+            parent_ref = _context._PARENT_RUN_TREE_REF.get()
+            seen_parent = parent_ref() if parent_ref else None
+            return {"ok": args["ok"]}
+
+        wrapped = _wrap_tool_handler(handler, session)
+        result = asyncio.run(wrapped({"ok": True}))
+
+        assert result == {"ok": True}
+        assert seen_parent is tool_run
+
+    def test_unbound_tool_handler_finds_registered_session_by_args(self):
+        from langsmith._internal import _context
+        from langsmith.integrations.claude_agent_sdk._client import _wrap_tool_handler
+        from langsmith.integrations.claude_agent_sdk._hooks import (
+            SessionState,
+            _register_session,
+            _unregister_session,
+        )
+
+        session = SessionState()
+        tool_run = _make_parent_run().create_child(
+            name="mcp__weather__get_weather",
+            run_type="tool",
+            inputs={"input": {"city": "SF"}},
+        )
+        session.active_tool_runs["tool_1"] = (tool_run, 0.0)
+        token = _register_session(session)
+        seen_parent = None
+
+        async def handler(args):
+            nonlocal seen_parent
+            parent_ref = _context._PARENT_RUN_TREE_REF.get()
+            seen_parent = parent_ref() if parent_ref else None
+            return {"ok": True}
+
+        try:
+            wrapped = _wrap_tool_handler(handler, tool_name="get_weather")
+            result = asyncio.run(wrapped({"city": "SF"}))
+        finally:
+            _unregister_session(session, token)
+
+        assert result == {"ok": True}
+        assert seen_parent is tool_run

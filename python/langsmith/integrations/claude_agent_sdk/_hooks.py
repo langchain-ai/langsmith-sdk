@@ -17,6 +17,7 @@ client-bound session.
 """
 
 import logging
+import threading
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -92,6 +93,12 @@ _current_session: ContextVar[Optional[SessionState]] = ContextVar(
     "langsmith_claude_agent_session", default=None
 )
 
+# Live sessions are only used by SDK MCP tool handlers when the SDK invokes the
+# handler in a detached async context that did not inherit _current_session and
+# the handler object could not be rebound to a client session directly.
+_live_sessions_lock = threading.Lock()
+_live_sessions: dict[int, SessionState] = {}
+
 
 def _current_session_or_default() -> SessionState:
     """Return the session bound to the current context, or the default."""
@@ -117,6 +124,8 @@ def _register_session(session: SessionState) -> object:
     The caller must pass the returned token to ``_unregister_session`` when
     the conversation ends.
     """
+    with _live_sessions_lock:
+        _live_sessions[id(session)] = session
     return _current_session.set(session)
 
 
@@ -132,6 +141,15 @@ def _unregister_session(session: SessionState, token: Any) -> None:
     except ValueError:
         # Token was created in a different context — fall back to clearing.
         _current_session.set(None)
+    finally:
+        with _live_sessions_lock:
+            _live_sessions.pop(id(session), None)
+
+
+def _registered_sessions() -> list[SessionState]:
+    """Return currently active client sessions."""
+    with _live_sessions_lock:
+        return list(_live_sessions.values())
 
 
 # ── Public helpers (used by _client.py) ───────────────────────────────────────
