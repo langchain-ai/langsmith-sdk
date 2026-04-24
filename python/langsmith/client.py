@@ -3684,9 +3684,7 @@ class Client:
 
         if self.compressed_traces is not None:
             remaining = (
-                max(0.0, deadline - time.monotonic())
-                if deadline is not None
-                else None
+                max(0.0, deadline - time.monotonic()) if deadline is not None else None
             )
             self.flush_compressed_traces(timeout=remaining)
         elif self.tracing_queue is not None:
