@@ -5,7 +5,7 @@ import {
   ScoreType,
   ValueType,
 } from "../schemas.js";
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "../utils/uuid/src/index.js";
 import { TraceableFunction, traceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 

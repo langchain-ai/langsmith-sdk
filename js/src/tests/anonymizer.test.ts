@@ -1,5 +1,5 @@
 import { StringNodeRule, createAnonymizer } from "../anonymizer/index.js";
-import { v4 as uuid } from "uuid";
+import { v4 as uuid } from "../utils/uuid/src/index.js";
 import { traceable } from "../traceable.js";
 import { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { mockClient } from "./utils/mock_client.js";

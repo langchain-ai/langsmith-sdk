@@ -1,4 +1,4 @@
-import { v4 as uuid4, validate } from "uuid";
+import { v4 as uuid4, validate } from "../utils/uuid/src/index.js";
 import { Client } from "../index.js";
 import {
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,

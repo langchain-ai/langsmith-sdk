@@ -7,7 +7,7 @@ import {
 
 import { SimpleEvaluationResult } from "../types.js";
 import { RunTree, RunTreeConfig } from "../../../run_trees.js";
-import { v7 } from "uuid";
+import { v7 } from "../../uuid/src/index.js";
 
 export type SimpleEvaluatorParams = {
   inputs: Record<string, any>;

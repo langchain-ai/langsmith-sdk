@@ -18,9 +18,6 @@ importers:
       p-queue:
         specifier: 6.6.2
         version: 6.6.2
-      uuid:
-        specifier: 10.0.0
-        version: 10.0.0
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: ^3.0.0

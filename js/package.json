@@ -149,8 +149,7 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
-    "p-queue": "6.6.2",
-    "uuid": "10.0.0"
+    "p-queue": "6.6.2"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
