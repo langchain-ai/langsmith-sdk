@@ -7,7 +7,7 @@ import * as fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-test.skip("Test performance with large runs and concurrency", async () => {
+test("Test performance with large runs and concurrency", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
@@ -46,20 +46,23 @@ test.skip("Test performance with large runs and concurrency", async () => {
  * between ticks -- any delay beyond the target interval is time the event
  * loop was blocked.
  *
- * The hot-path size estimation optimization is opt-in via
- * LANGSMITH_PERF_OPTIMIZATION=true. Running the benchmark with and
- * without that flag shows the before/after impact on the real public API
- * path, not just the internal queue.
+ * The hot-path size estimator is assumed to be enabled (it landed
+ * separately and is now the standard hot-path behavior). The flush-time
+ * worker offload is force-enabled inside the test, so the result reflects
+ * the full perf optimization stack.
  *
- * Example (run both to compare):
- *   # Default behavior (serialize on hot path)
- *   LANGSMITH_TRACING=false pnpm test:integration src/tests/perf.int.test.ts \
- *     -t "benchmark event loop"
+ * The benchmark is skipped by default and runs only when
+ * LANGSMITH_RUN_PERF_BENCH=true. The js-perf CI workflow sets that flag
+ * and runs the bench on both `main` and PR HEAD to produce a PR comment.
  *
- *   # With opt-in optimization (estimator)
- *   LANGSMITH_PERF_OPTIMIZATION=true LANGSMITH_TRACING=false \
+ * Manual run:
+ *   LANGSMITH_RUN_PERF_BENCH=true LANGSMITH_TRACING=false \
  *     pnpm test:integration src/tests/perf.int.test.ts -t "benchmark event loop"
  */
+// Force the perf optimization on for benchmark runs so results reflect
+// the shipped perf behavior regardless of the invoker's env.
+process.env.LANGSMITH_PERF_OPTIMIZATION = "true";
+
 // Enabled by setting LANGSMITH_RUN_PERF_BENCH=true. Skipped in CI by default.
 const benchIt =
   process.env.LANGSMITH_RUN_PERF_BENCH === "true" ? test : test.skip;
@@ -114,19 +117,6 @@ benchIt(
 
     const inputJsonSize = JSON.stringify(largeInputs).length;
     const outputJsonSize = JSON.stringify(largeOutputs).length;
-    const workerEnv = process.env.LANGSMITH_PERF_OPTIMIZATION === "true";
-    const mode = workerEnv
-      ? "PERF (estimator on hot path + worker-thread serialize at flush)"
-      : "DEFAULT (serialize on hot path + main-thread serialize at flush)";
-
-    console.log(`\n=== Event loop benchmark ===`);
-    console.log(`Mode: ${mode}`);
-    console.log(
-      `Per-run create payload size: ${(inputJsonSize / 1024).toFixed(1)} KB`
-    );
-    console.log(
-      `Per-run update payload size: ${(outputJsonSize / 1024).toFixed(1)} KB`
-    );
 
     const targetInterval = 1;
     const lags: number[] = [];
@@ -213,49 +203,61 @@ benchIt(
     clearInterval(monitor);
 
     lags.sort((a, b) => a - b);
+    createTimes.sort((a, b) => a - b);
+    updateTimes.sort((a, b) => a - b);
     const percentile = (values: number[], p: number) =>
       values.length === 0
         ? 0
         : values[Math.min(values.length - 1, Math.floor(values.length * p))];
-    const totalLag = lags.reduce((a, b) => a + b, 0);
-    const maxLag = lags.length ? lags[lags.length - 1] : 0;
 
-    createTimes.sort((a, b) => a - b);
-    updateTimes.sort((a, b) => a - b);
-    const createTotal = createTimes.reduce((a, b) => a + b, 0);
-    const updateTotal = updateTimes.reduce((a, b) => a + b, 0);
-    const createMax = createTimes.length
-      ? createTimes[createTimes.length - 1]
-      : 0;
-    const updateMax = updateTimes.length
-      ? updateTimes[updateTimes.length - 1]
-      : 0;
+    const stats = (values: number[]) => ({
+      total: values.reduce((a, b) => a + b, 0),
+      max: values.length ? values[values.length - 1] : 0,
+      p50: percentile(values, 0.5),
+      p95: percentile(values, 0.95),
+      p99: percentile(values, 0.99),
+    });
 
-    console.log(`\nRuns traced: ${NUM_RUNS}`);
-    console.log(
-      `Wall time (including batch drain): ${(wallEnd - wallStart).toFixed(1)}ms`
-    );
-    console.log(`\ncreateRun sync time (ms):`);
-    console.log(`  total:       ${createTotal.toFixed(2)}ms`);
-    console.log(`  max:         ${createMax.toFixed(2)}ms`);
-    console.log(`  p50:         ${percentile(createTimes, 0.5).toFixed(2)}ms`);
-    console.log(`  p95:         ${percentile(createTimes, 0.95).toFixed(2)}ms`);
-    console.log(`  p99:         ${percentile(createTimes, 0.99).toFixed(2)}ms`);
-    console.log(`\nupdateRun sync time (ms):`);
-    console.log(`  total:       ${updateTotal.toFixed(2)}ms`);
-    console.log(`  max:         ${updateMax.toFixed(2)}ms`);
-    console.log(`  p50:         ${percentile(updateTimes, 0.5).toFixed(2)}ms`);
-    console.log(`  p95:         ${percentile(updateTimes, 0.95).toFixed(2)}ms`);
-    console.log(`  p99:         ${percentile(updateTimes, 0.99).toFixed(2)}ms`);
-    console.log(
-      `\nEvent loop lag (setInterval monitor, ${targetInterval}ms target):`
-    );
-    console.log(`  samples > 0: ${lags.length}`);
-    console.log(`  total:       ${totalLag.toFixed(2)}ms`);
-    console.log(`  max:         ${maxLag.toFixed(2)}ms`);
-    console.log(`  p50:         ${percentile(lags, 0.5).toFixed(2)}ms`);
-    console.log(`  p95:         ${percentile(lags, 0.95).toFixed(2)}ms`);
-    console.log(`  p99:         ${percentile(lags, 0.99).toFixed(2)}ms`);
+    const createStats = stats(createTimes);
+    const updateStats = stats(updateTimes);
+    const lagStats = stats(lags);
+
+    const fmt = (n: number) => n.toFixed(2).padStart(9);
+    const humanReadable = [
+      ``,
+      `=== Event loop benchmark ===`,
+      `Runs traced:                 ${NUM_RUNS}`,
+      `Per-run create payload:      ${(inputJsonSize / 1024).toFixed(1)} KB`,
+      `Per-run update payload:      ${(outputJsonSize / 1024).toFixed(1)} KB`,
+      `Wall time (incl. drain):     ${(wallEnd - wallStart).toFixed(1)} ms`,
+      ``,
+      `                 total       max       p50       p95       p99`,
+      `createRun   ${fmt(createStats.total)} ${fmt(createStats.max)} ${fmt(
+        createStats.p50
+      )} ${fmt(createStats.p95)} ${fmt(createStats.p99)}`,
+      `updateRun   ${fmt(updateStats.total)} ${fmt(updateStats.max)} ${fmt(
+        updateStats.p50
+      )} ${fmt(updateStats.p95)} ${fmt(updateStats.p99)}`,
+      `loop lag    ${fmt(lagStats.total)} ${fmt(lagStats.max)} ${fmt(
+        lagStats.p50
+      )} ${fmt(lagStats.p95)} ${fmt(lagStats.p99)}`,
+      `(loop lag monitor: ${targetInterval}ms target, ${lags.length} samples > 0)`,
+    ].join("\n");
+
+    // Machine-readable payload. The js-perf CI workflow greps for the
+    // sentinel, parses the JSON, and posts a comparison comment on the PR.
+    const machineReadable = JSON.stringify({
+      runs: NUM_RUNS,
+      inputBytes: inputJsonSize,
+      outputBytes: outputJsonSize,
+      wallMs: wallEnd - wallStart,
+      createRun: createStats,
+      updateRun: updateStats,
+      loopLag: { ...lagStats, samples: lags.length },
+    });
+
+    console.log(humanReadable);
+    console.log(`<<PERF_BENCH_JSON>>${machineReadable}<<END_PERF_BENCH_JSON>>`);
   },
   120_000
 );
