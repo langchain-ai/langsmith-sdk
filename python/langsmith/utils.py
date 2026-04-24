@@ -737,6 +737,23 @@ def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
         return "-", owner_name, commit
 
 
+def parse_hub_identifier(identifier: str) -> tuple[str, str, str]:
+    """Parse a hub repo identifier (``owner/name:hash``, ``name``, etc.).
+
+    Agents, skills, and prompts share the same identifier grammar on Hub.
+
+    Args:
+        identifier: The hub identifier to parse.
+
+    Returns:
+        A tuple containing ``(owner, name, hash)``.
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    return parse_prompt_identifier(identifier)
+
+
 P = ParamSpec("P")
 
 

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.7.33"
+__version__ = "0.7.35"
 version = __version__  # for backwards compatibility
 
 
@@ -145,7 +145,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import AsyncCache
 
         return AsyncCache
-
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
 

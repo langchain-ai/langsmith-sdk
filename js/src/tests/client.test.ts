@@ -6,7 +6,7 @@ import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
-import { parsePromptIdentifier } from "../utils/prompts.js";
+import { parseHubIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -199,20 +199,20 @@ describe("Client", () => {
     });
   });
 
-  describe("parsePromptIdentifier", () => {
+  describe("parseHubIdentifier", () => {
     it("should parse valid identifiers correctly", () => {
-      expect(parsePromptIdentifier("name")).toEqual(["-", "name", "latest"]);
-      expect(parsePromptIdentifier("owner/name")).toEqual([
+      expect(parseHubIdentifier("name")).toEqual(["-", "name", "latest"]);
+      expect(parseHubIdentifier("owner/name")).toEqual([
         "owner",
         "name",
         "latest",
       ]);
-      expect(parsePromptIdentifier("owner/name:commit")).toEqual([
+      expect(parseHubIdentifier("owner/name:commit")).toEqual([
         "owner",
         "name",
         "commit",
       ]);
-      expect(parsePromptIdentifier("name:commit")).toEqual([
+      expect(parseHubIdentifier("name:commit")).toEqual([
         "-",
         "name",
         "commit",
@@ -233,7 +233,7 @@ describe("Client", () => {
       ];
 
       invalidIdentifiers.forEach((identifier) => {
-        expect(() => parsePromptIdentifier(identifier)).toThrowError(
+        expect(() => parseHubIdentifier(identifier)).toThrowError(
           /Invalid prompt identifier format/
         );
       });

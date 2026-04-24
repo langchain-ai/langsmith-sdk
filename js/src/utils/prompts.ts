@@ -1,6 +1,11 @@
 import { getInvalidPromptIdentifierMsg } from "./error.js";
 
-export function parsePromptIdentifier(
+/**
+ * Parse a hub repo identifier (owner/name:hash, name, etc.).
+ *
+ * Prompts, agents, and skills share the same identifier grammar on Hub.
+ */
+export function parseHubIdentifier(
   identifier: string
 ): [string, string, string] {
   if (

@@ -139,6 +139,7 @@ test("evaluate handles various data inputs and evaluator shapes", async () => {
 });
 
 test("evaluate can repeat", async () => {
+  const client = new Client();
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -163,6 +164,33 @@ test("evaluate can repeat", async () => {
 
     const firstRunResults = evalRes.results[i].evaluationResults;
     expect(firstRunResults.results).toHaveLength(0);
+  }
+
+  // numRepetitions should also be honored when data is a pre-fetched Example[].
+  const examples: Example[] = [];
+  for await (const example of client.listExamples({
+    datasetName: TESTING_DATASET_NAME,
+  })) {
+    examples.push(example);
+  }
+  const arrayRepeatRes = await evaluate(targetFunc, {
+    data: examples,
+    description: "numRepetitions honored with Example[] data",
+    numRepetitions: 3,
+  });
+  expect(arrayRepeatRes.results).toHaveLength(examples.length * 3);
+  const runCountByExampleId = new Map<string, number>();
+  for (const result of arrayRepeatRes.results) {
+    expect(result.run).toBeDefined();
+    expect(result.example).toBeDefined();
+    const exampleId = result.example.id;
+    runCountByExampleId.set(
+      exampleId,
+      (runCountByExampleId.get(exampleId) ?? 0) + 1
+    );
+  }
+  for (const example of examples) {
+    expect(runCountByExampleId.get(example.id)).toBe(3);
   }
 });
 

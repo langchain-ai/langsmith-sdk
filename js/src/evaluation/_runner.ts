@@ -1054,10 +1054,7 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
-    examples: Array.isArray(standardFields.data)
-      ? standardFields.data
-      : undefined,
+    data: standardFields.data,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,

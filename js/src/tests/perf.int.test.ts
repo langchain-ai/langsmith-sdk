@@ -1,4 +1,4 @@
-/* eslint-disable no-process-env */
+/* eslint-disable no-process-env, no-instanceof/no-instanceof */
 import { traceable } from "../traceable.js";
 import { Client } from "../client.js";
 import { v7 as uuidv7 } from "uuid";
@@ -140,14 +140,12 @@ benchIt(
     monitor.unref();
 
     const fetchImplementation: typeof fetch = async (input) => {
-      let url: string;
-      if (typeof input === "string") {
-        url = input;
-      } else if (typeof (input as URL).href === "string" && !("url" in input)) {
-        url = (input as URL).toString();
-      } else {
-        url = (input as Request).url;
-      }
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : input.url;
       if (url.endsWith("/info")) {
         return new Response(
           JSON.stringify({
