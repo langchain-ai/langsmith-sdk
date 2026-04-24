@@ -2183,6 +2183,9 @@ def test_validate_api_key_if_hosted_without_tracing(
 class TestResolveTracingMode:
     """Tests for _resolve_tracing_mode and the Client tracing_mode parameter."""
 
+    def teardown_method(self):
+        _clear_env_cache()
+
     def test_default_is_langsmith(self):
         assert _resolve_tracing_mode(None) == "langsmith"
 
@@ -2294,6 +2297,9 @@ def _make_mock_otel():
 
 class TestClientTracingMode:
     """Tests for Client(tracing_mode=...) via explicit arg and env var."""
+
+    def teardown_method(self):
+        _clear_env_cache()
 
     @mock.patch("langsmith.client.requests.Session")
     @mock.patch.dict(
