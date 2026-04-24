@@ -135,12 +135,14 @@ def _set_session_root(session: SessionState, run_tree: RunTree) -> None:
 
 
 def _unregister_session(session: SessionState, token: Any) -> None:
-    """Reset the ContextVar for the current session."""
+    """Reset the ContextVar for the current session and drop the live entry."""
     try:
         _current_session.reset(token)
     except ValueError:
-        # Token was created in a different context — fall back to clearing.
-        _current_session.set(None)
+        # Token was created in a different context. Don't clobber an unrelated
+        # current value — just log and continue. The live-sessions registry
+        # below is still cleaned up so matching won't find a stale session.
+        logger.debug("Could not reset _current_session with token from another context")
     finally:
         with _live_sessions_lock:
             _live_sessions.pop(id(session), None)

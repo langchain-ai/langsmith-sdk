@@ -337,44 +337,44 @@ def _wrap_tool_handler(
 
 
 def _tool_run_matches(run: Any, args: Any, tool_name: Optional[str]) -> bool:
-    """Return whether *run* appears to be for this SDK MCP handler call."""
-    if tool_name:
-        run_name = str(getattr(run, "name", ""))
-        name_matches = (
-            tool_name == run_name or tool_name in run_name or run_name in tool_name
-        )
-        if not name_matches:
-            return False
-    if args is None:
-        return True
+    """Return whether *run* appears to be for this SDK MCP handler call.
+
+    Matching is intentionally strict: we require both the tool name and the
+    handler args to line up with what the ``PreToolUse`` hook recorded. This
+    avoids cross-attributing a handler invocation to the wrong client's active
+    tool run under concurrency.
+    """
+    if not tool_name:
+        return False
+    run_name = str(getattr(run, "name", ""))
+    # SDK MCP tools show up in hook data as e.g. ``mcp__weather__get_weather``
+    # while the handler only knows its short name ``get_weather``.
+    name_matches = (
+        tool_name == run_name or tool_name in run_name or run_name in tool_name
+    )
+    if not name_matches:
+        return False
     inputs = getattr(run, "inputs", None)
     if not isinstance(inputs, dict):
         return False
-    return inputs.get("input") == args
+    # PreToolUse stores {} when the tool had no inputs, otherwise
+    # {"input": <tool_input>}. Normalise both sides before comparing.
+    recorded = inputs.get("input", {}) if inputs else {}
+    return recorded == (args or {})
 
 
 def _newest_matching_tool_run(
     sessions: list[SessionState], args: Any, tool_name: Optional[str]
 ) -> Any:
+    """Return the most recently created active tool run that matches."""
     candidates: list[tuple[float, Any]] = []
     for candidate_session in sessions:
         for run, start_time in candidate_session.active_tool_runs.values():
             if _tool_run_matches(run, args, tool_name):
                 candidates.append((start_time, run))
-    if candidates:
-        return max(candidates, key=lambda item: item[0])[1]
-
-    # If the handler object could not tell us its tool name/args, only fall back
-    # when exactly one active tool exists across all live sessions. This preserves
-    # the old single-client behavior without guessing under concurrency.
-    all_active = [
-        (start_time, run)
-        for candidate_session in sessions
-        for run, start_time in candidate_session.active_tool_runs.values()
-    ]
-    if len(all_active) == 1:
-        return all_active[0][1]
-    return None
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def _get_last_active_tool_run(
@@ -383,77 +383,54 @@ def _get_last_active_tool_run(
     args: Any = None,
     tool_name: Optional[str] = None,
 ) -> Any:
-    """Return the active tool run for an SDK MCP handler, or None."""
+    """Return the active tool run for an SDK MCP handler, or None.
+
+    Lookup order:
+
+    1. The session explicitly bound to the handler (if any).
+    2. The session bound to the current ContextVar.
+    3. The module-level default session (unit tests / unbound callers).
+    4. Any live client session — only used when the handler is unbound and the
+       SDK invoked it in a detached async context. Requires an exact tool
+       name + args match to avoid cross-attribution across clients.
+    """
     from ._hooks import (
         _current_session,
         _current_session_or_default,
         _registered_sessions,
     )
 
+    # If we have a specific session (explicitly bound, current-context, or the
+    # test default), just return its newest active tool run. There is no
+    # cross-client ambiguity at that point.
+    def _newest_in(s: SessionState) -> Any:
+        if not s.active_tool_runs:
+            return None
+        latest_id = max(
+            s.active_tool_runs,
+            key=lambda tid: s.active_tool_runs[tid][1],
+        )
+        return s.active_tool_runs[latest_id][0]
+
     if session is not None:
-        return _newest_matching_tool_run([session], args, tool_name)
+        return _newest_in(session)
 
     current_session = _current_session.get()
     if current_session is not None:
-        run = _newest_matching_tool_run([current_session], args, tool_name)
+        run = _newest_in(current_session)
         if run is not None:
             return run
 
-    run = _newest_matching_tool_run([_current_session_or_default()], args, tool_name)
-    if run is not None:
-        return run
+    default_session = _current_session_or_default()
+    if default_session is not current_session:
+        run = _newest_in(default_session)
+        if run is not None:
+            return run
 
+    # Last resort: the SDK invoked this handler in a detached async context and
+    # the handler object wasn't bound to a session. Require strict tool-name +
+    # args match so concurrent clients can't steal each other's attribution.
     return _newest_matching_tool_run(_registered_sessions(), args, tool_name)
-
-
-def _bind_mcp_tool_handlers_to_session(options: Any, session: SessionState) -> None:
-    """Bind SDK MCP tool handler wrappers to a client's session when possible."""
-    roots = [getattr(options, "mcp_servers", None)]
-    seen: set[int] = set()
-
-    def _visit(obj: Any, depth: int = 0) -> None:
-        if obj is None or depth > 6:
-            return
-        obj_id = id(obj)
-        if obj_id in seen:
-            return
-        seen.add(obj_id)
-
-        if isinstance(obj, dict):
-            for value in obj.values():
-                _visit(value, depth + 1)
-            return
-        if isinstance(obj, (list, tuple, set, frozenset)):
-            for value in obj:
-                _visit(value, depth + 1)
-            return
-
-        handler = getattr(obj, "handler", None)
-        if callable(handler):
-            original = getattr(handler, "_langsmith_original_handler", handler)
-            if getattr(handler, "_langsmith_session", None) is not session:
-                try:
-                    name = getattr(obj, "name", None)
-                    obj.handler = _wrap_tool_handler(original, session, name)
-                except Exception as e:
-                    logger.debug(f"Failed to bind MCP tool handler session: {e}")
-
-        for attr in ("tools", "_tools", "mcp_servers", "servers"):
-            try:
-                child = getattr(obj, attr)
-            except Exception:
-                continue
-            _visit(child, depth + 1)
-
-        try:
-            values = vars(obj).values()
-        except TypeError:
-            return
-        for value in values:
-            _visit(value, depth + 1)
-
-    for root in roots:
-        _visit(root)
 
 
 def instrument_claude_client(original_class: Any) -> None:
@@ -477,7 +454,6 @@ def instrument_claude_client(original_class: Any) -> None:
         self._ls_session = SessionState()
         if options:
             _inject_tracing_hooks(options, self._ls_session)
-            _bind_mcp_tool_handlers_to_session(options, self._ls_session)
         _orig_init(self, *args, **kwargs)
         self._ls_prompt = None
         self._ls_start_time = None
