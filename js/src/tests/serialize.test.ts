@@ -5,6 +5,7 @@ import {
   serialize,
   estimateSerializedSize,
 } from "../utils/fast-safe-stringify/index.js";
+import { hasLargeString } from "../utils/serialize_worker.js";
 import {
   HumanMessage,
   SystemMessage,
@@ -211,7 +212,7 @@ describe("estimateSerializedSize", () => {
   ) {
     const { minRatio = 0.9, maxRatio = 3.0 } = opts;
     const real = serialize(value).length;
-    const estimate = estimateSerializedSize(value);
+    const estimate = estimateSerializedSize(value).size;
     const ratio = estimate / real;
     if (ratio < minRatio || ratio > maxRatio) {
       throw new Error(
@@ -256,7 +257,7 @@ describe("estimateSerializedSize", () => {
       return originalToJSON();
     }) as typeof buf.toJSON;
 
-    const estimate = estimateSerializedSize(buf);
+    const estimate = estimateSerializedSize(buf).size;
     expect(estimate).toBeGreaterThan(0);
     expect(calls).toBe(0);
   });
@@ -348,7 +349,9 @@ describe("estimateSerializedSize", () => {
         nested: { __explode: true, value: "x".repeat(100) },
       };
 
-      expect(estimateSerializedSize(payload)).toBe(serialize(payload).length);
+      expect(estimateSerializedSize(payload).size).toBe(
+        serialize(payload).length
+      );
     } finally {
       Object.keys = originalKeys;
     }
@@ -369,7 +372,9 @@ describe("estimateSerializedSize", () => {
       }) as typeof Buffer.byteLength;
 
       const payload = { text: "explode-byte-length" };
-      expect(estimateSerializedSize(payload)).toBe(serialize(payload).length);
+      expect(estimateSerializedSize(payload).size).toBe(
+        serialize(payload).length
+      );
     } finally {
       Buffer.byteLength = originalByteLength;
     }
@@ -387,7 +392,7 @@ describe("estimateSerializedSize", () => {
     const cyc: any = { shared, other: shared };
     cyc.self = cyc;
     const real = serialize(cyc).length;
-    const estimate = estimateSerializedSize(cyc);
+    const estimate = estimateSerializedSize(cyc).size;
     // Should be finite (no infinite recursion), and in the ballpark.
     expect(Number.isFinite(estimate)).toBe(true);
     expect(estimate).toBeGreaterThan(0);
@@ -435,7 +440,7 @@ describe("estimateSerializedSize", () => {
   it("treats undefined/function/symbol as dropped in object properties", () => {
     const v = { a: 1, b: undefined, c: () => 1, d: Symbol(), e: 2 };
     const real = serialize(v).length;
-    const estimate = estimateSerializedSize(v);
+    const estimate = estimateSerializedSize(v).size;
     // Dropped keys shouldn't blow up the estimate significantly.
     expect(estimate).toBeLessThan(real * 6);
   });
@@ -444,8 +449,34 @@ describe("estimateSerializedSize", () => {
     // JSON.stringify renders these as "null" in arrays.
     const v = [1, undefined, () => 1, Symbol(), 2];
     const real = serialize(v).length;
-    const estimate = estimateSerializedSize(v);
+    const estimate = estimateSerializedSize(v).size;
     expect(estimate).toBeGreaterThan(real * 0.5);
+  });
+
+  it("reports the UTF-8 byte length of the longest string encountered", () => {
+    const short = "hi";
+    const long = "x".repeat(5000);
+    const payload = { a: short, nested: { b: long, c: "medium".repeat(100) } };
+    const { maxStringLen } = estimateSerializedSize(payload);
+    expect(maxStringLen).toBe(5000);
+  });
+
+  it("tracks maxStringLen across arrays and well-known containers", () => {
+    const big = "y".repeat(2048);
+    const payload = {
+      list: ["a", big, "b"],
+      map: new Map([["k", big]]),
+      set: new Set(["short", big]),
+    };
+    expect(estimateSerializedSize(payload).maxStringLen).toBe(2048);
+  });
+
+  it("reports zero maxStringLen for payloads with no strings", () => {
+    expect(
+      estimateSerializedSize({ a: 1, b: [2, 3], c: true }).maxStringLen
+    ).toBe(0);
+    expect(estimateSerializedSize(null).maxStringLen).toBe(0);
+    expect(estimateSerializedSize(42).maxStringLen).toBe(0);
   });
 
   it("handles LangChain message objects", () => {
@@ -473,5 +504,82 @@ describe("estimateSerializedSize", () => {
     });
 
     expectClose({ message }, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+});
+
+describe("hasLargeString", () => {
+  it("returns false for null / undefined / primitives below threshold", () => {
+    expect(hasLargeString(null)).toBe(false);
+    expect(hasLargeString(undefined)).toBe(false);
+    expect(hasLargeString(0)).toBe(false);
+    expect(hasLargeString("hi")).toBe(false);
+    expect(hasLargeString(true)).toBe(false);
+  });
+
+  it("returns true for a single string at or above threshold", () => {
+    expect(hasLargeString("x".repeat(100), 100)).toBe(true);
+    expect(hasLargeString("x".repeat(99), 100)).toBe(false);
+  });
+
+  it("finds a large string nested deep inside a payload", () => {
+    const payload = {
+      a: 1,
+      b: [{ c: "short" }, { d: { e: { f: "y".repeat(200) } } }],
+    };
+    expect(hasLargeString(payload, 100)).toBe(true);
+    expect(hasLargeString(payload, 1000)).toBe(false);
+  });
+
+  it("finds a large string inside Map and Set values", () => {
+    const big = "z".repeat(500);
+    expect(hasLargeString(new Map([["k", big]]), 100)).toBe(true);
+    expect(hasLargeString(new Set([big]), 100)).toBe(true);
+  });
+
+  it("short-circuits before visiting the entire graph", () => {
+    // Put the large string at the front; if we didn't short-circuit, we
+    // would visit many nodes after it. With short-circuit we should find
+    // it in O(1) nodes regardless of the rest of the graph.
+    const big = "a".repeat(200);
+    const huge = Array.from({ length: 100_000 }, (_, i) => ({ i, v: "x" }));
+    const payload = { first: big, rest: huge };
+    // Budget of 5 is more than enough to reach `first` but far too small
+    // to scan `rest`. If short-circuit works, we should still return true.
+    expect(hasLargeString(payload, 100, 5)).toBe(true);
+  });
+
+  it("respects the node budget and returns false when exhausted", () => {
+    // Build a wide payload of small strings; no string exceeds threshold.
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 1000; i++) wide[`k${i}`] = "tiny";
+    // With a small budget and nothing large to find, we bail out early.
+    expect(hasLargeString(wide, 100, 50)).toBe(false);
+    // With a generous budget we still return false (correctly).
+    expect(hasLargeString(wide, 100, 10_000)).toBe(false);
+  });
+
+  it("handles cycles without infinite looping", () => {
+    const a: any = { name: "a" };
+    const b: any = { name: "b", other: a };
+    a.other = b;
+    expect(() => hasLargeString(a, 100)).not.toThrow();
+    expect(hasLargeString(a, 100)).toBe(false);
+    b.big = "q".repeat(200);
+    expect(hasLargeString(a, 100)).toBe(true);
+  });
+
+  it("does not iterate into opaque binary containers", () => {
+    // A Buffer's .toString() is a huge string but its enumerable own
+    // properties are few; we should not treat its bytes as a string.
+    const buf = Buffer.alloc(200_000, "x");
+    expect(hasLargeString(buf, 100_000)).toBe(false);
+    expect(hasLargeString(new Uint8Array(200_000), 100_000)).toBe(false);
+    expect(hasLargeString(new ArrayBuffer(200_000), 100_000)).toBe(false);
+  });
+
+  it("skips Date / RegExp / Error without inspection", () => {
+    expect(hasLargeString(new Date(), 10)).toBe(false);
+    expect(hasLargeString(/foo/, 10)).toBe(false);
+    expect(hasLargeString(new Error("boom"), 10)).toBe(false);
   });
 });
