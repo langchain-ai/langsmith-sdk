@@ -13,7 +13,9 @@ from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._config import get_tracing_config
 from ._hooks import (
-    _active_tool_runs,
+    SessionState,
+    _register_session,
+    _unregister_session,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
@@ -294,10 +296,13 @@ def _wrap_tool_handler(original_handler: Any) -> Any:
 
 def _get_last_active_tool_run() -> Any:
     """Return the most recently created active tool run, or None."""
-    if not _active_tool_runs:
+    from ._hooks import _current_session_or_default
+
+    active = _current_session_or_default().active_tool_runs
+    if not active:
         return None
-    last_id = list(_active_tool_runs.keys())[-1]
-    run, _ = _active_tool_runs[last_id]
+    last_id = next(reversed(active))
+    run, _ = active[last_id]
     return run
 
 
@@ -411,7 +416,15 @@ def instrument_claude_client(original_class: Any) -> None:
             trace_kwargs["tags"] = config["tags"]
 
         async with trace(**trace_kwargs) as run:
-            set_parent_run_tree(run)
+            # Create a fresh per-conversation state container and bind it
+            # to the ContextVar so hook functions on this SDK event loop
+            # pick it up (see _hooks.SessionState). This keeps concurrent
+            # ClaudeSDKClient instances — eval runs, FastAPI handlers,
+            # Celery workers, asyncio.gather — from corrupting each
+            # other's correlation state.
+            session = SessionState()
+            session_token = _register_session(session)
+            parent_token = set_parent_run_tree(run)
             tracker = TurnLifecycle(self._ls_start_time)
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
@@ -472,8 +485,13 @@ def instrument_claude_client(original_class: Any) -> None:
                                             "tool_call_id": tool_use_id,
                                         }
                                     )
-                                    if tool_use_id and tool_use_id in _active_tool_runs:
-                                        tool_run, _ = _active_tool_runs.pop(tool_use_id)
+                                    if (
+                                        tool_use_id
+                                        and tool_use_id in session.active_tool_runs
+                                    ):
+                                        tool_run, _ = session.active_tool_runs.pop(
+                                            tool_use_id
+                                        )
                                         result_content = block.get("content", "")
                                         is_error = block.get("is_error", False)
                                         tool_run.end(
@@ -521,10 +539,13 @@ def instrument_claude_client(original_class: Any) -> None:
                 logger.exception("Error while tracing Claude Agent stream")
             finally:
                 tracker.close()
-                reconcile_from_transcripts(tracker)
+                reconcile_from_transcripts(tracker, session=session)
                 tracker.flush()
-                clear_parent_run_tree()
-                clear_active_tool_runs()
+                clear_parent_run_tree(parent_token)
+                try:
+                    clear_active_tool_runs(session)
+                finally:
+                    _unregister_session(session, session_token)
 
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init

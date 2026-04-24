@@ -22,8 +22,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from . import _hooks as _hooks_module
-from ._hooks import _subagent_transcript_paths
+from ._hooks import SessionState, _current_session_or_default
 from ._usage import (
     extract_usage_metadata,
     read_llm_turns_from_transcript,
@@ -40,6 +39,7 @@ LLM_RUN_NAME = "claude.assistant.turn"
 
 def reconcile_from_transcripts(
     tracker: "TurnLifecycle",
+    session: Optional[SessionState] = None,
 ) -> None:
     """Read transcripts and reconcile LLM runs.
 
@@ -51,9 +51,16 @@ def reconcile_from_transcripts(
 
     2. **Usage correction** — patches accurate usage from the JSONL
        transcripts onto all LLM runs (both streamed and synthetic).
+
+    If *session* is omitted the current ContextVar-bound session (or the
+    module-level default) is used. The caller in ``receive_response``
+    passes the per-conversation session explicitly to stay safe under
+    concurrent tracing.
     """
-    _create_missing_subagent_llm_runs(tracker)
-    _patch_usage_on_llm_runs(tracker)
+    if session is None:
+        session = _current_session_or_default()
+    _create_missing_subagent_llm_runs(tracker, session)
+    _patch_usage_on_llm_runs(tracker, session)
 
 
 # ── Step 1: synthetic subagent LLM runs ─────────────────────────────
@@ -61,11 +68,12 @@ def reconcile_from_transcripts(
 
 def _create_missing_subagent_llm_runs(
     tracker: "TurnLifecycle",
+    session: SessionState,
 ) -> None:
     # Guard against the same message_id being processed twice (e.g. if
     # the same transcript path appears multiple times in the list).
     created: set[str] = set()
-    for path, subagent_run in _subagent_transcript_paths:
+    for path, subagent_run in session.subagent_transcript_paths:
         try:
             turns = read_llm_turns_from_transcript(path)
             for turn in turns:
@@ -126,17 +134,18 @@ def _create_missing_subagent_llm_runs(
 
 def _patch_usage_on_llm_runs(
     tracker: "TurnLifecycle",
+    session: SessionState,
 ) -> None:
     if not tracker.llm_runs_by_message_id:
         return
 
     all_usage: dict[str, dict[str, Any]] = {}
 
-    main_path = _hooks_module._main_transcript_path
+    main_path = session.main_transcript_path
     if main_path:
         all_usage.update(read_usage_from_transcript(main_path))
 
-    for path, _run in _subagent_transcript_paths:
+    for path, _run in session.subagent_transcript_paths:
         all_usage.update(read_usage_from_transcript(path))
 
     patched = 0
