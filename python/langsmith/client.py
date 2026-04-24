@@ -3610,8 +3610,18 @@ class Client:
                     },
                 )
 
-    def flush_compressed_traces(self, attempts: int = 3) -> None:
-        """Force flush the currently buffered compressed runs."""
+    def flush_compressed_traces(
+        self, attempts: int = 3, timeout: Optional[float] = None
+    ) -> None:
+        """Force flush the currently buffered compressed runs.
+
+        Args:
+            attempts: Retry attempts for the send request.
+            timeout: Maximum seconds to wait for in-flight sends to complete.
+                None (default) waits indefinitely. Bounds only the wait on
+                already-submitted sends; the synchronous drain and submit
+                steps above are not bounded by this timeout.
+        """
         if self.compressed_traces is None:
             return
 
@@ -3653,21 +3663,43 @@ class Client:
         # If we got a future, wait for it to complete
         if self._futures:
             futures = list(self._futures)
-            done, _ = cf.wait(futures)
+            done, _ = cf.wait(futures, timeout=timeout)
             # Remove completed futures
             self._futures.difference_update(done)
 
-    def flush(self) -> None:
-        """Flush either queue or compressed buffer, depending on mode."""
-        # Flush any remaining batch items first
+    def flush(self, timeout: Optional[float] = None) -> None:
+        """Flush either queue or compressed buffer, depending on mode.
+
+        Args:
+            timeout: Maximum seconds to wait for pending traces to drain.
+                None (default) waits indefinitely. A timeout of 0 returns
+                immediately without waiting.
+        """
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
         if self._process_buffered_run_ops:
             with self._run_ops_buffer_lock:
                 if self._run_ops_buffer:
                     self._flush_run_ops_buffer()
+
         if self.compressed_traces is not None:
-            self.flush_compressed_traces()
+            remaining = (
+                max(0.0, deadline - time.monotonic())
+                if deadline is not None
+                else None
+            )
+            self.flush_compressed_traces(timeout=remaining)
         elif self.tracing_queue is not None:
-            self.tracing_queue.join()
+            if deadline is None:
+                self.tracing_queue.join()
+            else:
+                # queue.Queue.join() has no timeout; wait on its condition directly.
+                with self.tracing_queue.all_tasks_done:
+                    while self.tracing_queue.unfinished_tasks:
+                        wait_for = deadline - time.monotonic()
+                        if wait_for <= 0:
+                            break
+                        self.tracing_queue.all_tasks_done.wait(wait_for)
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
@@ -9612,8 +9644,22 @@ class Client:
         if body:
             self.request_with_retries("PATCH", f"{HUB}/{owner}/{name}", json=body)
 
-    def cleanup(self) -> None:
-        """Manually trigger cleanup of background threads."""
+    def cleanup(self, timeout: Optional[float] = None) -> None:
+        """Manually trigger cleanup of background threads.
+
+        Drains pending traces via ``flush()`` before stopping the background
+        threads. Pass ``timeout=0`` to skip the drain entirely (e.g. in error
+        paths or signal handlers where blocking on network I/O is
+        unacceptable).
+
+        Args:
+            timeout: Maximum seconds to wait for pending traces to flush.
+                None (default) waits indefinitely.
+        """
+        try:
+            self.flush(timeout=timeout)
+        except Exception as e:
+            logger.warning("Error flushing traces during cleanup: %s", e)
         self._manual_cleanup = True
         if self._cache is not None:
             self._cache.shutdown()
