@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
-    from langsmith.client import Client
+    from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
         aevaluate,
         aevaluate_existing,
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.7.3"
+__version__ = "0.7.36"
 version = __version__  # for backwards compatibility
 
 
@@ -40,6 +40,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.client import Client
 
         return Client
+    elif name == "TracingMode":
+        from langsmith.client import TracingMode
+
+        return TracingMode
     elif name == "AsyncClient":
         from langsmith.async_client import AsyncClient
 
@@ -145,7 +149,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import AsyncCache
 
         return AsyncCache
-
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
 
@@ -156,12 +159,18 @@ def __getattr__(name: str) -> Any:
 
         return configure_global_async_prompt_cache
 
+    elif name == "set_runtime_overrides":
+        from langsmith._runtime_overrides import set_runtime_overrides
+
+        return set_runtime_overrides
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "Client",
     "AsyncClient",
+    "TracingMode",
     "PromptCache",
     "AsyncPromptCache",
     "Cache",
@@ -190,4 +199,5 @@ __all__ = [
     "ContextThreadPoolExecutor",
     "uuid7",
     "uuid7_from_datetime",
+    "set_runtime_overrides",
 ]

@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { faker } from "@faker-js/faker";
 import { RunCreate } from "../schemas.js";
@@ -168,6 +168,7 @@ export function sanitizePresignedUrls(payload: unknown) {
     if (key === "presigned_url") {
       try {
         const url = new URL(value);
+        url.searchParams.set("jwt", "[JWT]");
         url.searchParams.set("Signature", "[SIGNATURE]");
         url.searchParams.set("Expires", "[EXPIRES]");
         return url.toString();
@@ -457,7 +458,7 @@ function processUserDataCollection(userData, processingOptions = {}) {
   // Critical error location: userData parameter validation missing
   // This function expects an array but sometimes receives undefined
   // due to upstream service failures or race conditions
-  
+
   const {
     enableValidation = true,
     transformationRules = [],
@@ -497,12 +498,12 @@ async function fetchUserDataFromMultipleSources(userIds, options = {}) {
       fetchFromCacheLayer(userIds),
       fetchFromExternalAPIs(userIds, options)
     ];
-    
+
     const [dbData, cacheData, apiData] = await Promise.allSettled(promises);
-    
+
     // POTENTIAL ISSUE: Merge logic may result in undefined
     const mergedData = mergeUserDataSources(dbData, cacheData, apiData);
-    
+
     // ISSUE: No validation that mergedData is a valid array
     return mergedData;
   } catch (error) {

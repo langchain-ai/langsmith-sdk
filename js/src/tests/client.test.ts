@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
+import { inspect } from "node:util";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
-import {
-  isVersionGreaterOrEqual,
-  parsePromptIdentifier,
-} from "../utils/prompts.js";
+import { parseHubIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -201,37 +199,20 @@ describe("Client", () => {
     });
   });
 
-  describe("isVersionGreaterOrEqual", () => {
-    it("should return true if the version is greater or equal", () => {
-      // Test versions equal to 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.23", "0.5.23")).toBe(true);
-
-      // Test versions greater than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.24", "0.5.23"));
-      expect(isVersionGreaterOrEqual("0.6.0", "0.5.23"));
-      expect(isVersionGreaterOrEqual("1.0.0", "0.5.23"));
-
-      // Test versions less than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
-    });
-  });
-
-  describe("parsePromptIdentifier", () => {
+  describe("parseHubIdentifier", () => {
     it("should parse valid identifiers correctly", () => {
-      expect(parsePromptIdentifier("name")).toEqual(["-", "name", "latest"]);
-      expect(parsePromptIdentifier("owner/name")).toEqual([
+      expect(parseHubIdentifier("name")).toEqual(["-", "name", "latest"]);
+      expect(parseHubIdentifier("owner/name")).toEqual([
         "owner",
         "name",
         "latest",
       ]);
-      expect(parsePromptIdentifier("owner/name:commit")).toEqual([
+      expect(parseHubIdentifier("owner/name:commit")).toEqual([
         "owner",
         "name",
         "commit",
       ]);
-      expect(parsePromptIdentifier("name:commit")).toEqual([
+      expect(parseHubIdentifier("name:commit")).toEqual([
         "-",
         "name",
         "commit",
@@ -252,10 +233,143 @@ describe("Client", () => {
       ];
 
       invalidIdentifiers.forEach((identifier) => {
-        expect(() => parsePromptIdentifier(identifier)).toThrowError(
-          `Invalid identifier format: ${identifier}`
+        expect(() => parseHubIdentifier(identifier)).toThrowError(
+          /Invalid prompt identifier format/
         );
       });
+    });
+  });
+
+  describe("listCommits", () => {
+    it("should handle private prompts without explicit owner", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      // Mock the _getPaginated method to capture the URL being called
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with just the prompt name (no owner)
+      const commits = [];
+      for await (const commit of client.listCommits("my-prompt")) {
+        commits.push(commit);
+      }
+
+      // Verify that the URL uses "-" as the owner for private prompts
+      expect(capturedUrl).toBe("/commits/-/my-prompt/");
+    });
+
+    it("should handle prompts with explicit owner", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with owner/name format
+      const commits = [];
+      for await (const commit of client.listCommits("owner/my-prompt")) {
+        commits.push(commit);
+      }
+
+      // Verify that the URL uses the provided owner
+      expect(capturedUrl).toBe("/commits/owner/my-prompt/");
+    });
+
+    it("should handle prompts with commit specifier", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      let capturedUrl: string | undefined;
+      jest
+        .spyOn(client as any, "_getPaginated")
+        .mockImplementation(async function* (...args: any[]) {
+          capturedUrl = args[0];
+          yield [];
+        });
+
+      // Call listCommits with prompt:commit format (commit part should be ignored for listCommits)
+      const commits = [];
+      for await (const commit of client.listCommits("my-prompt:abc123")) {
+        commits.push(commit);
+      }
+
+      // The commit identifier is parsed but not used in the URL (listCommits lists all commits)
+      expect(capturedUrl).toBe("/commits/-/my-prompt/");
+    });
+  });
+
+  describe("createCommit", () => {
+    it("should include description in request body when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ commit_hash: "new123", id: "1" }),
+        text: async () => "",
+        headers: new Headers(),
+      });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      // Capture the fetch call body
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          description: "initial prompt version",
+        }
+      );
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      const capturedBody = (fetchCall[1] as Record<string, unknown>)
+        ?.body as string;
+      const parsed = JSON.parse(capturedBody);
+      expect(parsed.description).toBe("initial prompt version");
+    });
+
+    it("should omit description from request body when not provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ commit_hash: "new123", id: "1" }),
+        text: async () => "",
+        headers: new Headers(),
+      });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit("owner/my-prompt", { id: "test" });
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      const capturedBody = (fetchCall[1] as Record<string, unknown>)
+        ?.body as string;
+      const parsed = JSON.parse(capturedBody);
+      expect(parsed.description).toBeUndefined();
     });
   });
 
@@ -761,6 +875,311 @@ describe("Client", () => {
       expect(result.extra).toBeDefined();
       expect(result.extra.runtime).toBeDefined();
       expect(result.extra.metadata).toBeDefined();
+    });
+  });
+
+  describe("listRuns normalizes naive timestamps", () => {
+    it("should append Z to naive timestamps returned by the API", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const naiveRun = {
+        id: "run-1",
+        name: "test-run",
+        run_type: "chain",
+        inputs: {},
+        start_time: "2026-03-12T19:38:10.269893",
+        end_time: "2026-03-12T19:38:11.000000",
+        session_id: "proj-1",
+        trace_id: "run-1",
+        dotted_order: "20260312T193810269893Zrun-1",
+      };
+
+      const mockResponse = {
+        runs: [naiveRun],
+        cursors: {},
+      };
+
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
+
+      const runs: any[] = [];
+      for await (const run of client.listRuns({ projectId: "proj-1" })) {
+        runs.push(run);
+      }
+
+      expect(runs).toHaveLength(1);
+      expect(runs[0].start_time).toBe("2026-03-12T19:38:10.269893Z");
+      expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000Z");
+    });
+
+    it("should not double-append Z to already-aware timestamps", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const awareRun = {
+        id: "run-2",
+        name: "test-run",
+        run_type: "chain",
+        inputs: {},
+        start_time: "2026-03-12T19:38:10.269893Z",
+        end_time: "2026-03-12T19:38:11.000000+00:00",
+        session_id: "proj-1",
+        trace_id: "run-2",
+        dotted_order: "20260312T193810269893Zrun-2",
+      };
+
+      const mockResponse = {
+        runs: [awareRun],
+        cursors: {},
+      };
+
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      });
+
+      const runs: any[] = [];
+      for await (const run of client.listRuns({ projectId: "proj-1" })) {
+        runs.push(run);
+      }
+
+      expect(runs).toHaveLength(1);
+      expect(runs[0].start_time).toBe("2026-03-12T19:38:10.269893Z");
+      expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000+00:00");
+    });
+  });
+
+  describe("custom headers", () => {
+    it("should include custom headers in requests", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Custom-Header": "custom-value",
+          "X-Another-Header": "another-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+      // Default headers should still be present
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+
+    it("should not allow custom headers to override required headers", () => {
+      const client = new Client({
+        apiKey: "correct-api-key",
+        headers: {
+          "x-api-key": "wrong-key",
+          "X-Custom-Header": "custom-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      // API key from config should take precedence
+      expect(mergedHeaders["x-api-key"]).toBe("correct-api-key");
+      // Custom header should still be present
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+    });
+
+    it("should allow dynamic update of custom headers", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Initial-Header": "initial-value",
+        },
+      });
+
+      let mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBe("initial-value");
+      expect(mergedHeaders["X-New-Header"]).toBeUndefined();
+
+      // Update custom headers
+      client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+      };
+
+      mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBeUndefined();
+      expect(mergedHeaders["X-New-Header"]).toBe("new-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+    });
+
+    it("should return custom headers via getter", () => {
+      const customHeaders = { "X-Custom-Header": "custom-value" };
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: customHeaders,
+      });
+
+      expect(client.headers).toEqual(customHeaders);
+    });
+
+    it("should work without custom headers", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+  });
+
+  describe("_filterNewTokenEvents", () => {
+    it("should strip kwargs from new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "sensitive streaming data" },
+          time: "2024-01-01T00:00:00Z",
+        },
+        {
+          name: "other_event",
+          kwargs: { data: "keep this" },
+          time: "2024-01-01T00:00:01Z",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].kwargs).toBeUndefined();
+      expect(filtered[1].kwargs).toEqual({ data: "keep this" });
+    });
+
+    it("should handle empty events array", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents([]);
+      expect(filtered).toEqual([]);
+    });
+
+    it("should handle undefined events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents(undefined);
+      expect(filtered).toBeUndefined();
+    });
+
+    it("should handle events without kwargs", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", time: "2024-01-01T00:00:00Z" },
+        { name: "other_event", time: "2024-01-01T00:00:01Z" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0]).toEqual({
+        name: "new_token",
+        time: "2024-01-01T00:00:00Z",
+      });
+      expect(filtered[1]).toEqual({
+        name: "other_event",
+        time: "2024-01-01T00:00:01Z",
+      });
+    });
+
+    it("should preserve other event properties", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "data" },
+          time: "2024-01-01T00:00:00Z",
+          message: "token received",
+          custom_field: "custom_value",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].message).toBe("token received");
+      expect(filtered[0].custom_field).toBe("custom_value");
+      expect(filtered[0].kwargs).toBeUndefined();
+    });
+
+    it("should filter multiple new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", kwargs: { token: "chunk1" }, time: "t1" },
+        { name: "new_token", kwargs: { token: "chunk2" }, time: "t2" },
+        { name: "new_token", kwargs: { token: "chunk3" }, time: "t3" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered).toHaveLength(3);
+      filtered.forEach((event: any) => {
+        expect(event.kwargs).toBeUndefined();
+        expect(event.name).toBe("new_token");
+      });
+    });
+  });
+
+  describe("toString", () => {
+    it("should not expose sensitive information like API keys", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "super-secret-api-key-12345",
+      });
+
+      const str = client.toString();
+      // Ensure API key is NOT in the string representation
+      expect(str).not.toContain("super-secret-api-key-12345");
+      // Ensure the string shows the API URL
+      expect(str).toContain("https://api.smith.langchain.com");
+      // Ensure it's properly formatted
+      expect(str).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
+    });
+
+    it("should be called when converting to string", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const str = String(client);
+      expect(str).not.toContain("secret-key");
+      expect(str).toContain("https://api.smith.langchain.com");
+    });
+
+    it("should be called by Node.js inspect", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectResult = inspect(client);
+      expect(inspectResult).not.toContain("secret-key");
+      expect(inspectResult).toContain("https://api.smith.langchain.com");
+      expect(inspectResult).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
+    });
+
+    it("should expose the Node.js custom inspect hook", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+      const inspectFn = (client as any)[inspectSymbol];
+      expect(typeof inspectFn).toBe("function");
+      expect(inspectFn.call(client)).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+      );
     });
   });
 });

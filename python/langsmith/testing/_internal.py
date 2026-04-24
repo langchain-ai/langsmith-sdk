@@ -80,6 +80,7 @@ def test(
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
     metadata: Optional[dict] = None,
+    experiment_metadata: Optional[dict] = None,
     repetitions: Optional[int] = None,
     split: Optional[Union[str | list[str]]] = None,
     cached_hosts: Optional[Sequence[str]] = None,
@@ -352,6 +353,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         test_suite_name=kwargs.pop("test_suite_name", None),
         cache=cache_dir,
         metadata=kwargs.pop("metadata", None),
+        experiment_metadata=kwargs.pop("experiment_metadata", None),
         repetitions=kwargs.pop("repetitions", None),
         split=kwargs.pop("split", None),
         cached_hosts=cached_hosts,
@@ -474,19 +476,22 @@ def _get_test_suite(
 def _start_experiment(
     client: ls_client.Client,
     test_suite: ls_schemas.Dataset,
+    experiment_metadata: Optional[dict] = None,
 ) -> ls_schemas.TracerSession:
     experiment_name = _get_experiment_name(test_suite.name)
+    # User-provided experiment_metadata is merged first so that system keys
+    # (revision_id, __ls_runner) always take precedence.
+    metadata = {
+        **(experiment_metadata or {}),
+        "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
+        "__ls_runner": "pytest",
+    }
     try:
         return client.create_project(
             experiment_name,
             reference_dataset_id=test_suite.id,
             description="Test Suite Results.",
-            metadata={
-                "revision_id": ls_env.get_langchain_env_var_metadata().get(
-                    "revision_id"
-                ),
-                "__ls_runner": "pytest",
-            },
+            metadata=metadata,
         )
     except ls_utils.LangSmithConflictError:
         return client.read_project(project_name=experiment_name)
@@ -525,9 +530,12 @@ def _end_tests(test_suite: _LangSmithTestSuite):
     test_suite.shutdown()
     dataset_version = test_suite.get_dataset_version()
     dataset_id = test_suite._dataset.id
+    # User-provided experiment_metadata is merged first so that system keys
+    # always take precedence.
     test_suite.client.update_project(
         test_suite.experiment_id,
         metadata={
+            **(test_suite.experiment_metadata or {}),
             **git_info,
             "dataset_version": dataset_version,
             "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
@@ -567,12 +575,14 @@ class _LangSmithTestSuite:
         client: Optional[ls_client.Client],
         experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
+        experiment_metadata: Optional[dict] = None,
     ):
         self.client = client or rt.get_cached_client()
         self._experiment = experiment
         self._dataset = dataset
         self._dataset_version: Optional[datetime.datetime] = dataset.modified_at
         self._executor = ls_utils.ContextThreadPoolExecutor()
+        self.experiment_metadata = experiment_metadata
         atexit.register(_end_tests, self)
 
     @property
@@ -593,6 +603,7 @@ class _LangSmithTestSuite:
         client: Optional[ls_client.Client],
         func: Callable,
         test_suite_name: Optional[str] = None,
+        experiment_metadata: Optional[dict] = None,
     ) -> _LangSmithTestSuite:
         client = client or rt.get_cached_client()
         test_suite_name = test_suite_name or _get_test_suite_name(func)
@@ -601,8 +612,10 @@ class _LangSmithTestSuite:
                 cls._instances = {}
             if test_suite_name not in cls._instances:
                 test_suite = _get_test_suite(client, test_suite_name)
-                experiment = _start_experiment(client, test_suite)
-                cls._instances[test_suite_name] = cls(client, experiment, test_suite)
+                experiment = _start_experiment(client, test_suite, experiment_metadata)
+                cls._instances[test_suite_name] = cls(
+                    client, experiment, test_suite, experiment_metadata
+                )
         return cls._instances[test_suite_name]
 
     @property
@@ -660,15 +673,20 @@ class _LangSmithTestSuite:
         try:
             example = self.client.read_example(example_id=example_id)
         except ls_utils.LangSmithNotFoundError:
-            example = self.client.create_example(
-                example_id=example_id,
-                inputs=inputs,
-                outputs=outputs,
-                dataset_id=self.id,
-                metadata=metadata,
-                split=split,
-                created_at=self._experiment.start_time,
-            )
+            try:
+                example = self.client.create_example(
+                    example_id=example_id,
+                    inputs=inputs,
+                    outputs=outputs,
+                    dataset_id=self.id,
+                    metadata=metadata,
+                    split=split,
+                    created_at=self._experiment.start_time,
+                )
+            except ls_utils.LangSmithConflictError:
+                # Another worker (e.g. pytest-xdist) created this example
+                # concurrently between our read and create. Read the existing one.
+                example = self.client.read_example(example_id=example_id)
         else:
             normalized_split = split
             if isinstance(normalized_split, str):
@@ -826,6 +844,7 @@ class _TestCase:
         )
 
     def log_inputs(self, inputs: dict) -> None:
+        self.inputs = inputs
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"inputs": inputs}
@@ -900,6 +919,7 @@ class _UTExtra(TypedDict, total=False):
     test_suite_name: Optional[str]
     cache: Optional[str]
     metadata: Optional[dict]
+    experiment_metadata: Optional[dict]
     repetitions: Optional[int]
     split: Optional[Union[str, list[str]]]
     cached_hosts: Optional[Sequence[str]]
@@ -916,6 +936,16 @@ def _create_test_case(
     output_keys = langtest_extra["output_keys"]
     metadata = langtest_extra["metadata"]
     split = langtest_extra["split"]
+    # Resolve experiment_metadata: explicit kwarg > env var
+    experiment_metadata = langtest_extra.get("experiment_metadata")
+    if experiment_metadata is None:
+        env_val = os.environ.get("LANGSMITH_EXPERIMENT_METADATA")
+        if env_val:
+            try:
+                experiment_metadata = _orjson.loads(env_val)
+            except Exception as e:
+                msg = f"LANGSMITH_EXPERIMENT_METADATA env var is not valid JSON: {e}"
+                raise ValueError(msg) from e
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
     outputs = None
@@ -930,7 +960,7 @@ def _create_test_case(
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(
-        client, func, langtest_extra.get("test_suite_name")
+        client, func, langtest_extra.get("test_suite_name"), experiment_metadata
     )
     example_id = langtest_extra["id"]
     dataset_sdk_version = (
@@ -1139,10 +1169,6 @@ unit = test
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
 
-    !!! warning
-
-        This API is in beta and might change in future versions.
-
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
@@ -1174,15 +1200,11 @@ def log_inputs(inputs: dict, /) -> None:
         )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
-    test_case.log_inputs(inputs)
+    test_case.log_inputs(run_tree.inputs)
 
 
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1222,10 +1244,6 @@ def log_outputs(outputs: dict, /) -> None:
 
 def log_reference_outputs(reference_outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1271,10 +1289,6 @@ def log_feedback(
     **kwargs: Any,
 ) -> None:
     """Log run feedback from within a pytest test run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1345,10 +1359,6 @@ def trace_feedback(
     *, name: str = "Feedback"
 ) -> Generator[Optional[run_trees.RunTree], None, None]:
     """Trace the computation of a pytest run feedback as its own run.
-
-    !!! warning
-
-        This API is in beta and might change in future versions.
 
     Args:
         name: Feedback run name. Defaults to "Feedback".

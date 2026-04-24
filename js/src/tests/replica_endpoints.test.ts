@@ -806,13 +806,13 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Get all POST calls
       const allPostCalls = callSpy.mock.calls.filter(
-        (call) =>
+        (call: any) =>
           (call[0] as string).includes("/runs") &&
           (call[1] as any)?.method === "POST"
       );
 
       // Parse runs from calls
-      const runs = allPostCalls.map((call) => {
+      const runs = allPostCalls.map((call: any) => {
         const body = (call[1] as any)?.body;
         let bodyStr: string;
         if (typeof body === "string") {
@@ -829,10 +829,10 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Count runs by project
       const mainProjectRuns = runs.filter(
-        (r) => r.session_name === mainProject
+        (r: any) => r.session_name === mainProject
       );
       const replicaProjectRuns = runs.filter(
-        (r) => r.session_name === "replica-project"
+        (r: any) => r.session_name === "replica-project"
       );
 
       // Expected:
@@ -846,11 +846,11 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       expect(replicaProjectRuns.length).toBe(2); // child (rerooted), grandchild (remapped IDs)
 
       // Verify each run type appears in main project
-      const mainNames = mainProjectRuns.map((r) => r.name).sort();
+      const mainNames = mainProjectRuns.map((r: any) => r.name).sort();
       expect(mainNames).toEqual(["child", "grandchild", "parent"]);
 
       // Verify child and grandchild appear in replica project
-      const replicaNames = replicaProjectRuns.map((r) => r.name).sort();
+      const replicaNames = replicaProjectRuns.map((r: any) => r.name).sort();
       expect(replicaNames).toEqual(["child", "grandchild"]);
     });
   });

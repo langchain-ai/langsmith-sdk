@@ -1,0 +1,174 @@
+interactions:
+- request:
+    body: '{"contents": [{"parts": [{"text": "Say ''foo''"}], "role": "user"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
+  response:
+    body:
+      string: "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"foo\"}],\"role\":
+        \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\":
+        5,\"candidatesTokenCount\": 1,\"totalTokenCount\": 29,\"promptTokensDetails\":
+        [{\"modality\": \"TEXT\",\"tokenCount\": 5}],\"thoughtsTokenCount\": 23},\"modelVersion\":
+        \"gemini-2.5-flash\",\"responseId\": \"eQzpaffpC7uDmtkPlPGw0Q8\"}\r\n\r\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Disposition:
+      - attachment
+      Content-Type:
+      - text/event-stream
+      Date:
+      - Wed, 22 Apr 2026 17:59:21 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=694
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Say ''foo''"}], "role": "user"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
+  response:
+    body:
+      string: "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"foo\"}],\"role\":
+        \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\":
+        5,\"candidatesTokenCount\": 1,\"totalTokenCount\": 30,\"promptTokensDetails\":
+        [{\"modality\": \"TEXT\",\"tokenCount\": 5}],\"thoughtsTokenCount\": 24},\"modelVersion\":
+        \"gemini-2.5-flash\",\"responseId\": \"eQzpaf3bOs2oqtsPy9GFqA8\"}\r\n\r\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Disposition:
+      - attachment
+      Content-Type:
+      - text/event-stream
+      Date:
+      - Wed, 22 Apr 2026 17:59:23 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=2053
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Say ''foo''"}], "role": "user"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
+  response:
+    body:
+      string: "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"foo\"}],\"role\":
+        \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 5,\"candidatesTokenCount\":
+        1,\"totalTokenCount\": 23,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\":
+        5}],\"thoughtsTokenCount\": 17},\"modelVersion\": \"gemini-2.5-flash\",\"responseId\":
+        \"xQzpaZ3ALPqu_uMPlru3-Qk\"}\r\n\r\ndata: {\"candidates\": [{\"content\":
+        {\"role\": \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\":
+        {\"promptTokenCount\": 5,\"candidatesTokenCount\": 1,\"totalTokenCount\":
+        23,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 5}],\"thoughtsTokenCount\":
+        17},\"modelVersion\": \"gemini-2.5-flash\",\"responseId\": \"xQzpaZ3ALPqu_uMPlru3-Qk\"}\r\n\r\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Disposition:
+      - attachment
+      Content-Type:
+      - text/event-stream
+      Date:
+      - Wed, 22 Apr 2026 18:00:38 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=592
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Say ''foo''"}], "role": "user"}]}'
+    headers:
+      Content-Type:
+      - application/json
+    method: post
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
+  response:
+    body:
+      string: "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"foo\"}],\"role\":
+        \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\":
+        5,\"candidatesTokenCount\": 1,\"totalTokenCount\": 29,\"promptTokensDetails\":
+        [{\"modality\": \"TEXT\",\"tokenCount\": 5}],\"thoughtsTokenCount\": 23},\"modelVersion\":
+        \"gemini-2.5-flash\",\"responseId\": \"xgzpaefyF5WV_uMPg76ayQk\"}\r\n\r\n"
+    headers:
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Disposition:
+      - attachment
+      Content-Type:
+      - text/event-stream
+      Date:
+      - Wed, 22 Apr 2026 18:00:39 GMT
+      Server:
+      - scaffolding on HTTPServer2
+      Server-Timing:
+      - gfet4t7; dur=1191
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Origin
+      - X-Origin
+      - Referer
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

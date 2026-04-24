@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest, expect, test, describe, it } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import {
@@ -2942,13 +2942,13 @@ test("traceable with nested calls and reroot replicas", async () => {
 
   // Parse the POST bodies to verify rerooting behavior
   const childPostCalls = callSpy.mock.calls.filter(
-    (call) =>
+    (call: any) =>
       (call[0] as string).includes("child.example.com") &&
       (call[0] as string).includes("/runs") &&
       (call[1] as any)?.method === "POST"
   );
   const fullPostCalls = callSpy.mock.calls.filter(
-    (call) =>
+    (call: any) =>
       (call[0] as string).includes("full.example.com") &&
       (call[0] as string).includes("/runs") &&
       (call[1] as any)?.method === "POST"
@@ -2958,11 +2958,11 @@ test("traceable with nested calls and reroot replicas", async () => {
   expect(fullPostCalls.length).toBeGreaterThan(0);
 
   // Verify correct API keys
-  childPostCalls.forEach((call) => {
+  childPostCalls.forEach((call: any) => {
     const headers = (call[1] as any)?.headers;
     expect(headers["x-api-key"]).toBe("child-key");
   });
-  fullPostCalls.forEach((call) => {
+  fullPostCalls.forEach((call: any) => {
     const headers = (call[1] as any)?.headers;
     expect(headers["x-api-key"]).toBe("full-key");
   });
@@ -3099,7 +3099,7 @@ test("child traceable with own replicas config", async () => {
 
   // Verify that child's replicas were used by checking calls to both projects
   const allPostCalls = callSpy.mock.calls.filter(
-    (call) =>
+    (call: any) =>
       (call[0] as string).includes("/runs") &&
       (call[1] as any)?.method === "POST"
   );
@@ -3111,7 +3111,7 @@ test("child traceable with own replicas config", async () => {
   expect(allPostCalls.length).toBe(7);
 
   // Parse calls - since all go to same mock endpoint, we need to check session_name in body
-  const runs = allPostCalls.map((call) => {
+  const runs = allPostCalls.map((call: any) => {
     const body = (call[1] as any)?.body;
     let bodyStr: string;
     if (typeof body === "string") {
@@ -3128,9 +3128,9 @@ test("child traceable with own replicas config", async () => {
 
   // Count runs by project
   const defaultProjectRuns = runs.filter(
-    (r) => r.session_name === defaultProject
+    (r: any) => r.session_name === defaultProject
   );
-  const subrunRuns = runs.filter((r) => r.session_name === replicaProject);
+  const subrunRuns = runs.filter((r: any) => r.session_name === replicaProject);
 
   // We should have: 1 parent, 1 child, 1 grandchild, 1 greatGrandchild in default
   // Plus: 1 child, 1 grandchild, 1 greatGrandchild in subrun (child's replicas inherited)
@@ -3138,37 +3138,41 @@ test("child traceable with own replicas config", async () => {
   expect(runs.length).toBe(7);
 
   // Parent only goes to default project (no replicas)
-  const parentRuns = runs.filter((r) => r.name === "parent");
+  const parentRuns = runs.filter((r: any) => r.name === "parent");
   expect(parentRuns.length).toBe(1);
   expect(parentRuns[0].session_name).toBe(defaultProject);
 
   // Child goes to BOTH default project and subrun (child's replicas)
-  const childRuns = runs.filter((r) => r.name === "child");
+  const childRuns = runs.filter((r: any) => r.name === "child");
   expect(childRuns.length).toBe(2);
-  const childProjects = childRuns.map((r) => r.session_name).sort();
+  const childProjects = childRuns.map((r: any) => r.session_name).sort();
   expect(childProjects).toEqual([defaultProject, replicaProject].sort());
 
   // Grandchild also goes to BOTH (inherits child's replicas)
-  const grandchildRuns = runs.filter((r) => r.name === "grandchild");
+  const grandchildRuns = runs.filter((r: any) => r.name === "grandchild");
   expect(grandchildRuns.length).toBe(2);
-  const grandchildProjects = grandchildRuns.map((r) => r.session_name).sort();
+  const grandchildProjects = grandchildRuns
+    .map((r: any) => r.session_name)
+    .sort();
   expect(grandchildProjects).toEqual([defaultProject, replicaProject].sort());
 
   // GreatGrandchild also goes to BOTH (inherits from grandchild which inherits from child)
-  const greatGrandchildRuns = runs.filter((r) => r.name === "greatGrandchild");
+  const greatGrandchildRuns = runs.filter(
+    (r: any) => r.name === "greatGrandchild"
+  );
   expect(greatGrandchildRuns.length).toBe(2);
   const greatGrandchildProjects = greatGrandchildRuns
-    .map((r) => r.session_name)
+    .map((r: any) => r.session_name)
     .sort();
   expect(greatGrandchildProjects).toEqual(
     [defaultProject, replicaProject].sort()
   );
 
   // Verify reroot behavior in replicaProject project
-  const subrunChild = subrunRuns.find((r) => r.name === "child");
-  const subrunGrandchild = subrunRuns.find((r) => r.name === "grandchild");
+  const subrunChild = subrunRuns.find((r: any) => r.name === "child");
+  const subrunGrandchild = subrunRuns.find((r: any) => r.name === "grandchild");
   const subrunGreatGrandchild = subrunRuns.find(
-    (r) => r.name === "greatGrandchild"
+    (r: any) => r.name === "greatGrandchild"
   );
 
   if (!subrunChild || !subrunGrandchild || !subrunGreatGrandchild) {
@@ -3210,12 +3214,12 @@ test("child traceable with own replicas config", async () => {
   expect(greatGrandchildDottedSegments.length).toBe(3);
 
   // In the default project (no reroot), verify child still has parent
-  const defaultChild = defaultProjectRuns.find((r) => r.name === "child");
+  const defaultChild = defaultProjectRuns.find((r: any) => r.name === "child");
   const defaultGrandchild = defaultProjectRuns.find(
-    (r) => r.name === "grandchild"
+    (r: any) => r.name === "grandchild"
   );
   const defaultGreatGrandchild = defaultProjectRuns.find(
-    (r) => r.name === "greatGrandchild"
+    (r: any) => r.name === "greatGrandchild"
   );
 
   if (!defaultChild || !defaultGrandchild || !defaultGreatGrandchild) {
@@ -3226,7 +3230,9 @@ test("child traceable with own replicas config", async () => {
   expect(defaultChild.parent_run_id).toBeDefined();
 
   // All runs in default project should share same trace_id (parent's trace)
-  const defaultParent = defaultProjectRuns.find((r) => r.name === "parent");
+  const defaultParent = defaultProjectRuns.find(
+    (r: any) => r.name === "parent"
+  );
   expect(defaultChild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGrandchild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGreatGrandchild.trace_id).toBe(defaultParent?.trace_id);

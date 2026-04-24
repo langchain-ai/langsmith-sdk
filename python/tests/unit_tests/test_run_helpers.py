@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import gc
 import inspect
 import json
 import os
@@ -7,6 +8,7 @@ import sys
 import time
 import uuid
 import warnings
+import weakref
 from typing import (
     Any,
     AsyncGenerator,
@@ -31,6 +33,8 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
+    _attachment_args_cache,
+    _cached_attachment_args,
     _get_inputs,
     _get_inputs_and_attachments_safe,
     as_runnable,
@@ -1867,6 +1871,47 @@ def test_attachment_detection_with_string_annotations() -> None:
     assert attachments == {"bar": test_attachment}
 
 
+def test_cached_attachment_args_no_leak() -> None:
+    """Closure funcs passed to _cached_attachment_args should not be retained."""
+    _cached_attachment_args.cache_clear()
+
+    class Ctx:
+        def __init__(self):
+            self.buf = "x" * 1_000_000
+
+    refs = []
+    for _ in range(10):
+        ctx = Ctx()
+        ref = weakref.ref(ctx)
+
+        def closure(ctx=ctx):
+            return len(ctx.buf)
+
+        _cached_attachment_args(inspect.signature(closure), closure)
+        refs.append(ref)
+        del ctx, closure
+
+    gc.collect()
+    alive = sum(1 for r in refs if r() is not None)
+    assert alive == 0, f"{alive}/10 closure contexts still alive"
+    assert len(_attachment_args_cache) == 0
+
+
+def test_cached_attachment_args_non_weakrefable_callable() -> None:
+    _cached_attachment_args.cache_clear()
+
+    class CallableNoWeakref:
+        __slots__ = ()
+
+        def __call__(self, bar: ls_schemas.Attachment) -> ls_schemas.Attachment:
+            return bar
+
+    fn = CallableNoWeakref()
+    signature = inspect.signature(fn)
+    assert _cached_attachment_args(signature, fn) == {"bar"}
+    assert len(_attachment_args_cache) == 0
+
+
 def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     with tracing_context(enabled=True):
 
@@ -2191,6 +2236,49 @@ def test_traceable_nested_outer_enabled_inner_disabled(mock_client: Client) -> N
     names = [p.get("name") for _, p in datas if p.get("name")]
     assert "outer_function" in names
     assert "inner_function" not in names
+
+
+def test_traceable_disabled_clears_parent_context(mock_client: Client) -> None:
+    """Test that when enabled=False, the parent RunTree context is cleared.
+
+    This ensures that a nested @traceable with enabled=False doesn't incorrectly
+    inherit the parent's RunTree, which would cause incorrect nesting.
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    def outer_function(a: int) -> int:
+        # At this point, get_current_run_tree() should return outer's run
+        outer_run = get_current_run_tree()
+        assert outer_run is not None
+        assert outer_run.name == "outer_function"
+        result = inner_disabled(a)
+        # After inner_disabled returns, we should still have outer's run
+        outer_run_after = get_current_run_tree()
+        assert outer_run_after is not None
+        assert outer_run_after.name == "outer_function"
+        return result
+
+    @traceable(client=mock_client, enabled=False)
+    def inner_disabled(a: int) -> int:
+        # Since enabled=False, get_current_run_tree() should return None
+        # (the parent context was cleared, not inherited)
+        inner_run = get_current_run_tree()
+        assert inner_run is None, (
+            "Expected None when enabled=False, but got a RunTree. "
+            "Parent context should be cleared, not inherited."
+        )
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    # Only outer_function should be traced
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" in names
+    assert "inner_disabled" not in names
 
 
 @pytest.mark.parametrize(

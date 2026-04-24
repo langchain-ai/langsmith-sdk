@@ -24,15 +24,17 @@ LS_TEST_CLIENT_INFO = {
 
 def _collect_trace_requests(mock_session: mock.MagicMock):
     """Collect and parse trace data from mock session requests."""
-    collected_requests = {}
+    all_events = []
     mock_requests = mock_session.request.call_args_list
 
     for call in mock_requests:
         if json_bytes := call.kwargs.get("data"):
             json_str = json_bytes.decode("utf-8")
-            collected_requests.update(json.loads(json_str))
+            data = json.loads(json_str)
+            all_events.extend(data.get("post", []))
+            all_events.extend(data.get("patch", []))
 
-    return collected_requests
+    return all_events
 
 
 @pytest.mark.asyncio
@@ -73,13 +75,7 @@ async def test_openai_agents_tracing_processor():
     assert mock_session.request.call_count > 0
 
     # Collect and verify trace data was sent
-    collected_requests = _collect_trace_requests(mock_session)
-
-    # Verify we have trace events
-    all_events = [
-        *collected_requests.get("post", []),
-        *collected_requests.get("patch", []),
-    ]
+    all_events = _collect_trace_requests(mock_session)
 
     assert len(all_events) > 0, "No trace events were recorded"
 
@@ -95,6 +91,11 @@ async def test_openai_agents_tracing_processor():
         event for event in all_events if event.get("name") == "Agent workflow"
     ]
     assert len(agent_runs) > 0, "No agent workflow runs found in trace"
+
+    agent_run = agent_runs[0]
+    metadata = (agent_run.get("extra") or {}).get("metadata") or {}
+    assert metadata.get("ls_integration") == "openai-agents-sdk", agent_run
+    assert "ls_integration_version" in metadata, agent_run
 
 
 @pytest.mark.xfail(reason="Flaky test - may fail intermittently")
@@ -225,12 +226,7 @@ async def test_wrap_openai_nests_under_agent_trace():
 
     await asyncio.sleep(0.5)
 
-    collected_requests = _collect_trace_requests(mock_session)
-
-    all_events = [
-        *collected_requests.get("post", []),
-        *collected_requests.get("patch", []),
-    ]
+    all_events = _collect_trace_requests(mock_session)
 
     assert len(all_events) > 0, "No trace events were recorded"
 
@@ -317,12 +313,7 @@ async def test_traceable_decorator_nests_under_agent_trace():
 
     await asyncio.sleep(0.5)
 
-    collected_requests = _collect_trace_requests(mock_session)
-
-    all_events = [
-        *collected_requests.get("post", []),
-        *collected_requests.get("patch", []),
-    ]
+    all_events = _collect_trace_requests(mock_session)
 
     assert len(all_events) > 0, "No trace events were recorded"
 
@@ -363,3 +354,152 @@ async def test_traceable_decorator_nests_under_agent_trace():
             assert found_agent, (
                 "helper_function run should be nested under Agent workflow"
             )
+
+
+@pytest.mark.asyncio
+async def test_ls_agent_type_metadata():
+    """Test that ls_agent_type metadata is set correctly.
+
+    - Root traces have ls_agent_type: "root"
+    - Handoff agents are root agents (not subagents) since they take
+      over the conversation
+    - Agents used as tools via as_tool() have ls_agent_type: "subagent"
+    """
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
+
+    processor = OpenAIAgentsTracingProcessor(client=client)
+    set_trace_processors([processor])
+
+    # Create a subagent for as_tool - this should get ls_agent_type: "subagent"
+    tool_agent = Agent(
+        name="Tool Agent",
+        instructions="You are a math expert. Answer math questions concisely.",
+    )
+
+    # Create main agent with as_tool
+    main_agent = Agent(
+        name="Assistant",
+        instructions=(
+            "You are a helpful assistant. Use the tool_agent tool for math questions."
+        ),
+        tools=[
+            tool_agent.as_tool(
+                tool_name="tool_agent",
+                tool_description="Use this tool for math questions",
+            )
+        ],
+    )
+
+    question = "What is 2 + 2?"
+
+    try:
+        await Runner.run(main_agent, question)
+    except openai.APIConnectionError as e:
+        pytest.skip(reason="OpenAI API connection error: " + str(e))
+
+    # Give the background thread time to process traces
+    await asyncio.sleep(0.5)
+
+    # Collect and verify trace data
+    all_events = _collect_trace_requests(mock_session)
+
+    # Verify root run has ls_agent_type: "root"
+    root_runs = [
+        event
+        for event in all_events
+        if event.get("name") == "Agent workflow"
+        or (event.get("run_type") == "chain" and not event.get("parent_run_id"))
+    ]
+
+    assert len(root_runs) > 0, "No root runs found"
+    root_metadata = (root_runs[0].get("extra") or {}).get("metadata") or {}
+    assert root_metadata.get("ls_agent_type") == "root", (
+        f"Root run should have ls_agent_type='root', "
+        f"got: {root_metadata.get('ls_agent_type')}"
+    )
+
+    # Verify as_tool agent runs have ls_agent_type: "subagent"
+    tool_agent_runs = [
+        event for event in all_events if event.get("name") == "Tool Agent"
+    ]
+    assert len(tool_agent_runs) > 0, "No Tool Agent runs found"
+    for agent_run in tool_agent_runs:
+        agent_metadata = (agent_run.get("extra") or {}).get("metadata") or {}
+        assert agent_metadata.get("ls_agent_type") == "subagent", (
+            f"as_tool agent should have ls_agent_type='subagent', "
+            f"got: {agent_metadata.get('ls_agent_type')}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_ls_agent_type_metadata_for_handoffs():
+    """Test that handoff agents are root agents, not subagents.
+
+    Handoff agents take over the conversation, so they should NOT have
+    ls_agent_type: "subagent".
+    """
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
+
+    processor = OpenAIAgentsTracingProcessor(client=client)
+    set_trace_processors([processor])
+
+    # Create a subagent for handoffs
+    handoff_agent = Agent(
+        name="Handoff Agent",
+        instructions="You are a math expert. Answer math questions concisely.",
+    )
+
+    # Create main agent with handoff
+    main_agent = Agent(
+        name="Assistant",
+        instructions=(
+            "You are a helpful assistant. Hand off to Handoff Agent for math questions."
+        ),
+        handoffs=[handoff_agent],
+    )
+
+    question = "What is 2 + 2?"
+
+    try:
+        await Runner.run(main_agent, question)
+    except openai.APIConnectionError as e:
+        pytest.skip(reason="OpenAI API connection error: " + str(e))
+
+    # Give the background thread time to process traces
+    await asyncio.sleep(0.5)
+
+    # Collect and verify trace data
+    all_events = _collect_trace_requests(mock_session)
+
+    # Verify root run has ls_agent_type: "root"
+    root_runs = [
+        event
+        for event in all_events
+        if event.get("name") == "Agent workflow"
+        or (event.get("run_type") == "chain" and not event.get("parent_run_id"))
+    ]
+
+    assert len(root_runs) > 0, "No root runs found"
+    root_metadata = (root_runs[0].get("extra") or {}).get("metadata") or {}
+    assert root_metadata.get("ls_agent_type") == "root", (
+        f"Root run should have ls_agent_type='root', "
+        f"got: {root_metadata.get('ls_agent_type')}"
+    )
+
+    # Verify handoff runs do NOT have ls_agent_type: "subagent"
+    handoff_runs = [
+        event for event in all_events if "handoff" in event.get("name", "").lower()
+    ]
+    assert len(handoff_runs) > 0, "No handoff runs found"
+    for handoff_run in handoff_runs:
+        handoff_metadata = (handoff_run.get("extra") or {}).get("metadata") or {}
+        assert handoff_metadata.get("ls_agent_type") != "subagent", (
+            "Handoff runs should not have ls_agent_type='subagent' - "
+            "handoffs are root agents"
+        )

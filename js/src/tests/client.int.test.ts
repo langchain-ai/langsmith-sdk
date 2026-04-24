@@ -6,6 +6,7 @@ import {
   Run,
   TracerSession,
 } from "../schemas.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -13,7 +14,7 @@ import {
 } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { ExampleCreate } from "../schemas.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -22,6 +23,7 @@ import {
   createRunsFactory,
   deleteDataset,
   deleteProject,
+  pollRunsUntilCount,
   toArray,
   waitUntil,
   skipIfTransientError,
@@ -942,96 +944,105 @@ test("Test list prompts", async () => {
   expect(lastUpdatedAt).toBeDefined();
 });
 
-test("Test get prompt", async () => {
+// Consolidated: exercises the full prompt lifecycle against a single prompt
+// repo: push + exists + get + update + commit + like/unlike + pullPromptCommit
+// + push/pull with metadata + delete + exists-after-delete. Previously split
+// across "Test get prompt", "Test prompt exists", "Test update prompt",
+// "Test delete prompt", "Test create commit", "Test like and unlike prompt",
+// "Test pull prompt commit", and "Test push and pull prompt".
+test("Prompt CRUD lifecycle (push, get, exists, update, commit, like/unlike, pull, delete)", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const promptName = `test_prompt_${uuidv4().slice(0, 8)}`;
-  const promptTemplate = ChatPromptTemplate.fromMessages(
+
+  const promptName = `test_prompt_lifecycle_${uuidv4().slice(0, 8)}`;
+  const initialTemplate = ChatPromptTemplate.fromMessages(
     [
       new SystemMessage({ content: "System message" }),
       new HumanMessage({ content: "{{question}}" }),
     ],
     { templateFormat: "mustache" }
   );
-
-  const url = await client.pushPrompt(promptName, { object: promptTemplate });
-  expect(url).toBeDefined();
-
-  const prompt = await client.getPrompt(promptName);
-  expect(prompt).toBeDefined();
-  expect(prompt?.repo_handle).toBe(promptName);
-
-  await client.deletePrompt(promptName);
-});
-
-test("Test prompt exists", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const nonExistentPrompt = `non_existent_${uuidv4().slice(0, 8)}`;
-  expect(await client.promptExists(nonExistentPrompt)).toBe(false);
-
-  const existentPrompt = `existent_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(existentPrompt, {
-    object: ChatPromptTemplate.fromMessages(
-      [
-        new SystemMessage({ content: "System message" }),
-        new HumanMessage({ content: "{{question}}" }),
-      ],
-      { templateFormat: "mustache" }
-    ),
-  });
-  expect(await client.promptExists(existentPrompt)).toBe(true);
-
-  await client.deletePrompt(existentPrompt);
-});
-
-test("Test update prompt", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-
-  const promptName = `test_update_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, {
-    object: ChatPromptTemplate.fromMessages(
-      [
-        new SystemMessage({ content: "System message" }),
-        new HumanMessage({ content: "{{question}}" }),
-      ],
-      { templateFormat: "mustache" }
-    ),
-  });
-
-  const updatedData = await client.updatePrompt(promptName, {
-    description: "Updated description",
-    isPublic: true,
-    tags: ["test", "update"],
-  });
-
-  expect(updatedData).toBeDefined();
-
-  const updatedPrompt = await client.getPrompt(promptName);
-  expect(updatedPrompt?.description).toBe("Updated description");
-  expect(updatedPrompt?.is_public).toBe(true);
-  expect(updatedPrompt?.tags).toEqual(
-    expect.arrayContaining(["test", "update"])
+  const updatedTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "My question is: {{question}}" }),
+    ],
+    { templateFormat: "mustache" }
   );
 
-  await client.deletePrompt(promptName);
-});
+  try {
+    // 1) Non-existent prompts should report as not-existing.
+    const nonExistentPrompt = `non_existent_${uuidv4().slice(0, 8)}`;
+    expect(await client.promptExists(nonExistentPrompt)).toBe(false);
 
-test("Test delete prompt", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
+    // 2) Push initial version with metadata.
+    const pushUrl = await client.pushPrompt(promptName, {
+      object: initialTemplate,
+      description: "Test description",
+      readme: "Test readme",
+      tags: ["test", "tag"],
+    });
+    expect(pushUrl).toBeDefined();
 
-  const promptName = `test_delete_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, {
-    object: ChatPromptTemplate.fromMessages(
-      [
-        new SystemMessage({ content: "System message" }),
-        new HumanMessage({ content: "{{question}}" }),
-      ],
-      { templateFormat: "mustache" }
-    ),
-  });
+    // 3) exists / get reflect the newly pushed prompt.
+    expect(await client.promptExists(promptName)).toBe(true);
+    const prompt = await client.getPrompt(promptName);
+    expect(prompt).toBeDefined();
+    expect(prompt?.repo_handle).toBe(promptName);
+    expect(prompt?.description).toBe("Test description");
+    expect(prompt?.readme).toBe("Test readme");
+    expect(prompt?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
+    expect(prompt?.is_public).toBe(false);
 
-  expect(await client.promptExists(promptName)).toBe(true);
-  await client.deletePrompt(promptName);
-  expect(await client.promptExists(promptName)).toBe(false);
+    // 4) updatePrompt changes description / isPublic / tags.
+    const updatedData = await client.updatePrompt(promptName, {
+      description: "Updated description",
+      isPublic: true,
+      tags: ["test", "update"],
+    });
+    expect(updatedData).toBeDefined();
+    const updatedPrompt = await client.getPrompt(promptName);
+    expect(updatedPrompt?.description).toBe("Updated description");
+    expect(updatedPrompt?.is_public).toBe(true);
+    expect(updatedPrompt?.tags).toEqual(
+      expect.arrayContaining(["test", "update"])
+    );
+
+    // 5) createCommit records a new commit URL referencing the prompt.
+    const commitUrl = await client.createCommit(promptName, updatedTemplate);
+    expect(commitUrl).toBeDefined();
+    expect(commitUrl).toContain(promptName);
+
+    // 6) like / unlike toggles num_likes.
+    await client.likePrompt(promptName);
+    expect((await client.getPrompt(promptName))?.num_likes).toBe(1);
+    await client.unlikePrompt(promptName);
+    expect((await client.getPrompt(promptName))?.num_likes).toBe(0);
+
+    // 7) pullPromptCommit returns the latest commit for this repo.
+    const promptCommit = await client.pullPromptCommit(promptName);
+    expect(promptCommit).toBeDefined();
+    expect(promptCommit.repo).toBe(promptName);
+
+    // 8) Pushing again without additional options still succeeds; _pullPrompt
+    //    returns the underlying manifest.
+    // Note: This may throw a LangSmithConflictError if the content hasn't changed
+    // (e.g., if the same template was already committed in step 5).
+    try {
+      await client.pushPrompt(promptName, { object: updatedTemplate });
+    } catch (e) {
+      // eslint-disable-next-line no-instanceof/no-instanceof
+      if (!(e instanceof LangSmithConflictError)) {
+        throw e;
+      }
+      // Conflict is expected if the same template was already committed
+    }
+    const pulledPrompt = await client._pullPrompt(promptName);
+    expect(pulledPrompt).toBeDefined();
+  } finally {
+    // 9) Delete and confirm it no longer exists.
+    await client.deletePrompt(promptName);
+    expect(await client.promptExists(promptName)).toBe(false);
+  }
 });
 
 test("test listing projects by metadata", async () => {
@@ -1056,123 +1067,6 @@ test("test listing projects by metadata", async () => {
   expect(myProject?.name).toEqual(projectName);
 
   await client.deleteProject({ projectName: projectName });
-});
-
-test("Test create commit", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-
-  const promptName = `test_create_commit_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, {
-    object: ChatPromptTemplate.fromMessages(
-      [
-        new SystemMessage({ content: "System message" }),
-        new HumanMessage({ content: "{{question}}" }),
-      ],
-      { templateFormat: "mustache" }
-    ),
-  });
-
-  const newTemplate = ChatPromptTemplate.fromMessages(
-    [
-      new SystemMessage({ content: "System message" }),
-      new HumanMessage({ content: "My question is: {{question}}" }),
-    ],
-    { templateFormat: "mustache" }
-  );
-  const commitUrl = await client.createCommit(promptName, newTemplate);
-
-  expect(commitUrl).toBeDefined();
-  expect(commitUrl).toContain(promptName);
-
-  await client.deletePrompt(promptName);
-});
-
-test("Test like and unlike prompt", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-
-  const promptName = `test_like_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, {
-    object: ChatPromptTemplate.fromMessages(
-      [
-        new SystemMessage({ content: "System message" }),
-        new HumanMessage({ content: "{{question}}" }),
-      ],
-      { templateFormat: "mustache" }
-    ),
-  });
-
-  await client.likePrompt(promptName);
-  let prompt = await client.getPrompt(promptName);
-  expect(prompt?.num_likes).toBe(1);
-
-  await client.unlikePrompt(promptName);
-  prompt = await client.getPrompt(promptName);
-  expect(prompt?.num_likes).toBe(0);
-
-  await client.deletePrompt(promptName);
-});
-
-test("Test pull prompt commit", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-
-  const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
-  const initialTemplate = ChatPromptTemplate.fromMessages(
-    [
-      new SystemMessage({ content: "System message" }),
-      new HumanMessage({ content: "{{question}}" }),
-    ],
-    { templateFormat: "mustache" }
-  );
-  await client.pushPrompt(promptName, { object: initialTemplate });
-
-  const promptCommit = await client.pullPromptCommit(promptName);
-  expect(promptCommit).toBeDefined();
-  expect(promptCommit.repo).toBe(promptName);
-
-  await client.deletePrompt(promptName);
-});
-
-test("Test push and pull prompt", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-
-  const promptName = `test_push_pull_${uuidv4().slice(0, 8)}`;
-  const template = ChatPromptTemplate.fromMessages(
-    [
-      new SystemMessage({ content: "System message" }),
-      new HumanMessage({ content: "{{question}}" }),
-    ],
-    { templateFormat: "mustache" }
-  );
-  const template2 = ChatPromptTemplate.fromMessages(
-    [
-      new SystemMessage({ content: "System message" }),
-      new HumanMessage({ content: "My question is: {{question}}" }),
-    ],
-    { templateFormat: "mustache" }
-  );
-
-  await client.pushPrompt(promptName, {
-    object: template,
-    description: "Test description",
-    readme: "Test readme",
-    tags: ["test", "tag"],
-  });
-
-  // test you can push an updated manifest without any other options
-  await client.pushPrompt(promptName, {
-    object: template2,
-  });
-
-  const pulledPrompt = await client._pullPrompt(promptName);
-  expect(pulledPrompt).toBeDefined();
-
-  const promptInfo = await client.getPrompt(promptName);
-  expect(promptInfo?.description).toBe("Test description");
-  expect(promptInfo?.readme).toBe("Test readme");
-  expect(promptInfo?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
-  expect(promptInfo?.is_public).toBe(false);
-
-  await client.deletePrompt(promptName);
 });
 
 // This test requires OPENAI_API_KEY to be set and valid
@@ -1354,89 +1248,70 @@ test("annotationqueue crud", async () => {
   }
 });
 
-test("annotationqueue crud with rubric instructions", async () => {
+// Consolidated: exercises rubric_instructions behavior across both creation
+// paths (unset vs set at creation time) plus the update path, using a single
+// pair of queues. Previously split across
+// "annotationqueue crud with rubric instructions" and
+// "annotationqueue crud with rubric instructions 2".
+test("annotationqueue rubric instructions (unset, set at create, update)", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
-  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
-  const queueId = uuidv4();
+
+  // Queue A: created WITHOUT rubric instructions, then updated to have them.
+  const queueAName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const queueAId = uuidv4();
+
+  // Queue B: created WITH rubric instructions, then updated.
+  const queueBName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const queueBId = uuidv4();
 
   try {
-    // 1. Create an annotation queue
-    const queue = await client.createAnnotationQueue({
-      name: queueName,
+    const queueA = await client.createAnnotationQueue({
+      name: queueAName,
       description: "Initial description",
-      queueId,
+      queueId: queueAId,
+    });
+    expect(queueA).toBeDefined();
+    expect(queueA.name).toBe(queueAName);
+    expect(queueA.rubric_instructions).toBeUndefined();
+
+    const fetchedQueueA = await client.readAnnotationQueue(queueA.id);
+    expect(fetchedQueueA.name).toBe(queueAName);
+    expect(fetchedQueueA.rubric_instructions).toBeNull();
+
+    const queueB = await client.createAnnotationQueue({
+      name: queueBName,
+      description: "Initial description",
+      queueId: queueBId,
       rubricInstructions: "This is a rubric instruction",
     });
-    expect(queue).toBeDefined();
-    expect(queue.name).toBe(queueName);
+    expect(queueB).toBeDefined();
+    expect(queueB.name).toBe(queueBName);
 
-    // 1a. Get the annotation queue
-    const fetchedQueue = await client.readAnnotationQueue(queue.id);
-    expect(fetchedQueue).toBeDefined();
-    expect(fetchedQueue.name).toBe(queueName);
-    expect(fetchedQueue.rubric_instructions).toBe(
+    const fetchedQueueB = await client.readAnnotationQueue(queueB.id);
+    expect(fetchedQueueB.name).toBe(queueBName);
+    expect(fetchedQueueB.rubric_instructions).toBe(
       "This is a rubric instruction"
     );
 
-    // 1b. Update the annotation queue rubric instructions
+    // Update path: set on previously-unset, and overwrite on previously-set.
     const newInstructions = "Updated rubric instructions";
-    await client.updateAnnotationQueue(queue.id, {
-      name: queueName,
+    await client.updateAnnotationQueue(queueA.id, {
+      name: queueAName,
       rubricInstructions: newInstructions,
     });
-    const updatedQueue = await client.readAnnotationQueue(queue.id);
-    expect(updatedQueue.rubric_instructions).toBe(newInstructions);
-  } finally {
-    // 6. Delete the annotation queue
-    await client.deleteAnnotationQueue(queueId);
-
-    // Clean up the project
-    if (await client.hasProject({ projectName })) {
-      await client.deleteProject({ projectName });
-    }
-  }
-});
-
-test("annotationqueue crud with rubric instructions 2", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
-  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
-  const queueId = uuidv4();
-
-  try {
-    // 1. Create an annotation queue
-    const queue = await client.createAnnotationQueue({
-      name: queueName,
-      description: "Initial description",
-      queueId,
-    });
-    expect(queue).toBeDefined();
-    expect(queue.name).toBe(queueName);
-    expect(queue.rubric_instructions).toBeUndefined();
-
-    // 1a. Get the annotation queue
-    const fetchedQueue = await client.readAnnotationQueue(queue.id);
-    expect(fetchedQueue).toBeDefined();
-    expect(fetchedQueue.name).toBe(queueName);
-    expect(fetchedQueue.rubric_instructions).toBeNull();
-
-    // 1b. Update the annotation queue rubric instructions
-    const newInstructions = "Updated rubric instructions";
-    await client.updateAnnotationQueue(queue.id, {
-      name: queueName,
+    await client.updateAnnotationQueue(queueB.id, {
+      name: queueBName,
       rubricInstructions: newInstructions,
     });
-    const updatedQueue = await client.readAnnotationQueue(queue.id);
-    expect(updatedQueue.rubric_instructions).toBe(newInstructions);
+    expect(
+      (await client.readAnnotationQueue(queueA.id)).rubric_instructions
+    ).toBe(newInstructions);
+    expect(
+      (await client.readAnnotationQueue(queueB.id)).rubric_instructions
+    ).toBe(newInstructions);
   } finally {
-    // 6. Delete the annotation queue
-    await client.deleteAnnotationQueue(queueId);
-
-    // Clean up the project
-    if (await client.hasProject({ projectName })) {
-      await client.deleteProject({ projectName });
-    }
+    await client.deleteAnnotationQueue(queueAId);
+    await client.deleteAnnotationQueue(queueBId);
   }
 });
 
@@ -2345,3 +2220,110 @@ test("fetch child runs", async () => {
     await deleteProject(client, projectName);
   }
 });
+
+// Consolidated: covers listThreads (threads grouped by thread_id) and
+// readThread (runs for a single thread_id) using a single project and set of
+// runs. Previously split across
+// "listThreads returns threads grouped by thread_id" and
+// "readThread yields runs for a single thread_id".
+test("listThreads groups runs by thread_id and readThread yields per-thread runs", async () => {
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 6 },
+  });
+  const projectName = `test-list-threads-${uuidv4().slice(0, 12)}`;
+  if (await client.hasProject({ projectName })) {
+    await deleteProject(client, projectName);
+  }
+  try {
+    const base = uuidv4().slice(0, 8);
+    const threadA = `thread-${base}-a`;
+    const threadB = `thread-${base}-b`;
+    const now = new Date();
+    const threadMeta = (tid: string) => ({
+      metadata: {
+        thread_id: tid,
+        session_id: null,
+        conversation_id: null,
+      },
+    });
+    await client.createRun({
+      name: "run_a1",
+      inputs: { x: 1 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime(),
+      extra: threadMeta(threadA),
+    });
+    await client.createRun({
+      name: "run_a2",
+      inputs: { x: 2 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime() + 1000,
+      extra: threadMeta(threadA),
+    });
+    await client.createRun({
+      name: "run_b1",
+      inputs: { y: 1 },
+      run_type: "llm",
+      project_name: projectName,
+      start_time: now.getTime() + 2000,
+      extra: threadMeta(threadB),
+    });
+    await pollRunsUntilCount(client, projectName, 3, 30_000);
+    const threads = await client.listThreads({
+      projectName,
+      limit: 10,
+    });
+    expect(Array.isArray(threads)).toBe(true);
+    expect(threads.length).toBeGreaterThanOrEqual(2);
+    for (const item of threads) {
+      expect(item).toHaveProperty("thread_id");
+      expect(item).toHaveProperty("runs");
+      expect(item).toHaveProperty("count");
+      expect(item).toHaveProperty("min_start_time");
+      expect(item).toHaveProperty("max_start_time");
+      expect(Array.isArray(item.runs)).toBe(true);
+      expect(item.count).toEqual(item.runs.length);
+    }
+    const threadIds = new Set(threads.map((t) => t.thread_id));
+    expect(threadIds.has(threadA)).toBe(true);
+    expect(threadIds.has(threadB)).toBe(true);
+    const threadAItem = threads.find((t) => t.thread_id === threadA);
+    const threadBItem = threads.find((t) => t.thread_id === threadB);
+    expect(threadAItem).toBeDefined();
+    expect(threadBItem).toBeDefined();
+    expect(threadAItem!.count).toEqual(2);
+    expect(threadBItem!.count).toEqual(1);
+
+    // readThread should yield only the runs belonging to the requested thread.
+    const readRunsA: Run[] = [];
+    for await (const run of client.readThread({
+      threadId: threadA,
+      projectName,
+      limit: 10,
+    })) {
+      readRunsA.push(run);
+    }
+    expect(readRunsA.length).toEqual(2);
+    const readNamesA = new Set(readRunsA.map((r) => r.name));
+    expect(readNamesA.has("run_a1")).toBe(true);
+    expect(readNamesA.has("run_a2")).toBe(true);
+
+    const readRunsB: Run[] = [];
+    for await (const run of client.readThread({
+      threadId: threadB,
+      projectName,
+      limit: 10,
+    })) {
+      readRunsB.push(run);
+    }
+    expect(readRunsB.length).toEqual(1);
+    expect(readRunsB[0].name).toBe("run_b1");
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await deleteProject(client, projectName);
+    }
+  }
+}, 60_000);

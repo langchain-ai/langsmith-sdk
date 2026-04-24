@@ -120,7 +120,9 @@ export function isTaskTool(tool: BetaToolUseBlock): tool is {
   name: "Task";
   type: "tool_use";
 } {
-  return tool.type === "tool_use" && tool.name === "Task";
+  return (
+    tool.type === "tool_use" && (tool.name === "Task" || tool.name === "Agent")
+  );
 }
 
 /**

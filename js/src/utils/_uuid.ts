@@ -2,7 +2,7 @@
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "./uuid/src/index.js";
 import { warnOnce } from "./warn.js";
 import { XXH3_128, xxh128ToBytes } from "./xxhash/xxhash.js";
 

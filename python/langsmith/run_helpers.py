@@ -9,7 +9,9 @@ import datetime
 import functools
 import inspect
 import logging
+import threading
 import warnings
+import weakref
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -44,6 +46,9 @@ import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._runtime_overrides import (
+    _aio_to_thread_override_active as _runtime_override_active,
+)
 from langsmith.env import _runtime_env
 from langsmith.run_trees import WriteReplica
 
@@ -54,7 +59,7 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
-    "parent": _context._PARENT_RUN_TREE,
+    "parent_ref": _context._PARENT_RUN_TREE_REF,
     "project_name": _context._PROJECT_NAME,
     "tags": _context._TAGS,
     "metadata": _context._METADATA,
@@ -70,8 +75,33 @@ _OTEL_AVAILABLE: Optional[bool] = None
 
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
-    """Get the current run tree."""
-    return _context._PARENT_RUN_TREE.get()
+    """Get the current run tree.
+
+    Uses a weakref-based lookup to avoid memory leaks from captured contexts.
+    The RunTree may return None if it has been garbage collected.
+    """
+    return _context.get_current_run_tree()
+
+
+@contextlib.contextmanager
+def set_tracing_parent(
+    run_tree: run_trees.RunTree,
+) -> Generator[None, None, None]:
+    """Set a RunTree as the active tracing parent within this block.
+
+    Unlike `tracing_context`, this only sets the parent run tree and nothing
+    else, making it safe to use in isolated threads where you want precise
+    control over which run acts as the parent without inheriting or overwriting
+    other context variables.
+
+    Args:
+        run_tree: The RunTree to use as the active parent.
+    """
+    token = _context._PARENT_RUN_TREE_REF.set(weakref.ref(run_tree))
+    try:
+        yield
+    finally:
+        _context._PARENT_RUN_TREE_REF.reset(token)
 
 
 def set_run_metadata(**metadata: Any) -> None:
@@ -91,8 +121,9 @@ def get_tracing_context(
 ) -> dict[str, Any]:
     """Get the current tracing context."""
     if context is None:
+        parent = _context.get_current_run_tree()
         return {
-            "parent": _context._PARENT_RUN_TREE.get(),
+            "parent": parent,
             "project_name": _context._PROJECT_NAME.get(),
             "tags": _context._TAGS.get(),
             "metadata": _context._METADATA.get(),
@@ -101,7 +132,11 @@ def get_tracing_context(
             "replicas": run_trees._REPLICAS.get(),
             "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
-    return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
+    # When reading from a copied context, dereference the weakref
+    result = {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
+    parent_ref = result.pop("parent_ref", None)
+    result["parent"] = parent_ref() if parent_ref is not None else None
+    return result
 
 
 @contextlib.contextmanager
@@ -570,6 +605,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -586,30 +622,29 @@ def traceable(
                 otel_context_manager = _maybe_create_otel_context(
                     run_container["new_run"]
                 )
+                use_ctx_task = accepts_context and not _runtime_override_active()
                 if otel_context_manager:
 
                     async def run_with_otel_context():
                         with otel_context_manager:
                             return await func(*args, **kwargs)
 
-                    if accepts_context:
+                    if use_ctx_task:
                         function_result = await asyncio.create_task(  # type: ignore[call-arg]
                             run_with_otel_context(), context=run_container["context"]
                         )
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
                             function_result = await run_with_otel_context()
                 else:
                     fr_coro = func(*args, **kwargs)
-                    if accepts_context:
+                    if use_ctx_task:
                         function_result = await asyncio.create_task(  # type: ignore[call-arg]
                             fr_coro, context=run_container["context"]
                         )
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
@@ -618,11 +653,13 @@ def traceable(
                 # shield from cancellation, given we're catching all exceptions
                 _cleanup_traceback(e)
                 await asyncio.shield(
-                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
+                    aitertools.aio_to_thread(
+                        copy_context(), _on_run_end, run_container, error=e
+                    )
                 )
                 raise
             await aitertools.aio_to_thread(
-                _on_run_end, run_container, outputs=function_result
+                copy_context(), _on_run_end, run_container, outputs=function_result
             )
             return function_result
 
@@ -633,6 +670,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -655,13 +693,13 @@ def traceable(
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.asyncio_accepts_context()
+                use_ctx_task = accepts_context and not _runtime_override_active()
                 if inspect.iscoroutine(async_gen_result):
-                    if accepts_context:
+                    if use_ctx_task:
                         async_gen_result = await asyncio.create_task(
                             async_gen_result, context=run_container["context"]
                         )  # type: ignore
                     else:
-                        # Python < 3.11
                         with tracing_context(
                             **get_tracing_context(run_container["context"])
                         ):
@@ -675,7 +713,7 @@ def traceable(
                         if run_container["new_run"]
                         else False
                     ),
-                    accepts_context=accepts_context,
+                    accepts_context=use_ctx_task,
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
                     otel_context_manager=otel_context_manager,
@@ -685,6 +723,7 @@ def traceable(
                 _cleanup_traceback(e)
                 await asyncio.shield(
                     aitertools.aio_to_thread(
+                        copy_context(),
                         _on_run_end,
                         run_container,
                         error=e,
@@ -693,6 +732,7 @@ def traceable(
                 )
                 raise
             await aitertools.aio_to_thread(
+                copy_context(),
                 _on_run_end,
                 run_container,
                 outputs=_get_function_result(results, reduce_fn),
@@ -840,6 +880,7 @@ def traceable(
             if not func_accepts_config:
                 kwargs.pop("config", None)
             trace_container = await aitertools.aio_to_thread(
+                copy_context(),
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -853,7 +894,9 @@ def traceable(
                     kwargs["run_tree"] = trace_container["new_run"]
                 stream = await func(*args, **kwargs)
             except Exception as e:
-                await aitertools.aio_to_thread(_on_run_end, trace_container, error=e)
+                await aitertools.aio_to_thread(
+                    copy_context(), _on_run_end, trace_container, error=e
+                )
                 raise
 
             if hasattr(stream, "__aiter__"):
@@ -863,7 +906,9 @@ def traceable(
                 return _TracedStream(stream, trace_container, reduce_fn)
 
             # If it's not iterable, end the trace immediately
-            await aitertools.aio_to_thread(_on_run_end, trace_container, outputs=stream)
+            await aitertools.aio_to_thread(
+                copy_context(), _on_run_end, trace_container, outputs=stream
+            )
             return stream
 
         if inspect.isasyncgenfunction(func):
@@ -1105,7 +1150,10 @@ class trace:
         if enabled:
             _context._TAGS.set(tags_)
             _context._METADATA.set(metadata)
-            _context._PARENT_RUN_TREE.set(self.new_run)
+            if self.new_run is not None:
+                _context._PARENT_RUN_TREE_REF.set(weakref.ref(self.new_run))
+            else:
+                _context._PARENT_RUN_TREE_REF.set(None)
             _context._PROJECT_NAME.set(project_name_)
             _context._CLIENT.set(client_)
 
@@ -1173,7 +1221,7 @@ class trace:
             run_trees.RunTree: The newly created run.
         """
         ctx = copy_context()
-        result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
+        result = await aitertools.aio_to_thread(ctx, self._setup)
         # Set the context for the current thread
         _set_tracing_context(get_tracing_context(ctx))
         return result
@@ -1195,12 +1243,12 @@ class trace:
         if exc_type is not None:
             await asyncio.shield(
                 aitertools.aio_to_thread(
-                    self._teardown, exc_type, exc_value, traceback, __ctx=ctx
+                    ctx, self._teardown, exc_type, exc_value, traceback
                 )
             )
         else:
             await aitertools.aio_to_thread(
-                self._teardown, exc_type, exc_value, traceback, __ctx=ctx
+                ctx, self._teardown, exc_type, exc_value, traceback
             )
         _set_tracing_context(get_tracing_context(ctx))
 
@@ -1208,7 +1256,7 @@ class trace:
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
     if project_name:
         return project_name
-    prt = _PARENT_RUN_TREE.get()
+    prt = get_current_run_tree()
     return (
         # Maintain tree consistency first
         _context._PROJECT_NAME.get()
@@ -1556,6 +1604,9 @@ def _setup_run(
             logging.DEBUG,
             "LangSmith tracing is not enabled, returning original function.",
         )
+        context = copy_context()
+        # Clear the parent RunTree context so nested calls don't inherit it
+        context.run(_context._PARENT_RUN_TREE_REF.set, None)
         return _TraceableContainer(
             new_run=None,
             project_name=selected_project,
@@ -1564,7 +1615,7 @@ def _setup_run(
             outer_tags=None,
             _on_success=langsmith_extra.get("_on_success"),
             on_end=langsmith_extra.get("on_end"),
-            context=copy_context(),
+            context=context,
             _token_event_logged=False,
             exceptions_to_handle=container_input.get("exceptions_to_handle"),
         )
@@ -1655,7 +1706,14 @@ def _setup_run(
         exceptions_to_handle=container_input.get("exceptions_to_handle"),
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])
-    context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
+    # Store a weak reference (not the RunTree itself) in the copied context.
+    # This prevents memory leaks when contexts are captured by asyncio operations
+    # (call_later, create_task, etc.) — the captured context holds only a weakref,
+    # and the RunTree can be GC'd once no strong references remain.
+    if new_run is not None:
+        context.run(_context._PARENT_RUN_TREE_REF.set, weakref.ref(new_run))
+    else:
+        context.run(_context._PARENT_RUN_TREE_REF.set, None)
     return response_container
 
 
@@ -1746,10 +1804,45 @@ def _attachment_args_helper(
 
 
 @functools.lru_cache(maxsize=1000)
+def _cached_attachment_args_by_signature(signature: inspect.Signature) -> set[str]:
+    return _attachment_args_helper(signature, None)
+
+
+_attachment_args_cache: weakref.WeakKeyDictionary[
+    Callable[..., Any], tuple[inspect.Signature, set[str]]
+] = weakref.WeakKeyDictionary()
+_attachment_args_cache_lock = threading.Lock()
+
+
 def _cached_attachment_args(
     signature: inspect.Signature, func: Optional[Callable] = None
 ) -> set[str]:
-    return _attachment_args_helper(signature, func)
+    if func is None:
+        return _cached_attachment_args_by_signature(signature)
+
+    try:
+        with _attachment_args_cache_lock:
+            cached = _attachment_args_cache.get(func)
+    except TypeError:
+        # Some callable objects cannot be weak-referenced.
+        return _attachment_args_helper(signature, func)
+
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    result = _attachment_args_helper(signature, func)
+    with _attachment_args_cache_lock:
+        _attachment_args_cache[func] = (signature, result)
+    return result
+
+
+def _clear_cached_attachment_args() -> None:
+    with _attachment_args_cache_lock:
+        _attachment_args_cache.clear()
+    _cached_attachment_args_by_signature.cache_clear()
+
+
+_cached_attachment_args.cache_clear = _clear_cached_attachment_args  # type: ignore[attr-defined]
 
 
 def _attachment_args(
@@ -1792,8 +1885,16 @@ def _set_tracing_context(context: Optional[dict[str, Any]] = None):
             v.set(None)
         return
     for k, v in context.items():
-        var = _CONTEXT_KEYS[k]
-        var.set(v)
+        if k == "parent":
+            # "parent" is a RunTree — store a weak reference
+            if v is not None:
+                _context._PARENT_RUN_TREE_REF.set(weakref.ref(v))
+            else:
+                _context._PARENT_RUN_TREE_REF.set(None)
+            continue
+        var = _CONTEXT_KEYS.get(k)
+        if var is not None:
+            var.set(v)
 
 
 def _process_iterator(
@@ -2061,9 +2162,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
 
     async def _aend_trace(self, error: Optional[BaseException] = None):
         ctx = copy_context()
-        await asyncio.shield(
-            aitertools.aio_to_thread(self._end_trace, error, __ctx=ctx)
-        )
+        await asyncio.shield(aitertools.aio_to_thread(ctx, self._end_trace, error))
         _set_tracing_context(get_tracing_context(ctx))
 
     async def __anext__(self) -> T:
@@ -2138,7 +2237,7 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
     Returns:
         Context manager for use_span or None if not available.
     """
-    if not run_tree or not utils.is_env_var_truish("OTEL_ENABLED"):
+    if not run_tree or run_tree.client.otel_exporter is None:
         return None
     if not _is_otel_available():
         return None
@@ -2177,4 +2276,4 @@ _TAGS = _context._TAGS
 _METADATA = _context._METADATA
 _TRACING_ENABLED = _context._TRACING_ENABLED
 _CLIENT = _context._CLIENT
-_PARENT_RUN_TREE = _context._PARENT_RUN_TREE
+_PARENT_RUN_TREE_REF = _context._PARENT_RUN_TREE_REF

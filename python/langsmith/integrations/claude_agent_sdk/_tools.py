@@ -5,11 +5,8 @@ which is used by hooks to maintain trace context when async context
 propagation is broken.
 """
 
-import logging
 import threading
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # Thread-local store for passing the parent run tree into hooks.
 # Claude's async event loop by default breaks tracing.

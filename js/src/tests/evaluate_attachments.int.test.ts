@@ -1,7 +1,7 @@
 import { evaluate, TargetConfigT } from "../evaluation/_runner.js";
 import { ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunnableLambda } from "@langchain/core/runnables";
 
 function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {

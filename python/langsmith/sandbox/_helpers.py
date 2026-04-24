@@ -6,24 +6,84 @@ and raise appropriate exceptions. They contain no I/O operations.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import httpx
 
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
-    ResourceAlreadyExistsError,
+    ResourceCreationError,
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxAPIError,
     SandboxAuthenticationError,
     SandboxClientError,
     SandboxConnectionError,
-    SandboxCreationError,
     SandboxNotReadyError,
     SandboxOperationError,
     ValidationError,
 )
+
+# =============================================================================
+# Header Utilities
+# =============================================================================
+
+
+def merge_headers(
+    base_headers: Optional[Mapping[str, str]] = None,
+    override_headers: Optional[Mapping[str, str]] = None,
+) -> dict[str, str]:
+    """Merge request headers, giving precedence to overrides."""
+    merged: dict[str, str] = dict(base_headers or {})
+    if override_headers:
+        merged.update(override_headers)
+    return merged
+
+
+# =============================================================================
+# Input Validation
+# =============================================================================
+
+
+def validate_service_params(port: int, expires_in_seconds: int) -> None:
+    """Validate parameters for service URL generation.
+
+    Args:
+        port: Target port inside the sandbox.
+        expires_in_seconds: Token TTL.
+
+    Raises:
+        ValueError: If port or TTL is out of range.
+    """
+    if not isinstance(port, int) or port <= 0:
+        raise ValueError(f"port must be a positive integer, got {port!r}")
+    if not isinstance(expires_in_seconds, int) or not (
+        1 <= expires_in_seconds <= 86400
+    ):
+        raise ValueError(
+            f"expires_in_seconds must be between 1 and 86400, "
+            f"got {expires_in_seconds!r}"
+        )
+
+
+def validate_ttl(value: Optional[int], name: str) -> None:
+    """Validate a TTL value for sandbox create/update.
+
+    Args:
+        value: TTL in seconds (None means unset, 0 disables).
+        name: Parameter name for error messages.
+
+    Raises:
+        ValueError: If value is negative or not a multiple of 60.
+    """
+    if value is None:
+        return
+    if value < 0:
+        raise ValueError(f"{name} must be >= 0, got {value}")
+    if value != 0 and value % 60 != 0:
+        raise ValueError(f"{name} must be a multiple of 60 seconds, got {value}")
+
 
 # =============================================================================
 # Error Response Parsing
@@ -107,8 +167,7 @@ def parse_validation_error(error: httpx.HTTPStatusError) -> list[dict]:
 def extract_quota_type(message: str) -> Optional[str]:
     """Extract quota type from error message.
 
-    Returns one of: "sandbox_count", "cpu", "memory", "volume_count",
-    "storage", or None.
+    Returns one of: "sandbox_count", "cpu", "memory", "storage", or None.
     """
     message_lower = message.lower()
     # Check for sandbox count quota
@@ -120,11 +179,6 @@ def extract_quota_type(message: str) -> Optional[str]:
         return "cpu"
     elif "memory" in message_lower:
         return "memory"
-    # Check for volume count quota
-    elif "volume" in message_lower and (
-        "count" in message_lower or "limit" in message_lower
-    ):
-        return "volume_count"
     elif "storage" in message_lower:
         return "storage"
     return None
@@ -135,8 +189,12 @@ def extract_quota_type(message: str) -> Optional[str]:
 # =============================================================================
 
 
-def raise_creation_error(data: dict[str, Any], error: httpx.HTTPStatusError) -> None:
-    """Raise SandboxCreationError with the error_type from the API response.
+def raise_creation_error(
+    data: dict[str, Any],
+    error: httpx.HTTPStatusError,
+    resource_type: str = "sandbox",
+) -> None:
+    """Raise ResourceCreationError with the error_type from the API response.
 
     The error_type indicates the specific failure reason:
     - ImagePull: Image pull failed
@@ -144,8 +202,9 @@ def raise_creation_error(data: dict[str, Any], error: httpx.HTTPStatusError) -> 
     - SandboxConfig: Configuration error
     - Unschedulable: Cannot be scheduled
     """
-    raise SandboxCreationError(
-        data.get("message", "Sandbox creation failed"),
+    raise ResourceCreationError(
+        data.get("message", f"{resource_type.title()} creation failed"),
+        resource_type=resource_type,
         error_type=data.get("error_type"),
     ) from error
 
@@ -155,9 +214,9 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
 
     Maps API error responses to specific exception types:
     - 408: ResourceTimeoutError (sandbox didn't become ready in time)
-    - 422: ValidationError (bad input) or SandboxCreationError (runtime)
+    - 422: ValidationError (bad input) or ResourceCreationError (runtime)
     - 429: QuotaExceededError (org limits exceeded)
-    - 503: SandboxCreationError (no resources available)
+    - 503: ResourceCreationError (no resources available)
     - Other: Falls through to generic error handling
     """
     status = error.response.status_code
@@ -189,80 +248,11 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
         ) from error
     elif status == 503:
         # Service Unavailable - scheduling failed
-        raise SandboxCreationError(
+        raise ResourceCreationError(
             data["message"],
+            resource_type="sandbox",
             error_type=data.get("error_type") or "Unschedulable",
         ) from error
-    else:
-        # Fall through to generic handling
-        handle_client_http_error(error)
-
-
-def handle_volume_creation_error(error: httpx.HTTPStatusError) -> None:
-    """Handle HTTP errors specific to volume creation.
-
-    Maps API error responses to specific exception types:
-    - 503: SandboxCreationError (provisioning failed)
-    - 504: ResourceTimeoutError (volume didn't become ready in time)
-    - Other: Falls through to generic error handling
-    """
-    status = error.response.status_code
-    data = parse_error_response(error)
-
-    if status == 503:
-        # Provisioning failed (invalid storage class, quota exceeded)
-        raise SandboxCreationError(
-            data["message"], error_type="VolumeProvisioning"
-        ) from error
-    elif status == 504:
-        # Timeout - volume didn't become ready in time
-        raise ResourceTimeoutError(data["message"], resource_type="volume") from error
-    else:
-        # Fall through to generic handling
-        handle_client_http_error(error)
-
-
-def handle_pool_error(error: httpx.HTTPStatusError) -> None:
-    """Handle HTTP errors specific to pool creation/update.
-
-    Maps API error responses to specific exception types:
-    - 400: ResourceNotFoundError or ValidationError (template has volumes)
-    - 409: ResourceAlreadyExistsError
-    - 429: QuotaExceededError (org limits exceeded)
-    - 504: ResourceTimeoutError (timeout waiting for ready replicas)
-    - Other: Falls through to generic error handling
-    """
-    status = error.response.status_code
-    data = parse_error_response(error)
-    error_type = data.get("error_type")
-
-    if status == 400:
-        # Check the error type to determine the specific exception
-        if error_type == "TemplateNotFound":
-            raise ResourceNotFoundError(
-                data["message"], resource_type="template"
-            ) from error
-        elif error_type == "ValidationError":
-            # Template has volumes attached
-            raise ValidationError(data["message"], error_type=error_type) from error
-        else:
-            # Generic bad request
-            handle_client_http_error(error)
-    elif status == 409:
-        # Pool already exists
-        raise ResourceAlreadyExistsError(
-            data["message"], resource_type="pool"
-        ) from error
-    elif status == 429:
-        # Organization quota exceeded
-        quota_type = extract_quota_type(data["message"])
-        raise QuotaExceededError(
-            message=data["message"],
-            quota_type=quota_type,
-        ) from error
-    elif status == 504:
-        # Timeout waiting for pool to be ready
-        raise ResourceTimeoutError(data["message"], resource_type="pool") from error
     else:
         # Fall through to generic handling
         handle_client_http_error(error)

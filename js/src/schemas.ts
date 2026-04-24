@@ -325,10 +325,6 @@ export interface RawExample extends BaseExample {
 
 export interface ExampleUpdateWithId extends ExampleUpdate {}
 
-export interface ExampleSearch extends BaseExample {
-  id: string;
-}
-
 export interface BaseDataset {
   name: string;
   description: string;
@@ -499,6 +495,11 @@ export interface PromptCommit {
   commit_hash: string;
   manifest: Record<string, any>;
   examples: Array<Record<any, any>>;
+  description?: string;
+  /** The model configuration for the prompt. */
+  hub_model_config?: Record<string, any>;
+  /** The model provider (e.g. ChatOpenAI) */
+  hub_model_provider?: string;
 }
 
 export interface Prompt {
@@ -544,6 +545,68 @@ export type PromptSortField =
 
 export interface LikePromptResponse {
   likes: number;
+}
+
+export interface FileEntry {
+  type: "file";
+  content: string;
+}
+
+export interface AgentEntry {
+  type: "agent";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export interface SkillEntry {
+  type: "skill";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export type Entry = FileEntry | AgentEntry | SkillEntry;
+
+/** The type of a non-prompt hub repo. */
+export type HubRepoType = "agent" | "skill";
+
+/**
+ * An agent pulled from hub.
+ */
+export interface AgentContext {
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the agent. */
+  files: Record<string, Entry>;
+}
+
+/**
+ * A skill pulled from hub.
+ */
+export interface SkillContext {
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the skill. */
+  files: Record<string, Entry>;
+}
+
+/** Response body for `POST /directories/commits`. */
+export interface DirectoryCommitResponse {
+  commit: {
+    /** The commit ID. */
+    id: string;
+    /** The commit hash. */
+    commit_hash: string;
+    /** When the commit was created. */
+    created_at: string;
+  };
 }
 
 export interface LangSmithSettings {

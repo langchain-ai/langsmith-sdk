@@ -16,7 +16,7 @@ from tests.unit_tests.test_run_helpers import _get_calls
 if TYPE_CHECKING:
     import anthropic
 
-model_name = "claude-3-5-haiku-latest"
+model_name = "claude-haiku-4-5-20251001"
 messages = [{"role": "user", "content": "Say 'foo'"}]
 
 
@@ -299,6 +299,66 @@ def test_beta_chat_sync_api():
         assert "".join([c.text for c in original.content]) == "".join(
             [c.text for c in patched.content]
         )
+
+        calls = _get_calls(mock_client, minimum=1)
+        assert calls
+        datas = [json.loads(call.kwargs["data"]) for call in calls]
+        outputs = None
+        for data in datas:
+            if data.get("post"):
+                if outputs := data["post"][0]["outputs"]:
+                    break
+            if data.get("patch"):
+                outputs = data["patch"][0]["outputs"]
+                break
+
+        assert outputs
+
+
+def test_beta_parse_sync_api():
+    import anthropic  # noqa
+    from pydantic import BaseModel
+    from tests.unit_tests.test_run_helpers import _get_calls
+
+    class CalendarEvent(BaseModel):
+        name: str
+        date: str
+        participants: list[str]
+
+    with tracing_context(enabled=True):
+        mock_session = mock.MagicMock()
+        mock_client = Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
+        original_client = anthropic.Anthropic()
+        patched_client = wrap_anthropic(
+            anthropic.Anthropic(), tracing_extra={"client": mock_client}
+        )
+
+        original = original_client.beta.messages.parse(
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Alice and Bob are going to a science fair on Friday.",
+                }
+            ],
+            model=model_name,
+            max_tokens=1024,
+            output_format=CalendarEvent,
+        )
+        patched = patched_client.beta.messages.parse(
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Alice and Bob are going to a science fair on Friday.",
+                }
+            ],
+            model=model_name,
+            max_tokens=1024,
+            output_format=CalendarEvent,
+        )
+        assert isinstance(patched, type(original))
+        assert patched.parsed_output is not None
+        assert patched.parsed_output.name
+        assert patched.parsed_output.participants
 
         calls = _get_calls(mock_client, minimum=1)
         assert calls

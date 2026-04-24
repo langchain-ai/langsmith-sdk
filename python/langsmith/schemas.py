@@ -55,7 +55,7 @@ class Attachment(NamedTuple):
 
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
-"""Attachments associated with the run. 
+"""Attachments associated with the run.
 
 Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
 """
@@ -175,12 +175,6 @@ class Example(ExampleBase):
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
-
-
-class ExampleSearch(ExampleBase):
-    """Example returned via search."""
-
-    id: UUID
 
 
 class AttachmentsOperations(BaseModel):
@@ -366,7 +360,7 @@ class RunBase(BaseModel):
         default_factory=dict
     )
     """Attachments associated with the run.
-    
+
     Each entry is a tuple of `(mime_type, bytes)`.
     """
 
@@ -475,6 +469,10 @@ class Run(RunBase):
         inputs = kwargs.pop("inputs", None) or {}
         super().__init__(**kwargs, inputs=inputs)
         self._host_url = _host_url
+        if self.start_time.tzinfo is None:
+            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
+        if self.end_time is not None and self.end_time.tzinfo is None:
+            self.end_time = self.end_time.replace(tzinfo=timezone.utc)
         if not self.dotted_order.strip() and not self.parent_run_id:
             self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
 
@@ -988,6 +986,8 @@ class ComparativeExperiment(BaseModel):
 class PromptCommit(BaseModel):
     """Represents a Prompt with a manifest."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     owner: str
     """The handle of the owner of the prompt."""
     repo: str
@@ -998,6 +998,12 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: list[dict]
     """The list of examples."""
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
+    hub_model_config: Optional[dict] = Field(default=None, alias="model_config")
+    """The model configuration for the prompt."""
+    hub_model_provider: Optional[str] = Field(default=None, alias="model_provider")
+    """The model provider (e.g. ChatOpenAI)."""
 
 
 class ListedPromptCommit(BaseModel):
@@ -1041,6 +1047,9 @@ class ListedPromptCommit(BaseModel):
 
     parent_commit_hash: Optional[str] = None
     """The optional hash of the parent commit."""
+
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class Prompt(BaseModel):
@@ -1114,6 +1123,89 @@ class PromptSortField(str, Enum):
     """Number of likes."""
 
 
+class FileEntry(BaseModel):
+    """A file with inline content."""
+
+    type: Literal["file"] = "file"
+    """The entry type."""
+    content: str
+    """The file content."""
+
+
+class AgentEntry(BaseModel):
+    """A link to another agent repo."""
+
+    type: Literal["agent"] = "agent"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+class SkillEntry(BaseModel):
+    """A link to a skill repo."""
+
+    type: Literal["skill"] = "skill"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator="type")]
+"""A hub directory entry, discriminated by `type`."""
+
+
+class AgentContext(BaseModel):
+    """An agent pulled from hub."""
+
+    commit_id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the agent."""
+
+
+class SkillContext(BaseModel):
+    """A skill pulled from hub."""
+
+    commit_id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the skill."""
+
+
+class DirectoryCommitInfo(BaseModel):
+    """Commit details returned from a directory commit."""
+
+    id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    created_at: datetime
+    """When the commit was created."""
+
+
+class DirectoryCommitResponse(BaseModel):
+    """Response body for ``POST /directories/commits``."""
+
+    commit: DirectoryCommitInfo
+    """The created commit."""
+
+
 class InputTokenDetails(TypedDict, total=False):
     """Breakdown of input token counts.
 
@@ -1133,8 +1225,12 @@ class InputTokenDetails(TypedDict, total=False):
     the model state given these tokens was read from the cache.
     """
     cache_read_over_200k: int
-    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing. 
+    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing.
     """
+    ephemeral_5m_input_tokens: int
+    """Input tokens used to create a 5-minute ephemeral cache entry (Anthropic)."""
+    ephemeral_1h_input_tokens: int
+    """Input tokens used to create a 1-hour ephemeral cache entry (Anthropic)."""
 
 
 class OutputTokenDetails(TypedDict, total=False):
@@ -1337,6 +1433,205 @@ class InsightsReport(BaseModel):
 
     def _repr_html_(self) -> str:
         return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
+
+
+class InsightsHighlightedTrace(BaseModel):
+    """A trace highlighted in an insights report summary."""
+
+    run_id: UUID | str
+    cluster_id: UUID | str | None = None
+    cluster_name: str | None = None
+    rank: int
+    highlight_reason: str
+    summary: str | None = None
+
+
+class InsightsSummaryReport(BaseModel):
+    """High-level summary of an insights job: key points and highlighted traces."""
+
+    key_points: list[str] = Field(default_factory=list)
+    title: str | None = None
+    highlighted_traces: list[InsightsHighlightedTrace] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+class InsightsCluster(BaseModel):
+    """A single cluster of runs in an insights report."""
+
+    id: UUID | str
+    parent_id: UUID | str | None = None
+    level: int
+    name: str
+    description: str
+    parent_name: str | None = None
+    num_runs: int
+    stats: dict[str, Any] | None = None
+
+
+def _fetch_insights_runs(
+    client: Any,
+    session_id: str | UUID,
+    job_id: str | UUID,
+    *,
+    cluster_id: str | UUID | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch runs for an Insights job, optionally filtered to a single cluster."""
+    from langsmith import utils as ls_utils  # local import to avoid circular deps
+
+    all_runs: list[dict[str, Any]] = []
+    limit = 100
+    next_offset: int | None = 0
+    while next_offset is not None:
+        params: dict[str, Any] = {"limit": limit, "offset": next_offset}
+        if cluster_id is not None:
+            params["cluster_id"] = str(cluster_id)
+
+        resp = client.request_with_retries(
+            "GET",
+            f"/sessions/{session_id}/insights/{job_id}/runs",
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(resp)
+        body = resp.json()
+        batch = body.get("runs", []) or []
+        all_runs.extend(batch)
+        returned_offset = body.get("offset")
+        if returned_offset is None:
+            next_offset = None
+        else:
+            next_offset = int(returned_offset)
+            if not batch:
+                next_offset = None
+    return all_runs
+
+
+class _ClusterWithTraces:
+    """Cluster wrapper that can load its traces from the API. Returned by report.clusters[name]."""
+
+    __slots__ = ("_cluster", "_report")
+
+    def __init__(self, cluster: InsightsCluster, report: InsightsReportResult) -> None:
+        self._cluster = cluster
+        self._report = report
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cluster, name)
+
+    def __dir__(self) -> list[str]:
+        return list(set(dir(self.__class__)) | set(dir(self._cluster)))
+
+    def __repr__(self) -> str:
+        return f"_ClusterWithTraces(name={self._cluster.name!r})"
+
+    def load_traces(self) -> list[dict[str, Any]]:
+        """Fetch run dicts for this cluster from the API."""
+        client = getattr(self._report, "_client", None)
+        if client is None:
+            raise ValueError(
+                "Report not attached to a client; get reports via Client.get_insights_report()"
+            )
+        session_id = getattr(self._report, "_session_id", None)
+        job_id = getattr(self._report, "_job_id", None)
+        if session_id is None or job_id is None:
+            raise ValueError("Report missing session/job ids")
+
+        return _fetch_insights_runs(
+            client=client,
+            session_id=session_id,
+            job_id=job_id,
+            cluster_id=self._cluster.id,
+        )
+
+
+class _ClustersMap:
+    """List-like map of clusters by name. Supports report.clusters['name'] and .load_traces()."""
+
+    __slots__ = ("_clusters", "_report")
+
+    def __init__(
+        self,
+        clusters: list[InsightsCluster],
+        report: InsightsReportResult,
+    ) -> None:
+        self._clusters = list(clusters)
+        self._report = report
+
+    def __getitem__(self, key: str | int) -> _ClusterWithTraces:
+        if isinstance(key, int):
+            cluster = self._clusters[key]
+        else:
+            by_name = {c.name: c for c in self._clusters}
+            if key not in by_name:
+                raise KeyError(
+                    f"Cluster {key!r} not found; available: {list(by_name.keys())}"
+                )
+            cluster = by_name[key]
+        return _ClusterWithTraces(cluster, self._report)
+
+    def __iter__(self):
+        return (_ClusterWithTraces(c, self._report) for c in self._clusters)
+
+    def __len__(self) -> int:
+        return len(self._clusters)
+
+    def __repr__(self) -> str:
+        return f"_ClustersMap(n_clusters={len(self._clusters)})"
+
+
+class InsightsReportResult(BaseModel):
+    """Full result of fetching an Insights report (job + clusters + summary + optional runs)."""
+
+    id: UUID | str
+    name: str
+    status: str
+    start_time: datetime | str | None = None
+    end_time: datetime | str | None = None
+    created_at: datetime | str | None = None
+    metadata: dict[str, Any] | None = None
+    shape: dict[str, int] | None = None
+    error: str | None = None
+    config_id: UUID | str | None = None
+    clusters: list[InsightsCluster] = Field(default_factory=list)
+    report: InsightsSummaryReport | None = None
+    runs: list[dict[str, Any]] = Field(default_factory=list)
+    """Run dicts when fetched with include_runs=True."""
+
+    _client: Any = PrivateAttr(default=None)
+    _session_id: Any = PrivateAttr(default=None)
+    _job_id: Any = PrivateAttr(default=None)
+
+    model_config = ConfigDict(extra="allow")
+
+    def _attach_client(
+        self,
+        client: Any,
+        session_id: str | UUID,
+        job_id: str | UUID,
+    ) -> None:
+        """Attach client and ids so clusters can load traces. Called by Client.get_insights_report."""
+        object.__setattr__(self, "_client", client)
+        object.__setattr__(self, "_session_id", str(session_id))
+        object.__setattr__(self, "_job_id", str(job_id))
+        object.__setattr__(
+            self,
+            "clusters",
+            _ClustersMap(self.clusters, self),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dict (raw JSON shape)."""
+        clusters_val = self.clusters
+        if hasattr(clusters_val, "_clusters"):
+            object.__setattr__(self, "clusters", clusters_val._clusters)
+        try:
+            return self.model_dump(mode="json")
+        finally:
+            if hasattr(clusters_val, "_clusters"):
+                object.__setattr__(self, "clusters", clusters_val)
+
+    def model_dump_json_dict(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dict (e.g. for saving to file)."""
+        return self.model_dump(mode="json")
 
 
 class FeedbackFormulaWeightedVariable(BaseModel):

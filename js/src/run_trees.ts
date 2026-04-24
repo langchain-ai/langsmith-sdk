@@ -28,7 +28,7 @@ import {
   uuid7FromTime,
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
-import { v5 as uuidv5 } from "uuid";
+import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -165,6 +165,13 @@ type WriteReplica = {
   updates?: KVMap | undefined;
   fromEnv?: boolean;
   reroot?: boolean;
+  /**
+   * Optional dedicated Client for this replica.
+   * When set, the replica's runs are dispatched through this client
+   * (and its tracing mode) instead of the RunTree's default client.
+   * Not serialized in distributed-tracing baggage headers.
+   */
+  client?: Client;
 };
 type Replica = ProjectReplica | WriteReplica;
 
@@ -423,6 +430,16 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
+    // Propagate all parent metadata; child metadata takes precedence.
+    const parentMeta = this.extra?.metadata ?? {};
+    const childMeta = child.extra?.metadata ?? {};
+    if (Object.keys(parentMeta).length > 0) {
+      child.extra = {
+        ...child.extra,
+        metadata: { ...parentMeta, ...childMeta },
+      };
+    }
+
     // Copy context vars over into the new run tree.
     if (_LC_CONTEXT_VARIABLES_KEY in this) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -513,15 +530,13 @@ export class RunTree implements BaseRun {
       }
     }
 
+    const parent_run_id = run.parent_run?.id ?? run.parent_run_id;
     let child_runs: (RunCreate & { id: string })[];
-    let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
       child_runs = run.child_runs.map((child_run) =>
         this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
       );
-      parent_run_id = undefined;
     } else {
-      parent_run_id = run.parent_run?.id ?? run.parent_run_id;
       child_runs = [];
     }
     return {
@@ -775,8 +790,14 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
-          .replicas) {
+        for (const {
+          projectName,
+          apiKey,
+          apiUrl,
+          workspaceId,
+          reroot,
+          client: replicaClient,
+        } of this.replicas) {
           const runCreate = this._remapForProject({
             projectName: projectName ?? this.project_name,
             runtimeEnv,
@@ -787,7 +808,8 @@ export class RunTree implements BaseRun {
             apiKey,
             workspaceId,
           });
-          await this.client.createRun(runCreate, {
+          const targetClient = replicaClient ?? this.client;
+          await targetClient.createRun(runCreate, {
             apiKey,
             apiUrl,
             workspaceId,
@@ -826,6 +848,7 @@ export class RunTree implements BaseRun {
         workspaceId,
         updates,
         reroot,
+        client: replicaClient,
       } of this.replicas) {
         const runData = this._remapForProject({
           projectName: projectName ?? this.project_name,
@@ -862,7 +885,8 @@ export class RunTree implements BaseRun {
         if (!options?.excludeInputs) {
           updatePayload.inputs = runData.inputs;
         }
-        await this.client.updateRun(runData.id, updatePayload, {
+        const targetClient = replicaClient ?? this.client;
+        await targetClient.updateRun(runData.id, updatePayload, {
           apiKey,
           apiUrl,
           workspaceId,

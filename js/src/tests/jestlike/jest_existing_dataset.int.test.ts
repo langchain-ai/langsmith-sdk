@@ -1,5 +1,5 @@
 import { describe } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../../utils/uuid/src/index.js";
 
 import { Client } from "../../client.js";
 import * as ls from "../../jest/index.js";

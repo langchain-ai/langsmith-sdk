@@ -1,20 +1,11 @@
-import { parse as parseVersion } from "semver";
+import { getInvalidPromptIdentifierMsg } from "./error.js";
 
-export function isVersionGreaterOrEqual(
-  current_version: string,
-  target_version: string
-): boolean {
-  const current = parseVersion(current_version);
-  const target = parseVersion(target_version);
-
-  if (!current || !target) {
-    throw new Error("Invalid version format.");
-  }
-
-  return current.compare(target) >= 0;
-}
-
-export function parsePromptIdentifier(
+/**
+ * Parse a hub repo identifier (owner/name:hash, name, etc.).
+ *
+ * Prompts, agents, and skills share the same identifier grammar on Hub.
+ */
+export function parseHubIdentifier(
   identifier: string
 ): [string, string, string] {
   if (
@@ -24,7 +15,7 @@ export function parsePromptIdentifier(
     identifier.endsWith("/") ||
     identifier.split(":").length > 2
   ) {
-    throw new Error(`Invalid identifier format: ${identifier}`);
+    throw new Error(getInvalidPromptIdentifierMsg(identifier));
   }
 
   const [ownerNamePart, commitPart] = identifier.split(":");
@@ -33,12 +24,12 @@ export function parsePromptIdentifier(
   if (ownerNamePart.includes("/")) {
     const [owner, name] = ownerNamePart.split("/", 2);
     if (!owner || !name) {
-      throw new Error(`Invalid identifier format: ${identifier}`);
+      throw new Error(getInvalidPromptIdentifierMsg(identifier));
     }
     return [owner, name, commit];
   } else {
     if (!ownerNamePart) {
-      throw new Error(`Invalid identifier format: ${identifier}`);
+      throw new Error(getInvalidPromptIdentifierMsg(identifier));
     }
     return ["-", ownerNamePart, commit];
   }

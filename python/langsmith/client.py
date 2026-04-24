@@ -13,6 +13,7 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 from __future__ import annotations
 
 import atexit
+import base64
 import collections
 import concurrent.futures as cf
 import contextlib
@@ -37,7 +38,7 @@ from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from functools import lru_cache, partial
 from inspect import signature
 from pathlib import Path
-from queue import PriorityQueue
+from queue import Full, PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -45,8 +46,10 @@ from typing import (
     Callable,
     Literal,
     Optional,
+    TypedDict,
     Union,
     cast,
+    get_args,
 )
 from urllib import parse as urllib_parse
 
@@ -79,6 +82,14 @@ from langsmith._internal._constants import (
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
     _SIZE_LIMIT_BYTES,
+    _TRACING_QUEUE_MAX_SIZE,
+)
+from langsmith._internal._hub import (
+    HUB,
+    PLATFORM_HUB,
+    REPO_HANDLE_PATTERN,
+    build_commit_url,
+    validate_parent_commit,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
@@ -102,13 +113,113 @@ from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)
 
+_TRACING_DROP_LOG_INTERVAL_S = 60
+_tracing_drops_count = 0
+_tracing_drops_last_log_time = 0.0
+_tracing_drops_lock = threading.Lock()
+TracingMode = Literal["langsmith", "otel", "hybrid"]
+_VALID_TRACING_MODES: frozenset[str] = frozenset(get_args(TracingMode))
+
+
+def _log_tracing_drop(reason: str) -> None:
+    """Rate-limited logging for dropped trace data (once per 60s)."""
+    global _tracing_drops_count, _tracing_drops_last_log_time
+    with _tracing_drops_lock:
+        _tracing_drops_count += 1
+        now = time.time()
+        if now - _tracing_drops_last_log_time >= _TRACING_DROP_LOG_INTERVAL_S:
+            count = _tracing_drops_count
+            _tracing_drops_count = 0
+            _tracing_drops_last_log_time = now
+            logger.warning(
+                "Dropped %d trace data item(s) in the last %ds: %s",
+                count,
+                _TRACING_DROP_LOG_INTERVAL_S,
+                reason,
+            )
+
+
+def _reset_tracing_drop_log() -> None:
+    """Reset rate-limit state for drop logging. Used in tests."""
+    global _tracing_drops_count, _tracing_drops_last_log_time
+    with _tracing_drops_lock:
+        _tracing_drops_count = 0
+        _tracing_drops_last_log_time = 0.0
+
+
+_TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
+
 _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 
 
-def _check_otel_enabled() -> bool:
-    """Check if OTEL is enabled and imports are available."""
-    return ls_utils.is_env_var_truish("OTEL_ENABLED")
+def _resolve_tracing_mode(
+    tracing_mode: Optional[TracingMode],
+    *,
+    otel_enabled: Optional[bool] = None,
+) -> TracingMode:
+    """Resolve the effective tracing mode from the constructor arg and env vars.
+
+    Priority: explicit ``tracing_mode`` argument >
+    deprecated ``otel_enabled`` argument >
+    ``LANGSMITH_TRACING_MODE`` env var >
+    legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars >
+    default ``"langsmith"``.
+    """
+    mode_envvar_name = "TRACING_MODE"
+    otel_enabled_envvar_name = "OTEL_ENABLED"
+    otel_only_envvar_name = "OTEL_ONLY"
+
+    env_mode = ls_utils.get_env_var(mode_envvar_name)
+
+    if tracing_mode is not None:
+        tracing_mode = tracing_mode.lower()  # type: ignore[assignment]
+        if tracing_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid tracing_mode={tracing_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        return tracing_mode  # type: ignore[return-value]
+
+    if otel_enabled is not None:
+        warnings.warn(
+            "The 'otel_enabled' parameter is deprecated and will be removed "
+            "in the next minor version. Use 'tracing_mode' instead, e.g. "
+            'Client(tracing_mode="hybrid") or Client(tracing_mode="otel").',
+            FutureWarning,
+            stacklevel=3,
+        )
+        if otel_enabled:
+            if ls_utils.is_env_var_truish(otel_only_envvar_name):
+                return "otel"
+            return "hybrid"
+        return "langsmith"
+
+    if env_mode is not None:
+        env_mode = env_mode.lower()
+        if env_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid LANGSMITH_TRACING_MODE={env_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        legacy_otel = ls_utils.is_env_var_truish(otel_enabled_envvar_name)
+        legacy_only = ls_utils.is_env_var_truish(otel_only_envvar_name)
+        if legacy_otel or legacy_only:
+            warnings.warn(
+                f"Both LANGSMITH_{mode_envvar_name} and the legacy "
+                f"LANGSMITH_{otel_enabled_envvar_name} / "
+                f"LANGSMITH_{otel_only_envvar_name} env vars are set. "
+                f"LANGSMITH_{mode_envvar_name} takes precedence.",
+                stacklevel=3,
+            )
+        return env_mode  # type: ignore[return-value]
+
+    # Fall back to legacy env vars
+    if ls_utils.is_env_var_truish(otel_only_envvar_name):
+        return "otel"
+    if ls_utils.is_env_var_truish("OTEL_ENABLED"):
+        return "hybrid"
+    return "langsmith"
 
 
 def _import_otel():
@@ -182,8 +293,11 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
+_UNSET = object()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
+
+_fallback_dirs_created: set[str] = set()
 
 
 @lru_cache(maxsize=1)
@@ -478,21 +592,27 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
+def _validate_api_key_if_hosted(
+    api_url: str,
+    api_key: Optional[str],
+    *,
+    tracing_mode: TracingMode = "langsmith",
+) -> None:
     """Verify API key is provided if url not localhost.
 
     Args:
         api_url: The API URL.
         api_key: The API key.
+        tracing_mode: Resolved tracing mode; when ``"otel"`` the warning is
+            suppressed because no LangSmith REST calls are made.
 
     Raises:
         LangSmithUserError: If the API key is not provided when using the hosted service.
     """
-    # If the domain is langchain.com, raise error if no api_key
     if not api_key:
         if (
             _is_langchain_hosted(api_url)
-            and not ls_utils.is_env_var_truish("OTEL_ENABLED")
+            and tracing_mode != "otel"
             and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
@@ -615,7 +735,29 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
         if URLLIB3_SUPPORTS_BLOCKSIZE:
             # urllib3 before 2.0 doesn't support blocksize
             pool_kwargs["blocksize"] = self._blocksize
-        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+        try:
+            return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+        except TypeError:
+            if "blocksize" in pool_kwargs:
+                logger.warning(
+                    "An intermediate HTTPAdapter does not accept the 'blocksize' "
+                    "kwarg. Retrying without it."
+                )
+                pool_kwargs.pop("blocksize")
+                return super().init_poolmanager(
+                    connections, maxsize, block, **pool_kwargs
+                )
+            raise
+
+
+class ListThreadsItem(TypedDict):
+    """Item returned by :meth:`Client.list_threads`."""
+
+    thread_id: str
+    runs: list[ls_schemas.Run]
+    count: int
+    min_start_time: Optional[str]
+    max_start_time: Optional[str]
 
 
 class Client:
@@ -665,6 +807,9 @@ class Client:
         "_tracing_error_callback",
         "_multipart_disabled",
         "_cache",
+        "_failed_traces_dir",
+        "_failed_traces_max_bytes",
+        "_tracing_mode",
     ]
 
     _api_key: Optional[str]
@@ -696,6 +841,7 @@ class Client:
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        tracing_mode: Optional[TracingMode] = None,
         otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
@@ -790,6 +936,20 @@ class Client:
                 integration.
 
                 If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_mode: Where to send traces.  One of:
+
+                - ``"langsmith"`` (default) — LangSmith only.
+                - ``"otel"`` — OpenTelemetry export only.
+                - ``"hybrid"`` — both OTel and LangSmith.
+
+                Falls back to the ``LANGSMITH_TRACING_MODE`` env var, then to
+                the legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars, then to
+                ``"langsmith"``.
+            otel_enabled: *Deprecated.* Use ``tracing_mode`` instead.
+
+                When ``True``, interpreted as ``tracing_mode="hybrid"``
+                (or ``"otel"`` if the ``OTEL_ONLY`` env var is set).
+                Will be removed in the next minor version.
             tracing_sampling_rate: The sampling rate for tracing.
 
                 If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment
@@ -881,6 +1041,9 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
+        resolved_mode = _resolve_tracing_mode(tracing_mode, otel_enabled=otel_enabled)
+        self._tracing_mode: TracingMode = resolved_mode
+
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
@@ -897,13 +1060,15 @@ class Client:
         else:
             self.api_url = ls_utils.get_api_url(api_url)
             self.api_key = ls_utils.get_api_key(api_key)
-            _validate_api_key_if_hosted(self.api_url, self.api_key)
+            _validate_api_key_if_hosted(
+                self.api_url, self.api_key, tracing_mode=resolved_mode
+            )
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
             if isinstance(timeout_ms, int)
-            else (timeout_ms or (10_000, 90_001))
+            else (timeout_ms or (10_000, 60_000))
         )
         self._timeout = (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000)
         self._web_url = web_url
@@ -928,9 +1093,62 @@ class Client:
         self._multipart_disabled: bool = False
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
+        if resolved_mode in ("otel", "hybrid"):
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
+
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    f"tracing_mode={resolved_mode!r} requires OpenTelemetry "
+                    "packages. Install with `pip install langsmith[otel]`. "
+                    "Falling back to LangSmith-only tracing.",
+                    stacklevel=2,
+                )
+                self.otel_exporter = None
+                self._tracing_mode = "langsmith"
+                _validate_api_key_if_hosted(
+                    self.api_url, self.api_key, tracing_mode="langsmith"
+                )
+
         # Initialize auto batching
         if auto_batch_tracing:
-            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+            queue_maxsize_str = ls_utils.get_env_var("TRACING_QUEUE_MAX_SIZE")
+            queue_maxsize = (
+                int(queue_maxsize_str)
+                if queue_maxsize_str is not None
+                else _TRACING_QUEUE_MAX_SIZE
+            )
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue(
+                maxsize=queue_maxsize
+            )
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1028,56 +1246,11 @@ class Client:
 
         self._manual_cleanup = False
 
-        if _check_otel_enabled() or otel_enabled:
-            try:
-                (
-                    otel_trace,
-                    set_span_in_context,
-                    get_otlp_tracer_provider,
-                    OTELExporter,
-                ) = _import_otel()
-
-                existing_provider = otel_trace.get_tracer_provider()
-                tracer = existing_provider.get_tracer(__name__)
-                if otel_tracer_provider is None:
-                    # Use existing global provider if available
-                    if not (
-                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
-                        and hasattr(tracer, "_tracer")
-                        and isinstance(
-                            cast(
-                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
-                                tracer,
-                            )._tracer,
-                            otel_trace.NoOpTracer,
-                        )
-                    ):
-                        otel_tracer_provider = cast(TracerProvider, existing_provider)
-                    else:
-                        otel_tracer_provider = get_otlp_tracer_provider()
-                        otel_trace.set_tracer_provider(otel_tracer_provider)
-
-                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
-
-                # Store imports for later use
-                self._otel_trace = otel_trace
-                self._set_span_in_context = set_span_in_context
-
-            except ImportError:
-                warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
-                )
-                self.otel_exporter = None
-        else:
-            self.otel_exporter = None
-
         self._tracing_error_callback = tracing_error_callback
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
         if cache is not None and disable_prompt_cache:
-            import warnings
-
             warnings.warn(
                 "Both 'cache' and 'disable_prompt_cache' were provided. "
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
@@ -1087,8 +1260,6 @@ class Client:
             )
 
         if cache is not None:
-            import warnings
-
             warnings.warn(
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
                 "Use 'configure_global_prompt_cache()' to configure the global cache, or "
@@ -1109,6 +1280,117 @@ class Client:
             self._cache = prompt_cache_singleton
         else:
             self._cache = None
+
+        self._failed_traces_dir: Optional[str] = ls_utils.get_env_var(
+            "FAILED_TRACES_DIR"
+        )
+        _max_mb_str = ls_utils.get_env_var("FAILED_TRACES_MAX_MB")
+        try:
+            _max_mb = int(_max_mb_str) if _max_mb_str else 0
+            self._failed_traces_max_bytes: int = (
+                int(_max_mb * 1024 * 1024) if _max_mb > 0 else 100 * 1024 * 1024
+            )
+        except (ValueError, OverflowError):
+            logger.warning(
+                "Invalid value for LANGSMITH_FAILED_TRACES_MAX_MB: %r, "
+                "using default 100 MB",
+                _max_mb_str,
+            )
+            self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+    def _dump_failed_trace(
+        self,
+        body_fn: Callable[[], bytes],
+        headers: dict,
+    ) -> None:
+        """Dump a failed trace payload to disk if a fallback directory is configured.
+
+        *body_fn* is called lazily inside a try/except so that any serialization
+        errors are silently swallowed — we must never raise from a failure path.
+        """
+        if not self._failed_traces_dir:
+            return
+        try:
+            body = body_fn()
+            if isinstance(body, str):
+                body = body.encode("utf-8")
+            self._write_trace_to_fallback_dir(
+                self._failed_traces_dir,
+                body,
+                endpoint="runs/multipart",
+                headers=headers,
+                max_bytes=self._failed_traces_max_bytes,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _write_trace_to_fallback_dir(
+        directory: str,
+        body: bytes,
+        *,
+        endpoint: str,
+        headers: dict,
+        max_bytes: Optional[int] = None,
+    ) -> None:
+        """Persist a failed trace payload to a local fallback directory.
+
+        Saves a self-contained JSON file with the endpoint, the HTTP headers
+        required for replay, and the base64-encoded request body.  Can be
+        replayed later with a simple POST:
+
+            POST /<endpoint>
+            Content-Type: <value from saved headers>
+            [Content-Encoding: <value from saved headers>]
+            <decoded body>
+
+        If *max_bytes* is set, new traces are dropped when the directory is
+        already at or over the budget.
+        """
+        envelope = {
+            "version": 1,
+            "endpoint": endpoint,
+            "headers": headers,
+            "body_base64": base64.b64encode(body).decode(),
+        }
+        filename = f"trace_{time.time():.6f}_{uuid.uuid4().hex[:8]}.json"
+        filepath = Path(directory) / filename
+        try:
+            if directory not in _fallback_dirs_created:
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                _fallback_dirs_created.add(directory)
+            if max_bytes is not None and max_bytes > 0:
+                # Check budget before writing — drop new traces if over limit.
+                dir_path = Path(directory)
+                total = sum(
+                    f.stat().st_size
+                    for f in dir_path.glob("trace_*.json")
+                    if f.is_file()
+                )
+                if total >= max_bytes:
+                    logger.warning(
+                        "Could not write trace to fallback dir %s as it's "
+                        "already over size limit (%d bytes >= %d bytes). "
+                        "Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.",
+                        directory,
+                        total,
+                        max_bytes,
+                    )
+                    return
+            temp_path = filepath.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(envelope))
+            temp_path.chmod(0o600)  # owner-only: payload may contain sensitive data
+            temp_path.rename(filepath)
+            logger.warning(
+                "LangSmith trace upload failed; data saved to %s for later replay.",
+                filepath,
+            )
+        except Exception as write_exc:
+            logger.error(
+                "LangSmith tracing error: could not write trace to fallback dir %s: %s",
+                directory,
+                write_exc,
+            )
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1158,7 +1440,6 @@ class Client:
         }
         # Merge custom headers first so they don't override required headers
         headers.update(self._custom_headers)
-        # Required headers that should not be overridden
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:
@@ -1189,6 +1470,15 @@ class Client:
         self._set_header_affecting_attr("_workspace_id", value)
 
     @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._set_header_affecting_attr("_custom_headers", value or {})
+
+    @property
     def info(self) -> ls_schemas.LangSmithInfo:
         """Get the information about the LangSmith API.
 
@@ -1199,11 +1489,7 @@ class Client:
             return self._info
 
         # Skip API call when using OTEL-only mode
-        otel_only_mode = ls_utils.is_env_var_truish(
-            "OTEL_ENABLED"
-        ) and ls_utils.is_env_var_truish("OTEL_ONLY")
-
-        if otel_only_mode:
+        if self._tracing_mode == "otel" and self.otel_exporter is not None:
             self._info = ls_schemas.LangSmithInfo()
             return self._info
 
@@ -1355,7 +1641,7 @@ class Client:
                                     continue
                         if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
-                                f"Server error caused failure to {method}"
+                                f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
                                 f"{_context}"
@@ -1753,6 +2039,8 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
+        if "events" in run_create and run_create["events"] is not None:
+            run_create["events"] = self._filter_new_token_events(run_create["events"])
         # Hide metadata in extra if present
         if "extra" in run_create and isinstance(run_create["extra"], dict):
             extra = run_create["extra"]
@@ -1796,31 +2084,42 @@ class Client:
         return random.random() < self.tracing_sample_rate
 
     def _filter_for_sampling(
-        self, runs: Iterable[dict], *, patch: bool = False
-    ) -> list[dict]:
+        self,
+        runs: Iterable[Union[dict, ls_schemas.Run, ls_schemas.RunLikeDict]],
+        *,
+        patch: bool = False,
+    ) -> list:
         if self.tracing_sample_rate is None:
             return list(runs)
+
+        def _val(run: Any, key: str, default: Any = _UNSET) -> Any:
+            try:
+                return run[key]
+            except (KeyError, TypeError):
+                if default is _UNSET:
+                    return getattr(run, key)
+                return getattr(run, key, default)
 
         if patch:
             sampled = []
             for run in runs:
-                trace_id = _as_uuid(run["trace_id"])
+                trace_id = _as_uuid(_val(run, "trace_id"))
                 if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                elif run["id"] == trace_id:
+                elif _val(run, "id") == trace_id:
                     self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []
             for run in runs:
-                trace_id = run.get("trace_id") or run["id"]
+                trace_id = _val(run, "trace_id", None) or _val(run, "id")
 
                 # If we've already made a decision about this trace, follow it
                 if trace_id in self._filtered_post_uuids:
                     continue
 
                 # For new traces, apply sampling
-                if run["id"] == trace_id:
+                if _val(run, "id") == trace_id:
                     if self._should_sample():
                         sampled.append(run)
                     else:
@@ -1829,6 +2128,21 @@ class Client:
                     # Child runs follow their trace's sampling decision
                     sampled.append(run)
             return sampled
+
+    @property
+    def tracing_mode(self) -> TracingMode:
+        """Per-client tracing mode."""
+        return self._tracing_mode
+
+    def _put_tracing_queue(self, item: TracingQueueItem) -> None:
+        """Put an item on the tracing queue, dropping if full."""
+        assert self.tracing_queue is not None
+        try:
+            self.tracing_queue.put_nowait(item)
+        except Full:
+            _log_tracing_drop(
+                f"tracing queue full (maxsize={self.tracing_queue.maxsize})"
+            )
 
     def create_run(
         self,
@@ -2017,7 +2331,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -2033,7 +2347,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -2165,6 +2479,29 @@ class Client:
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
+
+    @staticmethod
+    def _filter_new_token_events(
+        events: Optional[Sequence[dict]],
+    ) -> Optional[list[dict]]:
+        """Filter content from new_token events.
+
+        This prevents streaming LLM output from being uploaded via events.
+
+        Args:
+            events: The events to filter.
+
+        Returns:
+            The filtered events with kwargs removed from new_token events.
+        """
+        if not events:
+            return events  # type: ignore[return-value]
+        return [
+            {k: v for k, v in event.items() if k != "kwargs"}
+            if event.get("name") == "new_token"
+            else event
+            for event in events
+        ]
 
     def _should_flush_run_ops_buffer(self) -> bool:
         """Check if the run ops buffer should be flushed based on size or time."""
@@ -2318,8 +2655,6 @@ class Client:
         update: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
-        *,
-        pre_sampled: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
@@ -2330,8 +2665,6 @@ class Client:
             update (Optional[Sequence[Union[Run, RunLikeDict]]]):
                 A sequence of `Run` objects or equivalent dictionaries representing
                 runs that have already been created and should be updated / patched.
-            pre_sampled (bool, default=False): Whether the runs have already been subject
-                to sampling, and therefore should not be sampled again.
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -2411,13 +2744,15 @@ class Client:
         """
         if not create and not update:
             return
+        # filter out runs that are not sampled
+        create = self._filter_for_sampling(create or EMPTY_SEQ)
+        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        if not create and not update:
+            return
         # transform and convert to dicts
-        create_dicts = [
-            self._run_transform(run, copy=False) for run in create or EMPTY_SEQ
-        ]
+        create_dicts = [self._run_transform(run, copy=False) for run in create]
         update_dicts = [
-            self._run_transform(run, update=True, copy=False)
-            for run in update or EMPTY_SEQ
+            self._run_transform(run, update=True, copy=False) for run in update
         ]
         for run in create_dicts:
             if not run.get("trace_id") or not run.get("dotted_order"):
@@ -2429,13 +2764,6 @@ class Client:
                 raise ls_utils.LangSmithUserError(
                     "Batch ingest requires trace_id and dotted_order to be set."
                 )
-        # filter out runs that are not sampled
-        if not pre_sampled:
-            create_dicts = self._filter_for_sampling(create_dicts)
-            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
-
-        if not create_dicts and not update_dicts:
-            return
 
         # Apply process_buffered_run_ops function if provided
         if self._process_buffered_run_ops:
@@ -2598,7 +2926,6 @@ class Client:
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
-        pre_sampled: bool = False,
         dangerously_allow_filesystem: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
@@ -2610,8 +2937,6 @@ class Client:
             update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
                 A sequence of `Run` objects or equivalent dictionaries representing
                 runs that have already been created and should be updated / patched.
-            pre_sampled (bool, default=False): Whether the runs have already been subject
-                to sampling, and therefore should not be sampled again.
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -2688,11 +3013,14 @@ class Client:
         """
         if not (create or update):
             return
+        # filter out runs that are not sampled
+        create = self._filter_for_sampling(create or EMPTY_SEQ)
+        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        if not create and not update:
+            return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
-        update_dicts = [
-            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
-        ]
+        create_dicts = [self._run_transform(run) for run in create]
+        update_dicts = [self._run_transform(run, update=True) for run in update]
         # require trace_id and dotted_order
         if create_dicts:
             for run in create_dicts:
@@ -2726,10 +3054,6 @@ class Client:
             else:
                 del run
             update_dicts = standalone_updates
-        # filter out runs that are not sampled
-        if not pre_sampled:
-            create_dicts = self._filter_for_sampling(create_dicts)
-            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
         if not create_dicts and not update_dicts:
             return
         # insert runtime environment
@@ -2829,6 +3153,7 @@ class Client:
                                 **headers_for_endpoint,
                                 "Content-Type": encoder.content_type,
                             },
+                            "timeout": _TRACING_SEND_TIMEOUT,
                         },
                         stop_after_attempt=1,
                         _context=_context,
@@ -2843,7 +3168,7 @@ class Client:
                 ) as exc:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
                         continue
                 except Exception as e:
@@ -2853,9 +3178,20 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
-                    self._invoke_tracing_error_callback(e)
-                    # do not retry by default
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                self._dump_failed_trace(
+                    lambda: (
+                        data
+                        if isinstance(data, bytes)
+                        else rqtb_multipart.MultipartEncoder(
+                            parts, boundary=_BOUNDARY
+                        ).to_string()
+                    ),
+                    {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def _send_compressed_multipart_req(
         self,
@@ -2872,22 +3208,25 @@ class Client:
 
             for idx in range(1, attempts + 1):
                 try:
-                    headers = {
-                        **self._headers,
-                        "X-API-KEY": api_key,
-                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-                        "Content-Encoding": "zstd",
-                        "X-Pre-Compressed-Size": (
-                            str(compressed_traces_info[0])
-                            if compressed_traces_info
-                            else ""
-                        ),
-                        "X-Post-Compressed-Size": (
-                            str(compressed_traces_info[1])
-                            if compressed_traces_info
-                            else ""
-                        ),
-                    }
+                    headers = _apply_auth_overrides(
+                        self._headers,
+                        api_key=api_key,
+                        service_key=None,
+                        tenant_id=None,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    )
+                    headers["Content-Type"] = (
+                        f"multipart/form-data; boundary={_BOUNDARY}"
+                    )
+                    headers["Content-Encoding"] = "zstd"
+                    headers["X-Pre-Compressed-Size"] = (
+                        str(compressed_traces_info[0]) if compressed_traces_info else ""
+                    )
+                    headers["X-Post-Compressed-Size"] = (
+                        str(compressed_traces_info[1]) if compressed_traces_info else ""
+                    )
                     logger.debug(
                         f"Sending compressed multipart request with context: {_context}"
                     )
@@ -2897,6 +3236,7 @@ class Client:
                         request_kwargs={
                             "data": data_stream,
                             "headers": headers,
+                            "timeout": _TRACING_SEND_TIMEOUT,
                         },
                         stop_after_attempt=1,
                         _context=_context,
@@ -2913,8 +3253,9 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {exc}"
                         )
-                        self._invoke_tracing_error_callback(exc)
+                        _fail_exc: Exception = exc
                     else:
+                        data_stream.seek(0)
                         continue
                 except Exception as e:
                     try:
@@ -2927,9 +3268,18 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
-                    self._invoke_tracing_error_callback(e)
-                    # Do not retry by default after unknown exceptions
-                    break
+                    _fail_exc = e
+                # Fell through — final attempt failed or non-retryable error.
+                data_stream.seek(0)
+                self._dump_failed_trace(
+                    data_stream.read,
+                    {
+                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+                        "Content-Encoding": "zstd",
+                    },
+                )
+                self._invoke_tracing_error_callback(_fail_exc)
+                break
 
     def update_run(
         self,
@@ -3063,7 +3413,7 @@ class Client:
                 outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
-            data["events"] = events
+            data["events"] = self._filter_new_token_events(events)
         if data["extra"]:
             self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
@@ -3166,7 +3516,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -3182,7 +3532,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -3400,6 +3750,62 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    def read_thread(
+        self,
+        *,
+        thread_id: str,
+        project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
+        is_root: bool = True,
+        limit: Optional[int] = None,
+        select: Optional[Sequence[str]] = None,
+        filter: Optional[str] = None,
+        order: Literal["asc", "desc"] = "asc",
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.Run]:
+        """Read runs for a single thread.
+
+        Args:
+            thread_id: Thread id (required).
+            project_id: Project id(s) (required when not using project_name).
+            project_name: Project name(s) (required when not using project_id).
+            is_root: If True, return only root runs. Default True.
+            limit: Maximum number of runs to return.
+            select: Fields to select.
+            filter: Additional filter expression.
+            order: Sort order for runs (e.g. "asc" for chronological). Default "asc".
+            **kwargs: Additional arguments passed to the runs query.
+
+        Yields:
+            Runs in the thread.
+
+        Examples:
+            ```python
+            for run in client.read_thread(
+                thread_id="thread_abc123",
+                project_name="My Project",
+                limit=50,
+            ):
+                print(run.id)
+            ```
+        """
+        if not (project_id or project_name):
+            raise ValueError("thread_id requires project_id or project_name")
+
+        thread_id_escaped = json.dumps(str(thread_id))
+        thread_filter = f"eq(thread_id, {thread_id_escaped})"
+        combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
+        return self.list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            is_root=is_root,
+            limit=limit,
+            select=select,
+            filter=combined_filter,
+            order=order,
+            **kwargs,
+        )
+
     def list_runs(
         self,
         *,
@@ -3593,6 +3999,130 @@ class Client:
             )
             if limit is not None and i + 1 >= limit:
                 break
+
+    def list_threads(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        filter: Optional[str] = None,
+        start_time: Optional[datetime.datetime] = None,
+    ) -> list[ListThreadsItem]:
+        """List threads and fetch the runs for each thread.
+
+        Args:
+            project_id: The project (session) id.
+            project_name: The project name (alternative to project_id).
+            limit: Maximum number of threads to return. Default None (no limit).
+            offset: Pagination offset for threads. Default 0.
+            filter: Optional filter for threads and runs.
+            start_time: Only include runs from this time. Default: 1 day ago.
+
+        Returns:
+            List of thread items, each with "thread_id", "runs", "count",
+            "min_start_time", and "max_start_time".
+        """
+        if project_id is None and project_name is None:
+            raise ValueError("Either project_id or project_name must be provided")
+        if project_id is not None and project_name is not None:
+            raise ValueError("Provide exactly one of project_id or project_name")
+
+        if project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        assert project_id is not None  # one of project_id or project_name was required
+        session_id = str(_as_uuid(project_id, "project_id"))
+
+        if start_time is None:
+            start_time = datetime.datetime.now(
+                datetime.timezone.utc
+            ) - datetime.timedelta(days=1)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=datetime.timezone.utc)
+
+        run_select = [
+            "id",
+            "name",
+            "status",
+            "start_time",
+            "end_time",
+            "thread_id",
+            "trace_id",
+            "run_type",
+            "error",
+            "tags",
+            "session_id",
+            "parent_run_id",
+            "total_tokens",
+            "total_cost",
+            "dotted_order",
+            "reference_example_id",
+            "feedback_stats",
+            "app_path",
+        ]
+        body_query: dict[str, Any] = {
+            "session": [session_id],
+            "is_root": True,
+            "limit": 100,
+            "order": "desc",
+            "select": run_select,
+            "start_time": start_time.isoformat(),
+        }
+        if filter is not None:
+            body_query["filter"] = filter
+        body_query = {k: v for k, v in body_query.items() if v is not None}
+
+        threads_map: dict[str, list[dict]] = collections.defaultdict(list)
+        for run_dict in self._get_cursor_paginated_list("/runs/query", body=body_query):
+            tid = run_dict.get("thread_id")
+            if tid:
+                threads_map[tid].append(run_dict)
+
+        result: list[ListThreadsItem] = []
+        for thread_id, run_dicts in threads_map.items():
+            run_dicts.sort(
+                key=lambda r: (
+                    r.get("start_time") or "",
+                    r.get("dotted_order") or "",
+                )
+            )
+            runs = []
+            for run_dict in run_dicts:
+                attachments = _convert_stored_attachments_to_attachments_dict(
+                    run_dict, attachments_key="s3_urls", api_url=self.api_url
+                )
+                runs.append(
+                    ls_schemas.Run(
+                        attachments=attachments,
+                        **run_dict,
+                        _host_url=self._host_url,
+                    )
+                )
+            start_times: list[str] = [
+                str(r["start_time"])
+                for r in run_dicts
+                if r.get("start_time") is not None
+            ]
+            result.append(
+                {
+                    "thread_id": thread_id,
+                    "runs": runs,
+                    "count": len(runs),
+                    "min_start_time": min(start_times) if start_times else None,
+                    "max_start_time": max(start_times) if start_times else None,
+                }
+            )
+
+        result.sort(
+            key=lambda t: t.get("max_start_time") or "",
+            reverse=True,
+        )
+        if offset > 0:
+            result = result[offset:]
+        if limit is not None:
+            result = result[:limit]
+        return result
 
     def get_run_stats(
         self,
@@ -4470,7 +5000,8 @@ class Client:
                 "metadata": {
                     "runtime": ls_env.get_runtime_environment(),
                     **(metadata or {}),
-                }
+                },
+                "source": "sdk",
             },
         }
         if description is not None:
@@ -4859,7 +5390,7 @@ class Client:
     ) -> ls_schemas.DatasetVersion:
         """Get dataset version by `as_of` or exact tag.
 
-        Ues this to resolve the nearest version to a given timestamp or for a given tag.
+        Use this to retrieve the dataset version to a timestamp or for a given tag.
 
         Args:
             dataset_id (Optional[ID_TYPE]): The ID of the dataset.
@@ -6106,166 +6637,6 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    @warn_beta
-    def index_dataset(
-        self,
-        *,
-        dataset_id: ID_TYPE,
-        tag: str = "latest",
-        **kwargs: Any,
-    ) -> None:
-        """Enable dataset indexing. Examples are indexed by their inputs.
-
-        This enables searching for similar examples by inputs with
-        ``client.similar_examples()``.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to index.
-            tag (Optional[str]): The version of the dataset to index. If 'latest'
-                then any updates to the dataset (additions, updates, deletions of
-                examples) will be reflected in the index.
-            **kwargs (Any): Additional keyword arguments to pass as part of request body.
-
-        Returns:
-            None
-        """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index",
-            headers=self._headers,
-            data=json.dumps({"tag": tag, **kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @warn_beta
-    def sync_indexed_dataset(
-        self,
-        *,
-        dataset_id: ID_TYPE,
-        **kwargs: Any,
-    ) -> None:
-        """Sync dataset index.
-
-        This already happens automatically every 5 minutes, but you can call this to
-        force a sync.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
-
-        Returns:
-            None
-        """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index/sync",
-            headers=self._headers,
-            data=json.dumps({**kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
-    @warn_beta
-    def similar_examples(
-        self,
-        inputs: dict,
-        /,
-        *,
-        limit: int,
-        dataset_id: ID_TYPE,
-        filter: Optional[str] = None,
-        **kwargs: Any,
-    ) -> list[ls_schemas.ExampleSearch]:
-        r"""Retrieve the dataset examples whose inputs best match the current inputs.
-
-        !!! note
-
-            Must have few-shot indexing enabled for the dataset. See `client.index_dataset()`.
-
-        Args:
-            inputs (dict): The inputs to use as a search query. Must match the dataset
-                input schema. Must be JSON serializable.
-            limit (int): The maximum number of examples to return.
-            dataset_id (Union[UUID, str]): The ID of the dataset to search over.
-            filter (Optional[str]): A filter string to apply to the search results. Uses
-                the same syntax as the `filter` parameter in `list_runs()`. Only a subset
-                of operations are supported.
-
-                For example, you can use ``and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))``
-                to filter only examples where some_tag has some_value, and the environment is not dev.
-            **kwargs: Additional keyword arguments to pass as part of request body.
-
-        Returns:
-            list[ExampleSearch]: List of ExampleSearch objects.
-
-        Examples:
-            ```python
-            from langsmith import Client
-
-            client = Client()
-            client.similar_examples(
-                {"question": "When would i use the runnable generator"},
-                limit=3,
-                dataset_id="...",
-            )
-            ```
-
-            ```python
-            [
-                ExampleSearch(
-                    inputs={
-                        "question": "How do I cache a Chat model? What caches can I use?"
-                    },
-                    outputs={
-                        "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\nYou can also use SQLite Cache which uses a SQLite database:\n\nrm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n"
-                    },
-                    metadata=None,
-                    id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "What's a runnable lambda?"},
-                    outputs={
-                        "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
-                    },
-                    metadata=None,
-                    id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "Show me how to use RecursiveURLLoader"},
-                    outputs={
-                        "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
-                    },
-                    metadata=None,
-                    id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-            ]
-            ```
-        """
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
-        req = {
-            "inputs": inputs,
-            "limit": limit,
-            **kwargs,
-        }
-        if filter is not None:
-            req["filter"] = filter
-
-        resp = self.request_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/search",
-            headers=self._headers,
-            data=json.dumps(req),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-        examples = []
-        for ex in resp.json()["examples"]:
-            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
-        return examples
-
     def update_example(
         self,
         example_id: ID_TYPE,
@@ -7197,7 +7568,7 @@ class Client:
                             if self._data_available_event:
                                 self._data_available_event.set()
                 elif self.tracing_queue is not None:
-                    self.tracing_queue.put(
+                    self._put_tracing_queue(
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:
@@ -8441,7 +8812,10 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
-            response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}")
+            response = self.request_with_retries(
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
+            )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
             return None
@@ -8506,6 +8880,7 @@ class Client:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -8516,6 +8891,8 @@ class Client:
                 Defaults to latest commit.
             tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
                 Defaults to None.
+            description (Optional[str]): Optional human-readable description for the
+                commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The url of the prompt commit.
@@ -8551,7 +8928,12 @@ class Client:
         if parent_commit_hash == "latest" or parent_commit_hash is None:
             parent_commit_hash = self._get_latest_commit_hash(prompt_owner_and_name)
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = self.request_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -8852,6 +9234,7 @@ class Client:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -8877,6 +9260,8 @@ class Client:
                 Defaults to an empty list.
             commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
+            commit_description (Optional[str]): Optional human-readable description
+                for the commit (max 1000 chars). Defaults to None.
 
         Returns:
             str: The URL of the prompt.
@@ -8911,8 +9296,321 @@ class Client:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
+
+    def pull_agent(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.AgentContext:
+        """Pull an agent from Hub.
+
+        Args:
+            identifier: Repo identifier (owner/name:hash, owner/name, or name).
+            version: Commit hash or tag; overrides any hash in identifier.
+
+        Returns:
+            AgentContext: The agent snapshot.
+        """
+        data = self._pull_hub_directory(identifier, "agent", version=version)
+        return ls_schemas.AgentContext.model_validate(data)
+
+    def push_agent(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push an agent to Hub, creating the repo if it does not exist."""
+        return self._push_hub_directory(
+            identifier,
+            "agent",
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    def pull_skill(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.SkillContext:
+        """Pull a skill from Hub."""
+        data = self._pull_hub_directory(identifier, "skill", version=version)
+        return ls_schemas.SkillContext.model_validate(data)
+
+    def push_skill(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push a skill to Hub."""
+        return self._push_hub_directory(
+            identifier,
+            "skill",
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    def delete_agent(self, identifier: str) -> None:
+        """Delete an agent and its owned child file repos."""
+        self._delete_hub_directory(identifier)
+
+    def delete_skill(self, identifier: str) -> None:
+        """Delete a skill and its owned child file repos."""
+        self._delete_hub_directory(identifier)
+
+    def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        return self._hub_repo_exists(owner, name)
+
+    def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        return self._hub_repo_exists(owner, name)
+
+    def list_agents(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List agents with pagination."""
+        return self._list_hub_repos(
+            "agent",
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    def list_skills(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List skills with pagination."""
+        return self._list_hub_repos(
+            "skill",
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    def _pull_hub_directory(
+        self,
+        identifier: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        version: Optional[str],
+    ) -> dict[str, Any]:
+        """Fetch hub directory payload, merged with owner/repo from identifier."""
+        owner, name, commit = ls_utils.parse_hub_identifier(identifier)
+        target = (
+            version if version is not None else (commit if commit != "latest" else None)
+        )
+        params: dict[str, Any] = {"repo_type": repo_type}
+        if target:
+            params["commit"] = target
+        response = self.request_with_retries(
+            "GET",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            params=params,
+        )
+        return response.json()
+
+    def _push_hub_directory(
+        self,
+        identifier: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        files: dict[str, Any],
+        parent_commit: Optional[str],
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> str:
+        """Create a hub directory commit, creating the repo if it does not exist."""
+        validate_parent_commit(parent_commit)
+
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not self._current_tenant_is_owner(owner):
+            raise self._owner_conflict_error(f"push {repo_type}", owner)
+
+        if self._hub_repo_exists(owner, name):
+            if any(v is not None for v in (description, readme, tags, is_public)):
+                self._update_hub_repo_metadata(
+                    owner,
+                    name,
+                    description=description,
+                    readme=readme,
+                    tags=tags,
+                    is_public=is_public,
+                )
+        else:
+            if not REPO_HANDLE_PATTERN.match(name):
+                raise ls_utils.LangSmithUserError(
+                    f"Invalid repo_handle {name!r}: "
+                    f"must match {REPO_HANDLE_PATTERN.pattern}."
+                )
+            self._create_hub_repo(
+                name,
+                repo_type,
+                description=description,
+                readme=readme,
+                tags=tags,
+                is_public=bool(is_public),
+            )
+
+        request_files: dict[str, Optional[dict[str, Any]]] = {}
+        for path, entry in files.items():
+            if entry is None:
+                request_files[path] = None
+            else:
+                request_files[path] = entry.model_dump(exclude_none=True)
+
+        body: dict[str, Any] = {"files": request_files}
+        if parent_commit is not None:
+            body["parent_commit"] = parent_commit
+
+        response = self.request_with_retries(
+            "POST",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            json=body,
+        )
+        commit_hash = response.json()["commit"]["commit_hash"]
+        return build_commit_url(self._host_url, owner, name, commit_hash)
+
+    def _delete_hub_directory(self, identifier: str) -> None:
+        """Delete a hub directory repo."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not self._current_tenant_is_owner(owner):
+            raise self._owner_conflict_error("delete", owner)
+        self.request_with_retries(
+            "DELETE",
+            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+        )
+
+    def _list_hub_repos(
+        self,
+        repo_type: Literal["agent", "skill"],
+        *,
+        limit: int,
+        offset: int,
+        is_public: Optional[bool],
+        is_archived: Optional[bool],
+        query: Optional[str],
+    ) -> ls_schemas.ListPromptsResponse:
+        """List hub repos filtered by type.
+
+        Returns ``ListPromptsResponse`` because ``/repos`` is polymorphic — the
+        list shape is shared across prompt, agent, and skill repos.
+        """
+        params: dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+            "repo_type": repo_type,
+            "is_archived": "true" if is_archived else "false",
+        }
+        if is_public is not None:
+            params["is_public"] = "true" if is_public else "false"
+        if query:
+            params["query"] = query
+            params["match_prefix"] = "true"
+        response = self.request_with_retries("GET", HUB, params=params)
+        return ls_schemas.ListPromptsResponse(**response.json())
+
+    def _hub_repo_exists(self, owner: str, name: str) -> bool:
+        """Check if a hub repo exists."""
+        try:
+            self.request_with_retries("GET", f"{HUB}/{owner}/{name}")
+            return True
+        except ls_utils.LangSmithNotFoundError:
+            return False
+
+    def _create_hub_repo(
+        self,
+        name: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: bool,
+    ) -> None:
+        """Create a new hub repo of the given type."""
+        body: dict[str, Any] = {
+            "repo_handle": name,
+            "repo_type": repo_type,
+            "is_public": is_public,
+        }
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        try:
+            self.request_with_retries("POST", "/repos/", json=body)
+        except ls_utils.LangSmithConflictError:
+            pass
+
+    def _update_hub_repo_metadata(
+        self,
+        owner: str,
+        name: str,
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> None:
+        """Patch hub repo metadata fields that were explicitly provided."""
+        body: dict[str, Any] = {}
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        if is_public is not None:
+            body["is_public"] = is_public
+        if body:
+            self.request_with_retries("PATCH", f"{HUB}/{owner}/{name}", json=body)
 
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""
@@ -9742,6 +10440,140 @@ class Client:
                 print(f"Polling time: {i * rate}")  # noqa: T201
             time.sleep(rate)
         raise TimeoutError("Insights still pending")
+
+    @warn_beta
+    def get_insights_report(
+        self,
+        *,
+        id: str | uuid.UUID | None = None,
+        report: ls_schemas.InsightsReport | None = None,
+        project_id: str | uuid.UUID | None = None,
+        include_runs: bool = True,
+    ) -> ls_schemas.InsightsReportResult:
+        """Fetch an Insights report by ID or from a prior report object.
+
+        Args:
+            id: The Insights report ID (aka clustering job ID). Provide with
+                ``project_id`` if ``report`` is not provided.
+            report: An ``InsightsReport`` object returned by ``generate_insights`` or
+                ``poll_insights``. If provided, ``id`` and ``project_id`` must be omitted.
+            project_id: The tracing project (session) ID associated with the report.
+                Required if ``report`` is not provided.
+            include_runs: Whether to include all runs for the report.
+
+        Returns:
+            An ``InsightsReportResult`` with job metadata, clusters, summary report,
+            and optionally ``runs``.
+
+        Raises:
+            ValueError: If the required identifiers are not provided.
+        """
+        if report is not None:
+            if id is not None or project_id is not None:
+                raise ValueError(
+                    "Must specify exactly one of ('id' and 'project_id') or 'report'."
+                )
+            job_id = report.id
+            session_id = report.project_id
+        else:
+            if id is None or project_id is None:
+                raise ValueError("Must specify ('id' and 'project_id') or 'report'.")
+            job_id = id
+            session_id = project_id
+
+        resp = self.request_with_retries(
+            "GET", f"/sessions/{session_id}/insights/{job_id}"
+        )
+        ls_utils.raise_for_status_with_text(resp)
+        report_json = resp.json()
+
+        if not include_runs:
+            result = ls_schemas.InsightsReportResult(**report_json)
+            result._attach_client(self, session_id, job_id)
+            return result
+
+        report_json["runs"] = ls_schemas._fetch_insights_runs(
+            client=self,
+            session_id=session_id,
+            job_id=job_id,
+        )
+        result = ls_schemas.InsightsReportResult(**report_json)
+        result._attach_client(self, session_id, job_id)
+        return result
+
+    def list_project_issues(
+        self,
+        project_name: str,
+        *,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+    ) -> list[dict]:
+        """List issues associated with a tracing project (forge issues board).
+
+        Retrieves all issues from the forge issues board that are linked to the
+        given tracing project (identified by its session name).
+
+        Args:
+            project_name (str): The name of the tracing project (session) whose
+                issues you want to list.
+            status (Optional[str]): Filter issues by status (e.g. ``"open"``,
+                ``"resolved"``). If ``None``, issues of all statuses are returned.
+            priority (Optional[str]): Filter issues by priority (e.g.
+                ``"high"``, ``"medium"``, ``"low"``). If ``None``, issues of all
+                priorities are returned.
+
+        Returns:
+            List[dict]: A list of issue objects. Each dict contains the following
+            keys:
+
+            - ``id`` (str): Issue UUID.
+            - ``tenant_id`` (str): Workspace/tenant UUID.
+            - ``issue_board_id`` (str): UUID of the issue board this issue belongs to.
+            - ``title`` (str): Issue title.
+            - ``description`` (str): Issue description.
+            - ``priority`` (str): Issue priority.
+            - ``status`` (str): Issue status.
+            - ``category`` (str | None): Optional category label.
+            - ``trace_ids`` (List[str]): Run/trace IDs associated with the issue.
+            - ``github_issue_url`` (str | None): URL of the linked GitHub issue.
+            - ``github_issue_number`` (int | None): Number of the linked GitHub issue.
+            - ``created_at`` (str): ISO-8601 creation timestamp.
+            - ``updated_at`` (str): ISO-8601 last-updated timestamp.
+            - ``resolved_at`` (str | None): ISO-8601 resolution timestamp, or ``None``.
+
+        Example:
+            ```python
+            from langsmith import Client
+
+            client = Client()
+
+            # List all issues for a project
+            issues = client.list_project_issues("my-project")
+
+            # Filter by status and priority
+            open_high = client.list_project_issues(
+                "my-project", status="open", priority="high"
+            )
+            for issue in open_high:
+                print(issue["id"], issue["title"])
+            ```
+        """
+        params: dict[str, Any] = {"session_name": project_name}
+        if status is not None:
+            params["status"] = status
+        if priority is not None:
+            params["priority"] = priority
+        path = _platform_path(self.api_url, "forge-issues")
+        full_url = _construct_url(self.api_url, path)
+        response = self.session.request(
+            "GET",
+            full_url,
+            params=params,
+            headers=self._headers,
+            timeout=self._timeout,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
 
     def _ensure_insights_api_key(
         self,

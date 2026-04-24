@@ -3,10 +3,10 @@
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest, describe, expect, afterEach, it } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { RunCreate } from "../schemas.js";
+import type { KVMap, RunCreate } from "../schemas.js";
 
 const parseMockRequestBody = async (
   body: string | Uint8Array | ReadableStream
@@ -317,6 +317,76 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
+    });
+
+    it.each([
+      [true, {}], // should hide metadata
+      [false, { random: 123 }], // should keep metadata
+      [undefined, { random: 123 }], // should keep metadata
+      [
+        function syncFn(metadata: KVMap) {
+          return { ...metadata, hidden: "metadata" };
+        },
+        { random: 123, hidden: "metadata" },
+      ], // should hide metadata
+      [
+        async function asyncFn(metadata: KVMap) {
+          return { ...metadata, hidden: "metadata" };
+        },
+        { random: 123, hidden: "metadata" },
+      ], // should hide metadata
+    ])("should hide metadata: %p", async (hideMetadata, expectedMetadata) => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        { apiKey: "test-api-key", autoBatchTracing: true, hideMetadata },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+      const projectName = "__test_batch";
+
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        outputs: { text: "hello world" },
+        extra: { metadata: { random: 123 } },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+
+      const reqBody = await parseMockRequestBody(calledRequestParam?.body);
+      expect(reqBody).toEqual({
+        post: [
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: { text: "hello world" },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+            extra: { metadata: expectedMetadata, runtime: expect.any(Object) },
+          }),
+        ],
+        patch: [],
+      });
+      expect(reqBody.post[0].extra.metadata).toEqual(expectedMetadata);
     });
 
     it("should not throw an error if fetch fails for batch requests", async () => {

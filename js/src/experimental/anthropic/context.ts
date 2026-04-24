@@ -16,11 +16,11 @@ import type { SDKMessage } from "./types.js";
  * @internal
  */
 export class StreamManager {
-  namespaces: { [namespace: string]: RunTree };
+  namespaces: { [namespace: string]: RunTree | undefined };
   history: { [namespace: string]: SDKMessage[] };
 
-  assistant: { [messageId: string]: RunTree } = {};
-  tools: { [toolUseId: string]: RunTree } = {};
+  assistant: { [messageId: string]: RunTree | undefined } = {};
+  tools: { [toolUseId: string]: RunTree | undefined } = {};
 
   postRunQueue: Promise<void>[] = [];
   runTrees: RunTree[] = [];
@@ -42,7 +42,7 @@ export class StreamManager {
       if (message.modelUsage) {
         correctUsageFromResults(
           message.modelUsage,
-          Object.values(this.assistant)
+          Object.values(this.assistant).filter((runTree) => runTree != null)
         );
       }
 
@@ -97,6 +97,8 @@ export class StreamManager {
         outputs: { output: { messages: [] } },
       });
 
+      if (this.assistant[messageId] == null) return;
+
       this.assistant[messageId].outputs = (() => {
         const prevMessages =
           this.assistant[messageId].outputs?.output.messages ?? [];
@@ -131,51 +133,76 @@ export class StreamManager {
               : null) ||
             "unknown-agent";
 
-          this.tools[block.id] ??= this.createChild("root", {
-            name,
-            run_type: "chain",
-            inputs: block.input,
-            start_time: eventTime,
-          });
+          this.tools[block.id] ??=
+            this.createChild("root", {
+              name,
+              run_type: "chain",
+              inputs: block.input,
+              start_time: eventTime,
+              extra: {
+                metadata: {
+                  ls_agent_type: "subagent",
+                },
+              },
+            }) ?? this.tools[block.id];
 
           this.namespaces[block.id] ??= this.tools[block.id];
         } else {
           const name = block.name || "unknown-tool";
 
-          this.tools[block.id] ??= this.createChild(namespace, {
-            name,
-            run_type: "tool",
-            inputs: block.input ? { input: block.input } : {},
-            start_time: eventTime,
-          });
+          this.tools[block.id] ??=
+            this.createChild(namespace, {
+              name,
+              run_type: "tool",
+              inputs: block.input ? { input: block.input } : {},
+              start_time: eventTime,
+            }) ?? this.tools[block.id];
         }
       }
     }
 
     if (message.type === "user") {
-      if (message.tool_use_result) {
-        const toolResult = Array.isArray(message.message.content)
-          ? message.message.content.find((block) => "tool_use_id" in block)
-          : undefined;
+      const toolResultBlocks = Array.isArray(message.message.content)
+        ? message.message.content.filter((block) => "tool_use_id" in block)
+        : [];
 
+      const getToolOutput = (result: unknown) => {
         if (
-          toolResult?.tool_use_id &&
-          this.tools[toolResult.tool_use_id] != null
+          typeof result === "object" &&
+          result != null &&
+          !Array.isArray(result)
         ) {
-          const toolOutput = Array.isArray(message.tool_use_result)
-            ? { content: message.tool_use_result }
-            : message.tool_use_result;
+          return result;
+        }
+
+        return { content: result };
+      };
+
+      const getToolError = (result: unknown) => {
+        if (["string", "number", "boolean"].includes(typeof result)) {
+          return String(result);
+        }
+        return JSON.stringify(result);
+      };
+
+      for (const block of toolResultBlocks) {
+        if (this.tools[block.tool_use_id] != null) {
+          // Previous versions of @anthropic-ai/claude-agent-sdk did provide
+          // tool result in `message.tool_use_result`, but at least since 0.2.50 it disappeared,
+          // so we rely on the last tool result block instead.
+          const result =
+            message.tool_use_result != null && toolResultBlocks.length === 1
+              ? message.tool_use_result
+              : block.content;
+
+          const toolOutput = getToolOutput(result);
 
           const toolError =
-            "is_error" in toolResult && toolResult.is_error === true
-              ? ["string", "number", "boolean"].includes(
-                  typeof message.tool_use_result
-                )
-                ? String(message.tool_use_result)
-                : JSON.stringify(message.tool_use_result)
+            "is_error" in block && block.is_error === true
+              ? getToolError(result)
               : undefined;
 
-          void this.tools[toolResult.tool_use_id].end(toolOutput, toolError);
+          void this.tools[block.tool_use_id]?.end(toolOutput, toolError);
         }
       }
     }
@@ -186,8 +213,10 @@ export class StreamManager {
   protected createChild(
     namespace: string,
     args: Parameters<RunTree["createChild"]>[0]
-  ): RunTree {
-    const runTree = this.namespaces[namespace].createChild(args);
+  ): RunTree | undefined {
+    const runTree = this.namespaces[namespace]?.createChild(args);
+    if (runTree == null) return undefined;
+
     this.postRunQueue.push(runTree.postRun());
     this.runTrees.push(runTree);
     return runTree;
@@ -196,6 +225,7 @@ export class StreamManager {
   async finish() {
     // Clean up incomplete tools and subagent calls
     for (const tool of Object.values(this.tools)) {
+      if (tool == null) continue;
       if (tool.outputs == null && tool.error == null) {
         void tool.end(undefined, "Run not completed (conversation ended)");
       }

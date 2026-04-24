@@ -158,8 +158,15 @@ const setUsageMetadataOnRunTree = (
   };
 };
 
+type StandardTextBlock = { type: "text"; text: string };
+type StandardReasoningBlock = {
+  type: "reasoning";
+  reasoning: string;
+  extras?: Record<string, unknown>;
+};
+
 export type AggregatedDoStreamOutput = {
-  content: string;
+  content: (StandardReasoningBlock | StandardTextBlock)[];
   role: "assistant";
   tool_calls: {
     id: string;
@@ -207,6 +214,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doGenerate",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doGenerate",
             ...lsConfig?.metadata,
@@ -246,6 +254,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doStream",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doStream",
             ...lsConfig?.metadata,
@@ -283,23 +292,37 @@ export function LangSmithMiddleware(config?: {
               const output = chunks.reduce(
                 (aggregated: AggregatedDoStreamOutput, chunk) => {
                   if (chunk.type === "text-delta") {
+                    if (aggregated.content.at(-1)?.type !== "text") {
+                      aggregated.content.push({ type: "text", text: "" });
+                    }
+                    const contentBlock = aggregated.content.at(
+                      -1
+                    ) as NonNullable<StandardTextBlock>;
                     if (chunk.delta != null) {
-                      return {
-                        ...aggregated,
-                        content: aggregated.content + chunk.delta,
-                      };
+                      contentBlock.text += chunk.delta;
                     } else if (
                       "textDelta" in chunk &&
                       chunk.textDelta != null
                     ) {
                       // AI SDK 4 shim
-                      return {
-                        ...aggregated,
-                        content: aggregated.content + chunk.textDelta,
-                      };
-                    } else {
-                      return aggregated;
+                      contentBlock.text += chunk.textDelta;
                     }
+                    return aggregated;
+                  } else if (chunk.type === "reasoning-delta") {
+                    if (aggregated.content.at(-1)?.type !== "reasoning") {
+                      aggregated.content.push({
+                        type: "reasoning",
+                        reasoning: "",
+                        extras: chunk.providerMetadata,
+                      });
+                    }
+                    const reasoningBlock = aggregated.content.at(
+                      -1
+                    ) as NonNullable<StandardReasoningBlock>;
+                    if (chunk.delta != null) {
+                      reasoningBlock.reasoning += chunk.delta;
+                    }
+                    return aggregated;
                   } else if (chunk.type === "tool-call") {
                     const matchingToolCall = aggregated.tool_calls.find(
                       (call) => call.id === chunk.toolCallId
@@ -343,14 +366,36 @@ export function LangSmithMiddleware(config?: {
                   }
                 },
                 {
-                  content: "",
+                  content: [],
                   role: "assistant",
                   tool_calls: [],
                 }
               );
-              const outputFormatter =
-                lsConfig?.processOutputs ?? convertMessageToTracedFormat;
-              const formattedOutputs = await outputFormatter(output);
+              // Add raw request/response for tracing only (not part of aggregated output)
+              const outputForTracing: Record<string, unknown> = {
+                ...output,
+                request: rest.request,
+                response: rest.response,
+              };
+              if (
+                "content" in outputForTracing &&
+                Array.isArray(outputForTracing.content) &&
+                outputForTracing.content.length === 1 &&
+                outputForTracing.content[0].type === "text"
+              ) {
+                outputForTracing.content = outputForTracing.content[0].text;
+              }
+              let formattedOutputs: Record<string, unknown>;
+              if (lsConfig?.processOutputs) {
+                formattedOutputs = await lsConfig.processOutputs(
+                  outputForTracing
+                );
+              } else {
+                formattedOutputs = _formatTracedOutputs(
+                  outputForTracing,
+                  lsConfig?.traceRawHttp
+                );
+              }
               await runTree?.end(formattedOutputs);
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));

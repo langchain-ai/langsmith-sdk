@@ -16,7 +16,7 @@ from tests.unit_tests.test_run_helpers import _get_calls
 
 pytest.importorskip("google.adk", reason="google-adk not installed")
 
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.5-flash"
 APP_NAME = "test_app"
 USER_ID = "test_user"
 SESSION_ID = "test_session_123"
@@ -207,4 +207,5 @@ def test_sequential_agent(mock_ls_client: Client):
 
     time.sleep(0.2)
     calls = _get_calls(mock_ls_client, minimum=1)
-    assert len(calls) > 0
+    # Should have at least one call for the trace
+    assert len(calls) >= 1

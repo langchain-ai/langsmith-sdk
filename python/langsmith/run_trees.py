@@ -58,6 +58,18 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     updates: Optional[dict]
+    client: Optional[Client]
+    """Optional dedicated :class:`~langsmith.Client` for this replica.
+
+    When set, the replica's runs are enqueued on this client's tracing queue
+    (and dispatched by its background thread) instead of the RunTree's default
+    client.  This lets each replica use a different tracing mode — for example,
+    one replica with ``Client(tracing_mode="otel")`` and another with the
+    default LangSmith-only client.
+
+    The field is **not** propagated in distributed-tracing baggage (each service
+    must construct its own clients).
+    """
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
@@ -532,6 +544,14 @@ class RunTree(ls_schemas.RunBase):
             start_time = max(start_time, self.start_time)
 
         serialized_ = serialized or {"name": name}
+        if extra:
+            child_extra = dict(extra)
+            child_meta = (extra.get("metadata") or {}).copy()
+        else:
+            child_extra = {}
+            child_meta = {}
+        parent_meta = (self.extra or {}).get("metadata") or {}
+        child_extra["metadata"] = {**parent_meta, **child_meta}
         run = RunTree(
             name=name,
             id=_ensure_uuid(run_id),
@@ -543,7 +563,7 @@ class RunTree(ls_schemas.RunBase):
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.now(timezone.utc),
             end_time=end_time,
-            extra=extra or {},
+            extra=child_extra,
             parent_run=self,
             project_name=self.session_name,
             replicas=self.replicas,
@@ -670,7 +690,13 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.create_run(
+                replica_client = replica.get("client") or self.client
+                if not hasattr(replica_client, "create_run"):
+                    raise TypeError(
+                        f"WriteReplica 'client' must be a langsmith.Client, "
+                        f"got {type(replica_client).__name__}"
+                    )
+                replica_client.create_run(
                     **run_dict,
                     api_key=api_key,
                     api_url=api_url,
@@ -733,7 +759,13 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.update_run(
+                replica_client = replica.get("client") or self.client
+                if not hasattr(replica_client, "update_run"):
+                    raise TypeError(
+                        f"WriteReplica 'client' must be a langsmith.Client, "
+                        f"got {type(replica_client).__name__}"
+                    )
+                replica_client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
                     run_type=run_dict.get("run_type"),

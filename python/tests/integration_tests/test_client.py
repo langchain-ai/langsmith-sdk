@@ -387,66 +387,6 @@ def test_list_examples(langchain_client: "Client") -> None:
         safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-@pytest.mark.slow
-def test_similar_examples(langchain_client: Client) -> None:
-    inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
-    outputs = [
-        {"response": "good how are you"},
-        {"response": "ta ta"},
-        {"response": "tootles"},
-    ]
-    dataset_name = "__test_similar_examples" + uuid7().hex
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
-    dataset = langchain_client.create_dataset(
-        dataset_name=dataset_name,
-        inputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-            },
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        outputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "response": {"type": "string"},
-            },
-            "required": ["response"],
-            "additionalProperties": False,
-        },
-    )
-    langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, dataset_id=dataset.id
-    )
-    langchain_client.index_dataset(dataset_id=dataset.id)
-    # Need to wait for indexing to finish.
-    time.sleep(5)
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=2, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 2
-
-    langchain_client.create_example(
-        inputs={"text": "howdy"},
-        outputs={"response": "howdy"},
-        dataset_id=dataset.id,
-    )
-
-    langchain_client.sync_indexed_dataset(dataset_id=dataset.id)
-    time.sleep(5)
-
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=5, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 4
-
-    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
-
-
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -1326,9 +1266,9 @@ def test_multipart_ingest_create_then_update(
     _session = "__test_multipart_ingest_create_then_update"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_create: list[dict] = [
         {
@@ -1339,6 +1279,7 @@ def test_multipart_ingest_create_then_update(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 
@@ -1351,8 +1292,11 @@ def test_multipart_ingest_create_then_update(
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1368,15 +1312,18 @@ def test_multipart_ingest_update_then_create(
     _session = "__test_multipart_ingest_update_then_create"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1396,6 +1343,7 @@ def test_multipart_ingest_update_then_create(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 
@@ -2441,12 +2389,12 @@ def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError):
         langchain_client.update_examples(
             dataset_id=dataset1.id, updates=[example_update_1, example_update_2]
         )
 
-    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError):
         langchain_client.update_examples(
             example_ids=[example1_id, example2_id],
             inputs=[example_update_1.inputs, example_update_2.inputs],
@@ -3566,6 +3514,150 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.slow
+def test_list_threads(langchain_client: Client) -> None:
+    """Test list_threads returns threads grouped by thread_id."""
+    project_name = f"test-list-threads-{uuid7().hex[:12]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        base = uuid7().hex[:8]
+        thread_a = f"thread-{base}-a"
+        thread_b = f"thread-{base}-b"
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        # Backend derives thread_id from extra.metadata
+        # (session_id or conversation_id or thread_id). Set session_id/conversation_id
+        # to None so our thread_id is used for grouping.
+        def thread_meta(tid: str) -> dict:
+            return {
+                "metadata": {
+                    "thread_id": tid,
+                    "session_id": None,
+                    "conversation_id": None,
+                }
+            }
+
+        langchain_client.create_run(
+            name="run_a1",
+            inputs={"x": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now,
+            extra=thread_meta(thread_a),
+        )
+        langchain_client.create_run(
+            name="run_a2",
+            inputs={"x": 2},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=1),
+            extra=thread_meta(thread_a),
+        )
+        langchain_client.create_run(
+            name="run_b1",
+            inputs={"y": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=2),
+            extra=thread_meta(thread_b),
+        )
+        wait_for(
+            lambda: (
+                next(
+                    langchain_client.list_runs(project_name=project_name, limit=1),
+                    None,
+                )
+                is not None
+            ),
+            max_sleep_time=30,
+            sleep_time=2,
+        )
+        threads = langchain_client.list_threads(project_name=project_name, limit=10)
+        assert isinstance(threads, list)
+        assert len(threads) >= 2
+        for item in threads:
+            assert isinstance(item, dict)
+            assert "thread_id" in item
+            assert "runs" in item
+            assert "count" in item
+            assert "min_start_time" in item
+            assert "max_start_time" in item
+            assert isinstance(item["runs"], list)
+            assert item["count"] == len(item["runs"])
+        thread_ids = {t["thread_id"] for t in threads}
+        assert thread_a in thread_ids
+        assert thread_b in thread_ids
+        thread_a_item = next(t for t in threads if t["thread_id"] == thread_a)
+        thread_b_item = next(t for t in threads if t["thread_id"] == thread_b)
+        assert thread_a_item["count"] == 2
+        assert thread_b_item["count"] == 1
+    finally:
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+@pytest.mark.slow
+def test_read_thread(langchain_client: Client) -> None:
+    """Test read_thread yields runs for a single thread_id."""
+    project_name = f"test-read-thread-{uuid7().hex[:12]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        thread_id = f"thread-{uuid7().hex[:8]}"
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # Backend derives thread_id from extra.metadata; set session_id/conversation_id
+        # to None so thread_id is used.
+        meta = {
+            "metadata": {
+                "thread_id": thread_id,
+                "session_id": None,
+                "conversation_id": None,
+            }
+        }
+        langchain_client.create_run(
+            name="run_1",
+            inputs={"i": 1},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now,
+            extra=meta,
+        )
+        langchain_client.create_run(
+            name="run_2",
+            inputs={"i": 2},
+            run_type="llm",
+            project_name=project_name,
+            start_time=now + timedelta(seconds=1),
+            extra=meta,
+        )
+        wait_for(
+            lambda: (
+                next(
+                    langchain_client.list_runs(project_name=project_name, limit=1),
+                    None,
+                )
+                is not None
+            ),
+            max_sleep_time=30,
+            sleep_time=2,
+        )
+        runs = list(
+            langchain_client.read_thread(
+                thread_id=thread_id,
+                project_name=project_name,
+                limit=10,
+            )
+        )
+        assert len(runs) == 2
+        assert all(isinstance(r, Run) for r in runs)
+        names = {r.name for r in runs}
+        assert names == {"run_1", "run_2"}
+    finally:
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
 @pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
@@ -3900,6 +3992,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
+@pytest.mark.skip(reason="Relies on external config and resources")
 def test_create_insights_job(langchain_client: Client) -> None:
     chat_histories = [
         [

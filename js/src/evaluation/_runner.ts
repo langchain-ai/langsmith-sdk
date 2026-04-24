@@ -21,7 +21,7 @@ import {
   runEvaluator,
 } from "./evaluator.js";
 import { LangSmithConflictError } from "../utils/error.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import {
   evaluateComparative,
   ComparisonEvaluationResults,
@@ -1054,10 +1054,7 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
-    examples: Array.isArray(standardFields.data)
-      ? standardFields.data
-      : undefined,
+    data: standardFields.data,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,

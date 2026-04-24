@@ -2,7 +2,7 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { MessageGraph } from "@langchain/langgraph";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client } from "../client.js";
 import { Run } from "../schemas.js";
 import { traceable } from "../traceable.js";
