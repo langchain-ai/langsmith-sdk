@@ -1,14 +1,15 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
-Correlation state is scoped **per-session** via a :class:`contextvars.ContextVar`.
-Each ``receive_response()`` call opens a fresh :class:`SessionState` and binds
-it to the context var so that hook functions — which run on the SDK's async
-event loop — look up the correct session's state regardless of how many
-``ClaudeSDKClient`` instances are concurrently active in the process.
+Correlation state is scoped **per client session** via a
+:class:`contextvars.ContextVar`. Each instrumented ``ClaudeSDKClient`` owns a
+:class:`SessionState`; ``receive_response()`` binds it while processing the
+stream so helper functions can look up the right state regardless of how many
+clients are concurrently active in the process.
 
-Hooks injected by ``_client.py`` are bound to their owning ``SessionState`` so
-that hook callbacks use the correct state even if the SDK runs them in an async
-context that did not inherit ``receive_response``'s ContextVar.
+Hooks injected by ``_client.py`` are also bound to their owning
+``SessionState`` so hook callbacks use the correct state even if the SDK runs
+them in an async context that did not inherit ``receive_response``'s
+ContextVar.
 
 When no ContextVar is active, hooks use a module-level default session. This is
 primarily for direct unit tests; real traffic under ``receive_response`` uses a
@@ -44,8 +45,8 @@ logger = logging.getLogger(__name__)
 class SessionState:
     """All mutable correlation state for a single conversation.
 
-    One instance is created per ``receive_response()`` call and bound to the
-    ``_current_session`` ContextVar for the duration of that call.
+    One instance is created per instrumented ``ClaudeSDKClient`` and bound to
+    the ``_current_session`` ContextVar while that client is active.
     """
 
     # Key: tool_use_id → (run_tree, start_time)
@@ -83,8 +84,6 @@ class SessionState:
 
 # Module-level *default* session. Used when no ContextVar is set (e.g. tests
 # that poke hooks directly, or hooks firing outside a traced conversation).
-# Also serves as the backing store for the legacy module-level attribute
-# names exposed below.
 _default_session: SessionState = SessionState()
 
 # ContextVar holding the active session for a conversation. Injected hook
@@ -102,7 +101,7 @@ def _current_session_or_default() -> SessionState:
     return _default_session
 
 
-def _session_for_hook(data: dict[str, Any]) -> SessionState:
+def _session_for_hook() -> SessionState:
     """Resolve the session that owns the current hook invocation.
 
     Real Claude SDK hook invocations are wrapped by ``_bind_hook_to_session``
@@ -179,7 +178,7 @@ async def pre_tool_use_hook(
     tool_name: str = str(data.get("tool_name", "unknown_tool"))
     tool_input: dict[str, Any] = dict(data.get("tool_input") or {})
     agent_id: Optional[str] = str(data["agent_id"]) if data.get("agent_id") else None
-    session = _session_for_hook(data)
+    session = _session_for_hook()
 
     # Capture main session transcript path from BaseHookInput
     if session.main_transcript_path is None and data.get("transcript_path"):
@@ -247,7 +246,7 @@ async def post_tool_use_hook(
 
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     tool_response = input_data.get("tool_response")
-    session = _session_for_hook(dict(input_data))
+    session = _session_for_hook()
 
     try:
         run_info = session.active_tool_runs.pop(tool_use_id, None)
@@ -324,7 +323,7 @@ async def post_tool_use_failure_hook(
 
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     error: str = str(input_data.get("error", "Unknown error"))
-    session = _session_for_hook(dict(input_data))
+    session = _session_for_hook()
 
     try:
         run_info = session.active_tool_runs.pop(tool_use_id, None)
@@ -376,7 +375,7 @@ async def subagent_start_hook(
     data: dict[str, Any] = dict(input_data)
     agent_id: Optional[str] = str(data["agent_id"]) if data.get("agent_id") else None
     agent_type: str = str(data.get("agent_type") or "subagent")
-    session = _session_for_hook(data)
+    session = _session_for_hook()
 
     if not agent_id:
         return {}
@@ -463,7 +462,7 @@ async def subagent_stop_hook(
         if data.get("agent_transcript_path")
         else None
     )
-    session = _session_for_hook(data)
+    session = _session_for_hook()
 
     if not agent_id:
         return {}
@@ -539,3 +538,4 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
     session.ended_subagent_runs.clear()
     session.subagent_transcript_paths.clear()
     session.main_transcript_path = None
+    session.root_run = None

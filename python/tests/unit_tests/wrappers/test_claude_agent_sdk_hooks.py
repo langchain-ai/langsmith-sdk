@@ -33,6 +33,7 @@ def _clear_state():
         _hooks_module._default_session.ended_subagent_runs.clear()
         _hooks_module._default_session.subagent_transcript_paths.clear()
         _hooks_module._default_session.main_transcript_path = None
+        _hooks_module._default_session.root_run = None
 
     _reset()
     yield

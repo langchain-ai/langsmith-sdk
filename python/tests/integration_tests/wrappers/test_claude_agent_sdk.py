@@ -482,3 +482,4 @@ async def test_concurrent_three_clients_are_isolated():
     assert len(_hooks_module._default_session.ended_subagent_runs) == 0
     assert len(_hooks_module._default_session.subagent_runs) == 0
     assert len(_hooks_module._default_session.subagent_transcript_paths) == 0
+    assert _hooks_module._default_session.root_run is None

@@ -445,12 +445,11 @@ def instrument_claude_client(original_class: Any) -> None:
             trace_kwargs["tags"] = config["tags"]
 
         async with trace(**trace_kwargs) as run:
-            # Create a fresh per-conversation state container and bind it
-            # to the ContextVar so hook functions on this SDK event loop
-            # pick it up (see _hooks.SessionState). This keeps concurrent
-            # ClaudeSDKClient instances — eval runs, FastAPI handlers,
-            # Celery workers, asyncio.gather — from corrupting each
-            # other's correlation state.
+            # Bind this client's state container to the ContextVar so stream
+            # helpers on this SDK event loop pick it up (see
+            # _hooks.SessionState). This keeps concurrent ClaudeSDKClient
+            # instances — eval runs, FastAPI handlers, Celery workers,
+            # asyncio.gather — from corrupting each other's correlation state.
             session = getattr(self, "_ls_session", None)
             if session is None:
                 session = self._ls_session = SessionState()
