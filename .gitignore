@@ -164,3 +164,4 @@ cython_debug/
 js/_build/
 
 .envrc
+.worktrees/
