@@ -19,6 +19,7 @@ client-bound session.
 import logging
 import threading
 import time
+import weakref
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -94,10 +95,12 @@ _current_session: ContextVar[Optional[SessionState]] = ContextVar(
 )
 
 # Live sessions are only used by SDK MCP tool handlers when the SDK invokes the
-# handler in a detached async context that did not inherit _current_session and
-# the handler object could not be rebound to a client session directly.
+# handler in a detached async context that did not inherit _current_session.
+# Store weak values so this fallback registry never owns session lifetime.
 _live_sessions_lock = threading.Lock()
-_live_sessions: dict[int, SessionState] = {}
+_live_sessions: weakref.WeakValueDictionary[int, SessionState] = (
+    weakref.WeakValueDictionary()
+)
 
 
 def _current_session_or_default() -> SessionState:
