@@ -1,5 +1,6 @@
 /* eslint-disable no-process-env */
 import { SerializeWorker } from "../utils/serialize_worker.js";
+import { serialize } from "../utils/fast-safe-stringify/index.js";
 
 describe("SerializeWorker", () => {
   let worker: SerializeWorker;
@@ -74,5 +75,50 @@ describe("SerializeWorker", () => {
     const payload: Record<string, unknown> = { a: 1 };
     payload.self = payload;
     expect(await serializeToText(payload)).toContain("[Circular]");
+  });
+
+  test("produces byte-identical output to main-thread serialize for well-known types", async () => {
+    // This test ensures the worker's inlined serialize logic stays in sync
+    // with the main-thread implementation. If this fails, the worker source
+    // in serialize_worker.ts needs to be updated to match.
+    const payloads = [
+      // Primitives and simple structures
+      { a: 1, b: "two", c: [true, false, null] },
+      // Well-known types
+      {
+        date: new Date("2024-01-01T00:00:00.000Z"),
+        regex: /foo/gi,
+        map: new Map([
+          ["x", 1],
+          ["y", 2],
+        ]),
+        set: new Set(["a", "b"]),
+        big: BigInt("9007199254740999"),
+      },
+      // Error objects
+      { err: new Error("test error") },
+      // Nested structures
+      {
+        level1: {
+          level2: {
+            level3: { data: "deep" },
+            arr: [1, 2, 3],
+          },
+        },
+      },
+      // Large string (triggers worker path in client)
+      { big: "x".repeat(100_000) },
+    ];
+
+    for (const payload of payloads) {
+      const workerBytes = await worker.serialize(payload);
+      if (workerBytes === null) {
+        // Worker unavailable in this environment; skip comparison
+        continue;
+      }
+      const workerStr = Buffer.from(workerBytes).toString("utf8");
+      const mainStr = Buffer.from(serialize(payload)).toString("utf8");
+      expect(workerStr).toBe(mainStr);
+    }
   });
 });

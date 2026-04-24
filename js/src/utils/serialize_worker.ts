@@ -196,12 +196,13 @@ export class SerializeWorker {
         this.worker = null;
       });
       worker.on("exit", (code: number) => {
-        if (code !== 0) {
-          for (const [, p] of this.pending) {
-            p.reject(new Error(`worker exited with code ${code}`));
-          }
-          this.pending.clear();
+        // Reject all pending requests regardless of exit code. Even a clean
+        // exit (code 0) with in-flight requests means those promises would
+        // otherwise hang forever.
+        for (const [, p] of this.pending) {
+          p.reject(new Error(`worker exited with code ${code}`));
         }
+        this.pending.clear();
         this.worker = null;
       });
       // Don't let the worker keep the process alive.
