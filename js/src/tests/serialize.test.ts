@@ -478,6 +478,33 @@ describe("estimateSerializedSize", () => {
     expect(estimateSerializedSize(null).maxStringLen).toBe(0);
     expect(estimateSerializedSize(42).maxStringLen).toBe(0);
   });
+
+  it("handles LangChain message objects", () => {
+    // LangChain message classes have a toJSON() method that returns
+    // a serializable representation. The estimator must invoke it.
+    const messages = [
+      new SystemMessage("You are a helpful assistant."),
+      new HumanMessage("What is the capital of France?"),
+      new AIMessage("The capital of France is Paris."),
+    ];
+
+    expectClose({ messages }, { minRatio: 0.95, maxRatio: 1.1 });
+  });
+
+  it("handles LangChain message objects with complex content", () => {
+    // Multi-modal message with text and image
+    const message = new HumanMessage({
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/png;base64," + "x".repeat(1000) },
+        },
+      ],
+    });
+
+    expectClose({ message }, { minRatio: 0.95, maxRatio: 1.1 });
+  });
 });
 
 describe("hasLargeString", () => {
@@ -554,34 +581,5 @@ describe("hasLargeString", () => {
     expect(hasLargeString(new Date(), 10)).toBe(false);
     expect(hasLargeString(/foo/, 10)).toBe(false);
     expect(hasLargeString(new Error("boom"), 10)).toBe(false);
-    const estimate = estimateSerializedSize(v);
-    expect(estimate).toBeGreaterThan(real * 0.5);
-  });
-
-  it("handles LangChain message objects", () => {
-    // LangChain message classes have a toJSON() method that returns
-    // a serializable representation. The estimator must invoke it.
-    const messages = [
-      new SystemMessage("You are a helpful assistant."),
-      new HumanMessage("What is the capital of France?"),
-      new AIMessage("The capital of France is Paris."),
-    ];
-
-    expectClose({ messages }, { minRatio: 0.95, maxRatio: 1.1 });
-  });
-
-  it("handles LangChain message objects with complex content", () => {
-    // Multi-modal message with text and image
-    const message = new HumanMessage({
-      content: [
-        { type: "text", text: "What's in this image?" },
-        {
-          type: "image_url",
-          image_url: { url: "data:image/png;base64," + "x".repeat(1000) },
-        },
-      ],
-    });
-
-    expectClose({ message }, { minRatio: 0.95, maxRatio: 1.1 });
   });
 });
