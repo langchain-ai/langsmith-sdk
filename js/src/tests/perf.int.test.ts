@@ -60,9 +60,13 @@ test("Test performance with large runs and concurrency", async () => {
  *   LANGSMITH_RUN_PERF_BENCH=true LANGSMITH_TRACING=false \
  *     pnpm test:integration src/tests/perf.int.test.ts -t "benchmark"
  */
-// Force the perf optimization on for benchmark runs so results reflect
-// the shipped perf behavior regardless of the invoker's env.
-process.env.LANGSMITH_PERF_OPTIMIZATION = "true";
+// Default the perf optimization on for benchmark runs so results reflect
+// the shipped perf behavior. Respect an explicit override from the invoker
+// so `LANGSMITH_PERF_OPTIMIZATION=false` can be used to measure the
+// unoptimized baseline for comparison.
+if (process.env.LANGSMITH_PERF_OPTIMIZATION === undefined) {
+  process.env.LANGSMITH_PERF_OPTIMIZATION = "true";
+}
 
 // Enabled by setting LANGSMITH_RUN_PERF_BENCH=true. Skipped in CI by default.
 const benchIt =
