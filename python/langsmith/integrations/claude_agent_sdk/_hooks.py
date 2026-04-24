@@ -86,8 +86,24 @@ class SessionState:
     # on the first hook that fires (every hook inherits this field).
     main_transcript_path: Optional[str] = None
 
-    # Claude SDK session id (for fallback lookup when ContextVar is unset).
-    session_id: Optional[str] = None
+    # Claude SDK session ids (for fallback lookup when ContextVar is unset).
+    session_ids: set[str] = field(default_factory=set)
+
+    # Root LangSmith run id (for fallback lookup when ContextVar is unset and
+    # the SDK did not include a Claude session_id on the hook input).
+    root_run_id: Optional[str] = None
+
+    @property
+    def session_id(self) -> Optional[str]:
+        """Backward-compatible first session id, if any."""
+        return next(iter(self.session_ids), None)
+
+    @session_id.setter
+    def session_id(self, value: Optional[str]) -> None:
+        if value:
+            self.session_ids.add(value)
+        else:
+            self.session_ids.clear()
 
 
 # Module-level *default* session. Used when no ContextVar is set (e.g. tests
@@ -103,18 +119,26 @@ _current_session: ContextVar[Optional[SessionState]] = ContextVar(
     "langsmith_claude_agent_session", default=None
 )
 
-# Fallback registry keyed by Claude SDK ``session_id``. Used when a hook
-# fires on a task where the ContextVar was not propagated. Protected by
-# ``_sessions_lock`` because registration/lookup can race across threads.
+# Fallback registries used when a hook fires on a task/thread where the
+# ContextVar was not propagated. Protected by ``_sessions_lock`` because
+# registration/lookup can race across threads.
 _sessions_by_id: dict[str, SessionState] = {}
+_sessions_by_root_run_id: dict[str, SessionState] = {}
 _sessions_lock = threading.Lock()
 
 
 def _current_session_or_default() -> SessionState:
-    """Return the session bound to the current context, or the default."""
+    """Return the best session for the current execution context."""
     session = _current_session.get()
     if session is not None:
         return session
+    parent = get_parent_run_tree()
+    parent_id = getattr(parent, "id", None)
+    if parent_id is not None:
+        with _sessions_lock:
+            session = _sessions_by_root_run_id.get(str(parent_id))
+        if session is not None:
+            return session
     return _default_session
 
 
@@ -135,16 +159,23 @@ def _session_for_hook(data: dict[str, Any]) -> SessionState:
         sid = data.get("session_id")
         if sid:
             sid = str(sid)
-            if session.session_id is None:
-                session.session_id = sid
+            session.session_ids.add(sid)
             with _sessions_lock:
-                _sessions_by_id.setdefault(sid, session)
+                _sessions_by_id[sid] = session
         return session
 
     sid = data.get("session_id")
     if sid:
         with _sessions_lock:
             existing = _sessions_by_id.get(str(sid))
+        if existing is not None:
+            return existing
+
+    parent = get_parent_run_tree()
+    parent_id = getattr(parent, "id", None)
+    if parent_id is not None:
+        with _sessions_lock:
+            existing = _sessions_by_root_run_id.get(str(parent_id))
         if existing is not None:
             return existing
 
@@ -160,21 +191,29 @@ def _register_session(session: SessionState) -> object:
     return _current_session.set(session)
 
 
+def _set_session_root(session: SessionState, run_tree: RunTree) -> None:
+    """Register *session* under its root LangSmith run id."""
+    root_run_id = str(run_tree.id)
+    session.root_run_id = root_run_id
+    with _sessions_lock:
+        _sessions_by_root_run_id[root_run_id] = session
+
+
 def _unregister_session(session: SessionState, token: Any) -> None:
-    """Reset the ContextVar and deregister the session from the id registry."""
+    """Reset the ContextVar and deregister the session from fallback registries."""
     try:
         _current_session.reset(token)
     except ValueError:
         # Token was created in a different context — fall back to clearing.
         _current_session.set(None)
-    sid = session.session_id
-    if sid:
-        with _sessions_lock:
-            # Only remove if still pointing at the same session; a later
-            # conversation on the same ``session_id`` (unusual but possible)
-            # should not be evicted.
-            if _sessions_by_id.get(sid) is session:
+
+    with _sessions_lock:
+        for sid, value in list(_sessions_by_id.items()):
+            if value is session:
                 _sessions_by_id.pop(sid, None)
+        for root_run_id, value in list(_sessions_by_root_run_id.items()):
+            if value is session:
+                _sessions_by_root_run_id.pop(root_run_id, None)
 
 
 # ── Legacy module-level attribute shims ───────────────────────────────────────

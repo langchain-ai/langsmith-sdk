@@ -15,6 +15,7 @@ from ._config import get_tracing_config
 from ._hooks import (
     SessionState,
     _register_session,
+    _set_session_root,
     _unregister_session,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
@@ -424,6 +425,7 @@ def instrument_claude_client(original_class: Any) -> None:
             # other's correlation state.
             session = SessionState()
             session_token = _register_session(session)
+            _set_session_root(session, run)
             parent_token = set_parent_run_tree(run)
             tracker = TurnLifecycle(self._ls_start_time)
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
