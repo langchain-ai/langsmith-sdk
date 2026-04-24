@@ -404,3 +404,33 @@ def test_check_value_non_numeric(caplog):
         "Numeric values should be provided in the 'score' field, not 'value'."
         not in caplog.text
     )
+
+
+def test_feedback_config_preserves_unknown_keys():
+    """Regression test for https://github.com/langchain-ai/langchain/issues/31802.
+
+    A plain dict with keys outside FeedbackConfig must be stored as-is.
+    Previously, Pydantic v2 Union validation silently dropped unknown keys,
+    returning an empty dict {} instead of the original data.
+    """
+    # Dict with a key not in FeedbackConfig — must be preserved verbatim
+    result = EvaluationResult(key="sentiment", feedback_config={"threshold": 1.0})
+    assert result.feedback_config == {"threshold": 1.0}, (
+        "feedback_config silently dropped unknown keys"
+    )
+
+    # Dict with multiple unknown keys
+    result2 = EvaluationResult(
+        key="test", feedback_config={"custom_key": "value", "another": 42}
+    )
+    assert result2.feedback_config == {"custom_key": "value", "another": 42}
+
+    # Valid FeedbackConfig keys must still work normally
+    result3 = EvaluationResult(
+        key="score", feedback_config={"type": "continuous", "min": 0, "max": 1}
+    )
+    assert result3.feedback_config == {"type": "continuous", "min": 0, "max": 1}
+
+    # None must still work
+    result4 = EvaluationResult(key="empty", feedback_config=None)
+    assert result4.feedback_config is None
