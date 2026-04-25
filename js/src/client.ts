@@ -1703,7 +1703,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/info`, {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: { ...this._mergedHeaders, Accept: "application/json" },
         signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT_MS),
         ...this.fetchOptions,
       });
