@@ -3668,7 +3668,7 @@ class Client:
             self._futures.difference_update(done)
 
     def flush(self, timeout: Optional[float] = None) -> None:
-        """Flush either queue or compressed buffer, depending on mode.
+        """Flush the tracing queue and compressed buffer.
 
         Args:
             timeout: Maximum seconds to wait for pending traces to drain.
@@ -3682,12 +3682,7 @@ class Client:
                 if self._run_ops_buffer:
                     self._flush_run_ops_buffer()
 
-        if self.compressed_traces is not None:
-            remaining = (
-                max(0.0, deadline - time.monotonic()) if deadline is not None else None
-            )
-            self.flush_compressed_traces(timeout=remaining)
-        elif self.tracing_queue is not None:
+        if self.tracing_queue is not None:
             if deadline is None:
                 self.tracing_queue.join()
             else:
@@ -3698,6 +3693,12 @@ class Client:
                         if wait_for <= 0:
                             break
                         self.tracing_queue.all_tasks_done.wait(wait_for)
+
+        if self.compressed_traces is not None:
+            remaining = (
+                max(0.0, deadline - time.monotonic()) if deadline is not None else None
+            )
+            self.flush_compressed_traces(timeout=remaining)
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
