@@ -3658,16 +3658,16 @@ class Client:
             self._futures.difference_update(done)
 
     def flush(self) -> None:
-        """Flush either queue or compressed buffer, depending on mode."""
+        """Flush the tracing queue and compressed buffer."""
         # Flush any remaining batch items first
         if self._process_buffered_run_ops:
             with self._run_ops_buffer_lock:
                 if self._run_ops_buffer:
                     self._flush_run_ops_buffer()
+        if self.tracing_queue is not None:
+            self.tracing_queue.join()
         if self.compressed_traces is not None:
             self.flush_compressed_traces()
-        elif self.tracing_queue is not None:
-            self.tracing_queue.join()
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
