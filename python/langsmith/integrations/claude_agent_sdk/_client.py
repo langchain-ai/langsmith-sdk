@@ -13,7 +13,11 @@ from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._config import get_tracing_config
 from ._hooks import (
-    _active_tool_runs,
+    SessionState,
+    _current_session,
+    _register_session,
+    _set_session_root,
+    _unregister_session,
     clear_active_tool_runs,
     get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
@@ -219,8 +223,29 @@ def begin_llm_run_from_assistant_messages(
     return final_content, llm_run
 
 
-def _inject_tracing_hooks(options: Any) -> None:
-    """Inject LangSmith tracing hooks into ClaudeAgentOptions."""
+def _bind_hook_to_session(hook: Any, session: Optional[SessionState]) -> Any:
+    """Return a hook callable that runs with *session* bound, if provided."""
+    if session is None:
+        return hook
+
+    async def _bound(input_data: Any, tool_use_id: Any, context: Any) -> Any:
+        token = _current_session.set(session)
+        try:
+            return await hook(input_data, tool_use_id, context)
+        finally:
+            _current_session.reset(token)
+
+    return _bound
+
+
+def _inject_tracing_hooks(options: Any, session: Optional[SessionState] = None) -> None:
+    """Inject LangSmith tracing hooks into ClaudeAgentOptions.
+
+    If *session* is provided, injected hook callables bind that session around
+    each hook invocation. This is important because the Claude SDK may execute
+    hooks in async contexts that do not inherit the ``receive_response``
+    ContextVar; binding at hook injection time keeps each client isolated.
+    """
     if not hasattr(options, "hooks"):
         return
 
@@ -241,16 +266,21 @@ def _inject_tracing_hooks(options: Any) -> None:
     try:
         from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
 
-        langsmith_pre_matcher = HookMatcher(matcher=None, hooks=[pre_tool_use_hook])
-        langsmith_post_matcher = HookMatcher(matcher=None, hooks=[post_tool_use_hook])
+        langsmith_pre_matcher = HookMatcher(
+            matcher=None, hooks=[_bind_hook_to_session(pre_tool_use_hook, session)]
+        )
+        langsmith_post_matcher = HookMatcher(
+            matcher=None, hooks=[_bind_hook_to_session(post_tool_use_hook, session)]
+        )
         langsmith_failure_matcher = HookMatcher(
-            matcher=None, hooks=[post_tool_use_failure_hook]
+            matcher=None,
+            hooks=[_bind_hook_to_session(post_tool_use_failure_hook, session)],
         )
         langsmith_subagent_start_matcher = HookMatcher(
-            matcher=None, hooks=[subagent_start_hook]
+            matcher=None, hooks=[_bind_hook_to_session(subagent_start_hook, session)]
         )
         langsmith_subagent_stop_matcher = HookMatcher(
-            matcher=None, hooks=[subagent_stop_hook]
+            matcher=None, hooks=[_bind_hook_to_session(subagent_stop_hook, session)]
         )
 
         options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
@@ -266,39 +296,141 @@ def _inject_tracing_hooks(options: Any) -> None:
         logger.warning(f"Failed to inject tracing hooks: {e}")
 
 
-def _wrap_tool_handler(original_handler: Any) -> Any:
+def _wrap_tool_handler(
+    original_handler: Any,
+    session: Optional[SessionState] = None,
+    tool_name: Optional[str] = None,
+) -> Any:
     """Wrap an MCP tool handler to propagate LangSmith run context.
 
     The Claude SDK runs hooks and tool handlers in different async task
     contexts, so contextvars set in ``PreToolUse`` are invisible to the
-    handler.  This wrapper copies the active tool run into the contextvar
-    before calling the original handler, so ``@traceable`` calls inside
-    the handler nest correctly.
+    handler. This wrapper copies the active tool run into the contextvar before
+    calling the original handler, so ``@traceable`` calls inside the handler
+    nest correctly.
     """
 
     async def _wrapped(args: Any) -> Any:
-        # The most recently added active tool run is the one
-        # PreToolUse just created for this invocation.
-        tool_run = _get_last_active_tool_run()
+        # The most recently added active tool run is the one PreToolUse just
+        # created for this invocation. Prefer an explicitly bound client
+        # session because tool handlers may run in an async context that did
+        # not inherit _current_session.
+        tool_run = _get_last_active_tool_run(session, args=args, tool_name=tool_name)
         if tool_run:
             token = _context._PARENT_RUN_TREE_REF.set(weakref.ref(tool_run))
+            session_token = (
+                _current_session.set(session) if session is not None else None
+            )
             try:
                 return await original_handler(args)
             finally:
+                if session_token is not None:
+                    _current_session.reset(session_token)
                 _context._PARENT_RUN_TREE_REF.reset(token)
         return await original_handler(args)
 
     _wrapped._langsmith_wrapped = True  # type: ignore[attr-defined]
+    _wrapped._langsmith_original_handler = original_handler  # type: ignore[attr-defined]
+    _wrapped._langsmith_session = session  # type: ignore[attr-defined]
+    _wrapped._langsmith_tool_name = tool_name  # type: ignore[attr-defined]
     return _wrapped
 
 
-def _get_last_active_tool_run() -> Any:
-    """Return the most recently created active tool run, or None."""
-    if not _active_tool_runs:
+def _tool_run_matches(run: Any, args: Any, tool_name: Optional[str]) -> bool:
+    """Return whether *run* appears to be for this SDK MCP handler call.
+
+    Matching is intentionally strict: we require both the tool name and the
+    handler args to line up with what the ``PreToolUse`` hook recorded. This
+    avoids cross-attributing a handler invocation to the wrong client's active
+    tool run under concurrency.
+    """
+    if not tool_name:
+        return False
+    run_name = str(getattr(run, "name", ""))
+    # SDK MCP tools show up in hook data as e.g. ``mcp__weather__get_weather``
+    # while the handler only knows its short name ``get_weather``.
+    name_matches = (
+        tool_name == run_name or tool_name in run_name or run_name in tool_name
+    )
+    if not name_matches:
+        return False
+    inputs = getattr(run, "inputs", None)
+    if not isinstance(inputs, dict):
+        return False
+    # PreToolUse stores {} when the tool had no inputs, otherwise
+    # {"input": <tool_input>}. Normalise both sides before comparing.
+    recorded = inputs.get("input", {}) if inputs else {}
+    return recorded == (args or {})
+
+
+def _newest_matching_tool_run(
+    sessions: list[SessionState], args: Any, tool_name: Optional[str]
+) -> Any:
+    """Return the most recently created active tool run that matches."""
+    candidates: list[tuple[float, Any]] = []
+    for candidate_session in sessions:
+        for run, start_time in candidate_session.active_tool_runs.values():
+            if _tool_run_matches(run, args, tool_name):
+                candidates.append((start_time, run))
+    if not candidates:
         return None
-    last_id = list(_active_tool_runs.keys())[-1]
-    run, _ = _active_tool_runs[last_id]
-    return run
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _get_last_active_tool_run(
+    session: Optional[SessionState] = None,
+    *,
+    args: Any = None,
+    tool_name: Optional[str] = None,
+) -> Any:
+    """Return the active tool run for an SDK MCP handler, or None.
+
+    Lookup order:
+
+    1. The session explicitly bound to the handler (if any).
+    2. The session bound to the current ContextVar.
+    3. The module-level default session (unit tests / unbound callers).
+    4. Any live client session — only used when the handler is unbound and the
+       SDK invoked it in a detached async context. Requires an exact tool
+       name + args match to avoid cross-attribution across clients.
+    """
+    from ._hooks import (
+        _current_session,
+        _current_session_or_default,
+        _registered_sessions,
+    )
+
+    # If we have a specific session (explicitly bound, current-context, or the
+    # test default), just return its newest active tool run. There is no
+    # cross-client ambiguity at that point.
+    def _newest_in(s: SessionState) -> Any:
+        if not s.active_tool_runs:
+            return None
+        latest_id = max(
+            s.active_tool_runs,
+            key=lambda tid: s.active_tool_runs[tid][1],
+        )
+        return s.active_tool_runs[latest_id][0]
+
+    if session is not None:
+        return _newest_in(session)
+
+    current_session = _current_session.get()
+    if current_session is not None:
+        run = _newest_in(current_session)
+        if run is not None:
+            return run
+
+    default_session = _current_session_or_default()
+    if default_session is not current_session:
+        run = _newest_in(default_session)
+        if run is not None:
+            return run
+
+    # Last resort: the SDK invoked this handler in a detached async context and
+    # the handler object wasn't bound to a session. Require strict tool-name +
+    # args match so concurrent clients can't steal each other's attribution.
+    return _newest_matching_tool_run(_registered_sessions(), args, tool_name)
 
 
 def instrument_claude_client(original_class: Any) -> None:
@@ -319,8 +451,9 @@ def instrument_claude_client(original_class: Any) -> None:
     # ── patched __init__ ─────────────────────────────────────────────
     def _traced_init(self: Any, *args: Any, **kwargs: Any) -> None:
         options = kwargs.get("options") or (args[0] if args else None)
+        self._ls_session = SessionState()
         if options:
-            _inject_tracing_hooks(options)
+            _inject_tracing_hooks(options, self._ls_session)
         _orig_init(self, *args, **kwargs)
         self._ls_prompt = None
         self._ls_start_time = None
@@ -411,7 +544,17 @@ def instrument_claude_client(original_class: Any) -> None:
             trace_kwargs["tags"] = config["tags"]
 
         async with trace(**trace_kwargs) as run:
-            set_parent_run_tree(run)
+            # Bind this client's state container to the ContextVar so stream
+            # helpers on this SDK event loop pick it up (see
+            # _hooks.SessionState). This keeps concurrent ClaudeSDKClient
+            # instances — eval runs, FastAPI handlers, Celery workers,
+            # asyncio.gather — from corrupting each other's correlation state.
+            session = getattr(self, "_ls_session", None)
+            if session is None:
+                session = self._ls_session = SessionState()
+            session_token = _register_session(session)
+            _set_session_root(session, run)
+            parent_token = set_parent_run_tree(run)
             tracker = TurnLifecycle(self._ls_start_time)
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
@@ -472,8 +615,13 @@ def instrument_claude_client(original_class: Any) -> None:
                                             "tool_call_id": tool_use_id,
                                         }
                                     )
-                                    if tool_use_id and tool_use_id in _active_tool_runs:
-                                        tool_run, _ = _active_tool_runs.pop(tool_use_id)
+                                    if (
+                                        tool_use_id
+                                        and tool_use_id in session.active_tool_runs
+                                    ):
+                                        tool_run, _ = session.active_tool_runs.pop(
+                                            tool_use_id
+                                        )
                                         result_content = block.get("content", "")
                                         is_error = block.get("is_error", False)
                                         tool_run.end(
@@ -521,10 +669,13 @@ def instrument_claude_client(original_class: Any) -> None:
                 logger.exception("Error while tracing Claude Agent stream")
             finally:
                 tracker.close()
-                reconcile_from_transcripts(tracker)
+                reconcile_from_transcripts(tracker, session=session)
                 tracker.flush()
-                clear_parent_run_tree()
-                clear_active_tool_runs()
+                clear_parent_run_tree(parent_token)
+                try:
+                    clear_active_tool_runs(session)
+                finally:
+                    _unregister_session(session, session_token)
 
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init
@@ -550,7 +701,9 @@ def instrument_sdk_mcp_tool(tool_class: Any) -> None:
         _orig_init(self, *args, **kwargs)
         handler = self.handler
         if callable(handler) and not getattr(handler, "_langsmith_wrapped", False):
-            self.handler = _wrap_tool_handler(handler)
+            self.handler = _wrap_tool_handler(
+                handler, tool_name=getattr(self, "name", None)
+            )
 
     tool_class.__init__ = _patched_init
     tool_class._langsmith_handler_patched = True
