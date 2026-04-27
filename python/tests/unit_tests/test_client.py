@@ -3430,9 +3430,7 @@ def test_pull_and_push_prompt(
             # round-trip equivalence this test is checking.
             def _strip_none(obj):
                 if isinstance(obj, dict):
-                    return {
-                        k: _strip_none(v) for k, v in obj.items() if v is not None
-                    }
+                    return {k: _strip_none(v) for k, v in obj.items() if v is not None}
                 if isinstance(obj, list):
                     return [_strip_none(v) for v in obj]
                 return obj
