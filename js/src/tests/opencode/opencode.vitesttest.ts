@@ -49,7 +49,6 @@ it("basic", async () => {
             thread_id: expect.any(String),
             ls_integration: "opencode-js",
             ls_agent_type: "root",
-            ls_message_format: "anthropic",
           },
         },
         inputs: {
