@@ -22,6 +22,14 @@ function isToolResultError(value: unknown): boolean {
   return isRecord(value) && (value.is_error === true || value.isError === true);
 }
 
+function makeSubagentTranscriptPathKey(
+  path: string,
+  toolUseId?: string,
+  agentType?: string
+): string {
+  return JSON.stringify([path, toolUseId ?? null, agentType ?? null]);
+}
+
 /**
  * @internal
  */
@@ -319,7 +327,7 @@ export class StreamManager {
     toolUseId?: string,
     agentType?: string
   ) {
-    const key = `${path}\u0000${toolUseId ?? ""}\u0000${agentType ?? ""}`;
+    const key = makeSubagentTranscriptPathKey(path, toolUseId, agentType);
     if (this.transcriptPathKeys.has(key)) return;
     this.transcriptPathKeys.add(key);
     this.subagentTranscriptPaths.push({ path, toolUseId, agentType });
