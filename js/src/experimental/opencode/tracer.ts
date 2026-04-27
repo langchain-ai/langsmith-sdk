@@ -273,10 +273,6 @@ export class OpenCodeSessionTracer {
           ls_integration: "opencode-js",
           ls_agent_type: "root",
           thread_id: sessionID,
-
-          // TODO: opencode is not anthropic but LangSmith does support rendering Standard Messages
-          // This forces FE to enable messages view
-          ls_message_format: "anthropic",
         },
       },
       inputs: { messages: convertToStandardMessages([userRun]) },
