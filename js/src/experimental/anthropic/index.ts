@@ -1,6 +1,6 @@
 import { traceable, isTraceableFunction } from "../../traceable.js";
 import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
-import { convertFromAnthropicMessage } from "./messages.js";
+import { convertFromAnthropicMessage, mergeMessagesById } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
 
 /**
@@ -13,9 +13,9 @@ function wrapClaudeAgentQuery<
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
   async function* generator(
     originalGenerator: AsyncGenerator<SDKMessage, void, unknown>,
-    prompt: string | AsyncIterable<SDKMessage> | undefined
+    prompt: string | AsyncIterable<SDKMessage> | undefined,
+    streamManager: StreamManager
   ) {
-    const streamManager = new StreamManager();
     try {
       let systemCount = 0;
       for await (const message of originalGenerator) {
@@ -104,6 +104,42 @@ function wrapClaudeAgentQuery<
     });
   }
 
+  function addLangSmithHooks(
+    params: {
+      prompt: string | AsyncIterable<SDKMessage>;
+      options?: QueryOptions;
+    },
+    streamManager: StreamManager
+  ) {
+    const options = { ...(params.options ?? {}) } as Record<string, unknown>;
+    const hooks = { ...((options.hooks as Record<string, unknown>) ?? {}) };
+
+    const addHook = (eventName: string) => {
+      const existing = Array.isArray(hooks[eventName])
+        ? (hooks[eventName] as unknown[])
+        : [];
+      hooks[eventName] = [
+        ...existing,
+        {
+          hooks: [
+            async (input: unknown, toolUseId?: string) => {
+              streamManager.addHookEvent(input, toolUseId);
+              return {};
+            },
+          ],
+        },
+      ];
+    };
+
+    addHook("PreToolUse");
+    addHook("SubagentStart");
+    addHook("SubagentStop");
+    addHook("Stop");
+    options.hooks = hooks;
+
+    return { ...params, options };
+  }
+
   function processOutputs(rawOutputs: Record<string, unknown>) {
     if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
       const sdkMessages = rawOutputs.outputs as SDKMessage[];
@@ -112,7 +148,11 @@ function wrapClaudeAgentQuery<
           if (!("message" in message)) return true;
           return message.parent_tool_use_id == null;
         })
-        .flatMap(convertFromAnthropicMessage);
+        .flatMap(convertFromAnthropicMessage)
+        .reduce(
+          (acc, message) => mergeMessagesById(acc, [message]),
+          [] as ReturnType<typeof convertFromAnthropicMessage>
+        );
 
       return { output: { messages } };
     }
@@ -127,8 +167,18 @@ function wrapClaudeAgentQuery<
       },
       ...args: unknown[]
     ) => {
-      const actualGenerator = queryFn.call(defaultThis, params, ...args);
-      const wrappedGenerator = generator(actualGenerator, params.prompt);
+      const streamManager = new StreamManager();
+      const paramsWithHooks = addLangSmithHooks(params, streamManager);
+      const actualGenerator = queryFn.call(
+        defaultThis,
+        paramsWithHooks,
+        ...args
+      );
+      const wrappedGenerator = generator(
+        actualGenerator,
+        params.prompt,
+        streamManager
+      );
 
       for (const method of Object.getOwnPropertyNames(
         Object.getPrototypeOf(actualGenerator)

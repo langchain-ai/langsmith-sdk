@@ -3,6 +3,7 @@ import {
   convertFromAnthropicMessage,
   isTaskTool,
   isToolBlock,
+  mergeMessagesById,
 } from "./messages.js";
 import { getCurrentRunTree } from "../../traceable.js";
 import {
@@ -10,7 +11,8 @@ import {
   correctUsageFromResults,
   extractUsageFromMessage,
 } from "./usage.js";
-import type { SDKMessage } from "./types.js";
+import { readTranscript, type TranscriptAssistantTurn } from "./transcripts.js";
+import type { SDKMessage, SDKResultMessage } from "./types.js";
 
 /**
  * @internal
@@ -21,6 +23,18 @@ export class StreamManager {
 
   assistant: { [messageId: string]: RunTree | undefined } = {};
   tools: { [toolUseId: string]: RunTree | undefined } = {};
+  subagents: { [toolUseId: string]: RunTree | undefined } = {};
+
+  mainTranscriptPath?: string;
+  subagentTranscriptPaths: {
+    path: string;
+    toolUseId?: string;
+    agentType?: string;
+  }[] = [];
+  private pendingAgentTools: Map<string, Record<string, unknown>> = new Map();
+  private agentToToolUseId: Map<string, string> = new Map();
+  private transcriptPathKeys: Set<string> = new Set();
+  private resultModelUsage?: SDKResultMessage["modelUsage"];
 
   postRunQueue: Promise<void>[] = [];
   runTrees: RunTree[] = [];
@@ -40,10 +54,7 @@ export class StreamManager {
 
     if (message.type === "result") {
       if (message.modelUsage) {
-        correctUsageFromResults(
-          message.modelUsage,
-          Object.values(this.assistant).filter((runTree) => runTree != null)
-        );
+        this.resultModelUsage = message.modelUsage;
       }
 
       const usage = message.modelUsage
@@ -103,7 +114,11 @@ export class StreamManager {
         const prevMessages =
           this.assistant[messageId].outputs?.output.messages ?? [];
         const newMessages = convertFromAnthropicMessage([message]);
-        return { output: { messages: [...prevMessages, ...newMessages] } };
+        return {
+          output: {
+            messages: mergeMessagesById(prevMessages, newMessages),
+          },
+        };
       })();
 
       this.assistant[messageId].end_time = eventTime;
@@ -125,38 +140,9 @@ export class StreamManager {
 
       for (const block of tools) {
         if (isTaskTool(block)) {
-          const name =
-            block.input.subagent_type ||
-            block.input.agent_type ||
-            (block.input.description
-              ? block.input.description.split(" ")[0]
-              : null) ||
-            "unknown-agent";
-
-          this.tools[block.id] ??=
-            this.createChild("root", {
-              name,
-              run_type: "chain",
-              inputs: block.input,
-              start_time: eventTime,
-              extra: {
-                metadata: {
-                  ls_agent_type: "subagent",
-                },
-              },
-            }) ?? this.tools[block.id];
-
-          this.namespaces[block.id] ??= this.tools[block.id];
+          this.createAgentToolRun(namespace, block, eventTime);
         } else {
-          const name = block.name || "unknown-tool";
-
-          this.tools[block.id] ??=
-            this.createChild(namespace, {
-              name,
-              run_type: "tool",
-              inputs: block.input ? { input: block.input } : {},
-              start_time: eventTime,
-            }) ?? this.tools[block.id];
+          this.createToolRun(namespace, block, eventTime);
         }
       }
     }
@@ -186,7 +172,9 @@ export class StreamManager {
       };
 
       for (const block of toolResultBlocks) {
-        if (this.tools[block.tool_use_id] != null) {
+        const tool = this.tools[block.tool_use_id];
+        const subagent = this.subagents[block.tool_use_id];
+        if (tool != null || subagent != null) {
           // Previous versions of @anthropic-ai/claude-agent-sdk did provide
           // tool result in `message.tool_use_result`, but at least since 0.2.50 it disappeared,
           // so we rely on the last tool result block instead.
@@ -202,7 +190,8 @@ export class StreamManager {
               ? getToolError(result)
               : undefined;
 
-          void this.tools[block.tool_use_id]?.end(toolOutput, toolError);
+          void tool?.end(toolOutput, toolError);
+          void subagent?.end(toolOutput, toolError);
         }
       }
     }
@@ -210,11 +199,111 @@ export class StreamManager {
     this.history[namespace].push(message);
   }
 
+  addHookEvent(input: unknown, toolUseId?: string) {
+    if (typeof input !== "object" || input == null) return;
+    const data = input as Record<string, unknown>;
+
+    if (
+      this.mainTranscriptPath == null &&
+      typeof data.transcript_path === "string"
+    ) {
+      this.mainTranscriptPath = data.transcript_path;
+    }
+
+    if (
+      data.hook_event_name === "PreToolUse" &&
+      typeof toolUseId === "string" &&
+      (data.tool_name === "Agent" || data.tool_name === "Task")
+    ) {
+      this.pendingAgentTools.set(
+        toolUseId,
+        typeof data.tool_input === "object" && data.tool_input != null
+          ? (data.tool_input as Record<string, unknown>)
+          : {}
+      );
+      return;
+    }
+
+    if (data.hook_event_name === "SubagentStart") {
+      const agentId =
+        typeof data.agent_id === "string" ? data.agent_id : undefined;
+      if (agentId == null) return;
+
+      const agentType =
+        typeof data.agent_type === "string" ? data.agent_type : undefined;
+      let matchedToolUseId: string | undefined;
+      for (const [pendingToolUseId, toolInput] of this.pendingAgentTools) {
+        const pendingAgentType =
+          typeof toolInput.subagent_type === "string"
+            ? toolInput.subagent_type
+            : typeof toolInput.agent_type === "string"
+            ? toolInput.agent_type
+            : undefined;
+        if (
+          agentType == null ||
+          pendingAgentType == null ||
+          pendingAgentType === agentType
+        ) {
+          matchedToolUseId = pendingToolUseId;
+          break;
+        }
+      }
+      matchedToolUseId ??= this.pendingAgentTools.keys().next().value;
+      if (matchedToolUseId != null) {
+        this.agentToToolUseId.set(agentId, matchedToolUseId);
+        this.pendingAgentTools.delete(matchedToolUseId);
+      }
+      return;
+    }
+
+    if (data.hook_event_name === "SubagentStop") {
+      const transcriptPath =
+        typeof data.agent_transcript_path === "string"
+          ? data.agent_transcript_path
+          : undefined;
+      if (!transcriptPath) return;
+
+      const agentId =
+        typeof data.agent_id === "string" ? data.agent_id : undefined;
+      const agentType =
+        typeof data.agent_type === "string" ? data.agent_type : undefined;
+      const mappedToolUseId =
+        agentId != null ? this.agentToToolUseId.get(agentId) : undefined;
+      if (agentId != null) this.agentToToolUseId.delete(agentId);
+
+      this.addSubagentTranscriptPath(
+        transcriptPath,
+        mappedToolUseId,
+        agentType
+      );
+    }
+  }
+
+  addSubagentTranscriptPath(
+    path: string,
+    toolUseId?: string,
+    agentType?: string
+  ) {
+    const key = `${path}\u0000${toolUseId ?? ""}\u0000${agentType ?? ""}`;
+    if (this.transcriptPathKeys.has(key)) return;
+    this.transcriptPathKeys.add(key);
+    this.subagentTranscriptPaths.push({ path, toolUseId, agentType });
+  }
+
   protected createChild(
     namespace: string,
     args: Parameters<RunTree["createChild"]>[0]
   ): RunTree | undefined {
-    const runTree = this.namespaces[namespace]?.createChild(args);
+    const parentRunTree = this.namespaces[namespace];
+    if (parentRunTree == null) return undefined;
+    return this.createChildRun(parentRunTree, args);
+  }
+
+  private createChildRun(
+    parentRunTree: RunTree,
+    args: Parameters<RunTree["createChild"]>[0]
+  ): RunTree | undefined {
+    const runTree = parentRunTree.createChild(args);
     if (runTree == null) return undefined;
 
     this.postRunQueue.push(runTree.postRun());
@@ -222,12 +311,206 @@ export class StreamManager {
     return runTree;
   }
 
+  private getAgentName(block: { input: Record<string, unknown> }): string {
+    const subagentType = block.input.subagent_type;
+    if (typeof subagentType === "string" && subagentType.length > 0) {
+      return subagentType;
+    }
+
+    const agentType = block.input.agent_type;
+    if (typeof agentType === "string" && agentType.length > 0) {
+      return agentType;
+    }
+
+    const description = block.input.description;
+    if (typeof description === "string" && description.length > 0) {
+      return description.split(" ")[0] || "unknown-agent";
+    }
+
+    return "unknown-agent";
+  }
+
+  private createToolRun(
+    namespace: string,
+    block: Record<string, unknown>,
+    startTime?: number
+  ): RunTree | undefined {
+    if (typeof block.id !== "string") return undefined;
+
+    const name = typeof block.name === "string" ? block.name : "unknown-tool";
+    this.tools[block.id] ??=
+      this.createChild(namespace, {
+        name,
+        run_type: "tool",
+        inputs: block.input ? { input: block.input } : {},
+        start_time: startTime,
+      }) ?? this.tools[block.id];
+    return this.tools[block.id];
+  }
+
+  private createAgentToolRun(
+    namespace: string,
+    block: Record<string, unknown>,
+    startTime?: number
+  ) {
+    if (typeof block.id !== "string") return;
+    if (
+      typeof block.input !== "object" ||
+      block.input == null ||
+      Array.isArray(block.input)
+    ) {
+      return;
+    }
+
+    const input = block.input as Record<string, unknown>;
+    const agentToolRun = this.createToolRun(namespace, block, startTime);
+    if (agentToolRun == null) return;
+
+    this.subagents[block.id] ??=
+      this.createChildRun(agentToolRun, {
+        name: this.getAgentName({ input }),
+        run_type: "chain",
+        inputs: input,
+        start_time: startTime,
+        extra: {
+          metadata: {
+            ls_agent_type: "subagent",
+          },
+        },
+      }) ?? this.subagents[block.id];
+
+    this.namespaces[block.id] ??= this.subagents[block.id];
+  }
+
+  private resolveSubagentNamespace(agentType?: string): string | undefined {
+    const entries = Object.entries(this.namespaces);
+    if (agentType == null) return undefined;
+    return entries.find(([, runTree]) => runTree?.name === agentType)?.[0];
+  }
+
+  private createSyntheticAssistantRun(
+    namespace: string,
+    turn: TranscriptAssistantTurn
+  ) {
+    let runTree = this.assistant[turn.messageId];
+
+    if (runTree == null) {
+      runTree = this.createChild(namespace, {
+        name: "claude.assistant.turn",
+        run_type: "llm",
+        start_time: turn.timestamp,
+        inputs:
+          turn.inputMessages.length > 0 ? { messages: turn.inputMessages } : {},
+        outputs: {
+          output: { messages: convertFromAnthropicMessage(turn.message) },
+        },
+        extra: {
+          metadata: {
+            ls_provider: "anthropic",
+            ...(turn.model != null ? { ls_model_name: turn.model } : {}),
+            ...(turn.usageMetadata != null
+              ? { usage_metadata: turn.usageMetadata }
+              : {}),
+          },
+        },
+      });
+      if (runTree == null) return;
+      this.assistant[turn.messageId] = runTree;
+    } else {
+      runTree.outputs = {
+        output: { messages: convertFromAnthropicMessage(turn.message) },
+      };
+      runTree.extra ??= {};
+      runTree.extra.metadata ??= {};
+      if (turn.model != null) runTree.extra.metadata.ls_model_name = turn.model;
+      if (turn.usageMetadata != null) {
+        runTree.extra.metadata.usage_metadata = turn.usageMetadata;
+      }
+    }
+
+    runTree.end_time = turn.timestamp;
+
+    const tools = Array.isArray(turn.message.message.content)
+      ? turn.message.message.content.filter((block) => isToolBlock(block))
+      : [];
+
+    for (const block of tools) {
+      if (isTaskTool(block)) {
+        this.createAgentToolRun(namespace, block, turn.timestamp);
+      } else {
+        this.createToolRun(namespace, block, turn.timestamp);
+      }
+    }
+  }
+
+  private async reconcileTranscripts() {
+    const usageByMessageId: Record<string, Record<string, unknown>> = {};
+
+    if (this.mainTranscriptPath != null) {
+      const transcript = await readTranscript(this.mainTranscriptPath);
+      Object.assign(usageByMessageId, transcript.usageByMessageId);
+    }
+
+    for (const transcriptPath of this.subagentTranscriptPaths) {
+      const namespace =
+        transcriptPath.toolUseId ??
+        this.resolveSubagentNamespace(transcriptPath.agentType);
+      if (namespace == null || this.namespaces[namespace] == null) continue;
+
+      const transcript = await readTranscript(transcriptPath.path);
+      Object.assign(usageByMessageId, transcript.usageByMessageId);
+
+      for (const turn of transcript.turns) {
+        this.createSyntheticAssistantRun(namespace, turn);
+      }
+
+      for (const toolResult of transcript.toolResults) {
+        const tool = this.tools[toolResult.toolUseId];
+        if (tool == null) continue;
+        const output =
+          typeof toolResult.content === "object" &&
+          toolResult.content != null &&
+          !Array.isArray(toolResult.content)
+            ? (toolResult.content as Record<string, unknown>)
+            : { content: toolResult.content };
+        const error = toolResult.isError
+          ? typeof toolResult.content === "string" ||
+            typeof toolResult.content === "number" ||
+            typeof toolResult.content === "boolean"
+            ? String(toolResult.content)
+            : JSON.stringify(toolResult.content)
+          : undefined;
+        void tool.end(output, error);
+      }
+    }
+
+    for (const [messageId, usage] of Object.entries(usageByMessageId)) {
+      const runTree = this.assistant[messageId];
+      if (runTree == null) continue;
+      runTree.extra ??= {};
+      runTree.extra.metadata ??= {};
+      runTree.extra.metadata.usage_metadata = usage;
+    }
+  }
+
   async finish() {
+    await this.reconcileTranscripts();
+
+    if (this.resultModelUsage != null) {
+      correctUsageFromResults(
+        this.resultModelUsage,
+        Object.values(this.assistant).filter((runTree) => runTree != null)
+      );
+    }
+
     // Clean up incomplete tools and subagent calls
-    for (const tool of Object.values(this.tools)) {
-      if (tool == null) continue;
-      if (tool.outputs == null && tool.error == null) {
-        void tool.end(undefined, "Run not completed (conversation ended)");
+    for (const runTree of [
+      ...Object.values(this.tools),
+      ...Object.values(this.subagents),
+    ]) {
+      if (runTree == null) continue;
+      if (runTree.outputs == null && runTree.error == null) {
+        void runTree.end(undefined, "Run not completed (conversation ended)");
       }
     }
 

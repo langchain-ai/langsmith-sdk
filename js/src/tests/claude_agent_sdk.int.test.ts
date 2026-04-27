@@ -3,7 +3,10 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { describe, beforeAll, test, expect } from "@jest/globals";
 import * as claudeSDK from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 // Note: These tests require an ANTHROPIC_API_KEY environment variable.
 // They are skipped by default to avoid requiring API keys in CI.
@@ -23,6 +26,62 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
   });
+
+  const WEATHER_PROMPT =
+    "You have a get_weather tool. When the user asks about weather, call it. Only call the tool once.";
+
+  const allowAllTools = async (
+    _toolName: string,
+    input: Record<string, unknown>
+  ) => ({
+    behavior: "allow" as const,
+    updatedInput: input,
+  });
+
+  const consumeQuery = async (
+    query: AsyncIterable<claudeSDK.SDKMessage>
+  ): Promise<any[]> => {
+    const messages: any[] = [];
+    for await (const message of query) {
+      messages.push(message);
+    }
+    return messages;
+  };
+
+  const toolUseNames = (messages: any[]) =>
+    messages.flatMap((message) =>
+      message.type === "assistant" && Array.isArray(message.message?.content)
+        ? message.message.content
+            .filter((block: any) => block.type === "tool_use")
+            .map((block: any) => block.name)
+        : []
+    );
+
+  const stringifyToolResultContent = (content: any): string => {
+    if (typeof content === "string") return content;
+    if (content == null) return "";
+    if (Array.isArray(content)) {
+      return content.map(stringifyToolResultContent).join("\n");
+    }
+    if (typeof content === "object") {
+      if (typeof content.text === "string") return content.text;
+      try {
+        return JSON.stringify(content);
+      } catch {
+        return String(content);
+      }
+    }
+    return String(content);
+  };
+
+  const toolResultContents = (messages: any[]) =>
+    messages.flatMap((message) =>
+      message.type === "user" && Array.isArray(message.message?.content)
+        ? message.message.content
+            .filter((block: any) => block.type === "tool_result")
+            .map((block: any) => stringifyToolResultContent(block.content))
+        : []
+    );
 
   test("query with simple prompt", async () => {
     const messages: any[] = [];
@@ -209,7 +268,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const longPrompt = `
       Here is some context that might be cached:
       ${"Lorem ipsum dolor sit amet. ".repeat(100)}
-      
+
       Now answer this simple question: What is 2+2?
     `.trim();
 
@@ -421,6 +480,323 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const resultMessage = messages.find((m) => m.type === "result");
     expect(resultMessage).toBeDefined();
     expect(resultMessage.usage.output_tokens).toBeGreaterThan(1); // Should be more than the initial streaming count of 1
+  });
+
+  test("tool failure creates errored tool trace", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.tool_failure",
+    }) as typeof claudeSDK;
+
+    const messages = await consumeQuery(
+      tracedSDK.query({
+        prompt:
+          "Run this exact bash command: cat /tmp/__langsmith_test_nonexistent.txt",
+        options: {
+          model: "haiku",
+          allowedTools: ["Bash"],
+          permissionMode: "bypassPermissions",
+          allowDangerouslySkipPermissions: true,
+          maxTurns: 2,
+        },
+      })
+    );
+
+    const toolResultBlocks = messages.flatMap((message) =>
+      message.type === "user" && Array.isArray(message.message?.content)
+        ? message.message.content.filter(
+            (block: any) => block.type === "tool_result"
+          )
+        : []
+    );
+    expect(toolResultBlocks.length).toBeGreaterThanOrEqual(1);
+    expect(toolResultBlocks.some((block: any) => block.is_error === true)).toBe(
+      true
+    );
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const bashRuns = Object.values(tree.data).filter(
+      (run) => run.name === "Bash" && run.run_type === "tool"
+    );
+    expect(bashRuns.length).toBeGreaterThanOrEqual(1);
+    expect(bashRuns.some((run) => run.error != null)).toBe(true);
+  });
+
+  test("subagent trace includes transcript-reconciled LLM turns and tools", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.subagent",
+    }) as typeof claudeSDK;
+
+    await consumeQuery(
+      tracedSDK.query({
+        prompt: "Call foo.",
+        options: {
+          model: "haiku",
+          systemPrompt: "You must always call the foo subagent.",
+          allowedTools: ["Agent"],
+          agents: {
+            foo: {
+              description: "Does foo things.",
+              prompt:
+                "You must first call the Bash tool with command 'echo hello', then call the Bash tool with command 'echo world', and then respond with exactly: 'done'",
+              model: "haiku",
+              tools: ["Bash"],
+            },
+          },
+          permissionMode: "bypassPermissions",
+          allowDangerouslySkipPermissions: true,
+          maxTurns: 5,
+        },
+      })
+    );
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const fooEntry = Object.entries(tree.data).find(
+      ([, run]) => run.name === "foo" && run.run_type === "chain"
+    );
+    if (fooEntry == null) {
+      throw new Error("Expected foo subagent chain run");
+    }
+    const [fooKey] = fooEntry;
+    const parentToolKey = tree.edges.find(([, child]) => child === fooKey)?.[0];
+    if (parentToolKey == null) {
+      throw new Error("Expected foo subagent to be nested under a tool run");
+    }
+    expect(tree.data[parentToolKey]).toMatchObject({
+      run_type: "tool",
+      name: expect.stringMatching(/^(Agent|Task)$/),
+    });
+
+    const bashChildren = tree.edges.filter(([parent, child]) => {
+      const childRun = tree.data[child];
+      return (
+        parent === fooKey &&
+        childRun?.name === "Bash" &&
+        childRun.run_type === "tool"
+      );
+    });
+    expect(bashChildren.length).toBeGreaterThanOrEqual(2);
+
+    const subagentLlmChildren = tree.edges.filter(([parent, child]) => {
+      const childRun = tree.data[child];
+      return (
+        parent === fooKey &&
+        childRun?.name === "claude.assistant.turn" &&
+        childRun.run_type === "llm"
+      );
+    });
+    expect(subagentLlmChildren.length).toBeGreaterThanOrEqual(2);
+
+    for (const [, child] of subagentLlmChildren) {
+      expect(tree.data[child].extra?.metadata?.usage_metadata).toBeDefined();
+    }
+  });
+
+  test("resuming a session does not duplicate old LLM runs", async () => {
+    const firstMessages = await consumeQuery(
+      wrappedSDK.query({
+        prompt: "Say hello.",
+        options: {
+          model: "haiku",
+          systemPrompt: "Answer concisely.",
+          maxTurns: 1,
+        },
+      })
+    );
+    const sessionId = firstMessages.find(
+      (message) => message.session_id
+    )?.session_id;
+    expect(sessionId).toBeDefined();
+
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.continue_session",
+    }) as typeof claudeSDK;
+
+    await consumeQuery(
+      tracedSDK.query({
+        prompt: "Say goodbye.",
+        options: {
+          model: "haiku",
+          systemPrompt: "Answer concisely.",
+          resume: sessionId,
+          maxTurns: 1,
+        },
+      })
+    );
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const llmRuns = Object.values(tree.data).filter(
+      (run) => run.run_type === "llm"
+    );
+    expect(llmRuns.length).toBe(1);
+  });
+
+  test("custom MCP tool denied by default permissions is traced and closed", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.custom_tool_denied",
+    }) as typeof claudeSDK;
+
+    const getWeather = tracedSDK.tool(
+      "get_weather",
+      "Gets the current weather for a given city.",
+      { city: z.string() },
+      async (args: any) => ({
+        content: [{ type: "text", text: `Foggy in ${args.city}` }],
+      })
+    );
+
+    const server = tracedSDK.createSdkMcpServer({
+      name: "weather",
+      tools: [getWeather],
+    });
+
+    const messages = await consumeQuery(
+      tracedSDK.query({
+        prompt: "What's the weather in San Francisco?",
+        options: {
+          model: "haiku",
+          systemPrompt: WEATHER_PROMPT,
+          mcpServers: { weather: server },
+          maxTurns: 3,
+        },
+      })
+    );
+
+    expect(
+      toolUseNames(messages).some((name) => name.includes("get_weather"))
+    ).toBe(true);
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const weatherRuns = Object.values(tree.data).filter(
+      (run) => run.name.includes("get_weather") && run.run_type === "tool"
+    );
+    expect(weatherRuns.length).toBeGreaterThanOrEqual(1);
+    expect(
+      weatherRuns.every((run) => run.end_time != null || run.error != null)
+    ).toBe(true);
+  });
+
+  test("custom MCP tool granted by canUseTool returns result and is traced", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.custom_tool_granted",
+    }) as typeof claudeSDK;
+
+    const getWeather = tracedSDK.tool(
+      "get_weather",
+      "Gets the current weather for a given city.",
+      { city: z.string() },
+      async (args: any) => ({
+        content: [{ type: "text", text: `Foggy in ${args.city}` }],
+      })
+    );
+
+    const server = tracedSDK.createSdkMcpServer({
+      name: "weather",
+      tools: [getWeather],
+    });
+
+    const messages = await consumeQuery(
+      tracedSDK.query({
+        prompt: "What's the weather in San Francisco?",
+        options: {
+          model: "haiku",
+          systemPrompt: WEATHER_PROMPT,
+          mcpServers: { weather: server },
+          canUseTool: allowAllTools,
+          maxTurns: 3,
+        },
+      })
+    );
+
+    expect(
+      toolUseNames(messages).some((name) => name.includes("get_weather"))
+    ).toBe(true);
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const weatherRuns = Object.values(tree.data).filter(
+      (run) => run.name.includes("get_weather") && run.run_type === "tool"
+    );
+    expect(weatherRuns.length).toBeGreaterThanOrEqual(1);
+    expect(weatherRuns.some((run) => run.outputs != null)).toBe(true);
+    expect(
+      [
+        ...toolResultContents(messages),
+        ...weatherRuns.map((run) => stringifyToolResultContent(run.outputs)),
+      ].some((result) => result.includes("Foggy"))
+    ).toBe(true);
+  });
+
+  test("concurrent SDK queries keep trace state isolated", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.concurrent_three_clients",
+    }) as typeof claudeSDK;
+
+    const runOne = async (label: string) => {
+      const messages = await consumeQuery(
+        tracedSDK.query({
+          prompt: `Run the exact command: echo ${label}`,
+          options: {
+            model: "haiku",
+            systemPrompt: `You must call the Bash tool exactly once with command 'echo ${label}', then stop.`,
+            allowedTools: ["Bash"],
+            permissionMode: "bypassPermissions",
+            allowDangerouslySkipPermissions: true,
+            maxTurns: 2,
+          },
+        })
+      );
+      return {
+        label,
+        messages,
+        sessionIds: new Set(
+          messages.map((message) => message.session_id).filter(Boolean)
+        ),
+      };
+    };
+
+    const results = await Promise.all([
+      runOne("alpha"),
+      runOne("beta"),
+      runOne("gamma"),
+    ]);
+
+    for (const result of results) {
+      expect(toolUseNames(result.messages)).toContain("Bash");
+      expect(
+        toolResultContents(result.messages).some((output) =>
+          output.includes(result.label)
+        )
+      ).toBe(true);
+      expect(result.sessionIds.size).toBeGreaterThanOrEqual(1);
+    }
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const bashParentIds = new Set(
+      tree.edges
+        .filter(([, child]) => {
+          const childRun = tree.data[child];
+          return childRun?.name === "Bash" && childRun.run_type === "tool";
+        })
+        .map(([parent]) => parent)
+    );
+    expect(bashParentIds.size).toBe(3);
   });
 
   test("wrapping query preserves extra methods from generator", async () => {
