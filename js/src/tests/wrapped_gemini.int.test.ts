@@ -98,7 +98,7 @@ test("wrapping same instance should throw", async () => {
       apiKey: process.env.GEMINI_API_KEY || "test-key",
     })
   );
-  expect(() => wrapGemini(wrapped)).toThrowError(/already been wrapped/i);
+  expect(() => wrapGemini(wrapped)).toThrow(/already been wrapped/i);
 });
 
 test("should trace calls to langsmith", async () => {
