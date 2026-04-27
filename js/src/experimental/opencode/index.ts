@@ -15,14 +15,14 @@ export const LangSmithPlugin: Plugin = async (ctx) => {
   }
 
   return {
-    "experimental.chat.system.transform": async (input, output) => {
+    "experimental.chat.system.transform": async (input: any, output: any) => {
       const sessionID = input.sessionID;
       if (!sessionID) return;
 
       await tracer.handleSessionLoad(sessionID, getSessionHistory);
       await tracer.handleSystem(input, output);
     },
-    event: async (input) => {
+    event: async (input: any) => {
       const sessionID =
         "sessionID" in input.event.properties &&
         typeof input.event.properties.sessionID === "string"
