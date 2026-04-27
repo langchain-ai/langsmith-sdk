@@ -282,7 +282,8 @@ export interface CreateSandboxOptions {
   ttlSeconds?: number;
   /**
    * Idle timeout in seconds. The sandbox is deleted after this much inactivity.
-   * Must be a multiple of 60, or `0`/`undefined` to disable or omit.
+   * Must be a multiple of 60. Pass `0` to explicitly disable the idle timeout.
+   * When omitted, the server applies a default of `600` seconds (10 minutes).
    */
   idleTtlSeconds?: number;
   /** Number of vCPUs. */
@@ -392,6 +393,7 @@ export interface UpdateSandboxOptions {
   ttlSeconds?: number;
   /**
    * Idle timeout in seconds. Must be a multiple of 60. Pass `0` to disable.
+   * Omit (or pass `undefined`) to leave the existing value unchanged.
    */
   idleTtlSeconds?: number;
 }

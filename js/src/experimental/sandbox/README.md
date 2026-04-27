@@ -554,7 +554,7 @@ try {
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
 | `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
-| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables) |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables). When omitted, the server applies a default of `600` seconds (10 minutes). |
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
@@ -586,7 +586,7 @@ try {
 |----------|-------------|
 | `newName?` | New display name |
 | `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
-| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables) |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables). Omit to leave the existing value unchanged. |
 
 ### RunOptions
 
