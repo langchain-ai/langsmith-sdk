@@ -1,5 +1,7 @@
-import type { Plugin } from "@opencode-ai/plugin";
+// import type { Plugin } from "@opencode-ai/plugin";
 import { OpenCodeSessionTracer } from "./tracer.js";
+
+type Plugin = (ctx: any) => any;
 
 export const LangSmithPlugin: Plugin = async (ctx) => {
   const tracer = new OpenCodeSessionTracer();

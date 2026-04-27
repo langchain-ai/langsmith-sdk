@@ -1,6 +1,12 @@
-import type { Event, FilePart, Message, Model, Part } from "@opencode-ai/sdk";
+// import type { Event, FilePart, Message, Model, Part } from "@opencode-ai/sdk";
 import { RunTree, type RunTreeConfig } from "../../run_trees.js";
 import { Client } from "../../index.js";
+
+type Event = any;
+type FilePart = any;
+type Message = any;
+type Model = any;
+type Part = any;
 
 type AggregateMessage = {
   info: Message | undefined;
