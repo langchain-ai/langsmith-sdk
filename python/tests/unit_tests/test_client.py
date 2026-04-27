@@ -3423,7 +3423,23 @@ def test_pull_and_push_prompt(
             assert pushed_manifest["id"] == original_manifest["id"]
             assert pushed_manifest["type"] == original_manifest["type"]
 
-            assert original_manifest["kwargs"] == pushed_manifest["kwargs"]
+            # Strip None-valued keys before comparing: upstream langchain
+            # model classes occasionally add new optional kwargs that
+            # serialize as None by default (e.g. anthropic_proxy,
+            # output_version, openai_proxy), which shouldn't break the
+            # round-trip equivalence this test is checking.
+            def _strip_none(obj):
+                if isinstance(obj, dict):
+                    return {
+                        k: _strip_none(v) for k, v in obj.items() if v is not None
+                    }
+                if isinstance(obj, list):
+                    return [_strip_none(v) for v in obj]
+                return obj
+
+            assert _strip_none(original_manifest["kwargs"]) == _strip_none(
+                pushed_manifest["kwargs"]
+            )
 
 
 def test_evaluate_methods() -> None:
