@@ -2426,7 +2426,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
   const { client } = mockClient();
 
   // Called outside a traceable function - should throw
-  expect(() => getCurrentRunTree()).toThrowError();
+  expect(() => getCurrentRunTree()).toThrow();
 
   const runId = uuidv4();
   const nestedAddValueTraceable = traceable(
