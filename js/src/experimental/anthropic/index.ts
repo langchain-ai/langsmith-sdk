@@ -7,6 +7,13 @@ import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
 import { convertFromAnthropicMessage, mergeMessagesById } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
 
+const WRAPPED_TOOL_SYMBOL = Symbol.for(
+  "langsmith:claude_agent_sdk:wrapped_tool"
+);
+const WRAPPED_TOOL_HANDLER_SYMBOL = Symbol.for(
+  "langsmith:claude_agent_sdk:wrapped_tool_handler"
+);
+
 /**
  * Wraps the Claude Agent SDK's query function to add LangSmith tracing.
  * Traces the entire agent interaction including all streaming messages.
@@ -263,7 +270,15 @@ export function wrapClaudeAgentSDK<T extends object>(
   const inputSdk = sdk as TypedSdk;
   const wrappedSdk = { ...sdk } as TypedSdk;
 
-  if ("query" in inputSdk && isTraceableFunction(inputSdk.query)) {
+  const toolAlreadyWrapped =
+    "tool" in inputSdk &&
+    typeof inputSdk.tool === "function" &&
+    WRAPPED_TOOL_SYMBOL in inputSdk.tool;
+
+  if (
+    ("query" in inputSdk && isTraceableFunction(inputSdk.query)) ||
+    toolAlreadyWrapped
+  ) {
     throw new Error(
       "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
     );
@@ -294,6 +309,10 @@ export function wrapClaudeAgentSDK<T extends object>(
       const originalHandler = args[handlerIndex] as (
         ...handlerArgs: unknown[]
       ) => unknown;
+      if (WRAPPED_TOOL_HANDLER_SYMBOL in originalHandler) {
+        return inputSdk.tool?.(...args);
+      }
+
       const wrappedHandler = (...handlerArgs: unknown[]) => {
         const activeToolRun = StreamManager.getActiveToolRun(
           toolName,
@@ -306,11 +325,17 @@ export function wrapClaudeAgentSDK<T extends object>(
           originalHandler(...handlerArgs)
         );
       };
+      Object.defineProperty(wrappedHandler, WRAPPED_TOOL_HANDLER_SYMBOL, {
+        value: true,
+      });
 
       const wrappedArgs = [...args];
       wrappedArgs[handlerIndex] = wrappedHandler;
       return inputSdk.tool?.(...wrappedArgs);
     };
+    Object.defineProperty(wrappedSdk.tool, WRAPPED_TOOL_SYMBOL, {
+      value: true,
+    });
   }
 
   // Keep createSdkMcpServer and other methods as-is (bound to original SDK)
