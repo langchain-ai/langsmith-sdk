@@ -124,6 +124,10 @@ export async function readTranscript(
       if (sdkMessage == null) continue;
 
       const content = sdkMessage.message.content;
+      const toolUseResultIsError = isRecord(sdkMessage.tool_use_result)
+        ? sdkMessage.tool_use_result.is_error === true ||
+          sdkMessage.tool_use_result.isError === true
+        : false;
       if (Array.isArray(content)) {
         for (const block of content) {
           if (!isRecord(block) || block.type !== "tool_result") continue;
@@ -132,7 +136,10 @@ export async function readTranscript(
           toolResults.push({
             toolUseId,
             content: block.content,
-            isError: block.is_error === true,
+            isError:
+              block.is_error === true ||
+              block.isError === true ||
+              toolUseResultIsError,
           });
         }
       }

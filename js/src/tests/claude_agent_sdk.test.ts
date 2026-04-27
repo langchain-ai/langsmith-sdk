@@ -1757,6 +1757,81 @@ describe("wrapClaudeAgentSDK", () => {
     });
   });
 
+  test("marks MCP tool results with camelCase isError as errored", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield { type: "system", session_id: "session_abc123" };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tool_1",
+                name: "mcp__errorTool__error-tool",
+                input: {},
+              },
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        } as any;
+        yield {
+          type: "user",
+          parent_tool_use_id: null,
+          session_id: "session_abc123",
+          tool_use_result: {
+            content: [{ type: "text", text: "Error occurred" }],
+            isError: true,
+          },
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool_1",
+                content: "Error occurred",
+              },
+            ],
+          },
+        } as any;
+        yield {
+          type: "result",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          session_id: "session_abc123",
+        } as any;
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    for await (const _message of wrapped.query({
+      prompt: "Use failing MCP tool",
+    })) {
+      // consume stream
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const toolRun = Object.values(res.data).find(
+      (run) => run.name === "mcp__errorTool__error-tool"
+    );
+    expect(toolRun).toMatchObject({
+      run_type: "tool",
+      outputs: {
+        content: [{ type: "text", text: "Error occurred" }],
+        isError: true,
+      },
+      error: "Error occurred",
+    });
+  });
+
   test("throws error if wrapped again", () => {
     const mockSDK = createMockSDK();
     const wrapped = wrapClaudeAgentSDK(mockSDK);

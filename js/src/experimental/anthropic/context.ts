@@ -14,12 +14,22 @@ import {
 import { readTranscript, type TranscriptAssistantTurn } from "./transcripts.js";
 import type { SDKMessage, SDKResultMessage } from "./types.js";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value != null && !Array.isArray(value);
+}
+
+function isToolResultError(value: unknown): boolean {
+  return isRecord(value) && (value.is_error === true || value.isError === true);
+}
+
 /**
  * @internal
  */
 export class StreamManager {
   private static liveManagers: Set<StreamManager> = new Set();
+  private static managersByRootRun = new WeakMap<RunTree, StreamManager>();
 
+  private rootRun?: RunTree;
   namespaces: { [namespace: string]: RunTree | undefined };
   history: { [namespace: string]: SDKMessage[] };
 
@@ -43,13 +53,20 @@ export class StreamManager {
 
   constructor() {
     const rootRun = getCurrentRunTree(true);
+    this.rootRun = rootRun;
     this.namespaces = rootRun?.createChild ? { root: rootRun } : {};
     this.history = { root: [] };
+    if (rootRun != null) {
+      StreamManager.managersByRootRun.set(rootRun, this);
+    }
     StreamManager.liveManagers.add(this);
   }
 
   dispose() {
     StreamManager.liveManagers.delete(this);
+    if (this.rootRun != null) {
+      StreamManager.managersByRootRun.delete(this.rootRun);
+    }
   }
 
   async addMessage(message: SDKMessage) {
@@ -160,20 +177,24 @@ export class StreamManager {
         : [];
 
       const getToolOutput = (result: unknown) => {
-        if (
-          typeof result === "object" &&
-          result != null &&
-          !Array.isArray(result)
-        ) {
+        if (isRecord(result)) {
           return result;
         }
 
         return { content: result };
       };
 
-      const getToolError = (result: unknown) => {
+      const getToolError = (result: unknown): string => {
         if (["string", "number", "boolean"].includes(typeof result)) {
           return String(result);
+        }
+        if (Array.isArray(result)) {
+          return result.map(getToolError).join("\n");
+        }
+        if (isRecord(result)) {
+          if (typeof result.error === "string") return result.error;
+          if (typeof result.text === "string") return result.text;
+          if ("content" in result) return getToolError(result.content);
         }
         return JSON.stringify(result);
       };
@@ -192,10 +213,9 @@ export class StreamManager {
 
           const toolOutput = getToolOutput(result);
 
-          const toolError =
-            "is_error" in block && block.is_error === true
-              ? getToolError(result)
-              : undefined;
+          const isError = isToolResultError(block) || isToolResultError(result);
+
+          const toolError = isError ? getToolError(result) : undefined;
 
           await tool?.end(toolOutput, toolError);
           // Match Python's lifecycle: PostToolUse sets outputs on the
@@ -309,7 +329,22 @@ export class StreamManager {
     toolName?: string,
     input?: unknown
   ): RunTree | undefined {
+    const currentRun = getCurrentRunTree(true);
+    const currentManager =
+      currentRun != null
+        ? StreamManager.managersByRootRun.get(currentRun)
+        : undefined;
+    const currentRunTree = currentManager?.getActiveToolRun(toolName, input);
+    if (currentRunTree != null) return currentRunTree;
+
+    // Last resort: the SDK invoked an MCP handler from a detached async context
+    // that did not inherit the existing LangSmith AsyncLocalStorage. Require
+    // both tool name and input to match before scanning live managers to avoid
+    // cross-query attribution.
+    if (toolName == null || input === undefined) return undefined;
+
     for (const manager of Array.from(StreamManager.liveManagers).reverse()) {
+      if (manager === currentManager) continue;
       const runTree = manager.getActiveToolRun(toolName, input);
       if (runTree != null) return runTree;
     }
@@ -552,49 +587,51 @@ export class StreamManager {
   }
 
   async finish() {
-    await this.reconcileTranscripts();
+    try {
+      await this.reconcileTranscripts();
 
-    if (this.resultModelUsage != null) {
-      correctUsageFromResults(
-        this.resultModelUsage,
-        Object.values(this.assistant).filter((runTree) => runTree != null)
-      );
-    }
-
-    // Clean up incomplete tools and finalise subagent calls. This mirrors the
-    // Python integration: Agent/Task tool runs are ended when their tool result
-    // arrives, while subagent chain runs are finalised only after transcript
-    // reconciliation so hidden child LLM/tool runs are created first.
-    for (const tool of Object.values(this.tools)) {
-      if (tool == null) continue;
-      if (tool.outputs == null && tool.error == null) {
-        await tool.end(undefined, "Run not completed (conversation ended)");
+      if (this.resultModelUsage != null) {
+        correctUsageFromResults(
+          this.resultModelUsage,
+          Object.values(this.assistant).filter((runTree) => runTree != null)
+        );
       }
-    }
 
-    for (const subagent of Object.values(this.subagents)) {
-      if (subagent == null) continue;
-      if (subagent.end_time == null) {
-        if (subagent.outputs == null && subagent.error == null) {
-          await subagent.end(
-            undefined,
-            "Run not completed (conversation ended)"
-          );
-        } else {
-          await subagent.end();
+      // Clean up incomplete tools and finalise subagent calls. This mirrors the
+      // Python integration: Agent/Task tool runs are ended when their tool result
+      // arrives, while subagent chain runs are finalised only after transcript
+      // reconciliation so hidden child LLM/tool runs are created first.
+      for (const tool of Object.values(this.tools)) {
+        if (tool == null) continue;
+        if (tool.outputs == null && tool.error == null) {
+          await tool.end(undefined, "Run not completed (conversation ended)");
         }
       }
+
+      for (const subagent of Object.values(this.subagents)) {
+        if (subagent == null) continue;
+        if (subagent.end_time == null) {
+          if (subagent.outputs == null && subagent.error == null) {
+            await subagent.end(
+              undefined,
+              "Run not completed (conversation ended)"
+            );
+          } else {
+            await subagent.end();
+          }
+        }
+      }
+
+      // First make sure all the runs are created
+      await Promise.allSettled(this.postRunQueue);
+
+      // Then patch the runs
+      await Promise.allSettled(
+        this.runTrees.map((runTree) => runTree.patchRun())
+      );
+    } finally {
+      this.dispose();
     }
-
-    // First make sure all the runs are created
-    await Promise.allSettled(this.postRunQueue);
-
-    // Then patch the runs
-    await Promise.allSettled(
-      this.runTrees.map((runTree) => runTree.patchRun())
-    );
-
-    this.dispose();
   }
 }
 

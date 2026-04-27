@@ -177,17 +177,10 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       "calculator",
       "Performs basic arithmetic operations",
       {
-        type: "object",
-        properties: {
-          operation: {
-            type: "string",
-            enum: ["add", "subtract", "multiply", "divide"],
-          },
-          a: { type: "number" },
-          b: { type: "number" },
-        },
-        required: ["operation", "a", "b"],
-      } as any,
+        operation: z.enum(["add", "subtract", "multiply", "divide"]),
+        a: z.number(),
+        b: z.number(),
+      },
       async (args: any) => {
         let result: number;
         switch (args.operation) {
@@ -345,44 +338,50 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
   });
 
   test("tool with error handling", async () => {
-    const errorTool = wrappedSDK.tool(
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.mcp_tool_error",
+    }) as typeof claudeSDK;
+
+    const errorTool = tracedSDK.tool(
       "error-tool",
       "A tool that always errors",
-      {
-        type: "object",
-        properties: {},
-      } as any,
-      async () => {
-        return {
-          content: [{ type: "text", text: "Error occurred" }],
-          isError: true,
-        };
-      }
+      {},
+      async () => ({
+        content: [{ type: "text", text: "Error occurred" }],
+        isError: true,
+      })
     );
 
-    const messages: any[] = [];
-
-    for await (const message of wrappedSDK.query({
-      prompt: "Try to use the error-tool from the error-server.",
-      options: {
-        model: "haiku",
-        maxTurns: 5,
-        allowDangerouslySkipPermissions: true,
-        permissionMode: "bypassPermissions",
-        mcpServers: {
-          errorTool: wrappedSDK.createSdkMcpServer({
-            name: "error-server",
-            tools: [errorTool],
-          }),
+    const messages = await consumeQuery(
+      tracedSDK.query({
+        prompt: "Try to use the error-tool from the error-server.",
+        options: {
+          model: "haiku",
+          maxTurns: 5,
+          mcpServers: {
+            errorTool: tracedSDK.createSdkMcpServer({
+              name: "error-server",
+              tools: [errorTool],
+            }),
+          },
+          canUseTool: allowAllTools,
         },
-      },
-    })) {
-      messages.push(message);
-    }
+      })
+    );
 
     expect(messages.length).toBeGreaterThan(0);
     const resultMessage = messages.find((m) => m.type === "result");
     expect(resultMessage).toBeDefined();
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const errorToolRuns = Object.values(tree.data).filter(
+      (run) => run.name.includes("error-tool") && run.run_type === "tool"
+    );
+    expect(errorToolRuns.length).toBeGreaterThanOrEqual(1);
+    expect(errorToolRuns.some((run) => run.error != null)).toBe(true);
   });
 
   test("query with tool usage traces correctly", async () => {
@@ -392,17 +391,10 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       "calculator",
       "Performs basic arithmetic operations",
       {
-        type: "object",
-        properties: {
-          operation: {
-            type: "string",
-            enum: ["add", "subtract", "multiply", "divide"],
-          },
-          a: { type: "number" },
-          b: { type: "number" },
-        },
-        required: ["operation", "a", "b"],
-      } as any,
+        operation: z.enum(["add", "subtract", "multiply", "divide"]),
+        a: z.number(),
+        b: z.number(),
+      },
       async (args: any) => {
         let result: number;
         switch (args.operation) {
@@ -688,7 +680,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     ).toBe(true);
   });
 
-  test.only("custom MCP tool granted by canUseTool returns result and is traced", async () => {
+  test("custom MCP tool granted by canUseTool returns result and is traced", async () => {
     const { client, callSpy } = mockClient();
     const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
       client,
