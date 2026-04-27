@@ -5,6 +5,7 @@ import { describe, beforeAll, test, expect } from "@jest/globals";
 import * as claudeSDK from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
+import { traceable } from "../traceable.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
@@ -687,7 +688,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     ).toBe(true);
   });
 
-  test("custom MCP tool granted by canUseTool returns result and is traced", async () => {
+  test.only("custom MCP tool granted by canUseTool returns result and is traced", async () => {
     const { client, callSpy } = mockClient();
     const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
       client,
@@ -738,6 +739,67 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         ...weatherRuns.map((run) => stringifyToolResultContent(run.outputs)),
       ].some((result) => result.includes("Foggy"))
     ).toBe(true);
+  });
+
+  test("traceable called from MCP tool handler nests under MCP tool run", async () => {
+    const { client, callSpy } = mockClient();
+    const tracedSDK = wrapClaudeAgentSDK(claudeSDK, {
+      client,
+      tracingEnabled: true,
+      name: "test.custom_tool_nested_traceable",
+    }) as typeof claudeSDK;
+
+    const innerLookup = traceable(
+      async (city: string) => `nested lookup for ${city}`,
+      { name: "mcp_nested_lookup", client, tracingEnabled: true }
+    );
+
+    const getWeather = tracedSDK.tool(
+      "get_weather",
+      "Gets the current weather for a given city.",
+      { city: z.string() },
+      async (args: any) => {
+        const lookup = await innerLookup(args.city);
+        return {
+          content: [{ type: "text", text: `Foggy in ${args.city}; ${lookup}` }],
+        };
+      }
+    );
+
+    const server = tracedSDK.createSdkMcpServer({
+      name: "weather",
+      tools: [getWeather],
+    });
+
+    await consumeQuery(
+      tracedSDK.query({
+        prompt: "What's the weather in San Francisco?",
+        options: {
+          model: "haiku",
+          systemPrompt: WEATHER_PROMPT,
+          mcpServers: { weather: server },
+          canUseTool: allowAllTools,
+          maxTurns: 3,
+        },
+      })
+    );
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const weatherEntry = Object.entries(tree.data).find(
+      ([, run]) => run.name.includes("get_weather") && run.run_type === "tool"
+    );
+    const nestedEntry = Object.entries(tree.data).find(
+      ([, run]) => run.name === "mcp_nested_lookup"
+    );
+
+    if (weatherEntry == null) {
+      throw new Error("Expected get_weather tool run");
+    }
+    if (nestedEntry == null) {
+      throw new Error("Expected nested traceable run");
+    }
+
+    expect(tree.edges).toContainEqual([weatherEntry[0], nestedEntry[0]]);
   });
 
   test("concurrent SDK queries keep trace state isolated", async () => {

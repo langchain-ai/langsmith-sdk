@@ -1,4 +1,8 @@
-import { traceable, isTraceableFunction } from "../../traceable.js";
+import {
+  traceable,
+  isTraceableFunction,
+  withRunTree,
+} from "../../traceable.js";
 import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
 import { convertFromAnthropicMessage, mergeMessagesById } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
@@ -23,10 +27,10 @@ function wrapClaudeAgentQuery<
           const content = getLatestInput(prompt, systemCount);
           systemCount += 1;
 
-          if (content != null) streamManager.addMessage(content);
+          if (content != null) await streamManager.addMessage(content);
         }
 
-        streamManager.addMessage(message);
+        await streamManager.addMessage(message);
         yield message;
       }
     } finally {
@@ -270,9 +274,43 @@ export function wrapClaudeAgentSDK<T extends object>(
     wrappedSdk.query = wrapClaudeAgentQuery(inputSdk.query, inputSdk, config);
   }
 
-  // Wrap the tool method if it exists
+  // Wrap the tool method if it exists. The SDK invokes MCP tool handlers in an
+  // async context that may not inherit the query trace context, so bind nested
+  // traceable calls back to the active tool run when possible.
   if ("tool" in inputSdk && typeof inputSdk.tool === "function") {
-    wrappedSdk.tool = inputSdk.tool.bind(inputSdk);
+    wrappedSdk.tool = (...args: unknown[]) => {
+      const toolName = typeof args[0] === "string" ? args[0] : undefined;
+      let handlerIndex = -1;
+      for (let index = args.length - 1; index >= 0; index -= 1) {
+        if (typeof args[index] === "function") {
+          handlerIndex = index;
+          break;
+        }
+      }
+      if (handlerIndex < 0) {
+        return inputSdk.tool?.(...args);
+      }
+
+      const originalHandler = args[handlerIndex] as (
+        ...handlerArgs: unknown[]
+      ) => unknown;
+      const wrappedHandler = (...handlerArgs: unknown[]) => {
+        const activeToolRun = StreamManager.getActiveToolRun(
+          toolName,
+          handlerArgs[0]
+        );
+        if (activeToolRun == null) {
+          return originalHandler(...handlerArgs);
+        }
+        return withRunTree(activeToolRun, () =>
+          originalHandler(...handlerArgs)
+        );
+      };
+
+      const wrappedArgs = [...args];
+      wrappedArgs[handlerIndex] = wrappedHandler;
+      return inputSdk.tool?.(...wrappedArgs);
+    };
   }
 
   // Keep createSdkMcpServer and other methods as-is (bound to original SDK)

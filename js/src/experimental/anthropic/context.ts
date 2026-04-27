@@ -18,6 +18,8 @@ import type { SDKMessage, SDKResultMessage } from "./types.js";
  * @internal
  */
 export class StreamManager {
+  private static liveManagers: Set<StreamManager> = new Set();
+
   namespaces: { [namespace: string]: RunTree | undefined };
   history: { [namespace: string]: SDKMessage[] };
 
@@ -43,9 +45,14 @@ export class StreamManager {
     const rootRun = getCurrentRunTree(true);
     this.namespaces = rootRun?.createChild ? { root: rootRun } : {};
     this.history = { root: [] };
+    StreamManager.liveManagers.add(this);
   }
 
-  addMessage(message: SDKMessage) {
+  dispose() {
+    StreamManager.liveManagers.delete(this);
+  }
+
+  async addMessage(message: SDKMessage) {
     const eventTime = Date.now();
 
     // Short-circuit if no root run found
@@ -190,8 +197,16 @@ export class StreamManager {
               ? getToolError(result)
               : undefined;
 
-          void tool?.end(toolOutput, toolError);
-          void subagent?.end(toolOutput, toolError);
+          await tool?.end(toolOutput, toolError);
+          // Match Python's lifecycle: PostToolUse sets outputs on the
+          // subagent chain, but the subagent itself is not ended until after
+          // transcript reconciliation. Hidden transcript LLM/tool children can
+          // arrive after the Agent/Task tool result, so ending the chain here
+          // can make reconciled children appear outside their parent bounds.
+          if (subagent != null) {
+            subagent.outputs ??= toolOutput;
+            subagent.error ??= toolError;
+          }
         }
       }
     }
@@ -288,6 +303,49 @@ export class StreamManager {
     if (this.transcriptPathKeys.has(key)) return;
     this.transcriptPathKeys.add(key);
     this.subagentTranscriptPaths.push({ path, toolUseId, agentType });
+  }
+
+  static getActiveToolRun(
+    toolName?: string,
+    input?: unknown
+  ): RunTree | undefined {
+    for (const manager of Array.from(StreamManager.liveManagers).reverse()) {
+      const runTree = manager.getActiveToolRun(toolName, input);
+      if (runTree != null) return runTree;
+    }
+    return undefined;
+  }
+
+  private getActiveToolRun(
+    toolName?: string,
+    input?: unknown
+  ): RunTree | undefined {
+    const toolEntries = Object.values(this.tools).filter(
+      (runTree): runTree is RunTree =>
+        runTree != null && runTree.end_time == null && runTree.error == null
+    );
+
+    return toolEntries.find((runTree) => {
+      if (toolName != null) {
+        const runName = String(runTree.name);
+        const nameMatches =
+          runName === toolName ||
+          runName.includes(toolName) ||
+          toolName.includes(runName);
+        if (!nameMatches) return false;
+      }
+
+      if (input !== undefined) {
+        const recorded = runTree.inputs?.input ?? {};
+        try {
+          return JSON.stringify(recorded) === JSON.stringify(input ?? {});
+        } catch {
+          return false;
+        }
+      }
+
+      return true;
+    });
   }
 
   protected createChild(
@@ -480,7 +538,7 @@ export class StreamManager {
             ? String(toolResult.content)
             : JSON.stringify(toolResult.content)
           : undefined;
-        void tool.end(output, error);
+        await tool.end(output, error);
       }
     }
 
@@ -503,14 +561,28 @@ export class StreamManager {
       );
     }
 
-    // Clean up incomplete tools and subagent calls
-    for (const runTree of [
-      ...Object.values(this.tools),
-      ...Object.values(this.subagents),
-    ]) {
-      if (runTree == null) continue;
-      if (runTree.outputs == null && runTree.error == null) {
-        void runTree.end(undefined, "Run not completed (conversation ended)");
+    // Clean up incomplete tools and finalise subagent calls. This mirrors the
+    // Python integration: Agent/Task tool runs are ended when their tool result
+    // arrives, while subagent chain runs are finalised only after transcript
+    // reconciliation so hidden child LLM/tool runs are created first.
+    for (const tool of Object.values(this.tools)) {
+      if (tool == null) continue;
+      if (tool.outputs == null && tool.error == null) {
+        await tool.end(undefined, "Run not completed (conversation ended)");
+      }
+    }
+
+    for (const subagent of Object.values(this.subagents)) {
+      if (subagent == null) continue;
+      if (subagent.end_time == null) {
+        if (subagent.outputs == null && subagent.error == null) {
+          await subagent.end(
+            undefined,
+            "Run not completed (conversation ended)"
+          );
+        } else {
+          await subagent.end();
+        }
       }
     }
 
@@ -521,6 +593,8 @@ export class StreamManager {
     await Promise.allSettled(
       this.runTrees.map((runTree) => runTree.patchRun())
     );
+
+    this.dispose();
   }
 }
 
