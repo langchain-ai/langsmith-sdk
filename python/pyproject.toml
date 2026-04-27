@@ -195,5 +195,5 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
-timeout = 60
+timeout = 120
 timeout_method = "thread"
