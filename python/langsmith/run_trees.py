@@ -110,11 +110,12 @@ def _coerce_to_dict(value):
         return value
     if (
         not isinstance(value, type)
-        and hasattr(value, 'model_dump')
+        and hasattr(value, "model_dump")
         and callable(value.model_dump)
     ):
         return value.model_dump()
     return dict(value)
+
 
 TIMESTAMP_LENGTH = 36
 

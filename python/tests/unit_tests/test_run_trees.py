@@ -570,7 +570,9 @@ def test_runtree_accepts_pydantic_basemodel_as_constructor_outputs():
     class MyOutput(PydanticBaseModel):
         answer: str
 
-    rt = RunTree(name="test", run_type="chain", inputs={}, outputs=MyOutput(answer="hi"))
+    rt = RunTree(
+        name="test", run_type="chain", inputs={}, outputs=MyOutput(answer="hi")
+    )
     assert rt.outputs == {"answer": "hi"}
 
 
