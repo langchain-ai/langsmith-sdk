@@ -280,8 +280,8 @@ export class StreamManager {
           typeof toolInput.subagent_type === "string"
             ? toolInput.subagent_type
             : typeof toolInput.agent_type === "string"
-            ? toolInput.agent_type
-            : undefined;
+              ? toolInput.agent_type
+              : undefined;
         if (
           agentType == null ||
           pendingAgentType == null ||
