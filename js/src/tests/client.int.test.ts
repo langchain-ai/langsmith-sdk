@@ -39,7 +39,7 @@ type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
   client: Client,
   runId: string,
-  checkOutputs: CheckOutputsType = false
+  checkOutputs: CheckOutputsType = false,
 ) {
   return waitUntil(
     async () => {
@@ -54,12 +54,12 @@ async function waitUntilRunFound(
           }
         }
         return true;
-      } catch (e) {
+      } catch (_e) {
         return false;
       }
     },
     210_000,
-    5_000
+    5_000,
   );
 }
 
@@ -95,7 +95,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
   expect(dataset.id).toBe(dataset2.id);
 
   const datasets = await toArray(
-    client.listDatasets({ datasetName: fileName })
+    client.listDatasets({ datasetName: fileName }),
   );
   expect(datasets.length).toBeGreaterThan(0);
   expect(datasets.map((d) => d.id)).toContain(datasetId);
@@ -103,20 +103,20 @@ test("Test LangSmith Client Dataset CRD", async () => {
   const example = await client.createExample(
     { col1: "addedExampleCol1" },
     { col2: "addedExampleCol2" },
-    { datasetId: newDataset.id, split: "my_split" }
+    { datasetId: newDataset.id, split: "my_split" },
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
   expect(exampleValue.outputs?.col2).toBe("addedExampleCol2");
 
   const examples = await toArray(
-    client.listExamples({ datasetId: newDataset.id })
+    client.listExamples({ datasetId: newDataset.id }),
   );
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
   const _examples = await toArray(
-    client.listExamples({ datasetId: newDataset.id, splits: ["my_split"] })
+    client.listExamples({ datasetId: newDataset.id, splits: ["my_split"] }),
   );
   expect(_examples.length).toBe(1);
   expect(_examples.map((e) => e.id)).toContain(example.id);
@@ -144,7 +144,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
   const newExample = await client.createExample(
     { col1: "newAddedExampleCol1" },
     { col2: "newAddedExampleCol2" },
-    { datasetId: newDataset.id }
+    { datasetId: newDataset.id },
   );
   const newExampleValue_ = await client.readExample(newExample.id);
   expect(newExampleValue_.inputs.col1).toBe("newAddedExampleCol1");
@@ -176,13 +176,13 @@ test("Test LangSmith Client Dataset CRD", async () => {
 
   await client.deleteExample(example.id);
   const examples2 = await toArray(
-    client.listExamples({ datasetId: newDataset.id })
+    client.listExamples({ datasetId: newDataset.id }),
   );
   expect(examples2.length).toBe(2);
   await client.createExample({ dataset_id: newDataset.id, inputs: {} });
 
   const examples3 = await toArray(
-    client.listExamples({ datasetId: newDataset.id })
+    client.listExamples({ datasetId: newDataset.id }),
   );
   expect(examples3.length).toBe(3);
 
@@ -214,13 +214,13 @@ test("test create dataset", async () => {
     { output: "hi there" },
     {
       datasetId: dataset.id,
-    }
+    },
   );
   const loadedDataset = await langchainClient.readDataset({ datasetName });
   expect(loadedDataset.data_type).toEqual("llm");
 
   const datasetsByMetadata = await toArray(
-    langchainClient.listDatasets({ metadata: { key: "valuefoo" } })
+    langchainClient.listDatasets({ metadata: { key: "valuefoo" } }),
   );
   expect(datasetsByMetadata.length).toEqual(1);
   expect(datasetsByMetadata.map((d) => d.id)).toContain(dataset.id);
@@ -354,7 +354,7 @@ test("Test create feedback with source run", async () => {
       feedbacks = await toArray(
         langchainClient.listFeedback({
           runIds: [runId, runId2],
-        })
+        }),
       );
       if (feedbacks.length >= 2) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -455,7 +455,7 @@ test.skip("Test create run with revision id", async () => {
     await waitUntilRunFound(
       langchainClient,
       runId,
-      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0,
     );
     await waitUntilRunFound(langchainClient, runId2);
 
@@ -465,7 +465,7 @@ test.skip("Test create run with revision id", async () => {
     const run1 = await langchainClient.readRun(runId);
     expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(
-      "test_other_field"
+      "test_other_field",
     );
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toBeUndefined();
     expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
@@ -473,7 +473,7 @@ test.skip("Test create run with revision id", async () => {
     const run2 = await langchainClient.readRun(runId2);
     expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
     expect(run2.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(
-      "test_other_field"
+      "test_other_field",
     );
     expect(run2.extra?.metadata.LANGCHAIN_OTHER_KEY).toBeUndefined();
     expect(run2.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
@@ -563,7 +563,7 @@ test("Test getRunUrl with run", async () => {
   await waitUntilRunFound(
     client,
     runId,
-    (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+    (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0,
   );
   const result = await client.getRunUrl({
     run,
@@ -586,7 +586,7 @@ test("Examples CRUD", async () => {
     {
       datasetId: dataset.id,
       metadata: { key: "value" },
-    }
+    },
   );
   const exampleValue = await client.readExample(example.id);
   const initialVersion = exampleValue.modified_at;
@@ -618,32 +618,32 @@ test("Examples CRUD", async () => {
     datasetId: dataset.id,
   });
   const initialExamplesList = await toArray(
-    client.listExamples({ datasetId: dataset.id, asOf: initialVersion })
+    client.listExamples({ datasetId: dataset.id, asOf: initialVersion }),
   );
   expect(initialExamplesList.length).toEqual(1);
   const examplesList = await toArray(
-    client.listExamples({ datasetId: dataset.id })
+    client.listExamples({ datasetId: dataset.id }),
   );
   expect(examplesList.length).toEqual(4);
 
   const examplesListLimited = await toArray(
-    client.listExamples({ datasetId: dataset.id, limit: 2 })
+    client.listExamples({ datasetId: dataset.id, limit: 2 }),
   );
   expect(examplesListLimited.length).toEqual(2);
 
   const examplesListOffset = await toArray(
-    client.listExamples({ datasetId: dataset.id, offset: 2 })
+    client.listExamples({ datasetId: dataset.id, offset: 2 }),
   );
   expect(examplesListOffset.length).toEqual(2);
 
   const examplesListLimitedOffset = await toArray(
-    client.listExamples({ datasetId: dataset.id, limit: 1, offset: 2 })
+    client.listExamples({ datasetId: dataset.id, limit: 1, offset: 2 }),
   );
   expect(examplesListLimitedOffset.length).toEqual(1);
 
   await client.deleteExample(example.id);
   const examplesList2 = await toArray(
-    client.listExamples({ datasetId: dataset.id })
+    client.listExamples({ datasetId: dataset.id }),
   );
   expect(examplesList2.length).toEqual(3);
   const datasetDiff = await client.diffDatasetVersions({
@@ -657,19 +657,19 @@ test("Examples CRUD", async () => {
 
   // verify the example inputs, outputs, and metadata
   const example1 = examplesList2.find(
-    (e) => e.inputs.input === "hello world 1"
+    (e) => e.inputs.input === "hello world 1",
   );
   expect(example1?.outputs?.output).toEqual("hi there 1");
   expect(example1?.metadata?.key).toEqual("value 1");
   expect(example1?.metadata?.dataset_split).toEqual(["train"]);
   const example2 = examplesList2.find(
-    (e) => e.inputs.input === "hello world 2"
+    (e) => e.inputs.input === "hello world 2",
   );
   expect(example2?.outputs?.output).toEqual("hi there 2");
   expect(example2?.metadata?.key).toEqual("value 2");
   expect(example2?.metadata?.dataset_split).toEqual(["test"]);
   const example3 = examplesList2.find(
-    (e) => e.inputs.input === "hello world 3"
+    (e) => e.inputs.input === "hello world 3",
   );
   expect(example3?.outputs?.output).toEqual("hi there 3");
   expect(example3?.metadata?.key).toEqual("value 3");
@@ -682,22 +682,22 @@ test("Examples CRUD", async () => {
     {
       datasetId: dataset.id,
       metadata: { foo: "bar", baz: "qux" },
-    }
+    },
   );
   let examplesList3 = await toArray(
-    client.listExamples({ datasetId: dataset.id, metadata: { foo: "bar" } })
+    client.listExamples({ datasetId: dataset.id, metadata: { foo: "bar" } }),
   );
   expect(examplesList3.length).toEqual(1);
   expect(examplesList3[0].metadata?.foo).toEqual("bar");
   expect(examplesList3[0].metadata?.baz).toEqual("qux");
 
   examplesList3 = await toArray(
-    client.listExamples({ datasetId: dataset.id, metadata: { foo: "qux" } })
+    client.listExamples({ datasetId: dataset.id, metadata: { foo: "qux" } }),
   );
   expect(examplesList3.length).toEqual(0);
 
   examplesList3 = await toArray(
-    client.listExamples({ datasetId: dataset.id, metadata: { baz: "qux" } })
+    client.listExamples({ datasetId: dataset.id, metadata: { baz: "qux" } }),
   );
   expect(examplesList3.length).toEqual(1);
 
@@ -708,7 +708,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       metadata: { foo: "bar", baz: "qux" },
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(1);
   expect(examplesList3[0].metadata?.foo).toEqual("bar");
@@ -718,7 +718,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       filter: 'exists(metadata, "baz")',
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(1);
   expect(examplesList3[0].metadata?.foo).toEqual("bar");
@@ -728,7 +728,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       filter: 'has("metadata", \'{"foo": "bar"}\')',
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(1);
   expect(examplesList3[0].metadata?.foo).toEqual("bar");
@@ -738,7 +738,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       filter: 'exists(metadata, "bazzz")',
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(0);
 
@@ -746,7 +746,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       splits: ["train"],
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(2);
 
@@ -754,7 +754,7 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       splits: ["test"],
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(1);
 
@@ -762,33 +762,33 @@ test("Examples CRUD", async () => {
     client.listExamples({
       datasetId: dataset.id,
       splits: ["train", "test"],
-    })
+    }),
   );
   expect(examplesList3.length).toEqual(3);
 
   // Test batch soft delete - at the end so it doesn't affect other tests
   const allExamples = await toArray(
-    client.listExamples({ datasetId: dataset.id })
+    client.listExamples({ datasetId: dataset.id }),
   );
   const exampleIdsToDelete = allExamples.slice(0, 2).map((e) => e.id);
   await client.deleteExamples(exampleIdsToDelete);
   const examplesAfterBatchDelete = await toArray(
-    client.listExamples({ datasetId: dataset.id })
+    client.listExamples({ datasetId: dataset.id }),
   );
   expect(examplesAfterBatchDelete.length).toEqual(allExamples.length - 2);
 
   // Test hard delete
   const remainingExamples = await toArray(
-    client.listExamples({ datasetId: dataset.id })
+    client.listExamples({ datasetId: dataset.id }),
   );
   if (remainingExamples.length > 0) {
     const hardDeleteIds = [remainingExamples[0].id];
     await client.deleteExamples(hardDeleteIds, { hardDelete: true });
     const examplesAfterHardDelete = await toArray(
-      client.listExamples({ datasetId: dataset.id })
+      client.listExamples({ datasetId: dataset.id }),
     );
     expect(examplesAfterHardDelete.length).toEqual(
-      remainingExamples.length - 1
+      remainingExamples.length - 1,
     );
   }
 
@@ -815,7 +815,7 @@ test("list runs limit arg works", async () => {
         if (!payload.id) payload.id = uuidv4();
         await client.createRun(payload);
         await waitUntilRunFound(client, payload.id);
-      })
+      }),
     );
 
     let iters = 0;
@@ -825,7 +825,7 @@ test("list runs limit arg works", async () => {
       iters += 1;
       if (iters > limit) {
         throw new Error(
-          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`
+          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`,
         );
       }
     }
@@ -866,7 +866,7 @@ test("Test createProject raises LangSmithConflictError on duplicate name", async
     await expect(client.createProject({ projectName })).rejects.toThrow(
       expect.objectContaining({
         name: "LangSmithConflictError",
-      })
+      }),
     );
   } finally {
     try {
@@ -874,7 +874,7 @@ test("Test createProject raises LangSmithConflictError on duplicate name", async
       if (await client.hasProject({ projectName })) {
         await client.deleteProject({ projectName });
       }
-    } catch (e) {
+    } catch (_e) {
       // Everyone has those days.
     }
   }
@@ -894,7 +894,7 @@ test("Test list prompts", async () => {
         new SystemMessage({ content: "System message" }),
         new HumanMessage({ content: "{{question}}" }),
       ],
-      { templateFormat: "mustache" }
+      { templateFormat: "mustache" },
     ),
     isPublic: true,
   });
@@ -904,7 +904,7 @@ test("Test list prompts", async () => {
         new SystemMessage({ content: "System message" }),
         new HumanMessage({ content: "{{question}}" }),
       ],
-      { templateFormat: "mustache" }
+      { templateFormat: "mustache" },
     ),
   });
   await client.pushPrompt(promptName3, {
@@ -913,7 +913,7 @@ test("Test list prompts", async () => {
         new SystemMessage({ content: "System message" }),
         new HumanMessage({ content: "{{question}}" }),
       ],
-      { templateFormat: "mustache" }
+      { templateFormat: "mustache" },
     ),
   });
 
@@ -959,14 +959,14 @@ test("Prompt CRUD lifecycle (push, get, exists, update, commit, like/unlike, pul
       new SystemMessage({ content: "System message" }),
       new HumanMessage({ content: "{{question}}" }),
     ],
-    { templateFormat: "mustache" }
+    { templateFormat: "mustache" },
   );
   const updatedTemplate = ChatPromptTemplate.fromMessages(
     [
       new SystemMessage({ content: "System message" }),
       new HumanMessage({ content: "My question is: {{question}}" }),
     ],
-    { templateFormat: "mustache" }
+    { templateFormat: "mustache" },
   );
 
   try {
@@ -1004,7 +1004,7 @@ test("Prompt CRUD lifecycle (push, get, exists, update, commit, like/unlike, pul
     expect(updatedPrompt?.description).toBe("Updated description");
     expect(updatedPrompt?.is_public).toBe(true);
     expect(updatedPrompt?.tags).toEqual(
-      expect.arrayContaining(["test", "update"])
+      expect.arrayContaining(["test", "update"]),
     );
 
     // 5) createCommit records a new commit URL referencing the prompt.
@@ -1083,7 +1083,7 @@ test("Test pull prompt include model", async () => {
   try {
     const model = new ChatOpenAI({});
     const promptTemplate = PromptTemplate.fromTemplate(
-      "Tell me a joke about {topic}"
+      "Tell me a joke about {topic}",
     );
     const promptWithModel = promptTemplate.pipe(model);
 
@@ -1100,7 +1100,7 @@ test("Test pull prompt include model", async () => {
     // Skip test if it fails due to missing/invalid API key during deserialization
     if (error?.message?.includes("Missing secret")) {
       console.log(
-        "⚠️  Test skipped: OPENAI_API_KEY not valid for model loading"
+        "⚠️  Test skipped: OPENAI_API_KEY not valid for model loading",
       );
       return;
     }
@@ -1121,7 +1121,7 @@ test("list shared examples can list shared examples", async () => {
   const multiverseMathPublicDatasetShareToken =
     "cce9c8a9-761a-4756-b159-58ed2640e274";
   const sharedExamples = await client.listSharedExamples(
-    multiverseMathPublicDatasetShareToken
+    multiverseMathPublicDatasetShareToken,
   );
   expect(sharedExamples.length).toBeGreaterThan(0);
 });
@@ -1178,7 +1178,7 @@ test("annotationqueue crud", async () => {
 
     // 1b. List annotation queues and check nameContains
     const listedQueues = await toArray(
-      client.listAnnotationQueues({ nameContains: queueName })
+      client.listAnnotationQueues({ nameContains: queueName }),
     );
     expect(listedQueues.length).toBeGreaterThan(0);
     expect(listedQueues.some((q) => q.id === queue.id)).toBe(true);
@@ -1204,7 +1204,7 @@ test("annotationqueue crud", async () => {
       try {
         foundRun = await client.readRun(runId);
         if (foundRun) break;
-      } catch (error) {
+      } catch (_error) {
         // If run is not found, getRun might throw an error
         // We'll ignore it and keep trying
       }
@@ -1213,7 +1213,7 @@ test("annotationqueue crud", async () => {
 
     if (!foundRun) {
       throw new Error(
-        `Run with ID ${runId} not found after ${maxWaitTime / 1000} seconds`
+        `Run with ID ${runId} not found after ${maxWaitTime / 1000} seconds`,
       );
     }
 
@@ -1290,7 +1290,7 @@ test("annotationqueue rubric instructions (unset, set at create, update)", async
     const fetchedQueueB = await client.readAnnotationQueue(queueB.id);
     expect(fetchedQueueB.name).toBe(queueBName);
     expect(fetchedQueueB.rubric_instructions).toBe(
-      "This is a rubric instruction"
+      "This is a rubric instruction",
     );
 
     // Update path: set on previously-unset, and overwrite on previously-set.
@@ -1304,10 +1304,10 @@ test("annotationqueue rubric instructions (unset, set at create, update)", async
       rubricInstructions: newInstructions,
     });
     expect(
-      (await client.readAnnotationQueue(queueA.id)).rubric_instructions
+      (await client.readAnnotationQueue(queueA.id)).rubric_instructions,
     ).toBe(newInstructions);
     expect(
-      (await client.readAnnotationQueue(queueB.id)).rubric_instructions
+      (await client.readAnnotationQueue(queueB.id)).rubric_instructions,
     ).toBe(newInstructions);
   } finally {
     await client.deleteAnnotationQueue(queueAId);
@@ -1397,7 +1397,7 @@ test("upload examples multipart", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
   // Create test examples
   const exampleId = uuidv4();
@@ -1432,7 +1432,7 @@ test("upload examples multipart", async () => {
   expect(typeof createdExamples.as_of).toBe("string");
   if (createdExamples.as_of) {
     expect(new Date(createdExamples.as_of).getTime()).toBeLessThanOrEqual(
-      Date.now()
+      Date.now(),
     );
   }
 
@@ -1440,7 +1440,7 @@ test("upload examples multipart", async () => {
   expect(createdExample1.inputs["text"]).toBe("hello world");
 
   const createdExample2 = await client.readExample(
-    createdExamples.example_ids.find((id) => id !== exampleId)!
+    createdExamples.example_ids.find((id) => id !== exampleId)!,
   );
   expect(createdExample2.inputs["text"]).toBe("foo bar");
   expect(createdExample2.outputs?.["response"]).toBe("baz");
@@ -1476,7 +1476,7 @@ test("update examples multipart", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
   // Create test examples
   const exampleId = uuidv4();
@@ -1504,7 +1504,7 @@ test("update examples multipart", async () => {
   };
 
   await expect(
-    client.updateExamplesMultipart(dataset.id, [exampleUpdate1])
+    client.updateExamplesMultipart(dataset.id, [exampleUpdate1]),
   ).rejects.toThrow();
 
   const exampleUpdate2: ExampleUpdateWithAttachments = {
@@ -1517,7 +1517,7 @@ test("update examples multipart", async () => {
   };
 
   await expect(
-    client.updateExamplesMultipart(dataset.id, [exampleUpdate2])
+    client.updateExamplesMultipart(dataset.id, [exampleUpdate2]),
   ).rejects.toThrow();
 
   const exampleUpdate3: ExampleUpdateWithAttachments = {
@@ -1536,14 +1536,14 @@ test("update examples multipart", async () => {
   expect(typeof updateResponse.as_of).toBe("string");
   if (updateResponse.as_of) {
     expect(new Date(updateResponse.as_of).getTime()).toBeLessThanOrEqual(
-      Date.now()
+      Date.now(),
     );
   }
 
   let updatedExample = await client.readExample(exampleId);
   expect(updatedExample.inputs.text).toEqual("hello world2");
   expect(Object.keys(updatedExample.attachments ?? {}).sort()).toEqual(
-    ["bar", "test_file"].sort()
+    ["bar", "test_file"].sort(),
   );
   expect(updatedExample.metadata?.bar).toEqual("foo");
   let attachmentData: Uint8Array | undefined = updatedExample.attachments?.[
@@ -1551,16 +1551,16 @@ test("update examples multipart", async () => {
   ].presigned_url
     ? new Uint8Array(
         (await fetch(
-          updatedExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          updatedExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
   attachmentData = updatedExample.attachments?.["bar"].presigned_url
     ? new Uint8Array(
         (await fetch(updatedExample.attachments?.["bar"].presigned_url).then(
-          (res) => res.arrayBuffer()
-        )) as ArrayBuffer
+          (res) => res.arrayBuffer(),
+        )) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1580,8 +1580,8 @@ test("update examples multipart", async () => {
   attachmentData = updatedExample.attachments?.["test_file2"].presigned_url
     ? new Uint8Array(
         (await fetch(
-          updatedExample.attachments?.["test_file2"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          updatedExample.attachments?.["test_file2"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1605,8 +1605,8 @@ test("update examples multipart", async () => {
   attachmentData = updatedExample.attachments?.["test_file"].presigned_url
     ? new Uint8Array(
         (await fetch(
-          updatedExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          updatedExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1619,7 +1619,7 @@ test("create example go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -1636,7 +1636,7 @@ test("create example go backend", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
 
   // Create test examples
@@ -1659,8 +1659,8 @@ test("create example go backend", async () => {
   ].presigned_url
     ? new Uint8Array(
         (await fetch(
-          createdExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          createdExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1675,7 +1675,7 @@ test("create example go backend", async () => {
         test_file: ["image/png", fs.readFileSync(pathname)],
       },
       datasetName: datasetName,
-    }
+    },
   );
   expect(createdExample.inputs.text).toEqual("hello world");
   expect(createdExample.outputs?.foo).toEqual("bar");
@@ -1683,8 +1683,8 @@ test("create example go backend", async () => {
   attachmentData = createdExample.attachments?.["test_file"].presigned_url
     ? new Uint8Array(
         (await fetch(
-          createdExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          createdExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1801,7 +1801,7 @@ test.skip("test use source run io single example", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -1831,7 +1831,7 @@ test.skip("test use source run io single example", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
 
   // Create test examples
@@ -1870,7 +1870,7 @@ test.skip("test use source run io single example", async () => {
       useSourceRunIO: true,
       useSourceRunAttachments: [],
       sourceRunId: runId,
-    }
+    },
   );
   expect(createdExample.inputs.text).toEqual("hello world");
   expect(createdExample.outputs?.foo).toEqual("bar");
@@ -1888,7 +1888,7 @@ test("update example go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -1905,7 +1905,7 @@ test("update example go backend", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
 
   // Create test examples
@@ -1934,7 +1934,7 @@ test("update example go backend", async () => {
   let retrievedExample = await client.readExample(exampleId);
   expect(retrievedExample.inputs.text).toEqual("hello world");
   expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
-    ["test_file2", "test_file3"].sort()
+    ["test_file2", "test_file3"].sort(),
   );
 
   // Update new way
@@ -1950,7 +1950,7 @@ test("update example go backend", async () => {
   retrievedExample = await client.readExample(exampleId);
   expect(retrievedExample.inputs.text).toEqual("hello world");
   expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
-    ["test_file4", "test_file5"].sort()
+    ["test_file4", "test_file5"].sort(),
   );
 
   // Clean up
@@ -1961,7 +1961,7 @@ test("create examples go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -1978,7 +1978,7 @@ test("create examples go backend", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
 
   // Create test examples
@@ -2001,8 +2001,8 @@ test("create examples go backend", async () => {
   ].presigned_url
     ? new Uint8Array(
         (await fetch(
-          createdExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          createdExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -2029,8 +2029,8 @@ test("create examples go backend", async () => {
   attachmentData = createdExample.attachments?.["test_file"].presigned_url
     ? new Uint8Array(
         (await fetch(
-          createdExample.attachments?.["test_file"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          createdExample.attachments?.["test_file"].presigned_url,
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer,
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -2043,7 +2043,7 @@ test("update examples go backend", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -2060,7 +2060,7 @@ test("update examples go backend", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
 
   // Create test examples
@@ -2092,7 +2092,7 @@ test("update examples go backend", async () => {
   const retrievedExample = await client.readExample(exampleId);
   expect(retrievedExample.inputs.text).toEqual("hello world");
   expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
-    ["test_file2", "test_file3"].sort()
+    ["test_file2", "test_file3"].sort(),
   );
 
   // Clean up
@@ -2103,7 +2103,7 @@ test("create example errors", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
     0,
-    4
+    4,
   )}`;
 
   // Clean up existing dataset if it exists
@@ -2146,29 +2146,29 @@ test("create example errors", async () => {
   };
 
   await expect(
-    client.createExample(example, { foo: "bar" }, {})
+    client.createExample(example, { foo: "bar" }, {}),
   ).rejects.toThrow(
-    "Cannot provide outputs or options when using ExampleCreate object"
+    "Cannot provide outputs or options when using ExampleCreate object",
   );
 
   await expect(client.createExample(invalidExample)).rejects.toThrow(
-    "Must provide either datasetName or datasetId"
+    "Must provide either datasetName or datasetId",
   );
 
   await expect(client.createExample(invalidExample2)).rejects.toThrow(
-    "Must provide either datasetName or datasetId, not both"
+    "Must provide either datasetName or datasetId, not both",
   );
 
   await expect(client.createExample({ foo: "bar" }, {}, {})).rejects.toThrow(
-    "Must provide either datasetName or datasetId"
+    "Must provide either datasetName or datasetId",
   );
 
   await expect(
     client.createExample(
       { foo: "bar" },
       {},
-      { datasetId: dataset.id, datasetName: datasetName }
-    )
+      { datasetId: dataset.id, datasetName: datasetName },
+    ),
   ).rejects.toThrow("Must provide either datasetName or datasetId, not both");
 
   // Clean up
@@ -2192,7 +2192,7 @@ test("fetch child runs", async () => {
           {
             client,
             id: childRunId,
-          }
+          },
         );
         const result = await child();
         return result + "|From parent";
@@ -2200,7 +2200,7 @@ test("fetch child runs", async () => {
       {
         client,
         id: parentRunId,
-      }
+      },
     );
     const result = await parent();
     expect(result).toEqual("From child|From parent");

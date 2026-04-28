@@ -10,7 +10,7 @@ import { isIterable } from "./utils.js";
  * Matches Python's flatten_content_blocks behavior.
  */
 export function flattenContentBlocks(
-  content: BetaContentBlock[] | unknown
+  content: BetaContentBlock[] | unknown,
 ): Array<Record<string, unknown>> | unknown {
   if (!Array.isArray(content)) {
     return content;
@@ -57,7 +57,7 @@ export function flattenContentBlocks(
  * @internal
  */
 export function convertFromAnthropicMessage(
-  sdkMessage: SDKMessage | Iterable<SDKMessage> | string | undefined
+  sdkMessage: SDKMessage | Iterable<SDKMessage> | string | undefined,
 ): { content: unknown; role: string }[] {
   if (sdkMessage == null) return [];
   if (typeof sdkMessage === "string") {
@@ -130,7 +130,7 @@ export function isTaskTool(tool: BetaToolUseBlock): tool is {
  * @internal
  */
 export function isToolBlock(
-  block: BetaContentBlock
+  block: BetaContentBlock,
 ): block is BetaToolUseBlock {
   if (!block || typeof block !== "object") return false;
   return block.type === "tool_use";

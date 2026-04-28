@@ -103,7 +103,7 @@ function sha1(bytes: Uint8Array): Uint8Array {
     H[4] >> 24,
     H[4] >> 16,
     H[4] >> 8,
-    H[4]
+    H[4],
   );
 }
 

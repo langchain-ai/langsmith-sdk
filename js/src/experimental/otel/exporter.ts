@@ -51,7 +51,7 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * @returns A transformed version of the span.
    */
   transformExportedSpan?: (
-    span: ReadableSpan
+    span: ReadableSpan,
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   /**
@@ -87,7 +87,7 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
  */
 export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
   private transformExportedSpan?: (
-    span: ReadableSpan
+    span: ReadableSpan,
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   private projectName?: string;
@@ -128,7 +128,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
 
   export(
     spans: ReadableSpan[],
-    resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
+    resultCallback: Parameters<OTLPTraceExporter["export"]>[1],
   ): void {
     if (!isTracingEnabled()) {
       return resultCallback({ code: 0 });
@@ -211,7 +211,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         if (
           typeof span.attributes["ai.operationId"] === "string" &&
           constants.AI_SDK_LLM_OPERATIONS.includes(
-            span.attributes["ai.operationId"]
+            span.attributes["ai.operationId"],
           )
         ) {
           span.attributes[constants.LANGSMITH_RUN_TYPE] = "llm";
@@ -221,7 +221,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         } else if (
           typeof span.attributes["ai.operationId"] === "string" &&
           constants.AI_SDK_TOOL_OPERATIONS.includes(
-            span.attributes["ai.operationId"]
+            span.attributes["ai.operationId"],
           )
         ) {
           span.attributes[constants.LANGSMITH_RUN_TYPE] = "tool";

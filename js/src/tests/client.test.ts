@@ -32,7 +32,7 @@ describe("Client", () => {
       expect(createExampleSpy).toHaveBeenCalledWith(
         { input },
         { output: generation },
-        options
+        options,
       );
     });
   });
@@ -77,7 +77,7 @@ describe("Client", () => {
             type: "langchain",
           },
         },
-        options
+        options,
       );
     });
   });
@@ -234,7 +234,7 @@ describe("Client", () => {
 
       invalidIdentifiers.forEach((identifier) => {
         expect(() => parseHubIdentifier(identifier)).toThrowError(
-          /Invalid prompt identifier format/
+          /Invalid prompt identifier format/,
         );
       });
     });
@@ -333,7 +333,7 @@ describe("Client", () => {
         { id: "test" },
         {
           description: "initial prompt version",
-        }
+        },
       );
 
       const fetchCall = fetchSpy.mock.calls[0];
@@ -514,7 +514,7 @@ describe("Client", () => {
 
       const rootPatchFiltered = (client as any)._filterForSampling(
         rootPatchRuns,
-        true
+        true,
       );
 
       // Only root_run_2 should be included, and traceId1 should be removed from filtered set
@@ -578,7 +578,7 @@ describe("Client", () => {
       // Only children of sampled traces should be included
       expect(patchFiltered).toHaveLength(2);
       const patchTraceIds = new Set(
-        patchFiltered.map((run: any) => run.trace_id)
+        patchFiltered.map((run: any) => run.trace_id),
       );
       expect(patchTraceIds.has(traceIds[0])).toBe(true);
       expect(patchTraceIds.has(traceIds[2])).toBe(true);
@@ -653,7 +653,7 @@ describe("Client", () => {
               "x-tenant-id": "test-workspace-id",
               "x-api-key": "test-api-key",
             }),
-          })
+          }),
         );
 
         // eslint-disable-next-line no-process-env
@@ -683,7 +683,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("[403]: Forbidden");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -710,7 +710,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("Failed to create run");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -738,7 +738,7 @@ describe("Client", () => {
             run_type: "llm",
             inputs: { text: "hello" },
           },
-          { workspaceId: "test-workspace-id" }
+          { workspaceId: "test-workspace-id" },
         );
 
         // check call was made with correct headers
@@ -749,7 +749,7 @@ describe("Client", () => {
             headers: expect.objectContaining({
               "x-tenant-id": "test-workspace-id",
             }),
-          })
+          }),
         );
       });
 
@@ -782,7 +782,7 @@ describe("Client", () => {
           {
             outputs: { result: "updated" },
           },
-          { workspaceId: "override-workspace-id" }
+          { workspaceId: "override-workspace-id" },
         );
 
         expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -791,10 +791,10 @@ describe("Client", () => {
         const secondCall = mockFetch.mock.calls[1];
 
         expect((firstCall[1] as any).headers["x-tenant-id"]).toBe(
-          "default-workspace-id"
+          "default-workspace-id",
         );
         expect((secondCall[1] as any).headers["x-tenant-id"]).toBe(
-          "override-workspace-id"
+          "override-workspace-id",
         );
       });
     });
@@ -830,8 +830,8 @@ describe("Client", () => {
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringMatching(
-          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
-        )
+          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version.",
+        ),
       );
       consoleWarnSpy.mockClear();
 
@@ -1139,7 +1139,7 @@ describe("Client", () => {
       expect(str).toContain("https://api.smith.langchain.com");
       // Ensure it's properly formatted
       expect(str).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
 
@@ -1164,7 +1164,7 @@ describe("Client", () => {
       expect(inspectResult).not.toContain("secret-key");
       expect(inspectResult).toContain("https://api.smith.langchain.com");
       expect(inspectResult).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
 
@@ -1178,7 +1178,7 @@ describe("Client", () => {
       const inspectFn = (client as any)[inspectSymbol];
       expect(typeof inspectFn).toBe("function");
       expect(inspectFn.call(client)).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
   });

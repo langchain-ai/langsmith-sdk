@@ -52,12 +52,12 @@ export function _logTestFeedback(params: {
   if (trackingEnabled(context)) {
     if (exampleId === undefined) {
       throw new Error(
-        "Could not log feedback to LangSmith: missing example id. Please contact us for help."
+        "Could not log feedback to LangSmith: missing example id. Please contact us for help.",
       );
     }
     if (runTree === undefined) {
       throw new Error(
-        "Could not log feedback to LangSmith: missing run information. Please contact us for help."
+        "Could not log feedback to LangSmith: missing run information. Please contact us for help.",
       );
     }
     evaluatorLogFeedbackPromises.add(
@@ -68,9 +68,9 @@ export function _logTestFeedback(params: {
           runTree,
           sourceRunId !== undefined
             ? { __run: { run_id: sourceRunId } }
-            : undefined
+            : undefined,
         );
-      })()
+      })(),
     );
   }
   context.onFeedbackLogged?.(feedback);

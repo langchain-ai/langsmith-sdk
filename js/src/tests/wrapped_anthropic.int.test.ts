@@ -59,7 +59,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata was set correctly
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -72,7 +72,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify usage_metadata was captured
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -130,7 +130,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -138,7 +138,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     expect(body.events).toBeDefined();
     const tokenEvents = body.events.filter(
-      (event: any) => event.name === "new_token"
+      (event: any) => event.name === "new_token",
     );
     expect(tokenEvents.length).toBeGreaterThan(0);
     tokenEvents.forEach((event: any) => {
@@ -153,7 +153,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     const postBody = parseRequestBody((postCalls[0][1] as any).body);
     expect(postBody.extra.metadata).toMatchObject({
@@ -219,7 +219,7 @@ describe.skip("Requires Anthropic API key", () => {
             thing1: "thing2",
           },
         },
-      }
+      },
     );
 
     const patchedChoices: unknown[] = [];
@@ -284,7 +284,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -297,7 +297,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -305,7 +305,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     expect(body.events).toBeDefined();
     const tokenEvents = body.events.filter(
-      (event: any) => event.name === "new_token"
+      (event: any) => event.name === "new_token",
     );
     expect(tokenEvents.length).toBeGreaterThan(0);
 
@@ -348,7 +348,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -361,7 +361,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -369,7 +369,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     expect(body.events).toBeDefined();
     const tokenEvents = body.events.filter(
-      (event: any) => event.name === "new_token"
+      (event: any) => event.name === "new_token",
     );
     expect(tokenEvents.length).toBeGreaterThan(0);
 
@@ -397,7 +397,7 @@ describe.skip("Requires Anthropic API key", () => {
             customKey: "customValue",
           },
         },
-      }
+      },
     );
 
     const events: any[] = [];
@@ -466,17 +466,17 @@ describe.skip("Requires Anthropic API key", () => {
     // Both should have tool_use content blocks
     expect(patched.content).toBeDefined();
     expect(patched.content.some((block) => block.type === "tool_use")).toBe(
-      true
+      true,
     );
     expect(original.content.some((block) => block.type === "tool_use")).toBe(
-      true
+      true,
     );
 
     // Verify tracing was done
     expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     const patchBody = parseRequestBody((patchCalls[0][1] as any).body);
     expect(patchBody.outputs).toBeDefined();
@@ -529,7 +529,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify the aggregated output contains tool_use
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     const lastPatchCall = patchCalls[patchCalls.length - 1];
     const body = parseRequestBody((lastPatchCall[1] as any).body);
@@ -537,7 +537,7 @@ describe.skip("Requires Anthropic API key", () => {
     expect(body.outputs).toBeDefined();
     expect(body.outputs.content).toBeDefined();
     expect(
-      body.outputs.content.some((block: any) => block.type === "tool_use")
+      body.outputs.content.some((block: any) => block.type === "tool_use"),
     ).toBe(true);
 
     callSpy.mockClear();
@@ -546,7 +546,7 @@ describe.skip("Requires Anthropic API key", () => {
   test("wrapping same instance", async () => {
     const wrapped = wrapAnthropic(new Anthropic());
     expect(() => wrapAnthropic(wrapped)).toThrowError(
-      "This instance of Anthropic client has been already wrapped once."
+      "This instance of Anthropic client has been already wrapped once.",
     );
   });
 
@@ -587,7 +587,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata was set correctly
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -641,7 +641,7 @@ describe.skip("Requires Anthropic API key", () => {
     expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -681,7 +681,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     const postBody = parseRequestBody((postCalls[0][1] as any).body);
     expect(postBody.extra.metadata).toMatchObject({
@@ -737,7 +737,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -750,7 +750,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -758,7 +758,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     expect(body.events).toBeDefined();
     const tokenEvents = body.events.filter(
-      (event: any) => event.name === "new_token"
+      (event: any) => event.name === "new_token",
     );
     expect(tokenEvents.length).toBeGreaterThan(0);
 
@@ -803,7 +803,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify metadata
     const postCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "POST"
+      (call: any) => (call[1] as any).method === "POST",
     );
     expect(postCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -816,7 +816,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     // Verify token events were logged
     const patchCalls = callSpy.mock.calls.filter(
-      (call: any) => (call[1] as any).method === "PATCH"
+      (call: any) => (call[1] as any).method === "PATCH",
     );
     expect(patchCalls.length).toBeGreaterThan(0);
     const lastPatchCall = patchCalls[patchCalls.length - 1];
@@ -824,7 +824,7 @@ describe.skip("Requires Anthropic API key", () => {
 
     expect(body.events).toBeDefined();
     const tokenEvents = body.events.filter(
-      (event: any) => event.name === "new_token"
+      (event: any) => event.name === "new_token",
     );
     expect(tokenEvents.length).toBeGreaterThan(0);
 
@@ -845,7 +845,7 @@ describe.skip("Requires Anthropic API key", () => {
         max_tokens: 100,
         messages: [{ role: "user", content: "Say 'red'" }],
       },
-      { langsmithExtra: { name: "red", metadata: { customKey: "red" } } }
+      { langsmithExtra: { name: "red", metadata: { customKey: "red" } } },
     );
 
     const stream = await anthropic.messages.create(
@@ -855,7 +855,7 @@ describe.skip("Requires Anthropic API key", () => {
         messages: [{ role: "user", content: "Say 'green'" }],
         stream: true,
       },
-      { langsmithExtra: { name: "green", metadata: { customKey: "green" } } }
+      { langsmithExtra: { name: "green", metadata: { customKey: "green" } } },
     );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -864,7 +864,7 @@ describe.skip("Requires Anthropic API key", () => {
     }
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["red:0", "green:1"],
       edges: [],
@@ -942,7 +942,7 @@ describe.skip("Requires Anthropic API key", () => {
       });
 
       expect(
-        response1.usage.cache_creation?.ephemeral_5m_input_tokens
+        response1.usage.cache_creation?.ephemeral_5m_input_tokens,
       ).toBeGreaterThan(0);
 
       // Second call - should read from 5-minute cache
@@ -999,7 +999,7 @@ describe.skip("Requires Anthropic API key", () => {
       });
 
       expect(
-        response1.usage.cache_creation?.ephemeral_1h_input_tokens
+        response1.usage.cache_creation?.ephemeral_1h_input_tokens,
       ).toBeGreaterThan(0);
 
       // Second call - should read from 1-hour extended cache
@@ -1177,7 +1177,7 @@ describe.skip("Requires Anthropic API key", () => {
           let anthropicUsage: Anthropic.Usage | undefined;
           if ((requestParams as any).stream) {
             const stream = await anthropic.messages.create(
-              requestParams as Anthropic.MessageCreateParamsStreaming
+              requestParams as Anthropic.MessageCreateParamsStreaming,
             );
             for await (const event of stream) {
               if (event.type === "message_start" && event.message?.usage) {
@@ -1192,7 +1192,7 @@ describe.skip("Requires Anthropic API key", () => {
             }
           } else {
             const res = await anthropic.messages.create(
-              requestParams as Anthropic.MessageCreateParamsNonStreaming
+              requestParams as Anthropic.MessageCreateParamsNonStreaming,
             );
             anthropicUsage = res.usage;
           }
@@ -1213,13 +1213,13 @@ describe.skip("Requires Anthropic API key", () => {
             expect(anthropicUsage).not.toBeUndefined();
             expect(anthropicUsage).not.toBeNull();
             expect(usageMetadata!.input_tokens).toEqual(
-              anthropicUsage!.input_tokens
+              anthropicUsage!.input_tokens,
             );
             expect(usageMetadata!.output_tokens).toEqual(
-              anthropicUsage!.output_tokens
+              anthropicUsage!.output_tokens,
             );
             expect(usageMetadata!.total_tokens).toEqual(
-              anthropicUsage!.input_tokens + anthropicUsage!.output_tokens
+              anthropicUsage!.input_tokens + anthropicUsage!.output_tokens,
             );
           } else {
             expect(usageMetadata).toBeUndefined();
@@ -1228,7 +1228,7 @@ describe.skip("Requires Anthropic API key", () => {
 
           callSpy.mockClear();
         });
-      }
+      },
     );
   });
 });
@@ -1256,7 +1256,7 @@ test("prepopulated invocation params are merged and runtime params override", as
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call: any) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST",
   );
 
   expect(postCalls.length).toBeGreaterThan(0);

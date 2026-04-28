@@ -28,7 +28,7 @@ import type {
 } from "@openai/agents";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
-  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
+  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>(),
 );
 
 /**
@@ -50,7 +50,7 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
  *    invoked on one task via `_withSpanFactory`).
  */
 function enterRunTreeContext(
-  runTree: RunTree | undefined
+  runTree: RunTree | undefined,
 ): RunTree | undefined {
   const storage = AsyncLocalStorageProviderSingleton.getInstance();
   const previous = storage.getStore() as RunTree | undefined;
@@ -106,7 +106,7 @@ type RunTypeT =
  * Parse inputs or outputs into a dictionary format.
  */
 function isOpenAIAgentsItemArray(
-  data: unknown
+  data: unknown,
 ): data is Array<Record<string, unknown>> {
   return (
     Array.isArray(data) &&
@@ -116,13 +116,13 @@ function isOpenAIAgentsItemArray(
         typeof item === "object" &&
         item !== null &&
         "type" in item &&
-        typeof (item as { type?: unknown }).type === "string"
+        typeof (item as { type?: unknown }).type === "string",
     )
   );
 }
 
 function normalizeResponseInputItemsForReplay(
-  items: Array<Record<string, unknown>>
+  items: Array<Record<string, unknown>>,
 ): Array<Record<string, unknown>> {
   return items.map((item) => {
     const type = item.type;
@@ -171,7 +171,7 @@ function normalizeResponseInputItemsForReplay(
 
 function parseIO(
   data: unknown,
-  defaultKey = "output"
+  defaultKey = "output",
 ): Record<string, unknown> {
   if (data === null || data === undefined) {
     return {};
@@ -251,7 +251,7 @@ function deriveAgentInputsOutputs(run: RunTree): {
 } {
   const children = [...run.child_runs];
   const firstChildWithInputs = children.find(
-    (child) => child.inputs && Object.keys(child.inputs).length > 0
+    (child) => child.inputs && Object.keys(child.inputs).length > 0,
   );
   const lastChildWithOutputs = [...children]
     .reverse()
@@ -332,7 +332,7 @@ function extractSpanData(span: Span): Record<string, unknown> {
           k !== "output" &&
           k !== "usage" &&
           k !== "instructions" &&
-          !invocationKeys.includes(k)
+          !invocationKeys.includes(k),
       );
       for (const key of metadataKeys) {
         metadata[key] = response[key as keyof typeof response];
@@ -345,7 +345,7 @@ function extractSpanData(span: Span): Record<string, unknown> {
 
       if (response.usage) {
         metadata.usage_metadata = createResponsesUsageMetadata(
-          response.usage as Record<string, unknown>
+          response.usage as Record<string, unknown>,
         );
       }
       data.metadata = metadata;
@@ -390,7 +390,7 @@ function extractSpanData(span: Span): Record<string, unknown> {
  * {@link createResponsesUsageMetadata}).
  */
 function createUsageMetadata(
-  usage: GenerationUsageData
+  usage: GenerationUsageData,
 ): ExtractedUsageMetadata {
   const inputTokens = (usage.input_tokens as number) ?? 0;
   const outputTokens = (usage.output_tokens as number) ?? 0;
@@ -446,7 +446,7 @@ function createUsageMetadata(
  * Agents SDK `GenerationUsageData` shape (with breakdowns under `details`).
  */
 function createResponsesUsageMetadata(
-  usage: Record<string, unknown>
+  usage: Record<string, unknown>,
 ): ExtractedUsageMetadata {
   const inputTokens = (usage.input_tokens as number) ?? 0;
   const outputTokens = (usage.output_tokens as number) ?? 0;
@@ -909,7 +909,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         await run.postRun();
       } else {
         await run.patchRun(
-          span.spanData.type === "agent" ? undefined : { excludeInputs: true }
+          span.spanData.type === "agent" ? undefined : { excludeInputs: true },
         );
       }
     } catch (e) {
@@ -919,7 +919,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
 
   private async _maybePostTrace(
     traceId: string,
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
   ): Promise<void> {
     if (this._unpostedTraces.has(traceId)) {
       const traceRun = this._runs.get(traceId);

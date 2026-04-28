@@ -146,7 +146,7 @@ export class PromptCache {
    */
   get(
     key: string,
-    refreshFunc: () => Promise<PromptCommit>
+    refreshFunc: () => Promise<PromptCommit>,
   ): PromptCommit | undefined {
     // If max_size is 0, cache is disabled
     if (this.maxSize === 0) {
@@ -173,7 +173,7 @@ export class PromptCache {
   set(
     key: string,
     value: PromptCommit,
-    refreshFunc: () => Promise<PromptCommit>
+    refreshFunc: () => Promise<PromptCommit>,
   ): void {
     // If max_size is 0, cache is disabled - do nothing
     if (this.maxSize === 0) {
@@ -400,7 +400,7 @@ export class Cache extends PromptCache {
   constructor(config: CacheConfig = {}) {
     console.warn(
       "The 'Cache' class is deprecated and will be removed in a future version. " +
-        "Use 'PromptCache' instead."
+        "Use 'PromptCache' instead.",
     );
     super(config);
   }

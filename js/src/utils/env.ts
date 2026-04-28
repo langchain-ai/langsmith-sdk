@@ -162,7 +162,7 @@ export function getLangSmithEnvironmentVariables(): Record<string, string> {
         }
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Catch any errors that might occur while trying to access environment variables
   }
 
@@ -177,13 +177,13 @@ export function getEnvironmentVariable(name: string): string | undefined {
       ? // eslint-disable-next-line no-process-env
         process.env?.[name]
       : undefined;
-  } catch (e) {
+  } catch (_e) {
     return undefined;
   }
 }
 
 export function getLangSmithEnvironmentVariable(
-  name: string
+  name: string,
 ): string | undefined {
   return (
     getEnvironmentVariable(`LANGSMITH_${name}`) ||
@@ -274,14 +274,14 @@ export function resolveTracingMode(configValue?: TracingMode): TracingMode {
     if (!_VALID_TRACING_MODES.has(lower)) {
       throw new Error(
         `Invalid LANGSMITH_TRACING_MODE=${JSON.stringify(envMode)}. ` +
-          `Must be one of: ${[..._VALID_TRACING_MODES].sort().join(", ")}`
+          `Must be one of: ${[..._VALID_TRACING_MODES].sort().join(", ")}`,
       );
     }
     if (getOtelEnabled()) {
       console.warn(
         "Both LANGSMITH_TRACING_MODE and the legacy OTEL_ENABLED / " +
           "LANGSMITH_OTEL_ENABLED env vars are set. " +
-          "LANGSMITH_TRACING_MODE takes precedence."
+          "LANGSMITH_TRACING_MODE takes precedence.",
       );
     }
     return lower as TracingMode;

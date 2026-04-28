@@ -102,7 +102,7 @@ test("evaluate handles various data inputs and evaluator shapes", async () => {
   expect(
     multiFirst.evaluationResults.results
       .map(({ comment }) => comment)
-      .filter((c): c is string => !!c)
+      .filter((c): c is string => !!c),
   ).toEqual(expect.arrayContaining([multiExpected, multiExpected]));
 
   // 3) AsyncIterable of Examples as data input.
@@ -115,7 +115,7 @@ test("evaluate handles various data inputs and evaluator shapes", async () => {
   const asyncIterableFirst = asyncIterableRes.results[0];
   expect(asyncIterableFirst.evaluationResults.results).toHaveLength(1);
   expect(asyncIterableFirst.evaluationResults.results[0].comment).toEqual(
-    `Run: ${asyncIterableFirst.run.id} Example: ${asyncIterableFirst.example.id}`
+    `Run: ${asyncIterableFirst.run.id} Example: ${asyncIterableFirst.example.id}`,
   );
 
   // 4) Array of Examples as data input.
@@ -134,7 +134,7 @@ test("evaluate handles various data inputs and evaluator shapes", async () => {
   const arrayFirst = arrayRes.results[0];
   expect(arrayFirst.evaluationResults.results).toHaveLength(1);
   expect(arrayFirst.evaluationResults.results[0].comment).toEqual(
-    `Run: ${arrayFirst.run.id} Example: ${arrayFirst.example.id}`
+    `Run: ${arrayFirst.run.id} Example: ${arrayFirst.example.id}`,
   );
 });
 
@@ -186,7 +186,7 @@ test("evaluate can repeat", async () => {
     const exampleId = result.example.id;
     runCountByExampleId.set(
       exampleId,
-      (runCountByExampleId.get(exampleId) ?? 0) + 1
+      (runCountByExampleId.get(exampleId) ?? 0) + 1,
     );
   }
   for (const example of examples) {
@@ -209,7 +209,7 @@ test("evaluate works with summary evaluators in various configurations", async (
   // Traditional-signature summary evaluator (runs, examples) -> EvaluationResult.
   const positionalSummaryEvaluator = (
     runs: Run[],
-    examples?: Example[]
+    examples?: Example[],
   ): Promise<EvaluationResult> => {
     const runIds = runs.map(({ id }) => id).join(", ");
     const exampleIds = examples?.map(({ id }) => id).join(", ");
@@ -283,7 +283,7 @@ test("evaluate works with summary evaluators in various configurations", async (
 
   // Both positional summary evaluators produced identical feedback.
   const positionalResults = summaryResults.filter(
-    (r) => r.key === "MyCustomScore"
+    (r) => r.key === "MyCustomScore",
   );
   expect(positionalResults).toHaveLength(2);
   for (const r of positionalResults) {
@@ -293,7 +293,7 @@ test("evaluate works with summary evaluators in various configurations", async (
 
   // Object-style summary evaluator received inputs/outputs/referenceOutputs.
   const objectStyleResult = summaryResults.find(
-    (r) => r.key === "OutputOnlySummaryEvaluator"
+    (r) => r.key === "OutputOnlySummaryEvaluator",
   );
   expect(objectStyleResult).toBeDefined();
   expect(typeof objectStyleResult?.score).toBe("number");
@@ -301,7 +301,7 @@ test("evaluate works with summary evaluators in various configurations", async (
   const allInputs = evalRes.results.map(({ example }) => example.inputs);
   const allOutputs = evalRes.results.map(({ run }) => run.outputs);
   const allReferenceOutputs = evalRes.results.map(
-    ({ example }) => example.outputs
+    ({ example }) => example.outputs,
   );
   const inputValues = allInputs.map((input) => input.input).join(", ");
   const outputValues = allOutputs.map((output) => output?.foo).join(", ");
@@ -313,7 +313,7 @@ test("evaluate works with summary evaluators in various configurations", async (
       return sum + Math.abs(output?.foo - allReferenceOutputs[i]?.output);
     }, 0) / allOutputs.length;
   expect(objectStyleResult?.comment).toBe(
-    `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${expectedAvgDiff}`
+    `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${expectedAvgDiff}`,
   );
 });
 
@@ -350,7 +350,7 @@ test("split info saved correctly", async () => {
     myExp = session;
   }
   expect(myExp?.extra?.metadata?.dataset_splits.sort()).toEqual(
-    ["test", "train", "validation"].sort()
+    ["test", "train", "validation"].sort(),
   );
 
   await evaluate(targetFunc, {
@@ -372,7 +372,7 @@ test("split info saved correctly", async () => {
   }
 
   expect(myExp2?.extra?.metadata?.dataset_splits.sort()).toEqual(
-    ["test", "validation"].sort()
+    ["test", "validation"].sort(),
   );
 
   await evaluate(targetFunc, {
@@ -394,7 +394,7 @@ test("split info saved correctly", async () => {
   }
 
   expect(myExp3?.extra?.metadata?.dataset_splits.sort()).toEqual(
-    ["train"].sort()
+    ["train"].sort(),
   );
 });
 
@@ -419,7 +419,7 @@ test("evaluate supports concurrency limits and varied evaluator return types", a
   // Evaluator that returns multiple feedback keys via an EvaluationResults object.
   const multiKeyEvaluator = (
     run: Run,
-    example?: Example
+    example?: Example,
   ): Promise<EvaluationResults> =>
     Promise.resolve({
       results: [
@@ -468,13 +468,13 @@ test("evaluate supports concurrency limits and varied evaluator return types", a
     const expectedComment = `Run: ${result.run.id} Example: ${result.example?.id}`;
 
     const single = result.evaluationResults.results.find(
-      (r) => r.key === "single"
+      (r) => r.key === "single",
     );
     expect(single).toBeDefined();
     expect(single?.comment).toEqual(expectedComment);
 
     const firstKey = result.evaluationResults.results.find(
-      (r) => r.key === "first-key"
+      (r) => r.key === "first-key",
     );
     expect(firstKey).toMatchObject({
       key: "first-key",
@@ -483,7 +483,7 @@ test("evaluate supports concurrency limits and varied evaluator return types", a
     });
 
     const secondKey = result.evaluationResults.results.find(
-      (r) => r.key === "second-key"
+      (r) => r.key === "second-key",
     );
     expect(secondKey).toMatchObject({
       key: "second-key",
@@ -492,7 +492,7 @@ test("evaluate supports concurrency limits and varied evaluator return types", a
     });
 
     const asyncResult = result.evaluationResults.results.find(
-      (r) => r.key === "async_evaluator"
+      (r) => r.key === "async_evaluator",
     );
     expect(asyncResult).toBeDefined();
     expect(typeof asyncResult?.score).toBe("number");
@@ -510,15 +510,15 @@ test("concurrent evaluate restores dataset order before summary", async () => {
   }
 
   const orderedExamples = examples.sort(
-    (a, b) => Number(a.inputs.input) - Number(b.inputs.input)
+    (a, b) => Number(a.inputs.input) - Number(b.inputs.input),
   );
   const expectedInputs = orderedExamples.map((example) =>
-    Number(example.inputs.input)
+    Number(example.inputs.input),
   );
 
   const targetFunc = async (input: Record<string, any>) => {
     await new Promise((resolve) =>
-      setTimeout(resolve, input.input === 1 ? 100 : 10)
+      setTimeout(resolve, input.input === 1 ? 100 : 10),
     );
     return {
       foo: input.input + 1,
@@ -527,7 +527,7 @@ test("concurrent evaluate restores dataset order before summary", async () => {
 
   const customEvaluator = async (run: Run, example?: Example) => {
     await new Promise((resolve) =>
-      setTimeout(resolve, Number(example?.inputs.input) === 1 ? 10 : 100)
+      setTimeout(resolve, Number(example?.inputs.input) === 1 ? 10 : 100),
     );
     return {
       key: "paired",
@@ -562,18 +562,18 @@ test("concurrent evaluate restores dataset order before summary", async () => {
   });
 
   expect(
-    evalRes.results.map(({ example }) => Number(example.inputs.input))
+    evalRes.results.map(({ example }) => Number(example.inputs.input)),
   ).toEqual(expectedInputs);
   expect(evalRes.results.map(({ run }) => run.outputs?.foo)).toEqual(
-    expectedInputs.map((input) => input + 1)
+    expectedInputs.map((input) => input + 1),
   );
   expect(
     evalRes.results.map(
-      ({ evaluationResults }) => evaluationResults.results[0].comment
-    )
+      ({ evaluationResults }) => evaluationResults.results[0].comment,
+    ),
   ).toEqual(expectedInputs.map((input) => `input:${input}`));
   expect(evalRes.summaryResults.results[0].comment).toBe(
-    expectedInputs.join(",")
+    expectedInputs.join(","),
   );
 });
 
@@ -606,8 +606,8 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
 
   await Promise.all(
     [exp1, exp2].flatMap(({ results }) =>
-      results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
-    )
+      results.flatMap(({ run }) => waitUntilRunFound(client, run.id)),
+    ),
   );
   // Create comparative evaluator
   const comparativeEvaluator = ({
@@ -624,7 +624,7 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
       runs.map((run) => [
         run.id,
         run.outputs?.foo === example.outputs?.output ? 1 : 0,
-      ])
+      ]),
     );
 
     return {
@@ -641,7 +641,7 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
       description: "Comparative evaluation test",
       randomizeOrder: true,
       loadNested: false,
-    }
+    },
   );
 
   // Verify we got ComparisonEvaluationResults
@@ -663,14 +663,14 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
     (input: Record<string, any>) => ({ foo: input.input + 1 }),
     {
       data: TESTING_DATASET_NAME,
-    }
+    },
   );
 
   const exp2 = await evaluate(
     (input: Record<string, any>) => ({ foo: input.input + 2 }),
     {
       data: TESTING_DATASET_NAME,
-    }
+    },
   );
 
   // Create a standard evaluator (wrong type)
@@ -684,7 +684,7 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
     evaluate([exp1.experimentName, exp2.experimentName], {
       evaluators: [standardEvaluator],
       description: "Should fail at runtime",
-    })
+    }),
   ).rejects.toThrow(); // You might want to be more specific about the error message
 });
 

@@ -21,7 +21,7 @@ export interface StringEvaluatorParams {
   predictionKey?: string;
   answerKey?: string;
   gradingFunction: (
-    params: GradingFunctionParams
+    params: GradingFunctionParams,
   ) => Promise<GradingFunctionResult>;
 }
 
@@ -31,7 +31,7 @@ export class StringEvaluator implements RunEvaluator {
   protected predictionKey: string;
   protected answerKey?: string;
   protected gradingFunction: (
-    params: GradingFunctionParams
+    params: GradingFunctionParams,
   ) => Promise<GradingFunctionResult>;
 
   constructor(params: StringEvaluatorParams) {

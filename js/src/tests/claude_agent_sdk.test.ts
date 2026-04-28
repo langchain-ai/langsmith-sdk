@@ -39,11 +39,13 @@ const createMockSDK = () => {
   const inputSpy = jest.fn();
 
   const mockQuery = async function* (
-    params: MockQueryParams
+    params: MockQueryParams,
   ): AsyncGenerator<MockSDKMessage, void, unknown> {
     // Simulate system message
     const prompt =
-      typeof params.prompt === "string" ? [params.prompt] : params.prompt ?? [];
+      typeof params.prompt === "string"
+        ? [params.prompt]
+        : (params.prompt ?? []);
 
     for await (const message of prompt) {
       inputSpy(message, { createdAt: Date.now() });
@@ -91,11 +93,11 @@ const createMockSDK = () => {
     inputSchema: unknown,
     handler: (
       args: T,
-      extra: unknown
+      extra: unknown,
     ) => Promise<{
       content: Array<unknown>;
       isError?: boolean;
-    }>
+    }>,
   ) => {
     return {
       name,
@@ -155,7 +157,7 @@ describe("wrapClaudeAgentSDK", () => {
         return {
           content: [{ type: "text", text: `Result: ${eval(args.expression)}` }],
         };
-      }
+      },
     );
 
     expect(calculator.name).toBe("calculator");
@@ -170,7 +172,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         // First message group
         yield {
@@ -220,7 +222,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield {
           type: "assistant",
@@ -261,7 +263,7 @@ describe("wrapClaudeAgentSDK", () => {
     expect(assistantMessage.message?.usage?.output_tokens).toBe(50);
     expect(assistantMessage.message?.usage?.cache_read_input_tokens).toBe(20);
     expect(assistantMessage.message?.usage?.cache_creation_input_tokens).toBe(
-      10
+      10,
     );
   });
 
@@ -292,7 +294,7 @@ describe("wrapClaudeAgentSDK", () => {
     expect(messages.length).toBeGreaterThan(0);
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       data: {
         "claude.conversation:0": {
@@ -335,11 +337,11 @@ describe("wrapClaudeAgentSDK", () => {
     expect(mockSDK.spy.input).toHaveBeenCalledTimes(2);
     expect(mockSDK.spy.input).toHaveBeenCalledWith(
       { type: "user", message: { role: "user", content: "Hello" } },
-      { createdAt: expect.any(Number) }
+      { createdAt: expect.any(Number) },
     );
     expect(mockSDK.spy.input).toHaveBeenCalledWith(
       { type: "user", message: { role: "user", content: "How are you?" } },
-      { createdAt: expect.any(Number) }
+      { createdAt: expect.any(Number) },
     );
 
     const extractDuration = (call: unknown[]) => {
@@ -349,11 +351,11 @@ describe("wrapClaudeAgentSDK", () => {
 
     expect(
       extractDuration(mockSDK.spy.input.mock.calls[1]) -
-        extractDuration(mockSDK.spy.input.mock.calls[0])
+        extractDuration(mockSDK.spy.input.mock.calls[0]),
     ).toBeGreaterThan(250);
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "claude.assistant.turn:0",
@@ -419,7 +421,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield { type: "system" };
 
@@ -467,7 +469,7 @@ describe("wrapClaudeAgentSDK", () => {
     expect(messages.length).toBe(4);
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["claude.conversation:0", "claude.assistant.turn:1"],
       edges: [["claude.conversation:0", "claude.assistant.turn:1"]],
@@ -525,7 +527,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield {
           type: "system",
@@ -608,7 +610,7 @@ describe("wrapClaudeAgentSDK", () => {
     ]);
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "claude.conversation:0",
@@ -679,7 +681,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield { type: "system", session_id: "session_abc123" };
 
@@ -779,7 +781,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield { type: "system", session_id: "session_abc123" };
 
@@ -855,7 +857,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         // Main agent spawns a Task (subagent)
         yield {
@@ -952,7 +954,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield { type: "system", session_id: "session_abc123" };
 
@@ -1072,7 +1074,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = {
       ...createMockSDK(),
       query: async function* (
-        _params: MockQueryParams
+        _params: MockQueryParams,
       ): AsyncGenerator<MockSDKMessage, void, unknown> {
         yield { type: "system", session_id: "session_abc123" };
         // Main agent spawns a Task
@@ -1375,7 +1377,7 @@ describe("wrapClaudeAgentSDK", () => {
     const mockSDK = createMockSDK();
     const wrapped = wrapClaudeAgentSDK(mockSDK);
     expect(() => wrapClaudeAgentSDK(wrapped)).toThrow(
-      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
+      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`.",
     );
   });
 

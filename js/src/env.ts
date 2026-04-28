@@ -6,6 +6,6 @@ export const isTracingEnabled = (tracingEnabled?: boolean): boolean => {
   }
   const envVars = ["TRACING_V2", "TRACING"];
   return !!envVars.find(
-    (envVar) => getLangSmithEnvironmentVariable(envVar) === "true"
+    (envVar) => getLangSmithEnvironmentVariable(envVar) === "true",
   );
 };

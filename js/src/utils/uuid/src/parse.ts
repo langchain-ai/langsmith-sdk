@@ -32,7 +32,7 @@ function parse(uuid: string): NonSharedArrayBuffer {
     (v >>> 24) & 0xff,
     (v >>> 16) & 0xff,
     (v >>> 8) & 0xff,
-    v & 0xff
+    v & 0xff,
   );
 }
 

@@ -1,10 +1,10 @@
 export function atee<T>(
   iter: AsyncGenerator<T>,
-  length = 2
+  length = 2,
 ): AsyncGenerator<T>[] {
   const buffers = Array.from(
     { length },
-    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
+    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>,
   );
   return buffers.map(async function* makeIter(buffer) {
     while (true) {

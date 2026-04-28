@@ -47,7 +47,7 @@ import {
 } from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
-  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
+  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>(),
 );
 
 /**
@@ -56,7 +56,7 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
 function maybeCreateOtelContext<T>(
   runTree?: RunTree,
   projectName?: string,
-  tracer?: OTELTracer
+  tracer?: OTELTracer,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
   if (!runTree || runTree.client.tracingMode !== "otel") {
@@ -108,7 +108,7 @@ function maybeCreateOtelContext<T>(
             }
           }
           return fn();
-        }
+        },
       );
     };
   } catch {
@@ -139,15 +139,15 @@ const handleRunInputs = <Args extends unknown[]>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputs: any,
   processInputs: (
-    inputs: Readonly<ProcessInputs<Args>>
-  ) => KVMap | Promise<KVMap>
+    inputs: Readonly<ProcessInputs<Args>>,
+  ) => KVMap | Promise<KVMap>,
 ): KVMap => {
   try {
     return processInputs(inputs);
   } catch (e) {
     console.error(
       "Error occurred during processInputs. Sending raw inputs:",
-      e
+      e,
     );
     return inputs;
   }
@@ -185,7 +185,7 @@ async function handleEnd(params: {
 
 const _populateUsageMetadataAndOutputs = (
   processedOutputs: KVMap,
-  runTree?: RunTree
+  runTree?: RunTree,
 ) => {
   if (runTree !== undefined) {
     let usageMetadata: ExtractedUsageMetadata | undefined;
@@ -207,7 +207,7 @@ const _populateUsageMetadataAndOutputs = (
 };
 
 function isAsyncFn(
-  fn: unknown
+  fn: unknown,
 ): fn is (...args: unknown[]) => Promise<unknown> {
   return (
     fn != null &&
@@ -221,7 +221,7 @@ async function handleRunOutputs<Return>(params: {
   runTree?: RunTree;
   rawOutputs: unknown;
   processOutputsFn: (
-    outputs: Readonly<ProcessOutputs<Return>>
+    outputs: Readonly<ProcessOutputs<Return>>,
   ) => KVMap | Promise<KVMap>;
   on_end: (runTree?: RunTree) => void;
   postRunPromise?: Promise<void>;
@@ -268,7 +268,7 @@ async function handleRunOutputs<Return>(params: {
         .catch(async (e: unknown) => {
           console.error(
             "Error occurred during processOutputs. Sending unprocessed outputs:",
-            e
+            e,
           );
           try {
             await childRunEndPromises;
@@ -294,7 +294,7 @@ async function handleRunOutputs<Return>(params: {
   } catch (e) {
     console.error(
       "Error occurred during processOutputs. Sending unprocessed outputs:",
-      e
+      e,
     );
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
@@ -310,7 +310,7 @@ async function handleRunOutputs<Return>(params: {
     .catch((e) => {
       console.error(
         "Error occurred during childRunEndPromises.then. This should never happen.",
-        e
+        e,
       );
     });
   return;
@@ -320,7 +320,7 @@ const handleRunAttachments = (
   rawInputs: unknown[],
   extractAttachments?: (
     ...args: unknown[]
-  ) => [Attachments | undefined, unknown[]]
+  ) => [Attachments | undefined, unknown[]],
 ): [Attachments | undefined, unknown[]] => {
   if (!extractAttachments) {
     return [undefined, rawInputs];
@@ -342,11 +342,11 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
   processInputs: (
-    inputs: Readonly<ProcessInputs<Args>>
+    inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
-    | undefined
+    | undefined,
 ): RunTree | ContextPlaceholder => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
     return { tracingEnabled: runTree.tracingEnabled };
@@ -356,7 +356,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     inputs,
     extractAttachments as
       | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
-      | undefined
+      | undefined,
   );
   runTree.attachments = attached;
   const processedInputs = handleRunInputs<Args>(args, processInputs);
@@ -392,7 +392,7 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
           resolve: (value: unknown) => unknown,
           reject: (error: unknown) => unknown = (x) => {
             throw x;
-          }
+          },
         ) => {
           return boundThen(
             (value: unknown) => {
@@ -402,7 +402,7 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
             (error: unknown) => {
               proxyState.current = ["reject", error];
               return reject(error);
-            }
+            },
           );
         };
       }
@@ -435,7 +435,7 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
 
 const convertSerializableArg = (
   arg: unknown,
-  options?: { depth?: number; maxDepth?: number }
+  options?: { depth?: number; maxDepth?: number },
 ): { converted: unknown; deferredInputs: boolean } => {
   if (isReadableStream(arg)) {
     const proxyState: unknown[] = [];
@@ -482,12 +482,12 @@ const convertSerializableArg = (
                   ) => {
                     const wrapped = getSerializablePromise(
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      bound(...(args as any))
+                      bound(...(args as any)),
                     );
                     proxyState.current.push(
                       wrapped as Promise<IteratorResult<unknown>> & {
                         toJSON: () => IteratorResult<unknown>;
-                      }
+                      },
                     );
                     return wrapped;
                   };
@@ -507,7 +507,7 @@ const convertSerializableArg = (
           return () => {
             const onlyNexts = proxyState.current;
             const serialized = onlyNexts.map(
-              (next) => next.toJSON() as IteratorResult<unknown> | undefined
+              (next) => next.toJSON() as IteratorResult<unknown> | undefined,
             );
 
             const chunks = serialized.reduce<unknown[]>((memo, next) => {
@@ -611,12 +611,12 @@ const convertSerializableArg = (
 export type ProcessInputs<Args extends unknown[]> = Args extends []
   ? Record<string, never>
   : Args extends [infer Input]
-  ? Input extends KVMap
-    ? Input extends Iterable<infer Item> | AsyncIterable<infer Item>
-      ? { input: Array<Item> }
-      : Input
-    : { input: Input }
-  : { args: Args };
+    ? Input extends KVMap
+      ? Input extends Iterable<infer Item> | AsyncIterable<infer Item>
+        ? { input: Array<Item> }
+        : Input
+      : { input: Input }
+    : { args: Args };
 
 export type ProcessOutputs<ReturnValue> = ReturnValue extends KVMap
   ? ReturnValue extends Iterable<infer Item> | AsyncIterable<infer Item>
@@ -676,7 +676,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * @returns Transformed key-value map
    */
   processInputs?: (
-    inputs: Readonly<ProcessInputs<Parameters<Func>>>
+    inputs: Readonly<ProcessInputs<Parameters<Func>>>,
   ) => KVMap | Promise<KVMap>;
 
   /**
@@ -693,7 +693,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * @returns Transformed key-value map
    */
   processOutputs?: (
-    outputs: Readonly<ProcessOutputs<Awaited<ReturnType<Func>>>>
+    outputs: Readonly<ProcessOutputs<Awaited<ReturnType<Func>>>>,
   ) => KVMap | Promise<KVMap>;
 };
 
@@ -714,7 +714,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<Func extends (...args: any[]) => any>(
   wrappedFunc: Func,
-  config?: TraceableConfig<Func>
+  config?: TraceableConfig<Func>,
 ) {
   type Inputs = Parameters<Func>;
   const {
@@ -779,7 +779,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         `Failed to extract runtime config from args for ${
           runTreeConfig?.name ?? wrappedFunc.name
         }`,
-        err
+        err,
       );
       ensuredConfig = {
         name: wrappedFunc.name || "<lambda>",
@@ -809,7 +809,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       const { converted, deferredInputs: argDefersInput } =
         convertSerializableArg(
           processedArgs[i],
-          config?.__deferredSerializableArgOptions
+          config?.__deferredSerializableArgOptions,
         );
       processedArgs[i] = converted;
       deferredInputs = deferredInputs || argDefersInput;
@@ -817,7 +817,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     const [currentContext, rawInputs] = ((): [
       RunTree | ContextPlaceholder,
-      Inputs
+      Inputs,
     ] => {
       const [firstArg, ...restArgs] = processedArgs;
 
@@ -829,7 +829,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             restArgs as Inputs,
             config?.getInvocationParams,
             processInputsFn,
-            extractAttachmentsFn
+            extractAttachmentsFn,
           ),
           restArgs as Inputs,
         ];
@@ -855,7 +855,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           restArgs as Inputs,
           config?.getInvocationParams,
           processInputsFn,
-          extractAttachmentsFn
+          extractAttachmentsFn,
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -880,7 +880,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           Array.isArray(prevRunFromStore[_LC_CHILD_RUN_END_PROMISES_KEY])
         ) {
           prevRunFromStore[_LC_CHILD_RUN_END_PROMISES_KEY].push(
-            runEndedPromise
+            runEndedPromise,
           );
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -893,7 +893,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           processedArgs,
           config?.getInvocationParams,
           processInputsFn,
-          extractAttachmentsFn
+          extractAttachmentsFn,
         );
         if (lc_contextVars) {
           ((currentRunTree ?? {}) as Record<string | symbol, unknown>)[
@@ -921,7 +921,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         processedArgs,
         config?.getInvocationParams,
         processInputsFn,
-        extractAttachmentsFn
+        extractAttachmentsFn,
       );
       if (lc_contextVars) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -940,7 +940,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
       config?.project_name,
-      config?.tracer
+      config?.tracer,
     );
     const otel_context = getOTELContext();
 
@@ -963,7 +963,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
       function tapReadableStreamForTracing(
         stream: ReadableStream<unknown>,
-        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined,
       ) {
         const reader = stream.getReader();
         let finished = false;
@@ -976,7 +976,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             while (true) {
               const result = await (snapshot
                 ? snapshot(() =>
-                    otel_context.with(capturedOtelContext, () => reader.read())
+                    otel_context.with(capturedOtelContext, () => reader.read()),
                   )
                 : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
@@ -1022,7 +1022,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
       async function* wrapAsyncIteratorForTracing(
         iterator: AsyncIterator<unknown, unknown, undefined>,
-        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined,
       ) {
         let finished = false;
         let hasError = false;
@@ -1032,7 +1032,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           while (true) {
             const { value, done } = await (snapshot
               ? snapshot(() =>
-                  otel_context.with(capturedOtelContext, () => iterator.next())
+                  otel_context.with(capturedOtelContext, () => iterator.next()),
                 )
               : otel_context.with(capturedOtelContext, () => iterator.next()));
             if (done) {
@@ -1075,7 +1075,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
       function wrapAsyncGeneratorForTracing(
         iterable: AsyncIterable<unknown>,
-        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined,
       ) {
         if (isReadableStream(iterable)) {
           return tapReadableStreamForTracing(iterable, snapshot);
@@ -1117,7 +1117,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         __finalTracedIteratorKey !== undefined &&
         isAsyncIterable(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (returnValue as Record<string, any>)[__finalTracedIteratorKey]
+          (returnValue as Record<string, any>)[__finalTracedIteratorKey],
         )
       ) {
         const snapshot = AsyncLocalStorage.snapshot();
@@ -1126,7 +1126,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (returnValue as Record<string, any>)[__finalTracedIteratorKey],
-            snapshot
+            snapshot,
           ),
         };
       }
@@ -1138,7 +1138,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               if (isAsyncIterable(rawOutput)) {
                 const snapshot = AsyncLocalStorage.snapshot();
                 return resolve(
-                  wrapAsyncGeneratorForTracing(rawOutput, snapshot)
+                  wrapAsyncGeneratorForTracing(rawOutput, snapshot),
                 );
               }
 
@@ -1149,7 +1149,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 __finalTracedIteratorKey !== undefined &&
                 isAsyncIterable(
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  (rawOutput as Record<string, any>)[__finalTracedIteratorKey]
+                  (rawOutput as Record<string, any>)[__finalTracedIteratorKey],
                 )
               ) {
                 const snapshot = AsyncLocalStorage.snapshot();
@@ -1160,7 +1160,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                     (rawOutput as Record<string, any>)[
                       __finalTracedIteratorKey
                     ],
-                    snapshot
+                    snapshot,
                   ),
                 };
               }
@@ -1178,7 +1178,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                         }
 
                         return memo;
-                      }, [])
+                      }, []),
                     ),
                     processOutputsFn,
                     on_end,
@@ -1188,7 +1188,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 } catch (e) {
                   console.error(
                     "[LANGSMITH]: Error occurred while handling run outputs:",
-                    e
+                    e,
                   );
                 }
 
@@ -1224,7 +1224,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 deferredInputs,
               });
               throw error;
-            }
+            },
           )
           .then(resolve, reject);
       });
@@ -1246,7 +1246,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     // Wrap with OTEL context if available, similar to Python's implementation
     if (otelContextManager) {
       return asyncLocalStorage.run(currentContext, () =>
-        otelContextManager(runWithContext)
+        otelContextManager(runWithContext),
       );
     } else {
       return asyncLocalStorage.run(currentContext, runWithContext);

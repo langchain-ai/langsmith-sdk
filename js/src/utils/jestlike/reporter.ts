@@ -82,7 +82,7 @@ export async function printReporterTable(
     status: "pass" | "passed" | "fail" | "failed" | "pending" | "skipped";
   }[],
   testStatus: "pass" | "skip" | "fail" | "passed" | "failed" | "skipped",
-  failureMessage?: string
+  failureMessage?: string,
 ) {
   const rows = [];
   const feedbackKeys = new Set<string>();
@@ -120,15 +120,15 @@ export async function printReporterTable(
       const resultsPath = path.join(
         os.tmpdir(),
         "langsmith_test_results",
-        `${testId}.json`
+        `${testId}.json`,
       );
       let fileContent;
       try {
         fileContent = JSON.parse(await fs.readFile(resultsPath, "utf-8"));
         await fs.unlink(resultsPath);
-      } catch (e) {
+      } catch (_e) {
         console.log(
-          "[LANGSMITH]: Failed to read custom evaluation results. Please contact us for help."
+          "[LANGSMITH]: Failed to read custom evaluation results. Please contact us for help.",
         );
         rows.push([
           {
@@ -150,7 +150,7 @@ export async function printReporterTable(
           }
           return acc;
         },
-        {}
+        {},
       );
       experimentUrl = experimentUrl ?? fileContent.experimentUrl;
       rows.push([
@@ -169,7 +169,7 @@ export async function printReporterTable(
 
   const feedbackKeysTotalLength = [...feedbackKeys].reduce(
     (l, key) => l + key.length,
-    0
+    0,
   );
   const collapseFeedbackColumn =
     feedbackKeysTotalLength > FEEDBACK_COLLAPSE_THRESHOLD;
@@ -180,7 +180,7 @@ export async function printReporterTable(
     if (scores.length > 0) {
       const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
       const stdDev = Math.sqrt(
-        scores.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / scores.length
+        scores.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / scores.length,
       );
       for (const row of rows) {
         const score = row[0][key];
@@ -248,10 +248,10 @@ export async function printReporterTable(
           (max: number, feedbackLine: string) => {
             return Math.max(
               max,
-              feedbackLine.replace(STRIP_ANSI_REGEX, "").length
+              feedbackLine.replace(STRIP_ANSI_REGEX, "").length,
             );
           },
-          0
+          0,
         ) ?? 0;
       return Math.max(max, maxFeedbackLineLength);
     }, 0);
@@ -274,8 +274,8 @@ export async function printReporterTable(
   const testStatusColor = testStatus.includes("pass")
     ? chalk.green
     : testStatus.includes("fail")
-    ? chalk.red
-    : chalk.yellow;
+      ? chalk.red
+      : chalk.yellow;
   if (testSuiteName) {
     console.log(testStatusColor(`› ${testSuiteName}`));
   }
@@ -286,7 +286,7 @@ export async function printReporterTable(
   if (experimentUrl) {
     console.log();
     console.log(
-      ` [LANGSMITH]: View full results in LangSmith at ${experimentUrl}`
+      ` [LANGSMITH]: View full results in LangSmith at ${experimentUrl}`,
     );
     console.log();
   }

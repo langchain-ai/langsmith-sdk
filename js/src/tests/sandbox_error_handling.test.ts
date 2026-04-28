@@ -55,7 +55,7 @@ describe("handleClientHttpError body consumption", () => {
     // Bug: handleClientHttpError calls parseErrorResponse (consuming body),
     // then response.clone() — crashes with "Body has already been consumed"
     await expect(
-      client.captureSnapshot("test-sandbox", "my-snapshot")
+      client.captureSnapshot("test-sandbox", "my-snapshot"),
     ).rejects.toThrow(LangSmithValidationError);
   });
 });
@@ -78,7 +78,7 @@ describe("handleSandboxCreationError body consumption", () => {
     const client = makeClient();
 
     await expect(client.createSandbox("snap-123")).rejects.toThrow(
-      LangSmithValidationError
+      LangSmithValidationError,
     );
   });
 
@@ -96,7 +96,7 @@ describe("handleSandboxCreationError body consumption", () => {
     const client = makeClient();
 
     await expect(client.createSandbox("snap-123")).rejects.toThrow(
-      LangSmithSandboxCreationError
+      LangSmithSandboxCreationError,
     );
   });
 });

@@ -30,7 +30,7 @@ import { isAsyncIterable, isIteratorLike } from "./utils/asserts.js";
  * @returns {CallbackManager | undefined} Callback manager used by LangChain Runnable objects.
  */
 export async function getLangchainCallbacks(
-  currentRunTree?: RunTree | undefined
+  currentRunTree?: RunTree | undefined,
 ) {
   const runTree: RunTree | undefined = currentRunTree ?? getCurrentRunTree();
   if (!runTree) return undefined;
@@ -44,7 +44,7 @@ export async function getLangchainCallbacks(
 
   let langChainTracer = callbacks?.handlers.find(
     (handler): handler is LangChainTracer =>
-      handler?.name === "langchain_tracer"
+      handler?.name === "langchain_tracer",
   );
 
   if (!langChainTracer && runTree.tracingEnabled) {
@@ -125,7 +125,7 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
 
     if (!isTraceableFunction(fields.func)) {
       throw new Error(
-        "RunnableTraceable requires a function that is wrapped in traceable higher-order function"
+        "RunnableTraceable requires a function that is wrapped in traceable higher-order function",
       );
     }
 
@@ -141,13 +141,13 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
 
     return (await this.func(
       patchConfig(config, { callbacks }),
-      input
+      input,
     )) as RunOutput;
   }
 
   async *_streamIterator(
     input: RunInput,
-    options?: Partial<RunnableConfig>
+    options?: Partial<RunnableConfig>,
   ): AsyncGenerator<RunOutput> {
     const result = await this.invoke(input, options);
 

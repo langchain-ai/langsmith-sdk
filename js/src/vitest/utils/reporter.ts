@@ -45,7 +45,7 @@ export const printVitestTestModulesReporterTable = async (
     };
     state: () => "skipped" | "passed" | "failed";
     relativeModuleId: string;
-  }[]
+  }[],
 ) => {
   for (const testModule of testModules) {
     const tests = [...testModule.children.allTests()].map((test) => {
@@ -59,7 +59,7 @@ export const printVitestTestModulesReporterTable = async (
     await printReporterTable(
       testModule.relativeModuleId,
       tests,
-      testModule.state()
+      testModule.state(),
     );
   }
 };

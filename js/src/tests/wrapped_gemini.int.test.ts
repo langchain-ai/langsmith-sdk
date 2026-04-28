@@ -96,7 +96,7 @@ test("wrapping same instance should throw", async () => {
   const wrapped = wrapGemini(
     new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY || "test-key",
-    })
+    }),
   );
   expect(() => wrapGemini(wrapped)).toThrowError(/already been wrapped/i);
 });
@@ -111,7 +111,7 @@ test("should trace calls to langsmith", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   await geminiClient.models.generateContent({
@@ -144,7 +144,7 @@ test("should include model in traced inputs", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   await geminiClient.models.generateContent({
@@ -157,7 +157,7 @@ test("should include model in traced inputs", async () => {
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   const postCalls = callSpy.mock.calls.filter(
-    (call: any) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST",
   );
   expect(postCalls.length).toBeGreaterThan(0);
 
@@ -178,7 +178,7 @@ test("should extract usage metadata in outputs", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   await geminiClient.models.generateContent({
@@ -221,7 +221,7 @@ test("should extract usage metadata in extra.metadata.usage_metadata", async () 
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   await geminiClient.models.generateContent({
@@ -264,7 +264,7 @@ test("should handle function calling", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   const toolDeclaration = {
@@ -293,7 +293,7 @@ test("should handle function calling", async () => {
 
   // Find the PATCH call
   const patchCalls = callSpy.mock.calls.filter(
-    (call: any) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
 
   if (patchCalls.length > 0) {
@@ -321,7 +321,7 @@ test("should handle image input", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   // Simple 1x1 red pixel PNG in base64
@@ -383,7 +383,7 @@ test("should handle image generation output", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   // Use gemini-2.5-flash-image model which supports image generation
@@ -411,7 +411,7 @@ test("should handle image generation output", async () => {
     const hasImage = parts.some(
       (part: any) =>
         part.inlineData?.mimeType?.startsWith("image/") ||
-        part.fileData?.mimeType?.startsWith("image/")
+        part.fileData?.mimeType?.startsWith("image/"),
     );
     expect(hasImage).toBe(true);
   }
@@ -451,7 +451,7 @@ test("prepopulated invocation params are passed through", async () => {
         custom_key: "custom_value",
         version: "1.0.0",
       },
-    }
+    },
   );
 
   await wrappedClient.models.generateContent({
@@ -462,7 +462,7 @@ test("prepopulated invocation params are passed through", async () => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call: any) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST",
   );
 
   expect(postCalls.length).toBeGreaterThan(0);

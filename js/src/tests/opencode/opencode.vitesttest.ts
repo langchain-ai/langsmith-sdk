@@ -86,7 +86,7 @@ it("basic", async () => {
             expect.objectContaining({
               role: "system",
               content: expect.stringContaining(
-                "You are opencode, an interactive CLI tool"
+                "You are opencode, an interactive CLI tool",
               ),
             }),
             expect.objectContaining({
@@ -152,7 +152,7 @@ it("basic", async () => {
             expect.objectContaining({
               role: "system",
               content: expect.stringContaining(
-                "You are opencode, an interactive CLI tool"
+                "You are opencode, an interactive CLI tool",
               ),
             }),
             expect.objectContaining({
@@ -221,7 +221,7 @@ it("basic", async () => {
         inputs: {},
         outputs: {},
         error: expect.stringContaining(
-          "Invalid input: expected string, received undefined"
+          "Invalid input: expected string, received undefined",
         ),
       },
       "glob:9": {
@@ -230,7 +230,7 @@ it("basic", async () => {
         inputs: {},
         outputs: {},
         error: expect.stringContaining(
-          "Invalid input: expected string, received undefined"
+          "Invalid input: expected string, received undefined",
         ),
       },
       "opencode.assistant.turn:10": {
@@ -241,7 +241,7 @@ it("basic", async () => {
             expect.objectContaining({
               role: "system",
               content: expect.stringContaining(
-                "You are opencode, an interactive CLI tool"
+                "You are opencode, an interactive CLI tool",
               ),
             }),
             expect.objectContaining({
@@ -303,7 +303,7 @@ it("basic", async () => {
             expect.objectContaining({
               role: "system",
               content: expect.stringContaining(
-                "You are opencode, an interactive CLI tool"
+                "You are opencode, an interactive CLI tool",
               ),
             }),
             expect.objectContaining({
@@ -508,7 +508,7 @@ it("images", async () => {
                 expect.objectContaining({
                   type: "text",
                   text: expect.stringContaining(
-                    "Please describe what's in the image"
+                    "Please describe what's in the image",
                   ),
                 }),
               ]),
@@ -580,7 +580,7 @@ it("subagents", async () => {
                 expect.objectContaining({
                   type: "text",
                   text: expect.stringContaining(
-                    "The current time is **12:52 AM**."
+                    "The current time is **12:52 AM**.",
                   ),
                 }),
               ]),

@@ -103,13 +103,13 @@ export class Sandbox {
     if (this.status && this.status !== "ready") {
       throw new LangSmithSandboxNotReadyError(
         `Sandbox '${this.name}' is not ready (status: ${this.status}). ` +
-          "Use waitForSandbox() to wait for the sandbox to become ready."
+          "Use waitForSandbox() to wait for the sandbox to become ready.",
       );
     }
     if (!this.dataplane_url) {
       throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +
-          "Runtime operations require a dataplane URL."
+          "Runtime operations require a dataplane URL.",
       );
     }
     return this.dataplane_url;
@@ -149,19 +149,19 @@ export class Sandbox {
    */
   async run(
     command: string,
-    options: RunOptions & { wait: false }
+    options: RunOptions & { wait: false },
   ): Promise<CommandHandle>;
   async run(
     command: string,
-    options?: RunOptions & { wait?: true }
+    options?: RunOptions & { wait?: true },
   ): Promise<ExecutionResult>;
   async run(
     command: string,
-    options?: RunOptions
+    options?: RunOptions,
   ): Promise<ExecutionResult | CommandHandle>;
   async run(
     command: string,
-    options: RunOptions = {}
+    options: RunOptions = {},
   ): Promise<ExecutionResult | CommandHandle> {
     const {
       wait = true,
@@ -209,7 +209,7 @@ export class Sandbox {
       // Fall back to HTTP on connection errors or missing ws package
       const name = e != null && typeof e === "object" ? (e as Error).name : "";
       const message =
-        e != null && typeof e === "object" ? (e as Error).message ?? "" : "";
+        e != null && typeof e === "object" ? ((e as Error).message ?? "") : "";
       if (
         name === "LangSmithSandboxConnectionError" ||
         name === "LangSmithSandboxServerReloadError" ||
@@ -227,7 +227,7 @@ export class Sandbox {
    */
   private async _runWs(
     command: string,
-    options: Omit<RunOptions, "wait"> = {}
+    options: Omit<RunOptions, "wait"> = {},
   ): Promise<CommandHandle> {
     const {
       timeout = 60,
@@ -258,7 +258,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
-      }
+      },
     );
 
     const handle = new CommandHandle(stream, control, this);
@@ -272,7 +272,7 @@ export class Sandbox {
    */
   private async _runHttp(
     command: string,
-    options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {}
+    options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {},
   ): Promise<ExecutionResult> {
     const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
@@ -325,7 +325,7 @@ export class Sandbox {
     options: {
       stdoutOffset?: number;
       stderrOffset?: number;
-    } = {}
+    } = {},
   ): Promise<CommandHandle> {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
@@ -334,7 +334,7 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       commandId,
-      { stdoutOffset, stderrOffset }
+      { stdoutOffset, stderrOffset },
     );
 
     return new CommandHandle(stream, control, this, {
@@ -359,7 +359,7 @@ export class Sandbox {
   async write(
     path: string,
     content: string | Uint8Array,
-    timeout = 60
+    timeout = 60,
   ): Promise<void> {
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/upload?path=${encodeURIComponent(path)}`;
@@ -464,7 +464,7 @@ export class Sandbox {
    */
   async captureSnapshot(
     name: string,
-    options: CaptureSnapshotOptions = {}
+    options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
     return this._client.captureSnapshot(this.name, name, options);
   }

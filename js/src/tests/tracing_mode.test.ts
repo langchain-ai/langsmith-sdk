@@ -40,7 +40,7 @@ describe("resolveTracingMode", () => {
   it("throws on invalid env var value", () => {
     process.env.LANGSMITH_TRACING_MODE = "hybrid";
     expect(() => resolveTracingMode()).toThrow(
-      "Invalid LANGSMITH_TRACING_MODE"
+      "Invalid LANGSMITH_TRACING_MODE",
     );
   });
 });
