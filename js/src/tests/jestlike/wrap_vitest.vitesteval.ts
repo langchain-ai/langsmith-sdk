@@ -24,7 +24,7 @@ ls.describe("wrapped vitest", () => {
       };
       const res = myApp();
       await ls.expect(res).evaluatedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
-    }
+    },
   );
 
   ls.test.skip(
@@ -41,6 +41,6 @@ ls.describe("wrapped vitest", () => {
       ls.logOutputs({ res });
       // Will fail, can't run in CI because Vitest doesn't have xfail
       await ls.expect(res).evaluatedBy(myEvaluator).toBeLessThanOrEqual(0.5);
-    }
+    },
   );
 });

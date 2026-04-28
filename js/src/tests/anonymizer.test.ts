@@ -91,7 +91,7 @@ describe("replacer", () => {
       createAnonymizer(replacer)({
         message: "Hello, this is my email: hello@example.com",
         metadata: uuid(),
-      })
+      }),
     ).toEqual({
       message: "Hello, this is my email: [email address]",
       metadata: "[uuid]",
@@ -107,7 +107,7 @@ describe("replacer", () => {
 
   test("string", () => {
     expect(createAnonymizer(replacer)("hello@example.com")).toEqual(
-      "[email address]"
+      "[email address]",
     );
   });
 });
@@ -123,7 +123,7 @@ describe("declared", () => {
       createAnonymizer(replacers)({
         message: "Hello, this is my email: hello@example.com",
         metadata: uuid(),
-      })
+      }),
     ).toEqual({
       message: "Hello, this is my email: [email address]",
       metadata: "[uuid]",
@@ -132,13 +132,13 @@ describe("declared", () => {
 
   test("array", () => {
     expect(createAnonymizer(replacers)(["human", "hello@example.com"])).toEqual(
-      ["human", "[email address]"]
+      ["human", "[email address]"],
     );
   });
 
   test("string", () => {
     expect(createAnonymizer(replacers)("hello@example.com")).toEqual(
-      "[email address]"
+      "[email address]",
     );
   });
 });
@@ -160,7 +160,7 @@ describe("client", () => {
           ...Object.entries(value.values).map((lst) => lst.join(": ")),
         ].join("\n");
       },
-      { name: "child" }
+      { name: "child" },
     );
 
     const evaluate = traceable(
@@ -168,17 +168,17 @@ describe("client", () => {
         const messages = [new SystemMessage(`UUID: ${id}`)];
         return child({ messages, values });
       },
-      { client, name: "evaluate", tracingEnabled: true }
+      { client, name: "evaluate", tracingEnabled: true },
     );
 
     const result = await evaluate({ email: "hello@example.com" });
 
     expect(result).toEqual(
-      [`UUID: ${id}`, `email: hello@example.com`].join("\n")
+      [`UUID: ${id}`, `email: hello@example.com`].join("\n"),
     );
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["evaluate:0", "child:1"],
       data: {

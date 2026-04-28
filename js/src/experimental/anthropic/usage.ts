@@ -9,7 +9,7 @@ import type { ModelUsage, SDKMessage, SDKResultMessage } from "./types.js";
  * @internal
  */
 export function aggregateUsageFromModelUsage(
-  modelUsage: Record<string, ModelUsage>
+  modelUsage: Record<string, ModelUsage>,
 ): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
 
@@ -61,11 +61,11 @@ export function extractUsageMetadata(usage: unknown): Record<string, unknown> {
   const outputTokens = getNumberProperty(usage, "output_tokens") || 0;
 
   const inputTokenDetails = convertAnthropicUsageToInputTokenDetails(
-    usage as Record<string, unknown>
+    usage as Record<string, unknown>,
   );
   const cacheTokens = Object.values(inputTokenDetails).reduce(
     (sum, value) => sum + (typeof value === "number" ? value : 0),
-    0
+    0,
   );
 
   if (Object.keys(inputTokenDetails).length > 0 && cacheTokens > 0) {
@@ -83,7 +83,7 @@ export function extractUsageMetadata(usage: unknown): Record<string, unknown> {
 }
 
 export function extractUsageFromMessage(
-  message: SDKMessage
+  message: SDKMessage,
 ): Record<string, unknown> {
   // Assistant messages contain usage in message.message.usage
   // Result messages contain usage in message.usage
@@ -103,15 +103,18 @@ export function extractUsageFromMessage(
  */
 export function correctUsageFromResults(
   resultUsages: SDKResultMessage["modelUsage"],
-  assistantRuns: RunTree[]
+  assistantRuns: RunTree[],
 ) {
-  const runByModel = assistantRuns.reduce((acc, run) => {
-    const modelId = run.extra?.metadata?.ls_model_name;
-    if (!modelId) return acc;
-    acc[modelId] ??= [];
-    acc[modelId].push(run);
-    return acc;
-  }, {} as { [modelId: string]: RunTree[] });
+  const runByModel = assistantRuns.reduce(
+    (acc, run) => {
+      const modelId = run.extra?.metadata?.ls_model_name;
+      if (!modelId) return acc;
+      acc[modelId] ??= [];
+      acc[modelId].push(run);
+      return acc;
+    },
+    {} as { [modelId: string]: RunTree[] },
+  );
 
   const runUsageByModel = assistantRuns.reduce(
     (acc, run) => {
@@ -162,7 +165,7 @@ export function correctUsageFromResults(
           cache_creation: number;
         };
       };
-    }
+    },
   );
 
   const resultUsageMap = Object.fromEntries(
@@ -184,7 +187,7 @@ export function correctUsageFromResults(
           cache_creation: usage.cacheCreationInputTokens,
         },
       },
-    ])
+    ]),
   );
 
   for (const modelId in resultUsageMap) {
@@ -197,25 +200,25 @@ export function correctUsageFromResults(
     const difference = {
       input_tokens: Math.max(
         0,
-        resultUsage.input_tokens - runsUsage.input_tokens
+        resultUsage.input_tokens - runsUsage.input_tokens,
       ),
       output_tokens: Math.max(
         0,
-        resultUsage.output_tokens - runsUsage.output_tokens
+        resultUsage.output_tokens - runsUsage.output_tokens,
       ),
       total_tokens: Math.max(
         0,
-        resultUsage.total_tokens - runsUsage.total_tokens
+        resultUsage.total_tokens - runsUsage.total_tokens,
       ),
       cache_read: Math.max(
         0,
         resultUsage.input_token_details.cache_read -
-          runsUsage.input_token_details.cache_read
+          runsUsage.input_token_details.cache_read,
       ),
       cache_creation: Math.max(
         0,
         resultUsage.input_token_details.cache_creation -
-          runsUsage.input_token_details.cache_creation
+          runsUsage.input_token_details.cache_creation,
       ),
     };
 

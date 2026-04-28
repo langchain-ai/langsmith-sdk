@@ -12,17 +12,17 @@ const _state: V7State = {};
 function v7(
   options?: Version7Options,
   buf?: undefined,
-  offset?: number
+  offset?: number,
 ): string;
 function v7<TBuf extends Uint8Array = Uint8Array>(
   options: Version7Options | undefined,
   buf: TBuf,
-  offset?: number
+  offset?: number,
 ): TBuf;
 function v7<TBuf extends Uint8Array = Uint8Array>(
   options?: Version7Options,
   buf?: TBuf,
-  offset?: number
+  offset?: number,
 ): UUIDTypes<TBuf> {
   let bytes: Uint8Array;
 
@@ -33,7 +33,7 @@ function v7<TBuf extends Uint8Array = Uint8Array>(
       options.msecs,
       options.seq,
       buf,
-      offset
+      offset,
     );
   } else {
     // No options: Use internal state
@@ -78,7 +78,7 @@ function v7Bytes(
   msecs?: number,
   seq?: number,
   buf?: Uint8Array,
-  offset = 0
+  offset = 0,
 ) {
   if (rnds.length < 16) {
     throw new Error("Random bytes length must be >= 16");
@@ -90,7 +90,7 @@ function v7Bytes(
   } else {
     if (offset < 0 || offset + 16 > buf.length) {
       throw new RangeError(
-        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
       );
     }
   }

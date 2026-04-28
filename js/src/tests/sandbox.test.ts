@@ -39,7 +39,7 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     getApiKey: () => "test-key",
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
-  } as unknown as SandboxClient);
+  }) as unknown as SandboxClient;
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -71,7 +71,7 @@ describe("SandboxClient", () => {
       expect(str).not.toContain("super-secret-sandbox-api-key-12345");
       expect(str).toContain("https://custom.api.com/sandboxes");
       expect(str).toBe(
-        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]',
       );
     });
 
@@ -96,7 +96,7 @@ describe("SandboxClient", () => {
       expect(inspectResult).not.toContain("secret-key");
       expect(inspectResult).toContain("https://custom.api.com/sandboxes");
       expect(inspectResult).toBe(
-        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]',
       );
     });
 
@@ -110,7 +110,7 @@ describe("SandboxClient", () => {
       const inspectFn = (client as any)[inspectSymbol];
       expect(typeof inspectFn).toBe("function");
       expect(inspectFn.call(client)).toBe(
-        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]'
+        '[LangSmithSandboxClient apiEndpoint="https://custom.api.com/sandboxes"]',
       );
     });
   });
@@ -126,11 +126,11 @@ describe("Sandbox", () => {
           // No dataplane_url
         },
         createMockClient(),
-        false
+        false,
       );
 
       await expect(sandbox.run("echo hello")).rejects.toThrow(
-        LangSmithDataplaneNotConfiguredError
+        LangSmithDataplaneNotConfiguredError,
       );
     });
 
@@ -153,7 +153,7 @@ describe("Sandbox", () => {
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
-        false
+        false,
       );
 
       const result = await sandbox.run('echo "Hello, World!"');
@@ -183,7 +183,7 @@ describe("Sandbox", () => {
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
-        false
+        false,
       );
 
       await sandbox.run("echo $MY_VAR", {
@@ -214,7 +214,7 @@ describe("Sandbox", () => {
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
-        false
+        false,
       );
 
       await sandbox.write("/tmp/test.txt", "Hello, World!");
@@ -239,7 +239,7 @@ describe("Sandbox", () => {
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
-        false
+        false,
       );
 
       const content = new TextEncoder().encode("Binary content");
@@ -266,7 +266,7 @@ describe("Sandbox", () => {
           dataplane_url: "https://dataplane.example.com",
         },
         mockClient,
-        false
+        false,
       );
 
       const content = await sandbox.read("/tmp/test.txt");
@@ -292,7 +292,7 @@ describe("Sandbox", () => {
           name: "test-sandbox",
           dataplane_url: "https://dataplane.example.com",
         },
-        mockClient
+        mockClient,
       );
 
       await sandbox.delete();
@@ -404,7 +404,7 @@ describe("SandboxClient - createSandbox", () => {
     const client = createClientWithMock(mockFetch);
 
     await expect(
-      client.createSandbox("snap-123", { ttlSeconds: 61 })
+      client.createSandbox("snap-123", { ttlSeconds: 61 }),
     ).rejects.toThrow(LangSmithValidationError);
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -459,13 +459,13 @@ describe("validateTtl", () => {
 
   it("rejects negative values and non-multiples of 60", () => {
     expect(() => validateTtl(-1, "ttlSeconds")).toThrow(
-      LangSmithValidationError
+      LangSmithValidationError,
     );
     expect(() => validateTtl(30, "ttlSeconds")).toThrow(
-      LangSmithValidationError
+      LangSmithValidationError,
     );
     expect(() => validateTtl(61, "idleTtlSeconds")).toThrow(
-      LangSmithValidationError
+      LangSmithValidationError,
     );
   });
 });
@@ -578,7 +578,7 @@ describe("SandboxClient - getSandboxStatus", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(client.getSandboxStatus("nonexistent")).rejects.toThrow(
-      LangSmithResourceNotFoundError
+      LangSmithResourceNotFoundError,
     );
   });
 });
@@ -641,7 +641,7 @@ describe("SandboxClient - waitForSandbox", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(
-      client.waitForSandbox("test-sb", { pollInterval: 0.01 })
+      client.waitForSandbox("test-sb", { pollInterval: 0.01 }),
     ).rejects.toThrow(LangSmithResourceCreationError);
   });
 
@@ -655,7 +655,7 @@ describe("SandboxClient - waitForSandbox", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(
-      client.waitForSandbox("test-sb", { timeout: 0.05, pollInterval: 0.01 })
+      client.waitForSandbox("test-sb", { timeout: 0.05, pollInterval: 0.01 }),
     ).rejects.toThrow(LangSmithResourceTimeoutError);
   });
 });
@@ -668,7 +668,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         status: "provisioning",
         status_message: "Waiting for resources",
       },
-      createMockClient()
+      createMockClient(),
     );
 
     expect(sandbox.status).toBe("provisioning");
@@ -682,11 +682,11 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "provisioning",
       },
-      createMockClient()
+      createMockClient(),
     );
 
     await expect(sandbox.run("echo hello")).rejects.toThrow(
-      LangSmithSandboxNotReadyError
+      LangSmithSandboxNotReadyError,
     );
   });
 
@@ -706,7 +706,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
         dataplane_url: "https://dp.example.com",
         status: "ready",
       },
-      createMockClient({ _fetch: mockFetch })
+      createMockClient({ _fetch: mockFetch }),
     );
 
     const result = await sandbox.run("echo hello");
@@ -726,7 +726,7 @@ describe("Error classes", () => {
     const error = new LangSmithResourceTimeoutError(
       "Timeout",
       "sandbox",
-      "pending"
+      "pending",
     );
     expect(error.resourceType).toBe("sandbox");
     expect(error.lastStatus).toBe("pending");
@@ -736,7 +736,7 @@ describe("Error classes", () => {
   it("LangSmithQuotaExceededError should have quotaType", () => {
     const error = new LangSmithQuotaExceededError(
       "Quota exceeded",
-      "sandbox_count"
+      "sandbox_count",
     );
     expect(error.quotaType).toBe("sandbox_count");
   });
@@ -748,7 +748,7 @@ describe("Error classes", () => {
     const error = new LangSmithValidationError(
       "Validation failed",
       "cpu",
-      details
+      details,
     );
     expect(error.field).toBe("cpu");
     expect(error.details).toEqual(details);
@@ -757,7 +757,7 @@ describe("Error classes", () => {
   it("LangSmithSandboxCreationError should have errorType and custom toString", () => {
     const error = new LangSmithSandboxCreationError(
       "Creation failed",
-      "ImagePull"
+      "ImagePull",
     );
     expect(error.errorType).toBe("ImagePull");
     expect(error.toString()).toContain("ImagePull");
@@ -772,7 +772,7 @@ describe("Error classes", () => {
     const error = new LangSmithResourceCreationError(
       "Provisioning failed",
       "sandbox",
-      "ImagePull"
+      "ImagePull",
     );
     expect(error.name).toBe("LangSmithResourceCreationError");
     expect(error.resourceType).toBe("sandbox");
@@ -803,19 +803,19 @@ describe("Error classes", () => {
 describe("buildWsUrl", () => {
   it("should convert https to wss and append /execute/ws", () => {
     expect(buildWsUrl("https://dataplane.example.com")).toBe(
-      "wss://dataplane.example.com/execute/ws"
+      "wss://dataplane.example.com/execute/ws",
     );
   });
 
   it("should convert http to ws", () => {
     expect(buildWsUrl("http://localhost:8080")).toBe(
-      "ws://localhost:8080/execute/ws"
+      "ws://localhost:8080/execute/ws",
     );
   });
 
   it("should handle URLs with paths", () => {
     expect(buildWsUrl("https://dataplane.example.com/some/path")).toBe(
-      "wss://dataplane.example.com/some/path/execute/ws"
+      "wss://dataplane.example.com/some/path/execute/ws",
     );
   });
 });
@@ -863,7 +863,7 @@ describe("raiseForWsError", () => {
       error: "Not found",
     };
     expect(() => raiseForWsError(msg, "cmd-123")).toThrow(
-      LangSmithSandboxOperationError
+      LangSmithSandboxOperationError,
     );
     try {
       raiseForWsError(msg, "cmd-123");
@@ -899,7 +899,7 @@ describe("raiseForWsError", () => {
 describe("CommandHandle", () => {
   // Helper to create an async iterator from an array of WsMessages
   function createMockStream(
-    messages: WsMessage[]
+    messages: WsMessage[],
   ): AsyncIterableIterator<WsMessage> {
     let index = 0;
     return {
@@ -944,7 +944,7 @@ describe("CommandHandle", () => {
 
       const handle = new CommandHandle(stream, null, createMockSandbox());
       await expect(handle._ensureStarted()).rejects.toThrow(
-        LangSmithSandboxOperationError
+        LangSmithSandboxOperationError,
       );
     });
 
@@ -955,7 +955,7 @@ describe("CommandHandle", () => {
 
       const handle = new CommandHandle(stream, null, createMockSandbox());
       await expect(handle._ensureStarted()).rejects.toThrow(
-        "Expected 'started' message"
+        "Expected 'started' message",
       );
     });
 
@@ -1059,7 +1059,7 @@ describe("CommandHandle", () => {
       await handle._ensureStarted();
 
       await expect(handle.result).rejects.toThrow(
-        "Command stream ended without exit message"
+        "Command stream ended without exit message",
       );
     });
   });
@@ -1181,10 +1181,10 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     const client = createClientWithMock(mockFetch);
 
     await expect(client.createSandbox()).rejects.toThrow(
-      LangSmithValidationError
+      LangSmithValidationError,
     );
     await expect(client.createSandbox()).rejects.toThrow(
-      /Exactly one of snapshotId or options\.snapshotName must be set/
+      /Exactly one of snapshotId or options\.snapshotName must be set/,
     );
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -1194,7 +1194,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     const client = createClientWithMock(mockFetch);
 
     await expect(
-      client.createSandbox("snap-1", { snapshotName: "my-snap" })
+      client.createSandbox("snap-1", { snapshotName: "my-snap" }),
     ).rejects.toThrow(LangSmithValidationError);
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -1239,7 +1239,7 @@ describe("SandboxClient - snapshot operations", () => {
     const snapshot = await client.createSnapshot(
       "my-env",
       "python:3.12-slim",
-      4294967296
+      4294967296,
     );
 
     expect(snapshot.id).toBe("snap-1");
@@ -1307,7 +1307,7 @@ describe("SandboxClient - snapshot operations", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(client.getSnapshot("nonexistent")).rejects.toThrow(
-      LangSmithResourceNotFoundError
+      LangSmithResourceNotFoundError,
     );
   });
 
@@ -1421,7 +1421,7 @@ describe("SandboxClient - snapshot operations", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(client.waitForSnapshot("snap-1")).rejects.toThrow(
-      LangSmithResourceCreationError
+      LangSmithResourceCreationError,
     );
   });
 });
@@ -1476,7 +1476,7 @@ describe("SandboxClient - start/stop", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(client.startSandbox("nonexistent")).rejects.toThrow(
-      LangSmithResourceNotFoundError
+      LangSmithResourceNotFoundError,
     );
   });
 
@@ -1502,7 +1502,7 @@ describe("SandboxClient - start/stop", () => {
 
     const client = createClientWithMock(mockFetch);
     await expect(client.stopSandbox("nonexistent")).rejects.toThrow(
-      LangSmithResourceNotFoundError
+      LangSmithResourceNotFoundError,
     );
   });
 });
@@ -1521,7 +1521,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
 
     const sandbox = new (Sandbox as any)(
       { name: "my-vm", status: "stopped", snapshot_id: "snap-1" },
-      mockClient
+      mockClient,
     );
 
     await sandbox.start();
@@ -1543,7 +1543,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
         status: "ready",
         dataplane_url: "https://dp.example.com/my-vm",
       },
-      mockClient
+      mockClient,
     );
 
     await sandbox.stop();
@@ -1567,7 +1567,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
 
     const sandbox = new (Sandbox as any)(
       { name: "my-vm", status: "ready" },
-      mockClient
+      mockClient,
     );
 
     const snapshot = await sandbox.captureSnapshot("captured");
@@ -1576,7 +1576,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     expect(mockClient.captureSnapshot).toHaveBeenCalledWith(
       "my-vm",
       "captured",
-      {}
+      {},
     );
   });
 });

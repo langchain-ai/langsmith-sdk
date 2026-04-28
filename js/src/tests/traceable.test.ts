@@ -28,7 +28,7 @@ test("basic traceable implementation", async () => {
         yield char;
       }
     },
-    { client, tracingEnabled: true }
+    { client, tracingEnabled: true },
   );
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -37,7 +37,7 @@ test("basic traceable implementation", async () => {
   }
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["llm:0"],
     edges: [],
@@ -53,7 +53,7 @@ test("404s should only log, not throw an error", async () => {
       statusText: "Expected test error",
       json: () => Promise.resolve({}),
       text: () => Promise.resolve("Expected test error."),
-    })
+    }),
   );
   overrideFetchImplementation(overriddenFetch);
   const client = new Client({
@@ -67,7 +67,7 @@ test("404s should only log, not throw an error", async () => {
         yield char;
       }
     },
-    { client, tracingEnabled: true }
+    { client, tracingEnabled: true },
   );
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -102,7 +102,7 @@ test("nested traceable implementation", async () => {
 
       return { question, answer };
     },
-    { client, tracingEnabled: true }
+    { client, tracingEnabled: true },
   );
 
   const result = await chain("Hello world");
@@ -113,7 +113,7 @@ test("nested traceable implementation", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["chain:0", "llm:1", "str:2"],
     edges: [
@@ -135,13 +135,13 @@ test("nested traceable passes through LangChain context vars", (done) => {
     async () => {
       try {
         expect(
-          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo,
         ).toEqual("bar");
         const { client, callSpy } = mockClient();
 
         const llm = traceable(async function llm(input: string) {
           expect(
-            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo,
           ).toEqual("bar");
           return input.repeat(2);
         });
@@ -152,14 +152,14 @@ test("nested traceable passes through LangChain context vars", (done) => {
             yield char;
           }
           expect(
-            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo,
           ).toEqual("bar");
         });
 
         const chain = traceable(
           async function chain(input: string) {
             expect(
-              (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+              (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo,
             ).toEqual("bar");
             const question = await llm(input);
 
@@ -170,7 +170,7 @@ test("nested traceable passes through LangChain context vars", (done) => {
 
             return { question, answer };
           },
-          { client, tracingEnabled: true }
+          { client, tracingEnabled: true },
         );
 
         const result = await chain("Hello world");
@@ -181,7 +181,7 @@ test("nested traceable passes through LangChain context vars", (done) => {
         });
 
         expect(
-          await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+          await getAssumedTreeFromCalls(callSpy.mock.calls, client),
         ).toMatchObject({
           nodes: ["chain:0", "llm:1", "str:2"],
           edges: [
@@ -190,13 +190,13 @@ test("nested traceable passes through LangChain context vars", (done) => {
           ],
         });
         expect(
-          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo,
         ).toEqual("bar");
         done();
       } catch (e: any) {
         done(e);
       }
-    }
+    },
   );
 });
 
@@ -210,7 +210,7 @@ test("trace circular input and output objects", async () => {
     async function foo(_: Record<string, any>) {
       return a;
     },
-    { client, tracingEnabled: true }
+    { client, tracingEnabled: true },
   );
 
   const input = {
@@ -223,7 +223,7 @@ test("trace circular input and output objects", async () => {
   await llm(input);
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["foo:0"],
     edges: [],
@@ -271,7 +271,7 @@ test("passing run tree manually", async () => {
       }
       return 3;
     },
-    { name: "child" }
+    { name: "child" },
   );
 
   const parent = traceable(
@@ -281,13 +281,13 @@ test("passing run tree manually", async () => {
 
       return first + second;
     },
-    { client, tracingEnabled: true }
+    { client, tracingEnabled: true },
   );
 
   await parent(ROOT);
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: [
       "parent:0",
@@ -317,7 +317,7 @@ describe("distributed tracing", () => {
         if (depth < 2) return child(depth + 1);
         return 3;
       },
-      { name: "child" }
+      { name: "child" },
     );
 
     const parent = traceable(async function parent() {
@@ -341,7 +341,7 @@ describe("distributed tracing", () => {
     expect(response).toBe(6);
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "client:0",
@@ -372,7 +372,7 @@ describe("distributed tracing", () => {
         if (depth < 2) return child(depth + 1);
         return 3;
       },
-      { name: "child" }
+      { name: "child" },
     );
 
     const parent = traceable(async function parent() {
@@ -399,7 +399,7 @@ describe("distributed tracing", () => {
     await promiseOutside;
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "client:0",
@@ -434,7 +434,7 @@ describe("async generators", () => {
           yield i;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const numbers: number[] = [];
@@ -444,7 +444,7 @@ describe("async generators", () => {
 
     expect(numbers).toEqual([0, 1, 2, 3, 4]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["giveMeNumbers:0"],
       edges: [],
@@ -465,7 +465,7 @@ describe("async generators", () => {
           if (i === 2) throw new Error("I am bad");
         }
       },
-      { name: "throwTraceable", client, tracingEnabled: true }
+      { name: "throwTraceable", client, tracingEnabled: true },
     );
 
     await expect(async () => {
@@ -476,7 +476,7 @@ describe("async generators", () => {
     }).rejects.toThrow("I am bad");
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["throwTraceable:0"],
       edges: [],
@@ -497,7 +497,7 @@ describe("async generators", () => {
           yield i;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -506,7 +506,7 @@ describe("async generators", () => {
     }
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["giveMeNumbers:0"],
       edges: [],
@@ -526,7 +526,7 @@ describe("async generators", () => {
       async function* child() {
         for (let i = 0; i < 5; i++) yield i;
       },
-      { name: "child", client, tracingEnabled: true }
+      { name: "child", client, tracingEnabled: true },
     );
 
     const parent = traceable(
@@ -534,7 +534,7 @@ describe("async generators", () => {
         for await (const num of child()) yield num;
         for await (const num of child()) yield 4 - num;
       },
-      { name: "parent", client, tracingEnabled: true }
+      { name: "parent", client, tracingEnabled: true },
     );
 
     const numbers: number[] = [];
@@ -544,7 +544,7 @@ describe("async generators", () => {
 
     expect(numbers).toEqual([0, 1, 2, 3, 4, 4, 3, 2, 1, 0]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parent:0", "child:1", "child:2"],
       edges: [
@@ -574,7 +574,7 @@ describe("async generators", () => {
 
     expect(numbers).toEqual([0, 1, 2, 3, 4]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["giveMeGiveMeNumbers:0"],
       edges: [],
@@ -609,7 +609,7 @@ describe("async generators", () => {
     }).rejects.toThrow("I am bad");
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["giveMeGiveMeNumbers:0"],
       edges: [],
@@ -642,7 +642,7 @@ describe("async generators", () => {
     }
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["giveMeGiveMeNumbers:0"],
       edges: [],
@@ -682,7 +682,7 @@ describe("async generators", () => {
 
     expect(numbers).toEqual([0, 1, 2, 3, 4, 4, 3, 2, 1, 0]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parent:0", "child:1", "child:2"],
       edges: [
@@ -708,7 +708,7 @@ describe("async generators", () => {
 
         return readStream;
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const numbers: number[] = [];
@@ -718,7 +718,7 @@ describe("async generators", () => {
 
     expect(numbers).toEqual([0, 1, 2, 3, 4]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["stream:0"],
       edges: [],
@@ -745,7 +745,7 @@ describe("async generators", () => {
       {
         client,
         tracingEnabled: true,
-      }
+      },
     );
 
     const numbers: number[] = [];
@@ -758,7 +758,7 @@ describe("async generators", () => {
 
     expect(iterableWithProps.prop).toBe("value");
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["iterableWithProps:0"],
       edges: [],
@@ -859,7 +859,7 @@ describe("async generators", () => {
           yield "chunk";
         }
       },
-      { name: "never_ending_child", client, tracingEnabled: true }
+      { name: "never_ending_child", client, tracingEnabled: true },
     );
 
     const parentWithError = traceable(
@@ -871,7 +871,7 @@ describe("async generators", () => {
         // Throw error immediately
         throw new Error("Parent error");
       },
-      { name: "parent", client, tracingEnabled: true, id: parentId }
+      { name: "parent", client, tracingEnabled: true, id: parentId },
     );
 
     const startTime = Date.now();
@@ -906,7 +906,7 @@ describe("async generators", () => {
           yield "chunk";
         }
       },
-      { name: "never_ending_child", client, tracingEnabled: true }
+      { name: "never_ending_child", client, tracingEnabled: true },
     );
 
     const generatorWithError = traceable(
@@ -920,7 +920,7 @@ describe("async generators", () => {
         // Throw error after first yield
         throw new Error("Generator error");
       },
-      { name: "generator", client, tracingEnabled: true }
+      { name: "generator", client, tracingEnabled: true },
     );
 
     const startTime = Date.now();
@@ -958,7 +958,7 @@ describe("deferred input", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const inputGenerator = function* () {
@@ -974,7 +974,7 @@ describe("deferred input", () => {
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1003,7 +1003,7 @@ describe("deferred input", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const tokens: string[] = [];
@@ -1013,7 +1013,7 @@ describe("deferred input", () => {
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1044,7 +1044,7 @@ describe("deferred input", () => {
           },
           {
             name: "childFn",
-          }
+          },
         );
 
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1056,7 +1056,7 @@ describe("deferred input", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const tokens: string[] = [];
@@ -1081,10 +1081,10 @@ describe("deferred input", () => {
       },
     });
     expect(
-      new Date(tree.data["parrotStream:1"].start_time!).getTime()
+      new Date(tree.data["parrotStream:1"].start_time!).getTime(),
     ).toBeLessThan(new Date(tree.data["childFn:0"].start_time!).getTime());
     expect(
-      new Date(tree.data["parrotStream:1"].end_time!).getTime()
+      new Date(tree.data["parrotStream:1"].end_time!).getTime(),
     ).toBeGreaterThan(new Date(tree.data["childFn:0"].end_time!).getTime());
     // If input is deferred, it should be sent in a single POST call
     expect(callSpy.mock.calls.length).toBe(3);
@@ -1098,7 +1098,7 @@ describe("deferred input", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const readStream = new ReadableStream({
@@ -1117,7 +1117,7 @@ describe("deferred input", () => {
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1147,7 +1147,7 @@ describe("deferred input", () => {
           reader.releaseLock();
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const readStream = new ReadableStream({
@@ -1166,7 +1166,7 @@ describe("deferred input", () => {
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1194,19 +1194,19 @@ describe("deferred input", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const tokens: string[] = [];
     for await (const token of parrotStream(
-      Promise.resolve(["Hello", "world"])
+      Promise.resolve(["Hello", "world"]),
     )) {
       tokens.push(token);
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1227,7 +1227,7 @@ describe("deferred input", () => {
       async function parrotStream(input: Promise<string[]>) {
         return await input;
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     await expect(async () => {
@@ -1235,7 +1235,7 @@ describe("deferred input", () => {
     }).rejects.toThrow("Rejected!");
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1256,7 +1256,7 @@ describe("deferred input", () => {
       async function parrotStream(input: Promise<string[]>) {
         return input.then((value) => value);
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     await expect(async () => {
@@ -1264,7 +1264,7 @@ describe("deferred input", () => {
     }).rejects.toThrow("Rejected!");
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parrotStream:0"],
       edges: [],
@@ -1304,7 +1304,7 @@ describe("generator", () => {
 
     expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["generator:0"],
       edges: [],
@@ -1328,7 +1328,7 @@ describe("generator", () => {
 
     expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["generator:0"],
       edges: [],
@@ -1354,7 +1354,7 @@ describe("generator", () => {
     const traced = traceable(generator, { client, tracingEnabled: true });
     expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["generator:0"],
       edges: [],
@@ -1379,7 +1379,7 @@ test("metadata", async () => {
   await main();
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["main:0"],
     edges: [],
@@ -1400,14 +1400,14 @@ test("argsConfigPath", async () => {
       options: {
         suffix: string;
         langsmithExtra?: Partial<RunTreeConfig>;
-      }
+      },
     ): Promise<string> => `${value}${options.suffix}`,
     {
       client,
       name: "main",
       argsConfigPath: [1, "langsmithExtra"],
       tracingEnabled: true,
-    }
+    },
   );
 
   await main(1, {
@@ -1420,7 +1420,7 @@ test("argsConfigPath", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["renamed:0"],
     edges: [],
@@ -1453,7 +1453,7 @@ test("traceable continues execution when client throws error", async () => {
       client: errorClient as unknown as Client,
       name: "errorTest",
       tracingEnabled: true,
-    }
+    },
   );
 
   const result = await tracedFunction(5);
@@ -1501,7 +1501,7 @@ test("traceable with processInputs", async () => {
   });
   // Verify that the logged inputs have the password masked
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1551,7 +1551,7 @@ test("traceable with processOutputs", async () => {
   expect(result).toBe("Original Output for test");
   // Verify that the tracing data shows the modified output
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["originalFunc:0"],
     edges: [],
@@ -1703,7 +1703,7 @@ test("traceable process inputs/process outputs type inference", async () => {
   expect(chunks).toEqual(["a", "b", "c"]);
 
   const funcWithAsyncIteratorInputAndReturn = async function* (
-    a: AsyncIterable<string>
+    a: AsyncIterable<string>,
   ) {
     for await (const item of a) {
       yield item;
@@ -1732,7 +1732,7 @@ test("traceable process inputs/process outputs type inference", async () => {
         }
         return {};
       },
-    }
+    },
   );
   const inputAsyncIterable = (async function* () {
     yield "d";
@@ -1762,7 +1762,7 @@ test("traceable with processInputs throwing error does not affect invocation", a
       client,
       tracingEnabled: true,
       processInputs,
-    }
+    },
   );
 
   const result = await func({ username: "user1" });
@@ -1771,7 +1771,7 @@ test("traceable with processInputs throwing error does not affect invocation", a
   expect(result).toBe("Hello, user1");
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1799,7 +1799,7 @@ test("traceable with processOutputs throwing error does not affect invocation", 
       client,
       tracingEnabled: true,
       processOutputs,
-    }
+    },
   );
 
   const result = await func("test");
@@ -1810,7 +1810,7 @@ test("traceable with processOutputs throwing error does not affect invocation", 
   expect(result).toBe("Original Output for test");
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1840,7 +1840,7 @@ test("traceable async generator with processOutputs", async () => {
       client,
       tracingEnabled: true,
       processOutputs,
-    }
+    },
   );
 
   const results: number[] = [];
@@ -1853,7 +1853,7 @@ test("traceable async generator with processOutputs", async () => {
 
   // Tracing data should reflect the processed outputs
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1888,7 +1888,7 @@ test("traceable function returning object with async iterable and processOutputs
       tracingEnabled: true,
       processOutputs,
       __finalTracedIteratorKey: "stream",
-    }
+    },
   );
 
   const result = await func();
@@ -1903,7 +1903,7 @@ test("traceable function returning object with async iterable and processOutputs
   expect(processOutputs).toHaveBeenCalledWith({ outputs: [1, 2, 3] });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1943,7 +1943,7 @@ test("traceable generator function with processOutputs", async () => {
   expect(processOutputs).toHaveBeenCalledWith({ outputs: [1, 2, 3] });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -1977,7 +1977,7 @@ test("traceable with complex outputs", async () => {
       client,
       tracingEnabled: true,
       processOutputs,
-    }
+    },
   );
 
   const result = await func("test");
@@ -1992,7 +1992,7 @@ test("traceable with complex outputs", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -2034,7 +2034,7 @@ test("traceable with usage metadata", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   const result = await func("foo");
@@ -2054,7 +2054,7 @@ test("traceable with usage metadata", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -2111,7 +2111,7 @@ test("traceable with usage metadata with extract_usage", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   const result = await func("foo");
@@ -2126,7 +2126,7 @@ test("traceable with usage metadata with extract_usage", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -2185,7 +2185,7 @@ test("traceable with usage metadata with streaming", async () => {
     {
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   const results: KVMap[] = [];
@@ -2194,7 +2194,7 @@ test("traceable with usage metadata with streaming", async () => {
   }
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["func:0"],
     edges: [],
@@ -2244,7 +2244,7 @@ test("serializes well-known types in inputs and outputs", async () => {
         regularString: "normal output",
       };
     },
-    { client, tracingEnabled: true, name: "serializeTypesTest" }
+    { client, tracingEnabled: true, name: "serializeTypesTest" },
   );
 
   const inputMap = new Map<string, unknown>([["input", "value"]]);
@@ -2275,7 +2275,7 @@ test("serializes well-known types in inputs and outputs", async () => {
 
   // Verify serialization in traced inputs/outputs
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["serializeTypesTest:0"],
     edges: [],
@@ -2318,7 +2318,7 @@ test("traceable wrapper with error thrown", async () => {
       client: client,
       id: runId,
       tracingEnabled: true,
-    }
+    },
   );
 
   expect(isTraceableFunction(addValueTraceable)).toBe(true);
@@ -2349,7 +2349,7 @@ test("traceable wrapper with async error thrown", async () => {
       client: client,
       id: runId,
       tracingEnabled: true,
-    }
+    },
   );
 
   expect(isTraceableFunction(addValueTraceable)).toBe(true);
@@ -2381,7 +2381,7 @@ test("traceable wrapper with nested calls", async () => {
       client: client,
       id: runId,
       tracingEnabled: true,
-    }
+    },
   );
 
   expect(await addValueTraceable("testing", 9)).toBe("testing9");
@@ -2401,7 +2401,7 @@ test("traceable wrapper with nested calls", async () => {
       name: "nested_add_value",
       project_name: "__test_traceable_wrapper",
       client: client,
-    }
+    },
   );
 
   const entryTraceable = traceable(
@@ -2415,7 +2415,7 @@ test("traceable wrapper with nested calls", async () => {
       project_name: "__test_traceable_wrapper",
       client: client,
       id: runId2,
-    }
+    },
   );
 
   expect(await entryTraceable({ value: "testing" })).toBe("testing123");
@@ -2441,7 +2441,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
       name: "nested_add_value",
       project_name: "__test_traceable_wrapper",
       client: client,
-    }
+    },
   );
 
   const addValueTraceable = traceable(
@@ -2456,7 +2456,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
       client: client,
       tracingEnabled: true,
       id: runId,
-    }
+    },
   );
 
   expect(await addValueTraceable("testing", 9)).toBe("testing9");
@@ -2800,7 +2800,7 @@ test("traceable with invalid properties in usage metadata", async () => {
       client,
       run_type: "llm",
       tracingEnabled: true,
-    }
+    },
   );
 
   await traceableLLM({});
@@ -2811,7 +2811,7 @@ test("traceable with invalid properties in usage metadata", async () => {
   expect(tree.nodes).toEqual(["extra_usage_metadata_run:0"]);
 
   expect(
-    tree.data["extra_usage_metadata_run:0"].extra?.metadata?.usage_metadata
+    tree.data["extra_usage_metadata_run:0"].extra?.metadata?.usage_metadata,
   ).toEqual({
     foo: "bar",
     input_tokens: 10,
@@ -2853,7 +2853,7 @@ test("traceable should ignore undefined id", async () => {
       client,
       run_type: "llm",
       tracingEnabled: true,
-    }
+    },
   );
 
   await traceableLLM({});
@@ -2867,12 +2867,12 @@ test("traceable should ignore undefined id", async () => {
   expect(tree.data["extra_usage_metadata_run:0"].dotted_order).toBeDefined();
   expect(tree.data["extra_usage_metadata_run:0"].trace_id).toBeDefined();
   expect(tree.data["extra_usage_metadata_run:0"].id).toEqual(
-    tree.data["extra_usage_metadata_run:0"].trace_id
+    tree.data["extra_usage_metadata_run:0"].trace_id,
   );
   expect(
     tree.data["extra_usage_metadata_run:0"].dotted_order?.includes(
-      tree.data["extra_usage_metadata_run:0"].id
-    )
+      tree.data["extra_usage_metadata_run:0"].id,
+    ),
   ).toBe(true);
 });
 
@@ -2887,7 +2887,7 @@ test("traceable with nested calls and reroot replicas", async () => {
     async (input: string) => {
       return `processed: ${input}`;
     },
-    { name: "innerTask", client, tracingEnabled: true }
+    { name: "innerTask", client, tracingEnabled: true },
   );
 
   const middleTask = traceable(
@@ -2896,7 +2896,7 @@ test("traceable with nested calls and reroot replicas", async () => {
       const result2 = await innerTask(`${input}-b`);
       return `${result1}, ${result2}`;
     },
-    { name: "middleTask", client, tracingEnabled: true }
+    { name: "middleTask", client, tracingEnabled: true },
   );
 
   // Outer task has replicas configured directly
@@ -2923,7 +2923,7 @@ test("traceable with nested calls and reroot replicas", async () => {
           reroot: false,
         },
       ],
-    }
+    },
   );
 
   // Execute the nested traceable calls
@@ -2931,7 +2931,7 @@ test("traceable with nested calls and reroot replicas", async () => {
 
   // Verify the result
   expect(result).toBe(
-    "final: processed: test-input-a, processed: test-input-b"
+    "final: processed: test-input-a, processed: test-input-b",
   );
 
   // Wait for async operations
@@ -2945,13 +2945,13 @@ test("traceable with nested calls and reroot replicas", async () => {
     (call: any) =>
       (call[0] as string).includes("child.example.com") &&
       (call[0] as string).includes("/runs") &&
-      (call[1] as any)?.method === "POST"
+      (call[1] as any)?.method === "POST",
   );
   const fullPostCalls = callSpy.mock.calls.filter(
     (call: any) =>
       (call[0] as string).includes("full.example.com") &&
       (call[0] as string).includes("/runs") &&
-      (call[1] as any)?.method === "POST"
+      (call[1] as any)?.method === "POST",
   );
 
   expect(childPostCalls.length).toBeGreaterThan(0);
@@ -2973,16 +2973,16 @@ test("traceable with nested calls and reroot replicas", async () => {
 
   // Find outerTask and middleTask in both replicas to verify rerooting behavior
   const childOuterTask = Object.values(childTree.data).find(
-    (run) => run.name === "outerTask"
+    (run) => run.name === "outerTask",
   );
   const fullOuterTask = Object.values(fullTree.data).find(
-    (run) => run.name === "outerTask"
+    (run) => run.name === "outerTask",
   );
   const childMiddleTask = Object.values(childTree.data).find(
-    (run) => run.name === "middleTask"
+    (run) => run.name === "middleTask",
   );
   const fullMiddleTask = Object.values(fullTree.data).find(
-    (run) => run.name === "middleTask"
+    (run) => run.name === "middleTask",
   );
 
   expect(childOuterTask).toBeDefined();
@@ -3045,7 +3045,7 @@ test("child traceable with own replicas config", async () => {
       name: "greatGrandchild",
       client,
       tracingEnabled: true,
-    }
+    },
   );
 
   const grandchild = traceable(
@@ -3057,7 +3057,7 @@ test("child traceable with own replicas config", async () => {
       name: "grandchild",
       client,
       tracingEnabled: true,
-    }
+    },
   );
   const child = traceable(
     async () => {
@@ -3077,7 +3077,7 @@ test("child traceable with own replicas config", async () => {
       name: "child",
       client,
       tracingEnabled: true,
-    }
+    },
   );
   const parent = traceable(
     async () => {
@@ -3089,7 +3089,7 @@ test("child traceable with own replicas config", async () => {
       client,
       tracingEnabled: true,
       project_name: defaultProject,
-    }
+    },
   );
 
   await parent();
@@ -3101,7 +3101,7 @@ test("child traceable with own replicas config", async () => {
   const allPostCalls = callSpy.mock.calls.filter(
     (call: any) =>
       (call[0] as string).includes("/runs") &&
-      (call[1] as any)?.method === "POST"
+      (call[1] as any)?.method === "POST",
   );
 
   // Parent should only go to default project (no replicas)
@@ -3128,7 +3128,7 @@ test("child traceable with own replicas config", async () => {
 
   // Count runs by project
   const defaultProjectRuns = runs.filter(
-    (r: any) => r.session_name === defaultProject
+    (r: any) => r.session_name === defaultProject,
   );
   const subrunRuns = runs.filter((r: any) => r.session_name === replicaProject);
 
@@ -3158,21 +3158,21 @@ test("child traceable with own replicas config", async () => {
 
   // GreatGrandchild also goes to BOTH (inherits from grandchild which inherits from child)
   const greatGrandchildRuns = runs.filter(
-    (r: any) => r.name === "greatGrandchild"
+    (r: any) => r.name === "greatGrandchild",
   );
   expect(greatGrandchildRuns.length).toBe(2);
   const greatGrandchildProjects = greatGrandchildRuns
     .map((r: any) => r.session_name)
     .sort();
   expect(greatGrandchildProjects).toEqual(
-    [defaultProject, replicaProject].sort()
+    [defaultProject, replicaProject].sort(),
   );
 
   // Verify reroot behavior in replicaProject project
   const subrunChild = subrunRuns.find((r: any) => r.name === "child");
   const subrunGrandchild = subrunRuns.find((r: any) => r.name === "grandchild");
   const subrunGreatGrandchild = subrunRuns.find(
-    (r: any) => r.name === "greatGrandchild"
+    (r: any) => r.name === "greatGrandchild",
   );
 
   if (!subrunChild || !subrunGrandchild || !subrunGreatGrandchild) {
@@ -3216,10 +3216,10 @@ test("child traceable with own replicas config", async () => {
   // In the default project (no reroot), verify child still has parent
   const defaultChild = defaultProjectRuns.find((r: any) => r.name === "child");
   const defaultGrandchild = defaultProjectRuns.find(
-    (r: any) => r.name === "grandchild"
+    (r: any) => r.name === "grandchild",
   );
   const defaultGreatGrandchild = defaultProjectRuns.find(
-    (r: any) => r.name === "greatGrandchild"
+    (r: any) => r.name === "greatGrandchild",
   );
 
   if (!defaultChild || !defaultGrandchild || !defaultGreatGrandchild) {
@@ -3231,7 +3231,7 @@ test("child traceable with own replicas config", async () => {
 
   // All runs in default project should share same trace_id (parent's trace)
   const defaultParent = defaultProjectRuns.find(
-    (r: any) => r.name === "parent"
+    (r: any) => r.name === "parent",
   );
   expect(defaultChild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGrandchild.trace_id).toBe(defaultParent?.trace_id);
@@ -3304,21 +3304,21 @@ describe("tracingEnabled: false propagation to nested traceables", () => {
       async function child(input: string) {
         return `child: ${input}`;
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const parent = traceable(
       async function parent(input: string) {
         return child(input);
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const result = await parent("hello");
     expect(result).toBe("child: hello");
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["parent:0", "child:1"],
       edges: [["parent:0", "child:1"]],
@@ -3339,14 +3339,14 @@ describe("tracingEnabled: false propagation to nested traceables", () => {
         return `child: ${input}`;
       },
       // no explicit tracingEnabled — should inherit false from parent
-      { client }
+      { client },
     );
 
     const parent = traceable(
       async function parent(input: string) {
         return child(input);
       },
-      { tracingEnabled: false }
+      { tracingEnabled: false },
     );
 
     const result = await parent("hello");
@@ -3357,7 +3357,7 @@ describe("tracingEnabled: false propagation to nested traceables", () => {
     expect(childStoreValue).toBeDefined();
     expect(childStoreValue).not.toBeInstanceOf(RunTree);
     expect((childStoreValue as Record<string, unknown>).tracingEnabled).toBe(
-      false
+      false,
     );
   });
 });

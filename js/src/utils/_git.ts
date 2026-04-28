@@ -17,7 +17,7 @@ async function importChildProcess() {
 
 const execGit = (
   command: string[],
-  exec: (...args: any[]) => any
+  exec: (...args: any[]) => any,
 ): Promise<string | null> => {
   return new Promise((resolve) => {
     exec(`git ${command.join(" ")}`, (error: any, stdout: any) => {
@@ -31,20 +31,20 @@ const execGit = (
 };
 
 export const getGitInfo = async (
-  remote = "origin"
+  remote = "origin",
 ): Promise<GitInfo | null> => {
   let exec: (...args: any[]) => any;
   try {
     const execImport = await importChildProcess();
     exec = execImport.exec;
-  } catch (e) {
+  } catch (_e) {
     // no-op
     return null;
   }
 
   const isInsideWorkTree = await execGit(
     ["rev-parse", "--is-inside-work-tree"],
-    exec
+    exec,
   );
   if (!isInsideWorkTree) {
     return null;
@@ -66,7 +66,7 @@ export const getGitInfo = async (
     execGit(["rev-parse", "--abbrev-ref", "HEAD"], exec),
     execGit(
       ["describe", "--tags", "--exact-match", "--always", "--dirty"],
-      exec
+      exec,
     ),
     execGit(["status", "--porcelain"], exec).then((output) => output !== ""),
     execGit(["log", "-1", "--format=%an"], exec),
@@ -90,7 +90,7 @@ export const getDefaultRevisionId = async (): Promise<string | null> => {
   try {
     const execImport = await importChildProcess();
     exec = execImport.exec;
-  } catch (e) {
+  } catch (_e) {
     // no-op
     return null;
   }

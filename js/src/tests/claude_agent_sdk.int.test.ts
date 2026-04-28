@@ -33,14 +33,14 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
   const allowAllTools = async (
     _toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
   ) => ({
     behavior: "allow" as const,
     updatedInput: input,
   });
 
   const consumeQuery = async (
-    query: AsyncIterable<claudeSDK.SDKMessage>
+    query: AsyncIterable<claudeSDK.SDKMessage>,
   ): Promise<any[]> => {
     const messages: any[] = [];
     for await (const message of query) {
@@ -55,7 +55,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         ? message.message.content
             .filter((block: any) => block.type === "tool_use")
             .map((block: any) => block.name)
-        : []
+        : [],
     );
 
   const stringifyToolResultContent = (content: any): string => {
@@ -81,7 +81,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         ? message.message.content
             .filter((block: any) => block.type === "tool_result")
             .map((block: any) => stringifyToolResultContent(block.content))
-        : []
+        : [],
     );
 
   test("query with simple prompt", async () => {
@@ -113,7 +113,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     console.log("Total messages:", messages.length);
     console.log(
       "Message types:",
-      messages.map((m) => m.type)
+      messages.map((m) => m.type),
     );
 
     // Should have at least assistant message and result message
@@ -202,7 +202,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         return {
           content: [{ type: "text", text: `Result: ${result}` }],
         };
-      }
+      },
     );
 
     // Create SDK MCP server with the tool
@@ -247,10 +247,10 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     if (resultMessage.usage.server_tool_use) {
       expect(resultMessage.usage.server_tool_use).toBeDefined();
       expect(
-        resultMessage.usage.server_tool_use.web_search_requests
+        resultMessage.usage.server_tool_use.web_search_requests,
       ).toBeDefined();
       expect(
-        resultMessage.usage.server_tool_use.web_fetch_requests
+        resultMessage.usage.server_tool_use.web_fetch_requests,
       ).toBeDefined();
     }
   });
@@ -352,7 +352,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       async () => ({
         content: [{ type: "text", text: "Error occurred" }],
         isError: true,
-      })
+      }),
     );
 
     const messages = await consumeQuery(
@@ -369,7 +369,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           },
           canUseTool: allowAllTools,
         },
-      })
+      }),
     );
 
     expect(messages.length).toBeGreaterThan(0);
@@ -378,7 +378,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const errorToolRuns = Object.values(tree.data).filter(
-      (run) => run.name.includes("error-tool") && run.run_type === "tool"
+      (run) => run.name.includes("error-tool") && run.run_type === "tool",
     );
     expect(errorToolRuns.length).toBeGreaterThanOrEqual(1);
     expect(errorToolRuns.some((run) => run.error != null)).toBe(true);
@@ -416,7 +416,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         return {
           content: [{ type: "text", text: `Result: ${result}` }],
         };
-      }
+      },
     );
 
     const messages: any[] = [];
@@ -494,24 +494,24 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           allowDangerouslySkipPermissions: true,
           maxTurns: 2,
         },
-      })
+      }),
     );
 
     const toolResultBlocks = messages.flatMap((message) =>
       message.type === "user" && Array.isArray(message.message?.content)
         ? message.message.content.filter(
-            (block: any) => block.type === "tool_result"
+            (block: any) => block.type === "tool_result",
           )
-        : []
+        : [],
     );
     expect(toolResultBlocks.length).toBeGreaterThanOrEqual(1);
     expect(toolResultBlocks.some((block: any) => block.is_error === true)).toBe(
-      true
+      true,
     );
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const bashRuns = Object.values(tree.data).filter(
-      (run) => run.name === "Bash" && run.run_type === "tool"
+      (run) => run.name === "Bash" && run.run_type === "tool",
     );
     expect(bashRuns.length).toBeGreaterThanOrEqual(1);
     expect(bashRuns.some((run) => run.error != null)).toBe(true);
@@ -545,12 +545,12 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           allowDangerouslySkipPermissions: true,
           maxTurns: 5,
         },
-      })
+      }),
     );
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const fooEntry = Object.entries(tree.data).find(
-      ([, run]) => run.name === "foo" && run.run_type === "chain"
+      ([, run]) => run.name === "foo" && run.run_type === "chain",
     );
     if (fooEntry == null) {
       throw new Error("Expected foo subagent chain run");
@@ -599,10 +599,10 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           systemPrompt: "Answer concisely.",
           maxTurns: 1,
         },
-      })
+      }),
     );
     const sessionId = firstMessages.find(
-      (message) => message.session_id
+      (message) => message.session_id,
     )?.session_id;
     expect(sessionId).toBeDefined();
 
@@ -622,12 +622,12 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           resume: sessionId,
           maxTurns: 1,
         },
-      })
+      }),
     );
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const llmRuns = Object.values(tree.data).filter(
-      (run) => run.run_type === "llm"
+      (run) => run.run_type === "llm",
     );
     expect(llmRuns.length).toBe(1);
   });
@@ -646,7 +646,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       { city: z.string() },
       async (args: any) => ({
         content: [{ type: "text", text: `Foggy in ${args.city}` }],
-      })
+      }),
     );
 
     const server = tracedSDK.createSdkMcpServer({
@@ -663,20 +663,20 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           mcpServers: { weather: server },
           maxTurns: 3,
         },
-      })
+      }),
     );
 
     expect(
-      toolUseNames(messages).some((name) => name.includes("get_weather"))
+      toolUseNames(messages).some((name) => name.includes("get_weather")),
     ).toBe(true);
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const weatherRuns = Object.values(tree.data).filter(
-      (run) => run.name.includes("get_weather") && run.run_type === "tool"
+      (run) => run.name.includes("get_weather") && run.run_type === "tool",
     );
     expect(weatherRuns.length).toBeGreaterThanOrEqual(1);
     expect(
-      weatherRuns.every((run) => run.end_time != null || run.error != null)
+      weatherRuns.every((run) => run.end_time != null || run.error != null),
     ).toBe(true);
   });
 
@@ -694,7 +694,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       { city: z.string() },
       async (args: any) => ({
         content: [{ type: "text", text: `Foggy in ${args.city}` }],
-      })
+      }),
     );
 
     const server = tracedSDK.createSdkMcpServer({
@@ -712,16 +712,16 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           canUseTool: allowAllTools,
           maxTurns: 3,
         },
-      })
+      }),
     );
 
     expect(
-      toolUseNames(messages).some((name) => name.includes("get_weather"))
+      toolUseNames(messages).some((name) => name.includes("get_weather")),
     ).toBe(true);
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const weatherRuns = Object.values(tree.data).filter(
-      (run) => run.name.includes("get_weather") && run.run_type === "tool"
+      (run) => run.name.includes("get_weather") && run.run_type === "tool",
     );
     expect(weatherRuns.length).toBeGreaterThanOrEqual(1);
     expect(weatherRuns.some((run) => run.outputs != null)).toBe(true);
@@ -729,7 +729,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       [
         ...toolResultContents(messages),
         ...weatherRuns.map((run) => stringifyToolResultContent(run.outputs)),
-      ].some((result) => result.includes("Foggy"))
+      ].some((result) => result.includes("Foggy")),
     ).toBe(true);
   });
 
@@ -743,7 +743,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
     const innerLookup = traceable(
       async (city: string) => `nested lookup for ${city}`,
-      { name: "mcp_nested_lookup", client, tracingEnabled: true }
+      { name: "mcp_nested_lookup", client, tracingEnabled: true },
     );
 
     const getWeather = tracedSDK.tool(
@@ -755,7 +755,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         return {
           content: [{ type: "text", text: `Foggy in ${args.city}; ${lookup}` }],
         };
-      }
+      },
     );
 
     const server = tracedSDK.createSdkMcpServer({
@@ -773,15 +773,15 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           canUseTool: allowAllTools,
           maxTurns: 3,
         },
-      })
+      }),
     );
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const weatherEntry = Object.entries(tree.data).find(
-      ([, run]) => run.name.includes("get_weather") && run.run_type === "tool"
+      ([, run]) => run.name.includes("get_weather") && run.run_type === "tool",
     );
     const nestedEntry = Object.entries(tree.data).find(
-      ([, run]) => run.name === "mcp_nested_lookup"
+      ([, run]) => run.name === "mcp_nested_lookup",
     );
 
     if (weatherEntry == null) {
@@ -814,13 +814,13 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
             allowDangerouslySkipPermissions: true,
             maxTurns: 2,
           },
-        })
+        }),
       );
       return {
         label,
         messages,
         sessionIds: new Set(
-          messages.map((message) => message.session_id).filter(Boolean)
+          messages.map((message) => message.session_id).filter(Boolean),
         ),
       };
     };
@@ -835,8 +835,8 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       expect(toolUseNames(result.messages)).toContain("Bash");
       expect(
         toolResultContents(result.messages).some((output) =>
-          output.includes(result.label)
-        )
+          output.includes(result.label),
+        ),
       ).toBe(true);
       expect(result.sessionIds.size).toBeGreaterThanOrEqual(1);
     }
@@ -848,7 +848,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           const childRun = tree.data[child];
           return childRun?.name === "Bash" && childRun.run_type === "tool";
         })
-        .map(([parent]) => parent)
+        .map(([parent]) => parent),
     );
     expect(bashParentIds.size).toBe(3);
   });

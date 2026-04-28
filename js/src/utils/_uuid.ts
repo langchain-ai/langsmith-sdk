@@ -67,7 +67,7 @@ export function warnIfNotUuidV7(uuidStr: string, _idType: string): void {
       `LangSmith now uses UUID v7 for run and trace identifiers. ` +
         `This warning appears when passing custom IDs. ` +
         `Please use: import { uuidv7 } from 'langsmith'; const id = uuidv7(); ` +
-        `Future versions will require UUID v7.`
+        `Future versions will require UUID v7.`,
     );
   }
 }
@@ -97,7 +97,7 @@ function bytesToUuid(bytes: Uint8Array): string {
     .join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
     12,
-    16
+    16,
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
@@ -151,7 +151,7 @@ function _fastHash128(str: string): Uint8Array {
  */
 export function nonCryptographicUuid7Deterministic(
   originalId: string,
-  key: string
+  key: string,
 ): string {
   // Generate deterministic bytes from hash of original + key
   const hashInput = `${originalId}:${key}`;

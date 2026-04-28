@@ -21,9 +21,9 @@ export const importVitestModule = async (entrypoint?: string) => {
     const pkg = require(packagePath);
     const pkgDir = packagePath.replace(`${sep}package.json`, "");
     const esmEntry = !entrypoint
-      ? pkg.module ?? pkg.exports?.["."]?.import ?? "dist/index.js"
-      : pkg.exports?.[`./${entrypoint}`]?.import ??
-        pkg.exports?.[`./${entrypoint}`]?.default;
+      ? (pkg.module ?? pkg.exports?.["."]?.import ?? "dist/index.js")
+      : (pkg.exports?.[`./${entrypoint}`]?.import ??
+        pkg.exports?.[`./${entrypoint}`]?.default);
     const modulePath = `${pkgDir}${sep}${esmEntry}`;
     const path = pathToFileURL(modulePath).href;
     importedModule = await import(path);
@@ -31,11 +31,11 @@ export const importVitestModule = async (entrypoint?: string) => {
       throw new Error(
         `Failed to import vitest entrypoint${
           entrypoint ? ` ${entrypoint}` : ""
-        }`
+        }`,
       );
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
+  } catch (_error: any) {
     importedModule = await import(
       `vitest${entrypoint ? `/${entrypoint}` : ""}`
     );

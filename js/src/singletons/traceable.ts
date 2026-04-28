@@ -6,7 +6,7 @@ interface AsyncLocalStorageInterface {
 
   run: (
     context: RunTree | ContextPlaceholder | undefined,
-    fn: () => void
+    fn: () => void,
   ) => void;
 }
 
@@ -53,14 +53,14 @@ export function getCurrentRunTree(): RunTree;
 export function getCurrentRunTree(permitAbsentRunTree: false): RunTree;
 
 export function getCurrentRunTree(
-  permitAbsentRunTree: boolean
+  permitAbsentRunTree: boolean,
 ): RunTree | undefined;
 
 export function getCurrentRunTree(permitAbsentRunTree = false) {
   const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
   if (!permitAbsentRunTree && runTree === undefined) {
     throw new Error(
-      "Could not get the current run tree.\n\nPlease make sure you are calling this method within a traceable function and that tracing is enabled."
+      "Could not get the current run tree.\n\nPlease make sure you are calling this method within a traceable function and that tracing is enabled.",
     );
   }
 
@@ -70,13 +70,13 @@ export function getCurrentRunTree(permitAbsentRunTree = false) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function withRunTree<Fn extends (...args: any[]) => any>(
   runTree: RunTree,
-  fn: Fn
+  fn: Fn,
 ): Promise<Awaited<ReturnType<Fn>>> {
   const storage = AsyncLocalStorageProviderSingleton.getInstance();
   return new Promise<Awaited<ReturnType<Fn>>>((resolve, reject) => {
     storage.run(
       runTree,
-      () => void Promise.resolve(fn()).then(resolve).catch(reject)
+      () => void Promise.resolve(fn()).then(resolve).catch(reject),
     );
   });
 }
@@ -84,7 +84,7 @@ export function withRunTree<Fn extends (...args: any[]) => any>(
 export const ROOT = Symbol.for("langsmith:traceable:root");
 
 export function isTraceableFunction(
-  x: unknown
+  x: unknown,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): x is TraceableFunction<any> {
   return typeof x === "function" && "langsmith:traceable" in x;

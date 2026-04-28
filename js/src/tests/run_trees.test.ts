@@ -62,10 +62,10 @@ test("nested", () => {
   expect(child1.dotted_order).toBe(`${date}1Z${id}0.${date}2Z${id}1`);
   expect(child2.dotted_order).toBe(`${date}1Z${id}0.${date}3Z${id}2`);
   expect(grandchild1.dotted_order).toBe(
-    `${date}1Z${id}0.${date}2Z${id}1.${date}3Z${id}3`
+    `${date}1Z${id}0.${date}2Z${id}1.${date}3Z${id}3`,
   );
   expect(grandchild2.dotted_order).toBe(
-    `${date}1Z${id}0.${date}2Z${id}1.${date}4Z${id}4`
+    `${date}1Z${id}0.${date}2Z${id}1.${date}4Z${id}4`,
   );
   expect(child3.dotted_order).toBe(`${date}1Z${id}0.${date}5Z${id}5`);
 });
@@ -133,7 +133,7 @@ test("distributed", async () => {
         const currentRunTree = getCurrentRunTree();
         expect(currentRunTree.id).toBe("00000000-0000-0000-0000-00000000002");
         expect(currentRunTree.dotted_order).toBe(
-          "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001.20210503T000002000003Z00000000-0000-0000-0000-00000000002"
+          "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001.20210503T000002000003Z00000000-0000-0000-0000-00000000002",
         );
         return "child2";
       },
@@ -142,7 +142,7 @@ test("distributed", async () => {
         client,
         id: "00000000-0000-0000-0000-00000000002",
         start_time: Date.parse("2021-05-03T00:00:02.000Z"),
-      }
+      },
     )();
   });
 
@@ -153,7 +153,7 @@ test("distributed", async () => {
   await parent.patchRun();
   await client.awaitPendingTraceBatches();
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["parent_1:0", "child_2:1", "grandchild_traceable:2"],
   });
@@ -414,7 +414,7 @@ test("_sliceParentId handles empty dotted order segments", () => {
   const runDict = (singleRun as any)._convertToCreate(
     singleRun,
     undefined,
-    true
+    true,
   );
 
   // Try to slice at the run's own ID (should result in empty segments)
@@ -589,7 +589,7 @@ test("fromHeaders filters replica credentials", () => {
     },
   ];
   const baggage = `langsmith-replicas=${encodeURIComponent(
-    JSON.stringify(replicas)
+    JSON.stringify(replicas),
   )}`;
   const headers = {
     "langsmith-trace":

@@ -17,7 +17,7 @@ test("Simple Bun tracing integration test", async () => {
       name: "bun_tracing_test",
       client,
       id: runId,
-    }
+    },
   )({ text: "Hello world" });
 
   // Wait for the run to be found in the backend

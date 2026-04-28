@@ -64,7 +64,7 @@ export class CommandHandle {
       commandId?: string;
       stdoutOffset?: number;
       stderrOffset?: number;
-    }
+    },
   ) {
     this._stream = messageStream;
     this._control = control;
@@ -95,14 +95,14 @@ export class CommandHandle {
     if (firstResult.done) {
       throw new LangSmithSandboxOperationError(
         "Command stream ended before 'started' message",
-        "command"
+        "command",
       );
     }
     const firstMsg = firstResult.value;
     if (firstMsg.type !== "started") {
       throw new LangSmithSandboxOperationError(
         `Expected 'started' message, got '${firstMsg.type}'`,
-        "command"
+        "command",
       );
     }
     this._commandId = (firstMsg.command_id as string) ?? null;
@@ -137,7 +137,7 @@ export class CommandHandle {
     if (this._result === null) {
       throw new LangSmithSandboxOperationError(
         "Command stream ended without exit message",
-        "command"
+        "command",
       );
     }
     return this._result;
@@ -219,7 +219,7 @@ export class CommandHandle {
         reconnectAttempts++;
         if (reconnectAttempts > CommandHandle.MAX_AUTO_RECONNECTS) {
           throw new LangSmithSandboxConnectionError(
-            `Lost connection ${reconnectAttempts} times in succession, giving up`
+            `Lost connection ${reconnectAttempts} times in succession, giving up`,
           );
         }
 
@@ -227,7 +227,7 @@ export class CommandHandle {
         if (!isHotReload) {
           const delay = Math.min(
             CommandHandle.BACKOFF_BASE * 2 ** (reconnectAttempts - 1),
-            CommandHandle.BACKOFF_MAX
+            CommandHandle.BACKOFF_MAX,
           );
           await new Promise((r) => setTimeout(r, delay * 1000));
         }
@@ -288,7 +288,7 @@ export class CommandHandle {
     if (this._commandId === null) {
       throw new LangSmithSandboxOperationError(
         "Cannot reconnect: command ID not available",
-        "reconnect"
+        "reconnect",
       );
     }
     return this._sandbox.reconnect(this._commandId, {

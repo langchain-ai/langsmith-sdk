@@ -28,7 +28,7 @@ describe("Cache", () => {
     test("should return undefined for missing keys", () => {
       const cache = new PromptCache();
       expect(
-        cache.get("missing-key", async () => createMockPromptCommit("missing"))
+        cache.get("missing-key", async () => createMockPromptCommit("missing")),
       ).toBeUndefined();
       cache.stop();
     });
@@ -53,10 +53,10 @@ describe("Cache", () => {
     test("should clear all entries", () => {
       const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache.set("key2", createMockPromptCommit("test2"), async () =>
-        createMockPromptCommit("test2")
+        createMockPromptCommit("test2"),
       );
       expect(cache.size).toBe(2);
       cache.clear();
@@ -73,24 +73,24 @@ describe("Cache", () => {
       });
 
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache.set("key2", createMockPromptCommit("test2"), async () =>
-        createMockPromptCommit("test2")
+        createMockPromptCommit("test2"),
       );
       cache.set("key3", createMockPromptCommit("test3"), async () =>
-        createMockPromptCommit("test3")
+        createMockPromptCommit("test3"),
       );
 
       expect(cache.size).toBe(2);
       expect(
-        cache.get("key1", async () => createMockPromptCommit("test1"))
+        cache.get("key1", async () => createMockPromptCommit("test1")),
       ).toBeUndefined(); // Evicted
       expect(
-        cache.get("key2", async () => createMockPromptCommit("test2"))
+        cache.get("key2", async () => createMockPromptCommit("test2")),
       ).toBeDefined();
       expect(
-        cache.get("key3", async () => createMockPromptCommit("test3"))
+        cache.get("key3", async () => createMockPromptCommit("test3")),
       ).toBeDefined();
       cache.stop();
     });
@@ -102,10 +102,10 @@ describe("Cache", () => {
       });
 
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache.set("key2", createMockPromptCommit("test2"), async () =>
-        createMockPromptCommit("test2")
+        createMockPromptCommit("test2"),
       );
 
       // Access key1 to make it recently used
@@ -113,17 +113,17 @@ describe("Cache", () => {
 
       // Add key3 - should evict key2 (least recently used)
       cache.set("key3", createMockPromptCommit("test3"), async () =>
-        createMockPromptCommit("test3")
+        createMockPromptCommit("test3"),
       );
 
       expect(
-        cache.get("key1", async () => createMockPromptCommit("test1"))
+        cache.get("key1", async () => createMockPromptCommit("test1")),
       ).toBeDefined();
       expect(
-        cache.get("key2", async () => createMockPromptCommit("test2"))
+        cache.get("key2", async () => createMockPromptCommit("test2")),
       ).toBeUndefined(); // Evicted
       expect(
-        cache.get("key3", async () => createMockPromptCommit("test3"))
+        cache.get("key3", async () => createMockPromptCommit("test3")),
       ).toBeDefined();
       cache.stop();
     });
@@ -133,7 +133,7 @@ describe("Cache", () => {
     test("should track hits and misses", () => {
       const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
 
       cache.get("key1", async () => createMockPromptCommit("test1")); // Hit
@@ -150,7 +150,7 @@ describe("Cache", () => {
     test("should reset metrics", () => {
       const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache.get("key1", async () => createMockPromptCommit("test1"));
       cache.get("missing", async () => createMockPromptCommit("missing"));
@@ -181,10 +181,10 @@ describe("Cache", () => {
       const cache1 = new PromptCache({ ttlSeconds: null });
 
       cache1.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache1.set("key2", createMockPromptCommit("test2"), async () =>
-        createMockPromptCommit("test2")
+        createMockPromptCommit("test2"),
       );
       cache1.dump(cachePath);
       cache1.stop();
@@ -194,10 +194,10 @@ describe("Cache", () => {
 
       expect(loaded).toBe(2);
       expect(
-        cache2!.get("key1", async () => createMockPromptCommit("test1"))
+        cache2!.get("key1", async () => createMockPromptCommit("test1")),
       ).toBeDefined();
       expect(
-        cache2!.get("key2", async () => createMockPromptCommit("test2"))
+        cache2!.get("key2", async () => createMockPromptCommit("test2")),
       ).toBeDefined();
       cache2.stop();
     });
@@ -228,7 +228,7 @@ describe("Cache", () => {
 
       for (let i = 0; i < 5; i++) {
         cache1.set(`key${i}`, createMockPromptCommit(`test${i}`), async () =>
-          createMockPromptCommit(`test${i}`)
+          createMockPromptCommit(`test${i}`),
         );
       }
       cache1.dump(cachePath);
@@ -250,7 +250,7 @@ describe("Cache", () => {
       const cache = new PromptCache({ ttlSeconds: null });
 
       cache.set("key1", createMockPromptCommit("test1"), async () =>
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       cache.dump(cachePath);
 
@@ -277,7 +277,7 @@ describe("Cache", () => {
       cache.set(
         "key1",
         createMockPromptCommit("test1"),
-        fetchFunc as () => Promise<PromptCommit>
+        fetchFunc as () => Promise<PromptCommit>,
       );
 
       // Advance time significantly
@@ -765,11 +765,11 @@ describe("additional singleton tests", () => {
       // Client sets some values
       (client1 as any)._promptCache!.set(
         "prompt1",
-        createMockPromptCommit("test1")
+        createMockPromptCommit("test1"),
       );
       (client1 as any)._promptCache!.set(
         "prompt2",
-        createMockPromptCommit("test2")
+        createMockPromptCommit("test2"),
       );
 
       // Dump via singleton

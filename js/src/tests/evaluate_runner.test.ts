@@ -37,7 +37,7 @@ describe("evaluation runner internals", () => {
         await sleep(10);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toHaveLength(5);
@@ -56,7 +56,7 @@ describe("evaluation runner internals", () => {
         await sleep(10);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toEqual([1, 2, 3]);
@@ -80,7 +80,7 @@ describe("evaluation runner internals", () => {
         await sleep(delays[value]);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toEqual([2, 3, 1]);
@@ -98,8 +98,8 @@ describe("evaluation runner internals", () => {
           }
           await sleep(1);
           return value;
-        })
-      )
+        }),
+      ),
     ).rejects.toThrow("mapper boom");
   });
 
@@ -111,7 +111,7 @@ describe("evaluation runner internals", () => {
 
     const queue = new PQueue({ concurrency: 2 });
     await expect(
-      collect(_mapWithConcurrency(source(), queue, async (value) => value))
+      collect(_mapWithConcurrency(source(), queue, async (value) => value)),
     ).rejects.toThrow("source boom");
   });
 
@@ -146,7 +146,7 @@ describe("evaluation runner internals", () => {
       "example-2",
     ]);
     expect(
-      orderedRows.map((row) => row.evaluationResults.results[0].key)
+      orderedRows.map((row) => row.evaluationResults.results[0].key),
     ).toEqual(["key-0", "key-1", "key-2"]);
     expect(orderedRuns.map((run) => run.id)).toEqual([
       "run-0",
@@ -204,7 +204,7 @@ describe("evaluation runner internals", () => {
       async (value) => {
         await sleep(delays[value]);
         return value;
-      }
+      },
     )) {
       resultsOrder.push(value);
       const elapsed = Date.now() - startTime;

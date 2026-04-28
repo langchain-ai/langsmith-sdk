@@ -208,7 +208,7 @@ describe("estimateSerializedSize", () => {
   // estimator is speed, not precision.
   function expectClose(
     value: unknown,
-    opts: { minRatio?: number; maxRatio?: number } = {}
+    opts: { minRatio?: number; maxRatio?: number } = {},
   ) {
     const { minRatio = 0.9, maxRatio = 3.0 } = opts;
     const real = serialize(value).length;
@@ -217,8 +217,8 @@ describe("estimateSerializedSize", () => {
     if (ratio < minRatio || ratio > maxRatio) {
       throw new Error(
         `estimate out of range: real=${real}, estimate=${estimate}, ratio=${ratio.toFixed(
-          3
-        )} (expected between ${minRatio} and ${maxRatio})`
+          3,
+        )} (expected between ${minRatio} and ${maxRatio})`,
       );
     }
   }
@@ -350,7 +350,7 @@ describe("estimateSerializedSize", () => {
       };
 
       expect(estimateSerializedSize(payload).size).toBe(
-        serialize(payload).length
+        serialize(payload).length,
       );
     } finally {
       Object.keys = originalKeys;
@@ -373,7 +373,7 @@ describe("estimateSerializedSize", () => {
 
       const payload = { text: "explode-byte-length" };
       expect(estimateSerializedSize(payload).size).toBe(
-        serialize(payload).length
+        serialize(payload).length,
       );
     } finally {
       Buffer.byteLength = originalByteLength;
@@ -423,7 +423,7 @@ describe("estimateSerializedSize", () => {
       {
         minRatio: 0.5,
         maxRatio: 2.0,
-      }
+      },
     );
     expectClose(new Set([1, 2, 3, "hi"]), { minRatio: 0.5, maxRatio: 3.0 });
     expectClose(new Date(), { minRatio: 0.9, maxRatio: 1.2 });
@@ -433,7 +433,7 @@ describe("estimateSerializedSize", () => {
 
   it("does not throw on BigInt", () => {
     expect(() =>
-      estimateSerializedSize({ big: 123456789012345678901234567890n })
+      estimateSerializedSize({ big: 123456789012345678901234567890n }),
     ).not.toThrow();
   });
 
@@ -473,7 +473,7 @@ describe("estimateSerializedSize", () => {
 
   it("reports zero maxStringLen for payloads with no strings", () => {
     expect(
-      estimateSerializedSize({ a: 1, b: [2, 3], c: true }).maxStringLen
+      estimateSerializedSize({ a: 1, b: [2, 3], c: true }).maxStringLen,
     ).toBe(0);
     expect(estimateSerializedSize(null).maxStringLen).toBe(0);
     expect(estimateSerializedSize(42).maxStringLen).toBe(0);

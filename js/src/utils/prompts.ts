@@ -6,7 +6,7 @@ import { getInvalidPromptIdentifierMsg } from "./error.js";
  * Prompts, agents, and skills share the same identifier grammar on Hub.
  */
 export function parseHubIdentifier(
-  identifier: string
+  identifier: string,
 ): [string, string, string] {
   if (
     !identifier ||

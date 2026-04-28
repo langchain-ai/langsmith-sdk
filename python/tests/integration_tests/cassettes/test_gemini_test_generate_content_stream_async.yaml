@@ -4,7 +4,7 @@ interactions:
     headers:
       Content-Type:
       - application/json
-    method: post
+    method: POST
     uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
   response:
     body:
@@ -46,7 +46,7 @@ interactions:
     headers:
       Content-Type:
       - application/json
-    method: post
+    method: POST
     uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
   response:
     body:
@@ -88,7 +88,7 @@ interactions:
     headers:
       Content-Type:
       - application/json
-    method: post
+    method: POST
     uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
   response:
     body:
@@ -134,7 +134,7 @@ interactions:
     headers:
       Content-Type:
       - application/json
-    method: post
+    method: POST
     uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse
   response:
     body:

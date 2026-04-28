@@ -17,20 +17,20 @@ class LangSmithEvalReporter extends DefaultReporter {
         groups[ancestorTitle].push(testResult);
         return groups;
       },
-      {}
+      {},
     );
     try {
       for (const testGroupName of Object.keys(groupedTestResults)) {
         const resultGroup = groupedTestResults[testGroupName];
         const unskippedTests = resultGroup.filter(
-          (result: any) => result.status !== "pending"
+          (result: any) => result.status !== "pending",
         );
         const overallResult =
           unskippedTests.length === 0
             ? "skip"
             : unskippedTests.every((result: any) => result.status === "passed")
-            ? "pass"
-            : "fail";
+              ? "pass"
+              : "fail";
         await printReporterTable(testGroupName, resultGroup, overallResult);
       }
     } catch (e: any) {

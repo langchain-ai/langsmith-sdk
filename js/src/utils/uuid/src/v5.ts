@@ -8,19 +8,19 @@ function v5(
   value: string | Uint8Array,
   namespace: UUIDTypes,
   buf?: undefined,
-  offset?: number
+  offset?: number,
 ): string;
 function v5<TBuf extends Uint8Array = Uint8Array>(
   value: string | Uint8Array,
   namespace: UUIDTypes,
   buf: TBuf,
-  offset?: number
+  offset?: number,
 ): TBuf;
 function v5<TBuf extends Uint8Array = Uint8Array>(
   value: string | Uint8Array,
   namespace: UUIDTypes,
   buf?: TBuf,
-  offset?: number
+  offset?: number,
 ): UUIDTypes<TBuf> {
   return v35(0x50, sha1, value, namespace, buf, offset);
 }

@@ -31,7 +31,7 @@ test("multipart should work with overridden node-fetch", async () => {
         project_name: projectName,
         client: langchainClient,
         tracingEnabled: true,
-      }
+      },
     )();
 
     await langchainClient.awaitPendingTraceBatches();

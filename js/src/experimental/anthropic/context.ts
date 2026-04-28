@@ -25,7 +25,7 @@ function isToolResultError(value: unknown): boolean {
 function makeSubagentTranscriptPathKey(
   path: string,
   toolUseId?: string,
-  agentType?: string
+  agentType?: string,
 ): string {
   return JSON.stringify([path, toolUseId ?? null, agentType ?? null]);
 }
@@ -262,7 +262,7 @@ export class StreamManager {
         toolUseId,
         typeof data.tool_input === "object" && data.tool_input != null
           ? (data.tool_input as Record<string, unknown>)
-          : {}
+          : {},
       );
       return;
     }
@@ -280,8 +280,8 @@ export class StreamManager {
           typeof toolInput.subagent_type === "string"
             ? toolInput.subagent_type
             : typeof toolInput.agent_type === "string"
-            ? toolInput.agent_type
-            : undefined;
+              ? toolInput.agent_type
+              : undefined;
         if (
           agentType == null ||
           pendingAgentType == null ||
@@ -317,7 +317,7 @@ export class StreamManager {
       this.addSubagentTranscriptPath(
         transcriptPath,
         mappedToolUseId,
-        agentType
+        agentType,
       );
     }
   }
@@ -325,7 +325,7 @@ export class StreamManager {
   addSubagentTranscriptPath(
     path: string,
     toolUseId?: string,
-    agentType?: string
+    agentType?: string,
   ) {
     const key = makeSubagentTranscriptPathKey(path, toolUseId, agentType);
     if (this.transcriptPathKeys.has(key)) return;
@@ -335,7 +335,7 @@ export class StreamManager {
 
   static getActiveToolRun(
     toolName?: string,
-    input?: unknown
+    input?: unknown,
   ): RunTree | undefined {
     const currentRun = getCurrentRunTree(true);
     const currentManager =
@@ -361,11 +361,11 @@ export class StreamManager {
 
   private getActiveToolRun(
     toolName?: string,
-    input?: unknown
+    input?: unknown,
   ): RunTree | undefined {
     const toolEntries = Object.values(this.tools).filter(
       (runTree): runTree is RunTree =>
-        runTree != null && runTree.end_time == null && runTree.error == null
+        runTree != null && runTree.end_time == null && runTree.error == null,
     );
 
     return toolEntries.find((runTree) => {
@@ -393,7 +393,7 @@ export class StreamManager {
 
   protected createChild(
     namespace: string,
-    args: Parameters<RunTree["createChild"]>[0]
+    args: Parameters<RunTree["createChild"]>[0],
   ): RunTree | undefined {
     const parentRunTree = this.namespaces[namespace];
     if (parentRunTree == null) return undefined;
@@ -402,7 +402,7 @@ export class StreamManager {
 
   private createChildRun(
     parentRunTree: RunTree,
-    args: Parameters<RunTree["createChild"]>[0]
+    args: Parameters<RunTree["createChild"]>[0],
   ): RunTree | undefined {
     const runTree = parentRunTree.createChild(args);
     if (runTree == null) return undefined;
@@ -434,7 +434,7 @@ export class StreamManager {
   private createToolRun(
     namespace: string,
     block: Record<string, unknown>,
-    startTime?: number
+    startTime?: number,
   ): RunTree | undefined {
     if (typeof block.id !== "string") return undefined;
 
@@ -452,7 +452,7 @@ export class StreamManager {
   private createAgentToolRun(
     namespace: string,
     block: Record<string, unknown>,
-    startTime?: number
+    startTime?: number,
   ) {
     if (typeof block.id !== "string") return;
     if (
@@ -491,7 +491,7 @@ export class StreamManager {
 
   private createSyntheticAssistantRun(
     namespace: string,
-    turn: TranscriptAssistantTurn
+    turn: TranscriptAssistantTurn,
   ) {
     let runTree = this.assistant[turn.messageId];
 
@@ -601,7 +601,7 @@ export class StreamManager {
       if (this.resultModelUsage != null) {
         correctUsageFromResults(
           this.resultModelUsage,
-          Object.values(this.assistant).filter((runTree) => runTree != null)
+          Object.values(this.assistant).filter((runTree) => runTree != null),
         );
       }
 
@@ -622,7 +622,7 @@ export class StreamManager {
           if (subagent.outputs == null && subagent.error == null) {
             await subagent.end(
               undefined,
-              "Run not completed (conversation ended)"
+              "Run not completed (conversation ended)",
             );
           } else {
             await subagent.end();
@@ -635,7 +635,7 @@ export class StreamManager {
 
       // Then patch the runs
       await Promise.allSettled(
-        this.runTrees.map((runTree) => runTree.patchRun())
+        this.runTrees.map((runTree) => runTree.patchRun()),
       );
     } finally {
       this.dispose();

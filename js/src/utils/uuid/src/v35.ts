@@ -26,7 +26,7 @@ export default function v35<TBuf extends Uint8Array = Uint8Array>(
   value: string | Uint8Array,
   namespace: UUIDTypes,
   buf?: TBuf,
-  offset?: number
+  offset?: number,
 ): UUIDTypes<TBuf> {
   const valueBytes: Uint8Array =
     typeof value === "string" ? stringToBytes(value) : value;
@@ -39,7 +39,7 @@ export default function v35<TBuf extends Uint8Array = Uint8Array>(
 
   if (namespace?.length !== 16) {
     throw TypeError(
-      "Namespace must be array-like (16 iterable integer values, 0-255)"
+      "Namespace must be array-like (16 iterable integer values, 0-255)",
     );
   }
 
@@ -59,7 +59,7 @@ export default function v35<TBuf extends Uint8Array = Uint8Array>(
     offset ??= 0;
     if (offset < 0 || offset + 16 > buf.length) {
       throw new RangeError(
-        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
       );
     }
 

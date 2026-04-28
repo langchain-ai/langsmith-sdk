@@ -152,7 +152,7 @@ export class LangSmithValidationError extends LangSmithSandboxError {
     message: string,
     field?: string,
     details?: Array<Record<string, unknown>>,
-    errorType?: string
+    errorType?: string,
   ) {
     super(message);
     this.name = "LangSmithValidationError";

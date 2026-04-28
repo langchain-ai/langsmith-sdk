@@ -20,14 +20,14 @@ test("Test handoff between run tree and LangChain code.", async () => {
     },
     {
       name: "add_negligible_value",
-    }
+    },
   );
 
   const myFunc = async (messages: BaseMessage[], config?: RunnableConfig) => {
     const runnableConfig = config ?? { callbacks: [] };
     const newMsg = await addValueTraceable(
       runnableConfig,
-      messages[0] as HumanMessage
+      messages[0] as HumanMessage,
     );
     return [newMsg];
   };
@@ -38,7 +38,7 @@ test("Test handoff between run tree and LangChain code.", async () => {
       "agent",
       new RunnableLambda({
         func: async () => new HumanMessage({ content: "Hello!" }),
-      })
+      }),
     )
     .addNode("action", new RunnableLambda({ func: myFunc }))
     .addEdge("__start__", "agent")
@@ -65,7 +65,7 @@ test("Test handoff between run tree and LangChain code.", async () => {
         client.listRuns({
           projectName,
           filter: "eq(name, 'add_negligible_value')",
-        })
+        }),
       );
     await waitUntil(
       async () => {
@@ -73,7 +73,7 @@ test("Test handoff between run tree and LangChain code.", async () => {
         return traces.length > 0;
       },
       120_000,
-      10
+      10,
     );
 
     const traces = await getNestedFunction();

@@ -6,7 +6,7 @@ import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "./usage.js";
 
 function extractTraceableServiceTier(
-  providerMetadata: Record<string, unknown>
+  providerMetadata: Record<string, unknown>,
 ): "priority" | "flex" | undefined {
   if (
     providerMetadata?.openai != null &&
@@ -25,14 +25,14 @@ function extractTraceableServiceTier(
 }
 
 function isLanguageModelV3Usage(
-  usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>
+  usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
 ): usage is Partial<LanguageModelV3Usage> {
   return usage.inputTokens != null && typeof usage.inputTokens === "object";
 }
 
 function extractAISDK6OutputTokenDetails(
   usage: Partial<LanguageModelV3Usage>,
-  providerMetadata?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>,
 ) {
   const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
   const outputTokenDetailsKeyPrefix = openAIServiceTier
@@ -63,7 +63,7 @@ function extractAISDK6OutputTokenDetails(
 
 export function extractOutputTokenDetails(
   usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
-  providerMetadata?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>,
 ) {
   if (usage == null) {
     return {};
@@ -96,7 +96,7 @@ export function extractOutputTokenDetails(
 
 function extractAISDK6InputTokenDetails(
   usage: Partial<LanguageModelV3Usage>,
-  providerMetadata?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>,
 ) {
   let inputTokenDetails: Record<string, number> = {};
   const inputTokens = usage.inputTokens;
@@ -158,7 +158,7 @@ function extractAISDK6InputTokenDetails(
 
 export function extractInputTokenDetails(
   usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
-  providerMetadata?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>,
 ) {
   if (usage == null) {
     return {};
@@ -168,7 +168,7 @@ export function extractInputTokenDetails(
     // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)
     return extractAISDK6InputTokenDetails(
       usage as Partial<LanguageModelV3Usage>,
-      providerMetadata
+      providerMetadata,
     );
   }
   let inputTokenDetails: Record<string, number> = {};
@@ -203,7 +203,7 @@ export function extractInputTokenDetails(
     typeof providerMetadata?.openai === "object"
   ) {
     const openAIServiceTier = extractTraceableServiceTier(
-      providerMetadata ?? {}
+      providerMetadata ?? {},
     );
     const outputTokenDetailsKeyPrefix = openAIServiceTier
       ? `${openAIServiceTier}_`
@@ -270,13 +270,13 @@ export function extractUsageMetadata(span?: {
   if (typeof span.attributes["ai.response.providerMetadata"] === "string") {
     try {
       const providerMetadata = JSON.parse(
-        span.attributes["ai.response.providerMetadata"]
+        span.attributes["ai.response.providerMetadata"],
       );
       usageMetadata.input_token_details = extractInputTokenDetails(
         typeof span.attributes["ai.usage.cachedInputTokens"] === "number"
           ? { cachedInputTokens: span.attributes["ai.usage.cachedInputTokens"] }
           : undefined,
-        providerMetadata
+        providerMetadata,
       );
       if (
         providerMetadata.anthropic != null &&

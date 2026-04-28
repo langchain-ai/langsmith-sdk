@@ -41,7 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function toSDKAssistantMessage(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): SDKAssistantMessage | undefined {
   const message = data.message;
   if (!isRecord(message)) return undefined;
@@ -66,7 +66,7 @@ function toSDKAssistantMessage(
 }
 
 function toSDKUserMessage(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): SDKUserMessage | undefined {
   const message = data.message;
   if (!isRecord(message)) return undefined;
@@ -93,7 +93,7 @@ function toSDKUserMessage(
  * @internal
  */
 export async function readTranscript(
-  filePath: string
+  filePath: string,
 ): Promise<TranscriptData> {
   let contents: string;
   try {
@@ -180,7 +180,7 @@ export async function readTranscript(
 
   return {
     turns: Array.from(entriesById.values()).filter(
-      (turn) => turn.message.message.stop_reason
+      (turn) => turn.message.message.stop_reason,
     ),
     usageByMessageId,
     toolResults,

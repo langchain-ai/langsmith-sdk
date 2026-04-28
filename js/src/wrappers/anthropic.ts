@@ -41,14 +41,14 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
         arg: Anthropic.MessageCreateParamsStreaming,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): Promise<Stream<Anthropic.MessageStreamEvent>>;
     } & {
       (
         arg: Anthropic.MessageCreateParamsNonStreaming,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): Promise<Anthropic.Message>;
     };
     stream: {
@@ -56,7 +56,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
         arg: Anthropic.MessageStreamParams,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): MessageStream;
     };
   };
@@ -66,7 +66,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
  * Create usage metadata from Anthropic's token usage format.
  */
 export function createUsageMetadata(
-  anthropicUsage: Partial<Anthropic.Messages.Usage>
+  anthropicUsage: Partial<Anthropic.Messages.Usage>,
 ): KVMap | undefined {
   if (!anthropicUsage) {
     return undefined;
@@ -84,14 +84,14 @@ export function createUsageMetadata(
   const inputTokenDetails: Record<string, number> =
     convertAnthropicUsageToInputTokenDetails(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      anthropicUsage as Record<string, any>
+      anthropicUsage as Record<string, any>,
     );
 
   // Anthropic cache tokens are ADDITIVE (not subsets of input_tokens like OpenAI).
   // Sum them into input_tokens so the backend cost calculation is correct.
   const cacheTokenSum = Object.values(inputTokenDetails).reduce(
     (sum, v) => sum + (v ?? 0),
-    0
+    0,
   );
   const adjustedInputTokens = inputTokens + cacheTokenSum;
   const adjustedTotalTokens = adjustedInputTokens + outputTokens;
@@ -128,7 +128,7 @@ function processMessageOutput(outputs: KVMap): KVMap {
  */
 function accumulateContentBlockDelta(
   content: Anthropic.ContentBlock[],
-  event: Anthropic.ContentBlockDeltaEvent
+  event: Anthropic.ContentBlockDeltaEvent,
 ): void {
   const block = content[event.index];
   if (!block) return;
@@ -204,7 +204,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
         if (message.content) {
           accumulateContentBlockDelta(
             message.content as Anthropic.ContentBlock[],
-            chunk
+            chunk,
           );
         }
         break;
@@ -298,14 +298,14 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
  */
 export const wrapAnthropic = <T extends AnthropicType>(
   anthropic: T,
-  options?: Partial<RunTreeConfig>
+  options?: Partial<RunTreeConfig>,
 ): PatchedAnthropicClient<T> => {
   if (
     isTraceableFunction(anthropic.messages.create) ||
     isTraceableFunction(anthropic.messages.stream)
   ) {
     throw new Error(
-      "This instance of Anthropic client has been already wrapped once."
+      "This instance of Anthropic client has been already wrapped once.",
     );
   }
 
@@ -330,7 +330,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
    * to be viewed and edited in the LangSmith playground.
    */
   function processSystemMessage(
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
   ): Record<string, unknown> {
     if (!params.system) {
       return params;
@@ -342,7 +342,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     const systemContent = Array.isArray(params.system)
       ? params.system
           .map((block: string | { text: string; type?: string }) =>
-            typeof block === "string" ? block : block.text
+            typeof block === "string" ? block : block.text,
           )
           .join("\n")
       : params.system;
@@ -403,7 +403,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
 
   // Create a new messages object preserving the prototype
   tracedAnthropicClient.messages = Object.create(
-    Object.getPrototypeOf(anthropic.messages)
+    Object.getPrototypeOf(anthropic.messages),
   );
 
   // Copy all own properties
@@ -412,7 +412,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
   // Wrap messages.create
   tracedAnthropicClient.messages.create = traceable(
     anthropic.messages.create.bind(anthropic.messages),
-    messagesCreateConfig
+    messagesCreateConfig,
   );
 
   // Shared function to wrap stream methods
@@ -455,7 +455,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
       getInvocationParams: messagesCreateConfig.getInvocationParams,
       processOutputs: processMessageOutput,
       ...cleanedOptions,
-    }
+    },
   );
 
   // Wrap beta.messages if it exists
@@ -467,21 +467,21 @@ export const wrapAnthropic = <T extends AnthropicType>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tracedBeta = { ...anthropic.beta } as any;
     tracedBeta.messages = Object.create(
-      Object.getPrototypeOf(anthropic.beta.messages)
+      Object.getPrototypeOf(anthropic.beta.messages),
     );
     Object.assign(tracedBeta.messages, anthropic.beta.messages);
 
     // Wrap beta.messages.create
     tracedBeta.messages.create = traceable(
       anthropic.beta.messages.create.bind(anthropic.beta.messages),
-      messagesCreateConfig
+      messagesCreateConfig,
     );
 
     // Wrap beta.messages.parse if it exists
     if (typeof anthropic.beta.messages.parse === "function") {
       tracedBeta.messages.parse = traceable(
         anthropic.beta.messages.parse.bind(anthropic.beta.messages),
-        messagesCreateConfig
+        messagesCreateConfig,
       );
     }
 
@@ -489,7 +489,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     if (typeof anthropic.beta.messages.stream === "function") {
       tracedBeta.messages.stream = traceable(
         wrapStreamMethod(
-          anthropic.beta.messages.stream.bind(anthropic.beta.messages)
+          anthropic.beta.messages.stream.bind(anthropic.beta.messages),
         ),
         {
           name: "ChatAnthropic",
@@ -500,7 +500,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
           getInvocationParams: messagesCreateConfig.getInvocationParams,
           processOutputs: processMessageOutput,
           ...cleanedOptions,
-        }
+        },
       );
     }
 
