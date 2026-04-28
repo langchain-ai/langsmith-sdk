@@ -280,8 +280,8 @@ export class StreamManager {
           typeof toolInput.subagent_type === "string"
             ? toolInput.subagent_type
             : typeof toolInput.agent_type === "string"
-              ? toolInput.agent_type
-              : undefined;
+            ? toolInput.agent_type
+            : undefined;
         if (
           agentType == null ||
           pendingAgentType == null ||
@@ -568,12 +568,9 @@ export class StreamManager {
       for (const toolResult of transcript.toolResults) {
         const tool = this.tools[toolResult.toolUseId];
         if (tool == null) continue;
-        const output =
-          typeof toolResult.content === "object" &&
-          toolResult.content != null &&
-          !Array.isArray(toolResult.content)
-            ? (toolResult.content as Record<string, unknown>)
-            : { content: toolResult.content };
+        const output = isRecord(toolResult.content)
+          ? toolResult.content
+          : { content: toolResult.content };
         const error = toolResult.isError
           ? typeof toolResult.content === "string" ||
             typeof toolResult.content === "number" ||
