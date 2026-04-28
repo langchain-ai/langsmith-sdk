@@ -154,6 +154,15 @@ describe("Client", () => {
       expect(result).toBe("https://eu.smith.langchain.com");
     });
 
+    it("should return 'https://apac.smith.langchain.com' if apiUrl contains 'apac'", () => {
+      const client = new Client({
+        apiUrl: "https://apac.api.smith.langchain.com/v1",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://apac.smith.langchain.com");
+    });
+
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
       const client = new Client({
         apiUrl: "https://smith.langchain.com/api",
