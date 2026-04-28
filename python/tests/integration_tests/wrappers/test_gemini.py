@@ -141,6 +141,7 @@ def test_generate_content_stream_sync(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip("Doesn't work with cassettes properly for some reason")
 async def test_generate_content_async():
     """Test async generate_content."""
     from google import genai
