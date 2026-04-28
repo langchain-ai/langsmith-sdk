@@ -42,7 +42,7 @@ export class StreamManager {
       if (message.modelUsage) {
         correctUsageFromResults(
           message.modelUsage,
-          Object.values(this.assistant).filter((runTree) => runTree != null)
+          Object.values(this.assistant).filter((runTree) => runTree != null),
         );
       }
 
@@ -212,7 +212,7 @@ export class StreamManager {
 
   protected createChild(
     namespace: string,
-    args: Parameters<RunTree["createChild"]>[0]
+    args: Parameters<RunTree["createChild"]>[0],
   ): RunTree | undefined {
     const runTree = this.namespaces[namespace]?.createChild(args);
     if (runTree == null) return undefined;
@@ -236,7 +236,7 @@ export class StreamManager {
 
     // Then patch the runs
     await Promise.allSettled(
-      this.runTrees.map((runTree) => runTree.patchRun())
+      this.runTrees.map((runTree) => runTree.patchRun()),
     );
   }
 }

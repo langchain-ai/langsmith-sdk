@@ -67,7 +67,7 @@ describe("SerializeWorker", () => {
     };
     const parsed = JSON.parse(await serializeToText(payload));
     expect(parsed.messages[0].content[0].image_url.url).toHaveLength(
-      "data:image/png;base64,".length + img.length
+      "data:image/png;base64,".length + img.length,
     );
   });
 

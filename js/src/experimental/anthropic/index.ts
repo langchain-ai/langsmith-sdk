@@ -9,11 +9,11 @@ import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
  * @internal Use `wrapClaudeAgentSDK` instead.
  */
 function wrapClaudeAgentQuery<
-  T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
+  T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>,
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
   async function* generator(
     originalGenerator: AsyncGenerator<SDKMessage, void, unknown>,
-    prompt: string | AsyncIterable<SDKMessage> | undefined
+    prompt: string | AsyncIterable<SDKMessage> | undefined,
   ) {
     const streamManager = new StreamManager();
     try {
@@ -36,7 +36,7 @@ function wrapClaudeAgentQuery<
 
   function getLatestInput(
     arg: string | AsyncIterable<SDKMessage> | undefined,
-    systemCount: number
+    systemCount: number,
   ): SDKUserMessage | undefined {
     const value = (() => {
       if (typeof arg !== "object" || arg == null) return arg;
@@ -95,7 +95,7 @@ function wrapClaudeAgentQuery<
             Object.entries(options.mcpServers ?? {}).map(([key, value]) => [
               key,
               { name: value.name, type: value.type },
-            ])
+            ]),
           );
         }
 
@@ -131,9 +131,10 @@ function wrapClaudeAgentQuery<
       const wrappedGenerator = generator(actualGenerator, params.prompt);
 
       for (const method of Object.getOwnPropertyNames(
-        Object.getPrototypeOf(actualGenerator)
+        Object.getPrototypeOf(actualGenerator),
       ).filter(
-        (method) => !["constructor", "next", "throw", "return"].includes(method)
+        (method) =>
+          !["constructor", "next", "throw", "return"].includes(method),
       )) {
         Object.defineProperty(wrappedGenerator, method, {
           get() {
@@ -160,7 +161,7 @@ function wrapClaudeAgentQuery<
       __deferredSerializableArgOptions: { maxDepth: 1 },
       processInputs,
       processOutputs,
-    }
+    },
   ) as unknown as T;
 }
 
@@ -194,7 +195,7 @@ function wrapClaudeAgentQuery<
  */
 export function wrapClaudeAgentSDK<T extends object>(
   sdk: T,
-  config?: WrapClaudeAgentSDKConfig
+  config?: WrapClaudeAgentSDKConfig,
 ): T {
   type TypedSdk = T & {
     query?: (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>;
@@ -211,7 +212,7 @@ export function wrapClaudeAgentSDK<T extends object>(
 
   if ("query" in inputSdk && isTraceableFunction(inputSdk.query)) {
     throw new Error(
-      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
+      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`.",
     );
   }
 
@@ -241,7 +242,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_createSession>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_createSession` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_createSession` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_createSession?.(...args);
     };
@@ -254,7 +255,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_prompt>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_prompt` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_prompt` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_prompt?.(...args);
     };
@@ -267,7 +268,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_resumeSession>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_resumeSession` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_resumeSession` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_resumeSession?.(...args);
     };

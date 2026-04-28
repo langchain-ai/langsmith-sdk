@@ -1,5 +1,5 @@
 export const convertAnthropicUsageToInputTokenDetails = (
-  usage: Record<string, unknown>
+  usage: Record<string, unknown>,
 ): Record<string, number> => {
   const result: {
     ephemeral_5m_input_tokens?: number;

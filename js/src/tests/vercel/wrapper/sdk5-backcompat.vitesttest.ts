@@ -60,7 +60,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
       const mockLangModel = new MockLanguageModelV2({
         modelId: "trace-test-model",
@@ -98,14 +98,14 @@ describe("wrapAISDK", () => {
       const generateTextRun = mockHttpRequests[0];
       expect(generateTextRun.body.extra.metadata).toHaveProperty(
         "ai_sdk_method",
-        "ai.generateText"
+        "ai.generateText",
       );
 
       // The second createRun should be the low-level doGenerate call
       const doGenerateRun = mockHttpRequests[1];
       expect(doGenerateRun.body.extra.metadata).toHaveProperty(
         "ai_sdk_method",
-        "ai.doGenerate"
+        "ai.doGenerate",
       );
     });
 
@@ -125,7 +125,7 @@ describe("wrapAISDK", () => {
             version: "2.0",
           },
           client: mockClient as any,
-        }
+        },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -169,7 +169,7 @@ describe("wrapAISDK", () => {
         ai_sdk_method: "ai.generateText",
       });
       expect(updateTextRun.body.outputs).not.toHaveProperty(
-        "response_metadata"
+        "response_metadata",
       );
     });
 
@@ -186,7 +186,7 @@ describe("wrapAISDK", () => {
           name: "custom-tracer",
           traceResponseMetadata: true,
           client: mockClient as any,
-        }
+        },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -227,7 +227,7 @@ describe("wrapAISDK", () => {
 
       const updateTextRun = mockHttpRequests[3];
       expect(updateTextRun.body.outputs.response_metadata).toHaveProperty(
-        "steps"
+        "steps",
       );
     });
 
@@ -241,7 +241,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -259,7 +259,7 @@ describe("wrapAISDK", () => {
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
         expect(error.message).toContain(
-          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR",
         );
       }
 
@@ -270,20 +270,20 @@ describe("wrapAISDK", () => {
       expect(mockHttpRequests.length).toBeGreaterThan(0);
 
       const createRunCall = mockHttpRequests.find(
-        (req) => req.type === "createRun"
+        (req) => req.type === "createRun",
       );
       expect(createRunCall).toBeDefined();
       expect(createRunCall.body.inputs).toHaveProperty(
         "prompt",
-        "This should fail"
+        "This should fail",
       );
 
       const updateRunCall = mockHttpRequests.find(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR",
       );
     });
 
@@ -296,7 +296,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -342,13 +342,13 @@ describe("wrapAISDK", () => {
       const generateTextPostRun = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText",
       );
       expect(generateTextPostRun).toBeDefined();
       const generateTextPatchRun = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText",
       );
       expect(generateTextPatchRun).toBeDefined();
       expect(generateTextPatchRun.body.outputs.content).toMatchObject([
@@ -368,7 +368,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -407,7 +407,7 @@ describe("wrapAISDK", () => {
         {
           client: mockClient as any,
           name: "parent-traceable",
-        }
+        },
       )();
 
       // Should return quickly
@@ -428,23 +428,23 @@ describe("wrapAISDK", () => {
 
       const parentCreateRun = mockHttpRequests.find(
         (req) =>
-          req.type === "createRun" && req.body.name === "parent-traceable"
+          req.type === "createRun" && req.body.name === "parent-traceable",
       );
       expect(parentCreateRun).toBeDefined();
       const parentUpdateRun = mockHttpRequests.find(
-        (req) => req.type === "updateRun" && !req.body.parent_run_id
+        (req) => req.type === "updateRun" && !req.body.parent_run_id,
       );
       expect(parentUpdateRun).toBeDefined();
       const generateTextPostRun = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText",
       );
       expect(generateTextPostRun).toBeDefined();
       const generateTextPatchRun = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText",
       );
       expect(generateTextPatchRun).toBeDefined();
       expect(generateTextPatchRun.body.outputs.content).toMatchObject([
@@ -456,14 +456,14 @@ describe("wrapAISDK", () => {
       const generateLLMPatchRun = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.doStream"
+          req.body.extra.metadata.ai_sdk_method === "ai.doStream",
       );
       expect(generateLLMPatchRun).toBeDefined();
       expect(parentUpdateRun.body.end_time).toBeGreaterThanOrEqual(
-        generateTextPatchRun.body.end_time
+        generateTextPatchRun.body.end_time,
       );
       expect(parentUpdateRun.body.end_time).toBeGreaterThanOrEqual(
-        generateLLMPatchRun.body.end_time
+        generateLLMPatchRun.body.end_time,
       );
     });
 
@@ -476,7 +476,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       // Test error at doStream level
@@ -502,12 +502,12 @@ describe("wrapAISDK", () => {
 
       // Verify error was captured in LangSmith traces
       const updateRunCall = mockHttpRequests.find(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
 
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "TOTALLY EXPECTED MOCK DOSTREAM ERROR"
+        "TOTALLY EXPECTED MOCK DOSTREAM ERROR",
       );
     });
 
@@ -520,7 +520,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -563,7 +563,7 @@ describe("wrapAISDK", () => {
       const generateObjectRun = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.generateObject"
+          req.body.extra.metadata.ai_sdk_method === "ai.generateObject",
       );
       expect(generateObjectRun).toBeDefined();
     });
@@ -577,7 +577,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -598,7 +598,7 @@ describe("wrapAISDK", () => {
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
         expect(error.message).toContain(
-          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR",
         );
       }
 
@@ -607,11 +607,11 @@ describe("wrapAISDK", () => {
 
       // Verify error was captured in LangSmith
       const updateRunCall = mockHttpRequests.find(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR",
       );
     });
 
@@ -624,7 +624,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -678,7 +678,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -727,13 +727,13 @@ describe("wrapAISDK", () => {
       const streamObjectRun = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamObject",
       );
       expect(streamObjectRun).toBeDefined();
       const streamObjectPatchRun = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamObject",
       );
       expect(streamObjectPatchRun).toBeDefined();
       expect(streamObjectPatchRun.body.outputs).toMatchObject({
@@ -750,7 +750,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       // Test error at doStream level for streamObject
@@ -779,12 +779,12 @@ describe("wrapAISDK", () => {
 
       // Verify error was captured in LangSmith traces
       const updateRunCall = mockHttpRequests.find(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
 
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR"
+        "TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR",
       );
     });
 
@@ -797,7 +797,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       let callCount = 0;
@@ -876,10 +876,10 @@ describe("wrapAISDK", () => {
       expect(mockHttpRequests.length).toBeGreaterThan(0);
 
       const createRunCalls = mockHttpRequests.filter(
-        (req) => req.type === "createRun"
+        (req) => req.type === "createRun",
       );
       const updateRunCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun"
+        (req) => req.type === "updateRun",
       );
 
       // With 3 doStream attempts (2 failures + 1 success), we should see:
@@ -890,10 +890,11 @@ describe("wrapAISDK", () => {
 
       // Verify the success/error pattern: 1 parent success + 2 child errors + 1 child success
       const successUpdateCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun" && !req.body.error && req.body.outputs
+        (req) =>
+          req.type === "updateRun" && !req.body.error && req.body.outputs,
       );
       const errorUpdateCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
 
       expect(successUpdateCalls.length).toBe(2); // 1 parent streamText + 1 child doStream success
@@ -909,7 +910,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       let callCount = 0;
@@ -972,10 +973,10 @@ describe("wrapAISDK", () => {
       expect(mockHttpRequests.length).toBeGreaterThan(0);
 
       const createRunCalls = mockHttpRequests.filter(
-        (req) => req.type === "createRun"
+        (req) => req.type === "createRun",
       );
       const updateRunCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun"
+        (req) => req.type === "updateRun",
       );
 
       // With 3 doGenerate attempts (2 failures + 1 success), we should see:
@@ -986,10 +987,11 @@ describe("wrapAISDK", () => {
 
       // Verify the success/error pattern: 1 parent success + 2 child errors + 1 child success
       const successUpdateCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun" && !req.body.error && req.body.outputs
+        (req) =>
+          req.type === "updateRun" && !req.body.error && req.body.outputs,
       );
       const errorUpdateCalls = mockHttpRequests.filter(
-        (req) => req.type === "updateRun" && req.body.error
+        (req) => req.type === "updateRun" && req.body.error,
       );
 
       expect(successUpdateCalls.length).toBe(2); // 1 parent generateText + 1 child doGenerate success
@@ -997,19 +999,19 @@ describe("wrapAISDK", () => {
 
       // Find the parent generateText success (has content array)
       const parentSuccessCall = successUpdateCalls.find(
-        (req) => req.body.outputs.content?.[0]?.text
+        (req) => req.body.outputs.content?.[0]?.text,
       );
       expect(parentSuccessCall).toBeDefined();
       expect(parentSuccessCall.body.outputs.content[0].text).toBe(
-        "Generated after retry"
+        "Generated after retry",
       );
 
       // Verify the final successful call has usage metadata
       expect(
-        parentSuccessCall.body.extra?.metadata?.usage_metadata
+        parentSuccessCall.body.extra?.metadata?.usage_metadata,
       ).toBeDefined();
       expect(
-        parentSuccessCall.body.extra.metadata.usage_metadata.total_tokens
+        parentSuccessCall.body.extra.metadata.usage_metadata.total_tokens,
       ).toBe(15);
     });
 
@@ -1022,7 +1024,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const abortController = new AbortController();
@@ -1088,12 +1090,12 @@ describe("wrapAISDK", () => {
       const createRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText",
       );
       expect(createRunCall).toBeDefined();
       expect(createRunCall.body.inputs).toHaveProperty(
         "prompt",
-        "Tell me a lorem ipsum poem"
+        "Tell me a lorem ipsum poem",
       );
     });
   });
@@ -1122,7 +1124,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        baseConfig
+        baseConfig,
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -1153,7 +1155,7 @@ describe("wrapAISDK", () => {
       const createRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText",
       );
 
       expect(createRunCall).toBeDefined();
@@ -1176,7 +1178,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -1256,7 +1258,7 @@ describe("wrapAISDK", () => {
       const createRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText",
       );
 
       expect(createRunCall).toBeDefined();
@@ -1271,7 +1273,7 @@ describe("wrapAISDK", () => {
       const createUpdateCall = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText",
       );
       expect(createUpdateCall.body.outputs).toMatchObject({
         content: "REDACTED",
@@ -1279,7 +1281,7 @@ describe("wrapAISDK", () => {
       const createLLMRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate",
       );
       expect(createLLMRunCall.body.inputs).toMatchObject({
         messages: [
@@ -1292,7 +1294,7 @@ describe("wrapAISDK", () => {
       const updateLLMRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate",
       );
       expect(updateLLMRunCall.body.outputs).toMatchObject({
         content: "REDACTED CHILD OUTPUTS",
@@ -1310,7 +1312,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
       const modelWithConfig = new MockLanguageModelV2({
         modelId: "custom-model",
@@ -1357,7 +1359,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -1400,7 +1402,7 @@ describe("wrapAISDK", () => {
       const updateGenerateTextCall = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+          req.body.extra?.metadata?.ai_sdk_method === "ai.generateText",
       );
 
       expect(updateGenerateTextCall).toBeDefined();
@@ -1428,7 +1430,7 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        { client: mockClient as any }
+        { client: mockClient as any },
       );
 
       const mockLangModel = new MockLanguageModelV2({
@@ -1479,7 +1481,7 @@ describe("wrapAISDK", () => {
       const updateStreamTextCall = mockHttpRequests.find(
         (req) =>
           req.type === "updateRun" &&
-          req.body.extra?.metadata?.ai_sdk_method === "ai.streamText"
+          req.body.extra?.metadata?.ai_sdk_method === "ai.streamText",
       );
 
       expect(updateStreamTextCall).toBeDefined();

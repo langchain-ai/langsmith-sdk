@@ -46,7 +46,7 @@ interface LangSmithUsageMetadata {
 }
 
 const _createUsageMetadata = (
-  usage: UsageMetadata | GenerateContentResponseUsageMetadata
+  usage: UsageMetadata | GenerateContentResponseUsageMetadata,
 ): KVMap => {
   const usageMetadata: LangSmithUsageMetadata = {
     input_tokens: usage.promptTokenCount || 0,
@@ -258,7 +258,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
         };
 
         const role = "role" in content ? content.role : "user";
-        const parts = isContent(content) ? content.parts ?? [] : [content];
+        const parts = isContent(content) ? (content.parts ?? []) : [content];
 
         const textParts: string[] = [];
         const contentParts: Array<Record<string, unknown>> = [];
@@ -301,18 +301,18 @@ function processGeminiInputs(inputs: KVMap): KVMap {
           contentParts.every((p) => p.type === "text")
             ? textParts.join("\n")
             : contentParts.length > 0
-            ? contentParts
-            : "";
+              ? contentParts
+              : "";
 
         return { role, content: messageContent };
       })
       .filter(
         (
-          msg
+          msg,
         ): msg is {
           role: string;
           content: string | Record<string, unknown>[];
-        } => msg !== null
+        } => msg !== null,
       );
 
     return { messages, ...rest };
@@ -458,7 +458,7 @@ function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
 
 function _getGeminiInvocationParams(
   prepopulatedInvocationParams: Record<string, unknown>,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): InvocationParamsSchema {
   const config = (payload?.[0] || payload) as
     | GenerateContentParameters
@@ -507,7 +507,7 @@ function _getGeminiInvocationParams(
  */
 export function wrapGemini<T extends GoogleGenAIType>(
   gemini: T,
-  options?: Partial<RunTreeConfig>
+  options?: Partial<RunTreeConfig>,
 ): PatchedGeminiClient<T> {
   // Prevent double wrapping
   if (
@@ -516,7 +516,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
   ) {
     throw new Error(
       "This Google Gen AI client has already been wrapped. " +
-        "Wrapping a client multiple times is not supported."
+        "Wrapping a client multiple times is not supported.",
     );
   }
 
@@ -564,11 +564,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
     ...gemini.models,
     generateContent: traceable(
       gemini.models.generateContent.bind(gemini.models),
-      geminiTraceConfig
+      geminiTraceConfig,
     ),
     generateContentStream: traceable(
       gemini.models.generateContentStream.bind(gemini.models),
-      geminiStreamTraceConfig
+      geminiStreamTraceConfig,
     ),
   };
 

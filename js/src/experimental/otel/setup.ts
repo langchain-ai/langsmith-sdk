@@ -99,23 +99,23 @@ export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
       const contextManager = new AsyncHooksContextManager();
       contextManager.enable();
       otel_context.setGlobalContextManager(contextManager);
-    } catch (e) {
+    } catch (_e) {
       console.log(
         [
           `Could not automatically set up an OTEL context manager.`,
           `This may be expected if you have (or another imported library has) already set a global context manager.`,
           `If expected, you can skip this warning by passing "skipGlobalContextManagerSetup: true" into your initializeOTEL call.`,
-        ].join("\n")
+        ].join("\n"),
       );
     }
   }
 
   const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter(
-    exporterConfig
+    exporterConfig,
   );
 
   const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new LangSmithOTLPSpanProcessor(
-    DEFAULT_LANGSMITH_SPAN_EXPORTER
+    DEFAULT_LANGSMITH_SPAN_EXPORTER,
   );
 
   if (!globalTracerProvider) {
@@ -131,7 +131,7 @@ export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
 
     // If user has set global tracer before, this fails and returns false
     const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
-      defaultComponents.DEFAULT_LANGSMITH_TRACER_PROVIDER
+      defaultComponents.DEFAULT_LANGSMITH_TRACER_PROVIDER,
     );
 
     if (globalSuccessfullyOverridden) {

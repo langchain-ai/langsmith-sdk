@@ -55,13 +55,13 @@ export type DataT = string | AsyncIterable<Example> | Example[];
 /** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedSyncSummaryEvaluator = (
   runs: Array<Run>,
-  examples: Array<Example>
+  examples: Array<Example>,
 ) => EvaluationResult | EvaluationResult[] | EvaluationResults;
 
 /** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedAsyncSummaryEvaluator = (
   runs: Array<Run>,
-  examples: Array<Example>
+  examples: Array<Example>,
 ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>;
 
 // Summary evaluator runs over the whole dataset
@@ -89,13 +89,13 @@ type DeprecatedRunEvaluator = RunEvaluator;
 /** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedFunctionEvaluator = (
   run: Run,
-  example?: Example
+  example?: Example,
 ) => EvaluationResult | EvaluationResult[] | EvaluationResults;
 
 /** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedAsyncFunctionEvaluator = (
   run: Run,
-  example?: Example
+  example?: Example,
 ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>;
 
 // Row-level evaluator
@@ -234,18 +234,18 @@ export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
 // Function overloads
 export function evaluate(
   target: ComparativeTargetT,
-  options: ComparativeEvaluateOptions
+  options: ComparativeEvaluateOptions,
 ): Promise<ComparisonEvaluationResults>;
 
 export function evaluate(
   target: StandardTargetT,
-  options: EvaluateOptions
+  options: EvaluateOptions,
 ): Promise<ExperimentResults>;
 
 // Implementation signature
 export function evaluate(
   target: TargetT,
-  options: EvaluateOptions | ComparativeEvaluateOptions
+  options: EvaluateOptions | ComparativeEvaluateOptions,
 ): Promise<ExperimentResults | ComparisonEvaluationResults> {
   return _evaluate(target, options);
 }
@@ -261,7 +261,7 @@ interface _ExperimentResultRowWithIndex extends ExperimentResultRow {
 }
 
 export function _reorderResultRowsByExampleIndex(
-  rows: _ExperimentResultRowWithIndex[]
+  rows: _ExperimentResultRowWithIndex[],
 ): {
   orderedRows: ExperimentResultRow[];
   orderedRuns: Run[];
@@ -320,7 +320,7 @@ export class _ExperimentManager {
       return this._experimentName;
     } else {
       throw new Error(
-        "Experiment name not provided, and experiment not yet started."
+        "Experiment name not provided, and experiment not yet started.",
       );
     }
   }
@@ -388,7 +388,7 @@ export class _ExperimentManager {
     }
     if (this._runs === undefined) {
       throw new Error(
-        "Runs not provided in this experiment. Please predict first."
+        "Runs not provided in this experiment. Please predict first.",
       );
     } else {
       return this._runs;
@@ -489,7 +489,7 @@ export class _ExperimentManager {
     }
     throw new Error(
       "Could not generate a unique experiment name within 10 attempts." +
-        " Please try again with a different name."
+        " Please try again with a different name.",
     );
   }
 
@@ -538,7 +538,7 @@ export class _ExperimentManager {
     options?: {
       maxConcurrency?: number;
       queue?: PQueueType;
-    }
+    },
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
     const [rowsForResults, rowsForRuns] =
@@ -573,7 +573,7 @@ export class _ExperimentManager {
     options?: {
       maxConcurrency?: number;
       queue?: PQueueType;
-    }
+    },
   ): Promise<_ExperimentManager> {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
     const experimentResults = this._score(resolvedEvaluators, options);
@@ -603,7 +603,7 @@ export class _ExperimentManager {
   }
 
   async withSummaryEvaluators(
-    summaryEvaluators: Array<SummaryEvaluatorT>
+    summaryEvaluators: Array<SummaryEvaluatorT>,
   ): Promise<_ExperimentManager> {
     const aggregateFeedbackGen =
       this._applySummaryEvaluators(summaryEvaluators);
@@ -670,7 +670,7 @@ export class _ExperimentManager {
         // This is because runs array is not available until after this generator
         // is set, so we need to pass it like so.
         for await (const evaluationResults of evaluationResultsGenerator(
-          this._runsArray ?? []
+          this._runsArray ?? [],
         )) {
           results.push(...evaluationResults.results);
         }
@@ -693,7 +693,7 @@ export class _ExperimentManager {
     options?: {
       maxConcurrency?: number;
       queue?: PQueueType;
-    }
+    },
   ): AsyncGenerator<_ForwardResults> {
     const maxConcurrency = options?.maxConcurrency ?? 0;
     const examples = await this.getExamples();
@@ -723,11 +723,11 @@ export class _ExperimentManager {
             this.experimentName,
             this._metadata,
             this.client,
-            this._includeAttachments
+            this._includeAttachments,
           ).then((forwardResult) => ({
             ...forwardResult,
             exampleIndex: item.exampleIndex,
-          }))
+          })),
       )) {
         yield result;
       }
@@ -758,7 +758,7 @@ export class _ExperimentManager {
     currentResults: _ExperimentResultRowWithIndex,
     fields: {
       client: Client;
-    }
+    },
   ): Promise<_ExperimentResultRowWithIndex> {
     const { run, example, evaluationResults, exampleIndex } = currentResults;
     for (const evaluator of evaluators) {
@@ -777,14 +777,17 @@ export class _ExperimentManager {
         const evaluatorResponse = await evaluator.evaluateRun(
           run,
           example,
-          options
+          options,
         );
         evaluationResults.results.push(
-          ...(await fields.client.logEvaluationFeedback(evaluatorResponse, run))
+          ...(await fields.client.logEvaluationFeedback(
+            evaluatorResponse,
+            run,
+          )),
         );
       } catch (e) {
         console.error(
-          `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`
+          `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`,
         );
         printErrorStackTrace(e);
       }
@@ -810,7 +813,7 @@ export class _ExperimentManager {
     options?: {
       maxConcurrency?: number;
       queue?: PQueueType;
-    }
+    },
   ): AsyncGenerator<_ExperimentResultRowWithIndex> {
     const { maxConcurrency = 0, queue: providedQueue } = options || {};
 
@@ -827,14 +830,14 @@ export class _ExperimentManager {
       (currentResults) =>
         this._runEvaluators(evaluators, currentResults, {
           client: this.client,
-        })
+        }),
     )) {
       yield result;
     }
   }
 
   async *_applySummaryEvaluators(
-    summaryEvaluators: Array<SummaryEvaluatorT>
+    summaryEvaluators: Array<SummaryEvaluatorT>,
   ): AsyncGenerator<(runsArray: Run[]) => AsyncGenerator<EvaluationResults>> {
     const projectId = this._getExperiment().id;
     const examples = await this.getExamples();
@@ -844,16 +847,16 @@ export class _ExperimentManager {
         project_name: "evaluators",
         experiment: this.experimentName,
         projectId: projectId,
-      })
+      }),
     );
     const wrappedEvaluators = await wrapSummaryEvaluators(
       summaryEvaluators,
-      options
+      options,
     );
 
     yield async function* (
       this: _ExperimentManager,
-      runsArray: Run[]
+      runsArray: Run[],
     ): AsyncGenerator<EvaluationResults> {
       const aggregateFeedback = [];
 
@@ -880,7 +883,7 @@ export class _ExperimentManager {
           console.error(
             `Error running summary evaluator ${
               evaluator.name
-            }: ${JSON.stringify(e, null, 2)}`
+            }: ${JSON.stringify(e, null, 2)}`,
           );
           printErrorStackTrace(e);
         }
@@ -927,7 +930,7 @@ export class _ExperimentManager {
     if (modifiedAtTime.length === 0) return undefined;
     return modifiedAtTime.reduce(
       (max, current) => (current.time > max.time ? current : max),
-      modifiedAtTime[0]
+      modifiedAtTime[0],
     ).date;
   }
 
@@ -1023,7 +1026,7 @@ async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
   fields: (EvaluateOptions | ComparativeEvaluateOptions) & {
     experiment?: TracerSession;
-  }
+  },
 ): Promise<ExperimentResults | ComparisonEvaluationResults> {
   // Add check for comparative evaluation
   if (Array.isArray(target)) {
@@ -1050,7 +1053,7 @@ async function _evaluate(
   const [experiment_, newRuns] = await _resolveExperiment(
     fields.experiment ?? null,
     runs,
-    client
+    client,
   );
 
   let manager = await new _ExperimentManager({
@@ -1108,7 +1111,7 @@ async function _evaluate(
   }
   if (standardFields.summaryEvaluators) {
     manager = await manager.withSummaryEvaluators(
-      standardFields.summaryEvaluators
+      standardFields.summaryEvaluators,
     );
   }
   // Start consuming the results.
@@ -1124,7 +1127,7 @@ async function _forward(
   experimentName: string,
   metadata: KVMap,
   client: Client,
-  includeAttachments?: boolean
+  includeAttachments?: boolean,
 ): Promise<Omit<_ForwardResults, "exampleIndex">> {
   let run: BaseRun | undefined = undefined;
 
@@ -1149,32 +1152,32 @@ async function _forward(
   const wrappedFn = isTraceableFunction(fn)
     ? fn
     : "invoke" in fn
-    ? traceable(async (inputs) => {
-        let langChainCallbacks;
-        try {
-          // TODO: Deprecate this and rely on interop on 0.2 minor bump.
-          const { getLangchainCallbacks } = await import("../langchain.js");
-          langChainCallbacks = await getLangchainCallbacks();
-        } catch {
-          // no-op
-        }
-        // Issue with retrieving LangChain callbacks, rely on interop
-        if (langChainCallbacks === undefined && !includeAttachments) {
-          return await fn.invoke(inputs);
-        } else if (langChainCallbacks === undefined && includeAttachments) {
-          return await fn.invoke(inputs, {
-            attachments: example.attachments,
-          });
-        } else if (!includeAttachments) {
-          return await fn.invoke(inputs, { callbacks: langChainCallbacks });
-        } else {
-          return await fn.invoke(inputs, {
-            attachments: example.attachments,
-            callbacks: langChainCallbacks,
-          });
-        }
-      }, defaultOptions)
-    : traceable(fn, defaultOptions);
+      ? traceable(async (inputs) => {
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks === undefined && !includeAttachments) {
+            return await fn.invoke(inputs);
+          } else if (langChainCallbacks === undefined && includeAttachments) {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+            });
+          } else if (!includeAttachments) {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          } else {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+              callbacks: langChainCallbacks,
+            });
+          }
+        }, defaultOptions)
+      : traceable(fn, defaultOptions);
 
   try {
     if (includeAttachments && !("invoke" in fn)) {
@@ -1204,7 +1207,7 @@ function _resolveData(
   options: {
     client: Client;
     includeAttachments?: boolean;
-  }
+  },
 ): AsyncGenerator<Example> {
   let isUUID = false;
   try {
@@ -1233,23 +1236,23 @@ function _resolveData(
 
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
-  optionsArray?: Partial<RunTreeConfig>[]
+  optionsArray?: Partial<RunTreeConfig>[],
 ): Promise<
   Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
 > {
   async function _wrap(
-    evaluator: SummaryEvaluatorT
+    evaluator: SummaryEvaluatorT,
   ): Promise<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator> {
     const evalName = evaluator.name || "BatchEvaluator";
 
     const wrapperInner = (
       runs: Run[],
-      examples: Example[]
+      examples: Example[],
     ): Promise<EvaluationResult | EvaluationResult[] | EvaluationResults> => {
       const wrapperSuperInner = traceable(
         (
           _runs_: string,
-          _examples_: string
+          _examples_: string,
         ): Promise<
           EvaluationResult | EvaluationResult[] | EvaluationResults
         > => {
@@ -1274,22 +1277,22 @@ async function wrapSummaryEvaluators(
                 inputs,
                 outputs,
                 referenceOutputs,
-              })
+              }),
             );
           }
           // Otherwise use the traditional (runs, examples) signature
           return Promise.resolve(
-            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples)
+            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples),
           );
         },
-        { ...optionsArray, name: evalName }
+        { ...optionsArray, name: evalName },
       );
 
       return Promise.resolve(
         wrapperSuperInner(
           `Runs[] (Length=${runs.length})`,
-          `Examples[] (Length=${examples.length})`
-        )
+          `Examples[] (Length=${examples.length})`,
+        ),
       );
     };
 
@@ -1306,7 +1309,7 @@ async function wrapSummaryEvaluators(
 }
 
 function _resolveEvaluators(
-  evaluators: Array<EvaluatorT>
+  evaluators: Array<EvaluatorT>,
 ): Array<RunEvaluator> {
   const results: Array<RunEvaluator> = [];
   for (const evaluator of evaluators) {
@@ -1325,7 +1328,7 @@ function _resolveEvaluators(
 async function _resolveExperiment(
   experiment: TracerSession | null,
   runs: AsyncGenerator<Run> | null,
-  client: Client
+  client: Client,
 ): Promise<
   [TracerSession | string | undefined, AsyncGenerator<Run> | undefined]
 > {
@@ -1367,7 +1370,7 @@ async function _resolveExperiment(
 export async function* _mapWithConcurrency<TInput, TOutput>(
   iterable: Iterable<TInput> | AsyncIterable<TInput>,
   queue: PQueueType,
-  mapper: (value: TInput) => Promise<TOutput>
+  mapper: (value: TInput) => Promise<TOutput>,
 ): AsyncGenerator<TOutput> {
   type PendingTask = Promise<{ value: TOutput; self: PendingTask }>;
 
@@ -1393,10 +1396,10 @@ export async function* _mapWithConcurrency<TInput, TOutput>(
 }
 
 function _isCallable(
-  target: StandardTargetT | AsyncGenerator<Run>
+  target: StandardTargetT | AsyncGenerator<Run>,
 ): target is StandardTargetT {
   return Boolean(
     typeof target === "function" ||
-      ("invoke" in target && typeof target.invoke === "function")
+    ("invoke" in target && typeof target.invoke === "function"),
   );
 }

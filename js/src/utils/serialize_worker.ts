@@ -180,13 +180,13 @@ export class SerializeWorker {
               new Uint8Array(
                 msg.bytes,
                 0,
-                msg.length
-              ) as Uint8Array<ArrayBuffer>
+                msg.length,
+              ) as Uint8Array<ArrayBuffer>,
             );
           } else {
             p.reject(new Error("worker returned malformed message"));
           }
-        }
+        },
       );
       worker.on("error", (err: Error) => {
         // Reject all pending and disable; caller will fall back.
@@ -314,7 +314,7 @@ const NODE_BUDGET = 2048;
 export function hasLargeString(
   value: unknown,
   threshold: number = LARGE_STRING_THRESHOLD,
-  nodeBudget: number = NODE_BUDGET
+  nodeBudget: number = NODE_BUDGET,
 ): boolean {
   if (value === null || typeof value !== "object") {
     return typeof value === "string" && value.length >= threshold;

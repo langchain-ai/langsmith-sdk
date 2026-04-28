@@ -81,7 +81,7 @@ test("wrap generateText with tool class", async () => {
     tools: {
       listOrders: new MyTool(
         z.object({ userId: z.string() }),
-        "list all orders"
+        "list all orders",
       ),
     },
     stopWhen: stepCountIs(10),
@@ -120,28 +120,28 @@ test("wrap generateText with flex service tier", async () => {
   const patchBodies = await Promise.all(
     callSpy.mock.calls
       .filter((call: any) => call[1]!.method === "PATCH")
-      .map((call: any) => new Response(call[1]!.body).json())
+      .map((call: any) => new Response(call[1]!.body).json()),
   );
   const childRunPatchBodies = patchBodies.filter(
-    (body) => body.parent_run_id != null
+    (body) => body.parent_run_id != null,
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
 
   const llmChildRun = childRunPatchBodies.find(
-    (body) => body.extra?.metadata?.usage_metadata
+    (body) => body.extra?.metadata?.usage_metadata,
   );
   expect(llmChildRun).toBeDefined();
 
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
-    usageMetadata.input_tokens
+    usageMetadata.input_tokens,
   );
   expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
     usageMetadata.output_token_details.flex +
-      usageMetadata.output_token_details.flex_reasoning
+      usageMetadata.output_token_details.flex_reasoning,
   ).toEqual(usageMetadata.output_tokens);
 });
 
@@ -198,28 +198,28 @@ test("wrap streamText with service tier", async () => {
   const patchBodies = await Promise.all(
     callSpy.mock.calls
       .filter((call: any) => call[1]!.method === "PATCH")
-      .map((call: any) => new Response(call[1]!.body).json())
+      .map((call: any) => new Response(call[1]!.body).json()),
   );
   const childRunPatchBodies = patchBodies.filter(
-    (body) => body.parent_run_id != null
+    (body) => body.parent_run_id != null,
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
 
   const llmChildRun = childRunPatchBodies.find(
-    (body) => body.extra?.metadata?.usage_metadata
+    (body) => body.extra?.metadata?.usage_metadata,
   );
   expect(llmChildRun).toBeDefined();
 
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
-    usageMetadata.input_tokens
+    usageMetadata.input_tokens,
   );
   expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
     usageMetadata.output_token_details.flex +
-      usageMetadata.output_token_details.flex_reasoning
+      usageMetadata.output_token_details.flex_reasoning,
   ).toEqual(usageMetadata.output_tokens);
 });
 
@@ -386,12 +386,12 @@ test.skip("image and file data normalization", async () => {
     "..",
     "..",
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
   const imgBuffer = await fs.readFile(pathname);
   const imgArrayBuffer = imgBuffer.buffer.slice(
     imgBuffer.byteOffset,
-    imgBuffer.byteOffset + imgBuffer.byteLength
+    imgBuffer.byteOffset + imgBuffer.byteLength,
   ) as ArrayBuffer;
   const imgBase64 = imgBuffer.toString("base64");
   const imgUrl = "https://smith.langchain.com/og_image.png";
@@ -590,7 +590,7 @@ it.skip("openai cache with large prompt for automatic caching", async () => {
       name: "OpenAI Cache Test Wrapper",
       metadata: { testKey: meta },
       client,
-    }
+    },
   );
 
   await wrapper();
@@ -677,7 +677,7 @@ it.skip("openai cache with streamText", async () => {
       name: "OpenAI Cache StreamText Test Wrapper",
       metadata: { testKey: meta },
       client,
-    }
+    },
   );
 
   await wrapper();

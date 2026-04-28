@@ -32,7 +32,7 @@ export type LangSmithJestlikeDescribeWrapperConfig = {
 export type LangSmithJestlikeDescribeWrapper = (
   name: string,
   fn: () => void | Promise<void>,
-  config?: LangSmithJestlikeDescribeWrapperConfig
+  config?: LangSmithJestlikeDescribeWrapperConfig,
 ) => void;
 
 export type SimpleEvaluationResult = {
@@ -56,5 +56,5 @@ export type LangSmithJestlikeTestFunction<I, O> = (
     referenceOutputs?: O;
     testMetadata: LangSmithJestlikeTestMetadata;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } & Record<string, any>
+  } & Record<string, any>,
 ) => unknown | Promise<unknown>;

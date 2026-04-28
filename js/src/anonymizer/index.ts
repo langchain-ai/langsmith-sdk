@@ -20,7 +20,7 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
     depth: number,
     path: string,
     parent: Record<string, unknown> | null,
-    key: string
+    key: string,
   ][] = [[data, 0, "", null, ""]];
 
   let nextId = 0;
@@ -86,7 +86,7 @@ export type ReplacerType =
 
 export function createAnonymizer(
   replacer: ReplacerType,
-  options?: { maxDepth?: number }
+  options?: { maxDepth?: number },
 ) {
   return <T>(data: T): T => {
     let mutateValue = deepClone(data);
@@ -106,7 +106,7 @@ export function createAnonymizer(
                   : pattern,
                 replace ?? "[redacted]",
               ];
-            }
+            },
           );
 
           if (replacers.length === 0) throw new Error("No replacers provided");
@@ -132,18 +132,18 @@ export function createAnonymizer(
           };
         })()
       : typeof replacer === "function"
-      ? {
-          maskNodes: (nodes: StringNode[]) =>
-            nodes.reduce<StringNode[]>((memo, item) => {
-              const newValue = replacer(item.value, item.path);
-              if (newValue !== item.value) {
-                memo.push({ ...item, value: newValue });
-              }
+        ? {
+            maskNodes: (nodes: StringNode[]) =>
+              nodes.reduce<StringNode[]>((memo, item) => {
+                const newValue = replacer(item.value, item.path);
+                if (newValue !== item.value) {
+                  memo.push({ ...item, value: newValue });
+                }
 
-              return memo;
-            }, []),
-        }
-      : replacer;
+                return memo;
+              }, []),
+          }
+        : replacer;
 
     // Build a lookup from _id to internal node for direct write-back.
     const nodesById = new Map<number, StringNodeInternal>();

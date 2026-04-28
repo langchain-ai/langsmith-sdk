@@ -36,7 +36,7 @@ describe("Client timeout and retry behavior", () => {
             status: "success",
             start_time: new Date().toISOString(),
             end_time: new Date().toISOString(),
-          })
+          }),
         );
       } else if (testMode === "429_retry") {
         if (requestCount <= 2) {
@@ -57,7 +57,7 @@ describe("Client timeout and retry behavior", () => {
             status: "success",
             start_time: new Date().toISOString(),
             end_time: new Date().toISOString(),
-          })
+          }),
         );
       } else if (testMode === "400_no_retry") {
         // Return 400 Bad Request status (should not retry)

@@ -128,10 +128,10 @@
     "watch:single": "NODE_OPTIONS=--experimental-vm-modules pnpm jest --watch --config jest.config.cjs --testTimeout 100000",
     "test:vitest": "vitest run --config vitest.config.ts",
     "test:eval:vitest": "vitest run --config ls.vitest.config.ts",
-    "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
-    "lint:fix": "pnpm lint --fix",
-    "format": "prettier --write 'src/**/*.{ts,tsx,mts}'",
-    "format:check": "prettier --check 'src/**/*.{ts,tsx,mts}'",
+    "lint": "oxlint src/",
+    "lint:fix": "oxlint --fix src/",
+    "format": "oxfmt --write 'src/**/*.{ts,tsx,mts}'",
+    "format:check": "oxfmt --check 'src/**/*.{ts,tsx,mts}'",
     "check:types": "tsc --noEmit",
     "precommit": "lint-staged",
     "prepublish": "pnpm run build"
@@ -181,24 +181,18 @@
     "@types/node-fetch": "^2.6.12",
     "@types/semver": "^7.7.1",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^5.59.8",
-    "@typescript-eslint/parser": "^5.59.8",
     "ai": "^6.0.1",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
-    "eslint": "^8.41.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-import": "^2.27.5",
-    "eslint-plugin-no-instanceof": "^1.0.1",
-    "eslint-plugin-prettier": "^4.2.1",
     "jest": "^29.5.0",
     "langchain": "^0.3.29",
     "mongoose": "^9.5.0",
     "msw": "^2.11.2",
     "node-fetch": "^3.3.2",
     "openai": "^6.18.0",
-    "prettier": "^2.8.8",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0",
     "semver": "^7.7.4",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
@@ -235,8 +229,8 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
-      "prettier --write --ignore-unknown",
-      "eslint --cache --fix"
+      "oxfmt --write",
+      "oxlint --fix"
     ]
   },
   "exports": {

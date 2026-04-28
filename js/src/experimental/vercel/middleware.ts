@@ -33,7 +33,7 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
 
 const _formatTracedOutputs = (
   outputs: Record<string, unknown>,
-  includeHttpDetails = false
+  includeHttpDetails = false,
 ) => {
   let formattedOutputs: Record<string, unknown>;
 
@@ -50,7 +50,7 @@ const _formatTracedOutputs = (
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
   return convertMessageToTracedFormat(
-    formattedOutputs as LanguageModelV2Message
+    formattedOutputs as LanguageModelV2Message,
   );
 };
 
@@ -59,7 +59,7 @@ const setUsageMetadataOnRunTree = (
     usage?: LanguageModelV2Usage;
     providerMetadata?: SharedV2ProviderMetadata;
   },
-  runTree: RunTree
+  runTree: RunTree,
 ) => {
   if (result.usage == null || typeof result.usage !== "object") {
     return;
@@ -135,11 +135,11 @@ const setUsageMetadataOnRunTree = (
   };
   const inputTokenDetails = extractInputTokenDetails(
     result.usage,
-    result.providerMetadata
+    result.providerMetadata,
   );
   const outputTokenDetails = extractOutputTokenDetails(
     result.usage,
-    result.providerMetadata
+    result.providerMetadata,
   );
   runTree.extra = {
     ...runTree.extra,
@@ -188,10 +188,10 @@ export function LangSmithMiddleware(config?: {
   modelId?: string;
   lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">> & {
     processInputs?: (
-      inputs: Record<string, unknown>
+      inputs: Record<string, unknown>,
     ) => Record<string, unknown>;
     processOutputs?: (
-      outputs: Record<string, unknown>
+      outputs: Record<string, unknown>,
     ) => Record<string, unknown> | Promise<Record<string, unknown>>;
     traceRawHttp?: boolean;
   };
@@ -234,7 +234,7 @@ export function LangSmithMiddleware(config?: {
             }
             return _formatTracedOutputs(typedOutputs, lsConfig?.traceRawHttp);
           },
-        }
+        },
       );
       const res = await traceableFunc(params);
       return res;
@@ -296,7 +296,7 @@ export function LangSmithMiddleware(config?: {
                       aggregated.content.push({ type: "text", text: "" });
                     }
                     const contentBlock = aggregated.content.at(
-                      -1
+                      -1,
                     ) as NonNullable<StandardTextBlock>;
                     if (chunk.delta != null) {
                       contentBlock.text += chunk.delta;
@@ -317,7 +317,7 @@ export function LangSmithMiddleware(config?: {
                       });
                     }
                     const reasoningBlock = aggregated.content.at(
-                      -1
+                      -1,
                     ) as NonNullable<StandardReasoningBlock>;
                     if (chunk.delta != null) {
                       reasoningBlock.reasoning += chunk.delta;
@@ -325,7 +325,7 @@ export function LangSmithMiddleware(config?: {
                     return aggregated;
                   } else if (chunk.type === "tool-call") {
                     const matchingToolCall = aggregated.tool_calls.find(
-                      (call) => call.id === chunk.toolCallId
+                      (call) => call.id === chunk.toolCallId,
                     );
                     if (matchingToolCall != null) {
                       return aggregated;
@@ -369,7 +369,7 @@ export function LangSmithMiddleware(config?: {
                   content: [],
                   role: "assistant",
                   tool_calls: [],
-                }
+                },
               );
               // Add raw request/response for tracing only (not part of aggregated output)
               const outputForTracing: Record<string, unknown> = {
@@ -387,13 +387,12 @@ export function LangSmithMiddleware(config?: {
               }
               let formattedOutputs: Record<string, unknown>;
               if (lsConfig?.processOutputs) {
-                formattedOutputs = await lsConfig.processOutputs(
-                  outputForTracing
-                );
+                formattedOutputs =
+                  await lsConfig.processOutputs(outputForTracing);
               } else {
                 formattedOutputs = _formatTracedOutputs(
                   outputForTracing,
-                  lsConfig?.traceRawHttp
+                  lsConfig?.traceRawHttp,
                 );
               }
               await runTree?.end(formattedOutputs);

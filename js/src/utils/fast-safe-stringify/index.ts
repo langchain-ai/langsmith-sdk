@@ -312,7 +312,7 @@ export function serialize(
   errorContext?,
   replacer?,
   spacer?,
-  options?
+  options?,
 ): Uint8Array<ArrayBuffer> {
   try {
     const str = JSON.stringify(obj, createDefaultReplacer(replacer), spacer);
@@ -323,7 +323,7 @@ export function serialize(
       console.warn(
         `[WARNING]: LangSmith received unserializable value.${
           errorContext ? `\nContext: ${errorContext}` : ""
-        }`
+        }`,
       );
       return encodeString("[Unserializable]");
     }
@@ -332,7 +332,7 @@ export function serialize(
       console.warn(
         `[WARNING]: LangSmith received circular JSON. This will decrease tracer performance. ${
           errorContext ? `\nContext: ${errorContext}` : ""
-        }`
+        }`,
       );
     if (typeof options === "undefined") {
       options = defaultOptions();
@@ -348,7 +348,7 @@ export function serialize(
       }
     } catch (_) {
       return encodeString(
-        "[unable to serialize, circular reference is too complex to analyze]"
+        "[unable to serialize, circular reference is too complex to analyze]",
       );
     } finally {
       while (arr.length !== 0) {
@@ -452,7 +452,7 @@ function deterministicStringify(obj, replacer, spacer, options) {
     }
   } catch (_) {
     return JSON.stringify(
-      "[unable to serialize, circular reference is too complex to analyze]"
+      "[unable to serialize, circular reference is too complex to analyze]",
     );
   } finally {
     // Ensure that we restore the object as it was.

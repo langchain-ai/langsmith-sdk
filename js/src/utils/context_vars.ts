@@ -20,7 +20,7 @@ export function setContextVar(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   runTree: any,
   key: symbol,
-  value: unknown
+  value: unknown,
 ): void {
   const contextVars =
     _LC_CONTEXT_VARIABLES_KEY in runTree

@@ -23,6 +23,6 @@ ls.describe("wrapped jest", () => {
       };
       const res = myApp();
       await ls.expect(res).evaluatedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
-    }
+    },
   );
 });

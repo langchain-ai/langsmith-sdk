@@ -62,7 +62,7 @@ describe("Client._writeTraceToFallbackDir", () => {
       tmpDir,
       body,
       headers,
-      "runs/multipart"
+      "runs/multipart",
     );
 
     const files = await listDir(tmpDir);
@@ -74,7 +74,7 @@ describe("Client._writeTraceToFallbackDir", () => {
     expect(envelope.endpoint).toBe("runs/multipart");
     expect(envelope.headers).toEqual(headers);
     expect(Buffer.from(envelope.body_base64, "base64").toString()).toBe(
-      "hello world"
+      "hello world",
     );
   });
 
@@ -86,8 +86,8 @@ describe("Client._writeTraceToFallbackDir", () => {
         path.join(blocker, "sub"),
         Buffer.alloc(0),
         {},
-        "runs/multipart"
-      )
+        "runs/multipart",
+      ),
     ).resolves.not.toThrow();
   });
 
@@ -102,7 +102,7 @@ describe("Client._writeTraceToFallbackDir", () => {
         body,
         headers,
         "runs/multipart",
-        250
+        250,
       );
     }
     const files = await listDir(tmpDir);
@@ -129,7 +129,7 @@ describe("Client multipart failure → fallback dir", () => {
         ok: false,
         status: 500,
         text: () => Promise.resolve("Server error"),
-      } as Response)
+      } as Response),
     ) as jest.MockedFunction<typeof fetch>;
 
     const client = new Client({
@@ -163,7 +163,7 @@ describe("Client multipart failure → fallback dir", () => {
     const envelope = await readEnvelope(tmpDir, files[0]);
     expect(envelope.endpoint).toBe("runs/multipart");
     expect(envelope.headers["Content-Type"]).toMatch(
-      /^multipart\/form-data; boundary=/
+      /^multipart\/form-data; boundary=/,
     );
     const decoded = Buffer.from(envelope.body_base64, "base64").toString();
     expect(decoded).toContain(run.id);
@@ -175,7 +175,7 @@ describe("Client multipart failure → fallback dir", () => {
         ok: true,
         status: 200,
         text: () => Promise.resolve(""),
-      } as Response)
+      } as Response),
     ) as jest.MockedFunction<typeof fetch>;
 
     const client = new Client({

@@ -55,7 +55,7 @@ describe("Existing dataset", () => {
       async (example) => {
         expect(example.inputs.foo).toBe("bar");
         expect(example.outputs.foo).toBe("bar");
-      }
+      },
     );
   });
 });

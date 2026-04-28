@@ -11,7 +11,7 @@ test("Test performance with large runs and concurrency", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "test_data",
-    "beemovie.txt"
+    "beemovie.txt",
   );
 
   const largeInput = { bee: fs.readFileSync(pathname).toString() };
@@ -25,13 +25,13 @@ test("Test performance with large runs and concurrency", async () => {
     },
     {
       client,
-    }
+    },
   );
 
   await Promise.all(
     Array.from({ length: 1000 }, async () => {
       await largeTest(largeInput);
-    })
+    }),
   );
 
   await client.awaitPendingTraceBatches();
@@ -118,8 +118,8 @@ const benchFetch: typeof fetch = async (input) => {
     typeof input === "string"
       ? input
       : input instanceof URL
-      ? input.toString()
-      : input.url;
+        ? input.toString()
+        : input.url;
   if (url.endsWith("/info")) {
     return new Response(
       JSON.stringify({
@@ -129,7 +129,7 @@ const benchFetch: typeof fetch = async (input) => {
           size_limit_bytes: 20 * 1024 * 1024,
         },
       }),
-      { status: 200, headers: { "content-type": "application/json" } }
+      { status: 200, headers: { "content-type": "application/json" } },
     );
   }
   return new Response(JSON.stringify({ ok: true }), {
@@ -233,13 +233,13 @@ async function runBench(opts: {
     ``,
     `                 total       max       p50       p95       p99`,
     `createRun   ${fmt(createStats.total)} ${fmt(createStats.max)} ${fmt(
-      createStats.p50
+      createStats.p50,
     )} ${fmt(createStats.p95)} ${fmt(createStats.p99)}`,
     `updateRun   ${fmt(updateStats.total)} ${fmt(updateStats.max)} ${fmt(
-      updateStats.p50
+      updateStats.p50,
     )} ${fmt(updateStats.p95)} ${fmt(updateStats.p99)}`,
     `loop lag    ${fmt(lagStats.total)} ${fmt(lagStats.max)} ${fmt(
-      lagStats.p50
+      lagStats.p50,
     )} ${fmt(lagStats.p95)} ${fmt(lagStats.p99)}`,
     `(loop lag monitor: ${targetInterval}ms target, ${lags.length} samples > 0)`,
   ].join("\n");
@@ -255,7 +255,7 @@ benchIt(
     const pathname = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "test_data",
-      "beemovie.txt"
+      "beemovie.txt",
     );
 
     // Build a realistically large payload. Real-world LangSmith payloads
@@ -268,7 +268,7 @@ benchIt(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
     // ~500KB base64 image per message
     const imageB64 = base64Chunk.repeat(
-      Math.ceil((500 * 1024) / base64Chunk.length)
+      Math.ceil((500 * 1024) / base64Chunk.length),
     );
     const dataUri = `data:image/png;base64,${imageB64}`;
     const largeInputs = {
@@ -306,7 +306,7 @@ benchIt(
       outFile: "bench-base64.json",
     });
   },
-  120_000
+  120_000,
 );
 
 benchIt(
@@ -333,7 +333,7 @@ benchIt(
         role: i % 2 === 0 ? "user" : "assistant",
         name: `speaker_${i}`,
         timestamp: new Date(
-          Date.now() - (NUM_MESSAGES - i) * 1000
+          Date.now() - (NUM_MESSAGES - i) * 1000,
         ).toISOString(),
         metadata: {
           turn: i,
@@ -358,7 +358,7 @@ benchIt(
                 type: j % 2 === 0 ? "string" : "number",
                 description: `description of param ${j} for tool ${i}`,
               },
-            ])
+            ]),
           ),
         },
       })),
@@ -398,5 +398,5 @@ benchIt(
       outFile: "bench-structural.json",
     });
   },
-  120_000
+  120_000,
 );

@@ -53,7 +53,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     console.log("Total messages:", messages.length);
     console.log(
       "Message types:",
-      messages.map((m) => m.type)
+      messages.map((m) => m.type),
     );
 
     // Should have at least assistant message and result message
@@ -149,7 +149,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         return {
           content: [{ type: "text", text: `Result: ${result}` }],
         };
-      }
+      },
     );
 
     // Create SDK MCP server with the tool
@@ -194,10 +194,10 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     if (resultMessage.usage.server_tool_use) {
       expect(resultMessage.usage.server_tool_use).toBeDefined();
       expect(
-        resultMessage.usage.server_tool_use.web_search_requests
+        resultMessage.usage.server_tool_use.web_search_requests,
       ).toBeDefined();
       expect(
-        resultMessage.usage.server_tool_use.web_fetch_requests
+        resultMessage.usage.server_tool_use.web_fetch_requests,
       ).toBeDefined();
     }
   });
@@ -297,7 +297,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           content: [{ type: "text", text: "Error occurred" }],
           isError: true,
         };
-      }
+      },
     );
 
     const messages: any[] = [];
@@ -364,7 +364,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
         return {
           content: [{ type: "text", text: `Result: ${result}` }],
         };
-      }
+      },
     );
 
     const messages: any[] = [];

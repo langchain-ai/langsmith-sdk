@@ -69,7 +69,7 @@ function createMockSpan(
     startedAt?: string;
     endedAt?: string;
     error?: { message: string; data?: Record<string, unknown> };
-  }
+  },
 ): MockSpan {
   return {
     type: "trace.span",
@@ -95,7 +95,7 @@ function createMockTrace(
   options?: {
     groupId?: string;
     metadata?: Record<string, unknown>;
-  }
+  },
 ): MockTrace {
   return {
     type: "trace",
@@ -191,7 +191,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       expect(rootNode).toBeDefined();
       if (rootNode) {
         expect(tree.data[rootNode].extra?.metadata?.thread_id).toBe(
-          "group-123"
+          "group-123",
         );
       }
     });
@@ -240,7 +240,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
             output: [{ type: "message", content: "Calling tool..." }],
             model: "gpt-4.1-mini",
           },
-        }
+        },
       );
       const secondResponseSpan = createMockSpan(
         "trace-4b",
@@ -262,7 +262,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
             output: [{ type: "message", content: "It's sunny and 72°F." }],
             model: "gpt-4.1-mini",
           },
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -540,7 +540,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           name: "child_tool",
           input: "{}",
           output: "{}",
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -575,7 +575,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         {
           type: "agent",
           name: "SubAgent",
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -592,7 +592,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       expect(subagentNode).toBeDefined();
       if (subagentNode) {
         expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
-          "subagent"
+          "subagent",
         );
       }
     });
@@ -615,7 +615,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           type: "handoff",
           from_agent: "ParentAgent",
           to_agent: "HandoffAgent",
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -632,7 +632,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       expect(handoffNode).toBeDefined();
       if (handoffNode) {
         expect(tree.data[handoffNode].extra?.metadata?.ls_agent_type).not.toBe(
-          "subagent"
+          "subagent",
         );
       }
     });
@@ -670,7 +670,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           name: "orphan_tool",
           input: "{}",
           output: "{}",
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -694,7 +694,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         {
           type: "agent",
           name: "TraceableParentAgent",
-        }
+        },
       );
       const functionSpan = createMockSpan(
         "trace-11f",
@@ -705,14 +705,14 @@ describe("OpenAIAgentsTracingProcessor", () => {
           name: "get_weather",
           input: '{"city":"Tokyo"}',
           output: "{}",
-        }
+        },
       );
 
       const innerTraceable = traceable(
         async (city: string) => {
           return `mock-${city}`;
         },
-        { name: "nested_traceable", client }
+        { name: "nested_traceable", client },
       );
 
       await processor.onTraceStart(trace);
@@ -740,7 +740,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         .map((call): Record<string, unknown> | undefined => {
           const [url, fetchArgs] = call.slice(-2) as [
             string,
-            { method?: string; body?: string | Uint8Array } | undefined
+            { method?: string; body?: string | Uint8Array } | undefined,
           ];
           if (!fetchArgs || fetchArgs.method !== "POST") return undefined;
           if (!url.includes("/runs")) return undefined;
@@ -762,7 +762,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         .filter((run): run is Record<string, unknown> => run != null);
 
       const nestedRun = postedRuns.find(
-        (run) => run.name === "nested_traceable"
+        (run) => run.name === "nested_traceable",
       );
       const toolRun = postedRuns.find((run) => run.name === "get_weather");
       expect(nestedRun).toBeDefined();
@@ -786,7 +786,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         },
         {
           error: { message: "Tool execution failed" },
-        }
+        },
       );
 
       await processor.onTraceStart(trace);
@@ -838,7 +838,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const generationNode = tree.nodes.find((n) => n.includes("Generation"));
       expect(generationNode).toBeDefined();
       expect(
-        tree.data[generationNode!].extra?.metadata?.usage_metadata
+        tree.data[generationNode!].extra?.metadata?.usage_metadata,
       ).toEqual({
         input_tokens: 100,
         output_tokens: 50,

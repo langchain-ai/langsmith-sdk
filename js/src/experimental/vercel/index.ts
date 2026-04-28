@@ -18,7 +18,7 @@ import { RunTreeConfig } from "../../run_trees.js";
 
 const _wrapTools = (
   tools?: Record<string, unknown>,
-  lsConfig?: Partial<RunTreeConfig>
+  lsConfig?: Partial<RunTreeConfig>,
 ) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wrappedTools: Record<string, any> = {};
@@ -26,7 +26,7 @@ const _wrapTools = (
     for (const [key, tool] of Object.entries(tools)) {
       wrappedTools[key] = Object.assign(
         Object.create(Object.getPrototypeOf(tool)),
-        tool
+        tool,
       );
       if (
         wrappedTools[key] != null &&
@@ -41,7 +41,7 @@ const _wrapTools = (
             ...lsConfig,
             name: key,
             run_type: "tool",
-          }
+          },
         );
       }
     }
@@ -50,7 +50,7 @@ const _wrapTools = (
 };
 
 const _getModelDisplayName = (
-  model: string | Record<string, unknown>
+  model: string | Record<string, unknown>,
 ): string => {
   if (typeof model === "string") {
     return model;
@@ -91,7 +91,7 @@ const _formatTracedInputs = async (params: Record<string, unknown>) => {
     processedInputs = {
       ...rest,
       messages: messages.map((message) =>
-        convertMessageToTracedFormat(message)
+        convertMessageToTracedFormat(message),
       ),
     };
   } else {
@@ -117,7 +117,7 @@ const _formatTracedInputs = async (params: Record<string, unknown>) => {
 
 const _mergeConfig = (
   baseConfig?: Partial<RunTreeConfig>,
-  runtimeConfig?: Partial<RunTreeConfig>
+  runtimeConfig?: Partial<RunTreeConfig>,
 ): Record<string, unknown> => {
   return {
     ...baseConfig,
@@ -134,7 +134,7 @@ export type { AggregatedDoStreamOutput };
 
 export type WrapAISDKConfig<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends (...args: any[]) => any = (...args: any[]) => any
+  T extends (...args: any[]) => any = (...args: any[]) => any,
 > = Partial<
   Omit<
     RunTreeConfig,
@@ -242,7 +242,9 @@ export type WrapAISDKConfig<
    */
   processOutputs?: (
     // TODO: Unnest this typing on minor bump
-    outputs: { outputs: Awaited<ReturnType<T>> }
+    outputs: {
+      outputs: Awaited<ReturnType<T>>;
+    },
   ) => Record<string, unknown> | Promise<Record<string, unknown>>;
   /**
    * Apply transformations to AI SDK child LLM run inputs before logging.
@@ -286,7 +288,7 @@ export type WrapAISDKConfig<
    * @returns A single combined key-value map of processed inputs.
    */
   processChildLLMRunInputs?: (
-    inputs: LanguageModelV2CallOptions
+    inputs: LanguageModelV2CallOptions,
   ) => Record<string, unknown>;
   /**
    * Apply transformations to AI SDK child LLM run outputs before logging.
@@ -330,7 +332,7 @@ export type WrapAISDKConfig<
   processChildLLMRunOutputs?: (
     outputs: "fullStream" extends keyof Awaited<ReturnType<T>>
       ? AggregatedDoStreamOutput
-      : Awaited<ReturnType<LanguageModelV2["doGenerate"]>>
+      : Awaited<ReturnType<LanguageModelV2["doGenerate"]>>,
   ) => Record<string, unknown>;
 
   /**
@@ -382,7 +384,7 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
 
 const _resolveConfigs = (
   baseLsConfig?: WrapAISDKConfig,
-  runtimeLsConfig?: WrapAISDKConfig
+  runtimeLsConfig?: WrapAISDKConfig,
 ): {
   resolvedLsConfig: WrapAISDKConfig;
   resolvedChildLLMRunConfig: WrapAISDKConfig;
@@ -393,7 +395,7 @@ const _resolveConfigs = (
   const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
   const resolvedChildLLMRunConfig = _mergeConfig(
     baseChildRunConfig,
-    runtimeChildLLMRunConfig
+    runtimeChildLLMRunConfig,
   );
   const {
     processInputs: _processInputs,
@@ -451,7 +453,7 @@ const _getGenerateTextWrapperConfig = ({
         const processedOutputs = await resolvedLsConfig.processOutputs(
           // TODO: Fix this typing on minor bump
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          outputs as any
+          outputs as any,
         );
         return processedOutputs;
       }
@@ -499,9 +501,9 @@ const _getGenerateTextWrapperConfig = ({
             content: content ?? outputs.outputs.text,
             role: "assistant",
           },
-          resolvedLsConfig?.traceResponseMetadata ?? traceResponseMetadata
+          (resolvedLsConfig?.traceResponseMetadata ?? traceResponseMetadata)
             ? { steps }
-            : undefined
+            : undefined,
         );
       } else {
         return outputs;
@@ -546,7 +548,7 @@ const _getStreamTextWrapperConfig = ({
           const processedOutputs = await resolvedLsConfig.processOutputs(
             // TODO: Fix this typing on minor bump
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            outputs as any
+            outputs as any,
           );
           return processedOutputs;
         }
@@ -585,7 +587,7 @@ const _getStreamTextWrapperConfig = ({
             content,
             role: "assistant",
           },
-          responseMetadata
+          responseMetadata,
         );
       } catch {
         // Handle parsing failures without a log
@@ -624,9 +626,9 @@ const _getStreamTextWrapperConfig = ({
  */
 export const createLangSmithProviderOptions = <
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends (...args: any[]) => any
+  T extends (...args: any[]) => any,
 >(
-  lsConfig?: WrapAISDKConfig<T>
+  lsConfig?: WrapAISDKConfig<T>,
 ) => {
   return (lsConfig ?? {}) as Record<string, JSONValue>;
 };
@@ -661,10 +663,10 @@ const wrapAISDK = <
     generateObject?: (...args: any[]) => any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ToolLoopAgent?: any;
-  }
+  },
 >(
   ai: T,
-  baseLsConfig?: WrapAISDKConfig
+  baseLsConfig?: WrapAISDKConfig,
 ) => {
   /**
    * Wrapped version of AI SDK's generateText with LangSmith tracing.
@@ -715,7 +717,7 @@ const wrapAISDK = <
             tools: _wrapTools(params.tools, resolvedToolConfig),
             model: wrappedModel,
           },
-          ...rest
+          ...rest,
         );
       },
       _getGenerateTextWrapperConfig({
@@ -723,7 +725,7 @@ const wrapAISDK = <
         resolvedLsConfig,
         hasExplicitOutput,
         hasExplicitExperimentalOutput,
-      })
+      }),
     ) as (
       ...args: Parameters<typeof ai.generateText>
     ) => Promise<ReturnType<typeof ai.generateText>>;
@@ -759,7 +761,7 @@ const wrapAISDK = <
         params.providerOptions ?? {};
       const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
         baseLsConfig,
-        runtimeLsConfig
+        runtimeLsConfig,
       );
       const traceableFunc = traceable(
         async (
@@ -781,7 +783,7 @@ const wrapAISDK = <
               providerOptions,
               model: wrappedModel,
             },
-            ...rest
+            ...rest,
           ) as ReturnType<typeof generateObject>;
         },
         {
@@ -802,7 +804,7 @@ const wrapAISDK = <
               const processedOutputs = await resolvedLsConfig.processOutputs(
                 // TODO: Fix this typing on minor bump
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                outputs as any
+                outputs as any,
               );
               return processedOutputs;
             }
@@ -814,7 +816,7 @@ const wrapAISDK = <
             }
             return outputs.outputs.object ?? outputs;
           },
-        }
+        },
       ) as (
         ...args: Parameters<typeof generateObject>
       ) => Promise<ReturnType<typeof generateObject>>;
@@ -870,7 +872,7 @@ const wrapAISDK = <
             tools: _wrapTools(params.tools, resolvedToolConfig),
             model: wrappedModel,
           },
-          ...rest
+          ...rest,
         ) as ReturnType<typeof ai.streamText>;
       },
       _getStreamTextWrapperConfig({
@@ -878,7 +880,7 @@ const wrapAISDK = <
         resolvedLsConfig,
         hasExplicitOutput,
         hasExplicitExperimentalOutput,
-      })
+      }),
     ) as (
       ...args: Parameters<typeof ai.streamText>
     ) => ReturnType<typeof ai.streamText>;
@@ -913,7 +915,7 @@ const wrapAISDK = <
         params.providerOptions ?? {};
       const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
         baseLsConfig,
-        runtimeLsConfig
+        runtimeLsConfig,
       );
       const traceableFunc = traceable(
         (
@@ -935,7 +937,7 @@ const wrapAISDK = <
               providerOptions,
               model: wrappedModel,
             },
-            ...rest
+            ...rest,
           ) as ReturnType<typeof ai.streamObject>;
         },
         {
@@ -957,7 +959,7 @@ const wrapAISDK = <
                 const processedOutputs = await resolvedLsConfig.processOutputs(
                   // TODO: Fix this typing on minor bump
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  outputs as any
+                  outputs as any,
                 );
                 return processedOutputs;
               }
@@ -977,7 +979,7 @@ const wrapAISDK = <
               return outputs;
             }
           },
-        }
+        },
       ) as (
         ...args: Parameters<typeof streamObject>
       ) => ReturnType<typeof streamObject>;
@@ -1021,7 +1023,7 @@ const wrapAISDK = <
               ...[
                 { ...params, model: wrappedModel, tools: wrappedTools },
                 ...args.slice(1),
-              ]
+              ],
             );
             if (typeof instance.generate === "function") {
               instance.generate = traceable(
@@ -1034,7 +1036,7 @@ const wrapAISDK = <
                   hasExplicitOutput:
                     "output" in params && params.output != null,
                   traceResponseMetadata: true,
-                })
+                }),
               );
             }
             if (typeof instance.stream === "function") {
@@ -1048,7 +1050,7 @@ const wrapAISDK = <
                   hasExplicitOutput:
                     "output" in params && params.output != null,
                   traceResponseMetadata: true,
-                })
+                }),
               );
             }
             return instance;

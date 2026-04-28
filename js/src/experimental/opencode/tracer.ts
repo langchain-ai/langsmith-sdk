@@ -106,7 +106,7 @@ const convertToStandardContentBlock = (part: Part): unknown => {
 };
 
 const convertToStandardMessages = (
-  messages: { info: Message | undefined; parts: Part[] }[]
+  messages: { info: Message | undefined; parts: Part[] }[],
 ): unknown[] => {
   return messages.flatMap((message) => {
     const parts = dedupeParts(message.parts);
@@ -245,7 +245,7 @@ export class OpenCodeSessionTracer {
   private async sendTrace(
     sessionID: string,
     runs: AggregateMessage[],
-    options?: { parentRunTree?: RunTree }
+    options?: { parentRunTree?: RunTree },
   ) {
     const session = this.getSession(sessionID);
 
@@ -369,7 +369,7 @@ export class OpenCodeSessionTracer {
 
   public async flush() {
     await Promise.all(
-      Object.values(this.sessions).flatMap((session) => session.postRunQueue)
+      Object.values(this.sessions).flatMap((session) => session.postRunQueue),
     );
 
     await this.client.flush();
@@ -378,7 +378,7 @@ export class OpenCodeSessionTracer {
 
   public async handleSystem(
     input: { model: Model; sessionID?: string | undefined },
-    output: { system: string[] }
+    output: { system: string[] },
   ) {
     if (!input.sessionID) return;
     const session = this.getSession(input.sessionID);
@@ -387,7 +387,7 @@ export class OpenCodeSessionTracer {
 
   public async handleSessionLoad(
     sessionID: string,
-    history: (sessionID: string) => Promise<{ info: Message; parts: Part[] }[]>
+    history: (sessionID: string) => Promise<{ info: Message; parts: Part[] }[]>,
   ) {
     const session = this.getSession(sessionID);
 
@@ -433,7 +433,7 @@ export class OpenCodeSessionTracer {
       const message = this.getMessage(sessionID, properties.messageID);
 
       message.parts = message.parts.filter(
-        (part) => part.id !== properties.partID
+        (part) => part.id !== properties.partID,
       );
       updatedID = properties.messageID;
     }
@@ -471,8 +471,8 @@ export class OpenCodeSessionTracer {
       trace.state = trace.runs.some((run) =>
         run.parts.some(
           // trace is marked complete when there's a step-finish part with reason "stop"
-          (part) => part.type === "step-finish" && part.reason === "stop"
-        )
+          (part) => part.type === "step-finish" && part.reason === "stop",
+        ),
       );
 
       if (trace.state) {
