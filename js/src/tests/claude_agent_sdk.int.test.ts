@@ -3,7 +3,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { describe, beforeAll, test, expect } from "@jest/globals";
 import * as claudeSDK from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
 
 // Note: These tests require an ANTHROPIC_API_KEY environment variable.
@@ -114,17 +113,22 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
   });
 
   test("query with MCP tool usage", async () => {
-    const calculatorInputSchema = z.object({
-      operation: z.enum(["add", "subtract", "multiply", "divide"]),
-      a: z.number(),
-      b: z.number(),
-    });
-
     const calculator = wrappedSDK.tool(
       "calculator",
       "Performs basic arithmetic operations",
-      calculatorInputSchema.shape,
-      async (args) => {
+      {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["add", "subtract", "multiply", "divide"],
+          },
+          a: { type: "number" },
+          b: { type: "number" },
+        },
+        required: ["operation", "a", "b"],
+      } as any,
+      async (args: any) => {
         let result: number;
         switch (args.operation) {
           case "add":
