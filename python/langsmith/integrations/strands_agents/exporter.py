@@ -147,10 +147,13 @@ class LangSmithSpanExporter(SpanExporter):
             A new ReadableSpan with the message attributes added.
         """
         span_attrs = dict(span.attributes) if span.attributes else {}
-        operation = span_attrs.get("gen_ai.operation.name", "")
+        operation_raw = span_attrs.get("gen_ai.operation.name", "")
+        operation = operation_raw if isinstance(operation_raw, str) else ""
         # Strands puts tool metadata in span attributes (only on tool spans)
-        tool_call_id = span_attrs.get("gen_ai.tool.call.id", "")
-        tool_name = span_attrs.get("gen_ai.tool.name", "")
+        tool_call_id_raw = span_attrs.get("gen_ai.tool.call.id", "")
+        tool_call_id = tool_call_id_raw if isinstance(tool_call_id_raw, str) else ""
+        tool_name_raw = span_attrs.get("gen_ai.tool.name", "")
+        tool_name = tool_name_raw if isinstance(tool_name_raw, str) else ""
 
         # Maps toolUseId → tool name so tool-result messages can be labelled.
         # Seeded from span attrs on tool spans; extended inline as we encounter
@@ -293,6 +296,9 @@ class LangSmithSpanExporter(SpanExporter):
                 converted.append(self._convert_content_block(block))
             content = converted
 
+        if event_name == "gen_ai.tool.message":
+            content = self._stringify_tool_content(content)
+
         msg: dict[str, Any] = {"role": role, "content": content}
 
         # Carry over tool_call_id from event attributes (Strands stores it as "id")
@@ -362,7 +368,10 @@ class LangSmithSpanExporter(SpanExporter):
         else:
             flat_content = other_blocks
 
-        msg: dict[str, Any] = {"role": "tool", "content": flat_content}
+        msg: dict[str, Any] = {
+            "role": "tool",
+            "content": LangSmithSpanExporter._stringify_tool_content(flat_content),
+        }
         # Look up the tool name from the toolUseId → name mapping
         tool_name = (tool_id_to_name or {}).get(tool_call_id, "")
         if tool_name:
@@ -370,6 +379,23 @@ class LangSmithSpanExporter(SpanExporter):
         if tool_call_id:
             msg["tool_call_id"] = tool_call_id
         return msg
+
+    @staticmethod
+    def _stringify_tool_content(content: Any) -> str:
+        """Ensure tool message content is a string.
+
+        Strands emits tool-call inputs as JSON-serialized objects in
+        ``gen_ai.tool.message`` events. After parsing event payloads for the
+        rest of the exporter, convert those tool inputs back to strings so
+        LangSmith receives tool message content as either a plain string or a
+        stringified object.
+        """
+        if isinstance(content, str):
+            return content
+        try:
+            return json.dumps(content, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(content)
 
     @staticmethod
     def _convert_content_block(block: Any) -> Any:

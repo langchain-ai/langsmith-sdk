@@ -144,6 +144,40 @@ class TestLangSmithSpanExporter:
         completion_data = json.loads(transformed.attributes["gen_ai.completion"])
         assert completion_data["role"] == "assistant"
 
+    def test_transform_tool_input_message_stringifies_content(self):
+        """Test that Strands tool-call input content is stringified."""
+        delegate = MagicMock()
+        delegate.export.return_value = 0
+
+        exporter = LangSmithSpanExporter(delegate=delegate)
+
+        event = self._make_event(
+            "gen_ai.tool.message",
+            {
+                "content": json.dumps(
+                    {"mode": "view", "path": "otel_strands_share.py"}
+                ),
+                "id": "tooluse_123",
+            },
+        )
+        span = self._make_span(
+            name="execute_tool file_read",
+            attributes={"gen_ai.operation.name": "execute_tool"},
+            events=[event],
+        )
+
+        exporter.export([span])
+        transformed = delegate.export.call_args[0][0][0]
+
+        prompt_data = json.loads(transformed.attributes["gen_ai.prompt"])
+        message = prompt_data["messages"][0]
+        assert message["role"] == "tool"
+        assert message["tool_call_id"] == "tooluse_123"
+        assert message["content"] == json.dumps(
+            {"mode": "view", "path": "otel_strands_share.py"},
+            ensure_ascii=False,
+        )
+
     def test_run_type_mapping_chat(self):
         """Test that chat operations map to llm run type."""
         delegate = MagicMock()
