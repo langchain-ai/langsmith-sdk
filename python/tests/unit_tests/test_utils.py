@@ -457,6 +457,12 @@ def test_get_host_url():
         == "https://beta.smith.langchain.com"
     )
 
+    # If netloc begins with apac.
+    assert (
+        ls_utils.get_host_url(None, "https://apac.api.smith.langchain.com/v1")
+        == "https://apac.smith.langchain.com"
+    )
+
     # If netloc begins with api.
     assert (
         ls_utils.get_host_url(None, "https://api.smith.langchain.com")

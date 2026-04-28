@@ -1125,6 +1125,9 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (this.apiUrl.split(".", 1)[0].includes("aws")) {
       this.webUrl = "https://aws.smith.langchain.com";
       return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("apac")) {
+      this.webUrl = "https://apac.smith.langchain.com";
+      return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
       this.webUrl = "https://beta.smith.langchain.com";
       return this.webUrl;
