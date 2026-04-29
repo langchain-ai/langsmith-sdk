@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test, expect, jest } from "@jest/globals";
+import {
+  convertFromAnthropicMessage,
+  mergeMessagesById,
+} from "../experimental/anthropic/messages.js";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
@@ -121,6 +128,146 @@ const createMockSDK = () => {
     spy: { input: inputSpy },
   };
 };
+
+describe("Claude Agent SDK message utilities", () => {
+  test("merges thinking and text chunks with the same assistant message id", () => {
+    const thinking = convertFromAnthropicMessage({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        id: "msg_1",
+        role: "assistant",
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "thinking",
+            thinking: "I should answer exactly.",
+            signature: "sig_1",
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 7 },
+      },
+    } as any);
+
+    const text = convertFromAnthropicMessage({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        id: "msg_1",
+        role: "assistant",
+        model: "claude-haiku-4-5-20251001",
+        content: [{ type: "text", text: "Hello from LangSmith!" }],
+        usage: { input_tokens: 10, output_tokens: 7 },
+      },
+    } as any);
+
+    expect(mergeMessagesById(thinking, text)).toEqual([
+      {
+        id: "msg_1",
+        role: "assistant",
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "thinking",
+            thinking: "I should answer exactly.",
+            signature: "sig_1",
+          },
+          { type: "text", text: "Hello from LangSmith!" },
+        ],
+        usage: { input_tokens: 10, output_tokens: 7 },
+      },
+    ]);
+  });
+
+  test("merges text and tool_use chunks with the same assistant message id", () => {
+    const text = convertFromAnthropicMessage({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        id: "msg_2",
+        role: "assistant",
+        content: [{ type: "text", text: "I will inspect the file." }],
+      },
+    } as any);
+
+    const toolUse = convertFromAnthropicMessage({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        id: "msg_2",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Read",
+            input: { file_path: "/tmp/example.txt" },
+          },
+        ],
+      },
+    } as any);
+
+    expect(mergeMessagesById(text, toolUse)).toEqual([
+      {
+        id: "msg_2",
+        role: "assistant",
+        content: [
+          { type: "text", text: "I will inspect the file." },
+          {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Read",
+            input: { file_path: "/tmp/example.txt" },
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("deduplicates repeated chunks for the same assistant message id", () => {
+    const thinking = {
+      id: "msg_3",
+      role: "assistant",
+      content: [
+        {
+          type: "thinking",
+          thinking: "Same chunk.",
+          signature: "sig_duplicate",
+        },
+      ],
+    };
+
+    expect(mergeMessagesById([thinking], [thinking])).toEqual([thinking]);
+  });
+
+  test("does not merge distinct assistant message ids", () => {
+    const first = [
+      {
+        id: "msg_4",
+        role: "assistant",
+        content: [{ type: "text", text: "First" }],
+      },
+    ];
+    const second = [
+      {
+        id: "msg_5",
+        role: "assistant",
+        content: [{ type: "text", text: "Second" }],
+      },
+    ];
+
+    expect(mergeMessagesById(first, second)).toEqual([...first, ...second]);
+  });
+
+  test("does not merge tool result messages even when ids are absent", () => {
+    const first = [{ role: "tool", content: "first", tool_call_id: "toolu_1" }];
+    const second = [
+      { role: "tool", content: "second", tool_call_id: "toolu_2" },
+    ];
+
+    expect(mergeMessagesById(first, second)).toEqual([...first, ...second]);
+  });
+});
 
 describe("wrapClaudeAgentSDK", () => {
   test("wraps query function and traces agent interactions", async () => {
@@ -488,10 +635,7 @@ describe("wrapClaudeAgentSDK", () => {
           inputs: { messages: [{ content: "Test", role: "user" }] },
           outputs: {
             output: {
-              messages: [
-                { role: "assistant", content: "Part 1" },
-                { role: "assistant", content: "Part 1 complete" },
-              ],
+              messages: [{ role: "assistant", content: "Part 1 complete" }],
             },
           },
         },
@@ -511,10 +655,7 @@ describe("wrapClaudeAgentSDK", () => {
           },
           outputs: {
             output: {
-              messages: [
-                { role: "assistant", content: "Part 1" },
-                { role: "assistant", content: "Part 1 complete" },
-              ],
+              messages: [{ role: "assistant", content: "Part 1 complete" }],
             },
           },
         },
@@ -853,6 +994,87 @@ describe("wrapClaudeAgentSDK", () => {
     });
   });
 
+  test("merges thinking and text chunks for the same assistant message", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (
+        _params: MockQueryParams,
+      ): AsyncGenerator<MockSDKMessage, void, unknown> {
+        yield { type: "system", session_id: "session_abc123" };
+
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            model: "claude-haiku-4-5-20251001",
+            content: [
+              {
+                type: "thinking",
+                thinking: "I should say the requested phrase.",
+                signature: "sig_1",
+              },
+            ],
+            usage: { input_tokens: 10, output_tokens: 7 },
+          },
+        } as any;
+
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            model: "claude-haiku-4-5-20251001",
+            content: [{ type: "text", text: "Hello from LangSmith!" }],
+            usage: { input_tokens: 10, output_tokens: 7 },
+          },
+        } as any;
+
+        yield {
+          type: "result",
+          usage: { input_tokens: 10, output_tokens: 7 },
+          session_id: "session_abc123",
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    for await (const _message of wrapped.query({ prompt: "Test" })) {
+      // consume stream
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(res).toMatchObject({
+      data: {
+        "claude.assistant.turn:1": {
+          outputs: {
+            output: {
+              messages: [
+                {
+                  role: "assistant",
+                  id: "msg_1",
+                  content: [
+                    {
+                      type: "thinking",
+                      thinking: "I should say the requested phrase.",
+                      signature: "sig_1",
+                    },
+                    { type: "text", text: "Hello from LangSmith!" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+  });
+
   test("handles Task tool for subagent tracing", async () => {
     const mockSDK = {
       ...createMockSDK(),
@@ -947,6 +1169,264 @@ describe("wrapClaudeAgentSDK", () => {
 
     // Result
     expect(messages[3].type).toBe("result");
+  });
+
+  test("reconciles hidden subagent transcript turns and usage", async () => {
+    const { client, callSpy } = mockClient();
+    const tmpDir = await mkdtemp(join(tmpdir(), "ls-claude-transcripts-"));
+    const mainTranscriptPath = join(tmpDir, "main.jsonl");
+    const subagentTranscriptPath = join(tmpDir, "subagent.jsonl");
+
+    await writeFile(
+      mainTranscriptPath,
+      `${JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: {
+          id: "msg_parent",
+          role: "assistant",
+          model: "claude-sonnet-4-6",
+          content: [
+            {
+              type: "tool_use",
+              id: "task_1",
+              name: "Task",
+              input: { subagent_type: "reviewer", prompt: "Review code" },
+            },
+          ],
+          stop_reason: "tool_use",
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+      })}\n`,
+    );
+
+    await writeFile(
+      subagentTranscriptPath,
+      [
+        {
+          type: "user",
+          timestamp: "2026-01-01T00:00:01.000Z",
+          message: { role: "user", content: "Review code" },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-01-01T00:00:02.000Z",
+          message: {
+            id: "msg_hidden_1",
+            role: "assistant",
+            model: "claude-haiku-4-5",
+            content: [
+              {
+                type: "tool_use",
+                id: "read_1",
+                name: "Read",
+                input: { file_path: "/src/main.ts" },
+              },
+            ],
+            stop_reason: "tool_use",
+            usage: {
+              input_tokens: 7,
+              output_tokens: 2,
+              cache_read_input_tokens: 3,
+            },
+          },
+        },
+        {
+          type: "user",
+          timestamp: "2026-01-01T00:00:03.000Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "read_1",
+                content: "file contents",
+              },
+            ],
+          },
+        },
+        {
+          type: "assistant",
+          timestamp: "2026-01-01T00:00:04.000Z",
+          message: {
+            id: "msg_hidden_2",
+            role: "assistant",
+            model: "claude-haiku-4-5",
+            content: [{ type: "text", text: "The code looks fine." }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 11, output_tokens: 5 },
+          },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n") + "\n",
+    );
+
+    const runHooks = async (
+      params: MockQueryParams,
+      eventName: string,
+      input: Record<string, unknown>,
+      toolUseId?: string,
+    ) => {
+      const matchers = (params.options?.hooks as any)?.[eventName] ?? [];
+      for (const matcher of matchers) {
+        for (const hook of matcher.hooks ?? []) {
+          await hook(input, toolUseId, {
+            signal: new AbortController().signal,
+          });
+        }
+      }
+    };
+
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (params: MockQueryParams) {
+        yield { type: "system", session_id: "session_abc123" };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: null,
+          session_id: "session_abc123",
+          message: {
+            id: "msg_parent",
+            role: "assistant",
+            model: "claude-sonnet-4-6",
+            content: [
+              {
+                type: "tool_use",
+                id: "task_1",
+                name: "Task",
+                input: { subagent_type: "reviewer", prompt: "Review code" },
+              },
+            ],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        } as any;
+
+        await runHooks(
+          params,
+          "PreToolUse",
+          {
+            hook_event_name: "PreToolUse",
+            transcript_path: mainTranscriptPath,
+            tool_name: "Agent",
+            tool_input: { subagent_type: "reviewer", prompt: "Review code" },
+          },
+          "task_1",
+        );
+        await runHooks(params, "SubagentStart", {
+          hook_event_name: "SubagentStart",
+          transcript_path: mainTranscriptPath,
+          agent_id: "agent_1",
+          agent_type: "reviewer",
+        });
+        await runHooks(params, "SubagentStop", {
+          hook_event_name: "SubagentStop",
+          transcript_path: mainTranscriptPath,
+          agent_id: "agent_1",
+          agent_type: "reviewer",
+          agent_transcript_path: subagentTranscriptPath,
+        });
+
+        yield {
+          type: "result",
+          usage: { input_tokens: 100, output_tokens: 57 },
+          session_id: "session_abc123",
+        };
+      },
+    };
+
+    try {
+      const wrapped = wrapClaudeAgentSDK(mockSDK, {
+        client,
+        tracingEnabled: true,
+      });
+
+      for await (const _message of wrapped.query({
+        prompt: "Review my code",
+        options: {},
+      })) {
+        // consume stream
+      }
+
+      const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      expect(res).toMatchObject({
+        nodes: [
+          "claude.conversation:0",
+          "Task:1",
+          "reviewer:2",
+          "claude.assistant.turn:3",
+          "Read:4",
+          "claude.assistant.turn:5",
+          "claude.assistant.turn:6",
+        ],
+        edges: [
+          ["claude.conversation:0", "Task:1"],
+          ["Task:1", "reviewer:2"],
+          ["claude.conversation:0", "claude.assistant.turn:3"],
+          ["reviewer:2", "Read:4"],
+          ["reviewer:2", "claude.assistant.turn:5"],
+          ["reviewer:2", "claude.assistant.turn:6"],
+        ],
+        data: {
+          "Task:1": {
+            run_type: "tool",
+            inputs: {
+              input: { subagent_type: "reviewer", prompt: "Review code" },
+            },
+          },
+          "reviewer:2": {
+            run_type: "chain",
+            inputs: { subagent_type: "reviewer", prompt: "Review code" },
+          },
+          "claude.assistant.turn:3": {
+            extra: {
+              metadata: {
+                usage_metadata: {
+                  input_tokens: 100,
+                  output_tokens: 50,
+                  total_tokens: 150,
+                },
+              },
+            },
+          },
+          "Read:4": {
+            run_type: "tool",
+            inputs: { input: { file_path: "/src/main.ts" } },
+            outputs: { content: "file contents" },
+          },
+          "claude.assistant.turn:5": {
+            run_type: "llm",
+            inputs: { messages: [{ content: "Review code", role: "user" }] },
+            extra: {
+              metadata: {
+                ls_model_name: "claude-haiku-4-5",
+                usage_metadata: {
+                  input_tokens: 10,
+                  output_tokens: 2,
+                  total_tokens: 12,
+                  input_token_details: { cache_read: 3 },
+                },
+              },
+            },
+          },
+          "claude.assistant.turn:6": {
+            run_type: "llm",
+            outputs: {
+              output: {
+                messages: [
+                  {
+                    role: "assistant",
+                    content: [{ type: "text", text: "The code looks fine." }],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("captures per-model usage from modelUsage", async () => {
@@ -1195,112 +1675,53 @@ describe("wrapClaudeAgentSDK", () => {
     expect(res).toMatchObject({
       nodes: [
         "claude.conversation:0",
-        "explorer:1",
-        "claude.assistant.turn:2",
-        "Glob:3",
-        "claude.assistant.turn:4",
-        "Read:5",
-        "claude.assistant.turn:6",
+        "Task:1",
+        "explorer:2",
+        "claude.assistant.turn:3",
+        "Glob:4",
+        "claude.assistant.turn:5",
+        "Read:6",
+        "claude.assistant.turn:7",
       ],
       edges: [
-        ["claude.conversation:0", "explorer:1"],
-        ["claude.conversation:0", "claude.assistant.turn:2"],
-        ["explorer:1", "Glob:3"],
-        ["explorer:1", "claude.assistant.turn:4"],
-        ["explorer:1", "Read:5"],
-        ["explorer:1", "claude.assistant.turn:6"],
+        ["claude.conversation:0", "Task:1"],
+        ["Task:1", "explorer:2"],
+        ["claude.conversation:0", "claude.assistant.turn:3"],
+        ["explorer:2", "Glob:4"],
+        ["explorer:2", "claude.assistant.turn:5"],
+        ["explorer:2", "Read:6"],
+        ["explorer:2", "claude.assistant.turn:7"],
       ],
       data: {
-        "claude.conversation:0": {
-          run_type: "chain",
+        "Task:1": {
+          run_type: "tool",
           inputs: {
-            messages: [{ content: "Find TypeScript files", role: "user" }],
+            input: { subagent_type: "explorer", prompt: "Find files" },
           },
-          outputs: {
-            output: {
-              messages: [
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "task_1",
-                      name: "Task",
-                      input: {
-                        subagent_type: "explorer",
-                        prompt: "Find files",
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
+          error: "Run not completed (conversation ended)",
         },
-        "explorer:1": {
+        "explorer:2": {
           run_type: "chain",
           inputs: { subagent_type: "explorer", prompt: "Find files" },
           error: "Run not completed (conversation ended)",
         },
-        "Glob:3": {
+        "Glob:4": {
           run_type: "tool",
           inputs: { input: { pattern: "**/*.ts" } },
           error: "Run not completed (conversation ended)",
         },
-        "claude.assistant.turn:2": {
+        "Read:6": {
+          run_type: "tool",
+          inputs: { input: { file_path: "/src/index.ts" } },
+          error: "Run not completed (conversation ended)",
+        },
+        "claude.assistant.turn:5": {
           run_type: "llm",
-          inputs: {
-            messages: [{ content: "Find TypeScript files", role: "user" }],
-          },
           outputs: {
             output: {
               messages: [
                 {
                   role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "task_1",
-                      name: "Task",
-                      input: {
-                        subagent_type: "explorer",
-                        prompt: "Find files",
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-        "Read:5": {
-          run_type: "tool",
-          inputs: { input: { file_path: "/src/index.ts" } },
-          error: "Run not completed (conversation ended)",
-        },
-        "claude.assistant.turn:4": {
-          name: "claude.assistant.turn",
-          run_type: "llm",
-          inputs: {
-            messages: [
-              { content: "Find TypeScript files", role: "user" },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "task_1",
-                    name: "Task",
-                    input: { subagent_type: "explorer", prompt: "Find files" },
-                  },
-                ],
-                role: "assistant",
-              },
-            ],
-          },
-          outputs: {
-            output: {
-              messages: [
-                {
                   content: [
                     {
                       type: "tool_use",
@@ -1309,67 +1730,107 @@ describe("wrapClaudeAgentSDK", () => {
                       input: { pattern: "**/*.ts" },
                     },
                   ],
-                  role: "assistant",
                 },
               ],
             },
           },
         },
-        "claude.assistant.turn:6": {
+        "claude.assistant.turn:7": {
           run_type: "llm",
-          inputs: {
-            messages: [
-              { content: "Find TypeScript files", role: "user" },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "task_1",
-                    name: "Task",
-                    input: {
-                      subagent_type: "explorer",
-                      prompt: "Find files",
-                    },
-                  },
-                ],
-                role: "assistant",
-              },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "glob_1",
-                    name: "Glob",
-                    input: {
-                      pattern: "**/*.ts",
-                    },
-                  },
-                ],
-                role: "assistant",
-              },
-            ],
-          },
           outputs: {
             output: {
               messages: [
                 {
+                  role: "assistant",
                   content: [
                     {
                       type: "tool_use",
                       id: "read_1",
                       name: "Read",
-                      input: {
-                        file_path: "/src/index.ts",
-                      },
+                      input: { file_path: "/src/index.ts" },
                     },
                   ],
-                  role: "assistant",
                 },
               ],
             },
           },
         },
       },
+    });
+  });
+
+  test("marks MCP tool results with camelCase isError as errored", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield { type: "system", session_id: "session_abc123" };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tool_1",
+                name: "mcp__errorTool__error-tool",
+                input: {},
+              },
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        } as any;
+        yield {
+          type: "user",
+          parent_tool_use_id: null,
+          session_id: "session_abc123",
+          tool_use_result: {
+            content: [{ type: "text", text: "Error occurred" }],
+            isError: true,
+          },
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool_1",
+                content: "Error occurred",
+              },
+            ],
+          },
+        } as any;
+        yield {
+          type: "result",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          session_id: "session_abc123",
+        } as any;
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    for await (const _message of wrapped.query({
+      prompt: "Use failing MCP tool",
+    })) {
+      // consume stream
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const toolRun = Object.values(res.data).find(
+      (run) => run.name === "mcp__errorTool__error-tool",
+    );
+    expect(toolRun).toMatchObject({
+      run_type: "tool",
+      outputs: {
+        content: [{ type: "text", text: "Error occurred" }],
+        isError: true,
+      },
+      error: "Error occurred",
     });
   });
 
@@ -1714,137 +2175,39 @@ describe("wrapClaudeAgentSDK", () => {
       nodes: [
         "claude.conversation:0",
         "claude.assistant.turn:1",
-        "joke-agent:2",
-        "Bash:3",
-        "claude.assistant.turn:4",
+        "Task:2",
+        "joke-agent:3",
+        "Bash:4",
         "claude.assistant.turn:5",
+        "claude.assistant.turn:6",
       ],
       edges: [
         ["claude.conversation:0", "claude.assistant.turn:1"],
-        ["claude.conversation:0", "joke-agent:2"],
-        ["joke-agent:2", "Bash:3"],
-        ["joke-agent:2", "claude.assistant.turn:4"],
-        ["claude.conversation:0", "claude.assistant.turn:5"],
+        ["claude.conversation:0", "Task:2"],
+        ["Task:2", "joke-agent:3"],
+        ["joke-agent:3", "Bash:4"],
+        ["joke-agent:3", "claude.assistant.turn:5"],
+        ["claude.conversation:0", "claude.assistant.turn:6"],
       ],
       data: {
-        "claude.conversation:0": {
-          run_type: "chain",
+        "Task:2": {
+          run_type: "tool",
           inputs: {
-            messages: [
-              {
-                content: "List available files in the current directory",
-                role: "user",
-              },
-            ],
-            options: {
-              maxTurns: 10,
-              allowedTools: ["Read", "Grep"],
+            input: {
+              description: "Tell a joke about today's date",
+              subagent_type: "joke-agent",
+              prompt:
+                "Tell me a funny joke about today's date: February 21, 2026.",
             },
           },
           outputs: {
-            output: {
-              messages: [
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "thinking",
-                      thinking:
-                        "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
-                      signature: "",
-                    },
-                  ],
-                },
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                      name: "Task",
-                      input: {
-                        description: "Tell a joke about today's date",
-                        subagent_type: "joke-agent",
-                        prompt:
-                          "Tell me a funny joke about today's date: February 21, 2026.",
-                      },
-                    },
-                  ],
-                },
-                {
-                  type: "tool_result",
-                  tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                  content: [
-                    {
-                      type: "text",
-                      text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
-                    },
-                    {
-                      type: "text",
-                      text: "agentId: a7bf945f9f2425f6f (for resuming to continue this agent's work if needed)\n<usage>total_tokens: 5501\ntool_uses: 1\nduration_ms: 8420</usage>",
-                    },
-                  ],
-                  is_error: false,
-                  role: "tool",
-                },
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "text",
-                      text: 'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
-                    },
-                  ],
-                },
-              ],
-            },
+            status: "completed",
+            agentId: "a7bf945f9f2425f6f",
+            totalTokens: 5501,
+            totalToolUseCount: 1,
           },
         },
-        "claude.assistant.turn:1": {
-          run_type: "llm",
-          inputs: {
-            messages: [
-              {
-                content: "List available files in the current directory",
-                role: "user",
-              },
-            ],
-          },
-          outputs: {
-            output: {
-              messages: [
-                {
-                  content: [
-                    {
-                      type: "thinking",
-                      thinking:
-                        "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
-                      signature: "",
-                    },
-                  ],
-                  role: "assistant",
-                },
-                {
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                      name: "Task",
-                      input: {
-                        description: "Tell a joke about today's date",
-                        subagent_type: "joke-agent",
-                        prompt:
-                          "Tell me a funny joke about today's date: February 21, 2026.",
-                      },
-                    },
-                  ],
-                  role: "assistant",
-                },
-              ],
-            },
-          },
-        },
-        "joke-agent:2": {
+        "joke-agent:3": {
           run_type: "chain",
           inputs: {
             description: "Tell a joke about today's date",
@@ -1854,21 +2217,12 @@ describe("wrapClaudeAgentSDK", () => {
           },
           outputs: {
             status: "completed",
-            prompt:
-              "Tell me a funny joke about today's date: February 21, 2026.",
             agentId: "a7bf945f9f2425f6f",
-            content: [
-              {
-                type: "text",
-                text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
-              },
-            ],
-            totalDurationMs: 8420,
             totalTokens: 5501,
             totalToolUseCount: 1,
           },
         },
-        "Bash:3": {
+        "Bash:4": {
           run_type: "tool",
           inputs: {
             input: {
@@ -1876,60 +2230,15 @@ describe("wrapClaudeAgentSDK", () => {
               description: "Get current date and time",
             },
           },
-          outputs: {
-            content: "Sat Feb 21 20:13:00 CET 2026",
-          },
+          outputs: { content: "Sat Feb 21 20:13:00 CET 2026" },
         },
-        "claude.assistant.turn:4": {
+        "claude.assistant.turn:5": {
           run_type: "llm",
-          inputs: {
-            messages: [
-              {
-                content: "List available files in the current directory",
-                role: "user",
-              },
-              {
-                content: [
-                  {
-                    type: "thinking",
-                    thinking:
-                      "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
-                    signature: "",
-                  },
-                ],
-                role: "assistant",
-              },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                    name: "Task",
-                    input: {
-                      description: "Tell a joke about today's date",
-                      subagent_type: "joke-agent",
-                      prompt:
-                        "Tell me a funny joke about today's date: February 21, 2026.",
-                    },
-                  },
-                ],
-                role: "assistant",
-              },
-              {
-                content: [
-                  {
-                    type: "text",
-                    text: "Tell me a funny joke about today's date: February 21, 2026.",
-                  },
-                ],
-                role: "user",
-              },
-            ],
-          },
           outputs: {
             output: {
               messages: [
                 {
+                  role: "assistant",
                   content: [
                     {
                       type: "tool_use",
@@ -1941,76 +2250,6 @@ describe("wrapClaudeAgentSDK", () => {
                       },
                     },
                   ],
-                  role: "assistant",
-                },
-              ],
-            },
-          },
-        },
-        "claude.assistant.turn:5": {
-          run_type: "llm",
-          inputs: {
-            messages: [
-              {
-                content: "List available files in the current directory",
-                role: "user",
-              },
-              {
-                content: [
-                  {
-                    type: "thinking",
-                    thinking:
-                      "The user wants me to tell a joke about the latest date using the joke-agent. The current date is 2026-02-21. Let me launch the joke-agent with this information.",
-                    signature: "",
-                  },
-                ],
-                role: "assistant",
-              },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                    name: "Task",
-                    input: {
-                      description: "Tell a joke about today's date",
-                      subagent_type: "joke-agent",
-                      prompt:
-                        "Tell me a funny joke about today's date: February 21, 2026.",
-                    },
-                  },
-                ],
-                role: "assistant",
-              },
-              {
-                type: "tool_result",
-                tool_use_id: "toolu_01DEeFdMw6T3H28A3yynMUdd",
-                content: [
-                  {
-                    type: "text",
-                    text: 'The date is confirmed: Saturday, February 21, 2026. Here is your timely joke:\n\n---\n\nIt is February 21st, and I have to say -- this date is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\nKind of like a senior developer on a Friday afternoon.\n\n---\n\nAnd a bonus one-liner for the date nerds:\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, "I need space -- and you always come after me."',
-                  },
-                  {
-                    type: "text",
-                    text: "agentId: a7bf945f9f2425f6f (for resuming to continue this agent's work if needed)\n<usage>total_tokens: 5501\ntool_uses: 1\nduration_ms: 8420</usage>",
-                  },
-                ],
-                is_error: false,
-                role: "tool",
-              },
-            ],
-          },
-          outputs: {
-            output: {
-              messages: [
-                {
-                  content: [
-                    {
-                      type: "text",
-                      text: 'Here\'s what the joke-agent came up with for today\'s date, **February 21, 2026**:\n\n---\n\nFebruary 21st is really underrated. January gets all the "new year, new me" hype, and February 14th gets all the roses... but February 21st? It just shows up, does the work, and asks for nothing in return.\n\n*Kind of like a senior developer on a Friday afternoon.* 😄\n\n---\n\n**Bonus one-liner:**\n\nWhy did February 21st break up with February 22nd?\n\nBecause it said, *"I need space — and you always come after me."* 😂',
-                    },
-                  ],
-                  role: "assistant",
                 },
               ],
             },
@@ -2256,11 +2495,6 @@ describe("wrapClaudeAgentSDK", () => {
                       text: "I'll list the files in the current directory for you.",
                       type: "text",
                     },
-                  ],
-                },
-                {
-                  role: "assistant",
-                  content: [
                     {
                       id: "toolu_01C6pxkyGufmwfL2fGAot85b",
                       input: {
@@ -2310,11 +2544,6 @@ describe("wrapClaudeAgentSDK", () => {
                       text: "I'll list the files in the current directory for you.",
                       type: "text",
                     },
-                  ],
-                  role: "assistant",
-                },
-                {
-                  content: [
                     {
                       id: "toolu_01C6pxkyGufmwfL2fGAot85b",
                       input: {
@@ -2785,17 +3014,19 @@ describe("wrapClaudeAgentSDK", () => {
       nodes: [
         "claude.conversation:0",
         "claude.assistant.turn:1",
-        "oracle:2",
-        "Bash:3",
-        "claude.assistant.turn:4",
+        "Agent:2",
+        "oracle:3",
+        "Bash:4",
         "claude.assistant.turn:5",
+        "claude.assistant.turn:6",
       ],
       edges: [
         ["claude.conversation:0", "claude.assistant.turn:1"],
-        ["claude.conversation:0", "oracle:2"],
-        ["oracle:2", "Bash:3"],
-        ["oracle:2", "claude.assistant.turn:4"],
-        ["claude.conversation:0", "claude.assistant.turn:5"],
+        ["claude.conversation:0", "Agent:2"],
+        ["Agent:2", "oracle:3"],
+        ["oracle:3", "Bash:4"],
+        ["oracle:3", "claude.assistant.turn:5"],
+        ["claude.conversation:0", "claude.assistant.turn:6"],
       ],
     });
   });

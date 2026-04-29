@@ -49,19 +49,8 @@ export function aggregateUsageFromModelUsage(
  * Extracts and normalizes usage metrics from a Claude Agent SDK message.
  * @internal
  */
-export function extractUsageFromMessage(
-  message: SDKMessage,
-): Record<string, unknown> {
+export function extractUsageMetadata(usage: unknown): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
-
-  // Assistant messages contain usage in message.message.usage
-  // Result messages contain usage in message.usage
-  let usage: unknown;
-  if (message.type === "assistant") {
-    usage = message.message?.usage;
-  } else if (message.type === "result") {
-    usage = message.usage;
-  }
 
   if (!usage || typeof usage !== "object") {
     return metrics;
@@ -71,29 +60,41 @@ export function extractUsageFromMessage(
   const inputTokens = getNumberProperty(usage, "input_tokens") || 0;
   const outputTokens = getNumberProperty(usage, "output_tokens") || 0;
 
-  // Get cache tokens
-  const cacheRead = getNumberProperty(usage, "cache_read_input_tokens") || 0;
-  const cacheCreation =
-    getNumberProperty(usage, "cache_creation_input_tokens") || 0;
+  const inputTokenDetails = convertAnthropicUsageToInputTokenDetails(
+    usage as Record<string, unknown>,
+  );
+  const cacheTokens = Object.values(inputTokenDetails).reduce(
+    (sum, value) => sum + (typeof value === "number" ? value : 0),
+    0,
+  );
 
-  // Build input_token_details if we have cache tokens
-  if (cacheRead > 0 || cacheCreation > 0) {
-    const inputTokenDetails = convertAnthropicUsageToInputTokenDetails(
-      usage as Record<string, unknown>,
-    );
-    if (Object.keys(inputTokenDetails).length > 0) {
-      metrics.input_token_details = inputTokenDetails;
-    }
+  if (Object.keys(inputTokenDetails).length > 0 && cacheTokens > 0) {
+    metrics.input_token_details = inputTokenDetails;
   }
 
   // Sum cache tokens into input_tokens total (matching Python's sum_anthropic_tokens)
-  const totalInputTokens = inputTokens + cacheRead + cacheCreation;
+  const totalInputTokens = inputTokens + cacheTokens;
 
   metrics.input_tokens = totalInputTokens;
   metrics.output_tokens = outputTokens;
   metrics.total_tokens = totalInputTokens + outputTokens;
 
   return metrics;
+}
+
+export function extractUsageFromMessage(
+  message: SDKMessage,
+): Record<string, unknown> {
+  // Assistant messages contain usage in message.message.usage
+  // Result messages contain usage in message.usage
+  let usage: unknown;
+  if (message.type === "assistant") {
+    usage = message.message?.usage;
+  } else if (message.type === "result") {
+    usage = message.usage;
+  }
+
+  return extractUsageMetadata(usage);
 }
 
 /**

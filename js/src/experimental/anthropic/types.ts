@@ -22,6 +22,7 @@ export type SDKAssistantMessage = {
     content: Record<string, any>[];
     usage?: Record<string, any>;
     model?: string;
+    stop_reason?: string | null;
   };
   parent_tool_use_id: string | null;
 };
