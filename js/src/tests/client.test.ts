@@ -249,6 +249,38 @@ describe("Client", () => {
     });
   });
 
+  describe("pullPromptCommit", () => {
+    it("requires dangerouslyPullPublicPrompt for public prompt identifiers", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt"),
+      ).rejects.toThrow(/dangerouslyPullPublicPrompt: true/);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("allows public prompt identifiers with dangerouslyPullPublicPrompt", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const promptCommit = {
+        owner: "someuser",
+        repo: "someprompt",
+        commit_hash: "abc123",
+        manifest: {},
+        examples: [],
+      };
+      jest
+        .spyOn(client as any, "_fetchPromptFromApi")
+        .mockResolvedValue(promptCommit);
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt", {
+          dangerouslyPullPublicPrompt: true,
+        }),
+      ).resolves.toEqual(promptCommit);
+    });
+  });
+
   describe("listCommits", () => {
     it("should handle private prompts without explicit owner", async () => {
       const client = new Client({ apiKey: "test-api-key" });

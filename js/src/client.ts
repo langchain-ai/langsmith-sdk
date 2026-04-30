@@ -102,6 +102,18 @@ import {
   SerializeWorker,
 } from "./utils/serialize_worker.js";
 
+function assertPullPublicPromptAllowed(
+  promptIdentifier: string,
+  dangerouslyPullPublicPrompt?: boolean,
+): void {
+  const [owner] = parseHubIdentifier(promptIdentifier);
+  if (owner !== "-" && !dangerouslyPullPublicPrompt) {
+    throw new Error(
+      "Pulling a public prompt by owner/name is disabled by default because prompts may contain untrusted serialized LangChain objects. If you trust this prompt, set `dangerouslyPullPublicPrompt: true` to acknowledge the risk.",
+    );
+  }
+}
+
 /**
  * Catches timestamps without a timezone suffix.
  */
@@ -706,23 +718,11 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    // By default we compute the exact serialized size here by stringifying
-    // the payload. This is expensive: JSON.stringify on large payloads
-    // blocks the event loop on the user's hot path.
-    //
-    // Opting into LANGSMITH_PERF_OPTIMIZATION=true switches to a cheap
-    // structural estimate instead. The estimate is only used for soft
-    // memory accounting (queue size limit and downstream async caller
-    // memory tracking), never for anything correctness-critical -- the
-    // real serialization still happens later, off the hot path, when the
-    // batch is assembled for sending.
-    const size =
-      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true"
-        ? estimateSerializedSize(item.item).size
-        : serializePayloadForTracing(
-            item.item,
-            `Serializing run with id: ${item.item.id}`,
-          ).length;
+    // Use a cheap structural estimate for soft memory accounting (queue size
+    // limit and downstream async caller memory tracking). The exact
+    // serialization still happens later, off the hot path, when the batch is
+    // assembled for sending.
+    const size = estimateSerializedSize(item.item).size;
 
     // Check if adding this item would exceed the size limit
     // Allow the run if the queue is empty (to support large single traces)
@@ -886,11 +886,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * Serialize a payload for tracing, optionally offloading the work to a
-   * Node worker thread when LANGSMITH_PERF_OPTIMIZATION=true and the runtime
-   * supports worker_threads.
+   * Node worker thread when the runtime supports worker_threads.
    *
    * Falls back to synchronous serialization when:
-   *  - the perf flag is off
    *  - manualFlushMode is enabled (serverless: worker boot cost > benefit)
    *  - worker_threads is unavailable (non-Node runtimes)
    *  - the payload contains values that can't be structured-cloned across
@@ -910,9 +908,7 @@ export class Client implements LangSmithTracingClientInterface {
     payload: unknown,
     errorContext: string,
   ): Promise<Uint8Array<ArrayBuffer>> {
-    const perfOptIn =
-      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true";
-    if (!perfOptIn || this.manualFlushMode) {
+    if (this.manualFlushMode) {
       return serializePayloadForTracing(payload, errorContext);
     }
     // Shape-aware gate: worker offload pays for itself only when the
@@ -6269,13 +6265,39 @@ export class Client implements LangSmithTracingClientInterface {
     };
   }
 
+  /**
+   * Pull a prompt commit from the LangSmith API.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
+   */
   public async pullPromptCommit(
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<PromptCommit> {
+    assertPullPublicPromptAllowed(
+      promptIdentifier,
+      options?.dangerouslyPullPublicPrompt,
+    );
+
     // Check cache first if not skipped
     const refreshFunc = this._fetchPromptFromApi.bind(
       this,
@@ -6305,6 +6327,19 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
    * @private
    */
   public async _pullPrompt(
@@ -6312,11 +6347,17 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
       skipCache: options?.skipCache,
+      dangerouslyPullPublicPrompt: options?.dangerouslyPullPublicPrompt,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;

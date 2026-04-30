@@ -262,7 +262,7 @@ async def test_pull_prompt(
     # test pulling with tenant handle and name
     tenant_handle = (await langsmith_client._get_settings()).tenant_handle
     pulled_prompt_3 = await langsmith_client.pull_prompt(
-        f"{tenant_handle}/{prompt_name}"
+        f"{tenant_handle}/{prompt_name}", dangerously_pull_public_prompt=True
     )
     assert pulled_prompt.metadata and pulled_prompt_3.metadata
     assert (
@@ -274,7 +274,7 @@ async def test_pull_prompt(
     # test pulling with handle, name and commit hash
     tenant_handle = (await langsmith_client._get_settings()).tenant_handle
     pulled_prompt_4 = await langsmith_client.pull_prompt(
-        f"{tenant_handle}/{prompt_name}:latest"
+        f"{tenant_handle}/{prompt_name}:latest", dangerously_pull_public_prompt=True
     )
     assert pulled_prompt_3 == pulled_prompt_4
 

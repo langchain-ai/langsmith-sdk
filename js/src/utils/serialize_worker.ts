@@ -1,8 +1,7 @@
 /**
  * Off-thread serialization using Node worker_threads.
  *
- * Gated behind LANGSMITH_PERF_OPTIMIZATION=true. Falls back silently to
- * synchronous serialize() when:
+ * Falls back silently to synchronous serialize() when:
  *   - worker_threads is unavailable (browsers, Deno, Bun without compat,
  *     Cloudflare Workers, Vercel Edge, React Native)
  *   - the worker cannot be constructed (bundler/runtime constraints)
