@@ -102,6 +102,18 @@ import {
   SerializeWorker,
 } from "./utils/serialize_worker.js";
 
+function assertPullPublicPromptAllowed(
+  promptIdentifier: string,
+  dangerouslyPullPublicPrompt?: boolean,
+): void {
+  const [owner] = parseHubIdentifier(promptIdentifier);
+  if (owner !== "-" && !dangerouslyPullPublicPrompt) {
+    throw new Error(
+      "Pulling a public prompt by owner/name is disabled by default because prompts may contain untrusted serialized LangChain objects. If you trust this prompt, set `dangerouslyPullPublicPrompt: true` to acknowledge the risk.",
+    );
+  }
+}
+
 /**
  * Catches timestamps without a timezone suffix.
  */
@@ -6269,13 +6281,30 @@ export class Client implements LangSmithTracingClientInterface {
     };
   }
 
+  /**
+   * Pull a prompt commit from the LangSmith API.
+   *
+   * To pull a public prompt by owner/name (for example,
+   * `username/promptname`), set `dangerouslyPullPublicPrompt: true`. Only do
+   * this for trusted prompts.
+   */
   public async pullPromptCommit(
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Allow pulling a public prompt by owner/name. Only set this to true for
+       * trusted prompts.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<PromptCommit> {
+    assertPullPublicPromptAllowed(
+      promptIdentifier,
+      options?.dangerouslyPullPublicPrompt,
+    );
+
     // Check cache first if not skipped
     const refreshFunc = this._fetchPromptFromApi.bind(
       this,
@@ -6305,6 +6334,10 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   *
+   * To pull a public prompt by owner/name (for example,
+   * `username/promptname`), set `dangerouslyPullPublicPrompt: true`. Only do
+   * this for trusted prompts.
    * @private
    */
   public async _pullPrompt(
@@ -6312,11 +6345,17 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Allow pulling a public prompt by owner/name. Only set this to true for
+       * trusted prompts.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
       skipCache: options?.skipCache,
+      dangerouslyPullPublicPrompt: options?.dangerouslyPullPublicPrompt,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;

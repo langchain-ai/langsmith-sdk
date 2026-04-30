@@ -1795,6 +1795,7 @@ class AsyncClient:
         *,
         include_model: Optional[bool] = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
 
@@ -1804,6 +1805,9 @@ class AsyncClient:
             skip_cache: Whether to skip the prompt cache.
 
                 Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name (for example, `username/promptname`).
+                Only do this for trusted prompts. Defaults to `False`.
 
         Returns:
             The prompt object.
@@ -1811,6 +1815,11 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        ls_client._validate_public_prompt_pull(
+            prompt_identifier,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
+        )
+
         # Create refresh function bound to this specific prompt
         refresh_func = partial(
             self._afetch_prompt_from_api, prompt_identifier, include_model
@@ -1900,6 +1909,7 @@ class AsyncClient:
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -1919,6 +1929,9 @@ class AsyncClient:
                 **SECURITY NOTE**: Should only be set to `True` when pulling trusted
                 prompts.
             skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name (for example, `username/promptname`).
+                Only do this for trusted prompts. Defaults to `False`.
 
         Returns:
             The prompt object in the specified format.
@@ -1942,7 +1955,10 @@ class AsyncClient:
             langsmith package) depends on.
         """
         prompt_object = await self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model, skip_cache=skip_cache
+            prompt_identifier,
+            include_model=include_model,
+            skip_cache=skip_cache,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
         )
         return ls_client._process_prompt_manifest(
             prompt_object,
