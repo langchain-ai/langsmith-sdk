@@ -252,7 +252,9 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
 
     # test pulling with tenant handle and name
     tenant_handle = langsmith_client._get_settings().tenant_handle
-    pulled_prompt_3 = langsmith_client.pull_prompt(f"{tenant_handle}/{prompt_name}")
+    pulled_prompt_3 = langsmith_client.pull_prompt(
+        f"{tenant_handle}/{prompt_name}", dangerously_pull_public_prompt=True
+    )
     assert pulled_prompt.metadata and pulled_prompt_3.metadata
     assert (
         pulled_prompt.metadata["lc_hub_commit_hash"]
@@ -263,7 +265,7 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     # test pulling with handle, name and commit hash
     tenant_handle = langsmith_client._get_settings().tenant_handle
     pulled_prompt_4 = langsmith_client.pull_prompt(
-        f"{tenant_handle}/{prompt_name}:latest"
+        f"{tenant_handle}/{prompt_name}:latest", dangerously_pull_public_prompt=True
     )
     assert pulled_prompt_3 == pulled_prompt_4
 

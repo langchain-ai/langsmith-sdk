@@ -102,6 +102,18 @@ import {
   SerializeWorker,
 } from "./utils/serialize_worker.js";
 
+function assertPullPublicPromptAllowed(
+  promptIdentifier: string,
+  dangerouslyPullPublicPrompt?: boolean,
+): void {
+  const [owner] = parseHubIdentifier(promptIdentifier);
+  if (owner !== "-" && !dangerouslyPullPublicPrompt) {
+    throw new Error(
+      "Pulling a public prompt by owner/name is disabled by default because prompts may contain untrusted serialized LangChain objects. If you trust this prompt, set `dangerouslyPullPublicPrompt: true` to acknowledge the risk.",
+    );
+  }
+}
+
 /**
  * Catches timestamps without a timezone suffix.
  */
@@ -6253,13 +6265,39 @@ export class Client implements LangSmithTracingClientInterface {
     };
   }
 
+  /**
+   * Pull a prompt commit from the LangSmith API.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
+   */
   public async pullPromptCommit(
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<PromptCommit> {
+    assertPullPublicPromptAllowed(
+      promptIdentifier,
+      options?.dangerouslyPullPublicPrompt,
+    );
+
     // Check cache first if not skipped
     const refreshFunc = this._fetchPromptFromApi.bind(
       this,
@@ -6289,6 +6327,19 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
    * @private
    */
   public async _pullPrompt(
@@ -6296,11 +6347,17 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
     },
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
       skipCache: options?.skipCache,
+      dangerouslyPullPublicPrompt: options?.dangerouslyPullPublicPrompt,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;

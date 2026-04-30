@@ -3250,6 +3250,48 @@ _PROMPT_COMMITS = [
 ]
 
 
+def test_pull_prompt_commit_requires_dangerous_flag_for_public_prompts():
+    mock_session = mock.Mock()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=ls_schemas.LangSmithInfo(version="0.6.0"),
+        disable_prompt_cache=True,
+    )
+
+    with pytest.raises(ValueError, match="dangerously_pull_public_prompt=True"):
+        client.pull_prompt_commit("someuser/someprompt")
+
+    mock_session.request.assert_not_called()
+
+
+def test_pull_prompt_commit_allows_public_prompts_with_dangerous_flag():
+    mock_session = mock.Mock()
+    mock_session.request.return_value = mock.Mock(
+        json=lambda: {
+            "commit_hash": "abc123",
+            "manifest": {"type": "constructor"},
+            "examples": [],
+        }
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=ls_schemas.LangSmithInfo(version="0.6.0"),
+        disable_prompt_cache=True,
+    )
+
+    commit = client.pull_prompt_commit(
+        "someuser/someprompt", dangerously_pull_public_prompt=True
+    )
+
+    assert commit.owner == "someuser"
+    assert commit.repo == "someprompt"
+    assert commit.commit_hash == "abc123"
+
+
 @pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
 def test_pull_prompt(
     include_model: bool,
