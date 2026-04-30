@@ -60,14 +60,6 @@ test("Test performance with large runs and concurrency", async () => {
  *   LANGSMITH_RUN_PERF_BENCH=true LANGSMITH_TRACING=false \
  *     pnpm test:integration src/tests/perf.int.test.ts -t "benchmark"
  */
-// Default the perf optimization on for benchmark runs so results reflect
-// the shipped perf behavior. Respect an explicit override from the invoker
-// so `LANGSMITH_PERF_OPTIMIZATION=false` can be used to measure the
-// unoptimized baseline for comparison.
-if (process.env.LANGSMITH_PERF_OPTIMIZATION === undefined) {
-  process.env.LANGSMITH_PERF_OPTIMIZATION = "true";
-}
-
 // Enabled by setting LANGSMITH_RUN_PERF_BENCH=true. Skipped in CI by default.
 const benchIt =
   process.env.LANGSMITH_RUN_PERF_BENCH === "true" ? test : test.skip;
@@ -315,10 +307,9 @@ benchIt(
     // Structural-large payload: large total JSON size, but made up of many
     // small-to-medium strings across a wide/nested object graph. No single
     // string exceeds the worker-offload threshold, so this exercises the
-    // *non-offloaded* flush path (sync serialize on the main thread) even
-    // when LANGSMITH_PERF_OPTIMIZATION is on. Guards against regressions in
-    // the fallback path and confirms hasLargeString correctly filters this
-    // shape out.
+    // *non-offloaded* flush path (sync serialize on the main thread). Guards
+    // against regressions in the fallback path and confirms hasLargeString
+    // correctly filters this shape out.
     const NUM_MESSAGES = 200;
     const PER_MESSAGE_CHARS = 6_000; // well below the 64KB worker threshold
 
