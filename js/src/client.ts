@@ -706,23 +706,11 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    // By default we compute the exact serialized size here by stringifying
-    // the payload. This is expensive: JSON.stringify on large payloads
-    // blocks the event loop on the user's hot path.
-    //
-    // Opting into LANGSMITH_PERF_OPTIMIZATION=true switches to a cheap
-    // structural estimate instead. The estimate is only used for soft
-    // memory accounting (queue size limit and downstream async caller
-    // memory tracking), never for anything correctness-critical -- the
-    // real serialization still happens later, off the hot path, when the
-    // batch is assembled for sending.
-    const size =
-      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true"
-        ? estimateSerializedSize(item.item).size
-        : serializePayloadForTracing(
-            item.item,
-            `Serializing run with id: ${item.item.id}`,
-          ).length;
+    // Use a cheap structural estimate for soft memory accounting (queue size
+    // limit and downstream async caller memory tracking). The exact
+    // serialization still happens later, off the hot path, when the batch is
+    // assembled for sending.
+    const size = estimateSerializedSize(item.item).size;
 
     // Check if adding this item would exceed the size limit
     // Allow the run if the queue is empty (to support large single traces)
@@ -886,11 +874,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * Serialize a payload for tracing, optionally offloading the work to a
-   * Node worker thread when LANGSMITH_PERF_OPTIMIZATION=true and the runtime
-   * supports worker_threads.
+   * Node worker thread when the runtime supports worker_threads.
    *
    * Falls back to synchronous serialization when:
-   *  - the perf flag is off
    *  - manualFlushMode is enabled (serverless: worker boot cost > benefit)
    *  - worker_threads is unavailable (non-Node runtimes)
    *  - the payload contains values that can't be structured-cloned across
@@ -910,9 +896,7 @@ export class Client implements LangSmithTracingClientInterface {
     payload: unknown,
     errorContext: string,
   ): Promise<Uint8Array<ArrayBuffer>> {
-    const perfOptIn =
-      getLangSmithEnvironmentVariable("PERF_OPTIMIZATION") === "true";
-    if (!perfOptIn || this.manualFlushMode) {
+    if (this.manualFlushMode) {
       return serializePayloadForTracing(payload, errorContext);
     }
     // Shape-aware gate: worker offload pays for itself only when the
