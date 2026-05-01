@@ -46,10 +46,12 @@ class AsyncClient:
         "_cache",
         "_custom_headers",
         "_api_key",
+        "_oauth_access_token",
     )
 
     _custom_headers: dict[str, str]
     _api_key: Optional[str]
+    _oauth_access_token: Optional[str]
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {**self._custom_headers}
@@ -57,6 +59,8 @@ class AsyncClient:
         headers["Content-Type"] = "application/json"
         if self._api_key:
             headers[ls_client.X_API_KEY] = self._api_key
+        elif self._oauth_access_token:
+            headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         return headers
 
     @property
@@ -124,11 +128,39 @@ class AsyncClient:
         """
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
-        api_key = ls_utils.get_api_key(api_key)
-        api_url = ls_utils.get_api_url(api_url)
+        env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
+        env_api_key = ls_client._get_langsmith_env_var_uncached("API_KEY")
+        profile_config = ls_client._load_profile_client_config(
+            refresh_api_url=api_url if api_url is not None else env_api_url,
+            refresh_oauth=api_key is None,
+        )
+        api_url_ = (
+            api_url if api_url is not None else env_api_url or profile_config.api_url
+        )
+        explicit_or_env_api_key = api_key if api_key is not None else env_api_key
+        profile_auth_enabled = api_key is None and env_api_key is None
+        profile_oauth_access_token = (
+            profile_config.oauth_access_token if profile_auth_enabled else None
+        )
+        api_key_ = (
+            explicit_or_env_api_key
+            if explicit_or_env_api_key is not None
+            else None
+            if profile_oauth_access_token
+            else profile_config.api_key
+        )
+        self._oauth_access_token = (
+            profile_oauth_access_token.strip().strip('"').strip("'")
+            if profile_oauth_access_token
+            else None
+        )
+        api_key = ls_utils.get_api_key(api_key_)
+        api_url = ls_utils.get_api_url(api_url_)
         self._api_key = api_key
         _headers = self._compute_headers()
-        ls_client._validate_api_key_if_hosted(api_url, api_key)
+        ls_client._validate_api_key_if_hosted(
+            api_url, api_key or self._oauth_access_token
+        )
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)

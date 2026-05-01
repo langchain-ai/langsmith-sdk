@@ -1,5 +1,7 @@
 """Test the AsyncClient."""
 
+import json
+import pathlib
 import uuid
 import warnings
 from datetime import datetime
@@ -12,6 +14,19 @@ import pytest
 
 from langsmith import AsyncClient
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
+
+
+def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    ls_utils.get_env_var.cache_clear()
+    for key in (
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGSMITH_ENDPOINT",
+        "LANGSMITH_PROFILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -111,6 +126,40 @@ def test_async_client_no_custom_headers(mock_client_cls: mock.Mock) -> None:
     passed_headers = mock_client_cls.call_args.kwargs["headers"]
     assert passed_headers["Content-Type"] == "application/json"
     assert passed_headers["x-api-key"] == "test-api-key"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_profile_config_uses_oauth_access_token(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    AsyncClient()
+
+    assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["Authorization"] == "Bearer profile-access-token"
+    assert "x-api-key" not in passed_headers
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
