@@ -1,5 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, no-process-env */
 import { jest } from "@jest/globals";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { inspect } from "node:util";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import {
@@ -86,6 +89,196 @@ describe("Client", () => {
     const client = new Client({ apiUrl: "https://example.com/" });
     const result = (client as any).apiUrl;
     expect(result).toBe("https://example.com");
+  });
+
+  describe("profile config", () => {
+    const originalEnv = process.env;
+    let tempDir: string;
+
+    const writeProfileConfig = (config: unknown) => {
+      const configPath = path.join(tempDir, "config.json");
+      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      process.env.LANGSMITH_CONFIG_FILE = configPath;
+      return configPath;
+    };
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "langsmith-profile-"));
+      delete process.env.LANGSMITH_API_KEY;
+      delete process.env.LANGCHAIN_API_KEY;
+      delete process.env.LANGSMITH_ENDPOINT;
+      delete process.env.LANGCHAIN_ENDPOINT;
+      delete process.env.LANGSMITH_WORKSPACE_ID;
+      delete process.env.LANGCHAIN_WORKSPACE_ID;
+      delete process.env.LANGSMITH_PROFILE;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      process.env = originalEnv;
+    });
+
+    it("loads api URL, API key, and workspace from the active profile", () => {
+      writeProfileConfig({
+        current_profile: "prod",
+        profiles: {
+          prod: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).apiKey).toBe("profile-key");
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("profile-key");
+      expect((client as any)._mergedHeaders["x-tenant-id"]).toBe(
+        "workspace-id",
+      );
+    });
+
+    it("uses profile OAuth access tokens before profile API keys", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiKey).toBeUndefined();
+      expect((client as any)._mergedHeaders.Authorization).toBe(
+        "Bearer profile-access-token",
+      );
+      expect((client as any)._mergedHeaders["x-api-key"]).toBeUndefined();
+    });
+
+    it("suppresses profile auth when environment auth is set", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+      process.env.LANGSMITH_API_KEY = "env-key";
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("env-key");
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+    });
+
+    it("suppresses profile auth when constructor auth is set", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({
+        apiKey: "constructor-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe(
+        "constructor-key",
+      );
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+    });
+
+    it("refreshes expired profile OAuth tokens before requests", async () => {
+      const configPath = writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            expect(String(init?.body)).toContain("grant_type=refresh_token");
+            expect(String(init?.body)).toContain("client_id=langsmith-cli");
+            expect(String(init?.body)).toContain(
+              "refresh_token=old-refresh-token",
+            );
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const requestInit = mockFetch.mock.calls[1][1] as RequestInit;
+      expect(requestInit.headers).toMatchObject({
+        Authorization: "Bearer new-access-token",
+      });
+      const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      expect(updated.profiles.default.oauth.access_token).toBe(
+        "new-access-token",
+      );
+      expect(updated.profiles.default.oauth.refresh_token).toBe(
+        "new-refresh-token",
+      );
+      expect(updated.profiles.default.oauth).not.toHaveProperty("token_type");
+      expect(updated.profiles.default).not.toHaveProperty("bearer_token");
+    });
   });
 
   describe("getHostUrl", () => {
