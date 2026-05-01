@@ -31,7 +31,6 @@ const entrypoints = {
   "experimental/vercel": "experimental/vercel/index",
   "experimental/anthropic": "experimental/anthropic/index",
   "experimental/sandbox": "experimental/sandbox/index",
-  "experimental/opencode": "experimental/opencode/index",
 };
 
 const defaultEntrypoints = ["vitest/reporter"];
