@@ -1664,15 +1664,18 @@ class Client:
         """
         self._ensure_profile_auth()
         request_kwargs = request_kwargs or {}
+        headers = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+            **kwargs.get("headers", {}),
+        }
+        if self._profile_auth is not None:
+            headers = self._profile_auth.prepare_request_headers(headers)
         request_kwargs = {
             "timeout": self._timeout,
             **request_kwargs,
             **kwargs,
-            "headers": {
-                **self._headers,
-                **request_kwargs.get("headers", {}),
-                **kwargs.get("headers", {}),
-            },
+            "headers": headers,
         }
         if (
             method != "GET"

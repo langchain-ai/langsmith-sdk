@@ -288,6 +288,10 @@ class AsyncClient:
             kwargs["params"] = filtered_params
 
         await self._ensure_profile_auth()
+        if self._profile_auth is not None and "headers" in kwargs:
+            kwargs["headers"] = self._profile_auth.prepare_request_headers(
+                kwargs["headers"]
+            )
 
         for attempt in range(max_retries):
             try:

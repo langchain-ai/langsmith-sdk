@@ -229,6 +229,8 @@ class ProfileAuth:
         self._state = config.profile_state
         self._api_key_header = api_key_header
         self._lock = threading.Lock()
+        self._managed_auth_headers: set[tuple[str, str]] = set()
+        self._remember_auth_headers(self._auth_headers(refresh=False))
 
     @property
     def has_auth(self) -> bool:
@@ -254,10 +256,24 @@ class ProfileAuth:
         return profile is not None and should_refresh_profile_token(profile)
 
     def current_auth_headers(self) -> dict[str, str]:
-        return self._auth_headers(refresh=False)
+        headers = self._auth_headers(refresh=False)
+        self._remember_auth_headers(headers)
+        return headers
 
     def get_auth_headers(self) -> dict[str, str]:
-        return self._auth_headers(refresh=True)
+        headers = self._auth_headers(refresh=True)
+        self._remember_auth_headers(headers)
+        return headers
+
+    def prepare_request_headers(self, headers: Mapping[str, str]) -> dict[str, str]:
+        """Replace stale profile-managed auth while preserving explicit auth."""
+        request_headers = dict(headers)
+        for key, value in list(request_headers.items()):
+            if self._is_profile_auth_header(key, value):
+                del request_headers[key]
+        if not self._has_auth_header(request_headers):
+            request_headers.update(self.current_auth_headers())
+        return request_headers
 
     def _profile(self) -> Optional[ProfileConfig]:
         if self._state is None:
@@ -303,3 +319,20 @@ class ProfileAuth:
         if api_key:
             return {self._api_key_header: api_key}
         return {}
+
+    def _remember_auth_headers(self, headers: Mapping[str, str]) -> None:
+        for name, value in headers.items():
+            if self._is_auth_header_name(name) and value:
+                self._managed_auth_headers.add((name.lower(), value))
+
+    def _is_profile_auth_header(self, name: str, value: str) -> bool:
+        return (name.lower(), value) in self._managed_auth_headers
+
+    def _has_auth_header(self, headers: Mapping[str, str]) -> bool:
+        return any(
+            self._is_auth_header_name(name) and bool(value)
+            for name, value in headers.items()
+        )
+
+    def _is_auth_header_name(self, name: str) -> bool:
+        return name.lower() in {"authorization", self._api_key_header.lower()}
