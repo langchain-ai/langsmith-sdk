@@ -224,11 +224,9 @@ class ProfileAuth:
         self,
         config: ProfileClientConfig,
         *,
-        api_url: str,
         api_key_header: str,
     ) -> None:
         self._state = config.profile_state
-        self._api_url = api_url
         self._api_key_header = api_key_header
         self._lock = threading.Lock()
 
@@ -283,7 +281,8 @@ class ProfileAuth:
         )
         if refresh_token is None or self._state is None:
             return
-        token = _refresh_profile_oauth_token(self._api_url, refresh_token)
+        api_url = profile.get("api_url")
+        token = _refresh_profile_oauth_token(api_url, refresh_token)
         if token is None:
             return
         _apply_profile_token_response(profile, token)

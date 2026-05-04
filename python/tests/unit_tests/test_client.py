@@ -364,6 +364,66 @@ def test_profile_config_refreshes_expired_oauth_token(
     assert "bearer_token" not in updated["profiles"]["default"]
 
 
+def test_profile_config_refresh_uses_profile_api_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(
+        api_url="https://override.example.com",
+        auto_batch_tracing=False,
+    )
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
+    assert calls[0][0] == "https://profile.example.com/oauth/token"
+    assert request_calls[0][1] == "https://override.example.com/info"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+
+
 def test_validate_multiple_urls() -> None:
     """Test URL validation without environment variable manipulation."""
     _clear_env_cache()

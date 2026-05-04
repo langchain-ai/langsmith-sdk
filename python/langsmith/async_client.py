@@ -161,7 +161,6 @@ class AsyncClient:
         if use_profile_oauth:
             self._profile_auth = _profiles.ProfileAuth(
                 profile_config,
-                api_url=api_url,
                 api_key_header=ls_client.X_API_KEY,
             )
             self._profile_auth_headers = self._profile_auth.current_auth_headers()
