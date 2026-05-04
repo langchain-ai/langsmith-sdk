@@ -1122,6 +1122,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (!this.profileState || !refreshToken) {
       return;
     }
+    const refreshApiUrl =
+      trimQuotes(this.profileState.profile.api_url) ?? DEFAULT_API_URL;
     try {
       const fetchImplementation =
         this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -1131,7 +1133,7 @@ export class Client implements LangSmithTracingClientInterface {
         refresh_token: refreshToken,
       });
       const response = await fetchImplementation(
-        `${normalizeConfigUrl(this.apiUrl)}/oauth/token`,
+        `${normalizeConfigUrl(refreshApiUrl)}/oauth/token`,
         {
           method: "POST",
           headers: {

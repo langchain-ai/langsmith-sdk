@@ -279,6 +279,53 @@ describe("Client", () => {
       expect(updated.profiles.default.oauth).not.toHaveProperty("token_type");
       expect(updated.profiles.default).not.toHaveProperty("bearer_token");
     });
+
+    it("refreshes profile OAuth tokens against profile api_url", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          if (String(input) === "https://override.example.com/oauth/token") {
+            return new Response("wrong refresh URL", { status: 418 });
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({
+        apiUrl: "https://override.example.com",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://override.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect(mockFetch.mock.calls.map(([input]) => String(input))).toEqual([
+        "https://profile.example.com/oauth/token",
+        "https://override.example.com/info",
+      ]);
+    });
   });
 
   describe("getHostUrl", () => {
