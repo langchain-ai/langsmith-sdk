@@ -23,6 +23,7 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _profiles
 from langsmith._internal._hub import (
     HUB,
     PLATFORM_HUB,
@@ -47,11 +48,15 @@ class AsyncClient:
         "_custom_headers",
         "_api_key",
         "_oauth_access_token",
+        "_profile_auth",
+        "_profile_auth_headers",
     )
 
     _custom_headers: dict[str, str]
     _api_key: Optional[str]
     _oauth_access_token: Optional[str]
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {**self._custom_headers}
@@ -59,6 +64,8 @@ class AsyncClient:
         headers["Content-Type"] = "application/json"
         if self._api_key:
             headers[ls_client.X_API_KEY] = self._api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
         elif self._oauth_access_token:
             headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         return headers
@@ -130,36 +137,46 @@ class AsyncClient:
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
         env_api_key = ls_client._get_langsmith_env_var_uncached("API_KEY")
-        profile_config = ls_client._load_profile_client_config(
-            refresh_api_url=api_url if api_url is not None else env_api_url,
-            refresh_oauth=api_key is None,
-        )
+        profile_config = _profiles.load_profile_client_config()
         api_url_ = (
             api_url if api_url is not None else env_api_url or profile_config.api_url
         )
         explicit_or_env_api_key = api_key if api_key is not None else env_api_key
         profile_auth_enabled = api_key is None and env_api_key is None
-        profile_oauth_access_token = (
-            profile_config.oauth_access_token if profile_auth_enabled else None
-        )
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
         api_key_ = (
             explicit_or_env_api_key
             if explicit_or_env_api_key is not None
             else None
-            if profile_oauth_access_token
+            if use_profile_oauth
             else profile_config.api_key
         )
         self._oauth_access_token = (
-            profile_oauth_access_token.strip().strip('"').strip("'")
-            if profile_oauth_access_token
-            else None
+            profile_config.oauth_access_token if use_profile_oauth else None
         )
         api_key = ls_utils.get_api_key(api_key_)
         api_url = ls_utils.get_api_url(api_url_)
+        self._profile_auth = None
+        self._profile_auth_headers = {}
+        if use_profile_oauth:
+            self._profile_auth = _profiles.ProfileAuth(
+                profile_config,
+                api_url=api_url,
+                api_key_header=ls_client.X_API_KEY,
+            )
+            self._profile_auth_headers = self._profile_auth.current_auth_headers()
+            self._oauth_access_token = self._profile_auth.oauth_access_token
         self._api_key = api_key
         _headers = self._compute_headers()
         ls_client._validate_api_key_if_hosted(
-            api_url, api_key or self._oauth_access_token
+            api_url,
+            api_key
+            or self._oauth_access_token
+            or (
+                "profile-auth"
+                if self._profile_auth is not None and self._profile_auth.has_auth
+                else None
+            ),
         )
 
         if isinstance(timeout_ms, int):
@@ -244,6 +261,17 @@ class AsyncClient:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self._api_url)
 
+    async def _ensure_profile_auth(self) -> None:
+        if self._api_key or self._profile_auth is None:
+            return
+        if self._profile_auth.needs_refresh():
+            auth_headers = await asyncio.to_thread(self._profile_auth.get_auth_headers)
+        else:
+            auth_headers = self._profile_auth.current_auth_headers()
+        self._profile_auth_headers = auth_headers
+        self._oauth_access_token = self._profile_auth.oauth_access_token
+        self._client.headers = httpx.Headers(self._compute_headers())
+
     async def _arequest_with_retries(
         self,
         method: str,
@@ -259,6 +287,8 @@ class AsyncClient:
             params = kwargs["params"]
             filtered_params = {k: v for k, v in params.items() if v is not None}
             kwargs["params"] = filtered_params
+
+        await self._ensure_profile_auth()
 
         for attempt in range(max_retries):
             try:

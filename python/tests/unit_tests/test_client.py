@@ -330,7 +330,25 @@ def test_profile_config_refreshes_expired_oauth_token(
 
     client = Client(auto_batch_tracing=False)
 
+    assert client._headers["Authorization"] == "Bearer old-access-token"
+    assert calls == []
+
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
     assert client._headers["Authorization"] == "Bearer new-access-token"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
     assert calls[0][0] == "https://profile.example.com/oauth/token"
     assert calls[0][1]["data"] == {
         "grant_type": "refresh_token",

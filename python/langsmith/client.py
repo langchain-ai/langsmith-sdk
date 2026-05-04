@@ -45,7 +45,6 @@ from typing import (
     Any,
     Callable,
     Literal,
-    NamedTuple,
     Optional,
     TypedDict,
     Union,
@@ -69,7 +68,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _orjson
+from langsmith._internal import _orjson, _profiles
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -152,34 +151,6 @@ _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
 
 _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
-_OAUTH_CLIENT_ID = "langsmith-cli"
-_TOKEN_REFRESH_LEEWAY = datetime.timedelta(minutes=1)
-_TOKEN_REFRESH_TIMEOUT = 10
-
-
-class _ProfileOAuth(TypedDict, total=False):
-    access_token: str
-    refresh_token: str
-    expires_at: str
-
-
-class _ProfileConfig(TypedDict, total=False):
-    api_key: str
-    api_url: str
-    workspace_id: str
-    oauth: _ProfileOAuth
-
-
-class _ProfileConfigFile(TypedDict, total=False):
-    current_profile: str
-    profiles: dict[str, _ProfileConfig]
-
-
-class _ProfileClientConfig(NamedTuple):
-    api_url: Optional[str] = None
-    api_key: Optional[str] = None
-    workspace_id: Optional[str] = None
-    oauth_access_token: Optional[str] = None
 
 
 def _resolve_tracing_mode(
@@ -621,170 +592,12 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def _profile_config_path() -> Optional[Path]:
-    if config_file := os.environ.get("LANGSMITH_CONFIG_FILE"):
-        return Path(config_file)
-    try:
-        return Path.home() / ".langsmith" / "config.json"
-    except RuntimeError:
-        return None
-
-
-def _load_profile_state() -> Optional[tuple[Path, _ProfileConfigFile, str]]:
-    path = _profile_config_path()
-    if path is None or not path.exists():
-        return None
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(raw, dict):
-        return None
-    profiles = raw.get("profiles")
-    if not isinstance(profiles, dict):
-        return None
-    profile_name = os.environ.get("LANGSMITH_PROFILE")
-    if not profile_name:
-        current_profile = raw.get("current_profile")
-        if isinstance(current_profile, str) and current_profile:
-            profile_name = current_profile
-        elif "default" in profiles:
-            profile_name = "default"
-    if not profile_name or not isinstance(profiles.get(profile_name), dict):
-        return None
-    return path, cast(_ProfileConfigFile, raw), profile_name
-
-
 def _get_langsmith_env_var_uncached(name: str) -> Optional[str]:
     for namespace in ("LANGSMITH", "LANGCHAIN"):
         value = os.environ.get(f"{namespace}_{name}")
         if value is not None and value.strip() != "":
             return value
     return None
-
-
-def _normalize_profile_api_url(api_url: str) -> str:
-    return api_url.rstrip("/").removesuffix("/api/v1")
-
-
-def _parse_profile_expires_at(expires_at: str) -> Optional[datetime.datetime]:
-    try:
-        parsed = datetime.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
-    return parsed
-
-
-def _should_refresh_profile_token(profile: _ProfileConfig) -> bool:
-    oauth = profile.get("oauth") or {}
-    if not oauth.get("refresh_token"):
-        return False
-    if not oauth.get("access_token"):
-        return True
-    expires_at = oauth.get("expires_at")
-    if not expires_at:
-        return False
-    parsed = _parse_profile_expires_at(expires_at)
-    if parsed is None:
-        return False
-    return (
-        parsed <= datetime.datetime.now(datetime.timezone.utc) + _TOKEN_REFRESH_LEEWAY
-    )
-
-
-def _refresh_profile_oauth_token(
-    api_url: Optional[str], refresh_token: str
-) -> Optional[dict[str, Any]]:
-    refresh_url = _normalize_profile_api_url(
-        api_url or "https://api.smith.langchain.com"
-    )
-    try:
-        response = requests.post(
-            f"{refresh_url}/oauth/token",
-            data={
-                "grant_type": "refresh_token",
-                "client_id": _OAUTH_CLIENT_ID,
-                "refresh_token": refresh_token,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=_TOKEN_REFRESH_TIMEOUT,
-        )
-    except requests.RequestException:
-        return None
-    if response.status_code < 200 or response.status_code >= 300:
-        return None
-    try:
-        token = response.json()
-    except ValueError:
-        return None
-    if not isinstance(token, dict) or not token.get("access_token"):
-        return None
-    return token
-
-
-def _apply_profile_token_response(
-    profile: _ProfileConfig, token: Mapping[str, Any]
-) -> None:
-    oauth = profile.setdefault("oauth", {})
-    access_token = token.get("access_token")
-    if isinstance(access_token, str) and access_token:
-        oauth["access_token"] = access_token
-    refresh_token = token.get("refresh_token")
-    if isinstance(refresh_token, str) and refresh_token:
-        oauth["refresh_token"] = refresh_token
-    expires_in = token.get("expires_in")
-    if isinstance(expires_in, int) and expires_in > 0:
-        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
-            seconds=expires_in
-        )
-        oauth["expires_at"] = expires_at.isoformat().replace("+00:00", "Z")
-
-
-def _save_profile_config(path: Path, config: _ProfileConfigFile) -> None:
-    try:
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        temp_path = path.with_name(f"{path.name}.tmp")
-        temp_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-        os.chmod(temp_path, 0o600)
-        os.replace(temp_path, path)
-        os.chmod(path, 0o600)
-    except OSError:
-        return
-
-
-def _load_profile_client_config(
-    *, refresh_api_url: Optional[str] = None, refresh_oauth: bool = True
-) -> _ProfileClientConfig:
-    state = _load_profile_state()
-    if state is None:
-        return _ProfileClientConfig()
-    path, config, profile_name = state
-    profiles = config.get("profiles") or {}
-    profile = profiles[profile_name]
-    env_auth_set = bool(_get_langsmith_env_var_uncached("API_KEY"))
-    refresh_url = (
-        refresh_api_url
-        or _get_langsmith_env_var_uncached("ENDPOINT")
-        or profile.get("api_url")
-    )
-    if refresh_oauth and not env_auth_set and _should_refresh_profile_token(profile):
-        refresh_token = (profile.get("oauth") or {}).get("refresh_token")
-        if refresh_token:
-            token = _refresh_profile_oauth_token(refresh_url, refresh_token)
-            if token is not None:
-                _apply_profile_token_response(profile, token)
-                profiles[profile_name] = profile
-                config["profiles"] = profiles
-                _save_profile_config(path, config)
-    oauth_access_token = (profile.get("oauth") or {}).get("access_token")
-    return _ProfileClientConfig(
-        api_url=profile.get("api_url"),
-        api_key=None if oauth_access_token else profile.get("api_key"),
-        workspace_id=profile.get("workspace_id"),
-        oauth_access_token=oauth_access_token,
-    )
 
 
 def _validate_api_key_if_hosted(
@@ -1006,6 +819,8 @@ class Client:
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
         "_tracing_mode",
+        "_profile_auth",
+        "_profile_auth_headers",
     ]
 
     _api_key: Optional[str]
@@ -1014,6 +829,8 @@ class Client:
     _custom_headers: dict[str, str]
     _timeout: tuple[float, float]
     _manual_cleanup: bool
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
 
     def __init__(
         self,
@@ -1243,23 +1060,18 @@ class Client:
         env_api_url = _get_langsmith_env_var_uncached("ENDPOINT")
         env_api_key = _get_langsmith_env_var_uncached("API_KEY")
         env_workspace_id = _get_langsmith_env_var_uncached("WORKSPACE_ID")
-        profile_config = _load_profile_client_config(
-            refresh_api_url=api_url if api_url is not None else env_api_url,
-            refresh_oauth=api_key is None,
-        )
+        profile_config = _profiles.load_profile_client_config()
         api_url_ = (
             api_url if api_url is not None else env_api_url or profile_config.api_url
         )
         explicit_or_env_api_key = api_key if api_key is not None else env_api_key
         profile_auth_enabled = api_key is None and env_api_key is None
-        profile_oauth_access_token = (
-            profile_config.oauth_access_token if profile_auth_enabled else None
-        )
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
         api_key_ = (
             explicit_or_env_api_key
             if explicit_or_env_api_key is not None
             else None
-            if profile_oauth_access_token
+            if use_profile_oauth
             else profile_config.api_key
         )
         workspace_id_ = (
@@ -1268,10 +1080,10 @@ class Client:
             else env_workspace_id or profile_config.workspace_id
         )
         self._oauth_access_token = (
-            profile_oauth_access_token.strip().strip('"').strip("'")
-            if profile_oauth_access_token
-            else None
+            profile_config.oauth_access_token if use_profile_oauth else None
         )
+        self._profile_auth: Optional[_profiles.ProfileAuth] = None
+        self._profile_auth_headers: dict[str, str] = {}
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
@@ -1286,13 +1098,29 @@ class Client:
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self._oauth_access_token = None
+            self._profile_auth = None
+            self._profile_auth_headers = {}
             self.api_key = self._write_api_urls[self.api_url]
         else:
             self.api_url = ls_utils.get_api_url(api_url_)
+            if use_profile_oauth:
+                self._profile_auth = _profiles.ProfileAuth(
+                    profile_config,
+                    api_url=self.api_url,
+                    api_key_header=X_API_KEY,
+                )
+                self._profile_auth_headers = self._profile_auth.current_auth_headers()
+                self._oauth_access_token = self._profile_auth.oauth_access_token
             self.api_key = ls_utils.get_api_key(api_key_)
             _validate_api_key_if_hosted(
                 self.api_url,
-                self.api_key or self._oauth_access_token,
+                self.api_key
+                or self._oauth_access_token
+                or (
+                    "profile-auth"
+                    if self._profile_auth is not None and self._profile_auth.has_auth
+                    else None
+                ),
                 tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
@@ -1367,7 +1195,16 @@ class Client:
                 self.otel_exporter = None
                 self._tracing_mode = "langsmith"
                 _validate_api_key_if_hosted(
-                    self.api_url, self.api_key, tracing_mode="langsmith"
+                    self.api_url,
+                    self.api_key
+                    or self._oauth_access_token
+                    or (
+                        "profile-auth"
+                        if self._profile_auth is not None
+                        and self._profile_auth.has_auth
+                        else None
+                    ),
+                    tracing_mode="langsmith",
                 )
 
         # Initialize auto batching
@@ -1674,6 +1511,8 @@ class Client:
         headers.update(self._custom_headers)
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
         elif self._oauth_access_token:
             headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         if self._workspace_id:
@@ -1683,6 +1522,16 @@ class Client:
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
         """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    def _ensure_profile_auth(self) -> None:
+        if self.api_key or self._profile_auth is None:
+            return
+        auth_headers = self._profile_auth.get_auth_headers()
+        object.__setattr__(self, "_profile_auth_headers", auth_headers)
+        object.__setattr__(
+            self, "_oauth_access_token", self._profile_auth.oauth_access_token
+        )
         object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
@@ -1814,6 +1663,7 @@ class Client:
             LangSmithConnectionError: If a connection error occurs.
             LangSmithError: If the request fails.
         """
+        self._ensure_profile_auth()
         request_kwargs = request_kwargs or {}
         request_kwargs = {
             "timeout": self._timeout,
@@ -7249,6 +7099,7 @@ class Client:
             # Use platform path helper for consistent URL construction
             path = _platform_path(self.api_url, "datasets/examples/delete")
             full_url = _construct_url(self.api_url, path)
+            self._ensure_profile_auth()
             response = self.session.request(
                 "POST",
                 full_url,
@@ -10844,6 +10695,7 @@ class Client:
             params["priority"] = priority
         path = _platform_path(self.api_url, "forge-issues")
         full_url = _construct_url(self.api_url, path)
+        self._ensure_profile_auth()
         response = self.session.request(
             "GET",
             full_url,
