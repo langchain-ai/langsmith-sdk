@@ -795,7 +795,14 @@ function shouldRefreshProfileToken(profile: LangSmithProfile): boolean {
 }
 
 function normalizeConfigUrl(apiUrl: string): string {
-  return apiUrl.replace(/\/+$/, "").replace(/\/api\/v1$/, "");
+  let normalized = apiUrl;
+  while (normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  const apiV1Suffix = "/api/v1";
+  return normalized.endsWith(apiV1Suffix)
+    ? normalized.slice(0, -apiV1Suffix.length)
+    : normalized;
 }
 
 function applyTokenResponse(
@@ -817,6 +824,40 @@ function applyTokenResponse(
     profile.oauth.expires_at = new Date(
       Date.now() + token.expires_in * 1000,
     ).toISOString();
+  }
+}
+
+function getAbortReason(signal: AbortSignal): unknown {
+  return (
+    (signal as AbortSignal & { reason?: unknown }).reason ??
+    new Error("The operation was aborted.")
+  );
+}
+
+async function waitForAbortSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal | null,
+): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+  if (signal.aborted) {
+    throw getAbortReason(signal);
+  }
+  let cleanup: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    const onAbort = () => {
+      reject(getAbortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
+    };
+  });
+  try {
+    return await Promise.race([promise, abortPromise]);
+  } finally {
+    cleanup?.();
   }
 }
 
@@ -1034,18 +1075,32 @@ export class Client implements LangSmithTracingClientInterface {
   private get _fetch(): typeof fetch {
     const fetchImplementation =
       this.fetchImplementation || _getFetchImplementation(this.debug);
-    return (async (input: RequestInfo | URL, init?: RequestInit) => {
-      await this.ensureProfileOAuthToken();
-      return fetchImplementation(input, this.applyCurrentAuthHeaders(init));
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!this.needsProfileOAuthRefresh()) {
+        return fetchImplementation(input, this.applyCurrentAuthHeaders(init));
+      }
+      return (async () => {
+        await this.ensureProfileOAuthToken(init?.signal);
+        return fetchImplementation(input, this.applyCurrentAuthHeaders(init));
+      })();
     }) as typeof fetch;
   }
 
-  private async ensureProfileOAuthToken(): Promise<void> {
+  private needsProfileOAuthRefresh(): boolean {
     if (
       this.apiKey ||
       !this.profileState ||
       !shouldRefreshProfileToken(this.profileState.profile)
     ) {
+      return false;
+    }
+    return true;
+  }
+
+  private async ensureProfileOAuthToken(
+    signal?: AbortSignal | null,
+  ): Promise<void> {
+    if (!this.needsProfileOAuthRefresh()) {
       return;
     }
     if (!this.profileRefreshPromise) {
@@ -1055,7 +1110,7 @@ export class Client implements LangSmithTracingClientInterface {
         },
       );
     }
-    await this.profileRefreshPromise;
+    await waitForAbortSignal(this.profileRefreshPromise, signal);
     if (!this.oauthAccessToken && this.profileState?.profile.api_key) {
       this.apiKey = trimQuotes(this.profileState.profile.api_key);
       this.profileState = undefined;

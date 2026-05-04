@@ -98,7 +98,6 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGCHAIN_API_KEY",
     "LANGCHAIN_ENDPOINT",
     "LANGCHAIN_TRACING_V2",
-    "LANGCHAIN_CONFIG_FILE",
     "LANGCHAIN_PROJECT",
     "LANGCHAIN_SESSION",
     "LANGSMITH_API_KEY",
