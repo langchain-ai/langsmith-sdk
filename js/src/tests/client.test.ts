@@ -119,7 +119,7 @@ describe("Client", () => {
       process.env = originalEnv;
     });
 
-    it("loads api URL, API key, and workspace from the active profile", () => {
+    it("loads api URL, API key header, and workspace from the active profile", () => {
       writeProfileConfig({
         current_profile: "prod",
         profiles: {
@@ -134,7 +134,7 @@ describe("Client", () => {
       const client = new Client();
 
       expect((client as any).apiUrl).toBe("https://profile.example.com");
-      expect((client as any).apiKey).toBe("profile-key");
+      expect((client as any).apiKey).toBeUndefined();
       expect((client as any).workspaceId).toBe("workspace-id");
       expect((client as any)._mergedHeaders["x-api-key"]).toBe("profile-key");
       expect((client as any)._mergedHeaders["x-tenant-id"]).toBe(
@@ -278,6 +278,40 @@ describe("Client", () => {
       );
       expect(updated.profiles.default.oauth).not.toHaveProperty("token_type");
       expect(updated.profiles.default).not.toHaveProperty("bearer_token");
+    });
+
+    it("preserves explicit Authorization headers during profile refresh", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: {
+          Authorization: "Bearer explicit-token",
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl, requestInit]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+      expect(requestInit?.headers).toMatchObject({
+        Authorization: "Bearer explicit-token",
+      });
     });
 
     it("refreshes profile OAuth tokens against profile api_url", async () => {
