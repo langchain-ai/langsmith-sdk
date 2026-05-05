@@ -22,18 +22,6 @@ SANDBOX_CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 SANDBOX_CALLBACK_SUBJECT = "langsmith-sandbox-callback"
 
 _JWKS_PATH = "/.well-known/jwks.json"
-_DISALLOWED_CUSTOM_CLAIMS = frozenset(
-    {
-        "method",
-        "host",
-        "port",
-        "callback_url",
-        "identity",
-        "tenant_id",
-        "organization_id",
-        "sandbox_id",
-    }
-)
 
 
 class SandboxCallbackVerificationError(ValueError):
@@ -359,11 +347,6 @@ def _validate_claims(
         if not isinstance(value, str) or not value:
             raise SandboxCallbackVerificationError(
                 f"Sandbox callback JWT is missing {name}"
-            )
-    for name in _DISALLOWED_CUSTOM_CLAIMS:
-        if name in claims:
-            raise SandboxCallbackVerificationError(
-                f"Sandbox callback JWT must not include {name}"
             )
 
 

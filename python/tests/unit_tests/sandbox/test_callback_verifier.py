@@ -138,14 +138,6 @@ def test_verifier_refreshes_jwks_once_for_unknown_kid(
         ({"aud": ""}, "aud"),
         ({"exp": 1}, "expired"),
         ({"nbf": time.time() + 3600}, "not yet valid"),
-        ({"tenant_id": "other-tenant"}, "must not include tenant_id"),
-        ({"organization_id": "other-org"}, "must not include organization_id"),
-        ({"sandbox_id": "other-sandbox"}, "must not include sandbox_id"),
-        ({"identity": {"sandbox_id": "sandbox-1"}}, "must not include identity"),
-        ({"method": "POST"}, "must not include method"),
-        ({"host": "example.com"}, "must not include host"),
-        ({"port": 80}, "must not include port"),
-        ({"callback_url": "https://customer.example/callback"}, "callback_url"),
     ],
 )
 def test_verifier_rejects_bad_claims(
