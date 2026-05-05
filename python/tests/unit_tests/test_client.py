@@ -149,6 +149,394 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langsmith_api_key"
 
 
+def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    for key in (
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGSMITH_ENDPOINT",
+        "LANGCHAIN_WORKSPACE_ID",
+        "LANGSMITH_WORKSPACE_ID",
+        "LANGSMITH_PROFILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_profile_config_loads_api_key_and_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "current_profile": "prod",
+                "profiles": {
+                    "prod": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "workspace_id": "workspace-id",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.api_key == "profile-key"
+    assert client.workspace_id == "workspace-id"
+    assert client._headers["x-api-key"] == "profile-key"
+    assert client._headers["X-Tenant-Id"] == "workspace-id"
+
+
+def test_profile_config_uses_oauth_access_token_before_api_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_key is None
+    assert client._headers["Authorization"] == "Bearer profile-access-token"
+    assert "x-api-key" not in client._headers
+
+
+def test_profile_config_env_auth_suppresses_profile_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "workspace_id": "workspace-id",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("LANGSMITH_API_KEY", "env-key")
+    _clear_env_cache()
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.workspace_id == "workspace-id"
+    assert client.api_key == "env-key"
+    assert client._headers["x-api-key"] == "env-key"
+    assert "Authorization" not in client._headers
+
+
+def test_profile_config_constructor_auth_suppresses_profile_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    mock_post = mock.Mock()
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = Client(api_key="constructor-key", auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.api_key == "constructor-key"
+    assert client._headers["x-api-key"] == "constructor-key"
+    assert "Authorization" not in client._headers
+    mock_post.assert_not_called()
+
+
+def test_profile_config_refreshes_expired_oauth_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client._headers["Authorization"] == "Bearer old-access-token"
+    assert calls == []
+
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
+    assert client._headers["Authorization"] == "Bearer new-access-token"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+    assert calls[0][0] == "https://profile.example.com/oauth/token"
+    assert calls[0][1]["data"] == {
+        "grant_type": "refresh_token",
+        "client_id": "langsmith-cli",
+        "refresh_token": "old-refresh-token",
+    }
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated["profiles"]["default"]["oauth"]["access_token"] == "new-access-token"
+    assert (
+        updated["profiles"]["default"]["oauth"]["refresh_token"] == "new-refresh-token"
+    )
+    assert "token_type" not in updated["profiles"]["default"]["oauth"]
+    assert "bearer_token" not in updated["profiles"]["default"]
+
+
+def test_profile_config_refresh_replaces_snapshotted_auth_headers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    snapshotted_headers = dict(client._headers)
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries(
+        "GET",
+        "/info",
+        request_kwargs={"headers": snapshotted_headers},
+    )
+
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+
+
+def test_profile_config_refresh_preserves_explicit_auth_headers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries(
+        "GET",
+        "/info",
+        request_kwargs={"headers": {"Authorization": "Bearer explicit-token"}},
+    )
+
+    assert request_calls[0][2]["headers"]["Authorization"] == ("Bearer explicit-token")
+
+
+def test_profile_config_refresh_uses_profile_api_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(
+        api_url="https://override.example.com",
+        auto_batch_tracing=False,
+    )
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
+    assert calls[0][0] == "https://profile.example.com/oauth/token"
+    assert request_calls[0][1] == "https://override.example.com/info"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+
+
 def test_validate_multiple_urls() -> None:
     """Test URL validation without environment variable manipulation."""
     _clear_env_cache()

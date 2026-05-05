@@ -68,7 +68,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _orjson
+from langsmith._internal import _orjson, _profiles
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -605,6 +605,14 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
+def _get_langsmith_env_var_uncached(name: str) -> Optional[str]:
+    for namespace in ("LANGSMITH", "LANGCHAIN"):
+        value = os.environ.get(f"{namespace}_{name}")
+        if value is not None and value.strip() != "":
+            return value
+    return None
+
+
 def _validate_api_key_if_hosted(
     api_url: str,
     api_key: Optional[str],
@@ -780,6 +788,7 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_oauth_access_token",
         "_workspace_id",
         "_headers",
         "_custom_headers",
@@ -823,13 +832,18 @@ class Client:
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
         "_tracing_mode",
+        "_profile_auth",
+        "_profile_auth_headers",
     ]
 
     _api_key: Optional[str]
+    _oauth_access_token: Optional[str]
     _headers: dict[str, str]
     _custom_headers: dict[str, str]
     _timeout: tuple[float, float]
     _manual_cleanup: bool
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
 
     def __init__(
         self,
@@ -1056,6 +1070,33 @@ class Client:
 
         resolved_mode = _resolve_tracing_mode(tracing_mode, otel_enabled=otel_enabled)
         self._tracing_mode: TracingMode = resolved_mode
+        env_api_url = _get_langsmith_env_var_uncached("ENDPOINT")
+        env_api_key = _get_langsmith_env_var_uncached("API_KEY")
+        env_workspace_id = _get_langsmith_env_var_uncached("WORKSPACE_ID")
+        profile_config = _profiles.load_profile_client_config()
+        api_url_ = (
+            api_url if api_url is not None else env_api_url or profile_config.api_url
+        )
+        explicit_or_env_api_key = api_key if api_key is not None else env_api_key
+        profile_auth_enabled = api_key is None and env_api_key is None
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
+        api_key_ = (
+            explicit_or_env_api_key
+            if explicit_or_env_api_key is not None
+            else None
+            if use_profile_oauth
+            else profile_config.api_key
+        )
+        workspace_id_ = (
+            workspace_id
+            if workspace_id is not None
+            else env_workspace_id or profile_config.workspace_id
+        )
+        self._oauth_access_token = (
+            profile_config.oauth_access_token if use_profile_oauth else None
+        )
+        self._profile_auth: Optional[_profiles.ProfileAuth] = None
+        self._profile_auth_headers: dict[str, str] = {}
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
@@ -1063,18 +1104,36 @@ class Client:
             api_urls
         )
         # Initialize workspace attribute first
-        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
         # Store custom headers
         self._custom_headers = headers or {}
 
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
+            self._oauth_access_token = None
+            self._profile_auth = None
+            self._profile_auth_headers = {}
             self.api_key = self._write_api_urls[self.api_url]
         else:
-            self.api_url = ls_utils.get_api_url(api_url)
-            self.api_key = ls_utils.get_api_key(api_key)
+            self.api_url = ls_utils.get_api_url(api_url_)
+            if use_profile_oauth:
+                self._profile_auth = _profiles.ProfileAuth(
+                    profile_config,
+                    api_key_header=X_API_KEY,
+                )
+                self._profile_auth_headers = self._profile_auth.current_auth_headers()
+                self._oauth_access_token = self._profile_auth.oauth_access_token
+            self.api_key = ls_utils.get_api_key(api_key_)
             _validate_api_key_if_hosted(
-                self.api_url, self.api_key, tracing_mode=resolved_mode
+                self.api_url,
+                self.api_key
+                or self._oauth_access_token
+                or (
+                    "profile-auth"
+                    if self._profile_auth is not None and self._profile_auth.has_auth
+                    else None
+                ),
+                tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
@@ -1148,7 +1207,16 @@ class Client:
                 self.otel_exporter = None
                 self._tracing_mode = "langsmith"
                 _validate_api_key_if_hosted(
-                    self.api_url, self.api_key, tracing_mode="langsmith"
+                    self.api_url,
+                    self.api_key
+                    or self._oauth_access_token
+                    or (
+                        "profile-auth"
+                        if self._profile_auth is not None
+                        and self._profile_auth.has_auth
+                        else None
+                    ),
+                    tracing_mode="langsmith",
                 )
 
         # Initialize auto batching
@@ -1455,6 +1523,10 @@ class Client:
         headers.update(self._custom_headers)
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
+        elif self._oauth_access_token:
+            headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         if self._workspace_id:
             headers["X-Tenant-Id"] = self._workspace_id
         return headers
@@ -1462,6 +1534,16 @@ class Client:
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
         """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    def _ensure_profile_auth(self) -> None:
+        if self.api_key or self._profile_auth is None:
+            return
+        auth_headers = self._profile_auth.get_auth_headers()
+        object.__setattr__(self, "_profile_auth_headers", auth_headers)
+        object.__setattr__(
+            self, "_oauth_access_token", self._profile_auth.oauth_access_token
+        )
         object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
@@ -1593,16 +1675,20 @@ class Client:
             LangSmithConnectionError: If a connection error occurs.
             LangSmithError: If the request fails.
         """
+        self._ensure_profile_auth()
         request_kwargs = request_kwargs or {}
+        headers = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+            **kwargs.get("headers", {}),
+        }
+        if self._profile_auth is not None:
+            headers = self._profile_auth.prepare_request_headers(headers)
         request_kwargs = {
             "timeout": self._timeout,
             **request_kwargs,
             **kwargs,
-            "headers": {
-                **self._headers,
-                **request_kwargs.get("headers", {}),
-                **kwargs.get("headers", {}),
-            },
+            "headers": headers,
         }
         if (
             method != "GET"
@@ -7028,6 +7114,7 @@ class Client:
             # Use platform path helper for consistent URL construction
             path = _platform_path(self.api_url, "datasets/examples/delete")
             full_url = _construct_url(self.api_url, path)
+            self._ensure_profile_auth()
             response = self.session.request(
                 "POST",
                 full_url,
@@ -10652,6 +10739,7 @@ class Client:
             params["priority"] = priority
         path = _platform_path(self.api_url, "forge-issues")
         full_url = _construct_url(self.api_url, path)
+        self._ensure_profile_auth()
         response = self.session.request(
             "GET",
             full_url,
