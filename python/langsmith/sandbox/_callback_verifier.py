@@ -22,7 +22,18 @@ SANDBOX_CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 SANDBOX_CALLBACK_SUBJECT = "langsmith-sandbox-callback"
 
 _JWKS_PATH = "/.well-known/jwks.json"
-_DISALLOWED_CUSTOM_CLAIMS = frozenset({"method", "host", "port", "callback_url"})
+_DISALLOWED_CUSTOM_CLAIMS = frozenset(
+    {
+        "method",
+        "host",
+        "port",
+        "callback_url",
+        "identity",
+        "tenant_id",
+        "organization_id",
+        "sandbox_id",
+    }
+)
 
 
 class SandboxCallbackVerificationError(ValueError):
@@ -30,20 +41,44 @@ class SandboxCallbackVerificationError(ValueError):
 
 
 @dataclasses.dataclass(frozen=True)
+class SandboxCallbackIdentity:
+    """Verified LangSmith sandbox callback body identity."""
+
+    tenant_id: str
+    organization_id: str
+    sandbox_id: str
+    ls_user_id: Optional[str] = None
+
+
+@dataclasses.dataclass(frozen=True)
 class SandboxCallbackClaims:
-    """Verified LangSmith sandbox callback JWT claims."""
+    """Verified LangSmith sandbox callback JWT claims and body identity."""
 
     issuer: str
     audience: Union[str, tuple[str, ...]]
     subject: str
-    tenant_id: str
-    organization_id: str
-    sandbox_id: str
+    identity: SandboxCallbackIdentity
     body_sha256: str
     jti: str
     issued_at: datetime
     not_before: datetime
     expires_at: datetime
+
+    @property
+    def tenant_id(self) -> str:
+        return self.identity.tenant_id
+
+    @property
+    def organization_id(self) -> str:
+        return self.identity.organization_id
+
+    @property
+    def sandbox_id(self) -> str:
+        return self.identity.sandbox_id
+
+    @property
+    def ls_user_id(self) -> Optional[str]:
+        return self.identity.ls_user_id
 
 
 class SandboxCallbackVerifier:
@@ -114,8 +149,8 @@ class SandboxCallbackVerifier:
             body: Exact raw callback request body bytes.
             expected_sandbox_id: Sandbox ID the callback is expected to be for.
             unsafely_allow_any_sandbox_id: Skip sandbox ID matching. This is only
-                safe if the caller verifies ``claims.sandbox_id`` from the returned
-                claims before trusting the callback.
+                safe if the caller verifies ``claims.identity.sandbox_id`` before
+                trusting the callback.
         """
         expected_sandbox_id = _clean_optional(expected_sandbox_id)
         if expected_sandbox_id and unsafely_allow_any_sandbox_id:
@@ -149,23 +184,29 @@ class SandboxCallbackVerifier:
         key = self._find_key(kid)
         _verify_eddsa_signature(key, signing_input, signature)
 
-        expected_tenant_id = self._get_expected_tenant_id()
-        _validate_claims(
-            claims,
-            issuer_url=self.issuer_url,
-            expected_tenant_id=expected_tenant_id,
-            expected_organization_id=self.expected_organization_id,
-            expected_sandbox_id=expected_sandbox_id,
-            leeway_seconds=self.leeway_seconds,
-        )
-        expected_body_hash = hashlib.sha256(_body_bytes(body)).hexdigest()
+        body_bytes = _body_bytes(body)
+        expected_body_hash = hashlib.sha256(body_bytes).hexdigest()
         body_sha256 = claims.get("body_sha256")
         if body_sha256 != expected_body_hash:
             raise SandboxCallbackVerificationError(
                 "Sandbox callback body hash mismatch"
             )
 
-        return _claims_to_result(claims)
+        identity = _identity_from_body(body_bytes)
+        expected_tenant_id = self._get_expected_tenant_id()
+        _validate_claims(
+            claims,
+            issuer_url=self.issuer_url,
+            leeway_seconds=self.leeway_seconds,
+        )
+        _validate_identity(
+            identity,
+            expected_tenant_id=expected_tenant_id,
+            expected_organization_id=self.expected_organization_id,
+            expected_sandbox_id=expected_sandbox_id,
+        )
+
+        return _claims_to_result(claims, identity)
 
     def _find_key(self, kid: str) -> Mapping[str, Any]:
         try:
@@ -297,9 +338,6 @@ def _validate_claims(
     claims: Mapping[str, Any],
     *,
     issuer_url: str,
-    expected_tenant_id: str,
-    expected_organization_id: Optional[str],
-    expected_sandbox_id: Optional[str],
     leeway_seconds: float,
 ) -> None:
     now = time.time()
@@ -316,7 +354,7 @@ def _validate_claims(
         raise SandboxCallbackVerificationError("Sandbox callback JWT is expired")
     if nbf - leeway_seconds > now:
         raise SandboxCallbackVerificationError("Sandbox callback JWT is not yet valid")
-    for name in ("jti", "tenant_id", "organization_id", "sandbox_id", "body_sha256"):
+    for name in ("jti", "body_sha256"):
         value = claims.get(name)
         if not isinstance(value, str) or not value:
             raise SandboxCallbackVerificationError(
@@ -327,32 +365,80 @@ def _validate_claims(
             raise SandboxCallbackVerificationError(
                 f"Sandbox callback JWT must not include {name}"
             )
-    if claims["tenant_id"] != expected_tenant_id:
+
+
+def _validate_identity(
+    identity: SandboxCallbackIdentity,
+    *,
+    expected_tenant_id: str,
+    expected_organization_id: Optional[str],
+    expected_sandbox_id: Optional[str],
+) -> None:
+    if identity.tenant_id != expected_tenant_id:
         raise SandboxCallbackVerificationError("Sandbox callback tenant_id mismatch")
     if (
         expected_organization_id is not None
-        and claims["organization_id"] != expected_organization_id
+        and identity.organization_id != expected_organization_id
     ):
         raise SandboxCallbackVerificationError(
             "Sandbox callback organization_id mismatch"
         )
-    if expected_sandbox_id is not None and claims["sandbox_id"] != expected_sandbox_id:
+    if expected_sandbox_id is not None and identity.sandbox_id != expected_sandbox_id:
         raise SandboxCallbackVerificationError("Sandbox callback sandbox_id mismatch")
 
 
-def _claims_to_result(claims: Mapping[str, Any]) -> SandboxCallbackClaims:
+def _claims_to_result(
+    claims: Mapping[str, Any],
+    identity: SandboxCallbackIdentity,
+) -> SandboxCallbackClaims:
     return SandboxCallbackClaims(
         issuer=str(claims["iss"]),
         audience=_audience_result(claims["aud"]),
         subject=str(claims["sub"]),
-        tenant_id=str(claims["tenant_id"]),
-        organization_id=str(claims["organization_id"]),
-        sandbox_id=str(claims["sandbox_id"]),
+        identity=identity,
         body_sha256=str(claims["body_sha256"]),
         jti=str(claims["jti"]),
         issued_at=_datetime_from_timestamp(_numeric_claim(claims, "iat")),
         not_before=_datetime_from_timestamp(_numeric_claim(claims, "nbf")),
         expires_at=_datetime_from_timestamp(_numeric_claim(claims, "exp")),
+    )
+
+
+def _identity_from_body(body: bytes) -> SandboxCallbackIdentity:
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SandboxCallbackVerificationError(
+            "Sandbox callback body is malformed"
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise SandboxCallbackVerificationError("Sandbox callback body is malformed")
+    identity = payload.get("identity")
+    if not isinstance(identity, Mapping):
+        raise SandboxCallbackVerificationError(
+            "Sandbox callback body is missing identity"
+        )
+    values: dict[str, str] = {}
+    for name in ("tenant_id", "organization_id", "sandbox_id"):
+        value = identity.get(name)
+        if not isinstance(value, str) or not value:
+            raise SandboxCallbackVerificationError(
+                f"Sandbox callback body identity is missing {name}"
+            )
+        values[name] = value
+    raw_ls_user_id = identity.get("ls_user_id")
+    if raw_ls_user_id is not None and (
+        not isinstance(raw_ls_user_id, str) or not raw_ls_user_id
+    ):
+        raise SandboxCallbackVerificationError(
+            "Sandbox callback body identity has invalid ls_user_id"
+        )
+    ls_user_id = raw_ls_user_id if isinstance(raw_ls_user_id, str) else None
+    return SandboxCallbackIdentity(
+        tenant_id=values["tenant_id"],
+        organization_id=values["organization_id"],
+        sandbox_id=values["sandbox_id"],
+        ls_user_id=ls_user_id,
     )
 
 

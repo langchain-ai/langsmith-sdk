@@ -22,21 +22,41 @@ from langsmith.sandbox import (
 )
 
 
+def _callback_body(
+    *,
+    tenant_id: str = "tenant-1",
+    organization_id: str = "org-1",
+    sandbox_id: str = "sandbox-1",
+    ls_user_id: Optional[str] = "user-1",
+    host: str = "example.com",
+    port: int = 80,
+) -> bytes:
+    identity = {
+        "tenant_id": tenant_id,
+        "organization_id": organization_id,
+        "sandbox_id": sandbox_id,
+    }
+    if ls_user_id is not None:
+        identity["ls_user_id"] = ls_user_id
+    return json.dumps(
+        {"host": host, "port": port, "identity": identity},
+        separators=(",", ":"),
+    ).encode()
+
+
 def test_verifier_uses_sdk_defaults_and_caches_tenant_and_jwks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://smith.example/api")
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     ls_utils.get_env_var.cache_clear()
-    body = b'{"host":"example.com","port":80}'
+    body = _callback_body()
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
         kid="callback-kid",
         body=body,
         issuer_url="https://smith.example",
-        tenant_id="tenant-1",
-        sandbox_id="sandbox-1",
     )
     calls = _install_fake_langsmith_get(
         monkeypatch,
@@ -59,6 +79,8 @@ def test_verifier_uses_sdk_defaults_and_caches_tenant_and_jwks(
         assert claims.tenant_id == "tenant-1"
         assert claims.organization_id == "org-1"
         assert claims.sandbox_id == "sandbox-1"
+        assert claims.ls_user_id == "user-1"
+        assert claims.identity.ls_user_id == "user-1"
         assert claims.body_sha256 == hashlib.sha256(body).hexdigest()
 
     assert [call["url"] for call in calls] == [
@@ -71,7 +93,7 @@ def test_verifier_uses_sdk_defaults_and_caches_tenant_and_jwks(
 def test_verifier_refreshes_jwks_once_for_unknown_kid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    body = b"{}"
+    body = _callback_body()
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
@@ -116,9 +138,10 @@ def test_verifier_refreshes_jwks_once_for_unknown_kid(
         ({"aud": ""}, "aud"),
         ({"exp": 1}, "expired"),
         ({"nbf": time.time() + 3600}, "not yet valid"),
-        ({"tenant_id": "other-tenant"}, "tenant_id"),
-        ({"organization_id": "other-org"}, "organization_id"),
-        ({"sandbox_id": "other-sandbox"}, "sandbox_id"),
+        ({"tenant_id": "other-tenant"}, "must not include tenant_id"),
+        ({"organization_id": "other-org"}, "must not include organization_id"),
+        ({"sandbox_id": "other-sandbox"}, "must not include sandbox_id"),
+        ({"identity": {"sandbox_id": "sandbox-1"}}, "must not include identity"),
         ({"method": "POST"}, "must not include method"),
         ({"host": "example.com"}, "must not include host"),
         ({"port": 80}, "must not include port"),
@@ -130,7 +153,7 @@ def test_verifier_rejects_bad_claims(
     mutate_claims: Mapping[str, Any],
     message: str,
 ) -> None:
-    body = b"{}"
+    body = _callback_body()
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
@@ -154,12 +177,49 @@ def test_verifier_rejects_bad_claims(
         )
 
 
-def test_verifier_rejects_body_hash_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (_callback_body(tenant_id="other-tenant"), "tenant_id"),
+        (_callback_body(organization_id="other-org"), "organization_id"),
+        (_callback_body(sandbox_id="other-sandbox"), "sandbox_id"),
+        (b'{"host":"example.com","port":80}', "identity"),
+    ],
+)
+def test_verifier_rejects_bad_body_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+    message: str,
+) -> None:
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
         kid="callback-kid",
-        body=b'{"host":"example.com","port":80}',
+        body=body,
+        issuer_url="https://smith.example",
+    )
+    _install_fake_langsmith_get(monkeypatch, key, tenant_id="tenant-1")
+    verifier = SandboxCallbackVerifier(
+        api_url="https://smith.example",
+        expected_tenant_id="tenant-1",
+        expected_organization_id="org-1",
+    )
+
+    with pytest.raises(SandboxCallbackVerificationError, match=message):
+        verifier.verify(
+            {SANDBOX_CALLBACK_SIGNATURE_HEADER: token},
+            body,
+            expected_sandbox_id="sandbox-1",
+        )
+
+
+def test_verifier_rejects_body_hash_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    signed_body = _callback_body(port=80)
+    key = Ed25519PrivateKey.generate()
+    token = _sign_callback_jwt(
+        key,
+        kid="callback-kid",
+        body=signed_body,
         issuer_url="https://smith.example",
     )
     _install_fake_langsmith_get(monkeypatch, key, tenant_id="tenant-1")
@@ -171,13 +231,13 @@ def test_verifier_rejects_body_hash_mismatch(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(SandboxCallbackVerificationError, match="body hash"):
         verifier.verify(
             {SANDBOX_CALLBACK_SIGNATURE_HEADER: token},
-            b'{"host":"example.com","port":443}',
+            _callback_body(port=443),
             expected_sandbox_id="sandbox-1",
         )
 
 
 def test_verifier_rejects_wrong_public_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    body = b"{}"
+    body = _callback_body()
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
@@ -234,14 +294,13 @@ def test_verifier_requires_sandbox_id_unless_unsafe() -> None:
 def test_verifier_can_unsafely_allow_any_sandbox_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    body = b"{}"
+    body = _callback_body(sandbox_id="sandbox-from-body")
     key = Ed25519PrivateKey.generate()
     token = _sign_callback_jwt(
         key,
         kid="callback-kid",
         body=body,
         issuer_url="https://smith.example",
-        sandbox_id="sandbox-from-claims",
     )
     _install_fake_langsmith_get(monkeypatch, key, tenant_id="tenant-1")
     verifier = SandboxCallbackVerifier(
@@ -255,7 +314,7 @@ def test_verifier_can_unsafely_allow_any_sandbox_id(
         unsafely_allow_any_sandbox_id=True,
     )
 
-    assert claims.sandbox_id == "sandbox-from-claims"
+    assert claims.sandbox_id == "sandbox-from-body"
 
 
 def _install_fake_langsmith_get(
@@ -290,9 +349,6 @@ def _sign_callback_jwt(
     kid: str,
     body: bytes,
     issuer_url: str,
-    tenant_id: str = "tenant-1",
-    organization_id: str = "org-1",
-    sandbox_id: str = "sandbox-1",
     audience: str = "https://customer.example/callback",
     extra_claims: Optional[Mapping[str, Any]] = None,
 ) -> str:
@@ -305,9 +361,6 @@ def _sign_callback_jwt(
         "nbf": now,
         "exp": now + 300,
         "jti": "jti-1",
-        "tenant_id": tenant_id,
-        "organization_id": organization_id,
-        "sandbox_id": sandbox_id,
         "body_sha256": hashlib.sha256(body).hexdigest(),
     }
     if extra_claims:

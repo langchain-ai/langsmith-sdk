@@ -34,6 +34,7 @@ from langsmith.sandbox._callback_verifier import (
     SANDBOX_CALLBACK_SIGNATURE_HEADER,
     SANDBOX_CALLBACK_SUBJECT,
     SandboxCallbackClaims,
+    SandboxCallbackIdentity,
     SandboxCallbackVerificationError,
     SandboxCallbackVerifier,
 )
@@ -84,6 +85,7 @@ __all__ = [
     "SANDBOX_CALLBACK_SIGNATURE_HEADER",
     "SANDBOX_CALLBACK_SUBJECT",
     "SandboxCallbackClaims",
+    "SandboxCallbackIdentity",
     "SandboxCallbackVerifier",
     "SandboxCallbackVerificationError",
     # Models
