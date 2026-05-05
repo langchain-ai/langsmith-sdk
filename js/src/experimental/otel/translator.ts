@@ -15,6 +15,14 @@ function getOperationName(runType: string): string {
   return WELL_KNOWN_OPERATION_NAMES[runType] || runType;
 }
 
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
 export type SerializedRunOperation<
   T extends "post" | "patch" = "post" | "patch",
 > = {
@@ -186,6 +194,18 @@ export class LangSmithToOTELTranslator {
       span.setAttribute(constants.GEN_AI_REQUEST_MODEL, modelName);
     }
 
+    // Set usage from metadata if available
+    // This can be overriden by `run.outputs.usage_metadata` later if present.
+    if (
+      runInfo.extra?.metadata?.usage_metadata &&
+      typeof runInfo.extra.metadata.usage_metadata === "object"
+    ) {
+      span.setAttribute(
+        constants.LANGSMITH_USAGE_METADATA,
+        JSON.stringify(runInfo.extra.metadata.usage_metadata),
+      );
+    }
+
     // Set token usage information
     if (
       "prompt_tokens" in runInfo &&
@@ -223,7 +243,7 @@ export class LangSmithToOTELTranslator {
       if (value !== null && value !== undefined) {
         span.setAttribute(
           `${constants.LANGSMITH_METADATA}.${key}`,
-          String(value),
+          isPrimitive(value) ? String(value) : JSON.stringify(value),
         );
       }
     }
@@ -465,6 +485,14 @@ export class LangSmithToOTELTranslator {
             typeof outputs.usage_metadata === "object"
           ) {
             const usageMetadata = outputs.usage_metadata;
+
+            // Set usage from outputs if available
+            // This overrides the usage from metadata if present.
+            span.setAttribute(
+              constants.LANGSMITH_USAGE_METADATA,
+              JSON.stringify(usageMetadata),
+            );
+
             if (usageMetadata.input_token_details) {
               span.setAttribute(
                 constants.GEN_AI_USAGE_INPUT_TOKEN_DETAILS,
