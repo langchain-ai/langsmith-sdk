@@ -221,7 +221,7 @@ export function loadProfileClientConfig(): ProfileClientConfig {
 export class ProfileAuth {
   private refreshPromise?: Promise<void>;
 
-  private managedAuthorizationValues = new Set<string>();
+  private managedAuthorizationValue?: string;
 
   constructor(private state: LangSmithProfileState) {
     this.rememberProfileAuthHeader(this.currentAuthHeader());
@@ -253,7 +253,7 @@ export class ProfileAuth {
   }
 
   isProfileAuthorizationHeader(value: string): boolean {
-    return this.managedAuthorizationValues.has(value);
+    return value === this.managedAuthorizationValue;
   }
 
   private async refreshOAuthToken(
@@ -308,9 +308,8 @@ export class ProfileAuth {
   private rememberProfileAuthHeader(
     header: ProfileAuthHeader | undefined,
   ): void {
-    if (header?.name === "Authorization") {
-      this.managedAuthorizationValues.add(header.value);
-    }
+    this.managedAuthorizationValue =
+      header?.name === "Authorization" ? header.value : undefined;
   }
 }
 

@@ -905,9 +905,13 @@ export class Client implements LangSmithTracingClientInterface {
       this.fetchImplementation || _getFetchImplementation(this.debug);
     return (async (input: RequestInfo | URL, init?: RequestInit) => {
       let authHeader: ProfileAuthHeader | undefined;
+      const profileManagedAuthorization =
+        this.getProfileManagedAuthorizationHeader(init);
       if (this.apiKey !== undefined) {
         authHeader = { name: "x-api-key", value: `${this.apiKey}` };
-      } else if (!this.hasExplicitAuthHeader(init)) {
+      } else if (
+        !this.hasExplicitAuthHeader(init, profileManagedAuthorization)
+      ) {
         authHeader = await this.profileAuth?.getAuthHeader(
           fetchImplementation,
           init?.signal,
@@ -915,12 +919,44 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return fetchImplementation(
         input,
-        this.applyCurrentAuthHeaders(init, authHeader),
+        this.applyCurrentAuthHeaders(
+          init,
+          authHeader,
+          profileManagedAuthorization,
+        ),
       );
     }) as typeof fetch;
   }
 
-  private hasExplicitAuthHeader(init?: RequestInit): boolean {
+  private getProfileManagedAuthorizationHeader(
+    init?: RequestInit,
+  ): string | undefined {
+    if (!init?.headers || !this.profileAuth) {
+      return undefined;
+    }
+    const authorization = new Headers(init.headers).get("Authorization");
+    if (!hasValue(authorization)) {
+      return undefined;
+    }
+    return this.profileAuth.isProfileAuthorizationHeader(authorization ?? "")
+      ? (authorization ?? undefined)
+      : undefined;
+  }
+
+  private isProfileManagedAuthorizationHeader(
+    value: string,
+    profileManagedAuthorization?: string,
+  ): boolean {
+    return (
+      value === profileManagedAuthorization ||
+      this.profileAuth?.isProfileAuthorizationHeader(value) === true
+    );
+  }
+
+  private hasExplicitAuthHeader(
+    init?: RequestInit,
+    profileManagedAuthorization?: string,
+  ): boolean {
     if (!init?.headers) {
       return false;
     }
@@ -932,12 +968,16 @@ export class Client implements LangSmithTracingClientInterface {
     if (!hasValue(authorization)) {
       return false;
     }
-    return !this.profileAuth?.isProfileAuthorizationHeader(authorization ?? "");
+    return !this.isProfileManagedAuthorizationHeader(
+      authorization ?? "",
+      profileManagedAuthorization,
+    );
   }
 
   private applyCurrentAuthHeaders(
     init?: RequestInit,
     authHeader?: ProfileAuthHeader,
+    profileManagedAuthorization?: string,
   ): RequestInit | undefined {
     if (!authHeader) {
       return init;
@@ -957,7 +997,10 @@ export class Client implements LangSmithTracingClientInterface {
         const authorization = headers.get("Authorization");
         if (
           hasValue(authorization) &&
-          !this.profileAuth?.isProfileAuthorizationHeader(authorization ?? "")
+          !this.isProfileManagedAuthorizationHeader(
+            authorization ?? "",
+            profileManagedAuthorization,
+          )
         ) {
           return headers;
         }
@@ -967,7 +1010,10 @@ export class Client implements LangSmithTracingClientInterface {
       const authorization = headers.get("Authorization");
       if (
         hasValue(authorization) &&
-        !this.profileAuth?.isProfileAuthorizationHeader(authorization ?? "")
+        !this.isProfileManagedAuthorizationHeader(
+          authorization ?? "",
+          profileManagedAuthorization,
+        )
       ) {
         return headers;
       }
@@ -1003,7 +1049,10 @@ export class Client implements LangSmithTracingClientInterface {
     const authorization = getHeader("authorization");
     const hasExplicitAuthorization =
       hasValue(authorization) &&
-      !this.profileAuth?.isProfileAuthorizationHeader(authorization ?? "");
+      !this.isProfileManagedAuthorizationHeader(
+        authorization ?? "",
+        profileManagedAuthorization,
+      );
 
     if (this.apiKey !== undefined && authHeader.name === "x-api-key") {
       const authorizationKey = getHeaderKey("authorization");
