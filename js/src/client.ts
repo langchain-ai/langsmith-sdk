@@ -475,6 +475,43 @@ interface FeedbackUpdate {
   comment?: string | null;
 }
 
+type LangSmithProfileOAuth = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: string;
+};
+
+type LangSmithProfile = {
+  api_key?: string;
+  api_url?: string;
+  workspace_id?: string;
+  oauth?: LangSmithProfileOAuth;
+};
+
+type LangSmithProfileConfigFile = {
+  current_profile?: string;
+  profiles?: Record<string, LangSmithProfile>;
+};
+
+type LangSmithProfileState = {
+  configPath: string;
+  config: LangSmithProfileConfigFile;
+  profileName: string;
+  profile: LangSmithProfile;
+};
+
+type DefaultClientConfig = {
+  apiUrl: string;
+  apiKey?: string;
+  webUrl?: string;
+  hideInputs?: boolean;
+  hideOutputs?: boolean;
+  hideMetadata?: boolean;
+  workspaceId?: string;
+  oauthAccessToken?: string;
+  profileState?: LangSmithProfileState;
+};
+
 interface CreateRunParams {
   name: string;
   inputs: KVMap;
@@ -686,6 +723,155 @@ const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_BATCH_SIZE_LIMIT = 100;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
+const OAUTH_CLIENT_ID = "langsmith-cli";
+const TOKEN_REFRESH_LEEWAY_MS = 60_000;
+const TOKEN_REFRESH_TIMEOUT_MS = 10_000;
+
+function isBrowserLikeRuntime(): boolean {
+  const env = getEnv();
+  return env === "browser" || env === "webworker";
+}
+
+function getProfileConfigPath(): string | undefined {
+  const explicitPath = getEnvironmentVariable("LANGSMITH_CONFIG_FILE");
+  if (explicitPath) {
+    return explicitPath;
+  }
+  const home =
+    getEnvironmentVariable("HOME") ?? getEnvironmentVariable("USERPROFILE");
+  if (!home) {
+    return undefined;
+  }
+  return fsUtils.path.join(home, ".langsmith", "config.json");
+}
+
+function resolveProfileName(
+  config: LangSmithProfileConfigFile,
+): string | undefined {
+  const envProfile = getEnvironmentVariable("LANGSMITH_PROFILE");
+  if (envProfile) {
+    return envProfile;
+  }
+  if (config.current_profile) {
+    return config.current_profile;
+  }
+  if (config.profiles?.default) {
+    return "default";
+  }
+  return undefined;
+}
+
+function loadProfileState(): LangSmithProfileState | undefined {
+  if (isBrowserLikeRuntime()) {
+    return undefined;
+  }
+  const configPath = getProfileConfigPath();
+  if (!configPath || !fsUtils.existsSync(configPath)) {
+    return undefined;
+  }
+  try {
+    const config = JSON.parse(
+      fsUtils.readFileSync(configPath),
+    ) as LangSmithProfileConfigFile;
+    const profileName = resolveProfileName(config);
+    const profile = profileName ? config.profiles?.[profileName] : undefined;
+    if (!profileName || !profile) {
+      return undefined;
+    }
+    return { configPath, config, profileName, profile };
+  } catch {
+    return undefined;
+  }
+}
+
+function hasValue(value?: string): boolean {
+  return value !== undefined && value.trim() !== "";
+}
+
+function shouldRefreshProfileToken(profile: LangSmithProfile): boolean {
+  const oauth = profile.oauth;
+  if (!oauth?.refresh_token) {
+    return false;
+  }
+  if (!oauth.access_token) {
+    return true;
+  }
+  if (!oauth.expires_at) {
+    return false;
+  }
+  const expiresAt = Date.parse(oauth.expires_at);
+  if (Number.isNaN(expiresAt)) {
+    return false;
+  }
+  return expiresAt <= Date.now() + TOKEN_REFRESH_LEEWAY_MS;
+}
+
+function normalizeConfigUrl(apiUrl: string): string {
+  let normalized = apiUrl;
+  while (normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  const apiV1Suffix = "/api/v1";
+  return normalized.endsWith(apiV1Suffix)
+    ? normalized.slice(0, -apiV1Suffix.length)
+    : normalized;
+}
+
+function applyTokenResponse(
+  profile: LangSmithProfile,
+  token: {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+  },
+): void {
+  profile.oauth ??= {};
+  if (token.access_token) {
+    profile.oauth.access_token = token.access_token;
+  }
+  if (token.refresh_token) {
+    profile.oauth.refresh_token = token.refresh_token;
+  }
+  if (typeof token.expires_in === "number" && token.expires_in > 0) {
+    profile.oauth.expires_at = new Date(
+      Date.now() + token.expires_in * 1000,
+    ).toISOString();
+  }
+}
+
+function getAbortReason(signal: AbortSignal): unknown {
+  return (
+    (signal as AbortSignal & { reason?: unknown }).reason ??
+    new Error("The operation was aborted.")
+  );
+}
+
+async function waitForAbortSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal | null,
+): Promise<T> {
+  if (!signal) {
+    return promise;
+  }
+  if (signal.aborted) {
+    throw getAbortReason(signal);
+  }
+  let cleanup: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    const onAbort = () => {
+      reject(getAbortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
+    };
+  });
+  try {
+    return await Promise.race([promise, abortPromise]);
+  } finally {
+    cleanup?.();
+  }
+}
 
 export class AutoBatchQueue {
   items: {
@@ -801,6 +987,8 @@ export class AutoBatchQueue {
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
+  private oauthAccessToken?: string;
+
   private apiUrl: string;
 
   private webUrl?: string;
@@ -880,8 +1068,158 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _promptCache?: PromptCache;
 
+  private profileState?: LangSmithProfileState;
+
+  private profileRefreshPromise?: Promise<void>;
+
   private get _fetch(): typeof fetch {
-    return this.fetchImplementation || _getFetchImplementation(this.debug);
+    const fetchImplementation =
+      this.fetchImplementation || _getFetchImplementation(this.debug);
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!this.needsProfileOAuthRefresh()) {
+        return fetchImplementation(input, this.applyCurrentAuthHeaders(init));
+      }
+      return (async () => {
+        await this.ensureProfileOAuthToken(init?.signal);
+        return fetchImplementation(input, this.applyCurrentAuthHeaders(init));
+      })();
+    }) as typeof fetch;
+  }
+
+  private needsProfileOAuthRefresh(): boolean {
+    if (
+      this.apiKey ||
+      !this.profileState ||
+      !shouldRefreshProfileToken(this.profileState.profile)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  private async ensureProfileOAuthToken(
+    signal?: AbortSignal | null,
+  ): Promise<void> {
+    if (!this.needsProfileOAuthRefresh()) {
+      return;
+    }
+    if (!this.profileRefreshPromise) {
+      this.profileRefreshPromise = this.refreshProfileOAuthToken().finally(
+        () => {
+          this.profileRefreshPromise = undefined;
+        },
+      );
+    }
+    await waitForAbortSignal(this.profileRefreshPromise, signal);
+    if (!this.oauthAccessToken && this.profileState?.profile.api_key) {
+      this.apiKey = trimQuotes(this.profileState.profile.api_key);
+      this.profileState = undefined;
+    }
+  }
+
+  private async refreshProfileOAuthToken(): Promise<void> {
+    const refreshToken = this.profileState?.profile.oauth?.refresh_token;
+    if (!this.profileState || !refreshToken) {
+      return;
+    }
+    const refreshApiUrl =
+      trimQuotes(this.profileState.profile.api_url) ?? DEFAULT_API_URL;
+    try {
+      const fetchImplementation =
+        this.fetchImplementation || _getFetchImplementation(this.debug);
+      const body = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: OAUTH_CLIENT_ID,
+        refresh_token: refreshToken,
+      });
+      const response = await fetchImplementation(
+        `${normalizeConfigUrl(refreshApiUrl)}/oauth/token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: body.toString(),
+          signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
+        },
+      );
+      if (!response.ok) {
+        return;
+      }
+      const token = (await response.json()) as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
+      if (!token.access_token) {
+        return;
+      }
+      applyTokenResponse(this.profileState.profile, token);
+      this.oauthAccessToken = this.profileState.profile.oauth?.access_token;
+      this.profileState.config.profiles ??= {};
+      this.profileState.config.profiles[this.profileState.profileName] =
+        this.profileState.profile;
+      await fsUtils.writeFileAtomic(
+        this.profileState.configPath,
+        `${JSON.stringify(this.profileState.config, null, 2)}\n`,
+      );
+    } catch {
+      return;
+    }
+  }
+
+  private applyCurrentAuthHeaders(init?: RequestInit): RequestInit | undefined {
+    if (!this.apiKey && !this.oauthAccessToken) {
+      return init;
+    }
+    const applyAuth = (headers: Headers): Headers => {
+      if (this.apiKey) {
+        headers.delete("Authorization");
+        if (!headers.has("x-api-key")) {
+          headers.set("x-api-key", `${this.apiKey}`);
+        }
+      } else if (this.oauthAccessToken && !headers.has("x-api-key")) {
+        headers.set("Authorization", `Bearer ${this.oauthAccessToken}`);
+      }
+      return headers;
+    };
+    if (!init) {
+      return {
+        headers: this.apiKey
+          ? { "x-api-key": `${this.apiKey}` }
+          : { Authorization: `Bearer ${this.oauthAccessToken}` },
+      };
+    }
+    if (init.headers instanceof Headers) {
+      return { ...init, headers: applyAuth(new Headers(init.headers)) };
+    }
+    if (Array.isArray(init.headers)) {
+      return { ...init, headers: applyAuth(new Headers(init.headers)) };
+    }
+    const headers = {
+      ...((init.headers ?? {}) as Record<string, string>),
+    };
+    if (this.apiKey) {
+      const hasApiKey = Object.keys(headers).some(
+        (key) => key.toLowerCase() === "x-api-key" && hasValue(headers[key]),
+      );
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === "authorization") {
+          delete headers[key];
+        }
+      }
+      if (!hasApiKey) {
+        headers["x-api-key"] = `${this.apiKey}`;
+      }
+    } else if (this.oauthAccessToken) {
+      const hasApiKey = Object.keys(headers).some(
+        (key) => key.toLowerCase() === "x-api-key" && hasValue(headers[key]),
+      );
+      if (!hasApiKey) {
+        headers.Authorization = `Bearer ${this.oauthAccessToken}`;
+      }
+    }
+    return { ...init, headers };
   }
 
   /**
@@ -967,12 +1305,18 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+    this.oauthAccessToken =
+      this.apiKey !== undefined
+        ? undefined
+        : trimQuotes(defaultConfig.oauthAccessToken);
+    this.profileState =
+      this.apiKey !== undefined ? undefined : defaultConfig.profileState;
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
     this.workspaceId = trimQuotes(
-      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID"),
+      config.workspaceId ?? defaultConfig.workspaceId,
     );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
@@ -1070,17 +1414,22 @@ export class Client implements LangSmithTracingClientInterface {
     this._customHeaders = config.headers ?? {};
   }
 
-  public static getDefaultClientConfig(): {
-    apiUrl: string;
-    apiKey?: string;
-    webUrl?: string;
-    hideInputs?: boolean;
-    hideOutputs?: boolean;
-    hideMetadata?: boolean;
-  } {
-    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
-    const apiUrl =
-      getLangSmithEnvironmentVariable("ENDPOINT") ?? DEFAULT_API_URL;
+  public static getDefaultClientConfig(): DefaultClientConfig {
+    const profileState = loadProfileState();
+    const profile = profileState?.profile;
+    const envApiKey = getLangSmithEnvironmentVariable("API_KEY");
+    const envApiUrl = getLangSmithEnvironmentVariable("ENDPOINT");
+    const envWorkspaceId = getLangSmithEnvironmentVariable("WORKSPACE_ID");
+    const envAuthSet = hasValue(envApiKey);
+    const profileOAuthAccessToken = profile?.oauth?.access_token;
+    const hasProfileOAuth = Boolean(
+      profile?.oauth?.access_token || profile?.oauth?.refresh_token,
+    );
+    const apiKey =
+      envApiKey ??
+      (!envAuthSet && hasProfileOAuth ? undefined : profile?.api_key);
+    const apiUrl = envApiUrl ?? profile?.api_url ?? DEFAULT_API_URL;
+    const workspaceId = envWorkspaceId ?? profile?.workspace_id;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
@@ -1094,6 +1443,13 @@ export class Client implements LangSmithTracingClientInterface {
       hideInputs: hideInputs,
       hideOutputs: hideOutputs,
       hideMetadata: hideMetadata,
+      workspaceId: workspaceId,
+      oauthAccessToken:
+        !envAuthSet && !apiKey ? profileOAuthAccessToken : undefined,
+      profileState:
+        !envAuthSet && !apiKey && hasProfileOAuth && profileState
+          ? profileState
+          : undefined,
     };
   }
 
@@ -1142,6 +1498,8 @@ export class Client implements LangSmithTracingClientInterface {
     // Required headers that should not be overridden
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
+    } else if (this.oauthAccessToken) {
+      headers["Authorization"] = `Bearer ${this.oauthAccessToken}`;
     }
     if (this.workspaceId) {
       headers["x-tenant-id"] = this.workspaceId;

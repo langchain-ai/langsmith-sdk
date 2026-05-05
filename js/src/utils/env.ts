@@ -103,6 +103,7 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGSMITH_API_KEY",
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING_V2",
+    "LANGSMITH_CONFIG_FILE",
     "LANGSMITH_PROJECT",
     "LANGSMITH_SESSION",
   ];
