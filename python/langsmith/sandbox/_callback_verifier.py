@@ -22,6 +22,10 @@ SANDBOX_CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 SANDBOX_CALLBACK_SUBJECT = "langsmith-sandbox-callback"
 
 _JWKS_PATH = "/.well-known/jwks.json"
+_HeaderValue = Union[str, bytes]
+_Headers = Union[
+    Mapping[str, _HeaderValue], Sequence[tuple[_HeaderValue, _HeaderValue]]
+]
 
 
 class SandboxCallbackVerificationError(ValueError):
@@ -80,7 +84,7 @@ class SandboxCallbackVerifier:
         workspace_id: Optional[str] = None,
         expected_tenant_id: Optional[str] = None,
         expected_organization_id: Optional[str] = None,
-        leeway_seconds: float = 0,
+        leeway_seconds: float = 60,
         jwks_cache_ttl_seconds: float = 300,
         timeout: float = 5.0,
     ) -> None:
@@ -106,7 +110,7 @@ class SandboxCallbackVerifier:
         *,
         expected_tenant_id: Optional[str] = None,
         expected_organization_id: Optional[str] = None,
-        leeway_seconds: float = 0,
+        leeway_seconds: float = 60,
         jwks_cache_ttl_seconds: float = 300,
         timeout: float = 5.0,
     ) -> SandboxCallbackVerifier:
@@ -124,7 +128,7 @@ class SandboxCallbackVerifier:
 
     def verify(
         self,
-        headers: Mapping[str, str],
+        headers: _Headers,
         body: Union[bytes, bytearray, memoryview, str],
         *,
         expected_sandbox_id: Optional[str] = None,
@@ -452,11 +456,13 @@ def _datetime_from_timestamp(value: float) -> datetime:
     return datetime.fromtimestamp(value, tz=timezone.utc)
 
 
-def _get_header(headers: Mapping[str, str], name: str) -> Optional[str]:
+def _get_header(headers: _Headers, name: str) -> Optional[str]:
     needle = name.lower()
-    for key, value in headers.items():
-        if key.lower() == needle:
-            return value
+    items = headers.items() if isinstance(headers, Mapping) else headers
+    for key, value in items:
+        key_str = key.decode() if isinstance(key, bytes) else key
+        if key_str.lower() == needle:
+            return value.decode() if isinstance(value, bytes) else value
     return None
 
 

@@ -130,6 +130,33 @@ def test_verifier_refreshes_jwks_once_for_unknown_kid(
     ]
 
 
+def test_verifier_accepts_raw_asgi_headers_and_default_clock_leeway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _callback_body()
+    key = Ed25519PrivateKey.generate()
+    token = _sign_callback_jwt(
+        key,
+        kid="callback-kid",
+        body=body,
+        issuer_url="https://smith.example",
+        extra_claims={"exp": int(time.time()) - 30},
+    )
+    _install_fake_langsmith_get(monkeypatch, key, tenant_id="tenant-1")
+    verifier = SandboxCallbackVerifier(
+        api_url="https://smith.example",
+        expected_tenant_id="tenant-1",
+    )
+
+    claims = verifier.verify(
+        [(SANDBOX_CALLBACK_SIGNATURE_HEADER.lower().encode(), token.encode())],
+        body,
+        expected_sandbox_id="sandbox-1",
+    )
+
+    assert claims.sandbox_id == "sandbox-1"
+
+
 @pytest.mark.parametrize(
     ("mutate_claims", "message"),
     [
