@@ -489,7 +489,7 @@ try {
 | `createSandbox(snapshotId?, options?)` | Create a sandbox from a snapshot. Exactly one of the positional `snapshotId` or `options.snapshotName` must be provided. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
-| `updateSandbox(name, options)` | Rename or adjust TTLs on a sandbox |
+| `updateSandbox(name, options)` | Rename or adjust retention (idle stop, delete-after-stop) on a sandbox |
 | `deleteSandbox(name)` | Delete a sandbox |
 | `startSandbox(name, options?)` | Start a stopped sandbox and wait until ready |
 | `stopSandbox(name)` | Stop a running sandbox (preserves files) |
@@ -553,8 +553,8 @@ try {
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
-| `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
-| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables). When omitted, the server applies a default of `600` seconds (10 minutes). |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables idle stop). When omitted, the server applies a default of `600` seconds (10 minutes). |
+| `deleteAfterStopSeconds?` | Seconds after the sandbox enters `stopped` before deletion (multiple of 60; `0` disables stop-anchored deletion). When omitted, the server applies its configured default. |
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
@@ -585,8 +585,8 @@ try {
 | Property | Description |
 |----------|-------------|
 | `newName?` | New display name |
-| `ttlSeconds?` | Maximum lifetime in seconds (multiple of 60; `0` disables) |
-| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables). Omit to leave the existing value unchanged. |
+| `idleTtlSeconds?` | Idle timeout in seconds (multiple of 60; `0` disables idle stop). Omit to leave the existing value unchanged. |
+| `deleteAfterStopSeconds?` | Seconds after the sandbox enters `stopped` before deletion (multiple of 60; `0` disables). Omit to leave the existing value unchanged. |
 
 ### RunOptions
 
