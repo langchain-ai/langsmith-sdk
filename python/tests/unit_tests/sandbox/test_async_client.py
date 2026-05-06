@@ -476,18 +476,18 @@ class TestAsyncSandboxOperations:
 
         assert exc_info.value.last_status == "provisioning"
 
-    async def test_create_sandbox_with_ttl(
+    async def test_create_sandbox_with_retention(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test creating a sandbox with TTL values."""
+        """Creating a sandbox with idle and delete-after-stop retention."""
         httpx_mock.add_response(
             method="POST",
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "ttl_seconds": 3600,
                 "idle_ttl_seconds": 600,
-                "expires_at": "2026-03-24T12:00:00Z",
+                "delete_after_stop_seconds": 86400,
+                "stopped_at": None,
                 "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
             },
             status_code=201,
@@ -495,25 +495,25 @@ class TestAsyncSandboxOperations:
 
         sandbox = await client.create_sandbox(
             snapshot_id="snap-1",
-            ttl_seconds=3600,
             idle_ttl_seconds=600,
+            delete_after_stop_seconds=86400,
         )
 
-        assert sandbox.ttl_seconds == 3600
         assert sandbox.idle_ttl_seconds == 600
-        assert sandbox.expires_at == "2026-03-24T12:00:00Z"
+        assert sandbox.delete_after_stop_seconds == 86400
+        assert sandbox.stopped_at is None
 
         import json
 
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
-        assert payload["ttl_seconds"] == 3600
         assert payload["idle_ttl_seconds"] == 600
+        assert payload["delete_after_stop_seconds"] == 86400
 
-    async def test_create_sandbox_ttl_omitted_when_none(
+    async def test_create_sandbox_retention_omitted_when_none(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test TTL fields are omitted from payload when None."""
+        """Retention fields are omitted from payload when None."""
         httpx_mock.add_response(
             method="POST",
             url="http://test-server:8080/boxes",
@@ -530,34 +530,42 @@ class TestAsyncSandboxOperations:
 
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
-        assert "ttl_seconds" not in payload
         assert "idle_ttl_seconds" not in payload
+        assert "delete_after_stop_seconds" not in payload
 
-    async def test_create_sandbox_ttl_validation_negative(
+    async def test_create_sandbox_retention_validation_negative(
         self, client: AsyncSandboxClient
     ):
-        """Test that negative TTL values raise ValueError."""
+        """Negative retention values raise ValueError."""
         with pytest.raises(ValueError, match="must be >= 0"):
-            await client.create_sandbox(snapshot_id="snap-1", ttl_seconds=-1)
+            await client.create_sandbox(snapshot_id="snap-1", idle_ttl_seconds=-1)
+        with pytest.raises(ValueError, match="must be >= 0"):
+            await client.create_sandbox(
+                snapshot_id="snap-1", delete_after_stop_seconds=-1
+            )
 
-    async def test_create_sandbox_ttl_validation_not_multiple_of_60(
+    async def test_create_sandbox_retention_validation_not_multiple_of_60(
         self, client: AsyncSandboxClient
     ):
-        """Test that non-multiple-of-60 TTL values raise ValueError."""
+        """Non-multiple-of-60 retention values raise ValueError."""
         with pytest.raises(ValueError, match="must be a multiple of 60"):
-            await client.create_sandbox(snapshot_id="snap-1", ttl_seconds=90)
+            await client.create_sandbox(snapshot_id="snap-1", idle_ttl_seconds=90)
+        with pytest.raises(ValueError, match="must be a multiple of 60"):
+            await client.create_sandbox(
+                snapshot_id="snap-1", delete_after_stop_seconds=90
+            )
 
-    async def test_create_sandbox_ttl_zero_allowed(
+    async def test_create_sandbox_retention_zero_allowed(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test that TTL value of 0 is allowed (disables TTL)."""
+        """Zero is accepted on both retention fields."""
         httpx_mock.add_response(
             method="POST",
             url="http://test-server:8080/boxes",
             json={
                 "name": "test-sandbox",
-                "ttl_seconds": 0,
                 "idle_ttl_seconds": 0,
+                "delete_after_stop_seconds": 0,
                 "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
             },
             status_code=201,
@@ -565,62 +573,66 @@ class TestAsyncSandboxOperations:
 
         sandbox = await client.create_sandbox(
             snapshot_id="snap-1",
-            ttl_seconds=0,
             idle_ttl_seconds=0,
+            delete_after_stop_seconds=0,
         )
 
-        assert sandbox.ttl_seconds == 0
         assert sandbox.idle_ttl_seconds == 0
+        assert sandbox.delete_after_stop_seconds == 0
 
-    async def test_update_sandbox_with_ttl(
+    async def test_update_sandbox_with_retention(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test updating a sandbox with TTL values."""
+        """Update both retention fields simultaneously."""
         httpx_mock.add_response(
             method="PATCH",
             url="http://test-server:8080/boxes/my-sandbox",
             json={
                 "name": "my-sandbox",
-                "ttl_seconds": 7200,
                 "idle_ttl_seconds": 1200,
-                "expires_at": "2026-03-24T14:00:00Z",
+                "delete_after_stop_seconds": 7200,
+                "stopped_at": None,
                 "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
             },
         )
 
         sandbox = await client.update_sandbox(
             "my-sandbox",
-            ttl_seconds=7200,
             idle_ttl_seconds=1200,
+            delete_after_stop_seconds=7200,
         )
 
-        assert sandbox.ttl_seconds == 7200
         assert sandbox.idle_ttl_seconds == 1200
-        assert sandbox.expires_at == "2026-03-24T14:00:00Z"
+        assert sandbox.delete_after_stop_seconds == 7200
+        assert sandbox.stopped_at is None
 
         import json
 
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
-        assert payload["ttl_seconds"] == 7200
         assert payload["idle_ttl_seconds"] == 1200
+        assert payload["delete_after_stop_seconds"] == 7200
         assert "name" not in payload
 
-    async def test_update_sandbox_ttl_validation(self, client: AsyncSandboxClient):
-        """Test that invalid TTL values raise ValueError on update."""
+    async def test_update_sandbox_retention_validation(
+        self, client: AsyncSandboxClient
+    ):
+        """Update path enforces the same retention bounds as create."""
         with pytest.raises(ValueError, match="must be >= 0"):
             await client.update_sandbox("my-sandbox", idle_ttl_seconds=-60)
+        with pytest.raises(ValueError, match="must be >= 0"):
+            await client.update_sandbox("my-sandbox", delete_after_stop_seconds=-60)
 
-    async def test_update_sandbox_name_and_ttl(
+    async def test_update_sandbox_name_and_retention(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test updating sandbox name and TTL simultaneously."""
+        """Renaming and updating retention in one call."""
         httpx_mock.add_response(
             method="PATCH",
             url="http://test-server:8080/boxes/my-sandbox",
             json={
                 "name": "my-sandbox-renamed",
-                "ttl_seconds": 3600,
+                "delete_after_stop_seconds": 3600,
                 "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
             },
         )
@@ -628,18 +640,18 @@ class TestAsyncSandboxOperations:
         sandbox = await client.update_sandbox(
             "my-sandbox",
             new_name="my-sandbox-renamed",
-            ttl_seconds=3600,
+            delete_after_stop_seconds=3600,
         )
 
         assert sandbox.name == "my-sandbox-renamed"
-        assert sandbox.ttl_seconds == 3600
+        assert sandbox.delete_after_stop_seconds == 3600
 
         import json
 
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
         assert payload["name"] == "my-sandbox-renamed"
-        assert payload["ttl_seconds"] == 3600
+        assert payload["delete_after_stop_seconds"] == 3600
 
     async def test_list_sandboxes_includes_status(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock

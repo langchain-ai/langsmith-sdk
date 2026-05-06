@@ -48,12 +48,19 @@ class Sandbox:
         status_message: Human-readable details when status is "failed", None otherwise.
         created_at: Timestamp when the sandbox was created.
         updated_at: Timestamp when the sandbox was last updated.
-        ttl_seconds: Maximum lifetime TTL in seconds (0 means disabled).
         idle_ttl_seconds: Idle timeout TTL in seconds (``0`` means disabled).
             Newly-created sandboxes receive a server-side default of ``600``
             seconds (10 minutes) when the caller did not set ``idle_ttl_seconds``
-            explicitly.
-        expires_at: Computed expiration timestamp, or None if no TTL is set.
+            explicitly. The launcher stops the sandbox after this many idle
+            seconds; deletion is anchored to ``stopped_at`` and controlled by
+            ``delete_after_stop_seconds`` (see below).
+        delete_after_stop_seconds: Seconds after a sandbox enters the
+            ``stopped`` state before it (and its filesystem clone) are
+            permanently deleted. ``0`` disables stop-anchored deletion;
+            ``None`` falls back to the server default.
+        stopped_at: Timestamp when the sandbox transitioned to ``stopped``,
+            or ``None`` while running. The deletion deadline is
+            ``stopped_at + delete_after_stop_seconds``.
         snapshot_id: Snapshot ID used to create this sandbox.
         vcpus: Number of vCPUs allocated.
         mem_bytes: Memory allocation in bytes.
@@ -73,9 +80,9 @@ class Sandbox:
     status_message: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-    ttl_seconds: Optional[int] = None
     idle_ttl_seconds: Optional[int] = None
-    expires_at: Optional[str] = None
+    delete_after_stop_seconds: Optional[int] = None
+    stopped_at: Optional[str] = None
     snapshot_id: Optional[str] = None
     vcpus: Optional[int] = None
     mem_bytes: Optional[int] = None
@@ -110,9 +117,9 @@ class Sandbox:
             status_message=data.get("status_message"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
-            ttl_seconds=data.get("ttl_seconds"),
             idle_ttl_seconds=data.get("idle_ttl_seconds"),
-            expires_at=data.get("expires_at"),
+            delete_after_stop_seconds=data.get("delete_after_stop_seconds"),
+            stopped_at=data.get("stopped_at"),
             snapshot_id=data.get("snapshot_id"),
             vcpus=data.get("vcpus"),
             mem_bytes=data.get("mem_bytes"),
