@@ -53,7 +53,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import packaging
+import packaging.version
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
