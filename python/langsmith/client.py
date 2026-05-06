@@ -53,7 +53,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import packaging
+import packaging.version
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
@@ -585,8 +585,8 @@ def _default_retry_config() -> Retry:
     # the `allowed_methods` keyword is not available in urllib3 < 1.26
 
     # check to see if urllib3 version is 1.26 or greater
-    urllib3_version = importlib.metadata.version("urllib3")
-    use_allowed_methods = tuple(map(int, urllib3_version.split("."))) >= (1, 26)
+    urllib3_version = packaging.version.parse(importlib.metadata.version("urllib3"))
+    use_allowed_methods = urllib3_version >= packaging.version.parse("1.26")
 
     if use_allowed_methods:
         # Retry on all methods

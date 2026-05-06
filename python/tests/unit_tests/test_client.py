@@ -45,6 +45,7 @@ from langsmith.client import (
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
+    _default_retry_config,
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
@@ -68,6 +69,24 @@ def test__is_langchain_hosted() -> None:
     assert _is_langchain_hosted("https://api.smith.langchain.com")
     assert _is_langchain_hosted("https://beta.api.smith.langchain.com")
     assert _is_langchain_hosted("https://dev.api.smith.langchain.com")
+
+
+@pytest.mark.parametrize(
+    "urllib3_version",
+    ["1.26.0", "2.5.0", "2.5.0+cgr.2", "2.6.3+abc.def.4", "1.25.99"],
+)
+def test__default_retry_config_handles_pep440_local_versions(
+    monkeypatch: pytest.MonkeyPatch, urllib3_version: str
+) -> None:
+    import importlib.metadata
+
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: urllib3_version)
+    _default_retry_config.cache_clear()
+    try:
+        retry = _default_retry_config()
+    finally:
+        _default_retry_config.cache_clear()
+    assert retry is not None
 
 
 def _clear_env_cache():
