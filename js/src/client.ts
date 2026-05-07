@@ -6495,6 +6495,11 @@ export class Client implements LangSmithTracingClientInterface {
    * the prompt contents, not merely the publishing account. Prompts from your
    * own or your organization's account can still be unsafe if that account or
    * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should generally be avoided for public prompts or prompts
+   * outside your own organization.
    */
   public async pullPromptCommit(
     promptIdentifier: string,
@@ -6555,6 +6560,11 @@ export class Client implements LangSmithTracingClientInterface {
    * the prompt contents, not merely the publishing account. Prompts from your
    * own or your organization's account can still be unsafe if that account or
    * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should generally be avoided for public prompts or prompts
+   * outside your own organization.
    * @private
    */
   public async _pullPrompt(
