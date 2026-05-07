@@ -279,7 +279,7 @@ describe("Context (agent/skill) on Client", () => {
       await expect(
         client.pushAgent("-/my-agent", {
           files: { "main.py": { type: "file", content: "x" } },
-        })
+        }),
       ).resolves.toContain("/hub/workspace-handle/my-agent:abc12345");
     });
 
@@ -345,7 +345,7 @@ describe("Context (agent/skill) on Client", () => {
       const calls = fetchSpy.mock.calls as [string, any][];
       expect(calls[0][0]).toContain("/repos/-/email-assistant");
       expect(calls[2][0]).toContain(
-        "/v1/platform/hub/repos/-/email-assistant/directories/commits"
+        "/v1/platform/hub/repos/-/email-assistant/directories/commits",
       );
     });
 

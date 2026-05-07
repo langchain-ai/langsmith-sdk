@@ -498,7 +498,7 @@ async def test_async_push_agent_creates_and_commits() -> None:
     assert client._arequest_with_retries.await_count == 3
 
 
-async def test_async_push_agent_falls_back_to_dash_owner_when_tenant_handle_missing() -> None:
+async def test_async_push_agent_falls_back_to_dash_without_tenant_handle() -> None:
     client = _mock_async_client()
     client._get_settings = AsyncMock(return_value=SimpleNamespace(tenant_handle=None))
     client._arequest_with_retries.side_effect = [

@@ -2342,7 +2342,9 @@ class AsyncClient:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        tenant_handle = (await self._get_settings()).tenant_handle if owner == "-" else None
+        tenant_handle = (
+            (await self._get_settings()).tenant_handle if owner == "-" else None
+        )
         owner_for_url = resolve_owner_for_url(owner, tenant_handle)
         return build_commit_url(self._host_url, owner_for_url, name, commit_hash)
 
