@@ -1994,17 +1994,18 @@ class AsyncClient:
 
         Args:
             prompt_identifier: The identifier of the prompt.
-            include_model: Whether to include the model information in the prompt data.
-            secrets: A map of secrets to use when loading, e.g.
-                `{'OPENAI_API_KEY': 'sk-...'}`.
+            include_model: Whether to include model configuration in the loaded
+                prompt.
+            secrets: A map of secrets to use for explicit serialized LangChain secret
+                references in the manifest, e.g. `{'OPENAI_API_KEY': 'sk-...'}`.
 
-                If a secret is not found in the map, it will be loaded from the
-                environment if `secrets_from_env` is `True`. Should only be needed when
-                `include_model=True`.
-            secrets_from_env: Whether to load secrets from the environment.
-
-                **SECURITY NOTE**: Should only be set to `True` when pulling trusted
-                prompts.
+                If a manifest secret reference is not found in the map, it will be
+                loaded from the environment only if `secrets_from_env` is `True`.
+                Deserialized model integrations may still use their own
+                environment-based credential defaults during initialization.
+            secrets_from_env: Whether explicit serialized LangChain secret
+                references in the manifest may be loaded from environment variables
+                during deserialization.
             skip_cache: Whether to skip the prompt cache. Defaults to `False`.
             dangerously_pull_public_prompt: Set to `True` to allow pulling a
                 public prompt by owner/name (for example, `username/promptname`).
@@ -2013,18 +2014,32 @@ class AsyncClient:
         Returns:
             The prompt object in the specified format.
 
+        !!! warning "Security note"
+
+            Pulled prompts should be treated as executable configuration, not plain
+            text.
+
+            The `secrets` and `secrets_from_env` arguments only control explicit
+            serialized LangChain secret references in the manifest. They do not
+            prevent deserialized model integrations from using their own
+            environment-based credential defaults during initialization. For example,
+            a deserialized OpenAI chat model may still use `OPENAI_API_KEY` from the
+            environment if its constructor supports that default.
+
+            Avoid pulling public prompts or prompts outside your own organization
+            unless you have reviewed and trust their contents. When you do pull a
+            trusted external prompt, prefer pinning to a specific commit SHA rather
+            than following a mutable latest version. This is especially important
+            when `include_model=True`.
+
         !!! warning "Behavior changed in `langsmith` 0.5.1"
 
             Updated to take arguments `secrets` and `secrets_from_env` which default
             to None and False, respectively.
 
-            By default secrets needed to initialize a pulled object will no longer be
-            read from environment variables. This is relevant when
-            `include_model=True`. For example, to load an OpenAI model you need to
-            have an OPENAI_API_KEY. Previously this was read from environment
-            variables by default. To do so now you must specify
-            `secrets={"OPENAI_API_KEY": "sk-..."}` or `secrets_from_env=True`.
-            `secrets_from_env` should only be used when pulling trusted prompts.
+            By default, explicit serialized LangChain secret references in a pulled
+            manifest are not resolved from environment variables unless you specify
+            `secrets_from_env=True`.
 
             These updates were made to remediate vulnerability
             [GHSA-c67j-w6g6-q2cm](https://github.com/langchain-ai/langchain/security/advisories/GHSA-c67j-w6g6-q2cm)
