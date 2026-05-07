@@ -58,6 +58,18 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     updates: Optional[dict]
+    client: Optional[Client]
+    """Optional dedicated :class:`~langsmith.Client` for this replica.
+
+    When set, the replica's runs are enqueued on this client's tracing queue
+    (and dispatched by its background thread) instead of the RunTree's default
+    client.  This lets each replica use a different tracing mode — for example,
+    one replica with ``Client(tracing_mode="otel")`` and another with the
+    default LangSmith-only client.
+
+    The field is **not** propagated in distributed-tracing baggage (each service
+    must construct its own clients).
+    """
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
@@ -91,6 +103,19 @@ _DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
 )
 
 _SENTINEL = cast(None, object())
+
+
+def _coerce_to_dict(value):
+    if isinstance(value, dict):
+        return value
+    if (
+        not isinstance(value, type)
+        and hasattr(value, "model_dump")
+        and callable(value.model_dump)
+    ):
+        return value.model_dump()
+    return dict(value)
+
 
 TIMESTAMP_LENGTH = 36
 
@@ -304,6 +329,10 @@ class RunTree(ls_schemas.RunBase):
             values["tags"] = []
         if values.get("outputs") is None:
             values["outputs"] = {}
+        for _key in ("inputs", "outputs"):
+            _val = values.get(_key)
+            if _val is not None and not isinstance(_val, dict):
+                values[_key] = _coerce_to_dict(_val)
         if values.get("attachments") is None:
             values["attachments"] = {}
         if values.get("replicas") is None:
@@ -392,13 +421,13 @@ class RunTree(ls_schemas.RunBase):
             if inputs is None:
                 self.inputs = {}
             else:
-                self.inputs = dict(inputs)
+                self.inputs = _coerce_to_dict(inputs)
         if outputs is not NOT_PROVIDED:
             self.extra[OVERRIDE_OUTPUTS] = True
             if outputs is None:
                 self.outputs = {}
             else:
-                self.outputs = dict(outputs)
+                self.outputs = _coerce_to_dict(outputs)
         if usage_metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {})["usage_metadata"] = (
                 validate_extracted_usage_metadata(usage_metadata)
@@ -491,10 +520,11 @@ class RunTree(ls_schemas.RunBase):
         # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
+                dict_outputs = _coerce_to_dict(outputs)
                 if not self.outputs:
-                    self.outputs = outputs
+                    self.outputs = dict_outputs
                 else:
-                    self.outputs.update(outputs)
+                    self.outputs.update(dict_outputs)
         if error is not None:
             self.error = error
         if events is not None:
@@ -678,7 +708,13 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.create_run(
+                replica_client = replica.get("client") or self.client
+                if not hasattr(replica_client, "create_run"):
+                    raise TypeError(
+                        f"WriteReplica 'client' must be a langsmith.Client, "
+                        f"got {type(replica_client).__name__}"
+                    )
+                replica_client.create_run(
                     **run_dict,
                     api_key=api_key,
                     api_url=api_url,
@@ -741,7 +777,13 @@ class RunTree(ls_schemas.RunBase):
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
-                self.client.update_run(
+                replica_client = replica.get("client") or self.client
+                if not hasattr(replica_client, "update_run"):
+                    raise TypeError(
+                        f"WriteReplica 'client' must be a langsmith.Client, "
+                        f"got {type(replica_client).__name__}"
+                    )
+                replica_client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
                     run_type=run_dict.get("run_type"),

@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.5.22",
+  "version": "0.6.2",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "pnpm@10.33.0",
   "files": [
@@ -124,10 +124,10 @@
     "watch:single": "NODE_OPTIONS=--experimental-vm-modules pnpm jest --watch --config jest.config.cjs --testTimeout 100000",
     "test:vitest": "vitest run --config vitest.config.ts",
     "test:eval:vitest": "vitest run --config ls.vitest.config.ts",
-    "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
-    "lint:fix": "pnpm lint --fix",
-    "format": "prettier --write 'src/**/*.{ts,tsx,mts}'",
-    "format:check": "prettier --check 'src/**/*.{ts,tsx,mts}'",
+    "lint": "oxlint src/",
+    "lint:fix": "oxlint --fix src/",
+    "format": "oxfmt --write 'src/**/*.{ts,tsx,mts}'",
+    "format:check": "oxfmt --check 'src/**/*.{ts,tsx,mts}'",
     "check:types": "tsc --noEmit",
     "precommit": "lint-staged",
     "prepublish": "pnpm run build"
@@ -149,15 +149,14 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
-    "p-queue": "6.6.2",
-    "uuid": "10.0.0"
+    "p-queue": "6.6.2"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
     "@ai-sdk/provider": "^3.0.0",
     "@anthropic-ai/claude-agent-sdk": "^0.2.83",
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@google/genai": "^1.29.0",
@@ -165,7 +164,7 @@
     "@jest/reporters": "^30.2.0",
     "@langchain/core": "^0.3.72",
     "@langchain/langgraph": "^0.3.6",
-    "@langchain/openai": "^0.5.16",
+    "@langchain/openai": "^0.6.17",
     "@openai/agents": "^0.8.3",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.73.0",
@@ -177,25 +176,19 @@
     "@types/jest": "^29.5.1",
     "@types/node-fetch": "^2.6.12",
     "@types/semver": "^7.7.1",
-    "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^5.59.8",
-    "@typescript-eslint/parser": "^5.59.8",
     "ai": "^6.0.1",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
-    "eslint": "^8.41.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-import": "^2.27.5",
-    "eslint-plugin-no-instanceof": "^1.0.1",
-    "eslint-plugin-prettier": "^4.2.1",
     "jest": "^29.5.0",
     "langchain": "^0.3.29",
+    "mongoose": "^9.5.0",
     "msw": "^2.11.2",
     "node-fetch": "^3.3.2",
     "openai": "^6.18.0",
-    "prettier": "^2.8.8",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0",
     "semver": "^7.7.4",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
@@ -232,8 +225,8 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
-      "prettier --write --ignore-unknown",
-      "eslint --cache --fix"
+      "oxfmt --write",
+      "oxlint --fix"
     ]
   },
   "exports": {
@@ -471,6 +464,7 @@
     }
   },
   "browser": {
-    "./dist/utils/fs.js": "./dist/utils/fs.browser.js"
+    "./dist/utils/fs.js": "./dist/utils/fs.browser.js",
+    "./dist/utils/worker_threads.js": "./dist/utils/worker_threads.browser.js"
   }
 }

@@ -1,7 +1,18 @@
-import { traceable, isTraceableFunction } from "../../traceable.js";
+import {
+  traceable,
+  isTraceableFunction,
+  withRunTree,
+} from "../../traceable.js";
 import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
-import { convertFromAnthropicMessage } from "./messages.js";
+import { convertFromAnthropicMessage, mergeMessagesById } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
+
+const WRAPPED_TOOL_SYMBOL = Symbol.for(
+  "langsmith:claude_agent_sdk:wrapped_tool",
+);
+const WRAPPED_TOOL_HANDLER_SYMBOL = Symbol.for(
+  "langsmith:claude_agent_sdk:wrapped_tool_handler",
+);
 
 /**
  * Wraps the Claude Agent SDK's query function to add LangSmith tracing.
@@ -9,13 +20,13 @@ import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
  * @internal Use `wrapClaudeAgentSDK` instead.
  */
 function wrapClaudeAgentQuery<
-  T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
+  T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>,
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
   async function* generator(
     originalGenerator: AsyncGenerator<SDKMessage, void, unknown>,
-    prompt: string | AsyncIterable<SDKMessage> | undefined
+    prompt: string | AsyncIterable<SDKMessage> | undefined,
+    streamManager: StreamManager,
   ) {
-    const streamManager = new StreamManager();
     try {
       let systemCount = 0;
       for await (const message of originalGenerator) {
@@ -23,10 +34,10 @@ function wrapClaudeAgentQuery<
           const content = getLatestInput(prompt, systemCount);
           systemCount += 1;
 
-          if (content != null) streamManager.addMessage(content);
+          if (content != null) await streamManager.addMessage(content);
         }
 
-        streamManager.addMessage(message);
+        await streamManager.addMessage(message);
         yield message;
       }
     } finally {
@@ -36,7 +47,7 @@ function wrapClaudeAgentQuery<
 
   function getLatestInput(
     arg: string | AsyncIterable<SDKMessage> | undefined,
-    systemCount: number
+    systemCount: number,
   ): SDKUserMessage | undefined {
     const value = (() => {
       if (typeof arg !== "object" || arg == null) return arg;
@@ -95,13 +106,49 @@ function wrapClaudeAgentQuery<
             Object.entries(options.mcpServers ?? {}).map(([key, value]) => [
               key,
               { name: value.name, type: value.type },
-            ])
+            ]),
           );
         }
 
         return { messages: convertFromAnthropicMessage(prompt), options };
       },
     });
+  }
+
+  function addLangSmithHooks(
+    params: {
+      prompt: string | AsyncIterable<SDKMessage>;
+      options?: QueryOptions;
+    },
+    streamManager: StreamManager,
+  ) {
+    const options = { ...(params.options ?? {}) } as Record<string, unknown>;
+    const hooks = { ...((options.hooks as Record<string, unknown>) ?? {}) };
+
+    const addHook = (eventName: string) => {
+      const existing = Array.isArray(hooks[eventName])
+        ? (hooks[eventName] as unknown[])
+        : [];
+      hooks[eventName] = [
+        ...existing,
+        {
+          hooks: [
+            async (input: unknown, toolUseId?: string) => {
+              streamManager.addHookEvent(input, toolUseId);
+              return {};
+            },
+          ],
+        },
+      ];
+    };
+
+    addHook("PreToolUse");
+    addHook("SubagentStart");
+    addHook("SubagentStop");
+    addHook("Stop");
+    options.hooks = hooks;
+
+    return { ...params, options };
   }
 
   function processOutputs(rawOutputs: Record<string, unknown>) {
@@ -112,7 +159,11 @@ function wrapClaudeAgentQuery<
           if (!("message" in message)) return true;
           return message.parent_tool_use_id == null;
         })
-        .flatMap(convertFromAnthropicMessage);
+        .flatMap(convertFromAnthropicMessage)
+        .reduce(
+          (acc, message) => mergeMessagesById(acc, [message]),
+          [] as ReturnType<typeof convertFromAnthropicMessage>,
+        );
 
       return { output: { messages } };
     }
@@ -127,13 +178,24 @@ function wrapClaudeAgentQuery<
       },
       ...args: unknown[]
     ) => {
-      const actualGenerator = queryFn.call(defaultThis, params, ...args);
-      const wrappedGenerator = generator(actualGenerator, params.prompt);
+      const streamManager = new StreamManager();
+      const paramsWithHooks = addLangSmithHooks(params, streamManager);
+      const actualGenerator = queryFn.call(
+        defaultThis,
+        paramsWithHooks,
+        ...args,
+      );
+      const wrappedGenerator = generator(
+        actualGenerator,
+        params.prompt,
+        streamManager,
+      );
 
       for (const method of Object.getOwnPropertyNames(
-        Object.getPrototypeOf(actualGenerator)
+        Object.getPrototypeOf(actualGenerator),
       ).filter(
-        (method) => !["constructor", "next", "throw", "return"].includes(method)
+        (method) =>
+          !["constructor", "next", "throw", "return"].includes(method),
       )) {
         Object.defineProperty(wrappedGenerator, method, {
           get() {
@@ -160,7 +222,7 @@ function wrapClaudeAgentQuery<
       __deferredSerializableArgOptions: { maxDepth: 1 },
       processInputs,
       processOutputs,
-    }
+    },
   ) as unknown as T;
 }
 
@@ -194,7 +256,7 @@ function wrapClaudeAgentQuery<
  */
 export function wrapClaudeAgentSDK<T extends object>(
   sdk: T,
-  config?: WrapClaudeAgentSDKConfig
+  config?: WrapClaudeAgentSDKConfig,
 ): T {
   type TypedSdk = T & {
     query?: (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>;
@@ -209,9 +271,17 @@ export function wrapClaudeAgentSDK<T extends object>(
   const inputSdk = sdk as TypedSdk;
   const wrappedSdk = { ...sdk } as TypedSdk;
 
-  if ("query" in inputSdk && isTraceableFunction(inputSdk.query)) {
+  const toolAlreadyWrapped =
+    "tool" in inputSdk &&
+    typeof inputSdk.tool === "function" &&
+    WRAPPED_TOOL_SYMBOL in inputSdk.tool;
+
+  if (
+    ("query" in inputSdk && isTraceableFunction(inputSdk.query)) ||
+    toolAlreadyWrapped
+  ) {
     throw new Error(
-      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
+      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`.",
     );
   }
 
@@ -220,9 +290,53 @@ export function wrapClaudeAgentSDK<T extends object>(
     wrappedSdk.query = wrapClaudeAgentQuery(inputSdk.query, inputSdk, config);
   }
 
-  // Wrap the tool method if it exists
+  // Wrap the tool method if it exists. The SDK invokes MCP tool handlers in an
+  // async context that may not inherit the query trace context, so bind nested
+  // traceable calls back to the active tool run when possible.
   if ("tool" in inputSdk && typeof inputSdk.tool === "function") {
-    wrappedSdk.tool = inputSdk.tool.bind(inputSdk);
+    wrappedSdk.tool = (...args: unknown[]) => {
+      const toolName = typeof args[0] === "string" ? args[0] : undefined;
+      let handlerIndex = -1;
+      for (let index = args.length - 1; index >= 0; index -= 1) {
+        if (typeof args[index] === "function") {
+          handlerIndex = index;
+          break;
+        }
+      }
+      if (handlerIndex < 0) {
+        return inputSdk.tool?.(...args);
+      }
+
+      const originalHandler = args[handlerIndex] as (
+        ...handlerArgs: unknown[]
+      ) => unknown;
+      if (WRAPPED_TOOL_HANDLER_SYMBOL in originalHandler) {
+        return inputSdk.tool?.(...args);
+      }
+
+      const wrappedHandler = (...handlerArgs: unknown[]) => {
+        const activeToolRun = StreamManager.getActiveToolRun(
+          toolName,
+          handlerArgs[0],
+        );
+        if (activeToolRun == null) {
+          return originalHandler(...handlerArgs);
+        }
+        return withRunTree(activeToolRun, () =>
+          originalHandler(...handlerArgs),
+        );
+      };
+      Object.defineProperty(wrappedHandler, WRAPPED_TOOL_HANDLER_SYMBOL, {
+        value: true,
+      });
+
+      const wrappedArgs = [...args];
+      wrappedArgs[handlerIndex] = wrappedHandler;
+      return inputSdk.tool?.(...wrappedArgs);
+    };
+    Object.defineProperty(wrappedSdk.tool, WRAPPED_TOOL_SYMBOL, {
+      value: true,
+    });
   }
 
   // Keep createSdkMcpServer and other methods as-is (bound to original SDK)
@@ -241,7 +355,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_createSession>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_createSession` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_createSession` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_createSession?.(...args);
     };
@@ -254,7 +368,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_prompt>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_prompt` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_prompt` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_prompt?.(...args);
     };
@@ -267,7 +381,7 @@ export function wrapClaudeAgentSDK<T extends object>(
       ...args: Parameters<typeof inputSdk.unstable_v2_resumeSession>
     ) => {
       console.warn(
-        "Tracing of `unstable_v2_resumeSession` is not supported by LangSmith. Tracing will not be applied."
+        "Tracing of `unstable_v2_resumeSession` is not supported by LangSmith. Tracing will not be applied.",
       );
       return inputSdk.unstable_v2_resumeSession?.(...args);
     };

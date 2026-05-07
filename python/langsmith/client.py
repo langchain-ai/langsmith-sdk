@@ -49,10 +49,11 @@ from typing import (
     TypedDict,
     Union,
     cast,
+    get_args,
 )
 from urllib import parse as urllib_parse
 
-import packaging
+import packaging.version
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
@@ -67,7 +68,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _orjson
+from langsmith._internal import _orjson, _profiles
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -117,6 +118,8 @@ _TRACING_DROP_LOG_INTERVAL_S = 60
 _tracing_drops_count = 0
 _tracing_drops_last_log_time = 0.0
 _tracing_drops_lock = threading.Lock()
+TracingMode = Literal["langsmith", "otel", "hybrid"]
+_VALID_TRACING_MODES: frozenset[str] = frozenset(get_args(TracingMode))
 
 
 def _log_tracing_drop(reason: str) -> None:
@@ -151,9 +154,73 @@ _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 
 
-def _check_otel_enabled() -> bool:
-    """Check if OTEL is enabled and imports are available."""
-    return ls_utils.is_env_var_truish("OTEL_ENABLED")
+def _resolve_tracing_mode(
+    tracing_mode: Optional[TracingMode],
+    *,
+    otel_enabled: Optional[bool] = None,
+) -> TracingMode:
+    """Resolve the effective tracing mode from the constructor arg and env vars.
+
+    Priority: explicit ``tracing_mode`` argument >
+    deprecated ``otel_enabled`` argument >
+    ``LANGSMITH_TRACING_MODE`` env var >
+    legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars >
+    default ``"langsmith"``.
+    """
+    mode_envvar_name = "TRACING_MODE"
+    otel_enabled_envvar_name = "OTEL_ENABLED"
+    otel_only_envvar_name = "OTEL_ONLY"
+
+    env_mode = ls_utils.get_env_var(mode_envvar_name)
+
+    if tracing_mode is not None:
+        tracing_mode = tracing_mode.lower()  # type: ignore[assignment]
+        if tracing_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid tracing_mode={tracing_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        return tracing_mode  # type: ignore[return-value]
+
+    if otel_enabled is not None:
+        warnings.warn(
+            "The 'otel_enabled' parameter is deprecated and will be removed "
+            "in the next minor version. Use 'tracing_mode' instead, e.g. "
+            'Client(tracing_mode="hybrid") or Client(tracing_mode="otel").',
+            FutureWarning,
+            stacklevel=3,
+        )
+        if otel_enabled:
+            if ls_utils.is_env_var_truish(otel_only_envvar_name):
+                return "otel"
+            return "hybrid"
+        return "langsmith"
+
+    if env_mode is not None:
+        env_mode = env_mode.lower()
+        if env_mode not in _VALID_TRACING_MODES:
+            raise ls_utils.LangSmithUserError(
+                f"Invalid LANGSMITH_TRACING_MODE={env_mode!r}. "
+                f"Must be one of: {', '.join(sorted(_VALID_TRACING_MODES))}"
+            )
+        legacy_otel = ls_utils.is_env_var_truish(otel_enabled_envvar_name)
+        legacy_only = ls_utils.is_env_var_truish(otel_only_envvar_name)
+        if legacy_otel or legacy_only:
+            warnings.warn(
+                f"Both LANGSMITH_{mode_envvar_name} and the legacy "
+                f"LANGSMITH_{otel_enabled_envvar_name} / "
+                f"LANGSMITH_{otel_only_envvar_name} env vars are set. "
+                f"LANGSMITH_{mode_envvar_name} takes precedence.",
+                stacklevel=3,
+            )
+        return env_mode  # type: ignore[return-value]
+
+    # Fall back to legacy env vars
+    if ls_utils.is_env_var_truish(otel_only_envvar_name):
+        return "otel"
+    if ls_utils.is_env_var_truish("OTEL_ENABLED"):
+        return "hybrid"
+    return "langsmith"
 
 
 def _import_otel():
@@ -294,6 +361,19 @@ def _manifest_has_secrets(
         )
     else:
         return False
+
+
+def _validate_public_prompt_pull(
+    prompt_identifier: str, *, dangerously_pull_public_prompt: bool
+) -> None:
+    owner, _, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+    if owner != "-" and not dangerously_pull_public_prompt:
+        raise ValueError(
+            "Pulling a public prompt by owner/name is disabled by default because "
+            "prompts may contain untrusted serialized LangChain objects. If you "
+            "trust this prompt, set `dangerously_pull_public_prompt=True` to "
+            "acknowledge the risk."
+        )
 
 
 def _process_prompt_manifest(
@@ -506,8 +586,8 @@ def _default_retry_config() -> Retry:
     # the `allowed_methods` keyword is not available in urllib3 < 1.26
 
     # check to see if urllib3 version is 1.26 or greater
-    urllib3_version = importlib.metadata.version("urllib3")
-    use_allowed_methods = tuple(map(int, urllib3_version.split("."))) >= (1, 26)
+    urllib3_version = packaging.version.parse(importlib.metadata.version("urllib3"))
+    use_allowed_methods = urllib3_version >= packaging.version.parse("1.26")
 
     if use_allowed_methods:
         # Retry on all methods
@@ -526,21 +606,35 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
+def _get_langsmith_env_var_uncached(name: str) -> Optional[str]:
+    for namespace in ("LANGSMITH", "LANGCHAIN"):
+        value = os.environ.get(f"{namespace}_{name}")
+        if value is not None and value.strip() != "":
+            return value
+    return None
+
+
+def _validate_api_key_if_hosted(
+    api_url: str,
+    api_key: Optional[str],
+    *,
+    tracing_mode: TracingMode = "langsmith",
+) -> None:
     """Verify API key is provided if url not localhost.
 
     Args:
         api_url: The API URL.
         api_key: The API key.
+        tracing_mode: Resolved tracing mode; when ``"otel"`` the warning is
+            suppressed because no LangSmith REST calls are made.
 
     Raises:
         LangSmithUserError: If the API key is not provided when using the hosted service.
     """
-    # If the domain is langchain.com, raise error if no api_key
     if not api_key:
         if (
             _is_langchain_hosted(api_url)
-            and not ls_utils.is_env_var_truish("OTEL_ENABLED")
+            and tracing_mode != "otel"
             and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
@@ -695,6 +789,7 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_oauth_access_token",
         "_workspace_id",
         "_headers",
         "_custom_headers",
@@ -737,13 +832,19 @@ class Client:
         "_cache",
         "_failed_traces_dir",
         "_failed_traces_max_bytes",
+        "_tracing_mode",
+        "_profile_auth",
+        "_profile_auth_headers",
     ]
 
     _api_key: Optional[str]
+    _oauth_access_token: Optional[str]
     _headers: dict[str, str]
     _custom_headers: dict[str, str]
     _timeout: tuple[float, float]
     _manual_cleanup: bool
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
 
     def __init__(
         self,
@@ -768,6 +869,7 @@ class Client:
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        tracing_mode: Optional[TracingMode] = None,
         otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
@@ -862,6 +964,20 @@ class Client:
                 integration.
 
                 If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_mode: Where to send traces.  One of:
+
+                - ``"langsmith"`` (default) — LangSmith only.
+                - ``"otel"`` — OpenTelemetry export only.
+                - ``"hybrid"`` — both OTel and LangSmith.
+
+                Falls back to the ``LANGSMITH_TRACING_MODE`` env var, then to
+                the legacy ``OTEL_ENABLED`` / ``OTEL_ONLY`` env vars, then to
+                ``"langsmith"``.
+            otel_enabled: *Deprecated.* Use ``tracing_mode`` instead.
+
+                When ``True``, interpreted as ``tracing_mode="hybrid"``
+                (or ``"otel"`` if the ``OTEL_ONLY`` env var is set).
+                Will be removed in the next minor version.
             tracing_sampling_rate: The sampling rate for tracing.
 
                 If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment
@@ -953,23 +1069,73 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
+        resolved_mode = _resolve_tracing_mode(tracing_mode, otel_enabled=otel_enabled)
+        self._tracing_mode: TracingMode = resolved_mode
+        env_api_url = _get_langsmith_env_var_uncached("ENDPOINT")
+        env_api_key = _get_langsmith_env_var_uncached("API_KEY")
+        env_workspace_id = _get_langsmith_env_var_uncached("WORKSPACE_ID")
+        profile_config = _profiles.load_profile_client_config()
+        api_url_ = (
+            api_url if api_url is not None else env_api_url or profile_config.api_url
+        )
+        explicit_or_env_api_key = api_key if api_key is not None else env_api_key
+        profile_auth_enabled = api_key is None and env_api_key is None
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
+        api_key_ = (
+            explicit_or_env_api_key
+            if explicit_or_env_api_key is not None
+            else None
+            if use_profile_oauth
+            else profile_config.api_key
+        )
+        workspace_id_ = (
+            workspace_id
+            if workspace_id is not None
+            else env_workspace_id or profile_config.workspace_id
+        )
+        self._oauth_access_token = (
+            profile_config.oauth_access_token if use_profile_oauth else None
+        )
+        self._profile_auth: Optional[_profiles.ProfileAuth] = None
+        self._profile_auth_headers: dict[str, str] = {}
+
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
         # Initialize workspace attribute first
-        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
         # Store custom headers
         self._custom_headers = headers or {}
 
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
+            self._oauth_access_token = None
+            self._profile_auth = None
+            self._profile_auth_headers = {}
             self.api_key = self._write_api_urls[self.api_url]
         else:
-            self.api_url = ls_utils.get_api_url(api_url)
-            self.api_key = ls_utils.get_api_key(api_key)
-            _validate_api_key_if_hosted(self.api_url, self.api_key)
+            self.api_url = ls_utils.get_api_url(api_url_)
+            if use_profile_oauth:
+                self._profile_auth = _profiles.ProfileAuth(
+                    profile_config,
+                    api_key_header=X_API_KEY,
+                )
+                self._profile_auth_headers = self._profile_auth.current_auth_headers()
+                self._oauth_access_token = self._profile_auth.oauth_access_token
+            self.api_key = ls_utils.get_api_key(api_key_)
+            _validate_api_key_if_hosted(
+                self.api_url,
+                self.api_key
+                or self._oauth_access_token
+                or (
+                    "profile-auth"
+                    if self._profile_auth is not None and self._profile_auth.has_auth
+                    else None
+                ),
+                tracing_mode=resolved_mode,
+            )
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
@@ -1000,9 +1166,7 @@ class Client:
         self._multipart_disabled: bool = False
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
-        # Set OTEL exporter before starting the tracing thread so the thread sees it
-        # and disables compression in OTEL-only mode (avoids "Run compression is not enabled" warning).
-        if _check_otel_enabled() or otel_enabled:
+        if resolved_mode in ("otel", "hybrid"):
             try:
                 (
                     otel_trace,
@@ -1014,7 +1178,6 @@ class Client:
                 existing_provider = otel_trace.get_tracer_provider()
                 tracer = existing_provider.get_tracer(__name__)
                 if otel_tracer_provider is None:
-                    # Use existing global provider if available
                     if not (
                         isinstance(existing_provider, otel_trace.ProxyTracerProvider)
                         and hasattr(tracer, "_tracer")
@@ -1032,18 +1195,30 @@ class Client:
                         otel_trace.set_tracer_provider(otel_tracer_provider)
 
                 self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
-
-                # Store imports for later use
                 self._otel_trace = otel_trace
                 self._set_span_in_context = set_span_in_context
 
             except ImportError:
                 warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                    f"tracing_mode={resolved_mode!r} requires OpenTelemetry "
+                    "packages. Install with `pip install langsmith[otel]`. "
+                    "Falling back to LangSmith-only tracing.",
+                    stacklevel=2,
                 )
                 self.otel_exporter = None
-        else:
-            self.otel_exporter = None
+                self._tracing_mode = "langsmith"
+                _validate_api_key_if_hosted(
+                    self.api_url,
+                    self.api_key
+                    or self._oauth_access_token
+                    or (
+                        "profile-auth"
+                        if self._profile_auth is not None
+                        and self._profile_auth.has_auth
+                        else None
+                    ),
+                    tracing_mode="langsmith",
+                )
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -1158,8 +1333,6 @@ class Client:
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
         if cache is not None and disable_prompt_cache:
-            import warnings
-
             warnings.warn(
                 "Both 'cache' and 'disable_prompt_cache' were provided. "
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
@@ -1169,8 +1342,6 @@ class Client:
             )
 
         if cache is not None:
-            import warnings
-
             warnings.warn(
                 "The 'cache' parameter is deprecated and will be removed in a future version. "
                 "Use 'configure_global_prompt_cache()' to configure the global cache, or "
@@ -1353,6 +1524,10 @@ class Client:
         headers.update(self._custom_headers)
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
+        elif self._oauth_access_token:
+            headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         if self._workspace_id:
             headers["X-Tenant-Id"] = self._workspace_id
         return headers
@@ -1360,6 +1535,16 @@ class Client:
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
         """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    def _ensure_profile_auth(self) -> None:
+        if self.api_key or self._profile_auth is None:
+            return
+        auth_headers = self._profile_auth.get_auth_headers()
+        object.__setattr__(self, "_profile_auth_headers", auth_headers)
+        object.__setattr__(
+            self, "_oauth_access_token", self._profile_auth.oauth_access_token
+        )
         object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
@@ -1400,11 +1585,7 @@ class Client:
             return self._info
 
         # Skip API call when using OTEL-only mode
-        otel_only_mode = ls_utils.is_env_var_truish(
-            "OTEL_ENABLED"
-        ) and ls_utils.is_env_var_truish("OTEL_ONLY")
-
-        if otel_only_mode:
+        if self._tracing_mode == "otel" and self.otel_exporter is not None:
             self._info = ls_schemas.LangSmithInfo()
             return self._info
 
@@ -1495,16 +1676,20 @@ class Client:
             LangSmithConnectionError: If a connection error occurs.
             LangSmithError: If the request fails.
         """
+        self._ensure_profile_auth()
         request_kwargs = request_kwargs or {}
+        headers = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+            **kwargs.get("headers", {}),
+        }
+        if self._profile_auth is not None:
+            headers = self._profile_auth.prepare_request_headers(headers)
         request_kwargs = {
             "timeout": self._timeout,
             **request_kwargs,
             **kwargs,
-            "headers": {
-                **self._headers,
-                **request_kwargs.get("headers", {}),
-                **kwargs.get("headers", {}),
-            },
+            "headers": headers,
         }
         if (
             method != "GET"
@@ -2043,6 +2228,11 @@ class Client:
                     # Child runs follow their trace's sampling decision
                     sampled.append(run)
             return sampled
+
+    @property
+    def tracing_mode(self) -> TracingMode:
+        """Per-client tracing mode."""
+        return self._tracing_mode
 
     def _put_tracing_queue(self, item: TracingQueueItem) -> None:
         """Put an item on the tracing queue, dropping if full."""
@@ -3520,8 +3710,18 @@ class Client:
                     },
                 )
 
-    def flush_compressed_traces(self, attempts: int = 3) -> None:
-        """Force flush the currently buffered compressed runs."""
+    def flush_compressed_traces(
+        self, attempts: int = 3, timeout: Optional[float] = None
+    ) -> None:
+        """Force flush the currently buffered compressed runs.
+
+        Args:
+            attempts: Retry attempts for the send request.
+            timeout: Maximum seconds to wait for in-flight sends to complete.
+                None (default) waits indefinitely. Bounds only the wait on
+                already-submitted sends; the synchronous drain and submit
+                steps above are not bounded by this timeout.
+        """
         if self.compressed_traces is None:
             return
 
@@ -3563,21 +3763,42 @@ class Client:
         # If we got a future, wait for it to complete
         if self._futures:
             futures = list(self._futures)
-            done, _ = cf.wait(futures)
+            done, _ = cf.wait(futures, timeout=timeout)
             # Remove completed futures
             self._futures.difference_update(done)
 
-    def flush(self) -> None:
-        """Flush either queue or compressed buffer, depending on mode."""
-        # Flush any remaining batch items first
+    def flush(self, timeout: Optional[float] = None) -> None:
+        """Flush the tracing queue and compressed buffer.
+
+        Args:
+            timeout: Maximum seconds to wait for pending traces to drain.
+                None (default) waits indefinitely. A timeout of 0 returns
+                immediately without waiting.
+        """
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
         if self._process_buffered_run_ops:
             with self._run_ops_buffer_lock:
                 if self._run_ops_buffer:
                     self._flush_run_ops_buffer()
+
+        if self.tracing_queue is not None:
+            if deadline is None:
+                self.tracing_queue.join()
+            else:
+                # queue.Queue.join() has no timeout; wait on its condition directly.
+                with self.tracing_queue.all_tasks_done:
+                    while self.tracing_queue.unfinished_tasks:
+                        wait_for = deadline - time.monotonic()
+                        if wait_for <= 0:
+                            break
+                        self.tracing_queue.all_tasks_done.wait(wait_for)
+
         if self.compressed_traces is not None:
-            self.flush_compressed_traces()
-        elif self.tracing_queue is not None:
-            self.tracing_queue.join()
+            remaining = (
+                max(0.0, deadline - time.monotonic()) if deadline is not None else None
+            )
+            self.flush_compressed_traces(timeout=remaining)
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
@@ -6894,6 +7115,7 @@ class Client:
             # Use platform path helper for consistent URL construction
             path = _platform_path(self.api_url, "datasets/examples/delete")
             full_url = _construct_url(self.api_url, path)
+            self._ensure_profile_auth()
             response = self.session.request(
                 "POST",
                 full_url,
@@ -8981,20 +9203,42 @@ class Client:
         *,
         include_model: Optional[bool] = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
 
+        Public prompts referenced by owner/name cross a trust boundary because the
+        prompt manifest may contain serialized LangChain objects and configuration
+        that affect runtime behavior. For example, a prompt can intentionally
+        configure a model with a custom base URL, headers, model name, or other
+        constructor arguments. These are supported features, but they also mean
+        the prompt contents should be treated as executable configuration rather
+        than plain text.
+
+        Set `dangerously_pull_public_prompt=True` only after reviewing and
+        trusting the prompt contents, not merely the publishing account. Prompts
+        from your own or your organization's account can still be unsafe if that
+        account or prompt was compromised.
+
         Args:
-            prompt_identifier (str): The identifier of the prompt.
-            include_model (Optional[bool]): Whether to include model information.
-            skip_cache (bool): Whether to skip the prompt cache. Defaults to `False`.
+            prompt_identifier: The identifier of the prompt.
+            include_model: Whether to include model information.
+            skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name, for example `username/promptname`.
+                Defaults to `False`.
 
         Returns:
-            PromptCommit: The prompt object.
+            The prompt object.
 
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        _validate_public_prompt_pull(
+            prompt_identifier,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
+        )
+
         # Create refresh function bound to this specific prompt
         refresh_func = partial(
             self._fetch_prompt_from_api, prompt_identifier, include_model
@@ -9082,6 +9326,7 @@ class Client:
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -9101,6 +9346,9 @@ class Client:
                 **SECURITY NOTE**: Should only be set to `True` when pulling trusted
                 prompts.
             skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name (for example, `username/promptname`).
+                Only do this for trusted prompts. Defaults to `False`.
 
         Returns:
             Any: The prompt object in the specified format.
@@ -9124,7 +9372,10 @@ class Client:
             langsmith package) depends on.
         """
         prompt_object = self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model, skip_cache=skip_cache
+            prompt_identifier,
+            include_model=include_model,
+            skip_cache=skip_cache,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
         )
         return _process_prompt_manifest(
             prompt_object,
@@ -9524,8 +9775,22 @@ class Client:
         if body:
             self.request_with_retries("PATCH", f"{HUB}/{owner}/{name}", json=body)
 
-    def cleanup(self) -> None:
-        """Manually trigger cleanup of background threads."""
+    def cleanup(self, timeout: Optional[float] = None) -> None:
+        """Manually trigger cleanup of background threads.
+
+        Drains pending traces via ``flush()`` before stopping the background
+        threads. Pass ``timeout=0`` to skip the drain entirely (e.g. in error
+        paths or signal handlers where blocking on network I/O is
+        unacceptable).
+
+        Args:
+            timeout: Maximum seconds to wait for pending traces to flush.
+                None (default) waits indefinitely.
+        """
+        try:
+            self.flush(timeout=timeout)
+        except Exception as e:
+            logger.warning("Error flushing traces during cleanup: %s", e)
         self._manual_cleanup = True
         if self._cache is not None:
             self._cache.shutdown()
@@ -10477,6 +10742,7 @@ class Client:
             params["priority"] = priority
         path = _platform_path(self.api_url, "forge-issues")
         full_url = _construct_url(self.api_url, path)
+        self._ensure_profile_auth()
         response = self.session.request(
             "GET",
             full_url,

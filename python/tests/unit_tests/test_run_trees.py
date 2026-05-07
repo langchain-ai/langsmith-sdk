@@ -550,3 +550,64 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+# Tests for regression: RunTree should accept Pydantic BaseModel for inputs/outputs
+# https://github.com/langchain-ai/langsmith-sdk/issues/2765
+def test_runtree_accepts_pydantic_basemodel_as_constructor_inputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyInput(PydanticBaseModel):
+        query: str
+
+    rt = RunTree(name="test", run_type="chain", inputs=MyInput(query="hello"))
+    assert rt.inputs == {"query": "hello"}
+
+
+def test_runtree_accepts_pydantic_basemodel_as_constructor_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(
+        name="test", run_type="chain", inputs={}, outputs=MyOutput(answer="hi")
+    )
+    assert rt.outputs == {"answer": "hi"}
+
+
+def test_runtree_end_accepts_pydantic_basemodel_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.end(outputs=MyOutput(answer="goodbye"))
+    assert rt.outputs == {"answer": "goodbye"}
+
+
+def test_runtree_set_accepts_nested_pydantic_basemodel_inputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class Inner(PydanticBaseModel):
+        val: int
+
+    class MyNestedInput(PydanticBaseModel):
+        query: str
+        nested: Inner
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.set(inputs=MyNestedInput(query="hello", nested=Inner(val=42)))
+    assert rt.inputs == {"query": "hello", "nested": {"val": 42}}
+
+
+def test_runtree_set_accepts_pydantic_basemodel_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.set(outputs=MyOutput(answer="result"))
+    assert rt.outputs == {"answer": "result"}

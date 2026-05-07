@@ -103,6 +103,7 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGSMITH_API_KEY",
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING_V2",
+    "LANGSMITH_CONFIG_FILE",
     "LANGSMITH_PROJECT",
     "LANGSMITH_SESSION",
   ];
@@ -162,7 +163,7 @@ export function getLangSmithEnvironmentVariables(): Record<string, string> {
         }
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Catch any errors that might occur while trying to access environment variables
   }
 
@@ -177,13 +178,13 @@ export function getEnvironmentVariable(name: string): string | undefined {
       ? // eslint-disable-next-line no-process-env
         process.env?.[name]
       : undefined;
-  } catch (e) {
+  } catch (_e) {
     return undefined;
   }
 }
 
 export function getLangSmithEnvironmentVariable(
-  name: string
+  name: string,
 ): string | undefined {
   return (
     getEnvironmentVariable(`LANGSMITH_${name}`) ||
@@ -249,4 +250,47 @@ export function getOtelEnabled(): boolean {
     getEnvironmentVariable("OTEL_ENABLED") === "true" ||
     getLangSmithEnvironmentVariable("OTEL_ENABLED") === "true"
   );
+}
+
+export type TracingMode = "langsmith" | "otel";
+
+const _VALID_TRACING_MODES: Set<string> = new Set(["langsmith", "otel"]);
+
+/**
+ * Resolve the effective tracing mode from an explicit config value and
+ * environment variables.
+ *
+ * Priority: explicit argument > `LANGSMITH_TRACING_MODE` env var >
+ * legacy `OTEL_ENABLED` / `LANGSMITH_OTEL_ENABLED` env vars > `"langsmith"`.
+ */
+export function resolveTracingMode(configValue?: TracingMode): TracingMode {
+  if (configValue !== undefined) {
+    return configValue;
+  }
+
+  const envMode = getLangSmithEnvironmentVariable("TRACING_MODE");
+
+  if (envMode !== undefined && envMode !== "") {
+    const lower = envMode.toLowerCase();
+    if (!_VALID_TRACING_MODES.has(lower)) {
+      throw new Error(
+        `Invalid LANGSMITH_TRACING_MODE=${JSON.stringify(envMode)}. ` +
+          `Must be one of: ${[..._VALID_TRACING_MODES].sort().join(", ")}`,
+      );
+    }
+    if (getOtelEnabled()) {
+      console.warn(
+        "Both LANGSMITH_TRACING_MODE and the legacy OTEL_ENABLED / " +
+          "LANGSMITH_OTEL_ENABLED env vars are set. " +
+          "LANGSMITH_TRACING_MODE takes precedence.",
+      );
+    }
+    return lower as TracingMode;
+  }
+
+  // Fall back to legacy env var
+  if (getOtelEnabled()) {
+    return "otel";
+  }
+  return "langsmith";
 }

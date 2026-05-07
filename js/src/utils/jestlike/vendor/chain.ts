@@ -8,7 +8,7 @@ class JestlikeAssertionError extends Error {
 
   constructor(result: any, callsite: any) {
     super(
-      typeof result.message === "function" ? result.message() : result.message
+      typeof result.message === "function" ? result.message() : result.message,
     );
     this.matcherResult = result;
 
@@ -23,7 +23,7 @@ const _wrapMatchers = (
   evaluator: SimpleEvaluator,
   originalArgs: any[],
   originalExpect: any,
-  staticPath: string[] = []
+  staticPath: string[] = [],
 ) => {
   return Object.keys(matchers)
     .filter((name) => typeof (matchers as any)[name] === "function")
@@ -57,7 +57,7 @@ const addEvaluatedBy = (
   matchers: any,
   originalArgs: any[],
   originalExpect: any,
-  staticPath: string[] = []
+  staticPath: string[] = [],
 ) => {
   let spreadMatchers = { ...matchers };
   // Handle Bun, which uses a class, and Vitest which uses something weird
@@ -66,17 +66,17 @@ const addEvaluatedBy = (
     !Object.keys(matchers).includes("toEqual")
   ) {
     const prototypeProps = Object.getOwnPropertyNames(
-      Object.getPrototypeOf(matchers)
+      Object.getPrototypeOf(matchers),
     );
     spreadMatchers = Object.fromEntries(
       prototypeProps.map((prop) => {
         try {
           return [prop, (matchers as any)[prop]];
-        } catch (e) {
+        } catch (_e) {
           // Ignore bizarre Bun bug
           return [];
         }
-      })
+      }),
     ) as any;
   }
   return Object.assign({}, matchers, {
@@ -86,7 +86,7 @@ const addEvaluatedBy = (
         evaluator,
         originalArgs,
         originalExpect,
-        []
+        [],
       );
       // .not etc.
       const staticMatchers = Object.keys(spreadMatchers)
@@ -100,8 +100,8 @@ const addEvaluatedBy = (
                 evaluator,
                 originalArgs,
                 originalExpect,
-                staticPath.concat(name)
-              )
+                staticPath.concat(name),
+              ),
             ),
           };
         });
@@ -115,7 +115,7 @@ export function wrapExpect(originalExpect: any): typeof expect {
   const expectProxy = Object.assign(
     (...args: any[]) =>
       addEvaluatedBy(originalExpect(...args), args, originalExpect, []), // partially apply expect to get all matchers and chain them
-    originalExpect // clone additional properties on expect
+    originalExpect, // clone additional properties on expect
   );
 
   return expectProxy;

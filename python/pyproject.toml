@@ -60,6 +60,15 @@ claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
 # Enabled via `pip install langsmith[google-adk]`
 google-adk = ["google-adk>=1.0.0", "wrapt>=1.16.0"]
 
+# Enabled via `pip install langsmith[strands-agents]`
+strands-agents = [
+    "strands-agents>=0.1.0",
+    "strands-agents-tools>=0.2.0",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+]
+
 # Enabled via `pip install langsmith[pytest]`
 pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 
@@ -106,13 +115,15 @@ dev = [
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
     "claude-agent-sdk>=0.1.0; python_version>='3.10'",
+    "strands-agents>=0.1.0",
+    "strands-agents-tools>=0.2.0",
     "langchain-core>=1.0.0",
     "langchain-openai>=1.0.0",
     "langchain-anthropic>=1.0.0",
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.29",
+    "ty==0.0.32",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
@@ -195,5 +206,5 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
-timeout = 60
+timeout = 120
 timeout_method = "thread"

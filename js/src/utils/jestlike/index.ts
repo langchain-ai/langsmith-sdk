@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 
 import crypto from "crypto";
-import { v4, v5 } from "uuid";
+import { v4, v5 } from "../uuid/src/index.js";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
@@ -45,7 +45,7 @@ import {
 
 export function logFeedback(
   feedback: SimpleEvaluationResult,
-  config?: { sourceRunId?: string }
+  config?: { sourceRunId?: string },
 ) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined) {
@@ -53,7 +53,7 @@ export function logFeedback(
       [
         `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`,
         `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
   if (context.currentExample === undefined) {
@@ -61,7 +61,7 @@ export function logFeedback(
       [
         `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
         `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
   _logTestFeedback({
@@ -78,7 +78,7 @@ export function logOutputs(output: Record<string, unknown>) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined) {
     throw new Error(
-      `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`
+      `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`,
     );
   }
   if (
@@ -89,7 +89,7 @@ export function logOutputs(output: Record<string, unknown>) {
       [
         `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
         `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
   context.setLoggedOutput(output);
@@ -99,7 +99,7 @@ export function _objectHash(obj: KVMap | unknown[], depth = 0): string {
   // Prevent infinite recursion
   if (depth > 50) {
     throw new Error(
-      "Object is too deep to check equality for serialization. Please use a simpler example."
+      "Object is too deep to check equality for serialization. Please use a simpler example.",
     );
   }
 
@@ -127,14 +127,14 @@ export function _objectHash(obj: KVMap | unknown[], depth = 0): string {
 
 export function generateWrapperFromJestlikeMethods(
   methods: Record<string, any>,
-  testRunnerName: string
+  testRunnerName: string,
 ) {
   const { expect, test, describe, beforeAll, afterAll } = methods;
 
   async function _createProject(
     client: Client,
     datasetId: string,
-    projectConfig?: Partial<CreateProjectParams>
+    projectConfig?: Partial<CreateProjectParams>,
   ) {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
@@ -159,7 +159,7 @@ export function generateWrapperFromJestlikeMethods(
     }
     throw new Error(
       "Could not generate a unique experiment name within 10 attempts." +
-        " Please try again."
+        " Please try again.",
     );
   }
 
@@ -169,7 +169,7 @@ export function generateWrapperFromJestlikeMethods(
     datasetId: string,
     inputs: Record<string, unknown>,
     outputs?: Record<string, unknown>,
-    providedId?: string
+    providedId?: string,
   ) {
     if (providedId) {
       return providedId;
@@ -275,14 +275,14 @@ export function generateWrapperFromJestlikeMethods(
       const project = await _createProject(
         testClient,
         dataset.id,
-        projectConfig
+        projectConfig,
       );
       const datasetUrl = await testClient.getDatasetUrl({
         datasetId: dataset.id,
       });
       const experimentUrl = `${datasetUrl}/compare?selectedSessions=${project.id}`;
       console.log(
-        `[LANGSMITH]: Experiment starting for dataset "${datasetName}"!\n[LANGSMITH]: View results at ${experimentUrl}`
+        `[LANGSMITH]: Experiment starting for dataset "${datasetName}"!\n[LANGSMITH]: View results at ${experimentUrl}`,
       );
       storageValue = {
         dataset,
@@ -296,21 +296,21 @@ export function generateWrapperFromJestlikeMethods(
 
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void,
-    methodName: string
+    methodName: string,
   ): LangSmithJestlikeDescribeWrapper {
     if (isJsDom()) {
       console.error(
-        `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
+        `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`,
       );
     }
     return function (
       testSuiteName: string,
       fn: () => void | Promise<void>,
-      experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
+      experimentConfig?: LangSmithJestlikeDescribeWrapperConfig,
     ) {
       if (typeof method !== "function") {
         throw new Error(
-          `"${methodName}" is not supported by your test runner.`
+          `"${methodName}" is not supported by your test runner.`,
         );
       }
       if (testWrapperAsyncLocalStorageInstance.getStore() !== undefined) {
@@ -319,7 +319,7 @@ export function generateWrapperFromJestlikeMethods(
             `You seem to be nesting an ls.describe block named "${testSuiteName}" inside another ls.describe block.`,
             "This is not supported because each ls.describe block corresponds to a LangSmith dataset.",
             "To logically group tests, nest the native Jest or Vitest describe methods instead.",
-          ].join("\n")
+          ].join("\n"),
         );
       }
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
@@ -425,7 +425,7 @@ export function generateWrapperFromJestlikeMethods(
                   return example.modified_at;
                 }
               },
-              examples[0].modified_at
+              examples[0].modified_at,
             );
             if (new Date(finalModifiedAt).getTime() < startTime.getTime()) {
               finalModifiedAt = endTime.toISOString();
@@ -476,12 +476,12 @@ export function generateWrapperFromJestlikeMethods(
   function wrapTestMethod(method: (...args: any[]) => void) {
     return function <
       I extends Record<string, any> = Record<string, any>,
-      O extends Record<string, any> = Record<string, any>
+      O extends Record<string, any> = Record<string, any>,
     >(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
       testFn: LangSmithJestlikeTestFunction<I, O>,
-      timeout?: number
+      timeout?: number,
     ) {
       // Due to https://github.com/jestjs/jest/issues/13653,
       // we must access the local store value here before
@@ -506,7 +506,7 @@ export function generateWrapperFromJestlikeMethods(
         const resultsPath = path.join(
           os.tmpdir(),
           "langsmith_test_results",
-          `${testUuid}.json`
+          `${testUuid}.json`,
         );
         void method(
           `${name}${
@@ -524,7 +524,7 @@ export function generateWrapperFromJestlikeMethods(
                   `Could not retrieve test context.`,
                   `Please make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`,
                   `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-                ].join("\n")
+                ].join("\n"),
               );
             }
             // Jest .concurrent is super buggy and doesn't wait for beforeAll to complete
@@ -534,7 +534,7 @@ export function generateWrapperFromJestlikeMethods(
             await context.setupPromise;
             if (!datasetSetupInfo.get(context.suiteUuid)) {
               throw new Error(
-                "Dataset failed to initialize. Please check your LangSmith environment variables."
+                "Dataset failed to initialize. Please check your LangSmith environment variables.",
               );
             }
             const { dataset, createdAt, project, client, experimentUrl } =
@@ -548,7 +548,7 @@ export function generateWrapperFromJestlikeMethods(
             const setLoggedOutput = (value: Record<string, unknown>) => {
               if (loggedOutput !== undefined) {
                 console.warn(
-                  `[WARN]: New "logOutputs()" call will override output set by previous "logOutputs()" call.`
+                  `[WARN]: New "logOutputs()" call will override output set by previous "logOutputs()" call.`,
                 );
               }
               loggedOutput = value;
@@ -558,7 +558,7 @@ export function generateWrapperFromJestlikeMethods(
               let testContext = testWrapperAsyncLocalStorageInstance.getStore();
               if (testContext === undefined) {
                 throw new Error(
-                  "Could not identify test context. Please contact us for help."
+                  "Could not identify test context. Please contact us for help.",
                 );
               }
               return testWrapperAsyncLocalStorageInstance.run(
@@ -572,7 +572,7 @@ export function generateWrapperFromJestlikeMethods(
                   testContext = testWrapperAsyncLocalStorageInstance.getStore();
                   if (testContext === undefined) {
                     throw new Error(
-                      "Could not identify test context after setting test root run tree. Please contact us for help."
+                      "Could not identify test context after setting test root run tree. Please contact us for help.",
                     );
                   }
                   try {
@@ -593,8 +593,8 @@ export function generateWrapperFromJestlikeMethods(
                             repetition: i,
                             split,
                           },
-                        }
-                      )
+                        },
+                      ),
                     );
                     _logTestFeedback({
                       exampleId,
@@ -606,7 +606,7 @@ export function generateWrapperFromJestlikeMethods(
                     if (res != null) {
                       if (loggedOutput !== undefined) {
                         console.warn(
-                          `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
+                          `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`,
                         );
                       }
                       loggedOutput =
@@ -626,10 +626,10 @@ export function generateWrapperFromJestlikeMethods(
                     const rawError = e;
                     const strippedErrorMessage = e.message.replace(
                       STRIP_ANSI_REGEX,
-                      ""
+                      "",
                     );
                     const langsmithFriendlyError = new Error(
-                      strippedErrorMessage
+                      strippedErrorMessage,
                     );
                     (langsmithFriendlyError as any).rawJestError = rawError;
                     if (testContext.testRootRunTree) {
@@ -637,7 +637,7 @@ export function generateWrapperFromJestlikeMethods(
                     }
                     throw langsmithFriendlyError;
                   }
-                }
+                },
               );
             };
             try {
@@ -657,15 +657,15 @@ export function generateWrapperFromJestlikeMethods(
                     `Failed to initialize test tracking: Could not identify ${missingFields
                       .map((field) => `"${field}"`)
                       .join(
-                        ", "
-                      )} while syncing to LangSmith. Please contact us for help.`
+                        ", ",
+                      )} while syncing to LangSmith. Please contact us for help.`,
                   );
                 }
                 exampleId = getExampleId(
                   dataset.id,
                   inputs,
                   referenceOutputs,
-                  id
+                  id,
                 );
 
                 // TODO: Create or update the example in the background
@@ -684,7 +684,7 @@ export function generateWrapperFromJestlikeMethods(
                       metadata,
                       split,
                       createdAt,
-                    })
+                    }),
                   );
                 }
 
@@ -714,13 +714,13 @@ export function generateWrapperFromJestlikeMethods(
                         setLoggedOutput,
                         onFeedbackLogged,
                       },
-                      runTestFn
+                      runTestFn,
                     );
                   },
                   {
                     ...traceableOptions,
                     ...config,
-                  }
+                  },
                 );
                 try {
                   await tracedFunction(testInput);
@@ -743,7 +743,7 @@ export function generateWrapperFromJestlikeMethods(
                       setLoggedOutput,
                       onFeedbackLogged,
                     },
-                    runTestFn
+                    runTestFn,
                   );
                 } catch (e: any) {
                   // Extract raw Jest error from LangSmith formatted one and throw
@@ -763,11 +763,11 @@ export function generateWrapperFromJestlikeMethods(
                   outputs: loggedOutput,
                   feedback: testFeedback,
                   experimentUrl,
-                })
+                }),
               );
             }
           },
-          timeout
+          timeout,
         );
       }
     };
@@ -779,7 +779,7 @@ export function generateWrapperFromJestlikeMethods(
         string,
         any
       >)[],
-      config?: LangSmithJestlikeWrapperConfig
+      config?: LangSmithJestlikeWrapperConfig,
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
       if (context === undefined) {
@@ -787,13 +787,13 @@ export function generateWrapperFromJestlikeMethods(
           [
             `Could not retrieve test context. Make sure your test is nested within a "ls.describe()" block.`,
             `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-          ].join("\n")
+          ].join("\n"),
         );
       }
       return function (
         name: string,
         fn: LangSmithJestlikeTestFunction<I, O>,
-        timeout?: number
+        timeout?: number,
       ) {
         for (let i = 0; i < table.length; i += 1) {
           const example = table[i];
@@ -806,7 +806,7 @@ export function generateWrapperFromJestlikeMethods(
               config,
             },
             fn,
-            timeout
+            timeout,
           );
         }
       };

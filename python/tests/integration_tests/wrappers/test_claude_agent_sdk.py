@@ -10,11 +10,7 @@ except ImportError:
     CLAUDE_SDK_AVAILABLE = False
 
 from langsmith import traceable
-from langsmith.integrations.claude_agent_sdk._hooks import (
-    _active_tool_runs,
-    _agent_to_tool_mapping,
-    _subagent_runs,
-)
+from langsmith.integrations.claude_agent_sdk import _hooks as _hooks_module
 
 pytestmark = pytest.mark.skipif(
     not CLAUDE_SDK_AVAILABLE, reason="Claude Agent SDK not installed"
@@ -69,7 +65,7 @@ async def test_tool_failure_creates_error_trace():
 
     assert len(tool_result_blocks) >= 1
     assert tool_result_blocks[0].is_error is True
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
 
 @pytest.mark.asyncio
@@ -130,9 +126,9 @@ async def test_subagent():
                 pass
 
     # All hook state should be cleaned up
-    assert len(_active_tool_runs) == 0
-    assert len(_subagent_runs) == 0
-    assert len(_agent_to_tool_mapping) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
+    assert len(_hooks_module._default_session.subagent_runs) == 0
+    assert len(_hooks_module._default_session.agent_to_tool_mapping) == 0
 
     # Verify the trace hierarchy was created
     run_names = [r["name"] for r in posted_runs]
@@ -239,7 +235,7 @@ async def test_continue_session():
             async for msg in client.receive_response():
                 pass
 
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
     # The continued session should only have LLM runs for the NEW
     # conversation, not duplicates from the first one.
@@ -291,7 +287,7 @@ async def test_custom_tool_permission_denied():
     assert any("get_weather" in n for n in tool_names_seen), (
         f"Expected get_weather tool call, saw: {tool_names_seen}"
     )
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
 
 @pytest.mark.asyncio
@@ -360,10 +356,130 @@ async def test_custom_tool_permission_granted():
     assert any("Foggy" in r for r in tool_results_seen), (
         f"Expected 'Foggy' in results, saw: {tool_results_seen}"
     )
-    assert len(_active_tool_runs) == 0
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
 
     # @traceable inner_helper should nest under the tool run
     assert captured_parent_run_id is not None, (
         "inner_helper's parent_run_id was None — "
         "@traceable did not find a parent context"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.flaky(reruns=2)
+async def test_concurrent_three_clients_are_isolated():
+    """Three concurrent ClaudeSDKClient runs should not share hook state.
+
+    This is the integration-level regression test for Pylon 21395. It drives
+    multiple clients in parallel through the Bash tool path, which exercises
+    PreToolUse/PostToolUse hooks, transcript-path capture, and per-conversation
+    cleanup under real Claude Agent SDK scheduling.
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+
+    from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
+    from langsmith.run_trees import RunTree
+
+    configure_claude_agent_sdk(name="test.concurrent_three_clients")
+
+    posted_runs: list[dict] = []
+    original_post = RunTree.post
+
+    def tracked_post(self, *args, **kwargs):
+        posted_runs.append(
+            {
+                "name": self.name,
+                "run_type": self.run_type,
+                "id": str(self.id),
+                "parent_run_id": str(self.parent_run_id)
+                if self.parent_run_id
+                else None,
+            }
+        )
+        return original_post(self, *args, **kwargs)
+
+    async def run_one(label: str) -> dict:
+        options = ClaudeAgentOptions(
+            model="claude-haiku-4-5",
+            system_prompt=(
+                "You must call the Bash tool exactly once with command "
+                f"'echo {label}', then stop."
+            ),
+            allowed_tools=["Bash"],
+            permission_mode="bypassPermissions",
+            max_turns=2,
+        )
+
+        tool_names_seen: list[str] = []
+        tool_results_seen: list[str] = []
+        session_ids_seen: set[str] = set()
+
+        async with ClaudeSDKClient(options=options) as client:
+            await client.query(f"Run the exact command: echo {label}")
+            async for msg in client.receive_response():
+                sid = getattr(msg, "session_id", None)
+                if sid:
+                    session_ids_seen.add(str(sid))
+
+                if type(msg).__name__ == "AssistantMessage" and hasattr(msg, "content"):
+                    for block in msg.content:
+                        if type(block).__name__ == "ToolUseBlock":
+                            tool_names_seen.append(block.name)
+
+                if type(msg).__name__ == "UserMessage" and hasattr(msg, "content"):
+                    for block in msg.content:
+                        if type(block).__name__ == "ToolResultBlock":
+                            tool_results_seen.append(str(getattr(block, "content", "")))
+
+        return {
+            "label": label,
+            "tool_names_seen": tool_names_seen,
+            "tool_results_seen": tool_results_seen,
+            "session_ids_seen": session_ids_seen,
+        }
+
+    with patch.object(RunTree, "post", tracked_post):
+        results = await asyncio.gather(
+            run_one("alpha"),
+            run_one("beta"),
+            run_one("gamma"),
+        )
+
+    for result in results:
+        assert "Bash" in result["tool_names_seen"], (
+            f"Expected Bash tool call for {result['label']}, saw: "
+            f"{result['tool_names_seen']}"
+        )
+        assert any(
+            result["label"] in output for output in result["tool_results_seen"]
+        ), (
+            f"Expected tool output containing {result['label']}, saw: "
+            f"{result['tool_results_seen']}"
+        )
+        assert result["session_ids_seen"], (
+            f"Expected session_id for {result['label']}, saw none"
+        )
+
+    bash_parent_ids = {
+        run["parent_run_id"]
+        for run in posted_runs
+        if run["name"] == "Bash" and run["run_type"] == "tool"
+    }
+    assert len(bash_parent_ids) == 3, (
+        "Each concurrent client's Bash tool run should be under its own root "
+        f"span; saw parent ids: {bash_parent_ids}; runs: {posted_runs}"
+    )
+
+    # Every per-conversation state container should have cleaned itself up;
+    # nothing should leak into the legacy default-session globals or fallback
+    # registries after all concurrent clients complete.
+    assert len(_hooks_module._default_session.active_tool_runs) == 0
+    assert len(_hooks_module._default_session.pending_agent_tools) == 0
+    assert len(_hooks_module._default_session.agent_to_tool_mapping) == 0
+    assert len(_hooks_module._default_session.ended_subagent_runs) == 0
+    assert len(_hooks_module._default_session.subagent_runs) == 0
+    assert len(_hooks_module._default_session.subagent_transcript_paths) == 0
+    assert _hooks_module._default_session.root_run is None

@@ -1,5 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, no-process-env */
 import { jest } from "@jest/globals";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { inspect } from "node:util";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import {
@@ -32,7 +35,7 @@ describe("Client", () => {
       expect(createExampleSpy).toHaveBeenCalledWith(
         { input },
         { output: generation },
-        options
+        options,
       );
     });
   });
@@ -77,7 +80,7 @@ describe("Client", () => {
             type: "langchain",
           },
         },
-        options
+        options,
       );
     });
   });
@@ -86,6 +89,277 @@ describe("Client", () => {
     const client = new Client({ apiUrl: "https://example.com/" });
     const result = (client as any).apiUrl;
     expect(result).toBe("https://example.com");
+  });
+
+  describe("profile config", () => {
+    const originalEnv = process.env;
+    let tempDir: string;
+
+    const writeProfileConfig = (config: unknown) => {
+      const configPath = path.join(tempDir, "config.json");
+      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      process.env.LANGSMITH_CONFIG_FILE = configPath;
+      return configPath;
+    };
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "langsmith-profile-"));
+      delete process.env.LANGSMITH_API_KEY;
+      delete process.env.LANGCHAIN_API_KEY;
+      delete process.env.LANGSMITH_ENDPOINT;
+      delete process.env.LANGCHAIN_ENDPOINT;
+      delete process.env.LANGSMITH_WORKSPACE_ID;
+      delete process.env.LANGCHAIN_WORKSPACE_ID;
+      delete process.env.LANGSMITH_PROFILE;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      process.env = originalEnv;
+    });
+
+    it("loads api URL, API key header, and workspace from the active profile", () => {
+      writeProfileConfig({
+        current_profile: "prod",
+        profiles: {
+          prod: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).apiKey).toBeUndefined();
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("profile-key");
+      expect((client as any)._mergedHeaders["x-tenant-id"]).toBe(
+        "workspace-id",
+      );
+    });
+
+    it("uses profile OAuth access tokens before profile API keys", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiKey).toBeUndefined();
+      expect((client as any)._mergedHeaders.Authorization).toBe(
+        "Bearer profile-access-token",
+      );
+      expect((client as any)._mergedHeaders["x-api-key"]).toBeUndefined();
+    });
+
+    it("suppresses profile auth when environment auth is set", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+      process.env.LANGSMITH_API_KEY = "env-key";
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("env-key");
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+    });
+
+    it("suppresses profile auth when constructor auth is set", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({
+        apiKey: "constructor-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe(
+        "constructor-key",
+      );
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+    });
+
+    it("refreshes expired profile OAuth tokens before requests", async () => {
+      const configPath = writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            expect(String(init?.body)).toContain("grant_type=refresh_token");
+            expect(String(init?.body)).toContain("client_id=langsmith-cli");
+            expect(String(init?.body)).toContain(
+              "refresh_token=old-refresh-token",
+            );
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const requestInit = mockFetch.mock.calls[1][1] as RequestInit;
+      expect(requestInit.headers).toMatchObject({
+        Authorization: "Bearer new-access-token",
+      });
+      const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      expect(updated.profiles.default.oauth.access_token).toBe(
+        "new-access-token",
+      );
+      expect(updated.profiles.default.oauth.refresh_token).toBe(
+        "new-refresh-token",
+      );
+      expect(updated.profiles.default.oauth).not.toHaveProperty("token_type");
+      expect(updated.profiles.default).not.toHaveProperty("bearer_token");
+    });
+
+    it("preserves explicit Authorization headers during profile refresh", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: {
+          Authorization: "Bearer explicit-token",
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl, requestInit]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+      expect(requestInit?.headers).toMatchObject({
+        Authorization: "Bearer explicit-token",
+      });
+    });
+
+    it("refreshes profile OAuth tokens against profile api_url", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          if (String(input) === "https://override.example.com/oauth/token") {
+            return new Response("wrong refresh URL", { status: 418 });
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({
+        apiUrl: "https://override.example.com",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://override.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect(mockFetch.mock.calls.map(([input]) => String(input))).toEqual([
+        "https://profile.example.com/oauth/token",
+        "https://override.example.com/info",
+      ]);
+    });
   });
 
   describe("getHostUrl", () => {
@@ -152,6 +426,15 @@ describe("Client", () => {
       });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://eu.smith.langchain.com");
+    });
+
+    it("should return 'https://apac.smith.langchain.com' if apiUrl contains 'apac'", () => {
+      const client = new Client({
+        apiUrl: "https://apac.api.smith.langchain.com/v1",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://apac.smith.langchain.com");
     });
 
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
@@ -234,9 +517,41 @@ describe("Client", () => {
 
       invalidIdentifiers.forEach((identifier) => {
         expect(() => parseHubIdentifier(identifier)).toThrowError(
-          /Invalid prompt identifier format/
+          /Invalid prompt identifier format/,
         );
       });
+    });
+  });
+
+  describe("pullPromptCommit", () => {
+    it("requires dangerouslyPullPublicPrompt for public prompt identifiers", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt"),
+      ).rejects.toThrow(/dangerouslyPullPublicPrompt: true/);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("allows public prompt identifiers with dangerouslyPullPublicPrompt", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const promptCommit = {
+        owner: "someuser",
+        repo: "someprompt",
+        commit_hash: "abc123",
+        manifest: {},
+        examples: [],
+      };
+      jest
+        .spyOn(client as any, "_fetchPromptFromApi")
+        .mockResolvedValue(promptCommit);
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt", {
+          dangerouslyPullPublicPrompt: true,
+        }),
+      ).resolves.toEqual(promptCommit);
     });
   });
 
@@ -333,7 +648,7 @@ describe("Client", () => {
         { id: "test" },
         {
           description: "initial prompt version",
-        }
+        },
       );
 
       const fetchCall = fetchSpy.mock.calls[0];
@@ -514,7 +829,7 @@ describe("Client", () => {
 
       const rootPatchFiltered = (client as any)._filterForSampling(
         rootPatchRuns,
-        true
+        true,
       );
 
       // Only root_run_2 should be included, and traceId1 should be removed from filtered set
@@ -578,7 +893,7 @@ describe("Client", () => {
       // Only children of sampled traces should be included
       expect(patchFiltered).toHaveLength(2);
       const patchTraceIds = new Set(
-        patchFiltered.map((run: any) => run.trace_id)
+        patchFiltered.map((run: any) => run.trace_id),
       );
       expect(patchTraceIds.has(traceIds[0])).toBe(true);
       expect(patchTraceIds.has(traceIds[2])).toBe(true);
@@ -653,7 +968,7 @@ describe("Client", () => {
               "x-tenant-id": "test-workspace-id",
               "x-api-key": "test-api-key",
             }),
-          })
+          }),
         );
 
         // eslint-disable-next-line no-process-env
@@ -683,7 +998,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("[403]: Forbidden");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -710,7 +1025,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("Failed to create run");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -738,7 +1053,7 @@ describe("Client", () => {
             run_type: "llm",
             inputs: { text: "hello" },
           },
-          { workspaceId: "test-workspace-id" }
+          { workspaceId: "test-workspace-id" },
         );
 
         // check call was made with correct headers
@@ -749,7 +1064,7 @@ describe("Client", () => {
             headers: expect.objectContaining({
               "x-tenant-id": "test-workspace-id",
             }),
-          })
+          }),
         );
       });
 
@@ -782,7 +1097,7 @@ describe("Client", () => {
           {
             outputs: { result: "updated" },
           },
-          { workspaceId: "override-workspace-id" }
+          { workspaceId: "override-workspace-id" },
         );
 
         expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -791,10 +1106,10 @@ describe("Client", () => {
         const secondCall = mockFetch.mock.calls[1];
 
         expect((firstCall[1] as any).headers["x-tenant-id"]).toBe(
-          "default-workspace-id"
+          "default-workspace-id",
         );
         expect((secondCall[1] as any).headers["x-tenant-id"]).toBe(
-          "override-workspace-id"
+          "override-workspace-id",
         );
       });
     });
@@ -830,8 +1145,8 @@ describe("Client", () => {
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringMatching(
-          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
-        )
+          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version.",
+        ),
       );
       consoleWarnSpy.mockClear();
 
@@ -1139,7 +1454,7 @@ describe("Client", () => {
       expect(str).toContain("https://api.smith.langchain.com");
       // Ensure it's properly formatted
       expect(str).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
 
@@ -1164,7 +1479,7 @@ describe("Client", () => {
       expect(inspectResult).not.toContain("secret-key");
       expect(inspectResult).toContain("https://api.smith.langchain.com");
       expect(inspectResult).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
 
@@ -1178,7 +1493,7 @@ describe("Client", () => {
       const inspectFn = (client as any)[inspectSymbol];
       expect(typeof inspectFn).toBe("function");
       expect(inspectFn.call(client)).toBe(
-        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]'
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
   });

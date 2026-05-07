@@ -57,12 +57,24 @@ export interface SandboxData {
   status_message?: string;
   created_at?: string;
   updated_at?: string;
-  /** Maximum lifetime TTL in seconds (`0` means disabled, omitted/`undefined` means not set). */
-  ttl_seconds?: number;
-  /** Idle timeout TTL in seconds (`0` means disabled, omitted/`undefined` means not set). */
+  /**
+   * Idle timeout in seconds. The launcher stops the sandbox after this
+   * many seconds of inactivity. `0` disables the idle stop;
+   * omitted/`undefined` means not set (the server applies a default).
+   */
   idle_ttl_seconds?: number;
-  /** Computed expiration timestamp when a TTL is active, else omitted/`undefined`. */
-  expires_at?: string;
+  /**
+   * Seconds after a sandbox enters the `stopped` state before it (and its
+   * filesystem clone) are permanently deleted. `0` disables stop-anchored
+   * deletion; omitted/`undefined` falls back to the server default.
+   */
+  delete_after_stop_seconds?: number;
+  /**
+   * Timestamp when the sandbox transitioned to the `stopped` state, or
+   * `undefined` while running. The deletion deadline is
+   * `stopped_at + delete_after_stop_seconds`.
+   */
+  stopped_at?: string;
   /** Snapshot ID used to create this sandbox. */
   snapshot_id?: string;
   /** Number of vCPUs allocated. */
@@ -276,15 +288,20 @@ export interface CreateSandboxOptions {
    */
   waitForReady?: boolean;
   /**
-   * Maximum lifetime in seconds from creation. The sandbox is deleted after
-   * this duration. Must be a multiple of 60, or `0`/`undefined` to disable or omit.
-   */
-  ttlSeconds?: number;
-  /**
-   * Idle timeout in seconds. The sandbox is deleted after this much inactivity.
-   * Must be a multiple of 60, or `0`/`undefined` to disable or omit.
+   * Idle timeout in seconds. The launcher stops the sandbox after this many
+   * seconds of inactivity. Must be a multiple of 60. Pass `0` to disable
+   * the idle stop. When omitted, the server applies a default of `600`
+   * seconds (10 minutes).
    */
   idleTtlSeconds?: number;
+  /**
+   * Seconds after the sandbox enters the `stopped` state before it (and
+   * its filesystem clone) are permanently deleted. Must be a multiple of
+   * 60. Pass `0` to disable stop-anchored deletion (manual cleanup
+   * required). When omitted, the server applies its configured default
+   * (typically 14 days).
+   */
+  deleteAfterStopSeconds?: number;
   /** Number of vCPUs. */
   vCpus?: number;
   /** Memory in bytes. */
@@ -380,20 +397,23 @@ export interface StartSandboxOptions {
 }
 
 /**
- * Options for updating a sandbox (name and/or TTL).
+ * Options for updating a sandbox (name and/or retention settings).
  */
 export interface UpdateSandboxOptions {
   /** New display name. */
   newName?: string;
   /**
-   * Maximum lifetime in seconds from creation. Must be a multiple of 60.
-   * Pass `0` to disable absolute TTL.
-   */
-  ttlSeconds?: number;
-  /**
-   * Idle timeout in seconds. Must be a multiple of 60. Pass `0` to disable.
+   * Idle timeout in seconds. Must be a multiple of 60. Pass `0` to disable
+   * the idle stop. Omit (or pass `undefined`) to leave the existing value
+   * unchanged.
    */
   idleTtlSeconds?: number;
+  /**
+   * Seconds after entering `stopped` before deletion. Must be a multiple
+   * of 60. Pass `0` to disable stop-anchored deletion. Omit (or pass
+   * `undefined`) to leave the existing value unchanged.
+   */
+  deleteAfterStopSeconds?: number;
 }
 
 /**

@@ -694,62 +694,78 @@ sandbox = client.start_sandbox("my-vm")
 
 ## Sandbox Lifetime & TTL
 
-Control how long a sandbox stays alive with two optional TTL parameters:
+Sandboxes follow a two-stage retention model anchored to **idle activity**
+and the **`stopped`** state — there is no wall-clock "max lifetime" TTL:
 
-- **`ttl_seconds`** — Maximum lifetime from creation. The sandbox is automatically
-  deleted after this many seconds, regardless of activity.
-- **`idle_ttl_seconds`** — Idle timeout. The sandbox is automatically deleted after
-  this many seconds of inactivity. Activity (command execution, file I/O) resets
-  the timer.
+- **`idle_ttl_seconds`** — Idle timeout. The launcher stops the sandbox
+  after this many seconds of inactivity (any command execution or file I/O
+  resets the timer). When omitted at creation, the server applies a default
+  of `600` seconds (10 minutes); pass `0` explicitly to disable the idle
+  stop and keep the sandbox running indefinitely.
+- **`delete_after_stop_seconds`** — Stop-anchored deletion. Once a sandbox
+  enters the `stopped` state (either via the idle timer above or an explicit
+  `stop_sandbox` call), this timer starts. After the deadline passes, the
+  sandbox row and its filesystem clone are permanently deleted by a
+  server-side sweep. Pass `0` to disable stop-anchored deletion (manual
+  cleanup required); when omitted, the server applies its configured default
+  (typically 14 days).
 
-Both values must be multiples of 60 (minute-resolution). Pass `0` to explicitly
-disable a TTL. When both are set, whichever deadline comes first wins.
+Both values must be multiples of 60 (minute-resolution). The lifecycle is:
+
+```
+running ──(idle for idle_ttl_seconds)──▶ stopped ──(delete_after_stop_seconds)──▶ deleted
+```
 
 ```python
-# Create a sandbox that expires after 1 hour
-with client.sandbox(
-    snapshot_id=snapshot_id,
-    ttl_seconds=3600,
-) as sb:
+# Default retention (server defaults: 10 min idle stop, 14 day delete)
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     result = sb.run("echo hello")
 
-# Create a sandbox that expires after 10 min of inactivity
+# Aggressive: stop after 5 min idle, delete 1 hour after stop
 sb = client.create_sandbox(
     snapshot_id=snapshot_id,
-    idle_ttl_seconds=600,
+    idle_ttl_seconds=300,
+    delete_after_stop_seconds=3600,
 )
 
-# Combine both: 2-hour max lifetime, 15-min idle timeout
+# Long-running: never auto-stop, delete 7 days after manual stop
 sb = client.create_sandbox(
     snapshot_id=snapshot_id,
-    ttl_seconds=7200,
-    idle_ttl_seconds=900,
+    idle_ttl_seconds=0,
+    delete_after_stop_seconds=604800,
 )
 
-# Check expiration
-print(sb.ttl_seconds)       # 7200
-print(sb.idle_ttl_seconds)  # 900
-print(sb.expires_at)        # e.g. "2026-03-24T14:00:00Z"
+# Inspect retention settings
+print(sb.idle_ttl_seconds)            # e.g. 300
+print(sb.delete_after_stop_seconds)   # e.g. 3600
+print(sb.stopped_at)                  # None while running, ISO timestamp once stopped
 ```
 
-### Updating TTL on Existing Sandboxes
+### Updating retention on existing sandboxes
 
-You can update TTL values on an already-running sandbox:
+You can update either retention setting on a running or stopped sandbox.
+Updating `delete_after_stop_seconds` on an already-stopped sandbox shifts
+its deletion deadline (`stopped_at + delete_after_stop_seconds`):
 
 ```python
-# Extend the idle timeout to 30 minutes
+# Extend the idle stop to 30 minutes
 sb = client.update_sandbox("my-sandbox", idle_ttl_seconds=1800)
 
-# Disable the absolute TTL (sandbox runs indefinitely, idle TTL still applies)
-sb = client.update_sandbox("my-sandbox", ttl_seconds=0)
+# Push the deletion deadline out to 30 days after stop
+sb = client.update_sandbox("my-sandbox", delete_after_stop_seconds=2592000)
 
-# Update name and TTL together
+# Disable both — sandbox keeps running and never auto-deletes
 sb = client.update_sandbox(
     "my-sandbox",
-    new_name="my-sandbox-v2",
-    ttl_seconds=3600,
+    idle_ttl_seconds=0,
+    delete_after_stop_seconds=0,
 )
 ```
+
+> **Migration note (alpha):** the previous `ttl_seconds` (hard wall-clock
+> TTL) and `expires_at` fields were removed. The hard TTL never reliably
+> deleted stopped sandboxes; replace any usage with `idle_ttl_seconds` for
+> stopping and `delete_after_stop_seconds` for deletion.
 
 ## Reusing Existing Sandboxes
 
@@ -886,14 +902,14 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, ttl_seconds=None, idle_ttl_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
 | `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
 | `service(name, port, *, expires_in_seconds=600)` | Get a `ServiceURL` for an HTTP service on the given port |
 | `list_sandboxes()` | List all sandboxes |
-| `update_sandbox(name, *, new_name=None, ttl_seconds=None, idle_ttl_seconds=None)` | Update a sandbox's name or TTL settings |
+| `update_sandbox(name, *, new_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None)` | Update a sandbox's name or retention settings |
 | `delete_sandbox(name)` | Delete a sandbox |
 | `start_sandbox(name, *, timeout=120)` | Start a stopped sandbox, poll until ready |
 | `stop_sandbox(name)` | Stop a running sandbox (preserves sandbox files) |
@@ -914,9 +930,9 @@ except SandboxClientError as e:
 | `status_message` | Human-readable details when status is `"failed"`, `None` otherwise |
 | `dataplane_url` | URL for runtime operations (only functional when status is `"ready"`) |
 | `id` | Unique identifier (UUID) |
-| `ttl_seconds` | Maximum lifetime TTL in seconds (`0` means disabled, `None` means not set) |
-| `idle_ttl_seconds` | Idle timeout TTL in seconds (`0` means disabled, `None` means not set) |
-| `expires_at` | Computed expiration timestamp, or `None` if no TTL is active |
+| `idle_ttl_seconds` | Idle timeout in seconds before the launcher stops the sandbox (`0` means disabled, `None` means not set). New sandboxes get a server-side default of `600` (10 minutes) when not explicitly provided. |
+| `delete_after_stop_seconds` | Seconds after entering `stopped` before the sandbox and its filesystem clone are permanently deleted (`0` means disabled, `None` means server default). |
+| `stopped_at` | ISO 8601 timestamp when the sandbox transitioned to `stopped`, or `None` while running. |
 
 | Method | Description |
 |--------|-------------|

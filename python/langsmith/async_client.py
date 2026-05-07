@@ -23,6 +23,7 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _profiles
 from langsmith._internal._hub import (
     HUB,
     PLATFORM_HUB,
@@ -47,10 +48,16 @@ class AsyncClient:
         "_cache",
         "_custom_headers",
         "_api_key",
+        "_oauth_access_token",
+        "_profile_auth",
+        "_profile_auth_headers",
     )
 
     _custom_headers: dict[str, str]
     _api_key: Optional[str]
+    _oauth_access_token: Optional[str]
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {**self._custom_headers}
@@ -58,6 +65,10 @@ class AsyncClient:
         headers["Content-Type"] = "application/json"
         if self._api_key:
             headers[ls_client.X_API_KEY] = self._api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
+        elif self._oauth_access_token:
+            headers["Authorization"] = f"Bearer {self._oauth_access_token}"
         return headers
 
     @property
@@ -125,11 +136,48 @@ class AsyncClient:
         """
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
-        api_key = ls_utils.get_api_key(api_key)
-        api_url = ls_utils.get_api_url(api_url)
+        env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
+        env_api_key = ls_client._get_langsmith_env_var_uncached("API_KEY")
+        profile_config = _profiles.load_profile_client_config()
+        api_url_ = (
+            api_url if api_url is not None else env_api_url or profile_config.api_url
+        )
+        explicit_or_env_api_key = api_key if api_key is not None else env_api_key
+        profile_auth_enabled = api_key is None and env_api_key is None
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
+        api_key_ = (
+            explicit_or_env_api_key
+            if explicit_or_env_api_key is not None
+            else None
+            if use_profile_oauth
+            else profile_config.api_key
+        )
+        self._oauth_access_token = (
+            profile_config.oauth_access_token if use_profile_oauth else None
+        )
+        api_key = ls_utils.get_api_key(api_key_)
+        api_url = ls_utils.get_api_url(api_url_)
+        self._profile_auth = None
+        self._profile_auth_headers = {}
+        if use_profile_oauth:
+            self._profile_auth = _profiles.ProfileAuth(
+                profile_config,
+                api_key_header=ls_client.X_API_KEY,
+            )
+            self._profile_auth_headers = self._profile_auth.current_auth_headers()
+            self._oauth_access_token = self._profile_auth.oauth_access_token
         self._api_key = api_key
         _headers = self._compute_headers()
-        ls_client._validate_api_key_if_hosted(api_url, api_key)
+        ls_client._validate_api_key_if_hosted(
+            api_url,
+            api_key
+            or self._oauth_access_token
+            or (
+                "profile-auth"
+                if self._profile_auth is not None and self._profile_auth.has_auth
+                else None
+            ),
+        )
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
@@ -213,6 +261,17 @@ class AsyncClient:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self._api_url)
 
+    async def _ensure_profile_auth(self) -> None:
+        if self._api_key or self._profile_auth is None:
+            return
+        if self._profile_auth.needs_refresh():
+            auth_headers = await asyncio.to_thread(self._profile_auth.get_auth_headers)
+        else:
+            auth_headers = self._profile_auth.current_auth_headers()
+        self._profile_auth_headers = auth_headers
+        self._oauth_access_token = self._profile_auth.oauth_access_token
+        self._client.headers = httpx.Headers(self._compute_headers())
+
     async def _arequest_with_retries(
         self,
         method: str,
@@ -228,6 +287,12 @@ class AsyncClient:
             params = kwargs["params"]
             filtered_params = {k: v for k, v in params.items() if v is not None}
             kwargs["params"] = filtered_params
+
+        await self._ensure_profile_auth()
+        if self._profile_auth is not None and "headers" in kwargs:
+            kwargs["headers"] = self._profile_auth.prepare_request_headers(
+                kwargs["headers"]
+            )
 
         for attempt in range(max_retries):
             try:
@@ -1796,14 +1861,29 @@ class AsyncClient:
         *,
         include_model: Optional[bool] = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
+
+        Public prompts referenced by owner/name cross a trust boundary because the
+        prompt manifest may contain serialized LangChain objects and configuration
+        that affect runtime behavior. For example, a prompt can intentionally
+        configure a model with a custom base URL, headers, model name, or other
+        constructor arguments. These are supported features, but they also mean
+        the prompt contents should be treated as executable configuration rather
+        than plain text.
+
+        Set `dangerously_pull_public_prompt=True` only after reviewing and
+        trusting the prompt contents, not merely the publishing account. Prompts
+        from your own or your organization's account can still be unsafe if that
+        account or prompt was compromised.
 
         Args:
             prompt_identifier: The identifier of the prompt.
             include_model: Whether to include model information.
-            skip_cache: Whether to skip the prompt cache.
-
+            skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name, for example `username/promptname`.
                 Defaults to `False`.
 
         Returns:
@@ -1812,6 +1892,11 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        ls_client._validate_public_prompt_pull(
+            prompt_identifier,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
+        )
+
         # Create refresh function bound to this specific prompt
         refresh_func = partial(
             self._afetch_prompt_from_api, prompt_identifier, include_model
@@ -1901,6 +1986,7 @@ class AsyncClient:
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -1920,6 +2006,9 @@ class AsyncClient:
                 **SECURITY NOTE**: Should only be set to `True` when pulling trusted
                 prompts.
             skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name (for example, `username/promptname`).
+                Only do this for trusted prompts. Defaults to `False`.
 
         Returns:
             The prompt object in the specified format.
@@ -1943,7 +2032,10 @@ class AsyncClient:
             langsmith package) depends on.
         """
         prompt_object = await self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model, skip_cache=skip_cache
+            prompt_identifier,
+            include_model=include_model,
+            skip_cache=skip_cache,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
         )
         return ls_client._process_prompt_manifest(
             prompt_object,

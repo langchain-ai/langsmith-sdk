@@ -7,10 +7,10 @@ export function getUuidFromOtelTraceId(traceId: string): string {
   // Insert hyphens to convert back to UUID format
   return `${traceId.substring(0, 8)}-${traceId.substring(
     8,
-    12
+    12,
   )}-${traceId.substring(12, 16)}-${traceId.substring(
     16,
-    20
+    20,
   )}-${traceId.substring(20, 32)}`;
 }
 
@@ -24,6 +24,6 @@ export function getUuidFromOtelSpanId(spanId: string): string {
   const paddedHex = spanId.padStart(16, "0");
   return `00000000-0000-0000-${paddedHex.substring(0, 4)}-${paddedHex.substring(
     4,
-    16
+    16,
   )}`;
 }

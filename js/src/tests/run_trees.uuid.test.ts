@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { v4 as uuidv4, v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4, v7 as uuidv7 } from "../utils/uuid/src/index.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -100,7 +100,7 @@ test("nonCryptographicUuid7Deterministic produces valid, deterministic UUID7s", 
 
   // Different inputs -> different outputs
   expect(nonCryptographicUuid7Deterministic(original, "other-key")).not.toBe(
-    d1
+    d1,
   );
   expect(nonCryptographicUuid7Deterministic(uuidv7(), key)).not.toBe(d1);
 });
@@ -160,7 +160,7 @@ test("nonCryptographicUuid7Deterministic is fast", async () => {
   const startTime = new Date();
   for (let i = 0; i < originalUuids.length; i++) {
     finalUuids.push(
-      nonCryptographicUuid7Deterministic(originalUuids[i], "key")
+      nonCryptographicUuid7Deterministic(originalUuids[i], "key"),
     );
   }
   const endTime = new Date();

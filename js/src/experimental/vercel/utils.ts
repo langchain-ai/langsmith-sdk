@@ -62,7 +62,7 @@ const guessMimetypeFromBase64 = (data: string) => {
 
 export const normalizeFileDataAsDataURL = (
   fileData: LanguageModelV2DataContent | ArrayBuffer,
-  mimeType?: string
+  mimeType?: string,
 ): string => {
   // eslint-disable-next-line no-instanceof/no-instanceof
   if (fileData instanceof URL) {
@@ -120,7 +120,7 @@ export const normalizeFileDataAsDataURL = (
 
 export const convertMessageToTracedFormat = (
   message: Record<string, unknown>,
-  responseMetadata?: Record<string, unknown>
+  responseMetadata?: Record<string, unknown>,
 ) => {
   const formattedMessage: Record<string, unknown> = {
     ...message,
@@ -134,7 +134,7 @@ export const convertMessageToTracedFormat = (
             typeof block === "object" &&
             block.type === "tool-call"
           );
-        }
+        },
       ) as ToolCallPart[];
       const toolCalls = toolCallBlocks.map((block) => {
         // AI SDK 4 shim

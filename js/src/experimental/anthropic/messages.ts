@@ -5,12 +5,80 @@ import type {
 } from "./types.js";
 import { isIterable } from "./utils.js";
 
+export type LangSmithMessage = {
+  content?: unknown;
+  role?: string;
+  id?: string;
+} & Record<string, unknown>;
+
+function getContentBlockKey(block: unknown): string | undefined {
+  if (typeof block !== "object" || block == null) return undefined;
+  const record = block as Record<string, unknown>;
+  if (typeof record.id === "string") return `id:${record.id}`;
+  if (typeof record.signature === "string")
+    return `signature:${record.signature}`;
+  if (typeof record.type === "string" && typeof record.text === "string") {
+    return `text:${record.text}`;
+  }
+  try {
+    return `json:${JSON.stringify(record)}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function mergeContentBlocks(existing: unknown, incoming: unknown): unknown {
+  if (!Array.isArray(existing) || !Array.isArray(incoming)) return incoming;
+
+  const merged = [...existing];
+  const keys = new Set(merged.map(getContentBlockKey).filter(Boolean));
+
+  for (const block of incoming) {
+    const key = getContentBlockKey(block);
+    if (key != null && keys.has(key)) continue;
+    merged.push(block);
+    if (key != null) keys.add(key);
+  }
+
+  return merged;
+}
+
+export function mergeMessagesById(
+  previousMessages: LangSmithMessage[],
+  newMessages: LangSmithMessage[],
+): LangSmithMessage[] {
+  const merged = [...previousMessages];
+
+  for (const message of newMessages) {
+    const existingIndex = merged.findIndex(
+      (prev) =>
+        prev.role === message.role &&
+        message.id != null &&
+        prev.id === message.id,
+    );
+
+    if (existingIndex < 0) {
+      merged.push(message);
+      continue;
+    }
+
+    const existing = merged[existingIndex];
+    merged[existingIndex] = {
+      ...existing,
+      ...message,
+      content: mergeContentBlocks(existing.content, message.content),
+    };
+  }
+
+  return merged;
+}
+
 /**
  * Converts SDK content blocks into serializable objects.
  * Matches Python's flatten_content_blocks behavior.
  */
 export function flattenContentBlocks(
-  content: BetaContentBlock[] | unknown
+  content: BetaContentBlock[] | unknown,
 ): Array<Record<string, unknown>> | unknown {
   if (!Array.isArray(content)) {
     return content;
@@ -57,8 +125,8 @@ export function flattenContentBlocks(
  * @internal
  */
 export function convertFromAnthropicMessage(
-  sdkMessage: SDKMessage | Iterable<SDKMessage> | string | undefined
-): { content: unknown; role: string }[] {
+  sdkMessage: SDKMessage | Iterable<SDKMessage> | string | undefined,
+): LangSmithMessage[] {
   if (sdkMessage == null) return [];
   if (typeof sdkMessage === "string") {
     return [{ content: sdkMessage, role: "user" }];
@@ -130,7 +198,7 @@ export function isTaskTool(tool: BetaToolUseBlock): tool is {
  * @internal
  */
 export function isToolBlock(
-  block: BetaContentBlock
+  block: BetaContentBlock,
 ): block is BetaToolUseBlock {
   if (!block || typeof block !== "object") return false;
   return block.type === "tool_use";

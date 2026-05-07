@@ -55,7 +55,7 @@ class Attachment(NamedTuple):
 
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
-"""Attachments associated with the run. 
+"""Attachments associated with the run.
 
 Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
 """
@@ -360,7 +360,7 @@ class RunBase(BaseModel):
         default_factory=dict
     )
     """Attachments associated with the run.
-    
+
     Each entry is a tuple of `(mime_type, bytes)`.
     """
 
@@ -986,6 +986,8 @@ class ComparativeExperiment(BaseModel):
 class PromptCommit(BaseModel):
     """Represents a Prompt with a manifest."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     owner: str
     """The handle of the owner of the prompt."""
     repo: str
@@ -998,6 +1000,10 @@ class PromptCommit(BaseModel):
     """The list of examples."""
     description: Optional[str] = None
     """Optional human-readable description for the commit."""
+    hub_model_config: Optional[dict] = Field(default=None, alias="model_config")
+    """The model configuration for the prompt."""
+    hub_model_provider: Optional[str] = Field(default=None, alias="model_provider")
+    """The model provider (e.g. ChatOpenAI)."""
 
 
 class ListedPromptCommit(BaseModel):

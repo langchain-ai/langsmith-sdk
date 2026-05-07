@@ -54,12 +54,24 @@ export class Sandbox {
   readonly created_at?: string;
   /** Timestamp when the sandbox was last updated. */
   readonly updated_at?: string;
-  /** Maximum lifetime TTL in seconds (`0` means disabled). */
-  readonly ttl_seconds?: number;
-  /** Idle timeout TTL in seconds (`0` means disabled). */
+  /**
+   * Idle timeout TTL in seconds (`0` means disabled).
+   * New sandboxes receive a server-side default of `600` seconds (10 minutes)
+   * when the caller did not set `idleTtlSeconds` explicitly. The launcher
+   * stops the sandbox after this many idle seconds.
+   */
   readonly idle_ttl_seconds?: number;
-  /** Computed expiration timestamp when a TTL is active. */
-  readonly expires_at?: string;
+  /**
+   * Seconds after the sandbox enters the `stopped` state before it (and
+   * its filesystem clone) are permanently deleted (`0` means disabled).
+   */
+  readonly delete_after_stop_seconds?: number;
+  /**
+   * Timestamp when the sandbox transitioned to `stopped`, or `undefined`
+   * while running. The deletion deadline is
+   * `stopped_at + delete_after_stop_seconds`.
+   */
+  readonly stopped_at?: string;
   /** Snapshot ID used to create this sandbox. */
   readonly snapshot_id?: string;
   /** Number of vCPUs allocated. */
@@ -80,9 +92,9 @@ export class Sandbox {
     this.id = data.id;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
-    this.ttl_seconds = data.ttl_seconds;
     this.idle_ttl_seconds = data.idle_ttl_seconds;
-    this.expires_at = data.expires_at;
+    this.delete_after_stop_seconds = data.delete_after_stop_seconds;
+    this.stopped_at = data.stopped_at ?? undefined;
     this.snapshot_id = data.snapshot_id;
     this.vCpus = data.vcpus;
     this.mem_bytes = data.mem_bytes;
@@ -99,13 +111,13 @@ export class Sandbox {
     if (this.status && this.status !== "ready") {
       throw new LangSmithSandboxNotReadyError(
         `Sandbox '${this.name}' is not ready (status: ${this.status}). ` +
-          "Use waitForSandbox() to wait for the sandbox to become ready."
+          "Use waitForSandbox() to wait for the sandbox to become ready.",
       );
     }
     if (!this.dataplane_url) {
       throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +
-          "Runtime operations require a dataplane URL."
+          "Runtime operations require a dataplane URL.",
       );
     }
     return this.dataplane_url;
@@ -145,19 +157,19 @@ export class Sandbox {
    */
   async run(
     command: string,
-    options: RunOptions & { wait: false }
+    options: RunOptions & { wait: false },
   ): Promise<CommandHandle>;
   async run(
     command: string,
-    options?: RunOptions & { wait?: true }
+    options?: RunOptions & { wait?: true },
   ): Promise<ExecutionResult>;
   async run(
     command: string,
-    options?: RunOptions
+    options?: RunOptions,
   ): Promise<ExecutionResult | CommandHandle>;
   async run(
     command: string,
-    options: RunOptions = {}
+    options: RunOptions = {},
   ): Promise<ExecutionResult | CommandHandle> {
     const {
       wait = true,
@@ -205,7 +217,7 @@ export class Sandbox {
       // Fall back to HTTP on connection errors or missing ws package
       const name = e != null && typeof e === "object" ? (e as Error).name : "";
       const message =
-        e != null && typeof e === "object" ? (e as Error).message ?? "" : "";
+        e != null && typeof e === "object" ? ((e as Error).message ?? "") : "";
       if (
         name === "LangSmithSandboxConnectionError" ||
         name === "LangSmithSandboxServerReloadError" ||
@@ -223,7 +235,7 @@ export class Sandbox {
    */
   private async _runWs(
     command: string,
-    options: Omit<RunOptions, "wait"> = {}
+    options: Omit<RunOptions, "wait"> = {},
   ): Promise<CommandHandle> {
     const {
       timeout = 60,
@@ -254,7 +266,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
-      }
+      },
     );
 
     const handle = new CommandHandle(stream, control, this);
@@ -268,7 +280,7 @@ export class Sandbox {
    */
   private async _runHttp(
     command: string,
-    options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {}
+    options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {},
   ): Promise<ExecutionResult> {
     const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
@@ -321,7 +333,7 @@ export class Sandbox {
     options: {
       stdoutOffset?: number;
       stderrOffset?: number;
-    } = {}
+    } = {},
   ): Promise<CommandHandle> {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
@@ -330,7 +342,7 @@ export class Sandbox {
       dataplaneUrl,
       this._client.getApiKey(),
       commandId,
-      { stdoutOffset, stderrOffset }
+      { stdoutOffset, stderrOffset },
     );
 
     return new CommandHandle(stream, control, this, {
@@ -355,7 +367,7 @@ export class Sandbox {
   async write(
     path: string,
     content: string | Uint8Array,
-    timeout = 60
+    timeout = 60,
   ): Promise<void> {
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/upload?path=${encodeURIComponent(path)}`;
@@ -460,7 +472,7 @@ export class Sandbox {
    */
   async captureSnapshot(
     name: string,
-    options: CaptureSnapshotOptions = {}
+    options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
     return this._client.captureSnapshot(this.name, name, options);
   }

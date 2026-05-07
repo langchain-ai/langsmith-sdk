@@ -1,0 +1,210 @@
+name: js-perf
+
+on:
+  pull_request:
+    paths:
+      - "js/src/**"
+      - "js/package.json"
+      - ".github/workflows/js-perf.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR HEAD
+        uses: actions/checkout@v6
+        with:
+          path: pr
+
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: base
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+
+      - name: Install deps (main)
+        working-directory: base/js
+        run: pnpm install --frozen-lockfile
+
+      - name: Run benchmark (main)
+        working-directory: base/js
+        env:
+          LANGSMITH_RUN_PERF_BENCH: "true"
+          LANGSMITH_TRACING: "false"
+          LANGSMITH_PERF_BENCH_DIR: ${{ github.workspace }}/base-results
+        run: |
+          set -o pipefail
+          mkdir -p "$LANGSMITH_PERF_BENCH_DIR"
+          pnpm test:integration src/tests/perf.int.test.ts \
+            -t "benchmark event loop" 2>&1 | tee "$GITHUB_WORKSPACE/base-bench.log"
+
+      - name: Install deps (PR)
+        working-directory: pr/js
+        run: pnpm install --frozen-lockfile
+
+      - name: Run benchmark (PR)
+        working-directory: pr/js
+        env:
+          LANGSMITH_RUN_PERF_BENCH: "true"
+          LANGSMITH_TRACING: "false"
+          LANGSMITH_PERF_BENCH_DIR: ${{ github.workspace }}/pr-results
+        run: |
+          set -o pipefail
+          mkdir -p "$LANGSMITH_PERF_BENCH_DIR"
+          pnpm test:integration src/tests/perf.int.test.ts \
+            -t "benchmark event loop" 2>&1 | tee "$GITHUB_WORKSPACE/pr-bench.log"
+
+      - name: Compare and post PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+
+            const readJson = (dir, file) => {
+              try {
+                return JSON.parse(
+                  fs.readFileSync(path.join(dir, file), "utf8")
+                );
+              } catch {
+                return null;
+              }
+            };
+
+            const baseDir = path.join(process.env.GITHUB_WORKSPACE, "base-results");
+            const prDir   = path.join(process.env.GITHUB_WORKSPACE, "pr-results");
+
+            const cases = [
+              {
+                title: "Base64-heavy payload",
+                description:
+                  "Single large base64 string per message — the shape the worker-offload path is optimized for.",
+                file: "bench-base64.json",
+              },
+              {
+                title: "Structural payload",
+                description:
+                  "Many small strings across a wide/nested object graph. Should bypass worker offload and use sync flush.",
+                file: "bench-structural.json",
+              },
+            ];
+
+            const fmt = (n) => (typeof n === "number" ? n.toFixed(2) : String(n));
+            const delta = (a, b) => {
+              if (!a) return "n/a";
+              const pct = ((b - a) / a) * 100;
+              const sign = pct >= 0 ? "+" : "";
+              return `${sign}${pct.toFixed(1)}%`;
+            };
+
+            const metrics = [
+              ["Wall time (ms)",          ["wallMs"]],
+              ["createRun total (ms)",    ["createRun", "total"]],
+              ["createRun p50 (ms)",      ["createRun", "p50"]],
+              ["createRun p95 (ms)",      ["createRun", "p95"]],
+              ["createRun p99 (ms)",      ["createRun", "p99"]],
+              ["createRun max (ms)",      ["createRun", "max"]],
+              ["updateRun total (ms)",    ["updateRun", "total"]],
+              ["updateRun p95 (ms)",      ["updateRun", "p95"]],
+              ["loop lag total (ms)",     ["loopLag", "total"]],
+              ["loop lag p50 (ms)",       ["loopLag", "p50"]],
+              ["loop lag p95 (ms)",       ["loopLag", "p95"]],
+              ["loop lag p99 (ms)",       ["loopLag", "p99"]],
+              ["loop lag max (ms)",       ["loopLag", "max"]],
+            ];
+
+            const renderCase = ({ title, description, file }) => {
+              const base = readJson(baseDir, file);
+              const pr   = readJson(prDir, file);
+              if (!base || !pr) {
+                return [
+                  `#### ${title}`,
+                  ``,
+                  `_Missing results_: base=${!!base}, pr=${!!pr}`,
+                ];
+              }
+              const get = (obj, p) =>
+                p.reduce((o, k) => (o ? o[k] : undefined), obj);
+              const rows = metrics.map(([label, p]) => {
+                const a = get(base, p);
+                const b = get(pr, p);
+                return `| ${label} | ${fmt(a)} | ${fmt(b)} | ${delta(a, b)} |`;
+              });
+              return [
+                `#### ${title}`,
+                ``,
+                description,
+                `Payload: ${(pr.inputBytes / 1024).toFixed(1)} KB in / ${(
+                  pr.outputBytes / 1024
+                ).toFixed(1)} KB out, ${pr.runs} runs.`,
+                ``,
+                `| metric | main | this PR | delta |`,
+                `| --- | ---: | ---: | ---: |`,
+                ...rows,
+                ``,
+              ];
+            };
+
+            const body = [
+              `### JS perf benchmark`,
+              ``,
+              `Lower is better. Noisy on shared runners — treat as a signal, not a gate.`,
+              ``,
+              ...cases.flatMap(renderCase),
+            ].join("\n");
+
+            // PR comments have a 65536-char limit; leave headroom.
+            const MAX = 60000;
+            const trimmed =
+              body.length > MAX ? body.slice(0, MAX) + "\n\n…truncated" : body;
+
+            // Sticky upsert: find our previous comment by a hidden marker
+            // and update it in place, else create a new one. Avoids
+            // depending on a third-party sticky-comment action.
+            const MARKER = "<!-- js-perf-bench -->";
+            const message = `${MARKER}\n${trimmed}`;
+
+            const pr_number = context.payload.pull_request?.number;
+            if (!pr_number) {
+              core.info("Not a pull_request event; skipping comment.");
+              return;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr_number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: message,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr_number,
+                body: message,
+              });
+            }

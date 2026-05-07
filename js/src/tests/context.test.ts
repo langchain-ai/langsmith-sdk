@@ -49,7 +49,7 @@ describe("Context (agent/skill) on Client", () => {
 
       const [url, init] = fetchSpy.mock.calls[0] as [string, any];
       expect(url).toContain(
-        "/v1/platform/hub/repos/owner/my-agent/directories"
+        "/v1/platform/hub/repos/owner/my-agent/directories",
       );
       expect(url).toContain("repo_type=agent");
       expect(init.method).toBe("GET");
@@ -82,7 +82,7 @@ describe("Context (agent/skill) on Client", () => {
     it("rejects short parentCommit", async () => {
       const client = _mockClient();
       await expect(
-        client.pushAgent("-/repo", { files: {}, parentCommit: "abc" })
+        client.pushAgent("-/repo", { files: {}, parentCommit: "abc" }),
       ).rejects.toThrow(/8-64/);
     });
 
@@ -95,7 +95,7 @@ describe("Context (agent/skill) on Client", () => {
       await expect(
         client.pushAgent("-/BadName", {
           files: { "main.py": { type: "file", content: "x" } },
-        })
+        }),
       ).rejects.toThrow(/Invalid repo_handle/);
     });
 
@@ -164,7 +164,7 @@ describe("Context (agent/skill) on Client", () => {
       expect(createBody.repo_type).toBe("agent");
       // 3. commit
       expect(calls[2][0]).toContain(
-        "/v1/platform/hub/repos/-/my-agent/directories/commits"
+        "/v1/platform/hub/repos/-/my-agent/directories/commits",
       );
       expect(calls[2][1].method).toBe("POST");
       const commitBody = JSON.parse(calls[2][1].body);
@@ -388,7 +388,7 @@ describe("Context (agent/skill) on Client", () => {
         .mockResolvedValue(false);
       const fetchSpy = jest.spyOn(client as any, "_fetch");
       await expect(client.deleteAgent("other/repo")).rejects.toThrow(
-        /owner mismatch/
+        /owner mismatch/,
       );
       expect(fetchSpy).not.toHaveBeenCalled();
     });

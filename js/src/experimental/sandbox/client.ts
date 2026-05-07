@@ -119,7 +119,7 @@ export class SandboxClient {
   constructor(config: SandboxClientConfig = {}) {
     this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
       /\/$/,
-      ""
+      "",
     );
     this._apiKey = config.apiKey ?? getDefaultApiKey();
     this._fetchImpl = _getFetchImplementation();
@@ -146,7 +146,7 @@ export class SandboxClient {
       this._fetchImpl(url, {
         ...init,
         headers,
-      })
+      }),
     );
   }
 
@@ -168,7 +168,7 @@ export class SandboxClient {
   private async _postJson(
     url: string,
     body: Record<string, unknown>,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<Response> {
     const response = await this._fetch(url, {
       method: "POST",
@@ -228,15 +228,15 @@ export class SandboxClient {
    */
   async createSandbox(
     snapshotId?: string,
-    options: CreateSandboxOptions = {}
+    options: CreateSandboxOptions = {},
   ): Promise<Sandbox> {
     const {
       snapshotName,
       name,
       timeout = 30,
       waitForReady = true,
-      ttlSeconds,
       idleTtlSeconds,
+      deleteAfterStopSeconds,
       vCpus,
       memBytes,
       fsCapacityBytes,
@@ -246,12 +246,12 @@ export class SandboxClient {
     if (!!snapshotId === !!snapshotName) {
       throw new LangSmithValidationError(
         "Exactly one of snapshotId or options.snapshotName must be set",
-        "snapshotId"
+        "snapshotId",
       );
     }
 
-    validateTtl(ttlSeconds, "ttlSeconds");
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
+    validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     const url = `${this._baseUrl}/boxes`;
 
@@ -270,11 +270,11 @@ export class SandboxClient {
     if (name) {
       payload.name = name;
     }
-    if (ttlSeconds !== undefined) {
-      payload.ttl_seconds = ttlSeconds;
-    }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (deleteAfterStopSeconds !== undefined) {
+      payload.delete_after_stop_seconds = deleteAfterStopSeconds;
     }
     if (vCpus !== undefined) {
       payload.vcpus = vCpus;
@@ -317,7 +317,7 @@ export class SandboxClient {
    */
   async getSandbox(
     name: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<Sandbox> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
 
@@ -327,7 +327,7 @@ export class SandboxClient {
       if (response.status === 404) {
         throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
-          "sandbox"
+          "sandbox",
         );
       }
       await handleClientHttpError(response);
@@ -350,7 +350,7 @@ export class SandboxClient {
     if (!response.ok) {
       if (response.status === 404) {
         throw new LangSmithSandboxAPIError(
-          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`
+          `API endpoint not found: ${url}. Check that apiEndpoint is correct.`,
         );
       }
       await handleClientHttpError(response);
@@ -358,7 +358,7 @@ export class SandboxClient {
 
     const data = await response.json();
     return ((data.sandboxes ?? []) as SandboxData[]).map(
-      (s) => new Sandbox(s, this)
+      (s) => new Sandbox(s, this),
     );
   }
 
@@ -370,36 +370,37 @@ export class SandboxClient {
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox>;
   /**
-   * Update a sandbox's name and/or TTL settings.
+   * Update a sandbox's name and/or retention settings (idle stop and
+   * delete-after-stop).
    *
    * @param name - Current sandbox name.
    * @param options - Fields to update. Omit a field to leave it unchanged.
    * @returns Updated Sandbox. If no fields are provided, returns the current sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
-   * @throws LangSmithValidationError if TTL values are invalid.
+   * @throws LangSmithValidationError if retention values are invalid.
    */
   async updateSandbox(
     name: string,
-    options: UpdateSandboxOptions
+    options: UpdateSandboxOptions,
   ): Promise<Sandbox>;
   async updateSandbox(
     name: string,
-    newNameOrOptions: string | UpdateSandboxOptions
+    newNameOrOptions: string | UpdateSandboxOptions,
   ): Promise<Sandbox> {
     const options: UpdateSandboxOptions =
       typeof newNameOrOptions === "string"
         ? { newName: newNameOrOptions }
         : newNameOrOptions;
 
-    const { newName, ttlSeconds, idleTtlSeconds } = options;
-    validateTtl(ttlSeconds, "ttlSeconds");
+    const { newName, idleTtlSeconds, deleteAfterStopSeconds } = options;
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
+    validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     if (
       newName === undefined &&
-      ttlSeconds === undefined &&
-      idleTtlSeconds === undefined
+      idleTtlSeconds === undefined &&
+      deleteAfterStopSeconds === undefined
     ) {
       return this.getSandbox(name);
     }
@@ -409,11 +410,11 @@ export class SandboxClient {
     if (newName !== undefined) {
       payload.name = newName;
     }
-    if (ttlSeconds !== undefined) {
-      payload.ttl_seconds = ttlSeconds;
-    }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (deleteAfterStopSeconds !== undefined) {
+      payload.delete_after_stop_seconds = deleteAfterStopSeconds;
     }
 
     const response = await this._fetch(url, {
@@ -426,7 +427,7 @@ export class SandboxClient {
       if (response.status === 404) {
         throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
-          "sandbox"
+          "sandbox",
         );
       }
       if (response.status === 409) {
@@ -434,7 +435,7 @@ export class SandboxClient {
           newName !== undefined
             ? `Sandbox name '${newName}' already in use`
             : "Sandbox update conflict (name may already be in use)",
-          "sandbox"
+          "sandbox",
         );
       }
       await handleClientHttpError(response);
@@ -459,7 +460,7 @@ export class SandboxClient {
       if (response.status === 404) {
         throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
-          "sandbox"
+          "sandbox",
         );
       }
       await handleClientHttpError(response);
@@ -478,7 +479,7 @@ export class SandboxClient {
    */
   async getSandboxStatus(
     name: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<ResourceStatus> {
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
 
@@ -488,7 +489,7 @@ export class SandboxClient {
       if (response.status === 404) {
         throw new LangSmithResourceNotFoundError(
           `Sandbox '${name}' not found`,
-          "sandbox"
+          "sandbox",
         );
       }
       await handleClientHttpError(response);
@@ -519,7 +520,7 @@ export class SandboxClient {
    */
   async waitForSandbox(
     name: string,
-    options: WaitForSandboxOptions = {}
+    options: WaitForSandboxOptions = {},
   ): Promise<Sandbox> {
     const { timeout = 120, pollInterval = 1.0, signal } = options;
     const deadline = Date.now() + timeout * 1000;
@@ -538,7 +539,7 @@ export class SandboxClient {
       if (statusResult.status === "failed") {
         throw new LangSmithResourceCreationError(
           statusResult.status_message ?? `Sandbox '${name}' creation failed`,
-          "sandbox"
+          "sandbox",
         );
       }
 
@@ -554,7 +555,7 @@ export class SandboxClient {
     throw new LangSmithResourceTimeoutError(
       `Sandbox '${name}' did not become ready within ${timeout}s`,
       "sandbox",
-      lastStatus
+      lastStatus,
     );
   }
 
@@ -567,7 +568,7 @@ export class SandboxClient {
    */
   async startSandbox(
     name: string,
-    options: StartSandboxOptions = {}
+    options: StartSandboxOptions = {},
   ): Promise<Sandbox> {
     const { timeout = 120, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
@@ -605,7 +606,7 @@ export class SandboxClient {
     name: string,
     dockerImage: string,
     fsCapacityBytes: number,
-    options: CreateSnapshotOptions = {}
+    options: CreateSnapshotOptions = {},
   ): Promise<Snapshot> {
     const {
       registryId,
@@ -653,11 +654,11 @@ export class SandboxClient {
   async captureSnapshot(
     sandboxName: string,
     name: string,
-    options: CaptureSnapshotOptions = {}
+    options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
     const { timeout = 60, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(
-      sandboxName
+      sandboxName,
     )}/snapshot`;
 
     const payload: Record<string, unknown> = { name };
@@ -675,7 +676,7 @@ export class SandboxClient {
    */
   async getSnapshot(
     snapshotId: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<Snapshot> {
     const url = `${this._baseUrl}/snapshots/${encodeURIComponent(snapshotId)}`;
 
@@ -685,7 +686,7 @@ export class SandboxClient {
       if (response.status === 404) {
         throw new LangSmithResourceNotFoundError(
           `Snapshot '${snapshotId}' not found`,
-          "snapshot"
+          "snapshot",
         );
       }
       await handleClientHttpError(response);
@@ -775,7 +776,7 @@ export class SandboxClient {
    */
   async waitForSnapshot(
     snapshotId: string,
-    options: WaitForSnapshotOptions = {}
+    options: WaitForSnapshotOptions = {},
   ): Promise<Snapshot> {
     const { timeout = 300, pollInterval = 2.0, signal } = options;
     const deadline = Date.now() + timeout * 1000;
@@ -794,7 +795,7 @@ export class SandboxClient {
       if (snapshot.status === "failed") {
         throw new LangSmithResourceCreationError(
           snapshot.status_message ?? `Snapshot '${snapshotId}' build failed`,
-          "snapshot"
+          "snapshot",
         );
       }
 
@@ -810,7 +811,7 @@ export class SandboxClient {
     throw new LangSmithResourceTimeoutError(
       `Snapshot '${snapshotId}' did not become ready within ${timeout}s`,
       "snapshot",
-      lastStatus
+      lastStatus,
     );
   }
 
@@ -823,7 +824,7 @@ export class SandboxClient {
    */
   public toString(): string {
     return `[LangSmithSandboxClient apiEndpoint=${JSON.stringify(
-      this._baseUrl
+      this._baseUrl,
     )}]`;
   }
 

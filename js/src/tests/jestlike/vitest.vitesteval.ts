@@ -49,7 +49,7 @@ ls.describe(
         ls.logOutputs({
           testLoggedOutput: "logged",
         });
-      }
+      },
     );
 
     ls.test(
@@ -69,7 +69,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .toBeGreaterThanOrEqual(0.5);
         return res;
-      }
+      },
     );
 
     ls.test(
@@ -85,7 +85,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .not.toBeGreaterThanOrEqual(0.5);
         return res;
-      }
+      },
     );
 
     ls.test.concurrent.each(
@@ -107,7 +107,7 @@ ls.describe(
           },
         },
       ],
-      { repetitions: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } },
     )(
       "Does the thing",
       async ({ inputs: _inputs, referenceOutputs: _outputs }) => {
@@ -120,7 +120,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .not.toBeGreaterThanOrEqual(0.5);
         return res;
-      }
+      },
     );
   },
   {
@@ -128,5 +128,5 @@ ls.describe(
       model: "test-model",
     },
     testSuiteName: "js-vitest-testing",
-  }
+  },
 );

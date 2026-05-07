@@ -12,15 +12,15 @@ import { wrapEvaluator } from "../../utils/jestlike/vendor/evaluatedBy.js";
 interface CustomMatchers<R = unknown> {
   toBeRelativeCloseTo(
     expected: string,
-    options?: RelativeCloseToMatcherOptions
+    options?: RelativeCloseToMatcherOptions,
   ): Promise<R>;
   toBeAbsoluteCloseTo(
     expected: string,
-    options?: AbsoluteCloseToMatcherOptions
+    options?: AbsoluteCloseToMatcherOptions,
   ): Promise<R>;
   toBeSemanticCloseTo(
     expected: string,
-    options?: SemanticCloseToMatcherOptions
+    options?: SemanticCloseToMatcherOptions,
   ): Promise<R>;
   /**
    * Matcher that runs an evaluator with actual outputs and reference outputs from some run,
@@ -134,7 +134,7 @@ export const wrapVitest = (originalVitestMethods: Record<string, unknown>) => {
       beforeAll: originalVitestMethods.beforeAll,
       afterAll: originalVitestMethods.afterAll,
     },
-    "vitest"
+    "vitest",
   );
 
   return {

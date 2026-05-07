@@ -45,9 +45,11 @@ from langsmith.client import (
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
+    _default_retry_config,
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
+    _resolve_tracing_mode,
 )
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
@@ -67,6 +69,24 @@ def test__is_langchain_hosted() -> None:
     assert _is_langchain_hosted("https://api.smith.langchain.com")
     assert _is_langchain_hosted("https://beta.api.smith.langchain.com")
     assert _is_langchain_hosted("https://dev.api.smith.langchain.com")
+
+
+@pytest.mark.parametrize(
+    "urllib3_version",
+    ["1.26.0", "2.5.0", "2.5.0+cgr.2", "2.6.3+abc.def.4", "1.25.99"],
+)
+def test__default_retry_config_handles_pep440_local_versions(
+    monkeypatch: pytest.MonkeyPatch, urllib3_version: str
+) -> None:
+    import importlib.metadata
+
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: urllib3_version)
+    _default_retry_config.cache_clear()
+    try:
+        retry = _default_retry_config()
+    finally:
+        _default_retry_config.cache_clear()
+    assert retry is not None
 
 
 def _clear_env_cache():
@@ -146,6 +166,394 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
     client = Client()
     assert client.api_key == "env_langsmith_api_key"
+
+
+def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    for key in (
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGSMITH_ENDPOINT",
+        "LANGCHAIN_WORKSPACE_ID",
+        "LANGSMITH_WORKSPACE_ID",
+        "LANGSMITH_PROFILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_profile_config_loads_api_key_and_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "current_profile": "prod",
+                "profiles": {
+                    "prod": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "workspace_id": "workspace-id",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.api_key == "profile-key"
+    assert client.workspace_id == "workspace-id"
+    assert client._headers["x-api-key"] == "profile-key"
+    assert client._headers["X-Tenant-Id"] == "workspace-id"
+
+
+def test_profile_config_uses_oauth_access_token_before_api_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_key is None
+    assert client._headers["Authorization"] == "Bearer profile-access-token"
+    assert "x-api-key" not in client._headers
+
+
+def test_profile_config_env_auth_suppresses_profile_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "workspace_id": "workspace-id",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("LANGSMITH_API_KEY", "env-key")
+    _clear_env_cache()
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.workspace_id == "workspace-id"
+    assert client.api_key == "env-key"
+    assert client._headers["x-api-key"] == "env-key"
+    assert "Authorization" not in client._headers
+
+
+def test_profile_config_constructor_auth_suppresses_profile_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    mock_post = mock.Mock()
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = Client(api_key="constructor-key", auto_batch_tracing=False)
+
+    assert client.api_url == "https://profile.example.com"
+    assert client.api_key == "constructor-key"
+    assert client._headers["x-api-key"] == "constructor-key"
+    assert "Authorization" not in client._headers
+    mock_post.assert_not_called()
+
+
+def test_profile_config_refreshes_expired_oauth_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client._headers["Authorization"] == "Bearer old-access-token"
+    assert calls == []
+
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
+    assert client._headers["Authorization"] == "Bearer new-access-token"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+    assert calls[0][0] == "https://profile.example.com/oauth/token"
+    assert calls[0][1]["data"] == {
+        "grant_type": "refresh_token",
+        "client_id": "langsmith-cli",
+        "refresh_token": "old-refresh-token",
+    }
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated["profiles"]["default"]["oauth"]["access_token"] == "new-access-token"
+    assert (
+        updated["profiles"]["default"]["oauth"]["refresh_token"] == "new-refresh-token"
+    )
+    assert "token_type" not in updated["profiles"]["default"]["oauth"]
+    assert "bearer_token" not in updated["profiles"]["default"]
+
+
+def test_profile_config_refresh_replaces_snapshotted_auth_headers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    snapshotted_headers = dict(client._headers)
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries(
+        "GET",
+        "/info",
+        request_kwargs={"headers": snapshotted_headers},
+    )
+
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
+
+
+def test_profile_config_refresh_preserves_explicit_auth_headers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries(
+        "GET",
+        "/info",
+        request_kwargs={"headers": {"Authorization": "Bearer explicit-token"}},
+    )
+
+    assert request_calls[0][2]["headers"]["Authorization"] == ("Bearer explicit-token")
+
+
+def test_profile_config_refresh_uses_profile_api_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(
+        api_url="https://override.example.com",
+        auto_batch_tracing=False,
+    )
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    client.request_with_retries("GET", "/info")
+
+    assert calls[0][0] == "https://profile.example.com/oauth/token"
+    assert request_calls[0][1] == "https://override.example.com/info"
+    assert request_calls[0][2]["headers"]["Authorization"] == (
+        "Bearer new-access-token"
+    )
 
 
 def test_validate_multiple_urls() -> None:
@@ -1448,6 +1856,9 @@ def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://eu.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://eu.smith.langchain.com"
 
+    client = Client(api_url="https://apac.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://apac.smith.langchain.com"
+
     client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://dev.smith.langchain.com"
 
@@ -2177,6 +2588,223 @@ def test_validate_api_key_if_hosted_without_tracing(
             )
             if "unclosed event loop" not in str(w[0].message):
                 raise e
+
+
+class TestResolveTracingMode:
+    """Tests for _resolve_tracing_mode and the Client tracing_mode parameter."""
+
+    def teardown_method(self):
+        _clear_env_cache()
+
+    def test_default_is_langsmith(self):
+        assert _resolve_tracing_mode(None) == "langsmith"
+
+    @pytest.mark.parametrize("mode", ["langsmith", "otel", "hybrid"])
+    def test_explicit_arg_returned(self, mode: str):
+        assert _resolve_tracing_mode(mode) == mode  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("mode", ["Langsmith", "OTEL", "Hybrid", "OTel"])
+    def test_explicit_arg_case_insensitive(self, mode: str):
+        assert _resolve_tracing_mode(mode) == mode.lower()  # type: ignore[arg-type]
+
+    def test_explicit_arg_invalid_raises(self):
+        with pytest.raises(LangSmithUserError, match="Invalid tracing_mode='bad'"):
+            _resolve_tracing_mode("bad")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("mode", ["langsmith", "otel", "hybrid"])
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_fallback(self, mode: str):
+        os.environ["LANGSMITH_TRACING_MODE"] = mode
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == mode
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_case_insensitive(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "HYBRID"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_env_var_invalid_raises(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "nope"
+        _clear_env_cache()
+        with pytest.raises(LangSmithUserError, match="Invalid LANGSMITH_TRACING_MODE"):
+            _resolve_tracing_mode(None)
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_explicit_arg_takes_precedence_over_env_var(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "hybrid"
+        _clear_env_cache()
+        assert _resolve_tracing_mode("otel") == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_only_maps_to_otel(self):
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_enabled_maps_to_hybrid(self):
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_legacy_otel_enabled_plus_otel_only(self):
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        assert _resolve_tracing_mode(None) == "otel"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_conflict_warning_when_tracing_mode_and_legacy_set(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "langsmith"
+        os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+        _clear_env_cache()
+        with pytest.warns(UserWarning, match="legacy"):
+            _resolve_tracing_mode(None)
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_no_warning_when_only_tracing_mode_set(self):
+        os.environ["LANGSMITH_TRACING_MODE"] = "otel"
+        _clear_env_cache()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert _resolve_tracing_mode(None) == "otel"
+
+    def test_otel_enabled_true_maps_to_hybrid(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "hybrid"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_otel_enabled_true_with_otel_only_envvar(self):
+        os.environ["LANGSMITH_OTEL_ONLY"] = "true"
+        _clear_env_cache()
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=True) == "otel"
+
+    def test_otel_enabled_false_maps_to_langsmith(self):
+        with pytest.warns(FutureWarning, match="otel_enabled"):
+            assert _resolve_tracing_mode(None, otel_enabled=False) == "langsmith"
+
+    def test_tracing_mode_takes_precedence_over_otel_enabled(self):
+        result = _resolve_tracing_mode("otel", otel_enabled=True)
+        assert result == "otel"
+
+
+def _make_mock_otel():
+    """Build a mock return value for _import_otel that satisfies Client.__init__."""
+    mock_otel_trace = MagicMock()
+    mock_otel_trace.ProxyTracerProvider = type("ProxyTracerProvider", (), {})
+    mock_provider = MagicMock()
+    mock_provider.__class__ = type("RealProvider", (), {})
+    mock_otel_trace.get_tracer_provider.return_value = mock_provider
+    mock_set_span = MagicMock()
+    mock_get_provider = MagicMock()
+    mock_exporter_cls = MagicMock()
+    return mock_otel_trace, mock_set_span, mock_get_provider, mock_exporter_cls
+
+
+class TestClientTracingMode:
+    """Tests for Client(tracing_mode=...) via explicit arg and env var."""
+
+    def teardown_method(self):
+        _clear_env_cache()
+
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_default_mode_is_langsmith(self, _mock_session: mock.Mock):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "langsmith"
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_explicit_otel_mode(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="otel")
+        assert client.tracing_mode == "otel"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+        clear=True,
+    )
+    def test_explicit_hybrid_mode(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="hybrid")
+        assert client.tracing_mode == "hybrid"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "otel",
+        },
+        clear=True,
+    )
+    def test_otel_mode_via_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "otel"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "hybrid",
+        },
+        clear=True,
+    )
+    def test_hybrid_mode_via_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984")
+        assert client.tracing_mode == "hybrid"
+        assert client.otel_exporter is not None
+
+    @mock.patch("langsmith.client._import_otel", return_value=_make_mock_otel())
+    @mock.patch("langsmith.client.requests.Session")
+    @mock.patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_API_KEY": "lsv2_pt_fake",
+            "LANGSMITH_TRACING_MODE": "hybrid",
+        },
+        clear=True,
+    )
+    def test_explicit_arg_overrides_env_var(
+        self, _mock_session: mock.Mock, _mock_import: mock.Mock
+    ):
+        _clear_env_cache()
+        client = Client(api_url="http://localhost:1984", tracing_mode="langsmith")
+        assert client.tracing_mode == "langsmith"
+        assert client.otel_exporter is None
 
 
 def test_parse_token_or_url():
@@ -3029,6 +3657,48 @@ _PROMPT_COMMITS = [
 ]
 
 
+def test_pull_prompt_commit_requires_dangerous_flag_for_public_prompts():
+    mock_session = mock.Mock()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=ls_schemas.LangSmithInfo(version="0.6.0"),
+        disable_prompt_cache=True,
+    )
+
+    with pytest.raises(ValueError, match="dangerously_pull_public_prompt=True"):
+        client.pull_prompt_commit("someuser/someprompt")
+
+    mock_session.request.assert_not_called()
+
+
+def test_pull_prompt_commit_allows_public_prompts_with_dangerous_flag():
+    mock_session = mock.Mock()
+    mock_session.request.return_value = mock.Mock(
+        json=lambda: {
+            "commit_hash": "abc123",
+            "manifest": {"type": "constructor"},
+            "examples": [],
+        }
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=ls_schemas.LangSmithInfo(version="0.6.0"),
+        disable_prompt_cache=True,
+    )
+
+    commit = client.pull_prompt_commit(
+        "someuser/someprompt", dangerously_pull_public_prompt=True
+    )
+
+    assert commit.owner == "someuser"
+    assert commit.repo == "someprompt"
+    assert commit.commit_hash == "abc123"
+
+
 @pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
 def test_pull_prompt(
     include_model: bool,
@@ -3205,7 +3875,21 @@ def test_pull_and_push_prompt(
             assert pushed_manifest["id"] == original_manifest["id"]
             assert pushed_manifest["type"] == original_manifest["type"]
 
-            assert original_manifest["kwargs"] == pushed_manifest["kwargs"]
+            # Strip None-valued keys before comparing: upstream langchain
+            # model classes occasionally add new optional kwargs that
+            # serialize as None by default (e.g. anthropic_proxy,
+            # output_version, openai_proxy), which shouldn't break the
+            # round-trip equivalence this test is checking.
+            def _strip_none(obj):
+                if isinstance(obj, dict):
+                    return {k: _strip_none(v) for k, v in obj.items() if v is not None}
+                if isinstance(obj, list):
+                    return [_strip_none(v) for v in obj]
+                return obj
+
+            assert _strip_none(original_manifest["kwargs"]) == _strip_none(
+                pushed_manifest["kwargs"]
+            )
 
 
 def test_evaluate_methods() -> None:

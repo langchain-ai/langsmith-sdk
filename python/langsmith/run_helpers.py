@@ -2237,7 +2237,7 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
     Returns:
         Context manager for use_span or None if not available.
     """
-    if not run_tree or not utils.is_env_var_truish("OTEL_ENABLED"):
+    if not run_tree or run_tree.client.otel_exporter is None:
         return None
     if not _is_otel_available():
         return None

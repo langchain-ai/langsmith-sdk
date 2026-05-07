@@ -5,7 +5,7 @@ import {
   ScoreType,
   ValueType,
 } from "../schemas.js";
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "../utils/uuid/src/index.js";
 import { TraceableFunction, traceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 
@@ -86,26 +86,26 @@ export interface RunEvaluator {
   evaluateRun(
     run: Run,
     example?: Example,
-    options?: Partial<RunTreeConfig>
+    options?: Partial<RunTreeConfig>,
   ): Promise<EvaluationResult | EvaluationResults>;
 }
 
 export type RunEvaluatorLike =
   | ((
       run: Run,
-      example?: Example
+      example?: Example,
     ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
   | ((
       run: Run,
-      example?: Example
+      example?: Example,
     ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((
       run: Run,
-      example: Example
+      example: Example,
     ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
   | ((
       run: Run,
-      example: Example
+      example: Example,
     ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       run: Run;
@@ -125,9 +125,9 @@ export type RunEvaluatorLike =
 /**
  * Wraps an evaluator function + implements the RunEvaluator interface.
  */
-export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
-  implements RunEvaluator
-{
+export class DynamicRunEvaluator<
+  Func extends (...args: any[]) => any,
+> implements RunEvaluator {
   func: Func;
 
   constructor(evaluator: Func) {
@@ -146,7 +146,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
           referenceOutputs: example?.outputs,
           attachments: example?.attachments,
         },
-        example
+        example,
       );
     }) as Func;
   }
@@ -163,12 +163,12 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
 
   private coerceEvaluationResults(
     results: Record<string, any> | EvaluationResults,
-    sourceRunId: string
+    sourceRunId: string,
   ): EvaluationResult | EvaluationResults {
     if (this.isEvaluationResults(results)) {
       return {
         results: results.results.map((r) =>
-          this.coerceEvaluationResult(r, sourceRunId, false)
+          this.coerceEvaluationResult(r, sourceRunId, false),
         ),
       };
     }
@@ -176,14 +176,14 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     return this.coerceEvaluationResult(
       results as Record<string, any>,
       sourceRunId,
-      true
+      true,
     );
   }
 
   private coerceEvaluationResult(
     result: EvaluationResult | Record<string, any>,
     sourceRunId: string,
-    allowNoKey = false
+    allowNoKey = false,
   ): EvaluationResult {
     if ("key" in result) {
       if (!result.sourceRunId) {
@@ -212,7 +212,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   async evaluateRun(
     run: Run,
     example?: Example,
-    options?: Partial<RunTreeConfig>
+    options?: Partial<RunTreeConfig>,
   ): Promise<EvaluationResult | EvaluationResults> {
     let sourceRunId = uuidv7();
     const metadata: Record<string, any> = {
@@ -237,7 +237,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
           sourceRunId = runTree.id;
         },
         ...options,
-      }
+      },
     );
 
     const result = await wrappedTraceableFunc(
@@ -245,7 +245,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       // inputs. This key is extracted in the wrapped function, with `run` and
       // `example` passed to evaluator function as arguments.
       { langSmithRunAndExample: { run, example } },
-      { metadata }
+      { metadata },
     );
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible
@@ -258,7 +258,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     if (Array.isArray(result)) {
       return {
         results: result.map((r) =>
-          this.coerceEvaluationResult(r, sourceRunId, false)
+          this.coerceEvaluationResult(r, sourceRunId, false),
         ),
       };
     }

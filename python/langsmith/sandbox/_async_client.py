@@ -156,8 +156,8 @@ class AsyncSandboxClient:
         snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
@@ -187,12 +187,16 @@ class AsyncSandboxClient:
                 ``snapshot_id``; exactly one must be provided.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
-            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
-                will be automatically deleted after this duration. Must be a
-                multiple of 60. 0 or None disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The launcher
+                automatically stops the sandbox after this duration of
+                inactivity. Must be a multiple of 60. ``0`` explicitly
+                disables the idle stop. When omitted (``None``), the server
+                applies a default of ``600`` seconds (10 minutes).
+            delete_after_stop_seconds: Seconds after the sandbox enters the
+                ``stopped`` state before it (and its filesystem clone) are
+                permanently deleted. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion (manual cleanup required). When
+                omitted (``None``), the server applies its configured default.
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
@@ -220,8 +224,8 @@ class AsyncSandboxClient:
             snapshot_name=snapshot_name,
             name=name,
             timeout=timeout,
-            ttl_seconds=ttl_seconds,
             idle_ttl_seconds=idle_ttl_seconds,
+            delete_after_stop_seconds=delete_after_stop_seconds,
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
@@ -239,8 +243,8 @@ class AsyncSandboxClient:
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
@@ -264,12 +268,16 @@ class AsyncSandboxClient:
             wait_for_ready: If True (default), block until sandbox is ready.
                 If False, return immediately with status "provisioning". Use
                 get_sandbox_status() or wait_for_sandbox() to poll for readiness.
-            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
-                will be automatically deleted after this duration. Must be a
-                multiple of 60. 0 or None disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The launcher
+                automatically stops the sandbox after this duration of
+                inactivity. Must be a multiple of 60. ``0`` explicitly
+                disables the idle stop. When omitted (``None``), the server
+                applies a default of ``600`` seconds (10 minutes).
+            delete_after_stop_seconds: Seconds after the sandbox enters the
+                ``stopped`` state before it (and its filesystem clone) are
+                permanently deleted. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion (manual cleanup required). When
+                omitted (``None``), the server applies its configured default.
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
@@ -296,8 +304,8 @@ class AsyncSandboxClient:
         if bool(snapshot_id) == bool(snapshot_name):
             raise ValueError("Exactly one of snapshot_id or snapshot_name must be set")
 
-        validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+        validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
         url = f"{self._base_url}/boxes"
 
@@ -312,10 +320,10 @@ class AsyncSandboxClient:
             payload["timeout"] = timeout
         if name:
             payload["name"] = name
-        if ttl_seconds is not None:
-            payload["ttl_seconds"] = ttl_seconds
         if idle_ttl_seconds is not None:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
+        if delete_after_stop_seconds is not None:
+            payload["delete_after_stop_seconds"] = delete_after_stop_seconds
         if vcpus is not None:
             payload["vcpus"] = vcpus
         if mem_bytes is not None:
@@ -407,8 +415,8 @@ class AsyncSandboxClient:
         name: str,
         *,
         new_name: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Update a sandbox's properties.
@@ -416,10 +424,13 @@ class AsyncSandboxClient:
         Args:
             name: Current sandbox name.
             new_name: New display name.
-            ttl_seconds: Maximum lifetime in seconds from creation. Must be a
-                multiple of 60. 0 disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of 60.
-                0 disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of
+                60. ``0`` disables idle-stop. ``None`` leaves the existing
+                value unchanged.
+            delete_after_stop_seconds: Seconds after entering ``stopped``
+                before deletion. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion. ``None`` leaves the existing value
+                unchanged.
 
         Returns:
             Updated AsyncSandbox.
@@ -430,17 +441,17 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
             ValueError: If TTL values are invalid.
         """
-        validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+        validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
         url = f"{self._base_url}/boxes/{name}"
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
-        if ttl_seconds is not None:
-            payload["ttl_seconds"] = ttl_seconds
         if idle_ttl_seconds is not None:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
+        if delete_after_stop_seconds is not None:
+            payload["delete_after_stop_seconds"] = delete_after_stop_seconds
 
         try:
             response = await self._http.patch(

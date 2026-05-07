@@ -37,13 +37,13 @@ export function validateTtl(value: number | undefined, name: string): void {
   if (value < 0) {
     throw new LangSmithValidationError(
       `${name} must be >= 0, got ${value}`,
-      name
+      name,
     );
   }
   if (value !== 0 && value % 60 !== 0) {
     throw new LangSmithValidationError(
       `${name} must be a multiple of 60 seconds, got ${value}`,
-      name
+      name,
     );
   }
 }
@@ -70,7 +70,7 @@ interface ValidationDetail {
  * Expected format: {"detail": {"error": "...", "message": "..."}}
  */
 export async function parseErrorResponse(
-  response: Response
+  response: Response,
 ): Promise<ParsedError> {
   try {
     const data = await response.json();
@@ -89,7 +89,7 @@ export async function parseErrorResponse(
     if (Array.isArray(detail) && detail.length > 0) {
       const messages = detail
         .filter(
-          (d): d is ValidationDetail => typeof d === "object" && d !== null
+          (d): d is ValidationDetail => typeof d === "object" && d !== null,
         )
         .map((d) => d.msg || String(d))
         .filter(Boolean);
@@ -121,7 +121,7 @@ export async function parseErrorResponse(
  * Returns a list of validation error details.
  */
 export async function parseValidationError(
-  response: Response
+  response: Response,
 ): Promise<ValidationDetail[]> {
   try {
     const data = await response.json();
@@ -172,7 +172,7 @@ export function extractQuotaType(message: string): string | undefined {
  * - Other: Falls through to generic error handling
  */
 export async function handleSandboxCreationError(
-  response: Response
+  response: Response,
 ): Promise<never> {
   const status = response.status;
   const clonedResponse = response.clone();
@@ -200,7 +200,7 @@ export async function handleSandboxCreationError(
     // Service Unavailable - scheduling failed
     throw new LangSmithSandboxCreationError(
       data.message,
-      data.errorType || "Unschedulable"
+      data.errorType || "Unschedulable",
     );
   }
   // Fall through to generic handling — pass clone since body is already consumed
@@ -211,7 +211,7 @@ export async function handleSandboxCreationError(
  * Handle HTTP errors and raise appropriate exceptions (for client operations).
  */
 export async function handleClientHttpError(
-  response: Response
+  response: Response,
 ): Promise<never> {
   const status = response.status;
   // Only clone when we need to read the body twice (status 422 reads it again
@@ -267,7 +267,7 @@ export async function handleClientHttpError(
  * - 403 -> LangSmithSandboxOperationError (permission denied)
  */
 export async function handleSandboxHttpError(
-  response: Response
+  response: Response,
 ): Promise<never> {
   const data = await parseErrorResponse(response);
   const message = data.message;
@@ -290,7 +290,7 @@ export async function handleSandboxHttpError(
     throw new LangSmithSandboxOperationError(
       message,
       undefined,
-      "PermissionDenied"
+      "PermissionDenied",
     );
   }
 

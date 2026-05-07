@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import * as uuid from "uuid";
+import * as uuid from "../utils/uuid/src/index.js";
 import {
   RunTree,
   RunTreeConfig,
@@ -30,7 +30,7 @@ test("Test post and patch run", async () => {
     expect(parent_run.trace_id).toEqual(parent_run.id);
     expect(parent_run.dotted_order).toEqual(
       convertToDottedOrderFormat(parent_run.start_time, parent_run.id)
-        .dottedOrder
+        .dottedOrder,
     );
     await parent_run.postRun();
 
@@ -45,8 +45,8 @@ test("Test post and patch run", async () => {
         convertToDottedOrderFormat(
           child_llm_run.start_time,
           child_llm_run.id,
-          2
-        ).dottedOrder
+          2,
+        ).dottedOrder,
     );
     expect(child_llm_run.trace_id).toEqual(parent_run.trace_id);
     await child_llm_run.postRun();
@@ -86,42 +86,42 @@ test("Test post and patch run", async () => {
         try {
           const runs = await toArray(langchainClient.listRuns({ projectName }));
           return runs.length === 5;
-        } catch (e) {
+        } catch (_e) {
           return false;
         }
       },
       30_000, // Wait up to 30 seconds
-      3000 // every 3 second
+      3000, // every 3 second
     );
     const runs = await toArray(langchainClient.listRuns({ projectName }));
     expect(runs.length).toEqual(5);
     const runMap = new Map(runs.map((run) => [run.name, run]));
     expect(runMap.get("child_run")?.parent_run_id).toEqual(
-      runMap.get("parent_run")?.id
+      runMap.get("parent_run")?.id,
     );
     expect(runMap.get("child_chain_run")?.parent_run_id).toEqual(
-      runMap.get("parent_run")?.id
+      runMap.get("parent_run")?.id,
     );
     expect(runMap.get("grandchild_chain_run")?.parent_run_id).toEqual(
-      runMap.get("child_chain_run")?.id
+      runMap.get("child_chain_run")?.id,
     );
     expect(runMap.get("child_tool_run")?.parent_run_id).toEqual(
-      runMap.get("parent_run")?.id
+      runMap.get("parent_run")?.id,
     );
     expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
     await waitUntil(
       async () => {
         try {
           const runs_ = await toArray(
-            langchainClient.listRuns({ traceId: runs[0].trace_id })
+            langchainClient.listRuns({ traceId: runs[0].trace_id }),
           );
           return runs_.length === 5;
-        } catch (e) {
+        } catch (_e) {
           return false;
         }
       },
       30_000, // Wait up to 30 seconds
-      3000 // every 3 second
+      3000, // every 3 second
     );
 
     const traceRunsIter = langchainClient.listRuns({
@@ -132,13 +132,13 @@ test("Test post and patch run", async () => {
     // Sort by dotted order and assert runs lists are equal
     const sortedRuns = sanitizePresignedUrls(
       runs.sort((a, b) =>
-        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
-      )
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? ""),
+      ),
     );
     const sortedTraceRuns = sanitizePresignedUrls(
       traceRuns.sort((a, b) =>
-        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
-      )
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? ""),
+      ),
     );
     expect(sortedRuns).toEqual(sortedTraceRuns);
     await langchainClient.deleteProject({ projectName });
@@ -194,7 +194,7 @@ test("Test list runs multi project", async () => {
 
       expect(runs.length).toBe(2);
       expect(
-        runs.every((run) => run?.outputs?.["output"] === "Completed: foo")
+        runs.every((run) => run?.outputs?.["output"] === "Completed: foo"),
       ).toBe(true);
       expect(runs[0].session_id).not.toBe(runs[1].session_id);
     } finally {
@@ -204,7 +204,7 @@ test("Test list runs multi project", async () => {
         if (await langchainClient.hasProject({ projectName: project })) {
           try {
             await langchainClient.deleteProject({ projectName: project });
-          } catch (e) {
+          } catch (_e) {
             // Pass
           }
         }
@@ -255,6 +255,6 @@ test("dotted order matches start_time", async () => {
   expect(runs.length).toEqual(1);
   expect(runs[0].dotted_order).toEqual(parentRun.dotted_order);
   expect((runs[0].start_time as string).replace(/[-:.Z]/g, "")).toEqual(
-    parentRun.dotted_order.split(".")[0].split("Z")[0]
+    parentRun.dotted_order.split(".")[0].split("Z")[0],
   );
 });

@@ -12,7 +12,7 @@ import { mockClient } from "./utils/mock_client.js";
 
 // Helper function to parse mock request body
 const parseMockRequestBody = async (
-  body: string | Uint8Array | ReadableStream | undefined
+  body: string | Uint8Array | ReadableStream | undefined,
 ): Promise<{ post: any[]; patch: any[] }> => {
   if (!body) {
     return { post: [], patch: [] };
@@ -57,7 +57,7 @@ const parseMockRequestBody = async (
     let parsedValue;
     try {
       parsedValue = JSON.parse(value);
-    } catch (e) {
+    } catch (_e) {
       parsedValue = value;
     }
 
@@ -67,7 +67,7 @@ const parseMockRequestBody = async (
 
     if (!type) {
       reconstructedBody[method as keyof typeof reconstructedBody].push(
-        parsedValue
+        parsedValue,
       );
     } else {
       for (const item of reconstructedBody[method]) {
@@ -385,7 +385,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           client,
           name: "test-traceable",
           tracingEnabled: true,
-        }
+        },
       );
 
       const result = await tracedFunction("test input");
@@ -428,12 +428,12 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       // Create multiple runs using traceable to avoid authorization issues
       const traceableFn = traceable(
         async (input: string) => ({ output: input }),
-        { client, name: "batch-test", tracingEnabled: true }
+        { client, name: "batch-test", tracingEnabled: true },
       );
 
       // Execute multiple traceable functions
       const promises = Array.from({ length: 3 }, (_, i) =>
-        traceableFn(`test-${i}`)
+        traceableFn(`test-${i}`),
       );
 
       await Promise.all(promises);
@@ -448,7 +448,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
         calls.map(async (call) => {
           const requestParam = call[1] as any; // fetch calls have [url, init] format
           return parseMockRequestBody(requestParam?.body);
-        })
+        }),
       );
 
       // Should have exactly 2 batches (one per replica)
@@ -500,12 +500,12 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const traceableFn = traceable(
         async (input: string) => ({ output: input }),
-        { client, name: "multipart-test", tracingEnabled: true }
+        { client, name: "multipart-test", tracingEnabled: true },
       );
 
       // Execute multiple traceable functions to ensure batching
       const promises = Array.from({ length: 2 }, (_, i) =>
-        traceableFn(`multipart-test-${i}`)
+        traceableFn(`multipart-test-${i}`),
       );
 
       await Promise.all(promises);
@@ -520,7 +520,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
         calls.map(async (call) => {
           const requestParam = call[1] as any;
           return parseMockRequestBody(requestParam?.body);
-        })
+        }),
       );
 
       // Should have exactly 2 batches (one per replica)
@@ -604,7 +604,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       };
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(
-        invalidEndpointsConfig
+        invalidEndpointsConfig,
       );
 
       // Creating client should not throw, but invalid URLs might be handled during requests
@@ -620,7 +620,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       };
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(
-        invalidEndpointsConfig
+        invalidEndpointsConfig,
       );
 
       // Spy on console.warn to check warning messages
@@ -646,8 +646,8 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       // Should warn about invalid value types
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          "Invalid value type in LANGSMITH_RUNS_ENDPOINTS"
-        )
+          "Invalid value type in LANGSMITH_RUNS_ENDPOINTS",
+        ),
       );
 
       warnSpy.mockRestore();
@@ -664,7 +664,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       ];
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(
-        invalidEndpointsConfig
+        invalidEndpointsConfig,
       );
 
       // Spy on console.warn to check warning messages
@@ -688,17 +688,19 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Should warn about various invalid types
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Invalid item type in LANGSMITH_RUNS_ENDPOINTS")
+        expect.stringContaining(
+          "Invalid item type in LANGSMITH_RUNS_ENDPOINTS",
+        ),
       );
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          "Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS"
-        )
+          "Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS",
+        ),
       );
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          "Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS"
-        )
+          "Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS",
+        ),
       );
 
       warnSpy.mockRestore();
@@ -730,11 +732,11 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       // Create many concurrent traceable functions
       const traceableFn = traceable(
         async (input: string) => ({ output: input }),
-        { client, name: "concurrent-test", tracingEnabled: true }
+        { client, name: "concurrent-test", tracingEnabled: true },
       );
 
       const concurrentRuns = Array.from({ length: 20 }, (_, i) =>
-        traceableFn(`concurrent-${i}`)
+        traceableFn(`concurrent-${i}`),
       );
 
       await Promise.all(concurrentRuns);
@@ -759,7 +761,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           client,
           project_name: mainProject,
           tracingEnabled: true,
-        }
+        },
       );
 
       // Child has replicas: one for main project, one for replica project with reroot
@@ -782,7 +784,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           client,
           project_name: mainProject,
           tracingEnabled: true,
-        }
+        },
       );
 
       // Parent has no replicas
@@ -796,7 +798,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           client,
           project_name: mainProject,
           tracingEnabled: true,
-        }
+        },
       );
 
       await parent();
@@ -808,7 +810,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const allPostCalls = callSpy.mock.calls.filter(
         (call: any) =>
           (call[0] as string).includes("/runs") &&
-          (call[1] as any)?.method === "POST"
+          (call[1] as any)?.method === "POST",
       );
 
       // Parse runs from calls
@@ -829,10 +831,10 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Count runs by project
       const mainProjectRuns = runs.filter(
-        (r: any) => r.session_name === mainProject
+        (r: any) => r.session_name === mainProject,
       );
       const replicaProjectRuns = runs.filter(
-        (r: any) => r.session_name === "replica-project"
+        (r: any) => r.session_name === "replica-project",
       );
 
       // Expected:

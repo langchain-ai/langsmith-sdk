@@ -59,7 +59,7 @@ describe("OpenAIAgentsTracingProcessor - Real API Integration", () => {
 
     const result = await run(
       agent,
-      "Say 'Hello from LangSmith!' and nothing else."
+      "Say 'Hello from LangSmith!' and nothing else.",
     );
 
     console.log("Result:", {
@@ -219,7 +219,7 @@ describe("OpenAIAgentsTracingProcessor - Real API Integration", () => {
         capturedRunInfo.dottedOrder = currentRunTree.dotted_order;
         return `mock-lookup-for-${city}`;
       },
-      { name: "nested_traceable_lookup", client }
+      { name: "nested_traceable_lookup", client },
     );
 
     const weatherTool = tool({
@@ -263,7 +263,7 @@ describe("OpenAIAgentsTracingProcessor - Real API Integration", () => {
     expect(capturedRunInfo.traceId).toBeDefined();
     // Dotted order indicates a nested position in the tree, not a root.
     expect(capturedRunInfo.dottedOrder?.split(".").length ?? 0).toBeGreaterThan(
-      1
+      1,
     );
 
     await processor.forceFlush();

@@ -21,7 +21,7 @@ export async function mkdir(dir: string): Promise<void> {
 
 export async function writeFileAtomic(
   filePath: string,
-  content: string
+  content: string,
 ): Promise<void> {
   const tempPath = `${filePath}.tmp`;
   await nodeFsPromises.writeFile(tempPath, content, {

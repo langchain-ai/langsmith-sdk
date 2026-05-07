@@ -3,7 +3,7 @@ import { Client } from "../../client.js";
 
 export async function getAssumedTreeFromCalls(
   calls: unknown[][],
-  client: Client
+  client: Client,
 ): Promise<{
   nodes: string[];
   edges: Array<[string, string]>;
@@ -37,7 +37,7 @@ export async function getAssumedTreeFromCalls(
 
     const [url, fetchArgs] = call.slice(-2) as [
       string,
-      { method: string; body: string }
+      { method: string; body: string },
     ];
     const req = `${fetchArgs.method} ${new URL(url as string).pathname}`;
     let body: Run;
@@ -65,7 +65,7 @@ export async function getAssumedTreeFromCalls(
       const id = req.substring(
         req.startsWith("PATCH /api/v1/runs/")
           ? "PATCH /api/v1/runs/".length
-          : "PATCH /runs/".length
+          : "PATCH /runs/".length,
       );
       upsertId(id);
       nodeMap[id] = { ...nodeMap[id], ...body! };
@@ -76,7 +76,7 @@ export async function getAssumedTreeFromCalls(
     nodes: idMap.map(getId),
     edges: edges.map(([source, target]) => [getId(source), getId(target)]),
     data: Object.fromEntries(
-      Object.entries(nodeMap).map(([id, value]) => [getId(id), value] as const)
+      Object.entries(nodeMap).map(([id, value]) => [getId(id), value] as const),
     ),
   };
 }

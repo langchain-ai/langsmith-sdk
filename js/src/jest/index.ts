@@ -36,29 +36,29 @@ declare global {
     interface AsymmetricMatchers {
       toBeRelativeCloseTo(
         expected: string,
-        options?: RelativeCloseToMatcherOptions
+        options?: RelativeCloseToMatcherOptions,
       ): Promise<void>;
       toBeAbsoluteCloseTo(
         expected: string,
-        options?: AbsoluteCloseToMatcherOptions
+        options?: AbsoluteCloseToMatcherOptions,
       ): Promise<void>;
       toBeSemanticCloseTo(
         expected: string,
-        options?: SemanticCloseToMatcherOptions
+        options?: SemanticCloseToMatcherOptions,
       ): Promise<void>;
     }
     interface Matchers<R> {
       toBeRelativeCloseTo(
         expected: string,
-        options?: RelativeCloseToMatcherOptions
+        options?: RelativeCloseToMatcherOptions,
       ): Promise<R>;
       toBeAbsoluteCloseTo(
         expected: string,
-        options?: AbsoluteCloseToMatcherOptions
+        options?: AbsoluteCloseToMatcherOptions,
       ): Promise<R>;
       toBeSemanticCloseTo(
         expected: string,
-        options?: SemanticCloseToMatcherOptions
+        options?: SemanticCloseToMatcherOptions,
       ): Promise<R>;
       /**
        * Matcher that runs an evaluator with actual outputs and referenceOutputs from some run,
@@ -169,7 +169,7 @@ const wrapJest = (originalJestMethods: Record<string, unknown>) => {
       logOutputs,
       wrapEvaluator,
     },
-    process?.versions?.bun !== undefined ? "bun" : "jest"
+    process?.versions?.bun !== undefined ? "bun" : "jest",
   );
 
   // Return the normal used LS methods for convenience

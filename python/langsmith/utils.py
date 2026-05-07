@@ -901,6 +901,8 @@ def get_host_url(web_url: Optional[str], api_url: str):
         link = "https://eu.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("aws."):
         link = "https://aws.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("apac."):
+        link = "https://apac.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("beta."):
