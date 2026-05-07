@@ -6483,7 +6483,12 @@ export class Client implements LangSmithTracingClientInterface {
     });
     const data = (await response.json()) as DirectoryCommitResponse;
     const commitHash = data.commit.commit_hash;
-    return `${this.getHostUrl()}/hub/${owner}/${name}:${commitHash.slice(
+    let ownerForUrl = owner;
+    if (owner === "-") {
+      const settings = await this._getSettings();
+      ownerForUrl = settings.tenant_handle || owner;
+    }
+    return `${this.getHostUrl()}/hub/${ownerForUrl}/${name}:${commitHash.slice(
       0,
       8
     )}`;
