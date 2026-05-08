@@ -816,6 +816,7 @@ class Client:
         "_write_api_urls",
         "_settings",
         "_manual_cleanup",
+        "_atexit_handler",
         "_pyo3_client",
         "compressed_traces",
         "_data_available_event",
@@ -1155,7 +1156,10 @@ class Client:
             else ls_schemas.LangSmithInfo(**info)
         )
         weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, session_)
+        self._atexit_handler: Optional[Callable[[], None]] = functools.partial(
+            close_session, session_
+        )
+        atexit.register(self._atexit_handler)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
@@ -9809,6 +9813,39 @@ class Client:
         self._manual_cleanup = True
         if self._cache is not None:
             self._cache.shutdown()
+
+    def close(self, timeout: Optional[float] = None) -> None:
+        """Release resources held by this client.
+
+        Calls :meth:`cleanup` to drain pending traces and stop background
+        threads, then closes the underlying ``requests.Session`` and
+        unregisters the ``atexit`` handler so the session is not pinned in
+        memory for the remainder of the process lifetime.
+
+        Safe to call multiple times.
+
+        Args:
+            timeout: Forwarded to :meth:`cleanup` / :meth:`flush`. Maximum
+                seconds to wait for pending traces to flush. ``None``
+                (default) waits indefinitely. Pass ``0`` to skip the drain.
+        """
+        try:
+            self.cleanup(timeout=timeout)
+        except Exception as e:
+            logger.warning("Error during cleanup while closing client: %s", e)
+        handler = self._atexit_handler
+        if handler is not None:
+            try:
+                atexit.unregister(handler)
+            except Exception as e:
+                logger.debug("Error unregistering atexit handler: %s", e)
+            self._atexit_handler = None
+        session = self.session
+        if session is not None:
+            try:
+                close_session(session)
+            except Exception as e:
+                logger.warning("Error closing client session: %s", e)
 
     @overload
     def evaluate(
