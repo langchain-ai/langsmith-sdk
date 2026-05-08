@@ -235,8 +235,8 @@ export class SandboxClient {
       name,
       timeout = 30,
       waitForReady = true,
-      ttlSeconds,
       idleTtlSeconds,
+      deleteAfterStopSeconds,
       vCpus,
       memBytes,
       fsCapacityBytes,
@@ -250,8 +250,8 @@ export class SandboxClient {
       );
     }
 
-    validateTtl(ttlSeconds, "ttlSeconds");
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
+    validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     const url = `${this._baseUrl}/boxes`;
 
@@ -270,11 +270,11 @@ export class SandboxClient {
     if (name) {
       payload.name = name;
     }
-    if (ttlSeconds !== undefined) {
-      payload.ttl_seconds = ttlSeconds;
-    }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (deleteAfterStopSeconds !== undefined) {
+      payload.delete_after_stop_seconds = deleteAfterStopSeconds;
     }
     if (vCpus !== undefined) {
       payload.vcpus = vCpus;
@@ -370,14 +370,15 @@ export class SandboxClient {
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox>;
   /**
-   * Update a sandbox's name and/or TTL settings.
+   * Update a sandbox's name and/or retention settings (idle stop and
+   * delete-after-stop).
    *
    * @param name - Current sandbox name.
    * @param options - Fields to update. Omit a field to leave it unchanged.
    * @returns Updated Sandbox. If no fields are provided, returns the current sandbox.
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
-   * @throws LangSmithValidationError if TTL values are invalid.
+   * @throws LangSmithValidationError if retention values are invalid.
    */
   async updateSandbox(
     name: string,
@@ -392,14 +393,14 @@ export class SandboxClient {
         ? { newName: newNameOrOptions }
         : newNameOrOptions;
 
-    const { newName, ttlSeconds, idleTtlSeconds } = options;
-    validateTtl(ttlSeconds, "ttlSeconds");
+    const { newName, idleTtlSeconds, deleteAfterStopSeconds } = options;
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
+    validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     if (
       newName === undefined &&
-      ttlSeconds === undefined &&
-      idleTtlSeconds === undefined
+      idleTtlSeconds === undefined &&
+      deleteAfterStopSeconds === undefined
     ) {
       return this.getSandbox(name);
     }
@@ -409,11 +410,11 @@ export class SandboxClient {
     if (newName !== undefined) {
       payload.name = newName;
     }
-    if (ttlSeconds !== undefined) {
-      payload.ttl_seconds = ttlSeconds;
-    }
     if (idleTtlSeconds !== undefined) {
       payload.idle_ttl_seconds = idleTtlSeconds;
+    }
+    if (deleteAfterStopSeconds !== undefined) {
+      payload.delete_after_stop_seconds = deleteAfterStopSeconds;
     }
 
     const response = await this._fetch(url, {

@@ -6495,6 +6495,11 @@ export class Client implements LangSmithTracingClientInterface {
    * the prompt contents, not merely the publishing account. Prompts from your
    * own or your organization's account can still be unsafe if that account or
    * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should be avoided for public prompts or prompts outside
+   * your own organization.
    */
   public async pullPromptCommit(
     promptIdentifier: string,
@@ -6555,6 +6560,11 @@ export class Client implements LangSmithTracingClientInterface {
    * the prompt contents, not merely the publishing account. Prompts from your
    * own or your organization's account can still be unsafe if that account or
    * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should be avoided for public prompts or prompts outside
+   * your own organization.
    * @private
    */
   public async _pullPrompt(
@@ -6861,7 +6871,12 @@ export class Client implements LangSmithTracingClientInterface {
     });
     const data = (await response.json()) as DirectoryCommitResponse;
     const commitHash = data.commit.commit_hash;
-    return `${this.getHostUrl()}/hub/${owner}/${name}:${commitHash.slice(
+    let ownerForUrl = owner;
+    if (owner === "-") {
+      const settings = await this._getSettings();
+      ownerForUrl = settings.tenant_handle || owner;
+    }
+    return `${this.getHostUrl()}/hub/${ownerForUrl}/${name}:${commitHash.slice(
       0,
       8,
     )}`;
