@@ -54,16 +54,24 @@ export class Sandbox {
   readonly created_at?: string;
   /** Timestamp when the sandbox was last updated. */
   readonly updated_at?: string;
-  /** Maximum lifetime TTL in seconds (`0` means disabled). */
-  readonly ttl_seconds?: number;
   /**
    * Idle timeout TTL in seconds (`0` means disabled).
    * New sandboxes receive a server-side default of `600` seconds (10 minutes)
-   * when the caller did not set `idleTtlSeconds` explicitly.
+   * when the caller did not set `idleTtlSeconds` explicitly. The launcher
+   * stops the sandbox after this many idle seconds.
    */
   readonly idle_ttl_seconds?: number;
-  /** Computed expiration timestamp when a TTL is active. */
-  readonly expires_at?: string;
+  /**
+   * Seconds after the sandbox enters the `stopped` state before it (and
+   * its filesystem clone) are permanently deleted (`0` means disabled).
+   */
+  readonly delete_after_stop_seconds?: number;
+  /**
+   * Timestamp when the sandbox transitioned to `stopped`, or `undefined`
+   * while running. The deletion deadline is
+   * `stopped_at + delete_after_stop_seconds`.
+   */
+  readonly stopped_at?: string;
   /** Snapshot ID used to create this sandbox. */
   readonly snapshot_id?: string;
   /** Number of vCPUs allocated. */
@@ -84,9 +92,9 @@ export class Sandbox {
     this.id = data.id;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
-    this.ttl_seconds = data.ttl_seconds;
     this.idle_ttl_seconds = data.idle_ttl_seconds;
-    this.expires_at = data.expires_at;
+    this.delete_after_stop_seconds = data.delete_after_stop_seconds;
+    this.stopped_at = data.stopped_at ?? undefined;
     this.snapshot_id = data.snapshot_id;
     this.vCpus = data.vcpus;
     this.mem_bytes = data.mem_bytes;
