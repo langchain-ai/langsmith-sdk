@@ -371,40 +371,43 @@ describe("SandboxClient - createSandbox", () => {
     expect(init.signal).toBeDefined();
   });
 
-  it("should include ttl_seconds and idle_ttl_seconds in the request body when set", async () => {
+  it("should include idle_ttl_seconds and delete_after_stop_seconds in the request body when set", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
         dataplane_url: "https://dp.example.com",
         status: "ready",
-        ttl_seconds: 3600,
         idle_ttl_seconds: 600,
-        expires_at: "2026-03-24T15:00:00Z",
+        delete_after_stop_seconds: 86400,
+        stopped_at: null,
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
     const sandbox = await client.createSandbox("snap-123", {
-      ttlSeconds: 3600,
       idleTtlSeconds: 600,
+      deleteAfterStopSeconds: 86400,
     });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.ttl_seconds).toBe(3600);
     expect(body.idle_ttl_seconds).toBe(600);
-    expect(sandbox.ttl_seconds).toBe(3600);
+    expect(body.delete_after_stop_seconds).toBe(86400);
     expect(sandbox.idle_ttl_seconds).toBe(600);
-    expect(sandbox.expires_at).toBe("2026-03-24T15:00:00Z");
+    expect(sandbox.delete_after_stop_seconds).toBe(86400);
+    expect(sandbox.stopped_at).toBeUndefined();
   });
 
-  it("should reject invalid TTL values before calling the API", async () => {
+  it("should reject invalid retention values before calling the API", async () => {
     const mockFetch = jest.fn<typeof fetch>();
     const client = createClientWithMock(mockFetch);
 
     await expect(
-      client.createSandbox("snap-123", { ttlSeconds: 61 }),
+      client.createSandbox("snap-123", { idleTtlSeconds: 61 }),
+    ).rejects.toThrow(LangSmithValidationError);
+    await expect(
+      client.createSandbox("snap-123", { deleteAfterStopSeconds: 61 }),
     ).rejects.toThrow(LangSmithValidationError);
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -451,20 +454,20 @@ describe("SandboxClient - createSandbox", () => {
 
 describe("validateTtl", () => {
   it("accepts undefined, 0, and positive multiples of 60", () => {
-    expect(() => validateTtl(undefined, "ttlSeconds")).not.toThrow();
-    expect(() => validateTtl(0, "ttlSeconds")).not.toThrow();
-    expect(() => validateTtl(60, "ttlSeconds")).not.toThrow();
-    expect(() => validateTtl(3600, "idleTtlSeconds")).not.toThrow();
+    expect(() => validateTtl(undefined, "idleTtlSeconds")).not.toThrow();
+    expect(() => validateTtl(0, "idleTtlSeconds")).not.toThrow();
+    expect(() => validateTtl(60, "idleTtlSeconds")).not.toThrow();
+    expect(() => validateTtl(3600, "deleteAfterStopSeconds")).not.toThrow();
   });
 
   it("rejects negative values and non-multiples of 60", () => {
-    expect(() => validateTtl(-1, "ttlSeconds")).toThrow(
+    expect(() => validateTtl(-1, "idleTtlSeconds")).toThrow(
       LangSmithValidationError,
     );
-    expect(() => validateTtl(30, "ttlSeconds")).toThrow(
+    expect(() => validateTtl(30, "idleTtlSeconds")).toThrow(
       LangSmithValidationError,
     );
-    expect(() => validateTtl(61, "idleTtlSeconds")).toThrow(
+    expect(() => validateTtl(61, "deleteAfterStopSeconds")).toThrow(
       LangSmithValidationError,
     );
   });
@@ -481,28 +484,28 @@ describe("SandboxClient - updateSandbox", () => {
     return client;
   };
 
-  it("should PATCH ttl fields when provided in options", async () => {
+  it("should PATCH retention fields when provided in options", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "sb-1",
         status: "ready",
-        ttl_seconds: 0,
         idle_ttl_seconds: 1800,
+        delete_after_stop_seconds: 0,
       }),
     } as Response);
 
     const client = createClientWithMock(mockFetch);
     await client.updateSandbox("sb-1", {
-      ttlSeconds: 0,
       idleTtlSeconds: 1800,
+      deleteAfterStopSeconds: 0,
     });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("PATCH");
     const body = JSON.parse(init.body as string);
-    expect(body.ttl_seconds).toBe(0);
     expect(body.idle_ttl_seconds).toBe(1800);
+    expect(body.delete_after_stop_seconds).toBe(0);
     expect(body.name).toBeUndefined();
   });
 

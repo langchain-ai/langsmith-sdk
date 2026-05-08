@@ -50,53 +50,73 @@ class TestAsyncSandboxProperties:
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
 
-class TestAsyncSandboxTTLFields:
-    """Tests for TTL fields on AsyncSandbox."""
+class TestAsyncSandboxRetentionFields:
+    """Tests for the two-stage retention fields on AsyncSandbox."""
 
-    def test_from_dict_with_ttl(self, client):
-        """Test from_dict parses TTL fields."""
+    def test_from_dict_with_retention(self, client):
+        """from_dict parses idle_ttl_seconds, delete_after_stop_seconds,
+        and stopped_at."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "idle_ttl_seconds": 600,
+                "delete_after_stop_seconds": 86400,
+                "stopped_at": "2026-03-24T12:00:00Z",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.idle_ttl_seconds == 600
+        assert sb.delete_after_stop_seconds == 86400
+        assert sb.stopped_at == "2026-03-24T12:00:00Z"
+
+    def test_from_dict_without_retention(self, client):
+        """Retention fields default to None when absent."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.idle_ttl_seconds is None
+        assert sb.delete_after_stop_seconds is None
+        assert sb.stopped_at is None
+
+    def test_from_dict_with_zero_retention(self, client):
+        """Zero values are preserved (each disables that retention stage)."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "idle_ttl_seconds": 0,
+                "delete_after_stop_seconds": 0,
+                "stopped_at": None,
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.idle_ttl_seconds == 0
+        assert sb.delete_after_stop_seconds == 0
+        assert sb.stopped_at is None
+
+    def test_from_dict_silently_ignores_legacy_fields(self, client):
+        """Older smith-go responses may include the now-removed
+        ttl_seconds/expires_at fields; the SDK should silently drop them."""
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
                 "ttl_seconds": 3600,
-                "idle_ttl_seconds": 600,
                 "expires_at": "2026-03-24T12:00:00Z",
+                "idle_ttl_seconds": 600,
             },
             client=client,
             auto_delete=False,
         )
-        assert sb.ttl_seconds == 3600
         assert sb.idle_ttl_seconds == 600
-        assert sb.expires_at == "2026-03-24T12:00:00Z"
-
-    def test_from_dict_without_ttl(self, client):
-        """Test from_dict defaults TTL fields to None when absent."""
-        sb = AsyncSandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        assert sb.ttl_seconds is None
-        assert sb.idle_ttl_seconds is None
-        assert sb.expires_at is None
-
-    def test_from_dict_with_zero_ttl(self, client):
-        """Test from_dict handles zero TTL values (TTL disabled)."""
-        sb = AsyncSandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "ttl_seconds": 0,
-                "idle_ttl_seconds": 0,
-                "expires_at": None,
-            },
-            client=client,
-            auto_delete=False,
-        )
-        assert sb.ttl_seconds == 0
-        assert sb.idle_ttl_seconds == 0
-        assert sb.expires_at is None
+        assert sb.delete_after_stop_seconds is None
+        assert sb.stopped_at is None
+        assert not hasattr(sb, "ttl_seconds")
+        assert not hasattr(sb, "expires_at")
 
 
 class TestAsyncSandboxStatusFields:

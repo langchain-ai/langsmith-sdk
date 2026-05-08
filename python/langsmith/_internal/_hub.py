@@ -17,6 +17,13 @@ def build_commit_url(host: str, owner: str, name: str, commit_hash: str) -> str:
     return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
 
 
+def resolve_owner_for_url(owner: str, tenant_handle: Optional[str]) -> str:
+    """Resolve internal owner sentinel to a user-visible owner in URLs."""
+    if owner == "-" and tenant_handle:
+        return tenant_handle
+    return owner
+
+
 def validate_parent_commit(parent_commit: Optional[str]) -> None:
     """Raise ``LangSmithUserError`` if ``parent_commit`` is set but malformed."""
     if parent_commit is not None and not (8 <= len(parent_commit) <= 64):
