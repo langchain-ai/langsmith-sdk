@@ -18,7 +18,7 @@ from typing import (
     cast,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from typing_extensions import TypedDict
 
 from langsmith import run_helpers as rh
@@ -82,6 +82,27 @@ class EvaluationResult(BaseModel):
     """Metadata for the evaluator run."""
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("feedback_config", mode="before")
+    @classmethod
+    def preserve_feedback_config_dict(
+        cls, v: object
+    ) -> object:
+        """Prevent Pydantic from silently dropping keys from plain dicts.
+
+        When a dict is passed that doesn't match FeedbackConfig fields,
+        Pydantic v2 Union validation silently strips unknown keys instead of
+        falling back to the plain ``dict`` branch of the Union.  We detect
+        that case here and return the original dict untouched so the data is
+        never lost.
+        """
+        if not isinstance(v, dict):
+            return v
+        known_keys = {"type", "min", "max", "categories"}
+        if not v.keys() <= known_keys:
+            # Contains keys outside FeedbackConfig — keep as plain dict
+            return v
+        return v
 
     @model_validator(mode="after")
     def check_value_non_numeric(self) -> EvaluationResult:
