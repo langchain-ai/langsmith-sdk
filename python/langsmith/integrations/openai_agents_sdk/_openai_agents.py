@@ -391,8 +391,20 @@ if HAVE_AGENTS:
                 )
                 if metadata := extracted.get("metadata"):
                     run.extra["metadata"].update(metadata)
-                if invocation_params := extracted.get("invocation_params"):
-                    run.extra["invocation_params"] = invocation_params
+                # Extract user-supplied ls_invocation_params from tracer metadata
+                user_invocation_params = (self._metadata or {}).get(
+                    "ls_invocation_params", {}
+                )
+                extracted_invocation_params = extracted.get("invocation_params") or {}
+                if extracted_invocation_params or user_invocation_params:
+                    merged_invocation_params = {
+                        **extracted_invocation_params,
+                        **user_invocation_params,
+                    }
+                    run.extra["invocation_params"] = merged_invocation_params
+                    run.extra["metadata"]["ls_invocation_params"] = (
+                        merged_invocation_params
+                    )
 
                 if isinstance(span.span_data, tracing.ResponseSpanData):
                     self._first_response_inputs[span.trace_id] = (
