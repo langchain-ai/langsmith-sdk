@@ -75,8 +75,11 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
+)
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal._compressed_traces import CompressedTraces
+from langsmith._internal._compressed_traces import ZSTD_AVAILABLE, CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
@@ -1232,6 +1235,22 @@ class Client:
                 maxsize=queue_maxsize
             )
 
+            use_multipart = True
+            if self._info is not None and self._info.batch_ingest_config is not None:
+                use_multipart = self._info.batch_ingest_config.get(
+                    "use_multipart_endpoint", True
+                )
+            disable_compression = (
+                ls_utils.is_env_var_truish("DISABLE_RUN_COMPRESSION")
+                or self._tracing_mode in ("otel", "hybrid")
+                or not ZSTD_AVAILABLE
+                or not use_multipart
+            )
+            if not disable_compression:
+                self.compressed_traces = CompressedTraces()
+                self._data_available_event = threading.Event()
+                self._futures = weakref.WeakSet()
+
             threading.Thread(
                 target=_tracing_control_thread_func,
                 # arg must be a weakref to self to avoid the Thread object
@@ -1239,6 +1258,13 @@ class Client:
                 args=(weakref.ref(self),),
                 daemon=self._use_daemon_threads,
             ).start()
+
+            if self.compressed_traces is not None:
+                threading.Thread(
+                    target=_tracing_control_thread_func_compress_parallel,
+                    args=(weakref.ref(self),),
+                    daemon=self._use_daemon_threads,
+                ).start()
         else:
             self.tracing_queue = None
 
