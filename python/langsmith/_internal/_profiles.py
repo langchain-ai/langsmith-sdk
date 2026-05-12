@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import datetime
+import errno
 import json
 import os
 import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, TypedDict, cast
@@ -15,6 +19,13 @@ import requests
 _OAUTH_CLIENT_ID = "langsmith-cli"
 _TOKEN_REFRESH_LEEWAY = datetime.timedelta(minutes=1)
 _TOKEN_REFRESH_TIMEOUT = 10
+_X_USER_ID_HEADER = "x-user-id"
+_OAUTH_USER_ID_CLAIM = "sub"
+_REFRESH_LOCK_POLL_SECONDS = 0.05
+_REFRESH_LOCK_STALE_SECONDS = _TOKEN_REFRESH_TIMEOUT + 30
+_REFRESH_LOCK_TIMEOUT_SECONDS = _REFRESH_LOCK_STALE_SECONDS + _TOKEN_REFRESH_TIMEOUT
+_REFRESH_LOCKS_LOCK = threading.Lock()
+_REFRESH_LOCKS: dict[tuple[Path, str], threading.Lock] = {}
 
 
 class ProfileOAuth(TypedDict, total=False):
@@ -102,6 +113,84 @@ def _profile_from_state(state: ProfileState) -> Optional[ProfileConfig]:
     if not isinstance(profile, dict):
         return None
     return cast(ProfileConfig, profile)
+
+
+def _reload_profile_state(state: ProfileState) -> ProfileState:
+    try:
+        raw = json.loads(state.path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return state
+    if not isinstance(raw, dict):
+        return state
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, dict):
+        return state
+    if not isinstance(profiles.get(state.profile_name), dict):
+        return state
+    return ProfileState(state.path, cast(ProfileConfigFile, raw), state.profile_name)
+
+
+def _refresh_lock_for_state(state: ProfileState) -> threading.Lock:
+    key = (state.path, state.profile_name)
+    with _REFRESH_LOCKS_LOCK:
+        lock = _REFRESH_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _REFRESH_LOCKS[key] = lock
+        return lock
+
+
+def _refresh_lock_path(state: ProfileState) -> Path:
+    return state.path.with_name(f"{state.path.name}.oauth-refresh.lock")
+
+
+def _is_refresh_lock_stale(lock_path: Path) -> bool:
+    try:
+        modified_at = lock_path.stat().st_mtime
+    except OSError:
+        return False
+    return time.time() - modified_at > _REFRESH_LOCK_STALE_SECONDS
+
+
+def _acquire_filesystem_refresh_lock(state: ProfileState) -> Optional[Path]:
+    lock_path = _refresh_lock_path(state)
+    deadline = time.monotonic() + _REFRESH_LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            if _is_refresh_lock_stale(lock_path):
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(_REFRESH_LOCK_POLL_SECONDS)
+            continue
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                try:
+                    lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                except OSError:
+                    return None
+                continue
+            return None
+        try:
+            os.write(fd, str(os.getpid()).encode())
+        finally:
+            os.close(fd)
+        return lock_path
+
+
+def _release_filesystem_refresh_lock(lock_path: Optional[Path]) -> None:
+    if lock_path is None:
+        return
+    try:
+        lock_path.unlink()
+    except OSError:
+        pass
 
 
 def load_profile_client_config() -> ProfileClientConfig:
@@ -228,7 +317,6 @@ class ProfileAuth:
     ) -> None:
         self._state = config.profile_state
         self._api_key_header = api_key_header
-        self._lock = threading.Lock()
         self._managed_auth_headers: set[tuple[str, str]] = set()
         self._remember_auth_headers(self._auth_headers(refresh=False))
 
@@ -285,10 +373,18 @@ class ProfileAuth:
         if profile is None:
             return {}
         if refresh and should_refresh_profile_token(profile):
-            with self._lock:
-                profile = self._profile()
-                if profile is not None and should_refresh_profile_token(profile):
-                    self._refresh(profile)
+            if self._state is None:
+                return self._headers_from_profile(profile)
+            with _refresh_lock_for_state(self._state):
+                lock_path = _acquire_filesystem_refresh_lock(self._state)
+                try:
+                    self._state = _reload_profile_state(self._state)
+                    profile = self._profile()
+                    if profile is not None and should_refresh_profile_token(profile):
+                        self._refresh(profile)
+                    profile = self._profile()
+                finally:
+                    _release_filesystem_refresh_lock(lock_path)
         return self._headers_from_profile(profile)
 
     def _refresh(self, profile: ProfileConfig) -> None:
@@ -314,7 +410,11 @@ class ProfileAuth:
             (profile.get("oauth") or {}).get("access_token")
         )
         if oauth_access_token:
-            return {"Authorization": f"Bearer {oauth_access_token}"}
+            headers = {"Authorization": f"Bearer {oauth_access_token}"}
+            user_id = _oauth_user_id_from_access_token(oauth_access_token)
+            if user_id:
+                headers[_X_USER_ID_HEADER] = user_id
+            return headers
         api_key = trim_auth_value(profile.get("api_key"))
         if api_key:
             return {self._api_key_header: api_key}
@@ -322,7 +422,7 @@ class ProfileAuth:
 
     def _remember_auth_headers(self, headers: Mapping[str, str]) -> None:
         for name, value in headers.items():
-            if self._is_auth_header_name(name) and value:
+            if self._is_managed_header_name(name) and value:
                 self._managed_auth_headers.add((name.lower(), value))
 
     def _is_profile_auth_header(self, name: str, value: str) -> bool:
@@ -336,3 +436,27 @@ class ProfileAuth:
 
     def _is_auth_header_name(self, name: str) -> bool:
         return name.lower() in {"authorization", self._api_key_header.lower()}
+
+    def _is_managed_header_name(self, name: str) -> bool:
+        return self._is_auth_header_name(name) or name.lower() == _X_USER_ID_HEADER
+
+
+def _oauth_user_id_from_access_token(access_token: str) -> Optional[str]:
+    parts = access_token.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        payload = json.loads(_decode_base64_url(parts[1]))
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(_OAUTH_USER_ID_CLAIM)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _decode_base64_url(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
