@@ -97,10 +97,10 @@
     "experimental/anthropic.js",
     "experimental/anthropic.d.ts",
     "experimental/anthropic.d.cts",
-    "experimental/sandbox.cjs",
-    "experimental/sandbox.js",
-    "experimental/sandbox.d.ts",
-    "experimental/sandbox.d.cts",
+    "sandbox.cjs",
+    "sandbox.js",
+    "sandbox.d.ts",
+    "sandbox.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -446,14 +446,14 @@
       "import": "./experimental/anthropic.js",
       "require": "./experimental/anthropic.cjs"
     },
-    "./experimental/sandbox": {
+    "./sandbox": {
       "types": {
-        "import": "./experimental/sandbox.d.ts",
-        "require": "./experimental/sandbox.d.cts",
-        "default": "./experimental/sandbox.d.ts"
+        "import": "./sandbox.d.ts",
+        "require": "./sandbox.d.cts",
+        "default": "./sandbox.d.ts"
       },
-      "import": "./experimental/sandbox.js",
-      "require": "./experimental/sandbox.cjs"
+      "import": "./sandbox.js",
+      "require": "./sandbox.cjs"
     },
     "./package.json": "./package.json"
   },

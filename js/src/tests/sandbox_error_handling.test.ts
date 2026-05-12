@@ -1,10 +1,10 @@
 import { createServer, Server } from "http";
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
-import { SandboxClient } from "../experimental/sandbox/client.js";
+import { SandboxClient } from "../sandbox/client.js";
 import {
   LangSmithValidationError,
   LangSmithSandboxCreationError,
-} from "../experimental/sandbox/errors.js";
+} from "../sandbox/errors.js";
 
 let server: Server;
 let port: number;

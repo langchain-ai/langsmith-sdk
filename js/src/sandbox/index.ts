@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { SandboxClient } from "langsmith/experimental/sandbox";
+ * import { SandboxClient } from "langsmith/sandbox";
  *
  * // Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
  * const client = new SandboxClient();

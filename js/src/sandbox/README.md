@@ -2,8 +2,6 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-> ⚠️ **Warning**: This module is experimental (alpha). Features and APIs may change, and breaking changes are expected as we iterate.
-
 ## Quick Start
 
 Sandboxes are created from **snapshots**. A snapshot is a filesystem image you
@@ -11,7 +9,7 @@ build once from a Docker image (or capture from a running sandbox) and then
 reuse to boot as many sandboxes as you need.
 
 ```typescript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
@@ -47,7 +45,7 @@ If you already have a snapshot ID (for example, listed with
 The client automatically uses LangSmith environment variables:
 
 ```typescript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 // Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY
 const client = new SandboxClient();
@@ -460,7 +458,7 @@ import {
   LangSmithCommandTimeoutError,       // Command exceeded its timeout
   LangSmithQuotaExceededError,        // Quota limit reached
   LangSmithValidationError,           // Invalid input
-} from "langsmith/experimental/sandbox";
+} from "langsmith/sandbox";
 
 const client = new SandboxClient();
 

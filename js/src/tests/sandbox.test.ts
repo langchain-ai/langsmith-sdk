@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
 import { inspect } from "node:util";
-import { SandboxClient } from "../experimental/sandbox/client.js";
-import { Sandbox } from "../experimental/sandbox/sandbox.js";
-import { CommandHandle } from "../experimental/sandbox/command_handle.js";
+import { SandboxClient } from "../sandbox/client.js";
+import { Sandbox } from "../sandbox/sandbox.js";
+import { CommandHandle } from "../sandbox/command_handle.js";
 import {
   buildWsUrl,
   buildAuthHeaders,
   WSStreamControl,
   raiseForWsError,
-} from "../experimental/sandbox/ws_execute.js";
+} from "../sandbox/ws_execute.js";
 import {
   LangSmithResourceCreationError,
   LangSmithResourceNotFoundError,
@@ -22,9 +22,9 @@ import {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
-} from "../experimental/sandbox/errors.js";
-import type { WsMessage, OutputChunk } from "../experimental/sandbox/types.js";
-import { validateTtl } from "../experimental/sandbox/helpers.js";
+} from "../sandbox/errors.js";
+import type { WsMessage, OutputChunk } from "../sandbox/types.js";
+import { validateTtl } from "../sandbox/helpers.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
