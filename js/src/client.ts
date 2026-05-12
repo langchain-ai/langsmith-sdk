@@ -93,6 +93,7 @@ import {
 } from "./singletons/fetch.js";
 import {
   DEFAULT_API_URL,
+  PROFILE_USER_ID_HEADER,
   type ProfileAuthHeader,
   ProfileAuth,
   hasValue,
@@ -980,11 +981,34 @@ export class Client implements LangSmithTracingClientInterface {
     profileManagedAuthorization?: string,
   ): RequestInit | undefined {
     if (!authHeader) {
-      return init;
+      return this.stripManagedProfileUserIdHeader(init);
     }
+    const profileUserIdHeaders = (): Record<string, string> => {
+      if (authHeader.name !== "Authorization" || !hasValue(authHeader.userId)) {
+        return {};
+      }
+      return { [PROFILE_USER_ID_HEADER]: authHeader.userId ?? "" };
+    };
     const applyAuth = (headers: Headers): Headers => {
+      const deleteManagedProfileUserId = () => {
+        const userId = headers.get(PROFILE_USER_ID_HEADER);
+        if (
+          hasValue(userId) &&
+          this.profileAuth?.isProfileUserIdHeader(userId ?? "") === true
+        ) {
+          headers.delete(PROFILE_USER_ID_HEADER);
+        }
+      };
+      const setProfileUserId = () => {
+        if (hasValue(authHeader.userId)) {
+          headers.set(PROFILE_USER_ID_HEADER, authHeader.userId ?? "");
+        } else {
+          deleteManagedProfileUserId();
+        }
+      };
       if (this.apiKey !== undefined && authHeader.name === "x-api-key") {
         headers.delete("Authorization");
+        deleteManagedProfileUserId();
         if (!headers.has("x-api-key")) {
           headers.set("x-api-key", authHeader.value);
         }
@@ -992,6 +1016,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
       if (authHeader.name === "Authorization") {
         if (hasValue(headers.get("x-api-key"))) {
+          deleteManagedProfileUserId();
           return headers;
         }
         const authorization = headers.get("Authorization");
@@ -1002,9 +1027,11 @@ export class Client implements LangSmithTracingClientInterface {
             profileManagedAuthorization,
           )
         ) {
+          deleteManagedProfileUserId();
           return headers;
         }
         headers.set("Authorization", authHeader.value);
+        setProfileUserId();
         return headers;
       }
       const authorization = headers.get("Authorization");
@@ -1015,11 +1042,13 @@ export class Client implements LangSmithTracingClientInterface {
           profileManagedAuthorization,
         )
       ) {
+        deleteManagedProfileUserId();
         return headers;
       }
       if (hasValue(authorization)) {
         headers.delete("Authorization");
       }
+      deleteManagedProfileUserId();
       if (!headers.has("x-api-key")) {
         headers.set("x-api-key", authHeader.value);
       }
@@ -1027,7 +1056,10 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (!init) {
       return {
-        headers: { [authHeader.name]: authHeader.value },
+        headers: {
+          [authHeader.name]: authHeader.value,
+          ...profileUserIdHeaders(),
+        },
       };
     }
     if (init.headers instanceof Headers) {
@@ -1045,6 +1077,29 @@ export class Client implements LangSmithTracingClientInterface {
       const key = getHeaderKey(name);
       return key ? headers[key] : undefined;
     };
+    const deleteHeader = (name: string) => {
+      const key = getHeaderKey(name);
+      if (key) {
+        delete headers[key];
+      }
+    };
+    const deleteManagedProfileUserId = () => {
+      const userId = getHeader(PROFILE_USER_ID_HEADER);
+      if (
+        hasValue(userId) &&
+        this.profileAuth?.isProfileUserIdHeader(userId ?? "") === true
+      ) {
+        deleteHeader(PROFILE_USER_ID_HEADER);
+      }
+    };
+    const setProfileUserId = () => {
+      if (hasValue(authHeader.userId)) {
+        deleteHeader(PROFILE_USER_ID_HEADER);
+        headers[PROFILE_USER_ID_HEADER] = authHeader.userId ?? "";
+      } else {
+        deleteManagedProfileUserId();
+      }
+    };
     const hasApiKey = hasValue(getHeader("x-api-key"));
     const authorization = getHeader("authorization");
     const hasExplicitAuthorization =
@@ -1055,10 +1110,8 @@ export class Client implements LangSmithTracingClientInterface {
       );
 
     if (this.apiKey !== undefined && authHeader.name === "x-api-key") {
-      const authorizationKey = getHeaderKey("authorization");
-      if (authorizationKey) {
-        delete headers[authorizationKey];
-      }
+      deleteHeader("authorization");
+      deleteManagedProfileUserId();
       if (!hasApiKey) {
         headers["x-api-key"] = authHeader.value;
       }
@@ -1071,17 +1124,52 @@ export class Client implements LangSmithTracingClientInterface {
           delete headers[authorizationKey];
         }
         headers.Authorization = authHeader.value;
+        setProfileUserId();
+      } else {
+        deleteManagedProfileUserId();
       }
       return { ...init, headers };
     }
     if (!hasExplicitAuthorization) {
-      const authorizationKey = getHeaderKey("authorization");
-      if (authorizationKey) {
-        delete headers[authorizationKey];
-      }
+      deleteHeader("authorization");
+      deleteManagedProfileUserId();
       if (!hasApiKey) {
         headers["x-api-key"] = authHeader.value;
       }
+    }
+    return { ...init, headers };
+  }
+
+  private stripManagedProfileUserIdHeader(
+    init?: RequestInit,
+  ): RequestInit | undefined {
+    if (!init?.headers || !this.profileAuth) {
+      return init;
+    }
+    const stripFromHeaders = (headers: Headers): Headers => {
+      const userId = headers.get(PROFILE_USER_ID_HEADER);
+      if (
+        hasValue(userId) &&
+        this.profileAuth?.isProfileUserIdHeader(userId ?? "") === true
+      ) {
+        headers.delete(PROFILE_USER_ID_HEADER);
+      }
+      return headers;
+    };
+    if (init.headers instanceof Headers || Array.isArray(init.headers)) {
+      return { ...init, headers: stripFromHeaders(new Headers(init.headers)) };
+    }
+    const headers = {
+      ...((init.headers ?? {}) as Record<string, string>),
+    };
+    const userIdKey = Object.keys(headers).find(
+      (key) => key.toLowerCase() === PROFILE_USER_ID_HEADER,
+    );
+    if (
+      userIdKey &&
+      this.profileAuth.isProfileUserIdHeader(headers[userIdKey] ?? "")
+    ) {
+      delete headers[userIdKey];
     }
     return { ...init, headers };
   }
@@ -1356,6 +1444,12 @@ export class Client implements LangSmithTracingClientInterface {
       const profileAuthHeader = this.profileAuth?.currentAuthHeader();
       if (profileAuthHeader) {
         headers[profileAuthHeader.name] = profileAuthHeader.value;
+        if (
+          profileAuthHeader.name === "Authorization" &&
+          hasValue(profileAuthHeader.userId)
+        ) {
+          headers[PROFILE_USER_ID_HEADER] = profileAuthHeader.userId ?? "";
+        }
       }
     }
     if (this.workspaceId) {

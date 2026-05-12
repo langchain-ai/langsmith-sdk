@@ -59,6 +59,17 @@ export function writeFileSync(filePath: string, content: string): void {
   nodeFs.writeFileSync(filePath, content);
 }
 
+export function writeFileExclusiveSync(
+  filePath: string,
+  content: string,
+): void {
+  nodeFs.writeFileSync(filePath, content, {
+    encoding: "utf8",
+    flag: "wx",
+    mode: 0o600,
+  });
+}
+
 export function renameSync(oldPath: string, newPath: string): void {
   nodeFs.renameSync(oldPath, newPath);
 }
@@ -69,4 +80,9 @@ export function unlinkSync(filePath: string): void {
 
 export function readFileSync(filePath: string): string {
   return nodeFs.readFileSync(filePath, "utf-8");
+}
+
+export function statSync(filePath: string): { size: number; mtimeMs: number } {
+  const stats = nodeFs.statSync(filePath);
+  return { size: stats.size, mtimeMs: stats.mtimeMs };
 }

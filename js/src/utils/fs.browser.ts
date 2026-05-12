@@ -45,10 +45,19 @@ export function mkdirSync(_dir: string): void {}
 
 export function writeFileSync(_filePath: string, _content: string): void {}
 
+export function writeFileExclusiveSync(
+  _filePath: string,
+  _content: string,
+): void {}
+
 export function renameSync(_oldPath: string, _newPath: string): void {}
 
 export function unlinkSync(_filePath: string): void {}
 
 export function readFileSync(_filePath: string): string {
   return "";
+}
+
+export function statSync(_filePath: string): { size: number; mtimeMs: number } {
+  return { size: 0, mtimeMs: 0 };
 }
