@@ -78,7 +78,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._beta_decorator import deprecated, warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -3895,6 +3895,7 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
+    @deprecated("read_run() is deprecated. Use client.runs.retrieve(...) instead.")
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
@@ -3990,6 +3991,7 @@ class Client:
             **kwargs,
         )
 
+    @deprecated("list_runs() is deprecated. Use client.runs.query(...) instead.")
     def list_runs(
         self,
         *,
@@ -4184,6 +4186,7 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    @deprecated("list_threads() is deprecated. Use client.threads.query(...) instead.")
     def list_threads(
         self,
         *,
@@ -4434,6 +4437,7 @@ class Client:
             f"r/{run.id}?poll=true"
         )
 
+    @deprecated("share_run() is deprecated. Use client.runs.share.create(...) instead.")
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run.
 
@@ -4460,6 +4464,7 @@ class Client:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
+    @deprecated("unshare_run() is deprecated. Use client.runs.share.delete(...) instead.")
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run.
 
@@ -4476,6 +4481,7 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    @deprecated("read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead.")
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run.
 
@@ -4497,6 +4503,7 @@ class Client:
             return None
         return f"{self._host_url}/public/{result['share_token']}/r"
 
+    @deprecated("run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead.")
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run.
 

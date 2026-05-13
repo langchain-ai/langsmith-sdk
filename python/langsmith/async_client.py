@@ -31,6 +31,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _profiles
+from langsmith._internal._beta_decorator import deprecated
 from langsmith._internal._hub import (
     HUB,
     PLATFORM_HUB,
@@ -472,6 +473,7 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
+    @deprecated("read_run() is deprecated. Use client.runs.retrieve(...) instead.")
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
         """Read a run."""
         response = await self._arequest_with_retries(
@@ -480,6 +482,7 @@ class AsyncClient:
         )
         return ls_schemas.Run(**response.json())
 
+    @deprecated("list_runs() is deprecated. Use client.runs.query(...) instead.")
     async def list_runs(
         self,
         *,
@@ -644,6 +647,7 @@ class AsyncClient:
             if limit is not None and ix >= limit:
                 break
 
+    @deprecated("share_run() is deprecated. Use client.runs.share.create(...) instead.")
     async def share_run(
         self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
     ) -> str:
@@ -675,11 +679,13 @@ class AsyncClient:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
+    @deprecated("run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead.")
     async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
         """Get share state for a run asynchronously."""
         link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
         return link is not None
 
+    @deprecated("read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead.")
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run asynchronously.
 
