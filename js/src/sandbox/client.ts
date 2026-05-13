@@ -2,9 +2,9 @@
  * Main SandboxClient class for interacting with the sandbox server API.
  */
 
-import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
-import { _getFetchImplementation } from "../../singletons/fetch.js";
-import { AsyncCaller } from "../../utils/async_caller.js";
+import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+import { _getFetchImplementation } from "../singletons/fetch.js";
+import { AsyncCaller } from "../utils/async_caller.js";
 import type {
   CaptureSnapshotOptions,
   CreateSandboxOptions,
@@ -82,7 +82,7 @@ function getDefaultApiKey(): string | undefined {
  *
  * @example
  * ```typescript
- * import { SandboxClient } from "langsmith/experimental/sandbox";
+ * import { SandboxClient } from "langsmith/sandbox";
  *
  * // Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
  * const client = new SandboxClient();
@@ -107,8 +107,6 @@ function getDefaultApiKey(): string | undefined {
  *   await sandbox.delete();
  * }
  * ```
- *
- * @experimental This feature is experimental, and breaking changes are expected.
  */
 export class SandboxClient {
   private _baseUrl: string;
