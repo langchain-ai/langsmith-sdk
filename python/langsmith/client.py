@@ -64,6 +64,9 @@ from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
+import httpx as _httpx
+import langsmith_api as _langsmith_api_module
+
 import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
@@ -262,6 +265,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith_api.resources.runs import RunsResource
+    from langsmith_api.resources.threads import ThreadsResource
+    from langsmith_api.resources.traces import TracesResource
 
     # OTEL imports for type hints
     try:
@@ -1381,7 +1387,38 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        self._langsmith_api = None
+        self._langsmith_api = _langsmith_api_module.Langsmith(
+            api_key=self._api_key,
+            bearer_token=self._oauth_access_token,
+            tenant_id=str(self._workspace_id) if self._workspace_id else None,
+            base_url=self.api_url,
+            timeout=_httpx.Timeout(
+                connect=self._timeout[0],
+                read=self._timeout[1],
+                write=self._timeout[1],
+                pool=self._timeout[0],
+            ),
+            default_headers=self._custom_headers or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> "RunsResource":
+        return self._langsmith_api.runs
+
+    @property
+    def threads(self) -> "ThreadsResource":
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> "TracesResource":
+        return self._langsmith_api.traces
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
@@ -1394,16 +1431,6 @@ class Client:
             raise AttributeError(
                 f"'{type(self).__name__}' object has no attribute '{name}'"
             )
-        if api_client is None:
-            import langsmith_api as _langsmith_api_module
-
-            api_client = _langsmith_api_module.Langsmith(
-                api_key=self.api_key,
-                bearer_token=self._oauth_access_token,
-                tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=self.api_url,
-            )
-            self._langsmith_api = api_client
         return getattr(api_client, name)
 
     def _dump_failed_trace(

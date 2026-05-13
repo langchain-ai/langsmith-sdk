@@ -11,6 +11,7 @@ import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     Optional,
@@ -19,6 +20,12 @@ from typing import (
 )
 
 import httpx
+import langsmith_api as _langsmith_api_module
+
+if TYPE_CHECKING:
+    from langsmith_api.resources.runs import AsyncRunsResource
+    from langsmith_api.resources.threads import AsyncThreadsResource
+    from langsmith_api.resources.traces import AsyncTracesResource
 
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -51,6 +58,7 @@ class AsyncClient:
         "_oauth_access_token",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     )
 
     _custom_headers: dict[str, str]
@@ -227,6 +235,33 @@ class AsyncClient:
             self._cache = async_prompt_cache_singleton
         else:
             self._cache = None
+
+        self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
+            api_key=self._api_key,
+            bearer_token=self._oauth_access_token,
+            base_url=str(self._client.base_url),
+            timeout=self._client.timeout,
+            default_headers=self._custom_headers or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> "AsyncRunsResource":
+        return self._langsmith_api.runs
+
+    @property
+    def threads(self) -> "AsyncThreadsResource":
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> "AsyncTracesResource":
+        return self._langsmith_api.traces
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
