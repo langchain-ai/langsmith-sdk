@@ -112,13 +112,3 @@ __all__ = [
     "TunnelConnectionRefusedError",
     "TunnelUnsupportedVersionError",
 ]
-
-# Emit warning on import
-import warnings
-
-warnings.warn(
-    "langsmith.sandbox is in alpha. "
-    "This feature is experimental, and breaking changes are expected.",
-    FutureWarning,
-    stacklevel=2,
-)

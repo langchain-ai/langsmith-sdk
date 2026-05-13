@@ -2,8 +2,6 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-> ⚠️ **Warning**: This module is experimental. Features and APIs may change, and breaking changes are expected as we iterate.
-
 ## Quick Start
 
 ```python
@@ -762,7 +760,7 @@ sb = client.update_sandbox(
 )
 ```
 
-> **Migration note (alpha):** the previous `ttl_seconds` (hard wall-clock
+> **Migration note:** the previous `ttl_seconds` (hard wall-clock
 > TTL) and `expires_at` fields were removed. The hard TTL never reliably
 > deleted stopped sandboxes; replace any usage with `idle_ttl_seconds` for
 > stopping and `delete_after_stop_seconds` for deletion.
