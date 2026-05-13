@@ -197,7 +197,7 @@ export class SandboxClient {
    * ```typescript
    * const sandbox = await client.createSandbox();
    * // Or, resolve by snapshot name:
-   * const sandbox = await client.createSandbox(undefined, {
+   * const sandbox = await client.createSandbox({
    *   snapshotName: "python",
    * });
    * try {
@@ -208,10 +208,21 @@ export class SandboxClient {
    * }
    * ```
    */
+  async createSandbox(options?: CreateSandboxOptions): Promise<Sandbox>;
   async createSandbox(
     snapshotId?: string,
+    options?: CreateSandboxOptions,
+  ): Promise<Sandbox>;
+  async createSandbox(
+    snapshotIdOrOptions?: string | CreateSandboxOptions,
     options: CreateSandboxOptions = {},
   ): Promise<Sandbox> {
+    const snapshotId =
+      typeof snapshotIdOrOptions === "string" ? snapshotIdOrOptions : undefined;
+    const resolvedOptions =
+      typeof snapshotIdOrOptions === "object" && snapshotIdOrOptions !== null
+        ? snapshotIdOrOptions
+        : options;
     const {
       snapshotName,
       name,
@@ -223,7 +234,7 @@ export class SandboxClient {
       memBytes,
       fsCapacityBytes,
       proxyConfig,
-    } = options;
+    } = resolvedOptions;
 
     if (snapshotId && snapshotName) {
       throw new LangSmithValidationError(

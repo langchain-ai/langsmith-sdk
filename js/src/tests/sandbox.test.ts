@@ -1167,7 +1167,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox(undefined, {
+    const sandbox = await client.createSandbox({
       snapshotName: "my-snap",
     });
 
@@ -1190,7 +1190,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     } as Response);
     const client = createClientWithMock(mockFetch);
 
-    await client.createSandbox(undefined, { name: "test-sb" });
+    await client.createSandbox({ name: "test-sb" });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);

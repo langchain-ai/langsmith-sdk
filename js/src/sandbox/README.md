@@ -378,7 +378,7 @@ const resumed = await client.createSandbox(captured.id);
 
 // Or resolve by snapshot name instead of ID. This is optional; omitting both
 // snapshotId and snapshotName uses the default runtime.
-const byName = await client.createSandbox(undefined, {
+const byName = await client.createSandbox({
   snapshotName: "with-data",
 });
 
@@ -407,7 +407,7 @@ await client.deleteSnapshot(snapshot.id);
 server-side defaults are used.
 
 ```typescript
-const sandbox = await client.createSandbox(undefined, {
+const sandbox = await client.createSandbox({
   vCpus: 2,
   memBytes: 2_147_483_648,        // 2 GiB
   fsCapacityBytes: 5_368_709_120, // 5 GiB
@@ -472,7 +472,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(snapshotId?, options?)` | Create a sandbox with the default runtime. Pass `snapshotId` or `options.snapshotName` only to boot from a reusable snapshot. |
+| `createSandbox(options?)` / `createSandbox(snapshotId?, options?)` | Create a sandbox. Pass `snapshotId` or `options.snapshotName` to boot from a reusable snapshot. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
 | `updateSandbox(name, options)` | Rename or adjust retention (idle stop, delete-after-stop) on a sandbox |
