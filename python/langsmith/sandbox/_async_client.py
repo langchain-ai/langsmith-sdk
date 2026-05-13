@@ -178,8 +178,8 @@ class AsyncSandboxClient:
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            snapshot_id: Optional snapshot ID to boot from. Omit this and
-                ``snapshot_name`` for the normal default-runtime sandbox.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
                 ``snapshot_id``.
@@ -255,8 +255,8 @@ class AsyncSandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            snapshot_id: Optional snapshot ID to boot from. Omit this and
-                ``snapshot_name`` for the normal default-runtime sandbox.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
                 ``snapshot_id``.

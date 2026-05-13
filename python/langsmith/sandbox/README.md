@@ -26,8 +26,7 @@ sb = client.get_sandbox(name="your-sandbox")
 result = sb.run("python -c 'print(2 + 2)'")
 ```
 
-Omitting `snapshot_id` and `snapshot_name` is the expected default path. Use a
-snapshot only when you want to boot from a reusable custom filesystem image.
+Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 

@@ -184,10 +184,6 @@ export class SandboxClient {
    *
    * Remember to call `sandbox.delete()` when done to clean up resources.
    *
-   * Omitting `snapshotId` and `options.snapshotName` is the normal path; the
-   * server uses its default runtime. Pass one only to boot from a reusable
-   * snapshot.
-   *
    * @param snapshotId - Optional snapshot ID to boot from.
    * @param options - Creation options. Use `options.snapshotName` to boot from
    *   a named snapshot instead of the default runtime.

@@ -29,7 +29,6 @@ const res = await existingSb.run("python -c 'print(2 + 2)'");
 ```
 
 If you have a reusable snapshot ID, pass it to `client.createSandbox(snapshotId)`.
-Otherwise omit it; that is the expected default path.
 
 ## Configuration
 
@@ -536,7 +535,7 @@ try {
 
 | Property | Description |
 |----------|-------------|
-| `snapshotName?` | Optional snapshot name to boot from. Omit this and the positional `snapshotId` for the normal default-runtime sandbox. |
+| `snapshotName?` | Optional snapshot name to boot from. Mutually exclusive with the positional `snapshotId`. |
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |

@@ -267,8 +267,8 @@ export interface SandboxProxyConfig {
  */
 export interface CreateSandboxOptions {
   /**
-   * Optional snapshot name to boot from. Omit this and the positional
-   * `snapshotId` for the normal default-runtime sandbox.
+   * Optional snapshot name to boot from. Mutually exclusive with the positional
+   * `snapshotId`.
    * Resolved server-side to a snapshot owned by the caller's tenant.
    */
   snapshotName?: string;
