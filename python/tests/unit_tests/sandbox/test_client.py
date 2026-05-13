@@ -1197,19 +1197,40 @@ class TestStartStopOperations:
         assert "snapshot_id" not in body
         assert "template_name" not in body
 
-    def test_create_sandbox_requires_exactly_one_identifier(
+    def test_create_sandbox_omits_snapshot_id_when_absent(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test creating a sandbox without a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(name="my-vm")
+
+        assert sandbox.name == "my-vm"
+
+        import json
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert "snapshot_id" not in body
+        assert "snapshot_name" not in body
+
+    def test_create_sandbox_rejects_both_snapshot_identifiers(
         self, client: SandboxClient
     ):
-        """Test that exactly one of snapshot_id / snapshot_name must be set."""
-        with pytest.raises(
-            ValueError,
-            match="Exactly one of snapshot_id or snapshot_name must be set",
-        ):
-            client.create_sandbox()
+        """Test that snapshot_id / snapshot_name are mutually exclusive."""
 
         with pytest.raises(
             ValueError,
-            match="Exactly one of snapshot_id or snapshot_name must be set",
+            match="At most one of snapshot_id or snapshot_name may be set",
         ):
             client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
 

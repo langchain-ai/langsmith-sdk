@@ -93,13 +93,8 @@ function getDefaultApiKey(): string | undefined {
  *   apiKey: "your-api-key",
  * });
  *
- * // Build a snapshot, then create a sandbox from it
- * const snapshot = await client.createSnapshot(
- *   "python",
- *   "python:3.12-slim",
- *   1_073_741_824 // 1 GiB
- * );
- * const sandbox = await client.createSandbox(snapshot.id);
+ * // Create a sandbox with the default runtime
+ * const sandbox = await client.createSandbox();
  * try {
  *   const result = await sandbox.run("python --version");
  *   console.log(result.stdout);
@@ -185,33 +180,26 @@ export class SandboxClient {
   // =========================================================================
 
   /**
-   * Create a new Sandbox from a snapshot.
+   * Create a new Sandbox.
    *
    * Remember to call `sandbox.delete()` when done to clean up resources.
    *
-   * Exactly one of `snapshotId` (positional) or `options.snapshotName` must
-   * be provided. When `snapshotName` is used, the server resolves it to a
-   * snapshot owned by the caller's tenant.
+   * Omitting `snapshotId` and `options.snapshotName` is the normal path; the
+   * server uses its default runtime. Pass one only to boot from a reusable
+   * snapshot.
    *
-   * @param snapshotId - ID of the snapshot to boot from. Create one with
-   *   `createSnapshot()` or `captureSnapshot()`, or pass an existing snapshot ID.
-   *   Pass `undefined` when booting by name via `options.snapshotName`.
-   * @param options - Creation options. Use `options.snapshotName` to boot
-   *   by snapshot name instead of ID.
+   * @param snapshotId - Optional snapshot ID to boot from.
+   * @param options - Creation options. Use `options.snapshotName` to boot from
+   *   a named snapshot instead of the default runtime.
    * @returns Created Sandbox.
    * @throws ResourceTimeoutError if timeout waiting for sandbox to be ready.
    * @throws SandboxCreationError if sandbox creation fails.
-   * @throws LangSmithValidationError if TTL values are invalid, or if neither
-   *   (or both) of `snapshotId` / `options.snapshotName` are provided.
+   * @throws LangSmithValidationError if TTL values are invalid, or if both
+   *   `snapshotId` and `options.snapshotName` are provided.
    *
    * @example
    * ```typescript
-   * const snapshot = await client.createSnapshot(
-   *   "python",
-   *   "python:3.12-slim",
-   *   1_073_741_824
-   * );
-   * const sandbox = await client.createSandbox(snapshot.id);
+   * const sandbox = await client.createSandbox();
    * // Or, resolve by snapshot name:
    * const sandbox = await client.createSandbox(undefined, {
    *   snapshotName: "python",
@@ -241,9 +229,9 @@ export class SandboxClient {
       proxyConfig,
     } = options;
 
-    if (!!snapshotId === !!snapshotName) {
+    if (snapshotId && snapshotName) {
       throw new LangSmithValidationError(
-        "Exactly one of snapshotId or options.snapshotName must be set",
+        "At most one of snapshotId or options.snapshotName may be set",
         "snapshotId",
       );
     }

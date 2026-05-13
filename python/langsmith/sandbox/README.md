@@ -10,21 +10,14 @@ from langsmith.sandbox import SandboxClient
 # Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 client = SandboxClient()
 
-# First, build a snapshot (defines the container image and root filesystem)
-snapshot = client.create_snapshot(
-    "python-snapshot",
-    docker_image="python:3.12-slim",
-    fs_capacity_bytes=4 * 1024**3,  # 4 GB
-)
-
-# Now create a sandbox from the snapshot and run code
-with client.sandbox(snapshot_id=snapshot.id) as sb:
+# Create a sandbox with the default runtime and run code
+with client.sandbox() as sb:
     result = sb.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
     print(result.success)  # True
 
 # Or create a sandbox to keep
-sb = client.create_sandbox(snapshot_id=snapshot.id)
+sb = client.create_sandbox()
 result = sb.run("python -c 'print(2 + 2)'")
 client.delete_sandbox(sb.name)  # Don't forget to clean up when done
 
@@ -33,10 +26,8 @@ sb = client.get_sandbox(name="your-sandbox")
 result = sb.run("python -c 'print(2 + 2)'")
 ```
 
-The examples below assume `snapshot_id` is bound to a snapshot UUID obtained
-from `client.create_snapshot(...)` (or `client.list_snapshots()` /
-`client.get_snapshot(...)`). You only need to build a snapshot once; many
-sandboxes can be created from the same `snapshot_id`.
+Omitting `snapshot_id` and `snapshot_name` is the expected default path. Use a
+snapshot only when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
@@ -590,14 +581,13 @@ snapshot = client.create_snapshot(
     fs_capacity_bytes=4 * 1024**3,  # 4 GB
 )
 
-# Create a sandbox from the snapshot (by ID)
+# Optionally create a sandbox from the snapshot (by ID)
 with client.sandbox(snapshot_id=snapshot.id) as sb:
     result = sb.run("python --version")
     print(result.stdout)
 
-# Or resolve by snapshot name — the server looks up the snapshot owned by
-# your tenant and boots from it. Exactly one of snapshot_id or snapshot_name
-# must be provided.
+# Or resolve by snapshot name. This is optional; omitting both snapshot_id and
+# snapshot_name uses the default runtime.
 with client.sandbox(snapshot_name="my-python-env") as sb:
     result = sb.run("python --version")
     print(result.stdout)
@@ -900,8 +890,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
