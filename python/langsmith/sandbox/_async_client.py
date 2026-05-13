@@ -57,10 +57,8 @@ class AsyncSandboxClient:
     Example:
         # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
         async with AsyncSandboxClient() as client:
-            # Create a sandbox from a snapshot and run commands
-            async with await client.sandbox(
-                snapshot_id="<snapshot-uuid>"
-            ) as sandbox:
+            # Create a sandbox with the default runtime and run commands
+            async with await client.sandbox() as sandbox:
                 result = await sandbox.run("python --version")
                 print(result.stdout)
     """
@@ -180,11 +178,11 @@ class AsyncSandboxClient:
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             idle_ttl_seconds: Idle timeout in seconds. The launcher
@@ -216,8 +214,8 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
         sb = await self.create_sandbox(
             snapshot_id,
@@ -257,11 +255,11 @@ class AsyncSandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -298,11 +296,11 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
-        if bool(snapshot_id) == bool(snapshot_name):
-            raise ValueError("Exactly one of snapshot_id or snapshot_name must be set")
+        if snapshot_id and snapshot_name:
+            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
 
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")

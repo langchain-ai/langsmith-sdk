@@ -1167,7 +1167,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox(undefined, {
+    const sandbox = await client.createSandbox({
       snapshotName: "my-snap",
     });
 
@@ -1179,17 +1179,23 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     expect(sandbox.snapshot_id).toBe("snap-1");
   });
 
-  it("should throw when neither snapshotId nor snapshotName is provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
+  it("should omit snapshot_id when no snapshot is provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
     const client = createClientWithMock(mockFetch);
 
-    await expect(client.createSandbox()).rejects.toThrow(
-      LangSmithValidationError,
-    );
-    await expect(client.createSandbox()).rejects.toThrow(
-      /Exactly one of snapshotId or options\.snapshotName must be set/,
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
+    await client.createSandbox({ name: "test-sb" });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.snapshot_id).toBeUndefined();
+    expect(body.snapshot_name).toBeUndefined();
   });
 
   it("should throw when both snapshotId and snapshotName are provided", async () => {
@@ -1199,6 +1205,11 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     await expect(
       client.createSandbox("snap-1", { snapshotName: "my-snap" }),
     ).rejects.toThrow(LangSmithValidationError);
+    await expect(
+      client.createSandbox("snap-1", { snapshotName: "my-snap" }),
+    ).rejects.toThrow(
+      /At most one of snapshotId or options\.snapshotName may be set/,
+    );
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });

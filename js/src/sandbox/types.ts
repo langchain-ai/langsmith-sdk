@@ -267,8 +267,8 @@ export interface SandboxProxyConfig {
  */
 export interface CreateSandboxOptions {
   /**
-   * Snapshot name to boot from. Mutually exclusive with the positional
-   * `snapshotId` argument on `createSandbox`; exactly one must be provided.
+   * Optional snapshot name to boot from. Mutually exclusive with the positional
+   * `snapshotId`.
    * Resolved server-side to a snapshot owned by the caller's tenant.
    */
   snapshotName?: string;

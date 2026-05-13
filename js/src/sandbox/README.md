@@ -4,9 +4,8 @@ Sandboxed code execution for LangSmith. Run untrusted code safely in isolated co
 
 ## Quick Start
 
-Sandboxes are created from **snapshots**. A snapshot is a filesystem image you
-build once from a Docker image (or capture from a running sandbox) and then
-reuse to boot as many sandboxes as you need.
+By default, sandboxes are created with the server's standard runtime. You only
+need a snapshot when you want to boot from a reusable custom filesystem image.
 
 ```typescript
 import { SandboxClient } from "langsmith/sandbox";
@@ -14,15 +13,8 @@ import { SandboxClient } from "langsmith/sandbox";
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
 
-// Build a snapshot from a Docker image (do this once)
-const snapshot = await client.createSnapshot(
-  "python",
-  "python:3.12-slim",
-  1_073_741_824, // 1 GiB filesystem
-);
-
-// Create a sandbox from the snapshot and run code
-const sandbox = await client.createSandbox(snapshot.id);
+// Create a sandbox with the default runtime and run code
+const sandbox = await client.createSandbox();
 try {
   const result = await sandbox.run("python -c 'print(2 + 2)'");
   console.log(result.stdout); // "4\n"
@@ -36,9 +28,7 @@ const existingSb = await client.getSandbox("your-sandbox");
 const res = await existingSb.run("python -c 'print(2 + 2)'");
 ```
 
-If you already have a snapshot ID (for example, listed with
-`client.listSnapshots()`), you can skip the `createSnapshot` step and call
-`client.createSandbox(snapshotId)` directly.
+If you have a reusable snapshot ID, pass it to `client.createSandbox(snapshotId)`.
 
 ## Configuration
 
@@ -386,10 +376,9 @@ console.log(captured.id, captured.source_sandbox_id);
 // Boot a new sandbox from the captured snapshot
 const resumed = await client.createSandbox(captured.id);
 
-// Or resolve by snapshot name instead of ID — the server looks up the
-// snapshot owned by your tenant. Exactly one of the positional `snapshotId`
-// or `options.snapshotName` must be provided.
-const byName = await client.createSandbox(undefined, {
+// Or resolve by snapshot name instead of ID. This is optional; omitting both
+// snapshotId and snapshotName uses the default runtime.
+const byName = await client.createSandbox({
   snapshotName: "with-data",
 });
 
@@ -415,11 +404,10 @@ await client.deleteSnapshot(snapshot.id);
 ### Sizing and Resources
 
 `createSandbox` accepts optional per-sandbox resource limits. If omitted, the
-server-side defaults are used. `fsCapacityBytes` defaults to the snapshot's
-size.
+server-side defaults are used.
 
 ```typescript
-const sandbox = await client.createSandbox(snapshot.id, {
+const sandbox = await client.createSandbox({
   vCpus: 2,
   memBytes: 2_147_483_648,        // 2 GiB
   fsCapacityBytes: 5_368_709_120, // 5 GiB
@@ -484,7 +472,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(snapshotId?, options?)` | Create a sandbox from a snapshot. Exactly one of the positional `snapshotId` or `options.snapshotName` must be provided. |
+| `createSandbox(options?)` / `createSandbox(snapshotId?, options?)` | Create a sandbox. Pass `snapshotId` or `options.snapshotName` to boot from a reusable snapshot. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
 | `updateSandbox(name, options)` | Rename or adjust retention (idle stop, delete-after-stop) on a sandbox |
@@ -547,7 +535,7 @@ try {
 
 | Property | Description |
 |----------|-------------|
-| `snapshotName?` | Snapshot name to boot from. Mutually exclusive with the positional `snapshotId` argument on `createSandbox`; exactly one must be set. |
+| `snapshotName?` | Optional snapshot name to boot from. Mutually exclusive with the positional `snapshotId`. |
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |
