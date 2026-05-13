@@ -835,6 +835,7 @@ class Client:
         "_tracing_mode",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     ]
 
     _api_key: Optional[str]
@@ -1379,6 +1380,31 @@ class Client:
                 _max_mb_str,
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+        self._langsmith_api = None
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        try:
+            api_client = object.__getattribute__(self, "_langsmith_api")
+        except AttributeError:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        if api_client is None:
+            import langsmith_api as _langsmith_api_module
+
+            api_client = _langsmith_api_module.Langsmith(
+                api_key=self.api_key,
+                bearer_token=self._oauth_access_token,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+            )
+            self._langsmith_api = api_client
+        return getattr(api_client, name)
 
     def _dump_failed_trace(
         self,
