@@ -3416,6 +3416,15 @@ def test_annotation_queue_runs(langchain_client: Client):
     )
     assert run_info.id in run_ids
 
+    # Test listing all runs in the queue
+    listed_runs = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in listed_runs]) == sorted(run_ids)
+    assert all(r.added_at is not None for r in listed_runs)
+
+    # Test limit
+    limited = list(langchain_client.list_runs_from_annotation_queue(queue.id, limit=1))
+    assert len(limited) == 1
+
     # Test deleting a run from queue
     langchain_client.delete_run_from_annotation_queue(
         queue_id=queue.id, run_id=run_ids[2]
@@ -3428,6 +3437,9 @@ def test_annotation_queue_runs(langchain_client: Client):
     run_1 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
     run_2 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
     assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
+
+    remaining = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in remaining]) == sorted(run_ids[:2])
 
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)

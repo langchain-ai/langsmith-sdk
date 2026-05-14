@@ -1237,6 +1237,17 @@ test("annotationqueue crud", async () => {
     expect(run.run_type).toBe("chain");
     expect(run.inputs).toEqual({ foo: "bar" });
     expect(run.outputs).toEqual({ baz: "qux" });
+
+    // List runs in the annotation queue
+    const listed = await toArray(client.listRunsFromAnnotationQueue(queueId));
+    expect(listed.length).toBe(1);
+    expect(listed[0].id).toBe(runId);
+
+    // Limit should cap the number of yielded runs
+    const limited = await toArray(
+      client.listRunsFromAnnotationQueue(queueId, { limit: 1 }),
+    );
+    expect(limited.length).toBe(1);
   } finally {
     // 6. Delete the annotation queue
     await client.deleteAnnotationQueue(queueId);

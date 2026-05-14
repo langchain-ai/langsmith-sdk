@@ -1235,6 +1235,41 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
+    async def list_runs_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        status: Optional[
+            Literal["needs_my_review", "needs_others_review", "completed"]
+        ] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs in an annotation queue with the specified `queue_id`.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            status: Filter runs by review status. Must be one of
+                ``"needs_my_review"``, ``"needs_others_review"``, or
+                ``"completed"``. If None, returns runs across all review states.
+            limit: The maximum number of runs to return.
+
+        Yields:
+            The runs currently in the annotation queue, with queue metadata
+            (e.g. ``added_at``, ``last_reviewed_time``).
+        """
+        params: dict = {
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        if status is not None:
+            params["status"] = status
+        path = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        ix = 0
+        async for run in self._aget_paginated_list(path, params=params):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
+
     # Feedback Config API
 
     async def create_feedback_config(
