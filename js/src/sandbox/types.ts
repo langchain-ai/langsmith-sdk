@@ -113,6 +113,13 @@ export interface SandboxClientConfig {
    * Defaults to Infinity (no limit).
    */
   maxConcurrency?: number;
+  /**
+   * Optional default headers attached to every request on this client,
+   * including the data-plane `/execute` HTTP endpoint and the `/execute/ws`
+   * WebSocket upgrade. Use this to pass additional auth headers
+   * (e.g. `X-Service-Key`).
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -171,6 +178,11 @@ export interface WsRunOptions {
   ttlSeconds?: number;
   /** Whether to allocate a PTY. */
   pty?: boolean;
+  /**
+   * Additional headers attached to the WebSocket upgrade request. Merged on
+   * top of any default headers the SandboxClient was constructed with.
+   */
+  headers?: Record<string, string>;
 }
 
 /**

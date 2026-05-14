@@ -37,6 +37,7 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
   ({
     _fetch: createMockFetch({}),
     getApiKey: () => "test-key",
+    getDefaultHeaders: () => ({}),
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
@@ -57,6 +58,26 @@ describe("SandboxClient", () => {
         apiKey: "test-key",
       });
       expect((client as any)._baseUrl).toBe("https://custom.api.com/sandboxes");
+    });
+
+    it("should expose constructor headers via getDefaultHeaders()", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "test-key",
+        headers: { "X-Service-Key": "svc-jwt" },
+      });
+      expect(client.getDefaultHeaders()).toEqual({
+        "X-Service-Key": "svc-jwt",
+      });
+      expect(client.getApiKey()).toBe("test-key");
+    });
+
+    it("should default to empty default headers", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "test-key",
+      });
+      expect(client.getDefaultHeaders()).toEqual({});
     });
   });
 
@@ -830,6 +851,23 @@ describe("buildAuthHeaders", () => {
 
   it("should return empty headers when no key", () => {
     expect(buildAuthHeaders(undefined)).toEqual({});
+  });
+
+  it("should return extra headers when provided", () => {
+    expect(buildAuthHeaders(undefined, { "X-Service-Key": "svc-jwt" })).toEqual(
+      {
+        "X-Service-Key": "svc-jwt",
+      },
+    );
+  });
+
+  it("should merge X-Api-Key with extra headers", () => {
+    expect(buildAuthHeaders("api-key", { "X-Service-Key": "svc-jwt" })).toEqual(
+      {
+        "X-Api-Key": "api-key",
+        "X-Service-Key": "svc-jwt",
+      },
+    );
   });
 });
 

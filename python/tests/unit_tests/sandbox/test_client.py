@@ -105,6 +105,45 @@ class TestSandboxClientInit:
             assert client._http.headers.get("X-Api-Key") == "explicit-key"
             client.close()
 
+    def test_default_headers_attached_to_http_client(self):
+        """Constructor headers are attached on the HTTP client and tracked
+        separately so the WS exec path can replay them."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            headers={"X-Service-Key": "svc-jwt"},
+        )
+        assert client._http.headers.get("X-Service-Key") == "svc-jwt"
+        assert client._http.headers.get("X-Api-Key") == "api-key"
+        assert client._default_headers == {"X-Service-Key": "svc-jwt"}
+        client.close()
+
+    def test_ws_default_headers_merges_per_request(self):
+        """_ws_default_headers merges constructor headers with per-request overrides."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            headers={"X-Service-Key": "svc-jwt"},
+        )
+        assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
+        assert client._ws_default_headers({"X-Test": "v"}) == {
+            "X-Service-Key": "svc-jwt",
+            "X-Test": "v",
+        }
+        assert client._ws_default_headers({"X-Service-Key": "override"}) == {
+            "X-Service-Key": "override"
+        }
+        client.close()
+
+    def test_ws_default_headers_returns_none_when_unset(self):
+        """When no constructor headers and no per-request headers, return None."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+        )
+        assert client._ws_default_headers(None) is None
+        client.close()
+
     def test_max_retries_default(self):
         """Test default max_retries is 3."""
         from langsmith.sandbox._transport import RetryTransport
