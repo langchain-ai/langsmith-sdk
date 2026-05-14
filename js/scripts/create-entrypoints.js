@@ -30,7 +30,6 @@ const entrypoints = {
   "experimental/otel/processor": "experimental/otel/processor",
   "experimental/vercel": "experimental/vercel/index",
   "experimental/anthropic": "experimental/anthropic/index",
-  "experimental/llm_client": "experimental/llm_client/index",
   "experimental/sandbox": "sandbox/index",
   sandbox: "sandbox/index",
 };
