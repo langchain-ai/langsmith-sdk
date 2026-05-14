@@ -483,6 +483,16 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     )
     assert run_info.id in run_ids
 
+    # Test listing all runs in the queue
+    listed = [r async for r in async_client.list_runs_from_annotation_queue(queue.id)]
+    assert sorted([r.id for r in listed]) == sorted(run_ids)
+
+    # Test limit
+    limited = [
+        r async for r in async_client.list_runs_from_annotation_queue(queue.id, limit=1)
+    ]
+    assert len(limited) == 1
+
     # Test deleting a run from queue
     await async_client.delete_run_from_annotation_queue(
         queue_id=queue.id, run_id=run_ids[2]
@@ -495,6 +505,11 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     run_1 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
     run_2 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
     assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
+
+    remaining = [
+        r async for r in async_client.list_runs_from_annotation_queue(queue.id)
+    ]
+    assert sorted([r.id for r in remaining]) == sorted(run_ids[:2])
 
     # Clean up
     await async_client.delete_annotation_queue(queue.id)
