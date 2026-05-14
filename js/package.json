@@ -97,10 +97,6 @@
     "experimental/anthropic.js",
     "experimental/anthropic.d.ts",
     "experimental/anthropic.d.cts",
-    "experimental/llm_client.cjs",
-    "experimental/llm_client.js",
-    "experimental/llm_client.d.ts",
-    "experimental/llm_client.d.cts",
     "experimental/sandbox.cjs",
     "experimental/sandbox.js",
     "experimental/sandbox.d.ts",
@@ -453,15 +449,6 @@
       },
       "import": "./experimental/anthropic.js",
       "require": "./experimental/anthropic.cjs"
-    },
-    "./experimental/llm_client": {
-      "types": {
-        "import": "./experimental/llm_client.d.ts",
-        "require": "./experimental/llm_client.d.cts",
-        "default": "./experimental/llm_client.d.ts"
-      },
-      "import": "./experimental/llm_client.js",
-      "require": "./experimental/llm_client.cjs"
     },
     "./experimental/sandbox": {
       "types": {

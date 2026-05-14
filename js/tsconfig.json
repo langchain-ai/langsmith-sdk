@@ -57,7 +57,6 @@
       "src/experimental/otel/processor.ts",
       "src/experimental/vercel/index.ts",
       "src/experimental/anthropic/index.ts",
-      "src/experimental/llm_client/index.ts",
       "src/sandbox/index.ts",
       "src/sandbox/index.ts"
     ]
