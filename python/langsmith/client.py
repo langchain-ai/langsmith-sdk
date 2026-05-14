@@ -8667,6 +8667,39 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
+    def list_runs_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        status: Optional[
+            Literal["needs_my_review", "needs_others_review", "completed"]
+        ] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs in an annotation queue with the specified `queue_id`.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            status (Optional[Literal["needs_my_review", "needs_others_review", "completed"]]):
+                Filter runs by review status. If None, returns runs across all
+                review states.
+            limit (Optional[int]): The maximum number of runs to return.
+
+        Yields:
+            The runs currently in the annotation queue, with queue metadata
+            (e.g. ``added_at``, ``last_reviewed_time``).
+        """
+        params: dict = {
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        if status is not None:
+            params["status"] = status
+        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
+        for i, run in enumerate(self._get_paginated_list(path, params=params)):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            if limit is not None and i + 1 >= limit:
+                break
+
     def create_comparative_experiment(
         self,
         name: str,
