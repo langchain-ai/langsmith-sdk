@@ -30,6 +30,7 @@ const entrypoints = {
   "experimental/otel/processor": "experimental/otel/processor",
   "experimental/vercel": "experimental/vercel/index",
   "experimental/anthropic": "experimental/anthropic/index",
+  "experimental/sandbox": "sandbox/index",
   sandbox: "sandbox/index",
 };
 
@@ -73,7 +74,7 @@ const generateFiles = () => {
         [`${key}.d.ts`, `export * from '${modulePath}'`],
         [`${key}.d.cts`, `export * from '${compiledPath}'`],
       ];
-    }
+    },
   );
 
   return Object.fromEntries(files);
@@ -86,7 +87,7 @@ const updateConfig = () => {
     typedocOptions: {
       ...json.typedocOptions,
       entryPoints: [...Object.keys(entrypoints)].map(
-        (key) => `src/${entrypoints[key]}.ts`
+        (key) => `src/${entrypoints[key]}.ts`,
       ),
     },
   }));
@@ -111,11 +112,11 @@ const updateConfig = () => {
           };
 
           return [key === "index" ? "." : `./${key}`, entryPoint];
-        })
+        }),
       ),
       {
         "./package.json": "./package.json",
-      }
+      },
     ),
     files: ["dist/", ...filenames],
   }));

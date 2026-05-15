@@ -106,6 +106,7 @@ function getDefaultApiKey(): string | undefined {
 export class SandboxClient {
   private _baseUrl: string;
   private _apiKey?: string;
+  private _defaultHeaders: Record<string, string>;
   private _fetchImpl: typeof fetch;
   private _caller: AsyncCaller;
 
@@ -115,6 +116,7 @@ export class SandboxClient {
       "",
     );
     this._apiKey = config.apiKey ?? getDefaultApiKey();
+    this._defaultHeaders = { ...(config.headers ?? {}) };
     this._fetchImpl = _getFetchImplementation();
     this._caller = new AsyncCaller({
       maxRetries: config.maxRetries ?? 3,
@@ -135,6 +137,11 @@ export class SandboxClient {
     if (this._apiKey) {
       headers.set("X-Api-Key", this._apiKey);
     }
+    for (const [name, value] of Object.entries(this._defaultHeaders)) {
+      if (!headers.has(name)) {
+        headers.set(name, value);
+      }
+    }
     return this._caller.call(() =>
       this._fetchImpl(url, {
         ...init,
@@ -149,6 +156,16 @@ export class SandboxClient {
    */
   getApiKey(): string | undefined {
     return this._apiKey;
+  }
+
+  /**
+   * Get the constructor-supplied default headers. Used by the WebSocket exec
+   * path so headers like `X-Service-Key` set on the client are attached to
+   * the WS upgrade request.
+   * @internal
+   */
+  getDefaultHeaders(): Record<string, string> {
+    return { ...this._defaultHeaders };
   }
 
   /**

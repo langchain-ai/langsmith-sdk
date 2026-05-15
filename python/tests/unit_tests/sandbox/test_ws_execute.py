@@ -559,12 +559,22 @@ class TestCommandHandle:
 class TestSandboxRunWs:
     """Test Sandbox.run() with mocked WebSocket layer."""
 
-    def _make_sandbox(self) -> Any:
+    def _make_sandbox(self, default_headers: Any = None) -> Any:
         """Create a Sandbox with mocked client."""
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
@@ -679,6 +689,21 @@ class TestSandboxRunWs:
             pty=False,
         )
 
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_forwards_client_default_headers(self, mock_run_ws):
+        """Default headers set on the client (e.g. X-Service-Key) are
+        forwarded to the WS layer."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox(default_headers={"X-Service-Key": "svc-jwt"})
+        sandbox.run("echo hello")
+
+        assert mock_run_ws.call_args.kwargs.get("headers") == {
+            "X-Service-Key": "svc-jwt"
+        }
+
     def test_run_wait_false_plus_callbacks_raises(self):
         """wait=False + callbacks raises ValueError."""
         sandbox = self._make_sandbox()
@@ -730,11 +755,21 @@ class TestSandboxRunWs:
 
 
 class TestSandboxReconnect:
-    def _make_sandbox(self):
+    def _make_sandbox(self, default_headers: Any = None):
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",

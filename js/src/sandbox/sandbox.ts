@@ -249,6 +249,7 @@ export class Sandbox {
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
+    const clientHeaders = this._client.getDefaultHeaders();
     const [stream, control] = await runWsStream(
       dataplaneUrl,
       this._client.getApiKey(),
@@ -264,6 +265,9 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
+        ...(Object.keys(clientHeaders).length > 0
+          ? { headers: clientHeaders }
+          : {}),
       },
     );
 
@@ -336,11 +340,18 @@ export class Sandbox {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
+    const clientHeaders = this._client.getDefaultHeaders();
     const [stream, control] = await reconnectWsStream(
       dataplaneUrl,
       this._client.getApiKey(),
       commandId,
-      { stdoutOffset, stderrOffset },
+      {
+        stdoutOffset,
+        stderrOffset,
+        ...(Object.keys(clientHeaders).length > 0
+          ? { headers: clientHeaders }
+          : {}),
+      },
     );
 
     return new CommandHandle(stream, control, this, {

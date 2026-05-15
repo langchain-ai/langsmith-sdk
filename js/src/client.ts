@@ -1142,7 +1142,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private multipartStreamingDisabled = false;
+  private multipartStreamingDisabled =
+    getLangSmithEnvironmentVariable("DISABLE_MULTIPART_STREAMING") === "true";
 
   private _multipartDisabled = false;
 

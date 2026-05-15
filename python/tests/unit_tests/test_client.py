@@ -6294,3 +6294,44 @@ def test_client_repr_hides_sensitive_info() -> None:
     assert "https://api.smith.langchain.com" in repr_str
     # Ensure it's properly formatted
     assert repr_str == "Client (API URL: https://api.smith.langchain.com)"
+
+
+def test_client_close_releases_session_and_unregisters_atexit() -> None:
+    """``close()`` closes the session and unregisters its atexit handler."""
+    import atexit as _atexit
+
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        session=session,
+        auto_batch_tracing=False,
+    )
+
+    handler = client._atexit_handler
+    assert handler is not None
+
+    with mock.patch.object(_atexit, "unregister") as mock_unregister:
+        client.close()
+        mock_unregister.assert_called_once_with(handler)
+
+    session.close.assert_called()
+    assert client._atexit_handler is None
+
+    # Idempotent: calling close again does not raise or re-close.
+    session.close.reset_mock()
+    client.close()
+    session.close.assert_called()
+
+
+def test_client_close_idempotent_no_error() -> None:
+    """Calling ``close()`` multiple times must not raise."""
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        session=session,
+        auto_batch_tracing=False,
+    )
+    client.close()
+    client.close()
