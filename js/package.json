@@ -476,7 +476,10 @@
     "overrides": {
       "js-yaml": "^4.1.1",
       "vite": "^7.3.2",
-      "ai": "canary"
+      "ai": "canary",
+      "@ai-sdk/openai": "canary",
+      "@ai-sdk/provider": "canary",
+      "@ai-sdk/anthropic": "canary"
     }
   },
   "browser": {
