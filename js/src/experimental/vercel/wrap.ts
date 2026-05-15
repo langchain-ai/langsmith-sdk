@@ -8,13 +8,17 @@ import {
   type AggregatedDoStreamOutput,
   LangSmithMiddleware,
 } from "./middleware.js";
-import { convertMessageToTracedFormat } from "./utils.js";
+import {
+  convertMessageToTracedFormat,
+  getModelDisplayName,
+  getModelId,
+} from "./utils.js";
 import {
   isTraceableFunction,
   traceable,
   getCurrentRunTree,
 } from "../../traceable.js";
-import { RunTreeConfig } from "../../run_trees.js";
+import type { RunTreeConfig } from "../../run_trees.js";
 
 const _wrapTools = (
   tools?: Record<string, unknown>,
@@ -47,36 +51,6 @@ const _wrapTools = (
     }
   }
   return wrappedTools;
-};
-
-const _getModelDisplayName = (
-  model: string | Record<string, unknown>,
-): string => {
-  if (typeof model === "string") {
-    return model;
-  }
-
-  if (
-    model.config != null &&
-    typeof model.config === "object" &&
-    "provider" in model.config &&
-    typeof model.config.provider === "string"
-  ) {
-    return model.config.provider;
-  }
-
-  if (model.modelId != null && typeof model.modelId === "string") {
-    return model.modelId;
-  }
-
-  return "unknown";
-};
-
-const _getModelId = (model: string | Record<string, unknown>) => {
-  if (typeof model === "string") {
-    return model;
-  }
-  return typeof model.modelId === "string" ? model.modelId : undefined;
 };
 
 const _formatTracedInputs = async (params: Record<string, unknown>) => {
@@ -436,7 +410,7 @@ const _getGenerateTextWrapperConfig = ({
   traceResponseMetadata?: boolean;
 }) => {
   return {
-    name: runName ?? _getModelDisplayName(model),
+    name: runName ?? getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
       ls_agent_type: _getLsAgentType(),
@@ -530,7 +504,7 @@ const _getStreamTextWrapperConfig = ({
   traceResponseMetadata?: boolean;
 }) => {
   return {
-    name: runName ?? _getModelDisplayName(model),
+    name: runName ?? getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
       ls_agent_type: _getLsAgentType(),
@@ -704,8 +678,8 @@ const wrapAISDK = <
         const wrappedModel = ai.wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
-            name: _getModelDisplayName(params.model),
-            modelId: _getModelId(params.model),
+            name: getModelDisplayName(params.model),
+            modelId: getModelId(params.model),
             // TODO: Fix this typing on minor bump
             lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
@@ -771,8 +745,8 @@ const wrapAISDK = <
           const wrappedModel = ai.wrapLanguageModel({
             model: params.model,
             middleware: LangSmithMiddleware({
-              name: _getModelDisplayName(params.model),
-              modelId: _getModelId(params.model),
+              name: getModelDisplayName(params.model),
+              modelId: getModelId(params.model),
               // TODO: Fix this typing on minor bump
               lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
             }),
@@ -787,7 +761,7 @@ const wrapAISDK = <
           ) as ReturnType<typeof generateObject>;
         },
         {
-          name: _getModelDisplayName(params.model),
+          name: getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
             ls_agent_type: _getLsAgentType(),
@@ -859,8 +833,8 @@ const wrapAISDK = <
         const wrappedModel = ai.wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
-            name: _getModelDisplayName(params.model),
-            modelId: _getModelId(params.model),
+            name: getModelDisplayName(params.model),
+            modelId: getModelId(params.model),
             // TODO: Fix this typing on minor bump
             lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
@@ -925,8 +899,8 @@ const wrapAISDK = <
           const wrappedModel = ai.wrapLanguageModel({
             model: params.model,
             middleware: LangSmithMiddleware({
-              name: _getModelDisplayName(params.model),
-              modelId: _getModelId(params.model),
+              name: getModelDisplayName(params.model),
+              modelId: getModelId(params.model),
               // TODO: Fix this typing on minor bump
               lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
             }),
@@ -941,7 +915,7 @@ const wrapAISDK = <
           ) as ReturnType<typeof ai.streamObject>;
         },
         {
-          name: _getModelDisplayName(params.model),
+          name: getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
             ls_agent_type: _getLsAgentType(),
@@ -1005,8 +979,8 @@ const wrapAISDK = <
               wrappedModel = ai.wrapLanguageModel({
                 model: params.model,
                 middleware: LangSmithMiddleware({
-                  name: _getModelDisplayName(params.model),
-                  modelId: _getModelId(params.model),
+                  name: getModelDisplayName(params.model),
+                  modelId: getModelId(params.model),
                   // TODO: Fix this typing on minor bump
                   lsConfig: resolvedChildLLMRunConfig as Record<
                     string,

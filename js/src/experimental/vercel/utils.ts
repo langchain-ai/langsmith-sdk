@@ -208,3 +208,33 @@ export const convertMessageToTracedFormat = (
   }
   return formattedMessage;
 };
+
+export const getModelDisplayName = (
+  model: string | Record<string, unknown>,
+): string => {
+  if (typeof model === "string") {
+    return model;
+  }
+
+  if (
+    model.config != null &&
+    typeof model.config === "object" &&
+    "provider" in model.config &&
+    typeof model.config.provider === "string"
+  ) {
+    return model.config.provider;
+  }
+
+  if (model.modelId != null && typeof model.modelId === "string") {
+    return model.modelId;
+  }
+
+  return "unknown";
+};
+
+export const getModelId = (model: string | Record<string, unknown>) => {
+  if (typeof model === "string") {
+    return model;
+  }
+  return typeof model.modelId === "string" ? model.modelId : undefined;
+};
