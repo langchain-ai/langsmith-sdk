@@ -7,6 +7,7 @@ settings:
 overrides:
   js-yaml: ^4.1.1
   vite: ^7.3.2
+  ai: canary
 
 importers:
 
@@ -101,8 +102,8 @@ importers:
         specifier: ^5.59.8
         version: 5.62.0(eslint@8.57.1)(typescript@5.9.3)
       ai:
-        specifier: ^6.0.116
-        version: 6.0.177(zod@4.4.3)
+        specifier: canary
+        version: 7.0.0-canary.136(zod@4.4.3)
       babel-jest:
         specifier: ^30.2.0
         version: 30.4.1(@babel/core@7.29.0)
@@ -172,8 +173,8 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/gateway@3.0.112':
-    resolution: {integrity: sha512-jiBao9pR4owWyjo0BnuNc7WSQBGOD0thysE4AFgZXaG+zMFbISQXUkJr7ePw/phBvePy7jE5FSA2Lf7lwqUiiQ==}
+  '@ai-sdk/gateway@4.0.0-canary.80':
+    resolution: {integrity: sha512-gwmFUHs8EB4FtxdiuDIYdGIG7zew1SdxHu90VVh3+p4hZz6Yd1AP0JH2/+o/IXgLTtN+59SokChawcdb9TArSQ==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -190,8 +191,18 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/provider-utils@5.0.0-canary.40':
+    resolution: {integrity: sha512-+5drPAkt0yapCskgpBmJHBqABvkhTds6Qpv0o+Jsubv/crOV0wan4/NUEsWpkkiPq6qb+CIvATj67y8kE+fnNA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider@3.0.10':
     resolution: {integrity: sha512-Q3BZ27qfpYqnCYGvE3vt+Qi6LGOF9R5Nmzn+9JoM1lCRsD9mYaIhfJLkSunN48nfGXJ6n+XNV0J/XVpqGQl7Dw==}
+    engines: {node: '>=18'}
+
+  '@ai-sdk/provider@4.0.0-canary.16':
+    resolution: {integrity: sha512-IJKj5cOfRNbc1+rBIdyqFbsd4tjWY3wrM3y2D2YdZCHLi6qpS2yLN0P+ajEPCEnto6iZFWQHk28iRMwgvFSJRg==}
     engines: {node: '>=18'}
 
   '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.2.119':
@@ -1361,10 +1372,6 @@ packages:
     resolution: {integrity: sha512-Cdq0jW2lknrNfrAm92MyEAvpe2cRsKjdnQLHUL6xRA4IVUnsWx6P65E7NcUO0Y+L4w1Aee5iV8FvjSwd+lrs9A==}
     engines: {node: '>=8.0.0'}
 
-  '@opentelemetry/api@1.9.0':
-    resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
-    engines: {node: '>=8.0.0'}
-
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
@@ -2494,6 +2501,9 @@ packages:
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
 
+  '@workflow/serde@4.1.0':
+    resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
+
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
@@ -2521,8 +2531,8 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
-  ai@6.0.177:
-    resolution: {integrity: sha512-1xQtbeWwNcLyyM86ixZhkKvT+WRXc1lvarIKqPVtsyn8F9NDikwUMBqYu+aQKDgMht50SMXh4qboYuU8MeHZZA==}
+  ai@7.0.0-canary.136:
+    resolution: {integrity: sha512-n3deAN6CNB5iJu1QeQlLfSnREnvUydwkuXGvQXeiGo5HEXnh85kzURRZPciCQzm34f4krQiSkc2p7dkbz7DH+Q==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -4902,10 +4912,10 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.27(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/gateway@3.0.112(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.0-canary.80(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 3.0.10
-      '@ai-sdk/provider-utils': 4.0.27(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-canary.16
+      '@ai-sdk/provider-utils': 5.0.0-canary.40(zod@4.4.3)
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
@@ -4922,7 +4932,19 @@ snapshots:
       eventsource-parser: 3.0.8
       zod: 4.4.3
 
+  '@ai-sdk/provider-utils@5.0.0-canary.40(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.0-canary.16
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.0.8
+      zod: 4.4.3
+
   '@ai-sdk/provider@3.0.10':
+    dependencies:
+      json-schema: 0.4.0
+
+  '@ai-sdk/provider@4.0.0-canary.16':
     dependencies:
       json-schema: 0.4.0
 
@@ -6377,8 +6399,6 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@opentelemetry/api@1.9.0': {}
-
   '@opentelemetry/api@1.9.1': {}
 
   '@opentelemetry/auto-instrumentations-node@0.75.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))':
@@ -7582,6 +7602,8 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
+  '@workflow/serde@4.1.0': {}
+
   accepts@2.0.0:
     dependencies:
       mime-types: 3.0.2
@@ -7603,12 +7625,11 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@6.0.177(zod@4.4.3):
+  ai@7.0.0-canary.136(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 3.0.112(zod@4.4.3)
-      '@ai-sdk/provider': 3.0.10
-      '@ai-sdk/provider-utils': 4.0.27(zod@4.4.3)
-      '@opentelemetry/api': 1.9.0
+      '@ai-sdk/gateway': 4.0.0-canary.80(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-canary.16
+      '@ai-sdk/provider-utils': 5.0.0-canary.40(zod@4.4.3)
       zod: 4.4.3
 
   ajv-formats@3.0.1(ajv@8.20.0):
