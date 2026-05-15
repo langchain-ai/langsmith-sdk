@@ -101,6 +101,10 @@ describe("Client", () => {
       process.env.LANGSMITH_CONFIG_FILE = configPath;
       return configPath;
     };
+    const fakeOAuthToken = (payload: Record<string, unknown>) =>
+      `header.${Buffer.from(JSON.stringify(payload)).toString(
+        "base64url",
+      )}.signature`;
 
     beforeEach(() => {
       process.env = { ...originalEnv };
@@ -143,12 +147,13 @@ describe("Client", () => {
     });
 
     it("uses profile OAuth access tokens before profile API keys", () => {
+      const accessToken = fakeOAuthToken({ sub: "user-123" });
       writeProfileConfig({
         profiles: {
           default: {
             api_key: "profile-key",
             oauth: {
-              access_token: "profile-access-token",
+              access_token: accessToken,
             },
           },
         },
@@ -158,9 +163,30 @@ describe("Client", () => {
 
       expect((client as any).apiKey).toBeUndefined();
       expect((client as any)._mergedHeaders.Authorization).toBe(
-        "Bearer profile-access-token",
+        `Bearer ${accessToken}`,
       );
+      expect((client as any)._mergedHeaders["x-user-id"]).toBe("user-123");
       expect((client as any)._mergedHeaders["x-api-key"]).toBeUndefined();
+    });
+
+    it("uses the OAuth subject claim for x-user-id", () => {
+      const accessToken = fakeOAuthToken({ user_id: "generic-user" });
+      writeProfileConfig({
+        profiles: {
+          default: {
+            oauth: {
+              access_token: accessToken,
+            },
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any)._mergedHeaders.Authorization).toBe(
+        `Bearer ${accessToken}`,
+      );
+      expect((client as any)._mergedHeaders["x-user-id"]).toBeUndefined();
     });
 
     it("suppresses profile auth when environment auth is set", () => {
@@ -225,12 +251,14 @@ describe("Client", () => {
     });
 
     it("refreshes expired profile OAuth tokens before requests", async () => {
+      const oldAccessToken = fakeOAuthToken({ sub: "old-user" });
+      const newAccessToken = fakeOAuthToken({ sub: "new-user" });
       const configPath = writeProfileConfig({
         profiles: {
           default: {
             api_url: "https://profile.example.com",
             oauth: {
-              access_token: "old-access-token",
+              access_token: oldAccessToken,
               refresh_token: "old-refresh-token",
               expires_at: new Date(Date.now() - 60_000).toISOString(),
             },
@@ -248,7 +276,7 @@ describe("Client", () => {
             );
             return new Response(
               JSON.stringify({
-                access_token: "new-access-token",
+                access_token: newAccessToken,
                 refresh_token: "new-refresh-token",
                 expires_in: 300,
               }),
@@ -267,12 +295,11 @@ describe("Client", () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
       const requestInit = mockFetch.mock.calls[1][1] as RequestInit;
       expect(requestInit.headers).toMatchObject({
-        Authorization: "Bearer new-access-token",
+        Authorization: `Bearer ${newAccessToken}`,
+        "x-user-id": "new-user",
       });
       const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      expect(updated.profiles.default.oauth.access_token).toBe(
-        "new-access-token",
-      );
+      expect(updated.profiles.default.oauth.access_token).toBe(newAccessToken);
       expect(updated.profiles.default.oauth.refresh_token).toBe(
         "new-refresh-token",
       );
@@ -280,13 +307,183 @@ describe("Client", () => {
       expect(updated.profiles.default).not.toHaveProperty("bearer_token");
     });
 
-    it("preserves explicit Authorization headers during profile refresh", async () => {
+    it("refreshes expired profile OAuth tokens once for concurrent requests", async () => {
+      const oldAccessToken = fakeOAuthToken({ sub: "old-user" });
+      const newAccessToken = fakeOAuthToken({ sub: "new-user" });
       writeProfileConfig({
         profiles: {
           default: {
             api_url: "https://profile.example.com",
             oauth: {
-              access_token: "old-access-token",
+              access_token: oldAccessToken,
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "https://profile.example.com/oauth/token") {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return new Response(
+            JSON.stringify({
+              access_token: newAccessToken,
+              refresh_token: "new-refresh-token",
+              expires_in: 300,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 200 });
+      });
+      const client = new Client({ fetchImplementation: mockFetch as any });
+      const concurrency = 25;
+
+      await Promise.all(
+        Array.from({ length: concurrency }, () =>
+          (client as any)._fetch("https://profile.example.com/info", {
+            headers: (client as any)._mergedHeaders,
+          }),
+        ),
+      );
+
+      const refreshCalls = mockFetch.mock.calls.filter(
+        ([input]) =>
+          String(input) === "https://profile.example.com/oauth/token",
+      );
+      const infoCalls = mockFetch.mock.calls.filter(
+        ([input]) => String(input) === "https://profile.example.com/info",
+      );
+      expect(refreshCalls).toHaveLength(1);
+      expect(infoCalls).toHaveLength(concurrency);
+      for (const [, requestInit] of infoCalls as unknown as [
+        RequestInfo | URL,
+        RequestInit | undefined,
+      ][]) {
+        const headers = new Headers(requestInit?.headers);
+        expect(headers.get("Authorization")).toBe(`Bearer ${newAccessToken}`);
+        expect(headers.get("x-user-id")).toBe("new-user");
+      }
+    });
+
+    it("refreshes expired profile OAuth tokens once across clients", async () => {
+      const oldAccessToken = fakeOAuthToken({ sub: "old-user" });
+      const newAccessToken = fakeOAuthToken({ sub: "new-user" });
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: oldAccessToken,
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "https://profile.example.com/oauth/token") {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return new Response(
+            JSON.stringify({
+              access_token: newAccessToken,
+              refresh_token: "new-refresh-token",
+              expires_in: 300,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 200 });
+      });
+      const concurrency = 25;
+      const clients = Array.from(
+        { length: concurrency },
+        () => new Client({ fetchImplementation: mockFetch as any }),
+      );
+
+      await Promise.all(
+        clients.map((client) =>
+          (client as any)._fetch("https://profile.example.com/info", {
+            headers: (client as any)._mergedHeaders,
+          }),
+        ),
+      );
+
+      const refreshCalls = mockFetch.mock.calls.filter(
+        ([input]) =>
+          String(input) === "https://profile.example.com/oauth/token",
+      );
+      const infoCalls = mockFetch.mock.calls.filter(
+        ([input]) => String(input) === "https://profile.example.com/info",
+      );
+      expect(refreshCalls).toHaveLength(1);
+      expect(infoCalls).toHaveLength(concurrency);
+      for (const [, requestInit] of infoCalls as unknown as [
+        RequestInfo | URL,
+        RequestInit | undefined,
+      ][]) {
+        const headers = new Headers(requestInit?.headers);
+        expect(headers.get("Authorization")).toBe(`Bearer ${newAccessToken}`);
+        expect(headers.get("x-user-id")).toBe("new-user");
+      }
+    });
+
+    it("waits for an existing filesystem refresh lock", async () => {
+      const oldAccessToken = fakeOAuthToken({ sub: "old-user" });
+      const newAccessToken = fakeOAuthToken({ sub: "new-user" });
+      const configPath = writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: oldAccessToken,
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const lockPath = `${configPath}.oauth-refresh.lock`;
+      fs.writeFileSync(lockPath, "locked");
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+      const request = (client as any)._fetch(
+        "https://profile.example.com/info",
+        {
+          headers: (client as any)._mergedHeaders,
+        },
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(mockFetch).toHaveBeenCalledTimes(0);
+
+      const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      updated.profiles.default.oauth.access_token = newAccessToken;
+      updated.profiles.default.oauth.expires_at = "2999-01-01T00:00:00.000Z";
+      fs.writeFileSync(configPath, `${JSON.stringify(updated, null, 2)}\n`);
+      fs.unlinkSync(lockPath);
+      await request;
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl, requestInit]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+      const headers = new Headers(requestInit?.headers);
+      expect(headers.get("Authorization")).toBe(`Bearer ${newAccessToken}`);
+      expect(headers.get("x-user-id")).toBe("new-user");
+    });
+
+    it("preserves explicit Authorization headers during profile refresh", async () => {
+      const oldAccessToken = fakeOAuthToken({ sub: "old-user" });
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: oldAccessToken,
               refresh_token: "old-refresh-token",
               expires_at: new Date(Date.now() - 60_000).toISOString(),
             },
@@ -300,6 +497,7 @@ describe("Client", () => {
 
       await (client as any)._fetch("https://profile.example.com/info", {
         headers: {
+          ...(client as any)._mergedHeaders,
           Authorization: "Bearer explicit-token",
         },
       });
@@ -312,6 +510,7 @@ describe("Client", () => {
       expect(requestInit?.headers).toMatchObject({
         Authorization: "Bearer explicit-token",
       });
+      expect(new Headers(requestInit?.headers).get("x-user-id")).toBeNull();
     });
 
     it("refreshes profile OAuth tokens against profile api_url", async () => {

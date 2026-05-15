@@ -4,8 +4,15 @@ import * as fsUtils from "./fs.js";
 export const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
 const OAUTH_CLIENT_ID = "langsmith-cli";
+export const PROFILE_USER_ID_HEADER = "x-user-id";
+const OAUTH_USER_ID_CLAIM = "sub";
 const TOKEN_REFRESH_LEEWAY_MS = 60_000;
 const TOKEN_REFRESH_TIMEOUT_MS = 10_000;
+const TOKEN_REFRESH_LOCK_POLL_MS = 50;
+const TOKEN_REFRESH_LOCK_STALE_MS = TOKEN_REFRESH_TIMEOUT_MS + 30_000;
+const TOKEN_REFRESH_LOCK_TIMEOUT_MS =
+  TOKEN_REFRESH_LOCK_STALE_MS + TOKEN_REFRESH_TIMEOUT_MS;
+const profileRefreshPromises = new Map<string, Promise<void>>();
 
 type LangSmithProfileOAuth = {
   access_token?: string;
@@ -35,6 +42,7 @@ type LangSmithProfileState = {
 export type ProfileAuthHeader = {
   name: "Authorization" | "x-api-key";
   value: string;
+  userId?: string;
 };
 
 export type ProfileClientConfig = {
@@ -100,6 +108,92 @@ function loadProfileState(): LangSmithProfileState | undefined {
     return { configPath, config, profileName, profile };
   } catch {
     return undefined;
+  }
+}
+
+function reloadProfileState(
+  state: LangSmithProfileState,
+): LangSmithProfileState {
+  try {
+    const config = JSON.parse(
+      fsUtils.readFileSync(state.configPath),
+    ) as LangSmithProfileConfigFile;
+    const profile = config.profiles?.[state.profileName];
+    if (!profile) {
+      return state;
+    }
+    state.config = config;
+    state.profile = profile;
+  } catch {
+    return state;
+  }
+  return state;
+}
+
+function getProfileRefreshKey(state: LangSmithProfileState): string {
+  return `${state.configPath}\0${state.profileName}`;
+}
+
+function getProfileRefreshLockPath(state: LangSmithProfileState): string {
+  return `${state.configPath}.oauth-refresh.lock`;
+}
+
+function isLockFileStale(lockPath: string): boolean {
+  try {
+    return (
+      Date.now() - fsUtils.statSync(lockPath).mtimeMs >
+      TOKEN_REFRESH_LOCK_STALE_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withFilesystemRefreshLock(
+  state: LangSmithProfileState,
+  refresh: () => Promise<void>,
+): Promise<void> {
+  const lockPath = getProfileRefreshLockPath(state);
+  const deadline = Date.now() + TOKEN_REFRESH_LOCK_TIMEOUT_MS;
+  let hasLock = false;
+  while (!hasLock) {
+    try {
+      fsUtils.writeFileExclusiveSync(lockPath, `${Date.now()}\n`);
+      hasLock = true;
+      break;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "EEXIST") {
+        await refresh();
+        return;
+      }
+      if (isLockFileStale(lockPath)) {
+        try {
+          fsUtils.unlinkSync(lockPath);
+        } catch {
+          // Another process may have replaced the lock before us.
+        }
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        await refresh();
+        return;
+      }
+      await sleep(TOKEN_REFRESH_LOCK_POLL_MS);
+    }
+  }
+  try {
+    await refresh();
+  } finally {
+    try {
+      fsUtils.unlinkSync(lockPath);
+    } catch {
+      // Another process may have already removed a stale lock.
+    }
   }
 }
 
@@ -219,9 +313,9 @@ export function loadProfileClientConfig(): ProfileClientConfig {
 }
 
 export class ProfileAuth {
-  private refreshPromise?: Promise<void>;
+  private managedAuthorizationValues = new Set<string>();
 
-  private managedAuthorizationValue?: string;
+  private managedUserIdValues = new Set<string>();
 
   constructor(private state: LangSmithProfileState) {
     this.rememberProfileAuthHeader(this.currentAuthHeader());
@@ -238,14 +332,26 @@ export class ProfileAuth {
     signal?: AbortSignal | null,
   ): Promise<ProfileAuthHeader | undefined> {
     if (shouldRefreshProfileToken(this.state.profile)) {
-      if (!this.refreshPromise) {
-        this.refreshPromise = this.refreshOAuthToken(
-          fetchImplementation,
-        ).finally(() => {
-          this.refreshPromise = undefined;
+      reloadProfileState(this.state);
+    }
+    if (shouldRefreshProfileToken(this.state.profile)) {
+      const refreshKey = getProfileRefreshKey(this.state);
+      let refreshPromise = profileRefreshPromises.get(refreshKey);
+      if (!refreshPromise) {
+        refreshPromise = withFilesystemRefreshLock(this.state, async () => {
+          reloadProfileState(this.state);
+          if (shouldRefreshProfileToken(this.state.profile)) {
+            await this.refreshOAuthToken(fetchImplementation);
+          }
+        }).finally(() => {
+          if (profileRefreshPromises.get(refreshKey) === refreshPromise) {
+            profileRefreshPromises.delete(refreshKey);
+          }
         });
+        profileRefreshPromises.set(refreshKey, refreshPromise);
       }
-      await waitForAbortSignal(this.refreshPromise, signal);
+      await waitForAbortSignal(refreshPromise, signal);
+      reloadProfileState(this.state);
     }
     const header = authHeaderFromProfile(this.state.profile);
     this.rememberProfileAuthHeader(header);
@@ -253,7 +359,11 @@ export class ProfileAuth {
   }
 
   isProfileAuthorizationHeader(value: string): boolean {
-    return value === this.managedAuthorizationValue;
+    return this.managedAuthorizationValues.has(value);
+  }
+
+  isProfileUserIdHeader(value: string): boolean {
+    return this.managedUserIdValues.has(value);
   }
 
   private async refreshOAuthToken(
@@ -308,9 +418,27 @@ export class ProfileAuth {
   private rememberProfileAuthHeader(
     header: ProfileAuthHeader | undefined,
   ): void {
-    this.managedAuthorizationValue =
-      header?.name === "Authorization" ? header.value : undefined;
+    if (header?.name === "Authorization") {
+      this.managedAuthorizationValues.add(header.value);
+      if (header.userId) {
+        this.managedUserIdValues.add(header.userId);
+      }
+    }
   }
+}
+
+function oauthAuthHeaderFromAccessToken(
+  accessToken: string,
+): ProfileAuthHeader {
+  const header: ProfileAuthHeader = {
+    name: "Authorization",
+    value: `Bearer ${accessToken}`,
+  };
+  const userId = oauthUserIdFromAccessToken(accessToken);
+  if (userId) {
+    header.userId = userId;
+  }
+  return header;
 }
 
 function currentAuthHeaderFromProfile(
@@ -318,7 +446,7 @@ function currentAuthHeaderFromProfile(
 ): ProfileAuthHeader | undefined {
   const oauthAccessToken = trimConfigValue(profile.oauth?.access_token);
   if (oauthAccessToken) {
-    return { name: "Authorization", value: `Bearer ${oauthAccessToken}` };
+    return oauthAuthHeaderFromAccessToken(oauthAccessToken);
   }
   if (trimConfigValue(profile.oauth?.refresh_token)) {
     return undefined;
@@ -331,11 +459,37 @@ function authHeaderFromProfile(
 ): ProfileAuthHeader | undefined {
   const oauthAccessToken = trimConfigValue(profile.oauth?.access_token);
   if (oauthAccessToken) {
-    return { name: "Authorization", value: `Bearer ${oauthAccessToken}` };
+    return oauthAuthHeaderFromAccessToken(oauthAccessToken);
   }
   const apiKey = trimConfigValue(profile.api_key);
   if (apiKey) {
     return { name: "x-api-key", value: apiKey };
   }
   return undefined;
+}
+
+function oauthUserIdFromAccessToken(accessToken: string): string | undefined {
+  const [, encodedPayload] = accessToken.split(".");
+  if (!encodedPayload) {
+    return undefined;
+  }
+  try {
+    const payload = JSON.parse(decodeBase64Url(encodedPayload)) as unknown;
+    if (payload === null || typeof payload !== "object") {
+      return undefined;
+    }
+    const value = (payload as Record<string, unknown>)[OAUTH_USER_ID_CLAIM];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64Url(value: string): string {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(
+    base64.length + ((4 - (base64.length % 4)) % 4),
+    "=",
+  );
+  return Buffer.from(padded, "base64").toString("utf8");
 }
