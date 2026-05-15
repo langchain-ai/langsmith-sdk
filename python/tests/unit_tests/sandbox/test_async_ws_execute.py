@@ -584,12 +584,22 @@ class TestAsyncWSStreamControl:
 class TestAsyncSandboxRunWs:
     """Test AsyncSandbox.run() with mocked WebSocket layer."""
 
-    def _make_sandbox(self) -> Any:
+    def _make_sandbox(self, default_headers: Any = None) -> Any:
         """Create an AsyncSandbox with mocked client."""
         from langsmith.sandbox._async_sandbox import AsyncSandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return AsyncSandbox.from_dict(
             data={
                 "name": "test-sb",
@@ -720,6 +730,26 @@ class TestAsyncSandboxRunWs:
         )
 
     @pytest.mark.asyncio
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
+    async def test_run_forwards_client_default_headers(self, mock_run_ws):
+        """Default headers set on the client (e.g. X-Service-Key) are
+        forwarded to the async WS layer."""
+
+        async def fake_ws(*args, **kwargs):
+            return (
+                _make_async_stream([_started_msg(), _exit_msg(0)]),
+                _AsyncWSStreamControl(),
+            )
+
+        mock_run_ws.side_effect = fake_ws
+        sandbox = self._make_sandbox(default_headers={"X-Service-Key": "svc-jwt"})
+        await sandbox.run("echo hello")
+
+        assert mock_run_ws.call_args.kwargs.get("headers") == {
+            "X-Service-Key": "svc-jwt"
+        }
+
+    @pytest.mark.asyncio
     async def test_run_wait_false_plus_callbacks_raises(self):
         """wait=False + callbacks raises ValueError."""
         sandbox = self._make_sandbox()
@@ -779,11 +809,21 @@ class TestAsyncSandboxRunWs:
 
 
 class TestAsyncSandboxReconnect:
-    def _make_sandbox(self) -> Any:
+    def _make_sandbox(self, default_headers: Any = None) -> Any:
         from langsmith.sandbox._async_sandbox import AsyncSandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return AsyncSandbox.from_dict(
             data={
                 "name": "test-sb",
