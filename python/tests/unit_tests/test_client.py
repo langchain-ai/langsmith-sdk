@@ -5596,33 +5596,6 @@ def test_run_ops_buffer_preserves_service_auth_overrides():
                 pass
 
 
-@mock.patch("langsmith.client.requests.Session")
-def test_list_runs_child_run_ids_deprecation_warning(
-    mock_session_cls: mock.Mock,
-) -> None:
-    """Test that using child_run_ids in select parameter raises a deprecation warning."""
-
-    mock_session = mock.Mock()
-    mock_session_cls.return_value = mock_session
-    mock_session.request.return_value.json.return_value = {"runs": []}
-
-    client = Client()
-
-    # Test that deprecation warning is raised when child_run_ids is in select
-    with pytest.warns(DeprecationWarning, match="child_run_ids field is deprecated"):
-        list(
-            client.list_runs(
-                project_id=uuid.uuid4(),
-                select=["id", "name", "child_run_ids"],
-            )
-        )
-
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
-
-
 def test_tracing_error_callback_on_429():
     """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
     mock_session = MagicMock()

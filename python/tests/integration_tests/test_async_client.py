@@ -38,24 +38,30 @@ async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
+    start_time = datetime.datetime.now(datetime.timezone.utc)
     await async_client.create_run(
         name="test_run",
         inputs={"input": "hello"},
         run_type="llm",
         project_name=project_name,
         id=run_id,
-        start_time=datetime.datetime.now(datetime.timezone.utc),
+        start_time=start_time,
     )
 
+    project_id = None
+
     async def check_run():
+        nonlocal project_id
         try:
-            run = await async_client.read_run(run_id)
-            return run.name == "test_run"
+            project = await async_client.read_project(project_name=project_name)
+            project_id = project.id
+            await async_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_time, selects=["ID"])
+            return True
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
-    run = await async_client.read_run(run_id)
+    run = await async_client.runs.retrieve(str(run_id), project_id=str(project_id), start_time=start_time, selects=["ID", "NAME", "INPUTS"])
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 
@@ -82,10 +88,11 @@ async def test_list_runs(async_client: AsyncClient):
     filter_ = f'and(eq(metadata_key, "uid"), eq(metadata_value, "{meta_uid}"))'
 
     async def check_runs():
+        project = await async_client.read_project(project_name=project_name)
         runs = [
             run
-            async for run in async_client.list_runs(
-                project_name=project_name, filter=filter_
+            async for run in async_client.runs.query(
+                project_ids=[str(project.id)], filter=filter_, selects=["ID"]
             )
         ]
         return len(runs) == 2
@@ -215,32 +222,32 @@ async def test_create_feedback(async_client: AsyncClient):
         assert feedback.score in {0.8, 0.9}
     assert set(f.score for f in presigned_feedbacks) == {0.8, 0.9}
 
-    shared_run_url = None
+    share_result = None
 
     # The share endpoint can lag run creation; retry a bit before failing.
     async def check_share():
-        nonlocal shared_run_url
+        nonlocal share_result
         try:
-            shared_run_url = await async_client.share_run(run_id)
+            share_result = await async_client.runs.share.create(str(run_id))
             return True
         except ls_utils.LangSmithNotFoundError:
             return False
 
     await wait_for(check_share, timeout=20)
-    assert shared_run_url is not None
+    assert share_result is not None
 
     run_is_shared = False
 
     async def check_run_is_shared():
         nonlocal run_is_shared
         try:
-            run_is_shared = await async_client.run_is_shared(run_id)
+            run_is_shared = (await async_client.runs.share.retrieve(str(run_id))) is not None
             return run_is_shared
         except ls_utils.LangSmithNotFoundError:
             return False
 
     await wait_for(check_run_is_shared, timeout=20)
-    assert run_is_shared, f"Run isn't shared; failed link: {shared_run_url}"
+    assert run_is_shared, f"Run isn't shared; share token: {share_result.share_token if share_result else None}"
 
 
 @pytest.mark.asyncio
@@ -456,19 +463,23 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
 
     # Create some test runs
     run_ids = [uuid7() for _ in range(3)]
+    start_times: dict = {}
     for i, run_id in enumerate(run_ids):
+        _run_start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_times[run_id] = _run_start_time
         await async_client.create_run(
             name=f"test_run_{i}",
             inputs={"input": f"test_{i}"},
             run_type="llm",
             project_name=project_name,
-            start_time=datetime.datetime.now(datetime.timezone.utc),
+            start_time=_run_start_time,
             id=run_id,
         )
 
     async def _get_run(run_id: uuid.UUID) -> bool:
         try:
-            await async_client.read_run(run_id)  # type: ignore
+            project = await async_client.read_project(project_name=project_name)
+            await async_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_times[run_id], selects=["ID"])
             return True
         except ls_utils.LangSmithError:
             return False

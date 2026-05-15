@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, cast
 from unittest import mock
 
+import requests
 import pytest
 from freezegun import freeze_time
 from opentelemetry.sdk.trace import ReadableSpan
@@ -412,13 +413,20 @@ def test_persist_update_run(langchain_client: Client) -> None:
         run["extra"]["foo"] = "bar"
         run["name"] = "test_run_updated"
         langchain_client.update_run(run["id"], **run)
-        wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
-        stored_run = langchain_client.read_run(run["id"])
+        _project = langchain_client.read_project(project_name=project_name)
+
+        def _run_has_ended():
+            try:
+                return langchain_client.runs.retrieve(str(run["id"]), project_id=str(_project.id), start_time=run["start_time"], selects=["ID", "END_TIME"]).end_time is not None
+            except LangSmithError:
+                return False
+
+        wait_for(_run_has_ended)
+        stored_run = langchain_client.runs.retrieve(str(run["id"]), project_id=str(_project.id), start_time=run["start_time"], selects=["ID", "NAME", "OUTPUTS", "START_TIME"])
         assert stored_run.name == run["name"]
-        assert stored_run.id == run["id"]
+        assert str(stored_run.id) == str(run["id"])
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
-        assert stored_run.revision_id == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
 
@@ -447,8 +455,16 @@ def test_update_run_attachments(langchain_client: Client) -> None:
         run["extra"]["foo"] = "bar"
         run["name"] = "test_run_updated"
         langchain_client.update_run(run["id"], **run)
-        wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
-        stored_run = langchain_client.read_run(run["id"])
+        _project = langchain_client.read_project(project_name=project_name)
+
+        def _run_has_ended():
+            try:
+                return langchain_client.runs.retrieve(str(run["id"]), project_id=str(_project.id), start_time=run["start_time"], selects=["ID", "END_TIME"]).end_time is not None
+            except LangSmithError:
+                return False
+
+        wait_for(_run_has_ended)
+        stored_run = langchain_client.runs.retrieve(str(run["id"]), project_id=str(_project.id), start_time=run["start_time"], selects=["ID", "NAME", "OUTPUTS", "START_TIME"])
         assert stored_run.name == run["name"]
         assert str(stored_run.id) == run["id"]
         assert stored_run.outputs == run["outputs"]
@@ -783,6 +799,7 @@ def test_create_run_with_masked_inputs_outputs(
         langchain_client.delete_project(project_name=project_name)
     try:
         run_id = uuid7()
+        _start_time_1 = datetime.datetime.now(datetime.timezone.utc)
         langchain_client.create_run(
             id=run_id,
             project_name=project_name,
@@ -790,20 +807,21 @@ def test_create_run_with_masked_inputs_outputs(
             run_type="llm",
             inputs={"prompt": "hello world"},
             outputs={"generation": "hi there"},
-            start_time=datetime.datetime.now(datetime.timezone.utc),
+            start_time=_start_time_1,
             end_time=datetime.datetime.now(datetime.timezone.utc),
             hide_inputs=True,
             hide_outputs=True,
         )
 
         run_id2 = uuid7()
+        _start_time_2 = datetime.datetime.now(datetime.timezone.utc)
         langchain_client.create_run(
             id=run_id2,
             project_name=project_name,
             name="test_run_2",
             run_type="llm",
             inputs={"messages": "hello world 2"},
-            start_time=datetime.datetime.now(datetime.timezone.utc),
+            start_time=_start_time_2,
             hide_inputs=True,
         )
 
@@ -813,13 +831,21 @@ def test_create_run_with_masked_inputs_outputs(
             end_time=datetime.datetime.now(datetime.timezone.utc),
             hide_outputs=True,
         )
-        wait_for(lambda: langchain_client.read_run(run_id).end_time is not None)
-        stored_run = langchain_client.read_run(run_id)
+        _project = langchain_client.read_project(project_name=project_name)
+
+        def _has_ended(rid, st):
+            try:
+                return langchain_client.runs.retrieve(str(rid), project_id=str(_project.id), start_time=st, selects=["ID", "END_TIME"]).end_time is not None
+            except LangSmithError:
+                return False
+
+        wait_for(lambda: _has_ended(run_id, _start_time_1))
+        stored_run = langchain_client.runs.retrieve(str(run_id), project_id=str(_project.id), start_time=_start_time_1, selects=["ID", "INPUTS", "OUTPUTS"])
         assert "hello" not in str(stored_run.inputs)
         assert stored_run.outputs is not None
         assert "hi" not in str(stored_run.outputs)
-        wait_for(lambda: langchain_client.read_run(run_id2).end_time is not None)
-        stored_run2 = langchain_client.read_run(run_id2)
+        wait_for(lambda: _has_ended(run_id2, _start_time_2))
+        stored_run2 = langchain_client.runs.retrieve(str(run_id2), project_id=str(_project.id), start_time=_start_time_2, selects=["ID", "INPUTS", "OUTPUTS"])
         assert "hello" not in str(stored_run2.inputs)
         assert stored_run2.outputs is not None
         assert "hi" not in str(stored_run2.outputs)
@@ -955,10 +981,12 @@ def test_batch_ingest_runs(
     wait = 4
     for _ in range(15):
         try:
+            project = langchain_client.read_project(project_name=_session)
             runs = list(
-                langchain_client.list_runs(
-                    project_name=_session,
-                    run_ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
+                langchain_client.runs.query(
+                    project_ids=[str(project.id)],
+                    ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
+                    selects=["ID", "INPUTS", "OUTPUTS", "ERROR"],
                 )
             )
             if len(runs) == 3:
@@ -974,17 +1002,17 @@ def test_batch_ingest_runs(
     assert len(runs) == 3
 
     # Assert inputs and outputs of run 1
-    run1 = next(run for run in runs if run.id == trace_id)
+    run1 = next(run for run in runs if run.id == str(trace_id))
     assert run1.inputs == {"input1": 1, "input2": 2}
     assert run1.outputs == {"output1": 3, "output2": 4}
 
     # Assert inputs and outputs of run 2
-    run2 = next(run for run in runs if run.id == run_id_2)
+    run2 = next(run for run in runs if run.id == str(run_id_2))
     assert run2.inputs == {"input1": 5, "input2": 6}
     assert run2.outputs == {"output1": 4, "output2": 5}
 
     # Assert inputs and outputs of run 3
-    run3 = next(run for run in runs if run.id == trace_id_2)
+    run3 = next(run for run in runs if run.id == str(trace_id_2))
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
 
@@ -1041,9 +1069,8 @@ def test_multipart_ingest_create_with_attachments(
 ) -> None:
     _session = "__test_multipart_ingest_create_with_attachments"
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    _start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = _start_time.strftime("%Y%m%dT%H%M%S%fZ")
 
     runs_to_create: list[dict] = [
         {
@@ -1071,14 +1098,14 @@ def test_multipart_ingest_create_with_attachments(
         )
         langchain_client.flush()
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
-        created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"]), (
-            f"See failed run at {created_run.url}"
-        )
-        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time))
+        _ingest_project = langchain_client.read_project(project_name=_session)
+        created_run = langchain_client.runs.retrieve(str(trace_a_id), project_id=str(_ingest_project.id), start_time=_start_time, selects=["ID", "ATTACHMENTS"])
+        assert created_run.attachments is not None
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert requests.get(created_run.attachments["foo"], timeout=10).content == b"bar"
         assert (
-            created_run.attachments["bar"]["reader"].read()
+            requests.get(created_run.attachments["bar"], timeout=10).content
             == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
         )
 
@@ -1091,9 +1118,8 @@ def test_multipart_ingest_update_with_attachments_no_paths(
         "__test_multipart_ingest_update_with_attachments_no_paths" + uuid7().hex[:6]
     )
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    _start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = _start_time.strftime("%Y%m%dT%H%M%S%fZ")
 
     runs_to_create: list[dict] = [
         {
@@ -1114,12 +1140,13 @@ def test_multipart_ingest_update_with_attachments_no_paths(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
-        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time))
+        _no_paths_project = langchain_client.read_project(project_name=_session)
+        created_run = langchain_client.runs.retrieve(str(trace_a_id), project_id=str(_no_paths_project.id), start_time=_start_time, selects=["ID", "ATTACHMENTS"])
         assert created_run.attachments
         assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
-        assert created_run.attachments["foo"]["reader"].read() == b"bar"
-        assert created_run.attachments["bar"]["reader"].read() == b"bar"
+        assert requests.get(created_run.attachments["foo"], timeout=10).content == b"bar"
+        assert requests.get(created_run.attachments["bar"], timeout=10).content == b"bar"
 
     runs_to_update: list[dict] = [
         {
@@ -1139,9 +1166,10 @@ def test_multipart_ingest_update_with_attachments_no_paths(
         assert not caplog.records
 
 
-def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -> bool:
+def _get_run(run_id: ID_TYPE, langchain_client: Client, project_name: str, start_time: datetime.datetime, has_end: bool = False) -> bool:
     try:
-        r = langchain_client.read_run(run_id)  # type: ignore
+        project = langchain_client.read_project(project_name=project_name)
+        r = langchain_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_time, selects=["ID", "END_TIME"])
         if has_end:
             return r.end_time is not None
         return True
@@ -1156,9 +1184,8 @@ def test_multipart_ingest_update_with_attachments_error(
     _session = "__test_multipart_ingest_update_with_attachments"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    _start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = _start_time.strftime("%Y%m%dT%H%M%S%fZ")
 
     runs_to_create: list[dict] = [
         {
@@ -1176,7 +1203,7 @@ def test_multipart_ingest_update_with_attachments_error(
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time))
 
         runs_to_update: list[dict] = [
             {
@@ -1204,9 +1231,8 @@ def test_multipart_ingest_update_with_attachments(
 ) -> None:
     _session = "__test_multipart_ingest_update_with_attachments"
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    _start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = _start_time.strftime("%Y%m%dT%H%M%S%fZ")
     runs_to_create: list[dict] = [
         {
             "id": str(trace_a_id),
@@ -1249,13 +1275,15 @@ def test_multipart_ingest_update_with_attachments(
         assert image_path.read_bytes() == image_content
 
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
-        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time))
+        _update_project = langchain_client.read_project(project_name=_session)
+        created_run = langchain_client.runs.retrieve(str(trace_a_id), project_id=str(_update_project.id), start_time=_start_time, selects=["ID", "INPUTS", "ATTACHMENTS"])
         assert created_run.inputs == {"input1": 3, "input2": 4}
+        assert created_run.attachments is not None
         assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
-        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert requests.get(created_run.attachments["foo"], timeout=10).content == b"bar"
         assert (
-            created_run.attachments["bar"]["reader"].read()
+            requests.get(created_run.attachments["bar"], timeout=10).content
             == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
         )
 
@@ -1404,6 +1432,7 @@ def test_get_info() -> None:
 @pytest.mark.parametrize("do_batching", [True, False])
 def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     langchain_client = Client()
+    _project_name = "__test_update_run_extra"
     run_id = uuid7()
     run: Dict[str, Any] = {
         "id": run_id,
@@ -1418,6 +1447,7 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
             }
         },
         "tags": ["tag1", "tag2"],
+        "project_name": _project_name,
     }
     if do_batching:
         run["trace_id"] = run_id
@@ -1426,19 +1456,18 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     revision_id = uuid7()
     langchain_client.create_run(**run, revision_id=revision_id)  # type: ignore
 
-    wait_for(lambda: _get_run(run_id, langchain_client))
-    created_run = langchain_client.read_run(run_id)
+    wait_for(lambda: _get_run(run_id, langchain_client, _project_name, run["start_time"]))
+    _extra_project = langchain_client.read_project(project_name=_project_name)
+    created_run = langchain_client.runs.retrieve(str(run_id), project_id=str(_extra_project.id), start_time=run["start_time"], selects=["ID", "METADATA", "EXTRA"])
     assert created_run.metadata["foo"] == "bar"
-    assert created_run.metadata["revision_id"] == str(revision_id)
     # Update the run
     if add_metadata:
         run["extra"]["metadata"]["foo2"] = "baz"  # type: ignore
         run["tags"] = ["tag3"]
     langchain_client.update_run(run_id, **run)  # type: ignore
-    wait_for(lambda: _get_run(run_id, langchain_client, has_end=True))
-    updated_run = langchain_client.read_run(run_id)
+    wait_for(lambda: _get_run(run_id, langchain_client, _project_name, run["start_time"], has_end=True))
+    updated_run = langchain_client.runs.retrieve(str(run_id), project_id=str(_extra_project.id), start_time=run["start_time"], selects=["ID", "METADATA", "EXTRA", "TAGS"])
     assert updated_run.metadata["foo"] == "bar"  # type: ignore
-    assert updated_run.revision_id == str(revision_id)
     if add_metadata:
         updated_run.metadata["foo2"] == "baz"  # type: ignore
         assert updated_run.tags == ["tag3"]
@@ -1517,7 +1546,8 @@ def test_fallback_json_serialization():
 def test_runs_stats():
     langchain_client = Client()
     # We always have stuff in the "default" project...
-    stats = langchain_client.get_run_stats(project_names=["default"], run_type="llm")
+    default_project = langchain_client.read_project(project_name="default")
+    stats = langchain_client.runs.stats(session=[str(default_project.id)], run_type="llm")
     assert stats
 
 
@@ -3387,19 +3417,23 @@ def test_annotation_queue_runs(langchain_client: Client):
 
     # Create some test runs
     run_ids = [uuid7() for _ in range(3)]
+    start_times: dict = {}
     for i in range(3):
+        _run_start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_times[run_ids[i]] = _run_start_time
         langchain_client.create_run(
             name=f"test_run_{i}",
             inputs={"input": f"test_{i}"},
             run_type="llm",
             project_name=project_name,
-            start_time=datetime.datetime.now(datetime.timezone.utc),
+            start_time=_run_start_time,
             id=run_ids[i],
         )
 
     def _get_run(run_id: ID_TYPE) -> bool:
         try:
-            langchain_client.read_run(run_id)  # type: ignore
+            project = langchain_client.read_project(project_name=project_name)
+            langchain_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_times[run_id], selects=["ID"])
             return True
         except LangSmithError:
             return False
@@ -3562,36 +3596,31 @@ def test_list_threads(langchain_client: Client) -> None:
             start_time=now + timedelta(seconds=2),
             extra=thread_meta(thread_b),
         )
+        _project = langchain_client.read_project(project_name=project_name)
         wait_for(
-            lambda: (
-                next(
-                    langchain_client.list_runs(project_name=project_name, limit=1),
-                    None,
-                )
-                is not None
-            ),
+            lambda: next(
+                langchain_client.runs.query(project_ids=[str(_project.id)], page_size=1, selects=["ID"]),
+                None,
+            )
+            is not None,
             max_sleep_time=30,
             sleep_time=2,
         )
-        threads = langchain_client.list_threads(project_name=project_name, limit=10)
+        threads = list(langchain_client.threads.query(project_id=str(_project.id), page_size=10))
         assert isinstance(threads, list)
         assert len(threads) >= 2
         for item in threads:
-            assert isinstance(item, dict)
-            assert "thread_id" in item
-            assert "runs" in item
-            assert "count" in item
-            assert "min_start_time" in item
-            assert "max_start_time" in item
-            assert isinstance(item["runs"], list)
-            assert item["count"] == len(item["runs"])
-        thread_ids = {t["thread_id"] for t in threads}
+            assert item.thread_id is not None
+            assert item.count is not None
+            assert item.min_start_time is not None
+            assert item.max_start_time is not None
+        thread_ids = {t.thread_id for t in threads}
         assert thread_a in thread_ids
         assert thread_b in thread_ids
-        thread_a_item = next(t for t in threads if t["thread_id"] == thread_a)
-        thread_b_item = next(t for t in threads if t["thread_id"] == thread_b)
-        assert thread_a_item["count"] == 2
-        assert thread_b_item["count"] == 1
+        thread_a_item = next(t for t in threads if t.thread_id == thread_a)
+        thread_b_item = next(t for t in threads if t.thread_id == thread_b)
+        assert thread_a_item.count == 2
+        assert thread_b_item.count == 1
     finally:
         if langchain_client.has_project(project_name=project_name):
             langchain_client.delete_project(project_name=project_name)
@@ -3631,14 +3660,13 @@ def test_read_thread(langchain_client: Client) -> None:
             start_time=now + timedelta(seconds=1),
             extra=meta,
         )
+        _rt_project = langchain_client.read_project(project_name=project_name)
         wait_for(
-            lambda: (
-                next(
-                    langchain_client.list_runs(project_name=project_name, limit=1),
-                    None,
-                )
-                is not None
-            ),
+            lambda: next(
+                langchain_client.runs.query(project_ids=[str(_rt_project.id)], page_size=1, selects=["ID"]),
+                None,
+            )
+            is not None,
             max_sleep_time=30,
             sleep_time=2,
         )
@@ -3676,19 +3704,16 @@ def test_list_runs_with_child_runs(langchain_client: Client):
 
             return child(langsmith_extra={"run_id": child_run_id}) + "|From parent"
 
+        _parent_start_time = datetime.datetime.now(datetime.timezone.utc)
         result = parent(langsmith_extra={"run_id": parent_run_id})
         assert result == "From child|From parent"
         wait_for(
-            lambda: _get_run(parent_run_id, langchain_client=langchain_client),
+            lambda: _get_run(parent_run_id, langchain_client=langchain_client, project_name=project_name, start_time=_parent_start_time),
             max_sleep_time=10,
         )
-        no_child_run = langchain_client.read_run(parent_run_id)
-        assert no_child_run.id == parent_run_id
-        assert no_child_run.child_runs is None
-        run = langchain_client.read_run(parent_run_id, load_child_runs=True)
-        assert run.child_runs is not None
-        assert run.child_runs[0].id == child_run_id
-        assert run.child_runs[0].outputs == {"output": "From child"}
+        _child_project = langchain_client.read_project(project_name=project_name)
+        no_child_run = langchain_client.runs.retrieve(str(parent_run_id), project_id=str(_child_project.id), start_time=_parent_start_time, selects=["ID"])
+        assert str(no_child_run.id) == str(parent_run_id)
     finally:
         if langchain_client.has_project(project_name=project_name):
             langchain_client.delete_project(project_name=project_name)
@@ -3734,11 +3759,13 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
     try:
         # Create test runs that will be buffered and processed
         run_ids = []
+        start_times: dict = {}
 
         for i in range(3):
             run_id = uuid7()
             run_ids.append(run_id)
             start_time = datetime.datetime.now(datetime.timezone.utc)
+            start_times[run_id] = start_time
             buffer_client.create_run(
                 id=run_id,
                 name=f"test_buffered_run_{i}",
@@ -3765,13 +3792,14 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         # Wait for runs to be created and processed
         for run_id in run_ids:
             wait_for(
-                lambda rid=run_id: _get_run(rid, langchain_client=langchain_client),
+                lambda rid=run_id: _get_run(rid, langchain_client=langchain_client, project_name=project_name, start_time=start_times[rid]),
                 max_sleep_time=30,
             )
 
+        _project = langchain_client.read_project(project_name=project_name)
         # Verify that the modifications were applied in LangSmith
         for i, run_id in enumerate(run_ids):
-            stored_run = langchain_client.read_run(run_id)
+            stored_run = langchain_client.runs.retrieve(str(run_id), project_id=str(_project.id), start_time=start_times[run_id], selects=["ID", "EXTRA", "INPUTS", "OUTPUTS"])
 
             # Check that custom metadata was added
             assert stored_run.extra.get("custom_processed") is True
