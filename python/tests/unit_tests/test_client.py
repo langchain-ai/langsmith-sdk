@@ -1,6 +1,7 @@
 """Test the LangSmith client."""
 
 import asyncio
+import base64
 import dataclasses
 import gc
 import inspect
@@ -182,6 +183,11 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+def _fake_oauth_token(payload: dict[str, object]) -> str:
+    encoded_payload = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    return f"header.{encoded_payload.rstrip('=')}.signature"
+
+
 def test_profile_config_loads_api_key_and_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -238,6 +244,61 @@ def test_profile_config_uses_oauth_access_token_before_api_key(
     assert client.api_key is None
     assert client._headers["Authorization"] == "Bearer profile-access-token"
     assert "x-api-key" not in client._headers
+
+
+def test_profile_config_oauth_headers_include_user_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    access_token = _fake_oauth_token({"sub": "user-123"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "oauth": {"access_token": access_token},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client.api_key is None
+    assert client._headers["Authorization"] == f"Bearer {access_token}"
+    assert client._headers["x-user-id"] == "user-123"
+    assert "x-api-key" not in client._headers
+
+
+def test_profile_config_oauth_headers_use_subject_claim_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    access_token = _fake_oauth_token({"user_id": "generic-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "oauth": {"access_token": access_token},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    client = Client(auto_batch_tracing=False)
+
+    assert client._headers["Authorization"] == f"Bearer {access_token}"
+    assert "x-user-id" not in client._headers
 
 
 def test_profile_config_env_auth_suppresses_profile_auth(
@@ -383,6 +444,305 @@ def test_profile_config_refreshes_expired_oauth_token(
     assert "bearer_token" not in updated["profiles"]["default"]
 
 
+def test_profile_config_refresh_updates_x_user_id_header(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
+    new_access_token = _fake_oauth_token({"sub": "new-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": old_access_token,
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": new_access_token,
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    request_calls = []
+    response = mock.Mock()
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_calls.append((method, url, kwargs))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+
+    assert client._headers["x-user-id"] == "old-user"
+
+    client.request_with_retries("GET", "/info")
+
+    assert client._headers["x-user-id"] == "new-user"
+    assert request_calls[0][2]["headers"]["x-user-id"] == "new-user"
+
+
+def test_profile_config_refreshes_expired_oauth_token_once_for_concurrent_requests(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
+    new_access_token = _fake_oauth_token({"sub": "new-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": old_access_token,
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    refresh_calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        refresh_calls.append((url, kwargs))
+        time.sleep(0.05)
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": new_access_token,
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    request_headers = []
+    request_lock = threading.Lock()
+    response = mock.Mock()
+    response.status_code = 200
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        with request_lock:
+            request_headers.append(dict(kwargs["headers"]))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+    concurrency = 25
+    start = threading.Barrier(concurrency)
+    errors = []
+
+    def worker() -> None:
+        try:
+            start.wait()
+            client.request_with_retries("GET", "/info")
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(concurrency)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(refresh_calls) == 1
+    assert len(request_headers) == concurrency
+    assert all(
+        headers["Authorization"] == f"Bearer {new_access_token}"
+        and headers["x-user-id"] == "new-user"
+        for headers in request_headers
+    )
+
+
+def test_profile_config_refresh_singleflight_across_clients(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
+    new_access_token = _fake_oauth_token({"sub": "new-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": old_access_token,
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    refresh_calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        refresh_calls.append((url, kwargs))
+        time.sleep(0.05)
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": new_access_token,
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    concurrency = 25
+    clients = [Client(auto_batch_tracing=False) for _ in range(concurrency)]
+    request_headers = []
+    request_lock = threading.Lock()
+    response = mock.Mock()
+    response.status_code = 200
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        with request_lock:
+            request_headers.append(dict(kwargs["headers"]))
+        return response
+
+    for client in clients:
+        monkeypatch.setattr(client.session, "request", mock_request)
+
+    start = threading.Barrier(concurrency)
+    errors = []
+
+    def worker(client: Client) -> None:
+        try:
+            start.wait()
+            client.request_with_retries("GET", "/info")
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(client,)) for client in clients]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(refresh_calls) == 1
+    assert len(request_headers) == concurrency
+    assert all(
+        headers["Authorization"] == f"Bearer {new_access_token}"
+        and headers["x-user-id"] == "new-user"
+        for headers in request_headers
+    )
+
+
+def test_profile_config_refresh_waits_for_filesystem_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _clear_profile_env(monkeypatch)
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
+    new_access_token = _fake_oauth_token({"sub": "new-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": old_access_token,
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    lock_path = pathlib.Path(f"{config_path}.oauth-refresh.lock")
+    lock_path.write_text("locked", encoding="utf-8")
+    refresh_calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        refresh_calls.append((url, kwargs))
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "unexpected-access-token",
+            "refresh_token": "unexpected-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = Client(auto_batch_tracing=False)
+    request_headers = []
+    response = mock.Mock()
+    response.status_code = 200
+    response.raise_for_status.return_value = None
+
+    def mock_request(method: str, url: str, **kwargs: object) -> mock.Mock:
+        request_headers.append(dict(kwargs["headers"]))
+        return response
+
+    monkeypatch.setattr(client.session, "request", mock_request)
+    errors = []
+
+    def worker() -> None:
+        try:
+            client.request_with_retries("GET", "/info")
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    time.sleep(0.1)
+
+    assert refresh_calls == []
+    assert request_headers == []
+
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    updated["profiles"]["default"]["oauth"]["access_token"] = new_access_token
+    updated["profiles"]["default"]["oauth"]["expires_at"] = "2999-01-01T00:00:00Z"
+    config_path.write_text(json.dumps(updated), encoding="utf-8")
+    lock_path.unlink()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert refresh_calls == []
+    assert request_headers[0]["Authorization"] == f"Bearer {new_access_token}"
+    assert request_headers[0]["x-user-id"] == "new-user"
+
+
 def test_profile_config_refresh_replaces_snapshotted_auth_headers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -445,6 +805,7 @@ def test_profile_config_refresh_preserves_explicit_auth_headers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     _clear_profile_env(monkeypatch)
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -453,7 +814,7 @@ def test_profile_config_refresh_preserves_explicit_auth_headers(
                     "default": {
                         "api_url": "https://profile.example.com",
                         "oauth": {
-                            "access_token": "old-access-token",
+                            "access_token": old_access_token,
                             "refresh_token": "old-refresh-token",
                             "expires_at": "2000-01-01T00:00:00Z",
                         },
@@ -490,10 +851,16 @@ def test_profile_config_refresh_preserves_explicit_auth_headers(
     client.request_with_retries(
         "GET",
         "/info",
-        request_kwargs={"headers": {"Authorization": "Bearer explicit-token"}},
+        request_kwargs={
+            "headers": {
+                **client._headers,
+                "Authorization": "Bearer explicit-token",
+            }
+        },
     )
 
     assert request_calls[0][2]["headers"]["Authorization"] == ("Bearer explicit-token")
+    assert "x-user-id" not in request_calls[0][2]["headers"]
 
 
 def test_profile_config_refresh_uses_profile_api_url(

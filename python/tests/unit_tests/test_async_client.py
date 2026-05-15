@@ -1,7 +1,10 @@
 """Test the AsyncClient."""
 
+import asyncio
+import base64
 import json
 import pathlib
+import time
 import uuid
 import warnings
 from datetime import datetime
@@ -28,6 +31,11 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LANGSMITH_PROFILE",
     ):
         monkeypatch.delenv(key, raising=False)
+
+
+def _fake_oauth_token(payload: dict[str, object]) -> str:
+    encoded_payload = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    return f"header.{encoded_payload.rstrip('=')}.signature"
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -139,6 +147,7 @@ def test_async_client_profile_config_uses_oauth_access_token(
     mock_httpx_client = mock.Mock()
     mock_httpx_client.headers = httpx.Headers()
     mock_client_cls.return_value = mock_httpx_client
+    access_token = _fake_oauth_token({"sub": "user-123"})
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -146,7 +155,7 @@ def test_async_client_profile_config_uses_oauth_access_token(
                 "profiles": {
                     "default": {
                         "api_url": "https://profile.example.com",
-                        "oauth": {"access_token": "profile-access-token"},
+                        "oauth": {"access_token": access_token},
                     }
                 }
             }
@@ -159,7 +168,8 @@ def test_async_client_profile_config_uses_oauth_access_token(
 
     assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
     passed_headers = mock_client_cls.call_args.kwargs["headers"]
-    assert passed_headers["Authorization"] == "Bearer profile-access-token"
+    assert passed_headers["Authorization"] == f"Bearer {access_token}"
+    assert passed_headers["x-user-id"] == "user-123"
     assert "x-api-key" not in passed_headers
 
 
@@ -219,6 +229,79 @@ async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
 
     request_headers = mock_httpx_client.request.call_args.kwargs["headers"]
     assert request_headers["Authorization"] == "Bearer new-access-token"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_profile_refresh_singleflight_for_concurrent_requests(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.AsyncMock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+    old_access_token = _fake_oauth_token({"sub": "old-user"})
+    new_access_token = _fake_oauth_token({"sub": "new-user"})
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": old_access_token,
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    refresh_calls = []
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        refresh_calls.append((url, kwargs))
+        time.sleep(0.05)
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": new_access_token,
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    request_headers = []
+    response = mock.Mock()
+    response.status_code = 200
+    response.raise_for_status.return_value = None
+
+    async def mock_request(*args: object, **kwargs: object) -> mock.Mock:
+        request_headers.append(dict(mock_httpx_client.headers))
+        return response
+
+    mock_httpx_client.request.side_effect = mock_request
+    client = AsyncClient()
+    concurrency = 25
+
+    await asyncio.gather(
+        *(client._arequest_with_retries("GET", "/info") for _ in range(concurrency))
+    )
+
+    assert len(refresh_calls) == 1
+    assert len(request_headers) == concurrency
+    assert all(
+        headers["authorization"] == f"Bearer {new_access_token}"
+        and headers["x-user-id"] == "new-user"
+        for headers in request_headers
+    )
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
