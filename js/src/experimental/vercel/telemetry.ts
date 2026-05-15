@@ -3,11 +3,7 @@ import { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { traceable } from "../../traceable.js";
 import { isTracingEnabled } from "../../env.js";
-import {
-  convertMessageToTracedFormat,
-  getModelDisplayName,
-  getModelId,
-} from "./utils.js";
+import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./middleware.js";
 import type { KVMap } from "../../schemas.js";
 
@@ -216,23 +212,27 @@ export function createLangSmithTelemetry(
   const onStart: Telemetry["onStart"] = (event) => {
     if (!isTracingEnabled()) return;
 
-    const modelName = getModelDisplayName(event.model);
-    const modelId = getModelId(event.model);
-
     // If called within an existing traceable context, nest under it
     const parentRunTree = getCurrentRunTree(true);
 
     let inputs: KVMap = {};
-    if (event.messages != null) {
+    if ("messages" in event && event.messages != null) {
       inputs.messages = _formatMessages(event.messages);
     }
-    if (event.prompt != null) {
+
+    if ("prompt" in event && event.prompt != null) {
       inputs.prompt = event.prompt;
     }
-    if (event.system != null) {
+
+    if ("instructions" in event && event.instructions != null) {
+      inputs.instructions = event.instructions;
+    }
+
+    if ("system" in event && event.system != null) {
       inputs.system = event.system;
     }
-    if (event.tools != null) {
+
+    if ("tools" in event && event.tools != null) {
       inputs.tools = Object.keys(event.tools);
     }
 
@@ -246,15 +246,15 @@ export function createLangSmithTelemetry(
     }
 
     const runTreeConfig: RunTreeConfig = {
-      name: customName ?? modelName,
+      name: customName ?? event.provider,
       run_type: runType,
       inputs,
       extra: {
         ...customExtra,
         metadata: {
           ...customMetadata,
-          ls_model_name: modelId,
-          ls_provider: modelName,
+          ls_model_name: event.modelId,
+          ls_provider: event.provider,
           ls_integration: "vercel-ai-sdk-telemetry",
         },
       },
@@ -289,11 +289,8 @@ export function createLangSmithTelemetry(
     const stepNumber: number = event.stepNumber ?? 0;
 
     let inputs: KVMap = {};
-    if (event.messages != null) {
+    if ("messages" in event && event.messages != null) {
       inputs.messages = _formatMessages(event.messages);
-    }
-    if (event.request != null && traceRawHttp) {
-      inputs.request = event.request;
     }
 
     if (processChildLLMRunInputs) {
@@ -330,10 +327,9 @@ export function createLangSmithTelemetry(
     if (!state) return;
 
     // Stash metadata so executeToolCall can use it for the traceable wrapper
-    const toolCallId: string = event.toolCallId;
-    state.toolCallMetadata.set(toolCallId, {
-      toolName: event.toolName,
-      args: event.args,
+    state.toolCallMetadata.set(event.toolCall.toolCallId, {
+      toolName: event.toolCall.toolName,
+      args: event.toolCall.input,
     });
   };
 
@@ -368,6 +364,7 @@ export function createLangSmithTelemetry(
     }
 
     // Set usage metadata
+    // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
     setUsageMetadataOnRunTree(event, stepRunTree);
 
     await stepRunTree.end(outputs);
@@ -397,17 +394,21 @@ export function createLangSmithTelemetry(
     let outputs: KVMap = {};
 
     // Final result output
-    if (event.text != null) {
+    if ("text" in event && event.text != null) {
       outputs.content = event.text;
-    } else if (event.content != null) {
+    } else if ("content" in event && event.content != null) {
       outputs.content = event.content;
     }
 
-    if (event.object != null) {
+    if ("object" in event && event.object != null) {
       outputs.object = event.object;
     }
 
-    if (Array.isArray(event.toolCalls) && event.toolCalls.length > 0) {
+    if (
+      "toolCalls" in event &&
+      Array.isArray(event.toolCalls) &&
+      event.toolCalls.length > 0
+    ) {
       outputs.tool_calls = event.toolCalls.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (tc: any) => ({
@@ -422,27 +423,30 @@ export function createLangSmithTelemetry(
       );
     }
 
-    if (event.finishReason != null) {
+    if ("finishReason" in event && event.finishReason != null) {
       outputs.finish_reason = event.finishReason;
     }
 
-    if (traceResponseMetadata && Array.isArray(event.steps)) {
-      outputs.steps = event.steps.map(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (step: any, idx: number) => ({
-          step_number: idx,
-          ..._formatStepOutput(step, traceRawHttp),
-        }),
-      );
+    if (
+      traceResponseMetadata &&
+      "steps" in event &&
+      Array.isArray(event.steps)
+    ) {
+      outputs.steps = event.steps.map((step, idx) => ({
+        step_number: idx,
+        ..._formatStepOutput(step, traceRawHttp),
+      }));
     }
 
     // Set aggregated usage on root
-    if (event.totalUsage != null) {
+    if ("totalUsage" in event && event.totalUsage != null) {
       setUsageMetadataOnRunTree(
+        // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
         { usage: event.totalUsage, providerMetadata: event.providerMetadata },
         rootRunTree,
       );
-    } else if (event.usage != null) {
+    } else if ("usage" in event && event.usage != null) {
+      // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
       setUsageMetadataOnRunTree(event, rootRunTree);
     }
 

@@ -1,6 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import type { LanguageModelV2DataContent } from "@ai-sdk/provider";
-import type { ToolCallPart } from "ai";
+import type { ModelMessage, ToolCallPart } from "ai";
+import { isRecord } from "../../utils/types.js";
 
 const guessMimetypeFromBase64 = (data: string) => {
   // Check magic bytes from base64 data
@@ -60,68 +61,127 @@ const guessMimetypeFromBase64 = (data: string) => {
   return undefined;
 };
 
+// Extracted from AI SDK's FileData type
+type AISDKDataContent = string | Uint8Array | ArrayBuffer | Buffer;
+type AISDKProviderReference = { [provider: string]: string } & { type?: never };
+
+// TODO: add support for AI SDK FileData
+type AISDKFileData =
+  | { type: "data"; data: AISDKDataContent }
+  | { type: "url"; url: URL }
+  | { type: "reference"; reference: AISDKProviderReference }
+  | { type: "text"; text: string };
+
+function _isAISDKFileData(input: unknown): input is AISDKFileData {
+  if (!isRecord(input)) return false;
+  if (input.type === "data" && "data" in input) return true;
+  if (input.type === "url" && "url" in input) return true;
+  if (input.type === "reference" && "reference" in input) return true;
+  if (input.type === "text" && "text" in input) return true;
+  return false;
+}
+
+function _toUint8Array(fileData: unknown): Uint8Array | undefined {
+  // Covers `fileData: ArrayBuffer | Buffer | Uint8Array`
+  if (fileData instanceof Uint8Array) {
+    return fileData;
+  }
+
+  if (
+    fileData != null &&
+    typeof fileData === "object" &&
+    "type" in fileData &&
+    "data" in fileData &&
+    typeof fileData.data === "object" &&
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    fileData.data instanceof Uint8Array
+  ) {
+    return fileData.data;
+    // eslint-disable-next-line no-instanceof/no-instanceof
+  }
+
+  if (fileData instanceof ArrayBuffer) {
+    return new Uint8Array(fileData);
+  }
+
+  return undefined;
+}
+
 export const normalizeFileDataAsDataURL = (
-  fileData: LanguageModelV2DataContent | ArrayBuffer,
-  mimeType?: string,
+  fileData:
+    | AISDKFileData
+    | AISDKDataContent
+    | LanguageModelV2DataContent
+    | AISDKProviderReference
+    | URL,
+  mimeType: string | undefined,
 ): string => {
-  // eslint-disable-next-line no-instanceof/no-instanceof
+  if (_isAISDKFileData(fileData)) {
+    if (fileData.type === "data") {
+      return normalizeFileDataAsDataURL(fileData.data, mimeType);
+    }
+
+    if (fileData.type === "url") {
+      return fileData.url.toString();
+    }
+
+    if (fileData.type === "reference") {
+      // TODO: figure out if we can store the reference in a more reasonable format
+      return `data:application/octet-stream;base64,${btoa(JSON.stringify(fileData.reference))}`;
+    }
+
+    if (fileData.type === "text") {
+      return `data:text/plain;base64,${btoa(fileData.text)}`;
+    }
+
+    throw new Error("AISDKFileData is not supported");
+  }
+
   if (fileData instanceof URL) {
     return fileData.toString();
   }
-  let normalizedFileData: string;
+
   if (typeof fileData !== "string") {
-    let uint8Array;
-    // eslint-disable-next-line no-instanceof/no-instanceof
-    if (fileData instanceof Uint8Array) {
-      uint8Array = fileData;
-    } else if (
-      fileData != null &&
-      typeof fileData === "object" &&
-      "type" in fileData &&
-      "data" in fileData &&
-      typeof fileData.data === "object" &&
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      fileData.data instanceof Uint8Array
-    ) {
-      uint8Array = fileData.data;
-      // eslint-disable-next-line no-instanceof/no-instanceof
-    } else if (fileData instanceof ArrayBuffer) {
-      uint8Array = new Uint8Array(fileData);
-    }
+    const uint8Array = _toUint8Array(fileData);
     if (uint8Array) {
       let binary = "";
       for (let i = 0; i < uint8Array.length; i++) {
         binary += String.fromCharCode(uint8Array[i]);
       }
       const base64 = btoa(binary);
-      normalizedFileData = `data:${
+      const dataType =
         mimeType ??
         guessMimetypeFromBase64(base64) ??
-        "application/octet-stream"
-      };base64,${base64}`;
-    } else {
-      normalizedFileData = "";
+        "application/octet-stream";
+
+      return `data:${dataType};base64,${base64}`;
     }
-  } else {
+  }
+
+  if (typeof fileData === "string") {
     if (fileData.startsWith("http://") || fileData.startsWith("https://")) {
-      normalizedFileData = fileData;
-    } else if (!fileData.startsWith("data:")) {
-      normalizedFileData = `data:${
+      return fileData;
+    }
+
+    if (!fileData.startsWith("data:")) {
+      return `data:${
         mimeType ??
         guessMimetypeFromBase64(fileData) ??
         "application/octet-stream"
       };base64,${fileData}`;
-    } else {
-      normalizedFileData = fileData;
     }
+
+    return fileData;
   }
-  return normalizedFileData;
+
+  return "";
 };
 
 export const convertMessageToTracedFormat = (
-  message: Record<string, unknown>,
+  rawMessage: Record<string, unknown>,
   responseMetadata?: Record<string, unknown>,
 ) => {
+  const message = rawMessage as ModelMessage;
   const formattedMessage: Record<string, unknown> = {
     ...message,
   };
@@ -207,34 +267,4 @@ export const convertMessageToTracedFormat = (
     formattedMessage.response_metadata = responseMetadata;
   }
   return formattedMessage;
-};
-
-export const getModelDisplayName = (
-  model: string | Record<string, unknown>,
-): string => {
-  if (typeof model === "string") {
-    return model;
-  }
-
-  if (
-    model.config != null &&
-    typeof model.config === "object" &&
-    "provider" in model.config &&
-    typeof model.config.provider === "string"
-  ) {
-    return model.config.provider;
-  }
-
-  if (model.modelId != null && typeof model.modelId === "string") {
-    return model.modelId;
-  }
-
-  return "unknown";
-};
-
-export const getModelId = (model: string | Record<string, unknown>) => {
-  if (typeof model === "string") {
-    return model;
-  }
-  return typeof model.modelId === "string" ? model.modelId : undefined;
 };
