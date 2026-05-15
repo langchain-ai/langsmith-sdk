@@ -1,4 +1,4 @@
-/* eslint-disable import/no-extraneous-dependencies */
+import type { Telemetry } from "ai";
 import { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { traceable } from "../../traceable.js";
@@ -174,7 +174,7 @@ function _formatStepOutput(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createLangSmithTelemetry(
   config?: LangSmithTelemetryConfig,
-): any {
+): Telemetry {
   const {
     name: customName,
     runType = "chain",
@@ -213,8 +213,7 @@ export function createLangSmithTelemetry(
   // separate instances.
   let activeInvocationId: string | undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onStart = (event: any) => {
+  const onStart: Telemetry["onStart"] = (event) => {
     if (!isTracingEnabled()) return;
 
     const modelName = getModelDisplayName(event.model);
@@ -281,8 +280,7 @@ export function createLangSmithTelemetry(
     activeInvocationId = invocationId;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onStepStart = (event: any) => {
+  const onStepStart: Telemetry["onStepStart"] = (event) => {
     const state = activeInvocationId
       ? invocations.get(activeInvocationId)
       : undefined;
@@ -325,8 +323,7 @@ export function createLangSmithTelemetry(
     void stepRunTree.postRun();
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onToolCallStart = (event: any) => {
+  const onToolExecutionStart: Telemetry["onToolExecutionStart"] = (event) => {
     const state = activeInvocationId
       ? invocations.get(activeInvocationId)
       : undefined;
@@ -340,16 +337,14 @@ export function createLangSmithTelemetry(
     });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onChunk = (_event: any) => {
+  const onChunk: Telemetry["onChunk"] = (_event) => {
     // For streaming: we could add new_token events, but the step's
     // onStepFinish will capture the full output. We add a streaming
     // event marker on the step run tree if it exists.
     // Currently a no-op; the step finish will capture aggregated output.
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onStepFinish = async (event: any) => {
+  const onStepFinish: Telemetry["onStepFinish"] = async (event) => {
     const state = activeInvocationId
       ? invocations.get(activeInvocationId)
       : undefined;
@@ -380,8 +375,7 @@ export function createLangSmithTelemetry(
     state.stepRunTrees.delete(stepNumber);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onFinish = async (event: any) => {
+  const onEnd: Telemetry["onEnd"] = async (event) => {
     const state = activeInvocationId
       ? invocations.get(activeInvocationId)
       : undefined;
@@ -468,7 +462,7 @@ export function createLangSmithTelemetry(
     activeInvocationId = undefined;
   };
 
-  const onError = async (error: unknown) => {
+  const onError: Telemetry["onError"] = async (error) => {
     const state = activeInvocationId
       ? invocations.get(activeInvocationId)
       : undefined;
@@ -497,7 +491,7 @@ export function createLangSmithTelemetry(
     activeInvocationId = undefined;
   };
 
-  const executeToolCall = async <T>(params: {
+  const executeTool: Telemetry["executeTool"] = async <T>(params: {
     callId: string;
     toolCallId: string;
     execute: () => PromiseLike<T>;
@@ -553,11 +547,11 @@ export function createLangSmithTelemetry(
   return {
     onStart,
     onStepStart,
-    onToolCallStart,
+    onToolExecutionStart,
     onChunk,
     onStepFinish,
-    onFinish,
+    onEnd,
     onError,
-    executeToolCall,
+    executeTool,
   };
 }
