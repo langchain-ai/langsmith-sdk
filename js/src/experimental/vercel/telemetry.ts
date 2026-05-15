@@ -3,8 +3,11 @@ import { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { traceable } from "../../traceable.js";
 import { isTracingEnabled } from "../../env.js";
-import { convertMessageToTracedFormat } from "./utils.js";
-import { _getModelDisplayName, _getModelId } from "./wrap.js";
+import {
+  convertMessageToTracedFormat,
+  getModelDisplayName,
+  getModelId,
+} from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./middleware.js";
 import type { KVMap } from "../../schemas.js";
 
@@ -89,7 +92,7 @@ function _formatMessages(messages: any[]): any[] {
 function _formatStepOutput(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: Record<string, any>,
-  traceRawHttp?: boolean
+  traceRawHttp?: boolean,
 ): KVMap {
   // Build an assistant-style message from the step result
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,7 +119,7 @@ function _formatStepOutput(
           arguments:
             typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args),
         },
-      })
+      }),
     );
   }
 
@@ -170,7 +173,7 @@ function _formatStepOutput(
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createLangSmithTelemetry(
-  config?: LangSmithTelemetryConfig
+  config?: LangSmithTelemetryConfig,
 ): any {
   const {
     name: customName,
@@ -214,8 +217,8 @@ export function createLangSmithTelemetry(
   const onStart = (event: any) => {
     if (!isTracingEnabled()) return;
 
-    const modelName = _getModelDisplayName(event.model);
-    const modelId = _getModelId(event.model);
+    const modelName = getModelDisplayName(event.model);
+    const modelId = getModelId(event.model);
 
     // If called within an existing traceable context, nest under it
     const parentRunTree = getCurrentRunTree(true);
@@ -301,7 +304,7 @@ export function createLangSmithTelemetry(
       } catch (e) {
         console.error(
           "Error in processChildLLMRunInputs, using raw inputs:",
-          e
+          e,
         );
       }
     }
@@ -364,7 +367,7 @@ export function createLangSmithTelemetry(
       } catch (e) {
         console.error(
           "Error in processChildLLMRunOutputs, using raw outputs:",
-          e
+          e,
         );
       }
     }
@@ -421,7 +424,7 @@ export function createLangSmithTelemetry(
             arguments:
               typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args),
           },
-        })
+        }),
       );
     }
 
@@ -435,7 +438,7 @@ export function createLangSmithTelemetry(
         (step: any, idx: number) => ({
           step_number: idx,
           ..._formatStepOutput(step, traceRawHttp),
-        })
+        }),
       );
     }
 
@@ -443,7 +446,7 @@ export function createLangSmithTelemetry(
     if (event.totalUsage != null) {
       setUsageMetadataOnRunTree(
         { usage: event.totalUsage, providerMetadata: event.providerMetadata },
-        rootRunTree
+        rootRunTree,
       );
     } else if (event.usage != null) {
       setUsageMetadataOnRunTree(event, rootRunTree);
@@ -534,12 +537,12 @@ export function createLangSmithTelemetry(
         metadata: {
           tool_call_id: params.toolCallId,
         },
-      }
+      },
     );
 
     if (parentRunTree) {
       return withRunTree(parentRunTree, () =>
-        traceableExecute(toolArgs)
+        traceableExecute(toolArgs),
       ) as Promise<T>;
     }
 
