@@ -96,6 +96,20 @@ class TestAsyncSandboxClientInit:
                 api_key="explicit-key",
             )
             assert client._http.headers.get("X-Api-Key") == "explicit-key"
+
+    @pytest.mark.asyncio
+    async def test_default_headers_attached_to_http_client(self):
+        """Constructor headers flow to the HTTP client and are exposed for the
+        WS exec path."""
+        async with AsyncSandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            headers={"X-Service-Key": "svc-jwt"},
+        ) as client:
+            assert client._http.headers.get("X-Service-Key") == "svc-jwt"
+            assert client._http.headers.get("X-Api-Key") == "api-key"
+            assert client._default_headers == {"X-Service-Key": "svc-jwt"}
+            assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
             await client.aclose()
 
     async def test_max_retries_default(self):

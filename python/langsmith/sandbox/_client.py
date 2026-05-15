@@ -89,15 +89,20 @@ class SandboxClient:
             max_retries: Maximum number of retries for transient errors (502, 503,
                          504), rate limits (429), and connection failures. Set to 0
                          to disable retries. Default: 3.
+            headers: Optional default headers attached to every request on this
+                     client, including the data-plane ``/execute`` HTTP endpoint
+                     and the ``/execute/ws`` WebSocket upgrade. Use this to pass
+                     additional auth headers (e.g. ``X-Service-Key``).
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
             client_headers["X-Api-Key"] = resolved_api_key
-        if headers:
-            client_headers = merge_headers(client_headers, headers)
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
         transport = RetryTransport(max_retries=max_retries)
         self._http = httpx.Client(
             transport=transport, timeout=timeout, headers=client_headers
@@ -108,6 +113,16 @@ class SandboxClient:
         if headers is None:
             return None
         return merge_headers(self._http.headers, headers)
+
+    def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge constructor-supplied default headers with per-request overrides.
+
+        Used by the WebSocket exec path so headers like ``X-Service-Key``
+        set on the client are attached to the WS upgrade request.
+        """
+        if not self._default_headers and headers is None:
+            return None
+        return merge_headers(self._default_headers, headers)
 
     def close(self) -> None:
         """Close the HTTP client."""
