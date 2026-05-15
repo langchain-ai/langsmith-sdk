@@ -27,8 +27,7 @@ function telemetryChainRoot(runs: RunsTree) {
 function llmStepKey(runs: RunsTree, stepNumber: number) {
   const entry = Object.entries(runs.data).find(
     ([, r]) =>
-      r.run_type === "llm" &&
-      r.extra?.metadata?.step_number === stepNumber,
+      r.run_type === "llm" && r.extra?.metadata?.step_number === stepNumber,
   );
   expect(entry).toBeDefined();
   return entry![0];
@@ -51,7 +50,7 @@ function outerTraceableKey(runs: RunsTree) {
 }
 
 describe("openai telemetry", () => {
-  test("telemetry generateText basic", async () => {
+  test("telemetry generateText basic", { timeout: 30_000 }, async () => {
     const callSpy = vi.fn(fetch);
     const client = new Client({
       autoBatchTracing: false,
@@ -59,8 +58,7 @@ describe("openai telemetry", () => {
     });
 
     const model = openai("gpt-5-nano");
-    const userMessage =
-      "What color is the sky? Answer in one word: blue.";
+    const userMessage = "What color is the sky? Answer in one word: blue.";
 
     const result = await ai.generateText({
       model,
@@ -77,9 +75,7 @@ describe("openai telemetry", () => {
     const rootKey = telemetryChainRoot(runs);
     const step0Key = llmStepKey(runs, 0);
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[rootKey, step0Key]]),
-    );
+    expect(runs.edges).toEqual(expect.arrayContaining([[rootKey, step0Key]]));
 
     expect(runs).toMatchObject({
       data: {
@@ -118,7 +114,7 @@ describe("openai telemetry", () => {
     ).toBeGreaterThan(0);
   });
 
-  test("telemetry generateText with tools", async () => {
+  test("telemetry generateText with tools", { timeout: 30_000 }, async () => {
     const callSpy = vi.fn(fetch);
     const client = new Client({
       autoBatchTracing: false,
@@ -312,68 +308,70 @@ describe("openai telemetry", () => {
     });
   });
 
-  test("telemetry generateText with flex service tier", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry generateText with flex service tier",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const model = openai("gpt-5-mini");
-    const userMessage = "What color is the sky in one word: blue.";
+      const model = openai("gpt-5-mini");
+      const userMessage = "What color is the sky in one word: blue.";
 
-    const result = await ai.generateText({
-      model,
-      messages: [{ role: "user", content: userMessage }],
-      providerOptions: {
-        openai: {
-          serviceTier: "flex",
-        },
-      },
-      telemetry: { integrations: [createLangSmithTelemetry({ client })] },
-    });
-
-    expect(result.text.length).toBeGreaterThan(0);
-
-    await client.awaitPendingTraceBatches();
-
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const rootKey = telemetryChainRoot(runs);
-    const step0Key = llmStepKey(runs, 0);
-
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[rootKey, step0Key]]),
-    );
-
-    expect(runs).toMatchObject({
-      data: {
-        [rootKey]: {
-          run_type: "chain",
-          inputs: {
-            messages: [{ role: "user", content: userMessage }],
-          },
-          outputs: {
-            content: expect.stringMatching(/blue/i),
-            finish_reason: "stop",
+      const result = await ai.generateText({
+        model,
+        messages: [{ role: "user", content: userMessage }],
+        providerOptions: {
+          openai: {
+            serviceTier: "flex",
           },
         },
-        [step0Key]: {
-          run_type: "llm",
-          outputs: {
-            role: "assistant",
-            content: expect.stringMatching(/blue/i),
-            finish_reason: "stop",
+        telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+      });
+
+      expect(result.text.length).toBeGreaterThan(0);
+
+      await client.awaitPendingTraceBatches();
+
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootKey = telemetryChainRoot(runs);
+      const step0Key = llmStepKey(runs, 0);
+
+      expect(runs.edges).toEqual(expect.arrayContaining([[rootKey, step0Key]]));
+
+      expect(runs).toMatchObject({
+        data: {
+          [rootKey]: {
+            run_type: "chain",
+            inputs: {
+              messages: [{ role: "user", content: userMessage }],
+            },
+            outputs: {
+              content: expect.stringMatching(/blue/i),
+              finish_reason: "stop",
+            },
+          },
+          [step0Key]: {
+            run_type: "llm",
+            outputs: {
+              role: "assistant",
+              content: expect.stringMatching(/blue/i),
+              finish_reason: "stop",
+            },
           },
         },
-      },
-    });
+      });
 
-    const usageMetadata = runs.data[step0Key].extra?.metadata?.usage_metadata;
-    expect(usageMetadata?.input_tokens).toBeGreaterThan(0);
-    expect(usageMetadata?.output_tokens).toBeGreaterThan(0);
-  });
+      const usageMetadata = runs.data[step0Key].extra?.metadata?.usage_metadata;
+      expect(usageMetadata?.input_tokens).toBeGreaterThan(0);
+      expect(usageMetadata?.output_tokens).toBeGreaterThan(0);
+    },
+  );
 
-  test("telemetry generateObject", async () => {
+  test("telemetry generateObject", { timeout: 30_000 }, async () => {
     const callSpy = vi.fn(fetch);
     const client = new Client({
       autoBatchTracing: false,
@@ -403,9 +401,7 @@ describe("openai telemetry", () => {
     const rootKey = telemetryChainRoot(runs);
     const step0Key = llmStepKey(runs, 0);
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[rootKey, step0Key]]),
-    );
+    expect(runs.edges).toEqual(expect.arrayContaining([[rootKey, step0Key]]));
 
     expect(runs).toMatchObject({
       data: {
@@ -434,378 +430,395 @@ describe("openai telemetry", () => {
     });
   });
 
-  test("telemetry streamObject via streamText with output", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry streamObject via streamText with output",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const schema = z.object({ color: z.string() });
-    const userMessage = "What color is the sky? Respond with JSON only.";
+      const schema = z.object({ color: z.string() });
+      const userMessage = "What color is the sky? Respond with JSON only.";
 
-    const streamResult = ai.streamText({
-      model: openai("gpt-5-nano"),
-      messages: [{ role: "user", content: userMessage }],
-      output: ai.Output.object({ schema }),
-      telemetry: { integrations: [createLangSmithTelemetry({ client })] },
-    });
+      const streamResult = ai.streamText({
+        model: openai("gpt-5-nano"),
+        messages: [{ role: "user", content: userMessage }],
+        output: ai.Output.object({ schema }),
+        telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+      });
 
-    const chunks: unknown[] = [];
-    for await (const chunk of streamResult.partialOutputStream) {
-      chunks.push(chunk);
-    }
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(schema.parse(chunks.at(-1))).toBeDefined();
+      const chunks: unknown[] = [];
+      for await (const chunk of streamResult.partialOutputStream) {
+        chunks.push(chunk);
+      }
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(schema.parse(chunks.at(-1))).toBeDefined();
 
-    await client.awaitPendingTraceBatches();
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const rootKey = telemetryChainRoot(runs);
-    const step0Key = llmStepKey(runs, 0);
+      await client.awaitPendingTraceBatches();
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootKey = telemetryChainRoot(runs);
+      const step0Key = llmStepKey(runs, 0);
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[rootKey, step0Key]]),
-    );
+      expect(runs.edges).toEqual(expect.arrayContaining([[rootKey, step0Key]]));
 
-    expect(runs).toMatchObject({
-      data: {
-        [rootKey]: {
-          run_type: "chain",
-          inputs: {
-            messages: [{ role: "user", content: userMessage }],
+      expect(runs).toMatchObject({
+        data: {
+          [rootKey]: {
+            run_type: "chain",
+            inputs: {
+              messages: [{ role: "user", content: userMessage }],
+            },
+            outputs: {
+              content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+              finish_reason: "stop",
+            },
           },
-          outputs: {
-            content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-            finish_reason: "stop",
+          [step0Key]: {
+            run_type: "llm",
+            inputs: {
+              messages: [{ role: "user", content: userMessage }],
+            },
+            outputs: {
+              role: "assistant",
+              content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+              finish_reason: "stop",
+            },
           },
         },
-        [step0Key]: {
-          run_type: "llm",
-          inputs: {
-            messages: [{ role: "user", content: userMessage }],
-          },
-          outputs: {
-            role: "assistant",
-            content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-            finish_reason: "stop",
-          },
-        },
-      },
-    });
-  });
+      });
+    },
+  );
 
-  test("telemetry stream cancellation should finish spans cleanly", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry stream cancellation should finish spans cleanly",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const abortController = new AbortController();
-    const userMessage = "Tell me a long story about a cat.";
+      const abortController = new AbortController();
+      const userMessage = "Tell me a long story about a cat.";
 
-    const streamResult = ai.streamText({
-      model: openai("gpt-5-nano"),
-      messages: [{ role: "user", content: userMessage }],
-      telemetry: { integrations: [createLangSmithTelemetry({ client })] },
-      abortSignal: abortController.signal,
-    });
+      const streamResult = ai.streamText({
+        model: openai("gpt-5-nano"),
+        messages: [{ role: "user", content: userMessage }],
+        telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+        abortSignal: abortController.signal,
+      });
 
-    let abortedAfterDeltas = false;
-    let i = 0;
-    try {
-      for await (const chunk of streamResult.fullStream) {
-        if (chunk.type === "text-delta") {
-          if (i++ > 5) {
-            abortController.abort();
-            abortedAfterDeltas = true;
+      let abortedAfterDeltas = false;
+      let i = 0;
+      try {
+        for await (const chunk of streamResult.fullStream) {
+          if (chunk.type === "text-delta") {
+            if (i++ > 5) {
+              abortController.abort();
+              abortedAfterDeltas = true;
+            }
           }
         }
+      } catch {
+        // Abort may throw
       }
-    } catch {
-      // Abort may throw
-    }
 
-    await client.awaitPendingTraceBatches();
+      await client.awaitPendingTraceBatches();
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const rootKey = telemetryChainRoot(runs);
-    const step0Key = llmStepKey(runs, 0);
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootKey = telemetryChainRoot(runs);
+      const step0Key = llmStepKey(runs, 0);
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[rootKey, step0Key]]),
-    );
+      expect(runs.edges).toEqual(expect.arrayContaining([[rootKey, step0Key]]));
 
-    expect(runs).toMatchObject({
-      data: {
-        [rootKey]: {
-          run_type: "chain",
-          inputs: {
-            messages: [{ role: "user", content: userMessage }],
+      expect(runs).toMatchObject({
+        data: {
+          [rootKey]: {
+            run_type: "chain",
+            inputs: {
+              messages: [{ role: "user", content: userMessage }],
+            },
+          },
+          [step0Key]: {
+            run_type: "llm",
+            inputs: {
+              messages: [{ role: "user", content: userMessage }],
+            },
           },
         },
-        [step0Key]: {
-          run_type: "llm",
-          inputs: {
-            messages: [{ role: "user", content: userMessage }],
-          },
-        },
-      },
-    });
+      });
 
-    // Same as Anthropic: mid-stream abort leaves root/step open. If the request
-    // errors before any deltas (or the provider ends the run), spans may close.
-    if (abortedAfterDeltas) {
-      expect(runs.data[rootKey].end_time).toBeUndefined();
-      expect(runs.data[step0Key].end_time).toBeUndefined();
-    }
-  });
+      // Same as Anthropic: mid-stream abort leaves root/step open. If the request
+      // errors before any deltas (or the provider ends the run), spans may close.
+      if (abortedAfterDeltas) {
+        expect(runs.data[rootKey].end_time).toBeUndefined();
+        expect(runs.data[step0Key].end_time).toBeUndefined();
+      }
+    },
+  );
 
-  test("telemetry processInputs and processOutputs", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry processInputs and processOutputs",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const integration = createLangSmithTelemetry({
-      client,
-      processInputs: (inputs) => ({
-        ...inputs,
-        prompt: "REDACTED",
-        messages: (inputs.messages ?? []).map((m: any) => ({
-          ...m,
+      const integration = createLangSmithTelemetry({
+        client,
+        processInputs: (inputs) => ({
+          ...inputs,
+          prompt: "REDACTED",
+          messages: (inputs.messages ?? []).map((m: any) => ({
+            ...m,
+            content: "REDACTED",
+          })),
+        }),
+        processOutputs: (outputs) => ({
+          ...outputs,
           content: "REDACTED",
-        })),
-      }),
-      processOutputs: (outputs) => ({
-        ...outputs,
-        content: "REDACTED",
-      }),
-      processChildLLMRunInputs: (inputs) => ({
-        messages: (inputs.messages ?? []).map((m: any) => ({
-          ...m,
-          content: "REDACTED CHILD INPUTS",
-        })),
-      }),
-      processChildLLMRunOutputs: (outputs) => ({
-        ...outputs,
-        content: "REDACTED CHILD OUTPUTS",
-        role: "assistant",
-      }),
-    });
+        }),
+        processChildLLMRunInputs: (inputs) => ({
+          messages: (inputs.messages ?? []).map((m: any) => ({
+            ...m,
+            content: "REDACTED CHILD INPUTS",
+          })),
+        }),
+        processChildLLMRunOutputs: (outputs) => ({
+          ...outputs,
+          content: "REDACTED CHILD OUTPUTS",
+          role: "assistant",
+        }),
+      });
 
-    const model = openai("gpt-5-nano");
+      const model = openai("gpt-5-nano");
 
-    const result = await ai.generateText({
-      model,
-      prompt: "What is the capital of France? Answer: Paris.",
-      telemetry: { integrations: [integration] },
-    });
+      const result = await ai.generateText({
+        model,
+        prompt: "What is the capital of France? Answer: Paris.",
+        telemetry: { integrations: [integration] },
+      });
 
-    expect(result.text).not.toContain("REDACTED");
+      expect(result.text).not.toContain("REDACTED");
 
-    await client.awaitPendingTraceBatches();
+      await client.awaitPendingTraceBatches();
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const rootKey = telemetryChainRoot(runs);
-    const step0Key = llmStepKey(runs, 0);
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootKey = telemetryChainRoot(runs);
+      const step0Key = llmStepKey(runs, 0);
 
-    expect(runs.data[rootKey].inputs?.prompt).toBe("REDACTED");
-    expect(runs.data[rootKey].outputs?.content).toBe("REDACTED");
+      expect(runs.data[rootKey].inputs?.prompt).toBe("REDACTED");
+      expect(runs.data[rootKey].outputs?.content).toBe("REDACTED");
 
-    expect(runs.data[step0Key].inputs?.messages?.[0]?.content).toBe(
-      "REDACTED CHILD INPUTS",
-    );
-    expect(runs.data[step0Key].outputs?.content).toBe("REDACTED CHILD OUTPUTS");
-  });
+      expect(runs.data[step0Key].inputs?.messages?.[0]?.content).toBe(
+        "REDACTED CHILD INPUTS",
+      );
+      expect(runs.data[step0Key].outputs?.content).toBe(
+        "REDACTED CHILD OUTPUTS",
+      );
+    },
+  );
 
-  test("telemetry nested under traceable parent", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry nested under traceable parent",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const model = openai("gpt-5-nano");
-    const prompt = "What color is the sky? One word: blue.";
+      const model = openai("gpt-5-nano");
+      const prompt = "What color is the sky? One word: blue.";
 
-    const outerFn = traceable(
-      async () => {
-        const result = await ai.generateText({
-          model,
-          prompt,
-          telemetry: { integrations: [createLangSmithTelemetry({ client })] },
-        });
-        return result.text;
-      },
-      {
-        name: "outer-traceable",
-        client: client as any,
-      },
-    );
+      const outerFn = traceable(
+        async () => {
+          const result = await ai.generateText({
+            model,
+            prompt,
+            telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+          });
+          return result.text;
+        },
+        { name: "outer-traceable", client },
+      );
 
-    const text = await outerFn();
-    expect(text.length).toBeGreaterThan(0);
+      const text = await outerFn();
+      expect(text.length).toBeGreaterThan(0);
 
-    await client.awaitPendingTraceBatches();
+      await client.awaitPendingTraceBatches();
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
-    const outerKey = outerTraceableKey(runs);
-    const telemetryRoot = Object.values(runs.data).find(
-      (r) =>
-        r.run_type === "chain" &&
-        r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-    );
+      const outerKey = outerTraceableKey(runs);
+      const telemetryRoot = Object.values(runs.data).find(
+        (r) =>
+          r.run_type === "chain" &&
+          r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
+      );
 
-    expect(telemetryRoot).toBeDefined();
-    expect(telemetryRoot!.parent_run_id).toBe(runs.data[outerKey].id);
-    expect(telemetryRoot!.trace_id).toBe(runs.data[outerKey].trace_id);
+      expect(telemetryRoot).toBeDefined();
+      expect(telemetryRoot!.parent_run_id).toBe(runs.data[outerKey].id);
+      expect(telemetryRoot!.trace_id).toBe(runs.data[outerKey].trace_id);
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([[outerKey, telemetryChainRoot(runs)]]),
-    );
-  });
+      expect(runs.edges).toEqual(
+        expect.arrayContaining([[outerKey, telemetryChainRoot(runs)]]),
+      );
+    },
+  );
 
-  test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry tool with nested traceable (sub-agent pattern)",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const integration = createLangSmithTelemetry({
-      client,
-    });
-    // Manual lifecycle — use loose payloads (SDK events are wider than tests need).
-    const drive = integration as any;
+      const integration = createLangSmithTelemetry({
+        client,
+      });
+      // Manual lifecycle — use loose payloads (SDK events are wider than tests need).
+      const drive = integration as any;
 
-    const model = openai("gpt-5-nano");
+      const model = openai("gpt-5-nano");
 
-    const subAgent = traceable(
-      async (query: string) => {
-        return `Sub-agent result for: ${query}`;
-      },
-      {
-        name: "sub-agent",
-        run_type: "chain",
-        client: client as any,
-      },
-    );
-
-    drive.onStart?.({
-      model,
-      prompt: "Use the research tool",
-      tools: { research: {} },
-    });
-
-    drive.onStepStart?.({
-      stepNumber: 0,
-      messages: [{ role: "user", content: "Use the research tool" }],
-    });
-
-    drive.onToolExecutionStart?.({
-      callId: "call-1",
-      messages: [],
-      toolCall: {
-        type: "tool-call",
-        toolCallId: "tc-1",
-        toolName: "research",
-        input: { query: "AI trends" },
-      },
-      toolContext: undefined,
-    });
-
-    const toolResult = await integration.executeTool!({
-      callId: "call-1",
-      toolCallId: "tc-1",
-      execute: () => subAgent("AI trends"),
-    });
-
-    expect(toolResult).toBe("Sub-agent result for: AI trends");
-
-    await drive.onStepFinish?.({
-      stepNumber: 0,
-      text: "",
-      toolCalls: [
+      const subAgent = traceable(
+        async (query: string) => {
+          return `Sub-agent result for: ${query}`;
+        },
         {
+          name: "sub-agent",
+          run_type: "chain",
+          client: client as any,
+        },
+      );
+
+      drive.onStart?.({
+        model,
+        prompt: "Use the research tool",
+        tools: { research: {} },
+      });
+
+      drive.onStepStart?.({
+        stepNumber: 0,
+        messages: [{ role: "user", content: "Use the research tool" }],
+      });
+
+      drive.onToolExecutionStart?.({
+        callId: "call-1",
+        messages: [],
+        toolCall: {
+          type: "tool-call",
           toolCallId: "tc-1",
           toolName: "research",
-          args: { query: "AI trends" },
+          input: { query: "AI trends" },
         },
-      ],
-      usage: {
-        inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 5, text: 0, reasoning: 0 },
-        totalTokens: 15,
-      },
-      finishReason: "tool-calls",
-    });
+        toolContext: undefined,
+      });
 
-    drive.onStepStart?.({
-      stepNumber: 1,
-      messages: [{ role: "user", content: "Use the research tool" }],
-    });
+      const toolResult = await integration.executeTool!({
+        callId: "call-1",
+        toolCallId: "tc-1",
+        execute: () => subAgent("AI trends"),
+      });
 
-    await drive.onStepFinish?.({
-      stepNumber: 1,
-      text: "Based on the research, AI is trending.",
-      usage: {
-        inputTokens: { total: 20, noCache: 20, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 10, text: 10, reasoning: 0 },
-        totalTokens: 30,
-      },
-      finishReason: "stop",
-    });
+      expect(toolResult).toBe("Sub-agent result for: AI trends");
 
-    await drive.onEnd?.({
-      text: "Based on the research, AI is trending.",
-      usage: {
-        inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 15, text: 10, reasoning: 0 },
-        totalTokens: 45,
-      },
-      totalUsage: {
-        inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 15, text: 10, reasoning: 0 },
-        totalTokens: 45,
-      },
-      finishReason: "stop",
-      steps: [],
-    });
+      await drive.onStepFinish?.({
+        stepNumber: 0,
+        text: "",
+        toolCalls: [
+          {
+            toolCallId: "tc-1",
+            toolName: "research",
+            args: { query: "AI trends" },
+          },
+        ],
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 5, text: 0, reasoning: 0 },
+          totalTokens: 15,
+        },
+        finishReason: "tool-calls",
+      });
 
-    await client.awaitPendingTraceBatches();
+      drive.onStepStart?.({
+        stepNumber: 1,
+        messages: [{ role: "user", content: "Use the research tool" }],
+      });
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const rootKey = telemetryChainRoot(runs);
-    const step0Key = llmStepKey(runs, 0);
-    const step1Key = llmStepKey(runs, 1);
-    const researchToolKey = toolRunKey(runs, "research");
+      await drive.onStepFinish?.({
+        stepNumber: 1,
+        text: "Based on the research, AI is trending.",
+        usage: {
+          inputTokens: { total: 20, noCache: 20, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 10, text: 10, reasoning: 0 },
+          totalTokens: 30,
+        },
+        finishReason: "stop",
+      });
 
-    const subAgentRun = Object.values(runs.data).find(
-      (r) => r.name === "sub-agent",
-    );
-    expect(subAgentRun).toBeDefined();
+      await drive.onEnd?.({
+        text: "Based on the research, AI is trending.",
+        usage: {
+          inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 15, text: 10, reasoning: 0 },
+          totalTokens: 45,
+        },
+        totalUsage: {
+          inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 15, text: 10, reasoning: 0 },
+          totalTokens: 45,
+        },
+        finishReason: "stop",
+        steps: [],
+      });
 
-    expect(runs.edges).toEqual(
-      expect.arrayContaining([
-        [rootKey, step0Key],
-        [step0Key, researchToolKey],
-        [rootKey, step1Key],
-      ]),
-    );
+      await client.awaitPendingTraceBatches();
 
-    expect(subAgentRun!.parent_run_id).toBe(runs.data[researchToolKey].id);
-    expect(runs.data[researchToolKey].trace_id).toBe(runs.data[rootKey].trace_id);
-    expect(subAgentRun!.trace_id).toBe(runs.data[rootKey].trace_id);
+      const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootKey = telemetryChainRoot(runs);
+      const step0Key = llmStepKey(runs, 0);
+      const step1Key = llmStepKey(runs, 1);
+      const researchToolKey = toolRunKey(runs, "research");
 
-    expect(String(runs.data[rootKey].outputs?.content)).toMatch(
-      /trending|research/i,
-    );
-  });
+      const subAgentRun = Object.values(runs.data).find(
+        (r) => r.name === "sub-agent",
+      );
+      expect(subAgentRun).toBeDefined();
 
-  test("telemetry error handling", async () => {
+      expect(runs.edges).toEqual(
+        expect.arrayContaining([
+          [rootKey, step0Key],
+          [step0Key, researchToolKey],
+          [rootKey, step1Key],
+        ]),
+      );
+
+      expect(subAgentRun!.parent_run_id).toBe(runs.data[researchToolKey].id);
+      expect(runs.data[researchToolKey].trace_id).toBe(
+        runs.data[rootKey].trace_id,
+      );
+      expect(subAgentRun!.trace_id).toBe(runs.data[rootKey].trace_id);
+
+      expect(String(runs.data[rootKey].outputs?.content)).toMatch(
+        /trending|research/i,
+      );
+    },
+  );
+
+  test("telemetry error handling", { timeout: 30_000 }, async () => {
     const callSpy = vi.fn(fetch);
     const client = new Client({
       autoBatchTracing: false,
@@ -835,80 +848,86 @@ describe("openai telemetry", () => {
     const errorRuns = Object.values(runs.data).filter((r) => r.error);
 
     expect(errorRuns.length).toBe(2);
-    expect(String(errorRuns[0].error)).toContain(
-      "TOTALLY EXPECTED MOCK ERROR",
-    );
-    expect(String(errorRuns[1].error)).toContain(
-      "TOTALLY EXPECTED MOCK ERROR",
-    );
+    expect(String(errorRuns[0].error)).toContain("TOTALLY EXPECTED MOCK ERROR");
+    expect(String(errorRuns[1].error)).toContain("TOTALLY EXPECTED MOCK ERROR");
   });
 
-  test("telemetry reuse across sequential generateText calls", async () => {
-    const callSpy = vi.fn(fetch);
-    const client = new Client({
-      autoBatchTracing: false,
-      fetchImplementation: callSpy,
-    });
+  test(
+    "telemetry reuse across sequential generateText calls",
+    { timeout: 30_000 },
+    async () => {
+      const callSpy = vi.fn(fetch);
+      const client = new Client({
+        autoBatchTracing: false,
+        fetchImplementation: callSpy,
+      });
 
-    const integration = createLangSmithTelemetry({ client });
+      const integration = createLangSmithTelemetry({ client });
 
-    const model = openai("gpt-5-nano");
+      const model = openai("gpt-5-nano");
 
-    const result1 = await ai.generateText({
-      model,
-      prompt: "What color is the sky? One word: blue.",
-      telemetry: { integrations: [integration] },
-    });
+      const result1 = await ai.generateText({
+        model,
+        prompt: "What color is the sky? One word: blue.",
+        telemetry: { integrations: [integration] },
+      });
 
-    expect(result1.text.length).toBeGreaterThan(0);
+      expect(result1.text.length).toBeGreaterThan(0);
 
-    await client.awaitPendingTraceBatches();
+      await client.awaitPendingTraceBatches();
 
-    const firstRuns = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const firstRoot = Object.values(firstRuns.data).find(
-      (r) =>
-        r.run_type === "chain" &&
-        r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-    );
-    expect(firstRoot).toBeDefined();
+      const firstRuns = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        client,
+      );
+      const firstRoot = Object.values(firstRuns.data).find(
+        (r) =>
+          r.run_type === "chain" &&
+          r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
+      );
+      expect(firstRoot).toBeDefined();
 
-    const firstPosts = callSpy.mock.calls.filter(
-      (call) => (call[1] as { method?: string })?.method === "POST",
-    );
-    expect(firstPosts.length).toBe(2);
+      const firstPosts = callSpy.mock.calls.filter(
+        (call) => (call[1] as { method?: string })?.method === "POST",
+      );
+      expect(firstPosts.length).toBe(2);
 
-    callSpy.mockClear();
+      callSpy.mockClear();
 
-    const result2 = await ai.generateText({
-      model,
-      prompt: "What color is grass? One word: green.",
-      telemetry: { integrations: [integration] },
-    });
+      const result2 = await ai.generateText({
+        model,
+        prompt: "What color is grass? One word: green.",
+        telemetry: { integrations: [integration] },
+      });
 
-    expect(result2.text.length).toBeGreaterThan(0);
+      expect(result2.text.length).toBeGreaterThan(0);
 
-    await client.awaitPendingTraceBatches();
+      await client.awaitPendingTraceBatches();
 
-    const secondRuns = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const secondRoot = Object.values(secondRuns.data).find(
-      (r) =>
-        r.run_type === "chain" &&
-        r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-    );
-    expect(secondRoot).toBeDefined();
+      const secondRuns = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        client,
+      );
+      const secondRoot = Object.values(secondRuns.data).find(
+        (r) =>
+          r.run_type === "chain" &&
+          r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
+      );
+      expect(secondRoot).toBeDefined();
 
-    expect(secondRoot!.id).not.toBe(firstRoot!.id);
-    expect(secondRoot!.trace_id).not.toBe(firstRoot!.trace_id);
+      expect(secondRoot!.id).not.toBe(firstRoot!.id);
+      expect(secondRoot!.trace_id).not.toBe(firstRoot!.trace_id);
 
-    expect(secondRoot!.inputs?.prompt).toBe(
-      "What color is grass? One word: green.",
-    );
+      expect(secondRoot!.inputs?.prompt).toBe(
+        "What color is grass? One word: green.",
+      );
 
-    expect(String(secondRoot!.outputs?.content)).toMatch(/green/i);
+      expect(String(secondRoot!.outputs?.content)).toMatch(/green/i);
 
-    const secondPosts = callSpy.mock.calls.filter(
-      (call) => (call[1] as { method?: string })?.method === "POST",
-    );
-    expect(secondPosts.length).toBe(2);
-  });
+      const secondPosts = callSpy.mock.calls.filter(
+        (call) => (call[1] as { method?: string })?.method === "POST",
+      );
+      expect(secondPosts.length).toBe(2);
+    },
+  );
 });
