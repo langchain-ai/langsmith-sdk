@@ -94,7 +94,9 @@ test("telemetry generateText", async () => {
       "listOrders:2": {
         run_type: "tool",
         inputs: { userId: "123" },
-        outputs: {},
+        outputs: {
+          output: expect.stringMatching(/User 123 has the following orders/),
+        },
       },
       "step 1:3": {
         run_type: "llm",
@@ -212,7 +214,9 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
       "listOrders:2": {
         run_type: "tool",
         inputs: { userId: "123" },
-        outputs: {},
+        outputs: {
+          output: expect.stringMatching(/User 123 has the following orders/),
+        },
       },
       "step 1:3": {
         run_type: "llm",

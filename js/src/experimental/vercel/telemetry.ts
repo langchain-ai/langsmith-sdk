@@ -1,11 +1,11 @@
 import type { Telemetry } from "ai";
 import { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
-import { traceable } from "../../traceable.js";
 import { isTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./middleware.js";
 import type { KVMap } from "../../schemas.js";
+import { isRecord } from "../../utils/types.js";
 
 /**
  * Configuration options for creating a LangSmith telemetry integration
@@ -141,7 +141,8 @@ function _formatStepOutput(
  *
  * The integration object is **reusable** — create it once and pass it to
  * multiple `generateText`/`streamText` calls. Each call gets its own
- * isolated trace state.
+ * isolated trace state. State is keyed by the AI SDK `callId`, so nested
+ * `generateText` / `streamText` calls can safely share one integration instance.
  *
  * ```ts
  * import { generateText } from "ai";
@@ -163,9 +164,10 @@ function _formatStepOutput(
  * });
  * ```
  *
- * The `executeToolCall` hook ensures that any `generateText`/`streamText`
- * calls made inside a tool's `execute` function are properly nested as
- * children of the tool span, enabling full sub-agent tracing.
+ * Tool spans are created in `onToolExecutionStart`, execution runs under
+ * `withRunTree` via `executeTool` for nesting, and `onToolExecutionEnd`
+ * records outputs or errors (including tool results not visible to `executeTool`
+ * alone).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createLangSmithTelemetry(
@@ -192,25 +194,46 @@ export function createLangSmithTelemetry(
   interface InvocationState {
     rootRunTree: RunTree;
     stepRunTrees: Map<number, RunTree>;
-    toolCallMetadata: Map<string, { toolName: string; args: unknown }>;
+    toolRunTrees: Map<string, RunTree>;
   }
 
-  // Active invocations keyed by rootRunTree.id.
-  // For sequential reuse, there is at most one entry at a time.
-  // For concurrent reuse (parallel generateText calls sharing one integration),
-  // each gets its own entry.
-  const invocations = new Map<string, InvocationState>();
+  function getOpenStepOrRoot(state: InvocationState): RunTree {
+    let openStep: RunTree | undefined;
+    state.stepRunTrees.forEach((stepRt) => {
+      if (stepRt.end_time == null) {
+        openStep = stepRt;
+      }
+    });
+    return openStep ?? state.rootRunTree;
+  }
 
-  // Points to the most recently started invocation. Used by hooks that
-  // the AI SDK calls without an invocation identifier so we can route
-  // them to the correct state. For sequential usage this is always correct.
-  // For concurrent usage this is a best-effort heuristic — callers doing
-  // truly concurrent generateText through a single integration should create
-  // separate instances.
-  let activeInvocationId: string | undefined;
+  async function finalizeOpenToolRuns(
+    state: InvocationState,
+    opts?: { note?: string; error?: string },
+  ) {
+    const entries = Array.from(state.toolRunTrees.entries());
+    for (let i = 0; i < entries.length; i++) {
+      const [, toolRt] = entries[i];
+      if (toolRt.end_time == null) {
+        if (opts?.error != null) {
+          await toolRt.end(undefined, opts.error);
+        } else {
+          await toolRt.end(
+            opts?.note != null ? { note: opts.note } : undefined,
+          );
+        }
+        await toolRt.patchRun({ excludeInputs: true });
+      }
+    }
+    state.toolRunTrees.clear();
+  }
 
-  const onStart: Telemetry["onStart"] = (event) => {
+  /** Per-generation state keyed by AI SDK `callId` (stable across nested calls). */
+  const invocationsByCallId = new Map<string, InvocationState>();
+
+  const onStart: Telemetry["onStart"] = async (event) => {
     if (!isTracingEnabled()) return;
+    if (!("callId" in event) || typeof event.callId !== "string") return;
 
     // If called within an existing traceable context, nest under it
     const parentRunTree = getCurrentRunTree(true);
@@ -269,21 +292,16 @@ export function createLangSmithTelemetry(
     } else {
       rootRunTree = new RunTree(runTreeConfig);
     }
-    void rootRunTree.postRun();
-
-    const invocationId = rootRunTree.id;
-    invocations.set(invocationId, {
+    await rootRunTree.postRun();
+    invocationsByCallId.set(event.callId, {
       rootRunTree,
       stepRunTrees: new Map(),
-      toolCallMetadata: new Map(),
+      toolRunTrees: new Map(),
     });
-    activeInvocationId = invocationId;
   };
 
-  const onStepStart: Telemetry["onStepStart"] = (event) => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+  const onStepStart: Telemetry["onStepStart"] = async (event) => {
+    const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
     const stepNumber: number = event.stepNumber ?? 0;
@@ -317,20 +335,62 @@ export function createLangSmithTelemetry(
     });
 
     state.stepRunTrees.set(stepNumber, stepRunTree);
-    void stepRunTree.postRun();
+    await stepRunTree.postRun();
   };
 
-  const onToolExecutionStart: Telemetry["onToolExecutionStart"] = (event) => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+  const onToolExecutionStart: Telemetry["onToolExecutionStart"] = async (
+    event,
+  ) => {
+    const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
-    // Stash metadata so executeToolCall can use it for the traceable wrapper
-    state.toolCallMetadata.set(event.toolCall.toolCallId, {
-      toolName: event.toolCall.toolName,
-      args: event.toolCall.input,
+    const parentRunTree = getOpenStepOrRoot(state);
+
+    const inputs = isRecord(event.toolCall.input)
+      ? { ...event.toolCall.input }
+      : typeof event.toolCall.input !== "undefined"
+        ? { input: event.toolCall.input }
+        : {};
+
+    const toolRunTree = parentRunTree.createChild({
+      name: event.toolCall.toolName,
+      run_type: "tool",
+      inputs,
+      extra: {
+        metadata: {
+          tool_call_id: event.toolCall.toolCallId,
+          ai_sdk_call_id: event.callId,
+        },
+      },
     });
+    await toolRunTree.postRun();
+    state.toolRunTrees.set(event.toolCall.toolCallId, toolRunTree);
+  };
+
+  const onToolExecutionEnd: Telemetry["onToolExecutionEnd"] = async (event) => {
+    const state = invocationsByCallId.get(event.callId);
+    if (!state) return;
+
+    const toolRunTree = state.toolRunTrees.get(event.toolCall.toolCallId);
+    if (!toolRunTree) return;
+    state.toolRunTrees.delete(event.toolCall.toolCallId);
+
+    let outputs: KVMap | undefined;
+    let error: string | undefined;
+
+    if (event.toolOutput.type === "tool-result") {
+      outputs = { output: event.toolOutput.output };
+    } else if (event.toolOutput.type === "tool-error") {
+      const err = event.toolOutput.error;
+      error = err instanceof Error ? err.message : String(err);
+    }
+
+    await toolRunTree.end(
+      outputs,
+      error,
+      Math.floor(toolRunTree.start_time + event.toolExecutionMs),
+    );
+    await toolRunTree.patchRun({ excludeInputs: true });
   };
 
   const onChunk: Telemetry["onChunk"] = (_event) => {
@@ -341,9 +401,7 @@ export function createLangSmithTelemetry(
   };
 
   const onStepFinish: Telemetry["onStepFinish"] = async (event) => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+    const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
     const stepNumber: number = event.stepNumber ?? 0;
@@ -373,12 +431,12 @@ export function createLangSmithTelemetry(
   };
 
   const onEnd: Telemetry["onEnd"] = async (event) => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+    if (!("callId" in event) || typeof event.callId !== "string") return;
+    const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
     const { rootRunTree } = state;
+    await finalizeOpenToolRuns(state, { note: "closed on finish" });
 
     // Ensure any remaining step runs are closed
     const remainingSteps = Array.from(state.stepRunTrees.entries());
@@ -461,38 +519,46 @@ export function createLangSmithTelemetry(
     await rootRunTree.end(outputs);
     await rootRunTree.patchRun({ excludeInputs: true });
 
-    // Clean up this invocation's state
-    invocations.delete(activeInvocationId!);
-    activeInvocationId = undefined;
+    invocationsByCallId.delete(event.callId);
   };
 
-  const onError: Telemetry["onError"] = async (error) => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+  const onError: Telemetry["onError"] = async (payload) => {
+    const callId =
+      typeof payload === "object" &&
+      payload !== null &&
+      "callId" in payload &&
+      typeof (payload as { callId: unknown }).callId === "string"
+        ? (payload as { callId: string }).callId
+        : undefined;
+    const error =
+      typeof payload === "object" && payload !== null && "error" in payload
+        ? (payload as { error: unknown }).error
+        : payload;
+
+    if (callId === undefined) return;
+    const state = invocationsByCallId.get(callId);
     if (!state) return;
 
     const { rootRunTree } = state;
+
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    await finalizeOpenToolRuns(state, { error: errorMsg });
 
     // Close any open step runs with error
     const errorSteps = Array.from(state.stepRunTrees.entries());
     for (let i = 0; i < errorSteps.length; i++) {
       const [stepNumber, stepRt] = errorSteps[i];
       if (stepRt.end_time == null) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
         await stepRt.end(undefined, errorMsg);
         await stepRt.patchRun({ excludeInputs: true });
       }
       state.stepRunTrees.delete(stepNumber);
     }
 
-    const errorMsg = error instanceof Error ? error.message : String(error);
     await rootRunTree.end(undefined, errorMsg);
     await rootRunTree.patchRun({ excludeInputs: true });
 
-    // Clean up this invocation's state
-    invocations.delete(activeInvocationId!);
-    activeInvocationId = undefined;
+    invocationsByCallId.delete(callId);
   };
 
   const executeTool: Telemetry["executeTool"] = async <T>(params: {
@@ -500,58 +566,21 @@ export function createLangSmithTelemetry(
     toolCallId: string;
     execute: () => PromiseLike<T>;
   }): Promise<T> => {
-    const state = activeInvocationId
-      ? invocations.get(activeInvocationId)
-      : undefined;
+    const state = invocationsByCallId.get(params.callId);
 
-    const metadata = state?.toolCallMetadata.get(params.toolCallId);
-    state?.toolCallMetadata.delete(params.toolCallId);
-
-    const toolName = metadata?.toolName ?? "tool";
-    const toolArgs = metadata?.args;
-
-    // Find the active step to use as the parent context.
-    // withRunTree sets the ALS context so traceable creates
-    // the tool span as a child of that step.
-    let activeStep: RunTree | undefined;
-    state?.stepRunTrees.forEach((stepRt) => {
-      if (stepRt.end_time == null) {
-        activeStep = stepRt;
-      }
-    });
-    const parentRunTree = activeStep ?? state?.rootRunTree;
-
-    // Wrap the tool execute with traceable so:
-    // 1. A "tool" run is created in LangSmith
-    // 2. The ALS context is set to the tool run, so any nested
-    //    generateText/streamText calls become children of the tool
-    const traceableExecute = traceable(
-      async (_args: unknown) => {
-        return params.execute();
-      },
-      {
-        name: toolName,
-        run_type: "tool",
-        metadata: {
-          tool_call_id: params.toolCallId,
-        },
-      },
-    );
-
-    if (parentRunTree) {
-      return withRunTree(parentRunTree, () =>
-        traceableExecute(toolArgs),
-      ) as Promise<T>;
+    const toolRunTree = state?.toolRunTrees.get(params.toolCallId);
+    if (toolRunTree != null) {
+      return withRunTree(toolRunTree, () => params.execute()) as Promise<T>;
     }
 
-    // Fallback: no parent context, still trace the tool
-    return traceableExecute(toolArgs) as Promise<T>;
+    return params.execute() as Promise<T>;
   };
 
   return {
     onStart,
     onStepStart,
     onToolExecutionStart,
+    onToolExecutionEnd,
     onChunk,
     onStepFinish,
     onEnd,
