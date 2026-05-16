@@ -61,6 +61,37 @@ export function buildAuthHeaders(
   return {};
 }
 
+/**
+ * Build the initial WebSocket execute message.
+ *
+ * @internal
+ */
+export function buildExecutePayload(
+  command: string,
+  options: Required<
+    Pick<
+      WsRunOptions,
+      "timeout" | "shell" | "idleTimeout" | "killOnDisconnect" | "ttlSeconds"
+    >
+  > &
+    Pick<WsRunOptions, "env" | "cwd" | "commandId" | "pty">,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    type: "execute",
+    command,
+    timeout_seconds: options.timeout,
+    shell: options.shell,
+    idle_timeout_seconds: options.idleTimeout,
+    kill_on_disconnect: options.killOnDisconnect,
+    ttl_seconds: options.ttlSeconds,
+  };
+  if (options.env) payload.env = options.env;
+  if (options.cwd) payload.cwd = options.cwd;
+  if (options.commandId) payload.command_id = options.commandId;
+  if (options.pty) payload.pty = true;
+  return payload;
+}
+
 // =============================================================================
 // Stream Control
 // =============================================================================
@@ -243,7 +274,10 @@ async function* readWsMessages(
     while (true) {
       // Drain buffered messages first
       while (messageQueue.length > 0) {
-        yield messageQueue.shift()!;
+        const nextMessage = messageQueue.shift();
+        if (nextMessage !== undefined) {
+          yield nextMessage;
+        }
       }
 
       // If done and queue is empty, we're finished
@@ -316,19 +350,17 @@ export async function runWsStream(
       control._bind(ws);
 
       // Send execute request
-      const payload: Record<string, unknown> = {
-        type: "execute",
-        command,
-        timeout_seconds: timeout,
+      const payload = buildExecutePayload(command, {
+        timeout,
         shell,
-        idle_timeout_seconds: idleTimeout,
-        kill_on_disconnect: killOnDisconnect,
-        ttl_seconds: ttlSeconds,
-      };
-      if (env) payload.env = env;
-      if (cwd) payload.cwd = cwd;
-      if (commandId) payload.command_id = commandId;
-      if (pty) payload.pty = true;
+        idleTimeout,
+        killOnDisconnect,
+        ttlSeconds,
+        env,
+        cwd,
+        commandId,
+        pty,
+      });
 
       ws.send(JSON.stringify(payload));
 

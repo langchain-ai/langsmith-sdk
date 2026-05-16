@@ -21,6 +21,7 @@ from langsmith.sandbox._models import (
 )
 from langsmith.sandbox._ws_execute import (
     _build_auth_headers,
+    _build_execute_payload,
     _build_ws_url,
     _raise_from_error_msg,
     _WSStreamControl,
@@ -87,6 +88,33 @@ class TestBuildAuthHeaders:
             "X-Api-Key": "override-key",
             "X-Test-Header": "ws-value",
         }
+
+
+class TestBuildExecutePayload:
+    def test_includes_env_when_provided(self):
+        payload = _build_execute_payload(
+            "echo hello",
+            timeout=60,
+            shell="/bin/bash",
+            idle_timeout=300,
+            kill_on_disconnect=False,
+            ttl_seconds=600,
+            env={"LANGSMITH_SANDBOX_ID": "sandbox-123"},
+        )
+
+        assert payload["env"] == {"LANGSMITH_SANDBOX_ID": "sandbox-123"}
+
+    def test_omits_env_when_missing(self):
+        payload = _build_execute_payload(
+            "echo hello",
+            timeout=60,
+            shell="/bin/bash",
+            idle_timeout=300,
+            kill_on_disconnect=False,
+            ttl_seconds=600,
+        )
+
+        assert "env" not in payload
 
 
 # =============================================================================
@@ -567,6 +595,7 @@ class TestSandboxRunWs:
         client._api_key = "test-key"
         return Sandbox.from_dict(
             data={
+                "id": "sandbox-123",
                 "name": "test-sb",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
@@ -667,7 +696,7 @@ class TestSandboxRunWs:
             "test-key",
             "echo hello",
             timeout=60,
-            env=None,
+            env={"LANGSMITH_SANDBOX_ID": "sandbox-123"},
             cwd=None,
             shell="/bin/bash",
             headers={"X-Test-Header": "sandbox-ws"},

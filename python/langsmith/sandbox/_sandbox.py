@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import contextlib
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
 import httpx
 
+from langsmith import run_helpers as rh
+from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
+_SANDBOX_ID_ENV_VAR = "LANGSMITH_SANDBOX_ID"
 
 
 @dataclass
@@ -168,6 +172,82 @@ class Sandbox:
             )
         return self.dataplane_url
 
+    def _execution_env(self, env: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+        """Return command env with LangSmith sandbox metadata injected."""
+        if not self.id:
+            return env
+        return {**(env or {}), _SANDBOX_ID_ENV_VAR: self.id}
+
+    def _trace_metadata(self) -> dict[str, str]:
+        """Return metadata attached to sandbox execution traces."""
+        metadata = {"sandbox_name": self.name}
+        if self.id:
+            metadata["sandbox_id"] = self.id
+        return metadata
+
+    def _trace_inputs(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        env: Optional[dict[str, str]],
+        cwd: Optional[str],
+        shell: str,
+        on_stdout: Optional[Callable[[str], Any]],
+        on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int,
+        kill_on_disconnect: bool,
+        ttl_seconds: int,
+        pty: bool,
+        wait: bool,
+    ) -> dict[str, Any]:
+        """Return sanitized inputs for a sandbox execution trace."""
+        inputs: dict[str, Any] = {
+            "command": command,
+            "timeout": timeout,
+            "shell": shell,
+            "env_keys": sorted(env.keys()) if env else [],
+            "has_stdout_callback": on_stdout is not None,
+            "has_stderr_callback": on_stderr is not None,
+            "idle_timeout": idle_timeout,
+            "kill_on_disconnect": kill_on_disconnect,
+            "ttl_seconds": ttl_seconds,
+            "pty": pty,
+            "wait": wait,
+        }
+        if cwd is not None:
+            inputs["cwd"] = cwd
+        return inputs
+
+    def _trace_outputs(
+        self, result: Union[ExecutionResult, CommandHandle]
+    ) -> dict[str, Any]:
+        """Return outputs for a sandbox execution trace."""
+        if isinstance(result, CommandHandle):
+            return {"command_id": result.command_id, "pid": result.pid}
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+        }
+
+    @contextlib.contextmanager
+    def _sandbox_trace_context(self, metadata: dict[str, str]) -> Iterator[None]:
+        """Inject sandbox metadata into the active tracing context."""
+        current_context = rh.get_tracing_context()
+        merged_metadata = {**(current_context.get("metadata") or {}), **metadata}
+        with rh.tracing_context(
+            project_name=current_context.get("project_name"),
+            tags=current_context.get("tags"),
+            metadata=merged_metadata,
+            parent=current_context.get("parent"),
+            enabled=current_context.get("enabled"),
+            client=current_context.get("client"),
+            replicas=current_context.get("replicas"),
+            distributed_parent_id=current_context.get("distributed_parent_id"),
+        ):
+            yield
+
     @overload
     def run(
         self,
@@ -270,6 +350,80 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        if not ls_utils.tracing_is_enabled():
+            return self._run_untraced(
+                command,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+                shell=shell,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
+                pty=pty,
+                headers=headers,
+                wait=wait,
+            )
+
+        trace_metadata = self._trace_metadata()
+        with self._sandbox_trace_context(trace_metadata):
+            with rh.trace(
+                "Sandbox.run",
+                run_type="tool",
+                inputs=self._trace_inputs(
+                    command,
+                    timeout=timeout,
+                    env=env,
+                    cwd=cwd,
+                    shell=shell,
+                    on_stdout=on_stdout,
+                    on_stderr=on_stderr,
+                    idle_timeout=idle_timeout,
+                    kill_on_disconnect=kill_on_disconnect,
+                    ttl_seconds=ttl_seconds,
+                    pty=pty,
+                    wait=wait,
+                ),
+                metadata=trace_metadata,
+            ) as run_tree:
+                result = self._run_untraced(
+                    command,
+                    timeout=timeout,
+                    env=env,
+                    cwd=cwd,
+                    shell=shell,
+                    on_stdout=on_stdout,
+                    on_stderr=on_stderr,
+                    idle_timeout=idle_timeout,
+                    kill_on_disconnect=kill_on_disconnect,
+                    ttl_seconds=ttl_seconds,
+                    pty=pty,
+                    headers=headers,
+                    wait=wait,
+                )
+                run_tree.end(outputs=self._trace_outputs(result))
+                return result
+
+    def _run_untraced(
+        self,
+        command: str,
+        *,
+        timeout: int,
+        env: Optional[dict[str, str]],
+        cwd: Optional[str],
+        shell: str,
+        on_stdout: Optional[Callable[[str], Any]],
+        on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int,
+        kill_on_disconnect: bool,
+        ttl_seconds: int,
+        pty: bool,
+        headers: RequestHeaders,
+        wait: bool,
+    ) -> Union[ExecutionResult, CommandHandle]:
+        """Execute a command without creating a LangSmith trace."""
         if not wait and (on_stdout or on_stderr):
             raise ValueError(
                 "Cannot combine wait=False with on_stdout/on_stderr callbacks. "
@@ -351,7 +505,7 @@ class Sandbox:
 
         ws_kwargs: dict[str, Any] = {
             "timeout": timeout,
-            "env": env,
+            "env": self._execution_env(env),
             "cwd": cwd,
             "shell": shell,
             "on_stdout": on_stdout,
@@ -396,8 +550,9 @@ class Sandbox:
             "timeout": timeout,
             "shell": shell,
         }
-        if env is not None:
-            payload["env"] = env
+        execution_env = self._execution_env(env)
+        if execution_env is not None:
+            payload["env"] = execution_env
         if cwd is not None:
             payload["cwd"] = cwd
 

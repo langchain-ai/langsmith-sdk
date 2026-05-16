@@ -5,8 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_httpx import HTTPXMock
 
+from langsmith import Client
+from langsmith.run_helpers import get_tracing_context, tracing_context
 from langsmith.sandbox import (
     DataplaneNotConfiguredError,
+    ExecutionResult,
     ResourceNotFoundError,
     SandboxClient,
     SandboxConnectionError,
@@ -14,6 +17,26 @@ from langsmith.sandbox import (
     ServiceURL,
 )
 from langsmith.sandbox._sandbox import Sandbox
+from tests.unit_tests.conftest import parse_request_data
+
+
+def _get_trace_client() -> Client:
+    """Create a LangSmith client with mocked transport for tracing assertions."""
+    return Client(session=MagicMock(), api_key="test", auto_batch_tracing=False)
+
+
+def _trace_payloads(trace_client: Client) -> list[dict]:
+    """Return parsed LangSmith trace request payloads from a mocked client."""
+    payloads = []
+    for call in trace_client.session.request.mock_calls:  # type: ignore[union-attr]
+        if not call.args or call.args[0] not in {"POST", "PATCH"}:
+            continue
+        data = parse_request_data(call.kwargs["data"])
+        for key in ("post", "patch"):
+            payloads.extend(data.get(key) or [])
+        if data.get("name"):
+            payloads.append(data)
+    return payloads
 
 
 @pytest.fixture
@@ -299,6 +322,99 @@ class TestSandboxRun:
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
         assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
+
+    def test_run_injects_langsmith_sandbox_id_env(self, client, httpx_mock: HTTPXMock):
+        """Test that command env includes the LangSmith sandbox ID."""
+        import json
+
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo hello")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["env"]["LANGSMITH_SANDBOX_ID"] == "sandbox-123"
+
+    def test_run_preserves_env_when_injecting_sandbox_id(
+        self, client, httpx_mock: HTTPXMock
+    ):
+        """Test that sandbox ID env injection preserves user env vars."""
+        import json
+
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo hello", env={"MY_VAR": "hello"})
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["env"] == {
+            "MY_VAR": "hello",
+            "LANGSMITH_SANDBOX_ID": "sandbox-123",
+        }
+
+    def test_run_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
+        """Test that run() creates a trace with sandbox metadata in context."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        observed = {}
+
+        def fake_run_untraced(*args, **kwargs):
+            observed["metadata"] = dict(get_tracing_context()["metadata"])
+            return ExecutionResult(stdout="hello\n", stderr="", exit_code=0)
+
+        monkeypatch.setattr(sandbox, "_run_untraced", fake_run_untraced)
+
+        with tracing_context(
+            enabled=True,
+            client=trace_client,
+            metadata={"sandbox_id": "outer", "sandbox_name": "outer"},
+        ):
+            result = sandbox.run("echo $SECRET", env={"SECRET": "redacted"}, cwd="/tmp")
+
+        assert result.stdout == "hello\n"
+        assert observed["metadata"]["sandbox_id"] == "sandbox-123"
+        payloads = _trace_payloads(trace_client)
+        run_payload = next(p for p in payloads if p.get("name") == "Sandbox.run")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"]["env_keys"] == ["SECRET"]
+        assert run_payload["inputs"]["cwd"] == "/tmp"
+        assert "redacted" not in str(run_payload["inputs"])
 
     def test_run_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a command with per-request headers."""

@@ -4,9 +4,11 @@ import { inspect } from "node:util";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
+import { traceable } from "../traceable.js";
 import {
   buildWsUrl,
   buildAuthHeaders,
+  buildExecutePayload,
   WSStreamControl,
   raiseForWsError,
 } from "../sandbox/ws_execute.js";
@@ -25,6 +27,8 @@ import {
 } from "../sandbox/errors.js";
 import type { WsMessage, OutputChunk } from "../sandbox/types.js";
 import { validateTtl } from "../sandbox/helpers.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
+import { mockClient as createTraceClient } from "./utils/mock_client.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
@@ -162,6 +166,12 @@ describe("Sandbox", () => {
       expect(result.stderr).toBe("");
       expect(result.exit_code).toBe(0);
       expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(options.body as string);
+      expect(body.env).toEqual({
+        LANGSMITH_SANDBOX_ID: "sandbox-123",
+      });
     });
 
     it("should pass environment variables and cwd to command", async () => {
@@ -193,8 +203,73 @@ describe("Sandbox", () => {
 
       const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(options.body as string);
-      expect(body.env).toEqual({ MY_VAR: "test-value" });
+      expect(body.env).toEqual({
+        MY_VAR: "test-value",
+        LANGSMITH_SANDBOX_ID: "sandbox-123",
+      });
       expect(body.cwd).toBe("/tmp");
+    });
+
+    it("should trace run with sandbox metadata", async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: async () => ({
+          stdout: "Hello, World!\n",
+          stderr: "",
+          exit_code: 0,
+        }),
+      });
+      const mockClient = createMockClient({ _fetch: mockFetch });
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        mockClient,
+        false,
+      );
+      const { client: traceClient, callSpy } = createTraceClient();
+      const agent = traceable(
+        async () =>
+          sandbox.run("echo $SECRET", {
+            env: { SECRET: "redacted" },
+            cwd: "/tmp",
+          }),
+        {
+          name: "agent",
+          client: traceClient,
+          tracingEnabled: true,
+          metadata: { sandbox_id: "outer", sandbox_name: "outer" },
+        },
+      );
+
+      await agent();
+
+      const tree = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        traceClient,
+      );
+      const sandboxRun = Object.values(tree.data).find(
+        (run) => run.name === "Sandbox.run",
+      );
+      expect(sandboxRun).toBeDefined();
+      expect(sandboxRun?.run_type).toBe("tool");
+      expect(sandboxRun?.extra?.metadata).toMatchObject({
+        sandbox_id: "sandbox-123",
+        sandbox_name: "test-sandbox",
+      });
+      expect(sandboxRun?.inputs).toMatchObject({
+        command: "echo $SECRET",
+        env_keys: ["SECRET"],
+        cwd: "/tmp",
+      });
+      expect(JSON.stringify(sandboxRun?.inputs)).not.toContain("redacted");
+      expect(sandboxRun?.outputs).toMatchObject({
+        stdout: "Hello, World!\n",
+        stderr: "",
+        exit_code: 0,
+      });
     });
   });
 
@@ -830,6 +905,37 @@ describe("buildAuthHeaders", () => {
 
   it("should return empty headers when no key", () => {
     expect(buildAuthHeaders(undefined)).toEqual({});
+  });
+});
+
+describe("buildExecutePayload", () => {
+  it("should include env when provided", () => {
+    expect(
+      buildExecutePayload("echo hello", {
+        timeout: 60,
+        shell: "/bin/bash",
+        idleTimeout: 300,
+        killOnDisconnect: false,
+        ttlSeconds: 600,
+        env: { LANGSMITH_SANDBOX_ID: "sandbox-123" },
+      }),
+    ).toMatchObject({
+      type: "execute",
+      command: "echo hello",
+      env: { LANGSMITH_SANDBOX_ID: "sandbox-123" },
+    });
+  });
+
+  it("should omit env when missing", () => {
+    const payload = buildExecutePayload("echo hello", {
+      timeout: 60,
+      shell: "/bin/bash",
+      idleTimeout: 300,
+      killOnDisconnect: false,
+      ttlSeconds: 600,
+    });
+
+    expect(payload).not.toHaveProperty("env");
   });
 });
 

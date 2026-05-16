@@ -3,6 +3,7 @@
  */
 
 import type { SandboxClient } from "./client.js";
+import { traceable } from "../traceable.js";
 import type {
   CaptureSnapshotOptions,
   ExecutionResult,
@@ -18,6 +19,9 @@ import {
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import { reconnectWsStream, runWsStream } from "./ws_execute.js";
+import type { KVMap } from "../schemas.js";
+
+const SANDBOX_ID_ENV_VAR = "LANGSMITH_SANDBOX_ID";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -169,6 +173,28 @@ export class Sandbox {
     command: string,
     options: RunOptions = {},
   ): Promise<ExecutionResult | CommandHandle> {
+    let result: ExecutionResult | CommandHandle | undefined;
+    const tracedRun = traceable(
+      async () => {
+        result = await this._runUntraced(command, options);
+        return result;
+      },
+      {
+        name: "Sandbox.run",
+        run_type: "tool",
+        metadata: this.traceMetadata(),
+        processInputs: () => this.traceInputs(command, options),
+        processOutputs: () => this.traceOutputs(result),
+      },
+    );
+
+    return tracedRun();
+  }
+
+  private async _runUntraced(
+    command: string,
+    options: RunOptions = {},
+  ): Promise<ExecutionResult | CommandHandle> {
     const {
       wait = true,
       onStdout,
@@ -227,6 +253,64 @@ export class Sandbox {
     }
   }
 
+  private traceMetadata(): KVMap {
+    return {
+      sandbox_name: this.name,
+      ...(this.id ? { sandbox_id: this.id } : {}),
+    };
+  }
+
+  private traceInputs(command: string, options: RunOptions): KVMap {
+    const {
+      env,
+      cwd,
+      shell = "/bin/bash",
+      timeout = 60,
+      wait = true,
+      onStdout,
+      onStderr,
+      idleTimeout,
+      killOnDisconnect,
+      ttlSeconds,
+      pty,
+    } = options;
+    return {
+      command,
+      timeout,
+      shell,
+      env_keys: env ? Object.keys(env).sort() : [],
+      has_stdout_callback: onStdout !== undefined,
+      has_stderr_callback: onStderr !== undefined,
+      ...(cwd !== undefined ? { cwd } : {}),
+      ...(idleTimeout !== undefined ? { idle_timeout: idleTimeout } : {}),
+      ...(killOnDisconnect !== undefined
+        ? { kill_on_disconnect: killOnDisconnect }
+        : {}),
+      ...(ttlSeconds !== undefined ? { ttl_seconds: ttlSeconds } : {}),
+      ...(pty !== undefined ? { pty } : {}),
+      wait,
+    };
+  }
+
+  private traceOutputs(
+    result: ExecutionResult | CommandHandle | undefined,
+  ): KVMap {
+    if (result instanceof CommandHandle) {
+      return {
+        command_id: result.commandId,
+        pid: result.pid,
+      };
+    }
+    if (result) {
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exit_code,
+      };
+    }
+    return {};
+  }
+
   /**
    * Execute a command via WebSocket streaming.
    * @internal
@@ -255,7 +339,7 @@ export class Sandbox {
       command,
       {
         timeout,
-        env,
+        env: this.executionEnv(env),
         cwd,
         shell,
         onStdout,
@@ -289,8 +373,9 @@ export class Sandbox {
       timeout,
       shell,
     };
-    if (env !== undefined) {
-      payload.env = env;
+    const executionEnv = this.executionEnv(env);
+    if (executionEnv !== undefined) {
+      payload.env = executionEnv;
     }
     if (cwd !== undefined) {
       payload.cwd = cwd;
@@ -315,6 +400,15 @@ export class Sandbox {
       stderr: data.stderr ?? "",
       exit_code: data.exit_code ?? -1,
     };
+  }
+
+  private executionEnv(
+    env: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    if (!this.id) {
+      return env;
+    }
+    return { ...(env ?? {}), [SANDBOX_ID_ENV_VAR]: this.id };
   }
 
   /**
