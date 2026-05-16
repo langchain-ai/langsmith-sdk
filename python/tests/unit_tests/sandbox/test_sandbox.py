@@ -323,61 +323,6 @@ class TestSandboxRun:
         payload = json.loads(request.content)
         assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
 
-    def test_run_injects_langsmith_sandbox_id_env(self, client, httpx_mock: HTTPXMock):
-        """Test that command env includes the LangSmith sandbox ID."""
-        import json
-
-        sandbox = Sandbox.from_dict(
-            data={
-                "id": "sandbox-123",
-                "name": "test-sandbox",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
-        )
-
-        sandbox.run("echo hello")
-
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
-        assert payload["env"]["LANGSMITH_SANDBOX_ID"] == "sandbox-123"
-
-    def test_run_preserves_env_when_injecting_sandbox_id(
-        self, client, httpx_mock: HTTPXMock
-    ):
-        """Test that sandbox ID env injection preserves user env vars."""
-        import json
-
-        sandbox = Sandbox.from_dict(
-            data={
-                "id": "sandbox-123",
-                "name": "test-sandbox",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
-        )
-
-        sandbox.run("echo hello", env={"MY_VAR": "hello"})
-
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
-        assert payload["env"] == {
-            "MY_VAR": "hello",
-            "LANGSMITH_SANDBOX_ID": "sandbox-123",
-        }
-
     def test_run_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
         """Test that run() creates a trace with sandbox metadata in context."""
         trace_client = _get_trace_client()
@@ -412,7 +357,6 @@ class TestSandboxRun:
         assert run_payload["run_type"] == "tool"
         assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
         assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
-        assert run_payload["inputs"]["env_keys"] == ["SECRET"]
         assert run_payload["inputs"]["cwd"] == "/tmp"
         assert "redacted" not in str(run_payload["inputs"])
 

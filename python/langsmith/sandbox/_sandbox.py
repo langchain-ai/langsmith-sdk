@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
-_SANDBOX_ID_ENV_VAR = "LANGSMITH_SANDBOX_ID"
 
 
 @dataclass
@@ -172,12 +171,6 @@ class Sandbox:
             )
         return self.dataplane_url
 
-    def _execution_env(self, env: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
-        """Return command env with LangSmith sandbox metadata injected."""
-        if not self.id:
-            return env
-        return {**(env or {}), _SANDBOX_ID_ENV_VAR: self.id}
-
     def _trace_metadata(self) -> dict[str, str]:
         """Return metadata attached to sandbox execution traces."""
         metadata = {"sandbox_name": self.name}
@@ -190,7 +183,6 @@ class Sandbox:
         command: str,
         *,
         timeout: int,
-        env: Optional[dict[str, str]],
         cwd: Optional[str],
         shell: str,
         on_stdout: Optional[Callable[[str], Any]],
@@ -206,7 +198,6 @@ class Sandbox:
             "command": command,
             "timeout": timeout,
             "shell": shell,
-            "env_keys": sorted(env.keys()) if env else [],
             "has_stdout_callback": on_stdout is not None,
             "has_stderr_callback": on_stderr is not None,
             "idle_timeout": idle_timeout,
@@ -375,7 +366,6 @@ class Sandbox:
                 inputs=self._trace_inputs(
                     command,
                     timeout=timeout,
-                    env=env,
                     cwd=cwd,
                     shell=shell,
                     on_stdout=on_stdout,
@@ -505,7 +495,7 @@ class Sandbox:
 
         ws_kwargs: dict[str, Any] = {
             "timeout": timeout,
-            "env": self._execution_env(env),
+            "env": env,
             "cwd": cwd,
             "shell": shell,
             "on_stdout": on_stdout,
@@ -550,9 +540,8 @@ class Sandbox:
             "timeout": timeout,
             "shell": shell,
         }
-        execution_env = self._execution_env(env)
-        if execution_env is not None:
-            payload["env"] = execution_env
+        if env is not None:
+            payload["env"] = env
         if cwd is not None:
             payload["cwd"] = cwd
 

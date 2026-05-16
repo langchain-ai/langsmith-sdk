@@ -592,7 +592,6 @@ class TestAsyncSandboxRunWs:
         client._api_key = "test-key"
         return AsyncSandbox.from_dict(
             data={
-                "id": "sandbox-123",
                 "name": "test-sb",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
@@ -708,7 +707,7 @@ class TestAsyncSandboxRunWs:
             "test-key",
             "echo hello",
             timeout=60,
-            env={"LANGSMITH_SANDBOX_ID": "sandbox-123"},
+            env=None,
             cwd=None,
             shell="/bin/bash",
             headers={"X-Test-Header": "sandbox-ws"},

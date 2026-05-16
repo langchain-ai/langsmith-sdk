@@ -8,7 +8,6 @@ import { traceable } from "../traceable.js";
 import {
   buildWsUrl,
   buildAuthHeaders,
-  buildExecutePayload,
   WSStreamControl,
   raiseForWsError,
 } from "../sandbox/ws_execute.js";
@@ -169,9 +168,7 @@ describe("Sandbox", () => {
 
       const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(options.body as string);
-      expect(body.env).toEqual({
-        LANGSMITH_SANDBOX_ID: "sandbox-123",
-      });
+      expect(body).not.toHaveProperty("env");
     });
 
     it("should pass environment variables and cwd to command", async () => {
@@ -205,7 +202,6 @@ describe("Sandbox", () => {
       const body = JSON.parse(options.body as string);
       expect(body.env).toEqual({
         MY_VAR: "test-value",
-        LANGSMITH_SANDBOX_ID: "sandbox-123",
       });
       expect(body.cwd).toBe("/tmp");
     });
@@ -261,7 +257,6 @@ describe("Sandbox", () => {
       });
       expect(sandboxRun?.inputs).toMatchObject({
         command: "echo $SECRET",
-        env_keys: ["SECRET"],
         cwd: "/tmp",
       });
       expect(JSON.stringify(sandboxRun?.inputs)).not.toContain("redacted");
@@ -905,37 +900,6 @@ describe("buildAuthHeaders", () => {
 
   it("should return empty headers when no key", () => {
     expect(buildAuthHeaders(undefined)).toEqual({});
-  });
-});
-
-describe("buildExecutePayload", () => {
-  it("should include env when provided", () => {
-    expect(
-      buildExecutePayload("echo hello", {
-        timeout: 60,
-        shell: "/bin/bash",
-        idleTimeout: 300,
-        killOnDisconnect: false,
-        ttlSeconds: 600,
-        env: { LANGSMITH_SANDBOX_ID: "sandbox-123" },
-      }),
-    ).toMatchObject({
-      type: "execute",
-      command: "echo hello",
-      env: { LANGSMITH_SANDBOX_ID: "sandbox-123" },
-    });
-  });
-
-  it("should omit env when missing", () => {
-    const payload = buildExecutePayload("echo hello", {
-      timeout: 60,
-      shell: "/bin/bash",
-      idleTimeout: 300,
-      killOnDisconnect: false,
-      ttlSeconds: 600,
-    });
-
-    expect(payload).not.toHaveProperty("env");
   });
 });
 

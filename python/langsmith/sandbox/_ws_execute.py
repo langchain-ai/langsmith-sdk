@@ -57,37 +57,6 @@ def _build_auth_headers(
     return merge_headers(auth_headers, headers)
 
 
-def _build_execute_payload(
-    command: str,
-    *,
-    timeout: int,
-    shell: str,
-    idle_timeout: int,
-    kill_on_disconnect: bool,
-    ttl_seconds: int,
-    env: Optional[dict[str, str]] = None,
-    cwd: Optional[str] = None,
-    pty: bool = False,
-) -> dict[str, Any]:
-    """Build the initial WebSocket execute message."""
-    payload: dict[str, Any] = {
-        "type": "execute",
-        "command": command,
-        "timeout_seconds": timeout,
-        "shell": shell,
-        "idle_timeout_seconds": idle_timeout,
-        "kill_on_disconnect": kill_on_disconnect,
-        "ttl_seconds": ttl_seconds,
-    }
-    if env:
-        payload["env"] = env
-    if cwd:
-        payload["cwd"] = cwd
-    if pty:
-        payload["pty"] = True
-    return payload
-
-
 # =============================================================================
 # Stream Control
 # =============================================================================
@@ -287,17 +256,21 @@ def run_ws_stream(
                 control._bind(ws)
 
                 # Send execute request
-                payload = _build_execute_payload(
-                    command,
-                    timeout=timeout,
-                    shell=shell,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    env=env,
-                    cwd=cwd,
-                    pty=pty,
-                )
+                payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout_seconds": timeout,
+                    "shell": shell,
+                    "idle_timeout_seconds": idle_timeout,
+                    "kill_on_disconnect": kill_on_disconnect,
+                    "ttl_seconds": ttl_seconds,
+                }
+                if env:
+                    payload["env"] = env
+                if cwd:
+                    payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
                 ws.send(json.dumps(payload))
 
                 # Read messages until exit or error
@@ -469,17 +442,21 @@ async def run_ws_stream_async(
             ) as ws:
                 control._bind(ws)
 
-                payload = _build_execute_payload(
-                    command,
-                    timeout=timeout,
-                    shell=shell,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    env=env,
-                    cwd=cwd,
-                    pty=pty,
-                )
+                payload: dict[str, Any] = {
+                    "type": "execute",
+                    "command": command,
+                    "timeout_seconds": timeout,
+                    "shell": shell,
+                    "idle_timeout_seconds": idle_timeout,
+                    "kill_on_disconnect": kill_on_disconnect,
+                    "ttl_seconds": ttl_seconds,
+                }
+                if env:
+                    payload["env"] = env
+                if cwd:
+                    payload["cwd"] = cwd
+                if pty:
+                    payload["pty"] = True
                 await ws.send(json.dumps(payload))
 
                 async for raw_msg in ws:

@@ -21,8 +21,6 @@ import { CommandHandle } from "./command_handle.js";
 import { reconnectWsStream, runWsStream } from "./ws_execute.js";
 import type { KVMap } from "../schemas.js";
 
-const SANDBOX_ID_ENV_VAR = "LANGSMITH_SANDBOX_ID";
-
 /**
  * Represents an active sandbox for running commands and file operations.
  *
@@ -262,7 +260,6 @@ export class Sandbox {
 
   private traceInputs(command: string, options: RunOptions): KVMap {
     const {
-      env,
       cwd,
       shell = "/bin/bash",
       timeout = 60,
@@ -278,7 +275,6 @@ export class Sandbox {
       command,
       timeout,
       shell,
-      env_keys: env ? Object.keys(env).sort() : [],
       has_stdout_callback: onStdout !== undefined,
       has_stderr_callback: onStderr !== undefined,
       ...(cwd !== undefined ? { cwd } : {}),
@@ -339,7 +335,7 @@ export class Sandbox {
       command,
       {
         timeout,
-        env: this.executionEnv(env),
+        env,
         cwd,
         shell,
         onStdout,
@@ -373,9 +369,8 @@ export class Sandbox {
       timeout,
       shell,
     };
-    const executionEnv = this.executionEnv(env);
-    if (executionEnv !== undefined) {
-      payload.env = executionEnv;
+    if (env !== undefined) {
+      payload.env = env;
     }
     if (cwd !== undefined) {
       payload.cwd = cwd;
@@ -400,15 +395,6 @@ export class Sandbox {
       stderr: data.stderr ?? "",
       exit_code: data.exit_code ?? -1,
     };
-  }
-
-  private executionEnv(
-    env: Record<string, string> | undefined,
-  ): Record<string, string> | undefined {
-    if (!this.id) {
-      return env;
-    }
-    return { ...(env ?? {}), [SANDBOX_ID_ENV_VAR]: this.id };
   }
 
   /**
