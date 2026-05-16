@@ -1,6 +1,5 @@
 """Tests for Sandbox class."""
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -343,11 +342,11 @@ class TestSandboxRun:
         )
         observed = {}
 
-        def fake_run_untraced(*args, **kwargs):
+        def fake_run_ws(*args, **kwargs):
             observed["metadata"] = dict(get_tracing_context()["metadata"])
             return ExecutionResult(stdout="hello\n", stderr="", exit_code=0)
 
-        monkeypatch.setattr(sandbox, "_run_untraced", fake_run_untraced)
+        monkeypatch.setattr(sandbox, "_run_ws", fake_run_ws)
 
         with tracing_context(
             enabled=True,
@@ -381,10 +380,13 @@ class TestSandboxRun:
             auto_delete=False,
         )
 
-        def fake_reconnect_untraced(*args, **kwargs):
-            return SimpleNamespace(command_id="cmd-123", pid=456)
+        def fake_reconnect_ws_stream(*args, **kwargs):
+            return iter(()), None
 
-        monkeypatch.setattr(sandbox, "_reconnect_untraced", fake_reconnect_untraced)
+        monkeypatch.setattr(
+            "langsmith.sandbox._ws_execute.reconnect_ws_stream",
+            fake_reconnect_ws_stream,
+        )
 
         with tracing_context(
             enabled=True,
@@ -566,7 +568,9 @@ class TestSandboxWrite:
 
         assert "test-sandbox" in str(exc_info.value)
 
-    def test_write_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
+    def test_write_traces_invocation_with_sandbox_metadata(
+        self, client, httpx_mock: HTTPXMock
+    ):
         """Test write() traces file metadata without file contents."""
         trace_client = _get_trace_client()
         sandbox = Sandbox.from_dict(
@@ -578,17 +582,15 @@ class TestSandboxWrite:
             client=client,
             auto_delete=False,
         )
-        observed = {}
-
-        def fake_write_untraced(path, content, **kwargs):
-            observed["content"] = content
-
-        monkeypatch.setattr(sandbox, "_write_untraced", fake_write_untraced)
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/upload?path=%2Fapp%2Ftest.txt",
+            json={"path": "/app/test.txt", "written": 6},
+        )
 
         with tracing_context(enabled=True, client=trace_client):
             sandbox.write("/app/test.txt", "secret", timeout=12)
 
-        assert observed["content"] == b"secret"
         run_payload = _trace_payload(trace_client, "Sandbox.write")
         assert run_payload["run_type"] == "tool"
         assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
@@ -661,7 +663,9 @@ class TestSandboxRead:
 
         assert "test-sandbox" in str(exc_info.value)
 
-    def test_read_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
+    def test_read_traces_invocation_with_sandbox_metadata(
+        self, client, httpx_mock: HTTPXMock
+    ):
         """Test read() traces path metadata without file contents in inputs."""
         trace_client = _get_trace_client()
         sandbox = Sandbox.from_dict(
@@ -673,8 +677,11 @@ class TestSandboxRead:
             client=client,
             auto_delete=False,
         )
-        monkeypatch.setattr(
-            sandbox, "_read_untraced", lambda *args, **kwargs: b"secret"
+        httpx_mock.add_response(
+            method="GET",
+            url="https://sandbox-router.example.com/sb-123/download?path=%2Fapp%2Ftest.txt",
+            content=b"secret",
+            headers={"Content-Type": "application/octet-stream"},
         )
 
         with tracing_context(enabled=True, client=trace_client):
@@ -704,11 +711,7 @@ class TestSandboxTunnel:
             client=client,
             auto_delete=False,
         )
-        monkeypatch.setattr(
-            sandbox,
-            "_tunnel_untraced",
-            lambda *args, **kwargs: SimpleNamespace(remote_port=5432, local_port=15432),
-        )
+        monkeypatch.setattr("langsmith.sandbox._tunnel.Tunnel._start", lambda *a: None)
 
         with tracing_context(enabled=True, client=trace_client):
             tunnel = sandbox.tunnel(
