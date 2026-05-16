@@ -239,6 +239,25 @@ class Sandbox:
         ):
             yield
 
+    @contextlib.contextmanager
+    def _trace_dataplane_operation(
+        self, name: str, inputs: dict[str, Any]
+    ) -> Iterator[Optional[Any]]:
+        """Trace a sandbox dataplane operation when tracing is active."""
+        if not ls_utils.tracing_is_enabled():
+            yield None
+            return
+
+        trace_metadata = self._trace_metadata()
+        with self._sandbox_trace_context(trace_metadata):
+            with rh.trace(
+                name,
+                run_type="tool",
+                inputs=inputs,
+                metadata=trace_metadata,
+            ) as run_tree:
+                yield run_tree
+
     @overload
     def run(
         self,
@@ -341,8 +360,23 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        if not ls_utils.tracing_is_enabled():
-            return self._run_untraced(
+        with self._trace_dataplane_operation(
+            "Sandbox.run",
+            self._trace_inputs(
+                command,
+                timeout=timeout,
+                cwd=cwd,
+                shell=shell,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
+                pty=pty,
+                wait=wait,
+            ),
+        ) as run_tree:
+            result = self._run_untraced(
                 command,
                 timeout=timeout,
                 env=env,
@@ -357,44 +391,9 @@ class Sandbox:
                 headers=headers,
                 wait=wait,
             )
-
-        trace_metadata = self._trace_metadata()
-        with self._sandbox_trace_context(trace_metadata):
-            with rh.trace(
-                "Sandbox.run",
-                run_type="tool",
-                inputs=self._trace_inputs(
-                    command,
-                    timeout=timeout,
-                    cwd=cwd,
-                    shell=shell,
-                    on_stdout=on_stdout,
-                    on_stderr=on_stderr,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    pty=pty,
-                    wait=wait,
-                ),
-                metadata=trace_metadata,
-            ) as run_tree:
-                result = self._run_untraced(
-                    command,
-                    timeout=timeout,
-                    env=env,
-                    cwd=cwd,
-                    shell=shell,
-                    on_stdout=on_stdout,
-                    on_stderr=on_stderr,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    pty=pty,
-                    headers=headers,
-                    wait=wait,
-                )
+            if run_tree is not None:
                 run_tree.end(outputs=self._trace_outputs(result))
-                return result
+            return result
 
     def _run_untraced(
         self,
@@ -588,6 +587,38 @@ class Sandbox:
             SandboxOperationError: If command_id is not found or session expired.
             SandboxConnectionError: If connection to sandbox fails after retries.
         """
+        with self._trace_dataplane_operation(
+            "Sandbox.reconnect",
+            {
+                "command_id": command_id,
+                "stdout_offset": stdout_offset,
+                "stderr_offset": stderr_offset,
+            },
+        ) as run_tree:
+            handle = self._reconnect_untraced(
+                command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(
+                    outputs={
+                        "command_id": handle.command_id,
+                        "pid": handle.pid,
+                    }
+                )
+            return handle
+
+    def _reconnect_untraced(
+        self,
+        command_id: str,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        headers: RequestHeaders,
+    ) -> CommandHandle:
+        """Reconnect to a command without creating a LangSmith trace."""
         from langsmith.sandbox._ws_execute import reconnect_ws_stream
 
         dataplane_url = self._require_dataplane_url()
@@ -638,12 +669,31 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        with self._trace_dataplane_operation(
+            "Sandbox.write",
+            {"path": path, "timeout": timeout, "content_bytes": len(content_bytes)},
+        ) as run_tree:
+            self._write_untraced(
+                path,
+                content_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(outputs={"path": path, "bytes": len(content_bytes)})
+
+    def _write_untraced(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        timeout: int,
+        headers: RequestHeaders,
+    ) -> None:
+        """Write content without creating a LangSmith trace."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/upload"
-
-        # Ensure content is bytes for multipart upload
-        if isinstance(content, str):
-            content = content.encode("utf-8")
 
         files = {"file": ("file", content)}
 
@@ -680,6 +730,18 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        with self._trace_dataplane_operation(
+            "Sandbox.read", {"path": path, "timeout": timeout}
+        ) as run_tree:
+            content = self._read_untraced(path, timeout=timeout, headers=headers)
+            if run_tree is not None:
+                run_tree.end(outputs={"path": path, "bytes": len(content)})
+            return content
+
+    def _read_untraced(
+        self, path: str, *, timeout: int, headers: RequestHeaders
+    ) -> bytes:
+        """Read content without creating a LangSmith trace."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/download"
 
@@ -742,6 +804,38 @@ class Sandbox:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxNotReadyError: If sandbox is not ready.
         """
+        with self._trace_dataplane_operation(
+            "Sandbox.tunnel",
+            {
+                "remote_port": remote_port,
+                "local_port": local_port,
+                "max_reconnects": max_reconnects,
+            },
+        ) as run_tree:
+            t = self._tunnel_untraced(
+                remote_port,
+                local_port=local_port,
+                max_reconnects=max_reconnects,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(
+                    outputs={
+                        "remote_port": t.remote_port,
+                        "local_port": t.local_port,
+                    }
+                )
+            return t
+
+    def _tunnel_untraced(
+        self,
+        remote_port: int,
+        *,
+        local_port: int,
+        max_reconnects: int,
+        headers: RequestHeaders,
+    ) -> Tunnel:
+        """Open a tunnel without creating a LangSmith trace."""
         if not 1 <= remote_port <= 65535:
             raise ValueError(
                 f"remote_port must be between 1 and 65535 (got {remote_port})"

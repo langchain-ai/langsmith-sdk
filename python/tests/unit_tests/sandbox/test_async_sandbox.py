@@ -1,5 +1,6 @@
 """Tests for AsyncSandbox class."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,6 +38,11 @@ def _trace_payloads(trace_client: Client) -> list[dict]:
         if data.get("name"):
             payloads.append(data)
     return payloads
+
+
+def _trace_payload(trace_client: Client, name: str) -> dict:
+    """Return the first trace payload with the given run name."""
+    return next(p for p in _trace_payloads(trace_client) if p.get("name") == name)
 
 
 @pytest.fixture
@@ -337,6 +343,46 @@ class TestAsyncSandboxRun:
         assert run_payload["inputs"]["cwd"] == "/tmp"
         assert "redacted" not in str(run_payload["inputs"])
 
+    async def test_reconnect_traces_invocation_with_sandbox_metadata(
+        self, client, monkeypatch
+    ):
+        """Test reconnect() traces sanitized dataplane inputs."""
+        trace_client = _get_trace_client()
+        sandbox = AsyncSandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        async def fake_reconnect_untraced(*args, **kwargs):
+            return SimpleNamespace(command_id="cmd-123", pid=456)
+
+        monkeypatch.setattr(sandbox, "_reconnect_untraced", fake_reconnect_untraced)
+
+        with tracing_context(
+            enabled=True,
+            client=trace_client,
+            metadata={"sandbox_id": "outer", "sandbox_name": "outer"},
+        ):
+            handle = await sandbox.reconnect(
+                "cmd-123", stdout_offset=7, stderr_offset=11
+            )
+
+        assert handle.command_id == "cmd-123"
+        run_payload = _trace_payload(trace_client, "Sandbox.reconnect")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "command_id": "cmd-123",
+            "stdout_offset": 7,
+            "stderr_offset": 11,
+        }
+
     async def test_run_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a command with per-request headers."""
         httpx_mock.add_response(
@@ -499,6 +545,42 @@ class TestAsyncSandboxWrite:
 
         assert "test-sandbox" in str(exc_info.value)
 
+    async def test_write_traces_invocation_with_sandbox_metadata(
+        self, client, monkeypatch
+    ):
+        """Test write() traces file metadata without file contents."""
+        trace_client = _get_trace_client()
+        sandbox = AsyncSandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        observed = {}
+
+        async def fake_write_untraced(path, content, **kwargs):
+            observed["content"] = content
+
+        monkeypatch.setattr(sandbox, "_write_untraced", fake_write_untraced)
+
+        with tracing_context(enabled=True, client=trace_client):
+            await sandbox.write("/app/test.txt", "secret", timeout=12)
+
+        assert observed["content"] == b"secret"
+        run_payload = _trace_payload(trace_client, "Sandbox.write")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "path": "/app/test.txt",
+            "timeout": 12,
+            "content_bytes": 6,
+        }
+        assert "secret" not in str(run_payload["inputs"])
+
 
 class TestAsyncSandboxRead:
     """Tests for async sandbox file read."""
@@ -559,6 +641,80 @@ class TestAsyncSandboxRead:
             await sandbox.read("/app/test.txt")
 
         assert "test-sandbox" in str(exc_info.value)
+
+    async def test_read_traces_invocation_with_sandbox_metadata(
+        self, client, monkeypatch
+    ):
+        """Test read() traces path metadata without file contents in inputs."""
+        trace_client = _get_trace_client()
+        sandbox = AsyncSandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        async def fake_read_untraced(*args, **kwargs):
+            return b"secret"
+
+        monkeypatch.setattr(sandbox, "_read_untraced", fake_read_untraced)
+
+        with tracing_context(enabled=True, client=trace_client):
+            content = await sandbox.read("/app/test.txt", timeout=12)
+
+        assert content == b"secret"
+        run_payload = _trace_payload(trace_client, "Sandbox.read")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {"path": "/app/test.txt", "timeout": 12}
+        assert "secret" not in str(run_payload["inputs"])
+
+
+class TestAsyncSandboxTunnel:
+    """Tests for async sandbox TCP tunnels."""
+
+    async def test_tunnel_traces_invocation_with_sandbox_metadata(
+        self, client, monkeypatch
+    ):
+        """Test tunnel() traces dataplane tunnel parameters."""
+        trace_client = _get_trace_client()
+        sandbox = AsyncSandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        async def fake_tunnel_untraced(*args, **kwargs):
+            return SimpleNamespace(remote_port=5432, local_port=15432)
+
+        monkeypatch.setattr(sandbox, "_tunnel_untraced", fake_tunnel_untraced)
+
+        with tracing_context(enabled=True, client=trace_client):
+            tunnel = await sandbox.tunnel(
+                5432,
+                local_port=15432,
+                max_reconnects=5,
+            )
+
+        assert tunnel.remote_port == 5432
+        assert tunnel.local_port == 15432
+        run_payload = _trace_payload(trace_client, "Sandbox.tunnel")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "remote_port": 5432,
+            "local_port": 15432,
+            "max_reconnects": 5,
+        }
 
 
 class TestAsyncSandboxContextManager:

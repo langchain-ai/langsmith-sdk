@@ -171,22 +171,38 @@ export class Sandbox {
     command: string,
     options: RunOptions = {},
   ): Promise<ExecutionResult | CommandHandle> {
-    let result: ExecutionResult | CommandHandle | undefined;
-    const tracedRun = traceable(
+    return this.traceDataplaneOperation(
+      "Sandbox.run",
+      this.traceInputs(command, options),
+      () => this._runUntraced(command, options),
+      (result) => this.traceOutputs(result),
+    );
+  }
+
+  private async traceDataplaneOperation<T>(
+    name: string,
+    inputs: KVMap,
+    operation: () => Promise<T>,
+    processOutputs: (result: T) => KVMap = () => ({}),
+  ): Promise<T> {
+    let result: T | undefined;
+    let hasResult = false;
+    const tracedOperation = traceable(
       async () => {
-        result = await this._runUntraced(command, options);
+        result = await operation();
+        hasResult = true;
         return result;
       },
       {
-        name: "Sandbox.run",
+        name,
         run_type: "tool",
         metadata: this.traceMetadata(),
-        processInputs: () => this.traceInputs(command, options),
-        processOutputs: () => this.traceOutputs(result),
+        processInputs: () => inputs,
+        processOutputs: () => (hasResult ? processOutputs(result as T) : {}),
       },
     );
 
-    return tracedRun();
+    return tracedOperation();
   }
 
   private async _runUntraced(
@@ -414,6 +430,26 @@ export class Sandbox {
     } = {},
   ): Promise<CommandHandle> {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
+    return this.traceDataplaneOperation(
+      "Sandbox.reconnect",
+      {
+        command_id: commandId,
+        stdout_offset: stdoutOffset,
+        stderr_offset: stderrOffset,
+      },
+      () => this._reconnectUntraced(commandId, options),
+      (handle) => ({ command_id: handle.commandId, pid: handle.pid }),
+    );
+  }
+
+  private async _reconnectUntraced(
+    commandId: string,
+    options: {
+      stdoutOffset?: number;
+      stderrOffset?: number;
+    } = {},
+  ): Promise<CommandHandle> {
+    const { stdoutOffset = 0, stderrOffset = 0 } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
     const [stream, control] = await reconnectWsStream(
@@ -443,6 +479,23 @@ export class Sandbox {
    * ```
    */
   async write(
+    path: string,
+    content: string | Uint8Array,
+    timeout = 60,
+  ): Promise<void> {
+    const contentBytes =
+      typeof content === "string"
+        ? new TextEncoder().encode(content).byteLength
+        : content.byteLength;
+    return this.traceDataplaneOperation(
+      "Sandbox.write",
+      { path, timeout, content_bytes: contentBytes },
+      () => this._writeUntraced(path, content, timeout),
+      () => ({ path, bytes: contentBytes }),
+    );
+  }
+
+  private async _writeUntraced(
     path: string,
     content: string | Uint8Array,
     timeout = 60,
@@ -486,6 +539,15 @@ export class Sandbox {
    * ```
    */
   async read(path: string, timeout = 60): Promise<Uint8Array> {
+    return this.traceDataplaneOperation(
+      "Sandbox.read",
+      { path, timeout },
+      () => this._readUntraced(path, timeout),
+      (content) => ({ path, bytes: content.byteLength }),
+    );
+  }
+
+  private async _readUntraced(path: string, timeout = 60): Promise<Uint8Array> {
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/download?path=${encodeURIComponent(path)}`;
 

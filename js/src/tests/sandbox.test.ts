@@ -268,6 +268,64 @@ describe("Sandbox", () => {
     });
   });
 
+  describe("reconnect", () => {
+    it("should trace reconnect with sandbox metadata", async () => {
+      const mockClient = createMockClient();
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        mockClient,
+        false,
+      );
+      (sandbox as any)._reconnectUntraced = jest.fn(async () => ({
+        commandId: "cmd-123",
+        pid: 456,
+      }));
+      const { client: traceClient, callSpy } = createTraceClient();
+      const agent = traceable(
+        async () =>
+          sandbox.reconnect("cmd-123", {
+            stdoutOffset: 7,
+            stderrOffset: 11,
+          }),
+        {
+          name: "agent",
+          client: traceClient,
+          tracingEnabled: true,
+          metadata: { sandbox_id: "outer", sandbox_name: "outer" },
+        },
+      );
+
+      await agent();
+
+      const tree = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        traceClient,
+      );
+      const sandboxReconnect = Object.values(tree.data).find(
+        (run) => run.name === "Sandbox.reconnect",
+      );
+      expect(sandboxReconnect).toBeDefined();
+      expect(sandboxReconnect?.run_type).toBe("tool");
+      expect(sandboxReconnect?.extra?.metadata).toMatchObject({
+        sandbox_id: "sandbox-123",
+        sandbox_name: "test-sandbox",
+      });
+      expect(sandboxReconnect?.inputs).toEqual({
+        command_id: "cmd-123",
+        stdout_offset: 7,
+        stderr_offset: 11,
+      });
+      expect(sandboxReconnect?.outputs).toMatchObject({
+        command_id: "cmd-123",
+        pid: 456,
+      });
+    });
+  });
+
   describe("write", () => {
     it("should write string content to a file", async () => {
       const mockFetch = createMockFetch({
@@ -317,6 +375,59 @@ describe("Sandbox", () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
+
+    it("should trace write with sandbox metadata without file contents", async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: async () => ({}),
+      });
+      const mockClient = createMockClient({ _fetch: mockFetch });
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        mockClient,
+        false,
+      );
+      const { client: traceClient, callSpy } = createTraceClient();
+      const agent = traceable(
+        async () => sandbox.write("/tmp/test.txt", "secret", 12),
+        {
+          name: "agent",
+          client: traceClient,
+          tracingEnabled: true,
+          metadata: { sandbox_id: "outer", sandbox_name: "outer" },
+        },
+      );
+
+      await agent();
+
+      const tree = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        traceClient,
+      );
+      const sandboxWrite = Object.values(tree.data).find(
+        (run) => run.name === "Sandbox.write",
+      );
+      expect(sandboxWrite).toBeDefined();
+      expect(sandboxWrite?.run_type).toBe("tool");
+      expect(sandboxWrite?.extra?.metadata).toMatchObject({
+        sandbox_id: "sandbox-123",
+        sandbox_name: "test-sandbox",
+      });
+      expect(sandboxWrite?.inputs).toEqual({
+        path: "/tmp/test.txt",
+        timeout: 12,
+        content_bytes: 6,
+      });
+      expect(JSON.stringify(sandboxWrite?.inputs)).not.toContain("secret");
+      expect(sandboxWrite?.outputs).toMatchObject({
+        path: "/tmp/test.txt",
+        bytes: 6,
+      });
+    });
   });
 
   describe("read", () => {
@@ -343,6 +454,57 @@ describe("Sandbox", () => {
 
       const text = new TextDecoder().decode(content);
       expect(text).toBe("File content here");
+    });
+
+    it("should trace read with sandbox metadata without file contents in inputs", async () => {
+      const testContent = "secret";
+      const mockFetch = createMockFetch({
+        ok: true,
+        arrayBuffer: async () => new TextEncoder().encode(testContent).buffer,
+      });
+      const mockClient = createMockClient({ _fetch: mockFetch });
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        mockClient,
+        false,
+      );
+      const { client: traceClient, callSpy } = createTraceClient();
+      const agent = traceable(async () => sandbox.read("/tmp/test.txt", 12), {
+        name: "agent",
+        client: traceClient,
+        tracingEnabled: true,
+        metadata: { sandbox_id: "outer", sandbox_name: "outer" },
+      });
+
+      const content = await agent();
+
+      expect(new TextDecoder().decode(content)).toBe("secret");
+      const tree = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        traceClient,
+      );
+      const sandboxRead = Object.values(tree.data).find(
+        (run) => run.name === "Sandbox.read",
+      );
+      expect(sandboxRead).toBeDefined();
+      expect(sandboxRead?.run_type).toBe("tool");
+      expect(sandboxRead?.extra?.metadata).toMatchObject({
+        sandbox_id: "sandbox-123",
+        sandbox_name: "test-sandbox",
+      });
+      expect(sandboxRead?.inputs).toEqual({
+        path: "/tmp/test.txt",
+        timeout: 12,
+      });
+      expect(JSON.stringify(sandboxRead?.inputs)).not.toContain("secret");
+      expect(sandboxRead?.outputs).toMatchObject({
+        path: "/tmp/test.txt",
+        bytes: 6,
+      });
     });
   });
 

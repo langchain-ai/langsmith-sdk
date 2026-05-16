@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
@@ -242,6 +242,25 @@ class AsyncSandbox:
         ):
             yield
 
+    @contextlib.asynccontextmanager
+    async def _trace_dataplane_operation(
+        self, name: str, inputs: dict[str, Any]
+    ) -> AsyncIterator[Optional[Any]]:
+        """Trace a sandbox dataplane operation when tracing is active."""
+        if not ls_utils.tracing_is_enabled():
+            yield None
+            return
+
+        trace_metadata = self._trace_metadata()
+        with self._sandbox_trace_context(trace_metadata):
+            async with rh.trace(
+                name,
+                run_type="tool",
+                inputs=inputs,
+                metadata=trace_metadata,
+            ) as run_tree:
+                yield run_tree
+
     @overload
     async def run(
         self,
@@ -344,8 +363,23 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        if not ls_utils.tracing_is_enabled():
-            return await self._run_untraced(
+        async with self._trace_dataplane_operation(
+            "Sandbox.run",
+            self._trace_inputs(
+                command,
+                timeout=timeout,
+                cwd=cwd,
+                shell=shell,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+                idle_timeout=idle_timeout,
+                kill_on_disconnect=kill_on_disconnect,
+                ttl_seconds=ttl_seconds,
+                pty=pty,
+                wait=wait,
+            ),
+        ) as run_tree:
+            result = await self._run_untraced(
                 command,
                 timeout=timeout,
                 env=env,
@@ -360,44 +394,9 @@ class AsyncSandbox:
                 headers=headers,
                 wait=wait,
             )
-
-        trace_metadata = self._trace_metadata()
-        with self._sandbox_trace_context(trace_metadata):
-            async with rh.trace(
-                "Sandbox.run",
-                run_type="tool",
-                inputs=self._trace_inputs(
-                    command,
-                    timeout=timeout,
-                    cwd=cwd,
-                    shell=shell,
-                    on_stdout=on_stdout,
-                    on_stderr=on_stderr,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    pty=pty,
-                    wait=wait,
-                ),
-                metadata=trace_metadata,
-            ) as run_tree:
-                result = await self._run_untraced(
-                    command,
-                    timeout=timeout,
-                    env=env,
-                    cwd=cwd,
-                    shell=shell,
-                    on_stdout=on_stdout,
-                    on_stderr=on_stderr,
-                    idle_timeout=idle_timeout,
-                    kill_on_disconnect=kill_on_disconnect,
-                    ttl_seconds=ttl_seconds,
-                    pty=pty,
-                    headers=headers,
-                    wait=wait,
-                )
+            if run_tree is not None:
                 run_tree.end(outputs=self._trace_outputs(result))
-                return result
+            return result
 
     async def _run_untraced(
         self,
@@ -590,6 +589,38 @@ class AsyncSandbox:
             SandboxOperationError: If command_id is not found or session expired.
             SandboxConnectionError: If connection to sandbox fails after retries.
         """
+        async with self._trace_dataplane_operation(
+            "Sandbox.reconnect",
+            {
+                "command_id": command_id,
+                "stdout_offset": stdout_offset,
+                "stderr_offset": stderr_offset,
+            },
+        ) as run_tree:
+            handle = await self._reconnect_untraced(
+                command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(
+                    outputs={
+                        "command_id": handle.command_id,
+                        "pid": handle.pid,
+                    }
+                )
+            return handle
+
+    async def _reconnect_untraced(
+        self,
+        command_id: str,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        headers: RequestHeaders,
+    ) -> AsyncCommandHandle:
+        """Reconnect to a command without creating a LangSmith trace."""
         from langsmith.sandbox._ws_execute import reconnect_ws_stream_async
 
         dataplane_url = self._require_dataplane_url()
@@ -640,12 +671,31 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        async with self._trace_dataplane_operation(
+            "Sandbox.write",
+            {"path": path, "timeout": timeout, "content_bytes": len(content_bytes)},
+        ) as run_tree:
+            await self._write_untraced(
+                path,
+                content_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(outputs={"path": path, "bytes": len(content_bytes)})
+
+    async def _write_untraced(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        timeout: int,
+        headers: RequestHeaders,
+    ) -> None:
+        """Write content without creating a LangSmith trace."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/upload"
-
-        # Ensure content is bytes for multipart upload
-        if isinstance(content, str):
-            content = content.encode("utf-8")
 
         files = {"file": ("file", content)}
 
@@ -682,6 +732,18 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        async with self._trace_dataplane_operation(
+            "Sandbox.read", {"path": path, "timeout": timeout}
+        ) as run_tree:
+            content = await self._read_untraced(path, timeout=timeout, headers=headers)
+            if run_tree is not None:
+                run_tree.end(outputs={"path": path, "bytes": len(content)})
+            return content
+
+    async def _read_untraced(
+        self, path: str, *, timeout: int, headers: RequestHeaders
+    ) -> bytes:
+        """Read content without creating a LangSmith trace."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/download"
 
@@ -738,6 +800,38 @@ class AsyncSandbox:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxNotReadyError: If sandbox is not ready.
         """
+        async with self._trace_dataplane_operation(
+            "Sandbox.tunnel",
+            {
+                "remote_port": remote_port,
+                "local_port": local_port,
+                "max_reconnects": max_reconnects,
+            },
+        ) as run_tree:
+            t = await self._tunnel_untraced(
+                remote_port,
+                local_port=local_port,
+                max_reconnects=max_reconnects,
+                headers=headers,
+            )
+            if run_tree is not None:
+                run_tree.end(
+                    outputs={
+                        "remote_port": t.remote_port,
+                        "local_port": t.local_port,
+                    }
+                )
+            return t
+
+    async def _tunnel_untraced(
+        self,
+        remote_port: int,
+        *,
+        local_port: int,
+        max_reconnects: int,
+        headers: RequestHeaders,
+    ) -> AsyncTunnel:
+        """Open a tunnel without creating a LangSmith trace."""
         if not 1 <= remote_port <= 65535:
             raise ValueError(
                 f"remote_port must be between 1 and 65535 (got {remote_port})"
