@@ -8,15 +8,17 @@ import { createLangSmithTelemetry } from "../../../experimental/vercel/telemetry
 import { getAssumedTreeFromCalls } from "../../utils/tree.js";
 import { traceable } from "../../../traceable.js";
 import { Client } from "../../../index.js";
-import type { Run } from "../../../schemas.js";
 
 const { tool, stepCountIs } = ai;
 
-function isTelemetryRoot(r: Run): boolean {
-  return (
-    r.run_type === "chain" &&
-    r.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
-  );
+class GreaterThanMatcher {
+  constructor(private threshold: number) {}
+  asymmetricMatch(actual: unknown) {
+    return typeof actual === "number" && actual > this.threshold;
+  }
+  getExpectedType() {
+    return "number";
+  }
 }
 
 test("telemetry generateText basic", { timeout: 30_000 }, async () => {
@@ -40,48 +42,47 @@ test("telemetry generateText basic", { timeout: 30_000 }, async () => {
 
   await client.awaitPendingTraceBatches();
 
-  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  const root = Object.values(runs.data).find(isTelemetryRoot);
-  const step0 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-  );
-
-  expect(root).toBeDefined();
-  expect(step0).toBeDefined();
-  expect(step0!.parent_run_id).toBe(root!.id);
-
-  expect(root).toMatchObject({
-    run_type: "chain",
-    inputs: {
-      messages: [{ role: "user", content: userMessage }],
-    },
-    outputs: {
-      content: expect.stringMatching(/blue/i),
-      finish_reason: "stop",
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    edges: [["openai.responses:0", "step 0:1"]],
+    data: {
+      "openai.responses:0": {
+        run_type: "chain",
+        inputs: {
+          messages: [{ role: "user", content: userMessage }],
+        },
+        outputs: {
+          content: expect.stringMatching(/blue/i),
+          finish_reason: "stop",
+        },
+        extra: {
+          metadata: {
+            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
+          },
+        },
+      },
+      "step 0:1": {
+        run_type: "llm",
+        inputs: {
+          messages: [{ role: "user", content: userMessage }],
+        },
+        outputs: {
+          role: "assistant",
+          content: expect.stringMatching(/blue/i),
+          finish_reason: "stop",
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: new GreaterThanMatcher(0),
+              output_tokens: new GreaterThanMatcher(0),
+            },
+          },
+        },
+      },
     },
   });
-
-  expect(step0).toMatchObject({
-    run_type: "llm",
-    inputs: {
-      messages: [{ role: "user", content: userMessage }],
-    },
-    outputs: {
-      role: "assistant",
-      content: expect.stringMatching(/blue/i),
-      finish_reason: "stop",
-    },
-  });
-
-  expect(root!.extra?.metadata?.usage_metadata?.total_tokens).toBeGreaterThan(
-    0,
-  );
-  expect(step0!.extra?.metadata?.usage_metadata?.input_tokens).toBeGreaterThan(
-    0,
-  );
-  expect(step0!.extra?.metadata?.usage_metadata?.output_tokens).toBeGreaterThan(
-    0,
-  );
 });
 
 test("telemetry generateText with tools", { timeout: 30_000 }, async () => {
@@ -116,81 +117,70 @@ test("telemetry generateText with tools", { timeout: 30_000 }, async () => {
 
   await client.awaitPendingTraceBatches();
 
-  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  const root = Object.values(runs.data).find(isTelemetryRoot);
-  const step0 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-  );
-  const step1 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 1,
-  );
-  const listOrders = Object.values(runs.data).find(
-    (r) => r.run_type === "tool" && r.name === "listOrders",
-  );
-
-  expect(root).toBeDefined();
-  expect(step0).toBeDefined();
-  expect(step1).toBeDefined();
-  expect(listOrders).toBeDefined();
-  expect(step0!.parent_run_id).toBe(root!.id);
-  expect(listOrders!.parent_run_id).toBe(step0!.id);
-  expect(step1!.parent_run_id).toBe(root!.id);
-
-  expect(root).toMatchObject({
-    run_type: "chain",
-    inputs: {
-      messages: [{ role: "user", content: userContent }],
-      tools: ["listOrders"],
-    },
-    outputs: {
-      content: expect.stringMatching(/order/i),
-      finish_reason: "stop",
-    },
-  });
-
-  expect(step0).toMatchObject({
-    run_type: "llm",
-    inputs: {
-      messages: [{ role: "user", content: userContent }],
-    },
-    outputs: {
-      role: "assistant",
-      content: "",
-      tool_calls: expect.arrayContaining([
-        expect.objectContaining({
-          type: "function",
-          function: { name: "listOrders" },
-        }),
-      ]),
-      finish_reason: "tool-calls",
-    },
-  });
-
-  expect(listOrders).toMatchObject({
-    run_type: "tool",
-    inputs: { userId: "123" },
-    outputs: {},
-  });
-
-  expect(step1).toMatchObject({
-    run_type: "llm",
-    inputs: {
-      messages: expect.arrayContaining([
-        { role: "user", content: userContent },
-        expect.objectContaining({ role: "assistant" }),
-        expect.objectContaining({ role: "tool" }),
-      ]),
-    },
-    outputs: {
-      role: "assistant",
-      content: expect.stringMatching(/order/i),
-      finish_reason: "stop",
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    edges: [
+      ["openai.responses:0", "step 0:1"],
+      ["step 0:1", "listOrders:2"],
+      ["openai.responses:0", "step 1:3"],
+    ],
+    data: {
+      "openai.responses:0": {
+        run_type: "chain",
+        inputs: {
+          messages: [{ role: "user", content: userContent }],
+          tools: ["listOrders"],
+        },
+        outputs: {
+          content: expect.stringMatching(/order/i),
+          finish_reason: "stop",
+        },
+        extra: {
+          metadata: {
+            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
+          },
+        },
+      },
+      "step 0:1": {
+        run_type: "llm",
+        inputs: {
+          messages: [{ role: "user", content: userContent }],
+        },
+        outputs: {
+          role: "assistant",
+          content: "",
+          tool_calls: expect.arrayContaining([
+            expect.objectContaining({
+              type: "function",
+              function: { name: "listOrders" },
+            }),
+          ]),
+          finish_reason: "tool-calls",
+        },
+      },
+      "listOrders:2": {
+        run_type: "tool",
+        inputs: { userId: "123" },
+        outputs: {},
+      },
+      "step 1:3": {
+        run_type: "llm",
+        inputs: {
+          messages: expect.arrayContaining([
+            { role: "user", content: userContent },
+            expect.objectContaining({ role: "assistant" }),
+            expect.objectContaining({ role: "tool" }),
+          ]),
+        },
+        outputs: {
+          role: "assistant",
+          content: expect.stringMatching(/order/i),
+          finish_reason: "stop",
+        },
+      },
     },
   });
-
-  expect(root!.extra?.metadata?.usage_metadata?.total_tokens).toBeGreaterThan(
-    0,
-  );
 });
 
 test("telemetry streamText", { timeout: 30_000 }, async () => {
@@ -225,65 +215,53 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
 
   await client.awaitPendingTraceBatches();
 
-  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  const root = Object.values(runs.data).find(isTelemetryRoot);
-  const step0 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-  );
-  const step1 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 1,
-  );
-  const listOrders = Object.values(runs.data).find(
-    (r) => r.run_type === "tool" && r.name === "listOrders",
-  );
-
-  expect(root).toBeDefined();
-  expect(step0).toBeDefined();
-  expect(step1).toBeDefined();
-  expect(listOrders).toBeDefined();
-  expect(step0!.parent_run_id).toBe(root!.id);
-  expect(listOrders!.parent_run_id).toBe(step0!.id);
-  expect(step1!.parent_run_id).toBe(root!.id);
-
-  expect(root).toMatchObject({
-    run_type: "chain",
-    inputs: {
-      messages: [{ role: "user", content: userContent }],
-      tools: ["listOrders"],
-    },
-    outputs: {
-      content: expect.stringMatching(/order/i),
-      finish_reason: "stop",
-    },
-  });
-
-  expect(step0).toMatchObject({
-    run_type: "llm",
-    outputs: {
-      role: "assistant",
-      content: "",
-      tool_calls: expect.arrayContaining([
-        expect.objectContaining({
-          type: "function",
-          function: { name: "listOrders" },
-        }),
-      ]),
-      finish_reason: "tool-calls",
-    },
-  });
-
-  expect(listOrders).toMatchObject({
-    run_type: "tool",
-    inputs: { userId: "123" },
-    outputs: {},
-  });
-
-  expect(step1).toMatchObject({
-    run_type: "llm",
-    outputs: {
-      role: "assistant",
-      content: expect.stringMatching(/order/i),
-      finish_reason: "stop",
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    edges: [
+      ["openai.responses:0", "step 0:1"],
+      ["step 0:1", "listOrders:2"],
+      ["openai.responses:0", "step 1:3"],
+    ],
+    data: {
+      "openai.responses:0": {
+        run_type: "chain",
+        inputs: {
+          messages: [{ role: "user", content: userContent }],
+          tools: ["listOrders"],
+        },
+        outputs: {
+          content: expect.stringMatching(/order/i),
+          finish_reason: "stop",
+        },
+      },
+      "step 0:1": {
+        run_type: "llm",
+        outputs: {
+          role: "assistant",
+          content: "",
+          tool_calls: expect.arrayContaining([
+            expect.objectContaining({
+              type: "function",
+              function: { name: "listOrders" },
+            }),
+          ]),
+          finish_reason: "tool-calls",
+        },
+      },
+      "listOrders:2": {
+        run_type: "tool",
+        inputs: { userId: "123" },
+        outputs: {},
+      },
+      "step 1:3": {
+        run_type: "llm",
+        outputs: {
+          role: "assistant",
+          content: expect.stringMatching(/order/i),
+          finish_reason: "stop",
+        },
+      },
     },
   });
 });
@@ -304,51 +282,46 @@ test(
     const result = await ai.generateText({
       model,
       messages: [{ role: "user", content: userMessage }],
-      providerOptions: {
-        openai: {
-          serviceTier: "flex",
-        },
-      },
+      providerOptions: { openai: { serviceTier: "flex" } },
       telemetry: { integrations: [createLangSmithTelemetry({ client })] },
     });
 
     expect(result.text.length).toBeGreaterThan(0);
-
     await client.awaitPendingTraceBatches();
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const root = Object.values(runs.data).find(isTelemetryRoot);
-    const step0 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-    );
-
-    expect(root).toBeDefined();
-    expect(step0).toBeDefined();
-    expect(step0!.parent_run_id).toBe(root!.id);
-
-    expect(root).toMatchObject({
-      run_type: "chain",
-      inputs: {
-        messages: [{ role: "user", content: userMessage }],
-      },
-      outputs: {
-        content: expect.stringMatching(/blue/i),
-        finish_reason: "stop",
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          run_type: "chain",
+          inputs: {
+            messages: [{ role: "user", content: userMessage }],
+          },
+          outputs: {
+            content: expect.stringMatching(/blue/i),
+            finish_reason: "stop",
+          },
+        },
+        "step 0:1": {
+          run_type: "llm",
+          outputs: {
+            role: "assistant",
+            content: expect.stringMatching(/blue/i),
+            finish_reason: "stop",
+          },
+          extra: {
+            metadata: {
+              usage_metadata: {
+                input_tokens: new GreaterThanMatcher(0),
+                output_tokens: new GreaterThanMatcher(0),
+              },
+            },
+          },
+        },
       },
     });
-
-    expect(step0).toMatchObject({
-      run_type: "llm",
-      outputs: {
-        role: "assistant",
-        content: expect.stringMatching(/blue/i),
-        finish_reason: "stop",
-      },
-    });
-
-    const usageMetadata = step0!.extra?.metadata?.usage_metadata;
-    expect(usageMetadata?.input_tokens).toBeGreaterThan(0);
-    expect(usageMetadata?.output_tokens).toBeGreaterThan(0);
   },
 );
 
@@ -378,36 +351,32 @@ test("telemetry generateObject", { timeout: 30_000 }, async () => {
 
   await client.awaitPendingTraceBatches();
 
-  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  const root = Object.values(runs.data).find(isTelemetryRoot);
-  const step0 = Object.values(runs.data).find(
-    (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-  );
-
-  expect(root).toBeDefined();
-  expect(step0).toBeDefined();
-  expect(step0!.parent_run_id).toBe(root!.id);
-
-  expect(root).toMatchObject({
-    run_type: "chain",
-    inputs: {
-      messages: [{ role: "user", content: userMessage }],
-    },
-    outputs: {
-      content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-      finish_reason: "stop",
-    },
-  });
-
-  expect(step0).toMatchObject({
-    run_type: "llm",
-    inputs: {
-      messages: [{ role: "user", content: userMessage }],
-    },
-    outputs: {
-      role: "assistant",
-      content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-      finish_reason: "stop",
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    edges: [["openai.responses:0", "step 0:1"]],
+    data: {
+      "openai.responses:0": {
+        run_type: "chain",
+        inputs: {
+          messages: [{ role: "user", content: userMessage }],
+        },
+        outputs: {
+          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          finish_reason: "stop",
+        },
+      },
+      "step 0:1": {
+        run_type: "llm",
+        inputs: {
+          messages: [{ role: "user", content: userMessage }],
+        },
+        outputs: {
+          role: "assistant",
+          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          finish_reason: "stop",
+        },
+      },
     },
   });
 });
@@ -440,36 +409,33 @@ test(
     expect(schema.parse(chunks.at(-1))).toBeDefined();
 
     await client.awaitPendingTraceBatches();
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const root = Object.values(runs.data).find(isTelemetryRoot);
-    const step0 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-    );
 
-    expect(root).toBeDefined();
-    expect(step0).toBeDefined();
-    expect(step0!.parent_run_id).toBe(root!.id);
-
-    expect(root).toMatchObject({
-      run_type: "chain",
-      inputs: {
-        messages: [{ role: "user", content: userMessage }],
-      },
-      outputs: {
-        content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-        finish_reason: "stop",
-      },
-    });
-
-    expect(step0).toMatchObject({
-      run_type: "llm",
-      inputs: {
-        messages: [{ role: "user", content: userMessage }],
-      },
-      outputs: {
-        role: "assistant",
-        content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
-        finish_reason: "stop",
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          run_type: "chain",
+          inputs: {
+            messages: [{ role: "user", content: userMessage }],
+          },
+          outputs: {
+            content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            finish_reason: "stop",
+          },
+        },
+        "step 0:1": {
+          run_type: "llm",
+          inputs: {
+            messages: [{ role: "user", content: userMessage }],
+          },
+          outputs: {
+            role: "assistant",
+            content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            finish_reason: "stop",
+          },
+        },
       },
     });
   },
@@ -513,32 +479,28 @@ test(
     await client.awaitPendingTraceBatches();
 
     const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const root = Object.values(runs.data).find(isTelemetryRoot);
-    const step0 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-    );
 
-    expect(root).toBeDefined();
-    expect(step0).toBeDefined();
-    expect(step0!.parent_run_id).toBe(root!.id);
-
-    expect(root).toMatchObject({
-      run_type: "chain",
-      inputs: {
-        messages: [{ role: "user", content: userMessage }],
-      },
-    });
-
-    expect(step0).toMatchObject({
-      run_type: "llm",
-      inputs: {
-        messages: [{ role: "user", content: userMessage }],
+    expect(runs).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          run_type: "chain",
+          inputs: {
+            messages: [{ role: "user", content: userMessage }],
+          },
+        },
+        "step 0:1": {
+          run_type: "llm",
+          inputs: {
+            messages: [{ role: "user", content: userMessage }],
+          },
+        },
       },
     });
 
     if (abortedAfterDeltas) {
-      expect(root!.end_time).toBeUndefined();
-      expect(step0!.end_time).toBeUndefined();
+      expect(runs.data["openai.responses:0"].end_time).toBeUndefined();
+      expect(runs.data["step 0:1"].end_time).toBeUndefined();
     }
   },
 );
@@ -592,28 +554,24 @@ test(
 
     await client.awaitPendingTraceBatches();
 
-    const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const root = Object.values(runs.data).find(isTelemetryRoot);
-    const step0 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-    );
-
-    expect(root).toBeDefined();
-    expect(step0).toBeDefined();
-    expect(step0!.parent_run_id).toBe(root!.id);
-
-    expect(root).toMatchObject({
-      inputs: { prompt: "REDACTED" },
-      outputs: { content: "REDACTED" },
-    });
-
-    expect(step0).toMatchObject({
-      inputs: {
-        messages: [
-          expect.objectContaining({ content: "REDACTED CHILD INPUTS" }),
-        ],
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          inputs: { prompt: "REDACTED" },
+          outputs: { content: "REDACTED" },
+        },
+        "step 0:1": {
+          inputs: {
+            messages: [
+              expect.objectContaining({ content: "REDACTED CHILD INPUTS" }),
+            ],
+          },
+          outputs: { content: "REDACTED CHILD OUTPUTS" },
+        },
       },
-      outputs: { content: "REDACTED CHILD OUTPUTS" },
     });
   },
 );
@@ -649,25 +607,29 @@ test(
     await client.awaitPendingTraceBatches();
 
     const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const outer = Object.values(runs.data).find(
-      (r) => r.name === "outer-traceable",
-    );
-    const telemetryRoot = Object.values(runs.data).find(isTelemetryRoot);
+    expect(runs).toMatchObject({
+      nodes: ["outer-traceable:0", "openai.responses:1", "step 0:2"],
+      edges: [
+        ["outer-traceable:0", "openai.responses:1"],
+        ["openai.responses:1", "step 0:2"],
+      ],
 
-    expect(outer).toBeDefined();
-    expect(telemetryRoot).toBeDefined();
-    expect(telemetryRoot!.parent_run_id).toBe(outer!.id);
-    expect(telemetryRoot!.trace_id).toBe(outer!.trace_id);
-
-    expect(outer).toMatchObject({
-      name: "outer-traceable",
-    });
-
-    expect(telemetryRoot).toMatchObject({
-      run_type: "chain",
-      extra: {
-        metadata: expect.objectContaining({
-          ls_integration: "vercel-ai-sdk-telemetry",
+      data: {
+        "outer-traceable:0": {
+          name: "outer-traceable",
+        },
+        "openai.responses:1": {
+          trace_id: runs.data["outer-traceable:0"].trace_id,
+          run_type: "chain",
+          extra: {
+            metadata: expect.objectContaining({
+              ls_integration: "vercel-ai-sdk-telemetry",
+            }),
+          },
+        },
+        "step 0:2": expect.objectContaining({
+          run_type: "llm",
+          trace_id: runs.data["outer-traceable:0"].trace_id,
         }),
       },
     });
@@ -780,47 +742,38 @@ test(
     await client.awaitPendingTraceBatches();
 
     const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const root = Object.values(runs.data).find(isTelemetryRoot);
-    const step0 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 0,
-    );
-    const step1 = Object.values(runs.data).find(
-      (r) => r.run_type === "llm" && r.extra?.metadata?.step_number === 1,
-    );
-    const research = Object.values(runs.data).find(
-      (r) => r.run_type === "tool" && r.name === "research",
-    );
-    const subAgentRun = Object.values(runs.data).find(
-      (r) => r.name === "sub-agent",
-    );
+    const [rootKey, step0Key, researchKey, subAgentKey, step1Key] = runs.nodes;
+    const root = runs.data[rootKey];
+    const step0 = runs.data[step0Key];
+    const research = runs.data[researchKey];
 
-    expect(root).toBeDefined();
-    expect(step0).toBeDefined();
-    expect(step1).toBeDefined();
-    expect(research).toBeDefined();
-    expect(subAgentRun).toBeDefined();
-
-    expect(step0!.parent_run_id).toBe(root!.id);
-    expect(research!.parent_run_id).toBe(step0!.id);
-    expect(step1!.parent_run_id).toBe(root!.id);
-    expect(subAgentRun!.parent_run_id).toBe(research!.id);
-
-    expect(subAgentRun!.trace_id).toBe(root!.trace_id);
-    expect(research!.trace_id).toBe(root!.trace_id);
-
-    expect(root).toMatchObject({
-      outputs: {
-        content: expect.stringMatching(/trending|research/i),
+    expect(runs).toMatchObject({
+      edges: [
+        [rootKey, step0Key],
+        [step0Key, researchKey],
+        [researchKey, subAgentKey],
+        [rootKey, step1Key],
+      ],
+      data: {
+        [rootKey]: {
+          outputs: {
+            content: expect.stringMatching(/trending|research/i),
+          },
+        },
+        [step0Key]: { parent_run_id: root.id },
+        [researchKey]: {
+          parent_run_id: step0.id,
+          trace_id: root.trace_id,
+          run_type: "tool",
+          name: "research",
+        },
+        [subAgentKey]: {
+          parent_run_id: research.id,
+          trace_id: root.trace_id,
+          name: "sub-agent",
+        },
+        [step1Key]: { parent_run_id: root.id },
       },
-    });
-
-    expect(research).toMatchObject({
-      run_type: "tool",
-      name: "research",
-    });
-
-    expect(subAgentRun).toMatchObject({
-      name: "sub-agent",
     });
   },
 );
@@ -852,15 +805,19 @@ test("telemetry error handling", { timeout: 30_000 }, async () => {
   await client.awaitPendingTraceBatches();
 
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  const errorRuns = Object.values(runs.data).filter((r) => r.error);
+  const [parentKey, childKey] = runs.edges[0]!;
 
-  expect(errorRuns).toHaveLength(2);
-  expect(errorRuns.map((r) => String(r.error))).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
-      expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
-    ]),
-  );
+  expect(runs).toMatchObject({
+    edges: [[parentKey, childKey]],
+    data: {
+      [parentKey]: {
+        error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
+      },
+      [childKey]: {
+        error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
+      },
+    },
+  });
 });
 
 test(
@@ -888,13 +845,24 @@ test(
     await client.awaitPendingTraceBatches();
 
     const firstRuns = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const firstRoot = Object.values(firstRuns.data).find(isTelemetryRoot);
-    expect(firstRoot).toBeDefined();
-
-    expect(firstRoot).toMatchObject({
-      inputs: { prompt: "What color is the sky? One word: blue." },
-      outputs: { content: expect.stringMatching(/blue/i) },
+    expect(firstRuns).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "What color is the sky? One word: blue.",
+              },
+            ],
+          },
+          outputs: { content: expect.stringMatching(/blue/i) },
+        },
+        "step 0:1": expect.objectContaining({ run_type: "llm" }),
+      },
     });
+    const firstChain = firstRuns.data["openai.responses:0"]!;
 
     const firstPosts = callSpy.mock.calls.filter(
       (call) => (call[1] as { method?: string })?.method === "POST",
@@ -917,16 +885,27 @@ test(
       callSpy.mock.calls,
       client,
     );
-    const secondRoot = Object.values(secondRuns.data).find(isTelemetryRoot);
-    expect(secondRoot).toBeDefined();
-
-    expect(secondRoot!.id).not.toBe(firstRoot!.id);
-    expect(secondRoot!.trace_id).not.toBe(firstRoot!.trace_id);
-
-    expect(secondRoot).toMatchObject({
-      inputs: { prompt: "What color is grass? One word: green." },
-      outputs: { content: expect.stringMatching(/green/i) },
+    expect(secondRuns).toMatchObject({
+      edges: [["openai.responses:0", "step 0:1"]],
+      data: {
+        "openai.responses:0": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "What color is grass? One word: green.",
+              },
+            ],
+          },
+          outputs: { content: expect.stringMatching(/green/i) },
+        },
+        "step 0:1": expect.objectContaining({ run_type: "llm" }),
+      },
     });
+    const secondChain = secondRuns.data["openai.responses:0"]!;
+
+    expect(secondChain.id).not.toBe(firstChain.id);
+    expect(secondChain.trace_id).not.toBe(firstChain.trace_id);
 
     const secondPosts = callSpy.mock.calls.filter(
       (call) => (call[1] as { method?: string })?.method === "POST",
