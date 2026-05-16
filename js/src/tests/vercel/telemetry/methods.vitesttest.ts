@@ -58,7 +58,7 @@ async function simulateGenerateText(
     // Final result overrides
     totalUsage?: any;
     error?: Error;
-  }
+  },
 ) {
   const model = opts.model ?? { modelId: "test-model" };
   const steps = opts.steps ?? [
@@ -210,7 +210,7 @@ describe("createLangSmithTelemetry", () => {
       expect(rootCreate.body.inputs).toHaveProperty("prompt", "Test prompt");
       expect(rootCreate.body.extra.metadata).toHaveProperty(
         "ls_integration",
-        "vercel-ai-sdk-telemetry"
+        "vercel-ai-sdk-telemetry",
       );
 
       // Step run (LLM)
@@ -227,7 +227,7 @@ describe("createLangSmithTelemetry", () => {
       const rootUpdate = updateRuns[1];
       expect(rootUpdate.body.outputs).toHaveProperty(
         "content",
-        "Test response"
+        "Test response",
       );
     });
 
@@ -244,7 +244,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const rootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(rootCreate.body.name).toBe("openai");
       expect(rootCreate.body.extra.metadata.ls_model_name).toBe("gpt-4o");
@@ -263,7 +263,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const rootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(rootCreate.body.name).toBe("my-agent");
     });
@@ -282,7 +282,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const rootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(rootCreate.body.extra.metadata).toMatchObject({
         customField: "test-value",
@@ -307,7 +307,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const updateRunCall = mockHttpRequests.find(
-        (r) => r.type === "updateRun" && r.body.error
+        (r) => r.type === "updateRun" && r.body.error,
       );
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK ERROR");
@@ -320,13 +320,13 @@ describe("createLangSmithTelemetry", () => {
 
       // Start the lifecycle manually to simulate mid-step error
       integration.onStart?.({
-        model: { modelId: "test-model" },
+        modelId: "test-model",
         prompt: "Test",
-      });
+      } as any);
       integration.onStepStart?.({
         stepNumber: 0,
         messages: [{ role: "user", content: "Test" }],
-      });
+      } as any);
 
       // Error before step finishes
       await integration.onError?.(new Error("Mid-step error"));
@@ -335,7 +335,7 @@ describe("createLangSmithTelemetry", () => {
 
       // Step and root should both be closed with error
       const errorUpdates = mockHttpRequests.filter(
-        (r) => r.type === "updateRun" && r.body.error
+        (r) => r.type === "updateRun" && r.body.error,
       );
       expect(errorUpdates.length).toBe(2); // step + root
     });
@@ -465,7 +465,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const toolRuns = mockHttpRequests.filter(
-        (r) => r.type === "createRun" && r.body.run_type === "tool"
+        (r) => r.type === "createRun" && r.body.run_type === "tool",
       );
       expect(toolRuns.length).toBe(1);
       expect(toolRuns[0].body.name).toBe("calculator");
@@ -480,7 +480,7 @@ describe("createLangSmithTelemetry", () => {
         (r) =>
           r.type === "updateRun" &&
           r.body.outputs &&
-          (r.body.outputs.output === 4 || r.body.outputs.outputs === 4)
+          (r.body.outputs.output === 4 || r.body.outputs.outputs === 4),
       );
       expect(toolUpdate).toBeDefined();
     });
@@ -499,7 +499,7 @@ describe("createLangSmithTelemetry", () => {
           name: "inner-agent-call",
           run_type: "chain",
           client: mockClient as any,
-        }
+        },
       );
 
       await simulateGenerateText(integration, {
@@ -550,12 +550,12 @@ describe("createLangSmithTelemetry", () => {
       const createRuns = mockHttpRequests.filter((r) => r.type === "createRun");
 
       const toolRun = createRuns.find(
-        (r) => r.body.run_type === "tool" && r.body.name === "research"
+        (r) => r.body.run_type === "tool" && r.body.name === "research",
       );
       expect(toolRun).toBeDefined();
 
       const innerRun = createRuns.find(
-        (r) => r.body.name === "inner-agent-call"
+        (r) => r.body.name === "inner-agent-call",
       );
       expect(innerRun).toBeDefined();
 
@@ -598,7 +598,7 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step"
+          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
       );
       expect(stepUpdate).toBeDefined();
       expect(stepUpdate.body.extra.metadata.usage_metadata).toMatchObject({
@@ -610,15 +610,15 @@ describe("createLangSmithTelemetry", () => {
       // Verify token details
       expect(
         stepUpdate.body.extra.metadata.usage_metadata.input_token_details
-          .cache_read
+          .cache_read,
       ).toBe(30);
       expect(
         stepUpdate.body.extra.metadata.usage_metadata.input_token_details
-          .cache_creation
+          .cache_creation,
       ).toBe(20);
       expect(
         stepUpdate.body.extra.metadata.usage_metadata.output_token_details
-          .reasoning
+          .reasoning,
       ).toBe(10);
     });
 
@@ -663,7 +663,7 @@ describe("createLangSmithTelemetry", () => {
       const rootUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
+          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
       );
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.extra.metadata.usage_metadata).toMatchObject({
@@ -707,7 +707,7 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step"
+          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
       );
       expect(stepUpdate).toBeDefined();
       expect(stepUpdate.body.extra.metadata.usage_metadata).toMatchObject({
@@ -735,7 +735,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const rootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(rootCreate.body.inputs.prompt).toBe("REDACTED");
     });
@@ -773,7 +773,7 @@ describe("createLangSmithTelemetry", () => {
       const rootUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
+          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
       );
       expect(rootUpdate.body.outputs.content).toBe("REDACTED");
     });
@@ -796,10 +796,10 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const stepCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "llm"
+        (r) => r.type === "createRun" && r.body.run_type === "llm",
       );
       expect(stepCreate.body.inputs.messages[0].content).toBe(
-        "REDACTED_CHILD_INPUT"
+        "REDACTED_CHILD_INPUT",
       );
     });
 
@@ -823,7 +823,7 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step"
+          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
       );
       expect(stepUpdate.body.outputs.content).toBe("REDACTED_CHILD_OUTPUT");
     });
@@ -854,10 +854,10 @@ describe("createLangSmithTelemetry", () => {
 
       // Step's dotted_order should be prefixed with root's dotted_order
       expect(
-        stepRun!.body.dotted_order.startsWith(rootRun!.body.dotted_order)
+        stepRun!.body.dotted_order.startsWith(rootRun!.body.dotted_order),
       ).toBe(true);
       expect(stepRun!.body.dotted_order.split(".").length).toBe(
-        rootRun!.body.dotted_order.split(".").length + 1
+        rootRun!.body.dotted_order.split(".").length + 1,
       );
     });
 
@@ -875,7 +875,7 @@ describe("createLangSmithTelemetry", () => {
         {
           name: "outer-traceable",
           client: mockClient as any,
-        }
+        },
       );
 
       await outerFn();
@@ -885,12 +885,12 @@ describe("createLangSmithTelemetry", () => {
       const createRuns = mockHttpRequests.filter((r) => r.type === "createRun");
 
       const outerRun = createRuns.find(
-        (r) => r.body.name === "outer-traceable"
+        (r) => r.body.name === "outer-traceable",
       );
       const telemetryRoot = createRuns.find(
         (r) =>
           r.body.run_type === "chain" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
+          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
       );
 
       expect(outerRun).toBeDefined();
@@ -934,7 +934,7 @@ describe("createLangSmithTelemetry", () => {
       const rootUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
+          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
       );
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.outputs.steps).toBeDefined();
@@ -956,7 +956,7 @@ describe("createLangSmithTelemetry", () => {
       const rootUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry"
+          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
       );
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.outputs.steps).toBeUndefined();
@@ -1011,7 +1011,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const rootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(rootCreate.body.session_name).toBe("my-custom-project");
     });
@@ -1048,7 +1048,7 @@ describe("createLangSmithTelemetry", () => {
 
       const firstCallRequests = [...mockHttpRequests];
       const firstRootCreate = firstCallRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(firstRootCreate).toBeDefined();
       const firstRootId = firstRootCreate.body.id;
@@ -1080,7 +1080,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const secondRootCreate = mockHttpRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(secondRootCreate).toBeDefined();
 
@@ -1091,12 +1091,12 @@ describe("createLangSmithTelemetry", () => {
       // Second call should have its own inputs
       expect(secondRootCreate.body.inputs).toHaveProperty(
         "prompt",
-        "Second call"
+        "Second call",
       );
 
       // Should have correct structure: root + step
       const secondCreateRuns = mockHttpRequests.filter(
-        (r) => r.type === "createRun"
+        (r) => r.type === "createRun",
       );
       expect(secondCreateRuns.length).toBe(2); // root + step
     });
@@ -1152,7 +1152,7 @@ describe("createLangSmithTelemetry", () => {
 
       // No error updates on the second call
       const errorUpdates = mockHttpRequests.filter(
-        (r) => r.type === "updateRun" && r.body.error
+        (r) => r.type === "updateRun" && r.body.error,
       );
       expect(errorUpdates.length).toBe(0);
     });
@@ -1259,16 +1259,16 @@ describe("createLangSmithTelemetry", () => {
 
       // Second call should have its own complete trace
       const secondCreateRuns = mockHttpRequests.filter(
-        (r) => r.type === "createRun"
+        (r) => r.type === "createRun",
       );
       const secondRoot = secondCreateRuns.find(
-        (r) => r.body.run_type === "chain"
+        (r) => r.body.run_type === "chain",
       );
       const secondSteps = secondCreateRuns.filter(
-        (r) => r.body.run_type === "llm"
+        (r) => r.body.run_type === "llm",
       );
       const secondTools = secondCreateRuns.filter(
-        (r) => r.body.run_type === "tool"
+        (r) => r.body.run_type === "tool",
       );
 
       expect(secondRoot).toBeDefined();
@@ -1284,7 +1284,7 @@ describe("createLangSmithTelemetry", () => {
 
       // And it should differ from the first call's trace_id
       const firstRoot = firstCallRequests.find(
-        (r) => r.type === "createRun" && r.body.run_type === "chain"
+        (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
       expect(secondTraceId).not.toBe(firstRoot!.body.trace_id);
     });
