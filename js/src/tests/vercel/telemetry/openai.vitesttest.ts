@@ -682,7 +682,6 @@ test(
     await client.awaitPendingTraceBatches();
     const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
-    console.dir(runs, { depth: null });
     expect(runs).toMatchObject({
       edges: [
         ["openai.responses:0", "step 0:1"],
