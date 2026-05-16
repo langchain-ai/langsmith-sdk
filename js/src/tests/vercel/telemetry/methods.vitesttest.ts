@@ -33,11 +33,21 @@ class MockLangSmithClient {
   }
 }
 
+/** Final PATCH for the root `chain` run (child runs inherit `ls_integration` metadata). */
+function findRootChainUpdate(mockHttpRequests: any[]) {
+  return mockHttpRequests.find(
+    (r) =>
+      r.type === "updateRun" &&
+      r.body.run_type === "chain" &&
+      r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
+  );
+}
+
 /**
  * Simulate the Vercel AI SDK telemetry lifecycle for generateText.
  *
- * Event order: onStart → onStepStart → (onToolCallStart → executeToolCall →
- * onToolCallFinish)* → onStepFinish → ... → onFinish
+ * Event order: onStart → onStepStart → (onToolExecutionStart → executeTool →
+ * onToolExecutionEnd)* → onStepFinish → ... → onEnd
  */
 async function simulateGenerateText(
   integration: any,
@@ -47,6 +57,8 @@ async function simulateGenerateText(
     prompt?: string;
     system?: string;
     tools?: Record<string, any>;
+    /** AI SDK generation id; defaults for tests. */
+    callId?: string;
     // Simulated step results
     steps?: Array<{
       text?: string;
@@ -60,7 +72,21 @@ async function simulateGenerateText(
     error?: Error;
   },
 ) {
+  const generationCallId = opts.callId ?? "simulated-generation-call";
+
   const model = opts.model ?? { modelId: "test-model" };
+  const modelId =
+    typeof model === "object" && model != null && "modelId" in model
+      ? model.modelId
+      : "test-model";
+  const provider =
+    typeof model === "object" &&
+    model != null &&
+    typeof model.config?.provider === "string"
+      ? model.config.provider
+      : typeof model === "object" && model != null && typeof model.provider === "string"
+        ? model.provider
+        : "test-provider";
   const steps = opts.steps ?? [
     {
       text: "Hello world",
@@ -76,6 +102,9 @@ async function simulateGenerateText(
   // onStart
   integration.onStart?.({
     model,
+    modelId,
+    provider,
+    callId: generationCallId,
     messages: opts.messages,
     prompt: opts.prompt,
     system: opts.system,
@@ -83,7 +112,10 @@ async function simulateGenerateText(
   });
 
   if (opts.error) {
-    await integration.onError?.(opts.error);
+    await integration.onError?.({
+      callId: generationCallId,
+      error: opts.error,
+    });
     return;
   }
 
@@ -93,6 +125,8 @@ async function simulateGenerateText(
     // onStepStart
     integration.onStepStart?.({
       stepNumber: i,
+      provider,
+      modelId,
       messages: opts.messages ?? [
         { role: "user", content: opts.prompt ?? "test" },
       ],
@@ -101,21 +135,76 @@ async function simulateGenerateText(
     // Handle tool calls within this step
     if (step.toolCalls && step.toolCalls.length > 0) {
       for (const tc of step.toolCalls) {
-        integration.onToolCallStart?.({
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          args: tc.args,
+        const messages =
+          opts.messages ?? [{ role: "user", content: opts.prompt ?? "test" }];
+        const callId = `call-${tc.toolCallId}`;
+
+        integration.onToolExecutionStart?.({
+          callId,
+          messages,
+          toolCall: {
+            type: "tool-call",
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            input: tc.args,
+          },
+          toolContext: undefined,
         });
 
-        // Execute the tool via the integration hook
-        if (integration.executeToolCall) {
-          const toolResult = await integration.executeToolCall({
-            callId: `call-${tc.toolCallId}`,
-            toolCallId: tc.toolCallId,
-            execute:
-              tc.execute ?? (() => Promise.resolve(tc.result ?? "tool result")),
+        if (integration.executeTool) {
+          const started = Date.now();
+          let toolResult: unknown;
+          try {
+            toolResult = await integration.executeTool({
+              callId,
+              toolCallId: tc.toolCallId,
+              execute:
+                tc.execute ??
+                (() => Promise.resolve(tc.result ?? "tool result")),
+            });
+          } catch (err) {
+            await integration.onToolExecutionEnd?.({
+              callId,
+              messages,
+              toolCall: {
+                type: "tool-call",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                input: tc.args,
+              },
+              toolContext: undefined,
+              toolExecutionMs: Math.max(1, Date.now() - started),
+              toolOutput: {
+                type: "tool-error",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                input: tc.args,
+                error: err,
+              },
+            });
+            throw err;
+          }
+
+          await integration.onToolExecutionEnd?.({
+            callId,
+            messages,
+            toolCall: {
+              type: "tool-call",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              input: tc.args,
+            },
+            toolContext: undefined,
+            toolExecutionMs: Math.max(1, Date.now() - started),
+            toolOutput: {
+              type: "tool-result",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              input: tc.args,
+              output: toolResult,
+            },
           });
-          // Store for toolResults
+
           if (!step.toolResults) step.toolResults = [];
           step.toolResults.push({
             toolCallId: tc.toolCallId,
@@ -141,9 +230,9 @@ async function simulateGenerateText(
     });
   }
 
-  // onFinish
+  // onEnd
   const lastStep = steps[steps.length - 1];
-  await integration.onFinish?.({
+  await integration.onEnd?.({
     text: lastStep.text,
     toolCalls: lastStep.toolCalls ?? [],
     toolResults: lastStep.toolResults ?? [],
@@ -394,7 +483,7 @@ describe("createLangSmithTelemetry", () => {
 
       const createRuns = mockHttpRequests.filter((r) => r.type === "createRun");
 
-      // root + step 0 + tool (via traceable) + step 1
+      // root + step 0 + tool + step 1
       const rootRun = createRuns.find((r) => r.body.run_type === "chain");
       const stepRuns = createRuns.filter((r) => r.body.run_type === "llm");
       const toolRuns = createRuns.filter((r) => r.body.run_type === "tool");
@@ -413,8 +502,8 @@ describe("createLangSmithTelemetry", () => {
     });
   });
 
-  describe("tool tracing via executeToolCall", () => {
-    it("should create tool spans using traceable inside executeToolCall", async () => {
+  describe("tool tracing via executeTool", () => {
+    it("should create tool spans and record outputs on onToolExecutionEnd", async () => {
       const integration = createLangSmithTelemetry({
         client: mockClient as any,
       });
@@ -660,11 +749,7 @@ describe("createLangSmithTelemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Find the root chain run update
-      const rootUpdate = mockHttpRequests.find(
-        (r) =>
-          r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-      );
+      const rootUpdate = findRootChainUpdate(mockHttpRequests);
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.extra.metadata.usage_metadata).toMatchObject({
         input_tokens: 30,
@@ -770,11 +855,8 @@ describe("createLangSmithTelemetry", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const rootUpdate = mockHttpRequests.find(
-        (r) =>
-          r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-      );
+      const rootUpdate = findRootChainUpdate(mockHttpRequests);
+      expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.outputs.content).toBe("REDACTED");
     });
 
@@ -931,11 +1013,7 @@ describe("createLangSmithTelemetry", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const rootUpdate = mockHttpRequests.find(
-        (r) =>
-          r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-      );
+      const rootUpdate = findRootChainUpdate(mockHttpRequests);
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.outputs.steps).toBeDefined();
       expect(Array.isArray(rootUpdate.body.outputs.steps)).toBe(true);
@@ -953,11 +1031,7 @@ describe("createLangSmithTelemetry", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const rootUpdate = mockHttpRequests.find(
-        (r) =>
-          r.type === "updateRun" &&
-          r.body.extra?.metadata?.ls_integration === "vercel-ai-sdk-telemetry",
-      );
+      const rootUpdate = findRootChainUpdate(mockHttpRequests);
       expect(rootUpdate).toBeDefined();
       expect(rootUpdate.body.outputs.steps).toBeUndefined();
     });

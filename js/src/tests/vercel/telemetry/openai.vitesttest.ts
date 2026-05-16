@@ -162,7 +162,9 @@ test("telemetry generateText with tools", { timeout: 30_000 }, async () => {
       "listOrders:2": {
         run_type: "tool",
         inputs: { userId: "123" },
-        outputs: {},
+        outputs: {
+          output: expect.stringMatching(/User 123 has the following orders/),
+        },
       },
       "step 1:3": {
         run_type: "llm",
@@ -252,7 +254,9 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
       "listOrders:2": {
         run_type: "tool",
         inputs: { userId: "123" },
-        outputs: {},
+        outputs: {
+          output: expect.stringMatching(/User 123 has the following orders/),
+        },
       },
       "step 1:3": {
         run_type: "llm",
@@ -646,133 +650,114 @@ test(
       fetchImplementation: callSpy,
     });
 
-    const integration = createLangSmithTelemetry({
-      client,
-    });
-    const drive = integration as any;
-
+    const integration = createLangSmithTelemetry({ client });
     const model = openai("gpt-5-nano");
 
     const subAgent = traceable(
-      async (query: string) => `Sub-agent result for: ${query}`,
+      async (query: string) => {
+        const subagent = await ai.generateText({
+          model,
+          prompt: `Only say '${query}' and nothing else`,
+          telemetry: { integrations: [integration] },
+        });
+
+        return subagent.text;
+      },
       { name: "sub-agent", run_type: "chain", client },
     );
 
-    drive.onStart?.({
+    await ai.generateText({
       model,
-      prompt: "Use the research tool",
-      tools: { research: {} },
-    });
-
-    drive.onStepStart?.({
-      stepNumber: 0,
-      messages: [{ role: "user", content: "Use the research tool" }],
-    });
-
-    drive.onToolExecutionStart?.({
-      callId: "call-1",
-      messages: [],
-      toolCall: {
-        type: "tool-call",
-        toolCallId: "tc-1",
-        toolName: "research",
-        input: { query: "AI trends" },
+      prompt: "Call the research tool to search for 'AI trends'",
+      tools: {
+        research: tool({
+          description: "Search for AI trends",
+          inputSchema: z.object({ query: z.string() }),
+          execute: async ({ query }) => subAgent(query),
+        }),
       },
-      toolContext: undefined,
-    });
-
-    const toolResult = await integration.executeTool!({
-      callId: "call-1",
-      toolCallId: "tc-1",
-      execute: () => subAgent("AI trends"),
-    });
-
-    expect(toolResult).toBe("Sub-agent result for: AI trends");
-
-    await drive.onStepFinish?.({
-      stepNumber: 0,
-      text: "",
-      toolCalls: [
-        {
-          toolCallId: "tc-1",
-          toolName: "research",
-          args: { query: "AI trends" },
-        },
-      ],
-      usage: {
-        inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 5, text: 0, reasoning: 0 },
-        totalTokens: 15,
-      },
-      finishReason: "tool-calls",
-    });
-
-    drive.onStepStart?.({
-      stepNumber: 1,
-      messages: [{ role: "user", content: "Use the research tool" }],
-    });
-
-    await drive.onStepFinish?.({
-      stepNumber: 1,
-      text: "Based on the research, AI is trending.",
-      usage: {
-        inputTokens: { total: 20, noCache: 20, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 10, text: 10, reasoning: 0 },
-        totalTokens: 30,
-      },
-      finishReason: "stop",
-    });
-
-    await drive.onEnd?.({
-      text: "Based on the research, AI is trending.",
-      usage: {
-        inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 15, text: 10, reasoning: 0 },
-        totalTokens: 45,
-      },
-      totalUsage: {
-        inputTokens: { total: 30, noCache: 30, cacheRead: 0, cacheWrite: 0 },
-        outputTokens: { total: 15, text: 10, reasoning: 0 },
-        totalTokens: 45,
-      },
-      finishReason: "stop",
-      steps: [],
+      telemetry: { integrations: [integration] },
     });
 
     await client.awaitPendingTraceBatches();
-
     const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    const [rootKey, step0Key, researchKey, subAgentKey, step1Key] = runs.nodes;
-    const root = runs.data[rootKey];
-    const step0 = runs.data[step0Key];
-    const research = runs.data[researchKey];
 
+    console.dir(runs, { depth: null });
     expect(runs).toMatchObject({
       edges: [
-        [rootKey, step0Key],
-        [step0Key, researchKey],
-        [researchKey, subAgentKey],
-        [rootKey, step1Key],
+        ["openai.responses:0", "step 0:1"],
+        ["step 0:1", "research:2"],
+        ["research:2", "sub-agent:3"],
+        ["sub-agent:3", "openai.responses:4"],
+        ["openai.responses:4", "step 0:5"],
       ],
       data: {
-        [rootKey]: {
+        "openai.responses:0": {
+          run_type: "chain",
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "Call the research tool to search for 'AI trends'",
+              },
+            ],
+            tools: ["research"],
+          },
           outputs: {
-            content: expect.stringMatching(/trending|research/i),
+            tool_calls: [{ type: "function", function: { name: "research" } }],
+            finish_reason: "tool-calls",
           },
         },
-        [step0Key]: { parent_run_id: root.id },
-        [researchKey]: {
-          parent_run_id: step0.id,
-          trace_id: root.trace_id,
+        "step 0:1": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "Call the research tool to search for 'AI trends'",
+              },
+            ],
+          },
+          outputs: {
+            role: "assistant",
+            tool_calls: [{ type: "function", function: { name: "research" } }],
+            finish_reason: "tool-calls",
+          },
+        },
+        "research:2": {
           run_type: "tool",
-          name: "research",
+          inputs: { query: "AI trends" },
+          outputs: { output: "AI trends" },
         },
-        [subAgentKey]: {
-          parent_run_id: research.id,
-          trace_id: root.trace_id,
-          name: "sub-agent",
+        "sub-agent:3": {
+          run_type: "chain",
+          inputs: { input: "AI trends" },
+          outputs: { outputs: "AI trends" },
         },
-        [step1Key]: { parent_run_id: root.id },
+        "openai.responses:4": {
+          run_type: "chain",
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "Only say 'AI trends' and nothing else",
+              },
+            ],
+          },
+          outputs: { content: "AI trends", finish_reason: "stop" },
+        },
+        "step 0:5": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: "Only say 'AI trends' and nothing else",
+              },
+            ],
+          },
+          outputs: { role: "assistant", finish_reason: "stop" },
+        },
       },
     });
   },
