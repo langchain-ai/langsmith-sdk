@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
@@ -75,10 +76,12 @@ def _trace_reconnect_outputs(handle: CommandHandle) -> dict[str, Any]:
 
 
 def _trace_write_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    content = inputs["content"]
+    content_bytes = content.encode("utf-8") if isinstance(content, str) else content
     return {
         "path": inputs["path"],
         "timeout": inputs["timeout"],
-        "content_bytes": len(inputs["content"]),
+        "content_bytes": len(content_bytes),
     }
 
 
@@ -100,6 +103,30 @@ def _trace_tunnel_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
 
 def _trace_tunnel_outputs(tunnel: Tunnel) -> dict[str, Any]:
     return {"remote_port": tunnel.remote_port, "local_port": tunnel.local_port}
+
+
+def _sandbox_traceable(
+    *,
+    name: str,
+    process_inputs: Callable[[dict[str, Any]], dict[str, Any]],
+    process_outputs: Optional[Callable[[Any], dict[str, Any]]] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
+        def wrapper(self: Sandbox, *args: Any, **kwargs: Any) -> Any:
+            traced = rh.traceable(
+                name=name,
+                run_type="tool",
+                metadata=self._trace_metadata(),
+                process_inputs=process_inputs,
+                process_outputs=process_outputs,
+            )(func)
+            with self._sandbox_trace_context():
+                return traced(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -305,6 +332,11 @@ class Sandbox:
         wait: Literal[False],
     ) -> CommandHandle: ...
 
+    @_sandbox_traceable(
+        name="Sandbox.run",
+        process_inputs=_trace_run_inputs,
+        process_outputs=_trace_execution_outputs,
+    )
     def run(
         self,
         command: str,
@@ -369,47 +401,6 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        with self._sandbox_trace_context():
-            return self._run_untraced(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                on_stdout=on_stdout,
-                on_stderr=on_stderr,
-                idle_timeout=idle_timeout,
-                kill_on_disconnect=kill_on_disconnect,
-                ttl_seconds=ttl_seconds,
-                pty=pty,
-                headers=headers,
-                wait=wait,
-            )
-
-    @rh.traceable(
-        name="Sandbox.run",
-        run_type="tool",
-        process_inputs=_trace_run_inputs,
-        process_outputs=_trace_execution_outputs,
-    )
-    def _run_untraced(
-        self,
-        command: str,
-        *,
-        timeout: int,
-        env: Optional[dict[str, str]],
-        cwd: Optional[str],
-        shell: str,
-        on_stdout: Optional[Callable[[str], Any]],
-        on_stderr: Optional[Callable[[str], Any]],
-        idle_timeout: int,
-        kill_on_disconnect: bool,
-        ttl_seconds: int,
-        pty: bool,
-        headers: RequestHeaders,
-        wait: bool,
-    ) -> Union[ExecutionResult, CommandHandle]:
-        """Execute a command."""
         if not wait and (on_stdout or on_stderr):
             raise ValueError(
                 "Cannot combine wait=False with on_stdout/on_stderr callbacks. "
@@ -427,7 +418,6 @@ class Sandbox:
                 env=env,
                 cwd=cwd,
                 shell=shell,
-                wait=wait,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
                 idle_timeout=idle_timeout,
@@ -435,6 +425,7 @@ class Sandbox:
                 ttl_seconds=ttl_seconds,
                 pty=pty,
                 headers=headers,
+                wait=wait,
             )
 
         # Default (wait=True, no callbacks): try WS, fall back to HTTP.
@@ -559,6 +550,11 @@ class Sandbox:
             handle_sandbox_http_error(e)
             raise  # pragma: no cover
 
+    @_sandbox_traceable(
+        name="Sandbox.reconnect",
+        process_inputs=_trace_reconnect_inputs,
+        process_outputs=_trace_reconnect_outputs,
+    )
     def reconnect(
         self,
         command_id: str,
@@ -584,29 +580,6 @@ class Sandbox:
             SandboxOperationError: If command_id is not found or session expired.
             SandboxConnectionError: If connection to sandbox fails after retries.
         """
-        with self._sandbox_trace_context():
-            return self._reconnect_untraced(
-                command_id,
-                stdout_offset=stdout_offset,
-                stderr_offset=stderr_offset,
-                headers=headers,
-            )
-
-    @rh.traceable(
-        name="Sandbox.reconnect",
-        run_type="tool",
-        process_inputs=_trace_reconnect_inputs,
-        process_outputs=_trace_reconnect_outputs,
-    )
-    def _reconnect_untraced(
-        self,
-        command_id: str,
-        *,
-        stdout_offset: int,
-        stderr_offset: int,
-        headers: RequestHeaders,
-    ) -> CommandHandle:
-        """Reconnect to a command."""
         from langsmith.sandbox._ws_execute import reconnect_ws_stream
 
         dataplane_url = self._require_dataplane_url()
@@ -635,6 +608,7 @@ class Sandbox:
             stderr_offset=stderr_offset,
         )
 
+    @_sandbox_traceable(name="Sandbox.write", process_inputs=_trace_write_inputs)
     def write(
         self,
         path: str,
@@ -658,32 +632,10 @@ class Sandbox:
             SandboxClientError: For other errors.
         """
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
-        with self._sandbox_trace_context():
-            self._write_untraced(
-                path,
-                content_bytes,
-                timeout=timeout,
-                headers=headers,
-            )
-
-    @rh.traceable(
-        name="Sandbox.write",
-        run_type="tool",
-        process_inputs=_trace_write_inputs,
-    )
-    def _write_untraced(
-        self,
-        path: str,
-        content: bytes,
-        *,
-        timeout: int,
-        headers: RequestHeaders,
-    ) -> None:
-        """Write content."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/upload"
 
-        files = {"file": ("file", content)}
+        files = {"file": ("file", content_bytes)}
 
         try:
             response = self._client._http.post(
@@ -697,6 +649,11 @@ class Sandbox:
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
+    @_sandbox_traceable(
+        name="Sandbox.read",
+        process_inputs=_trace_read_inputs,
+        process_outputs=_trace_read_outputs,
+    )
     def read(
         self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
     ) -> bytes:
@@ -718,19 +675,6 @@ class Sandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        with self._sandbox_trace_context():
-            return self._read_untraced(path, timeout=timeout, headers=headers)
-
-    @rh.traceable(
-        name="Sandbox.read",
-        run_type="tool",
-        process_inputs=_trace_read_inputs,
-        process_outputs=_trace_read_outputs,
-    )
-    def _read_untraced(
-        self, path: str, *, timeout: int, headers: RequestHeaders
-    ) -> bytes:
-        """Read content."""
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/download"
 
@@ -753,6 +697,11 @@ class Sandbox:
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
 
+    @_sandbox_traceable(
+        name="Sandbox.tunnel",
+        process_inputs=_trace_tunnel_inputs,
+        process_outputs=_trace_tunnel_outputs,
+    )
     def tunnel(
         self,
         remote_port: int,
@@ -793,29 +742,6 @@ class Sandbox:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
             SandboxNotReadyError: If sandbox is not ready.
         """
-        with self._sandbox_trace_context():
-            return self._tunnel_untraced(
-                remote_port,
-                local_port=local_port,
-                max_reconnects=max_reconnects,
-                headers=headers,
-            )
-
-    @rh.traceable(
-        name="Sandbox.tunnel",
-        run_type="tool",
-        process_inputs=_trace_tunnel_inputs,
-        process_outputs=_trace_tunnel_outputs,
-    )
-    def _tunnel_untraced(
-        self,
-        remote_port: int,
-        *,
-        local_port: int,
-        max_reconnects: int,
-        headers: RequestHeaders,
-    ) -> Tunnel:
-        """Open a tunnel."""
         if not 1 <= remote_port <= 65535:
             raise ValueError(
                 f"remote_port must be between 1 and 65535 (got {remote_port})"
