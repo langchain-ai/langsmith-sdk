@@ -9863,6 +9863,9 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
+        target_concurrency: Optional[int] = None,
+        evaluation_concurrency: Optional[int] = None,
         **kwargs: Any,
     ) -> ExperimentResults: ...
 
@@ -9882,6 +9885,9 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
+        target_concurrency: Optional[int] = None,
+        evaluation_concurrency: Optional[int] = None,
         **kwargs: Any,
     ) -> ComparativeExperimentResults: ...
 
@@ -9905,6 +9911,8 @@ class Client:
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
         error_handling: Literal["log", "ignore"] = "log",
+        target_concurrency: Optional[int] = None,
+        evaluation_concurrency: Optional[int] = None,
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
         r"""Evaluate a target system on a given dataset.
@@ -10110,6 +10118,8 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            target_concurrency=target_concurrency,
+            evaluation_concurrency=evaluation_concurrency,
             **kwargs,
         )
 
@@ -10138,6 +10148,8 @@ class Client:
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
         error_handling: Literal["log", "ignore"] = "log",
+        target_concurrency: Optional[int] = None,
+        evaluation_concurrency: Optional[int] = None,
         **kwargs: Any,
     ) -> AsyncExperimentResults:
         r"""Evaluate an async target system on a given dataset.
@@ -10361,6 +10373,8 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            target_concurrency=target_concurrency,
+            evaluation_concurrency=evaluation_concurrency,
             **kwargs,
         )
 
