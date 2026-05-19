@@ -5616,6 +5616,51 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * List runs in an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   * @param options - The options for listing runs
+   * @param options.status - Filter runs by their status in the queue
+   * @param options.includeStats - Whether to include feedback stats on the returned runs
+   * @param options.offset - The starting offset for pagination
+   * @param options.limit - The maximum number of runs to return
+   * @returns An async iterator of RunWithAnnotationQueueInfo objects
+   */
+  public async *listRunsFromAnnotationQueue(
+    queueId: string,
+    options: {
+      status?: "needs_my_review" | "needs_others_review" | "completed";
+      includeStats?: boolean;
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
+    const { status, includeStats, offset, limit } = options;
+    const params = new URLSearchParams();
+    if (status) params.append("status", status);
+    if (includeStats !== undefined)
+      params.append("include_stats", includeStats.toString());
+    if (offset !== undefined) params.append("offset", offset.toString());
+    params.append(
+      "limit",
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString(),
+    );
+
+    let count = 0;
+    for await (const runs of this._getPaginated<RunWithAnnotationQueueInfo>(
+      `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`,
+      params,
+    )) {
+      for (const run of runs) {
+        yield _normalizeRunTimestamps(
+          run as unknown as Run & RunWithAnnotationQueueInfo,
+        );
+        count++;
+        if (limit !== undefined && count >= limit) return;
+      }
+    }
+  }
+
+  /**
    * Delete a run from an an annotation queue.
    * @param queueId - The ID of the annotation queue to delete the run from
    * @param queueRunId - The ID of the run to delete from the annotation queue
