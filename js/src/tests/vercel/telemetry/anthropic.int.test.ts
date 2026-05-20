@@ -1,4 +1,4 @@
-import { test, expect, vi } from "vitest";
+import { jest } from "@jest/globals";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as ai from "ai";
 import z from "zod";
@@ -11,7 +11,7 @@ import { Client } from "../../../index.js";
 const { tool, stepCountIs } = ai;
 
 test("telemetry generateText", async () => {
-  const callSpy = vi.fn(fetch);
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -46,12 +46,12 @@ test("telemetry generateText", async () => {
 
   expect(runs).toMatchObject({
     edges: [
-      ["anthropic.messages:0", "step 0:1"],
-      ["step 0:1", "listOrders:2"],
-      ["anthropic.messages:0", "step 1:3"],
+      ["ai.generateText:0", "anthropic.messages:1"],
+      ["anthropic.messages:1", "listOrders:2"],
+      ["ai.generateText:0", "anthropic.messages:3"],
     ],
     data: {
-      "anthropic.messages:0": {
+      "ai.generateText:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -68,7 +68,7 @@ test("telemetry generateText", async () => {
           finish_reason: "stop",
         },
       },
-      "step 0:1": {
+      "anthropic.messages:1": {
         run_type: "llm",
         inputs: {
           messages: [
@@ -98,7 +98,7 @@ test("telemetry generateText", async () => {
           output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
-      "step 1:3": {
+      "anthropic.messages:3": {
         run_type: "llm",
         inputs: {
           messages: expect.arrayContaining([
@@ -121,13 +121,13 @@ test("telemetry generateText", async () => {
   });
 
   expect(
-    runs.data["anthropic.messages:0"].extra?.metadata?.usage_metadata
+    runs.data["ai.generateText:0"].extra?.metadata?.usage_metadata
       ?.total_tokens,
   ).toBeGreaterThan(0);
 });
 
-test("telemetry streamText", { timeout: 30_000 }, async () => {
-  const callSpy = vi.fn(fetch);
+test("telemetry streamText", async () => {
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -166,12 +166,12 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
 
   expect(runs).toMatchObject({
     edges: [
-      ["anthropic.messages:0", "step 0:1"],
-      ["step 0:1", "listOrders:2"],
-      ["anthropic.messages:0", "step 1:3"],
+      ["ai.streamText:0", "anthropic.messages:1"],
+      ["anthropic.messages:1", "listOrders:2"],
+      ["ai.streamText:0", "anthropic.messages:3"],
     ],
     data: {
-      "anthropic.messages:0": {
+      "ai.streamText:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -188,7 +188,7 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
           finish_reason: "stop",
         },
       },
-      "step 0:1": {
+      "anthropic.messages:1": {
         run_type: "llm",
         inputs: {
           messages: [
@@ -218,7 +218,7 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
           output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
-      "step 1:3": {
+      "anthropic.messages:3": {
         run_type: "llm",
         inputs: {
           messages: expect.arrayContaining([
@@ -239,10 +239,10 @@ test("telemetry streamText", { timeout: 30_000 }, async () => {
       },
     },
   });
-});
+}, 30_000);
 
 test("telemetry generateObject", async () => {
-  const callSpy = vi.fn(fetch);
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -269,9 +269,9 @@ test("telemetry generateObject", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["anthropic.messages:0", "step 0:1"]],
+    edges: [["ai.generateText:0", "anthropic.messages:1"]],
     data: {
-      "anthropic.messages:0": {
+      "ai.generateText:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -286,7 +286,7 @@ test("telemetry generateObject", async () => {
           finish_reason: "stop",
         },
       },
-      "step 0:1": {
+      "anthropic.messages:1": {
         run_type: "llm",
         inputs: {
           messages: [
@@ -307,7 +307,7 @@ test("telemetry generateObject", async () => {
 });
 
 test("telemetry streamObject via streamText with output", async () => {
-  const callSpy = vi.fn(fetch);
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -340,9 +340,9 @@ test("telemetry streamObject via streamText with output", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["anthropic.messages:0", "step 0:1"]],
+    edges: [["ai.streamText:0", "anthropic.messages:1"]],
     data: {
-      "anthropic.messages:0": {
+      "ai.streamText:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -357,7 +357,7 @@ test("telemetry streamObject via streamText with output", async () => {
           finish_reason: "stop",
         },
       },
-      "step 0:1": {
+      "anthropic.messages:1": {
         run_type: "llm",
         inputs: {
           messages: [
@@ -375,10 +375,10 @@ test("telemetry streamObject via streamText with output", async () => {
       },
     },
   });
-});
+}, 30_000);
 
 test("telemetry stream cancellation should finish spans cleanly", async () => {
-  const callSpy = vi.fn(fetch);
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -412,13 +412,12 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   }
 
   await client.awaitPendingTraceBatches();
-
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["anthropic.messages:0", "step 0:1"]],
+    edges: [["ai.streamText:0", "anthropic.messages:1"]],
     data: {
-      "anthropic.messages:0": {
+      "ai.streamText:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -429,7 +428,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
           ],
         },
       },
-      "step 0:1": {
+      "anthropic.messages:1": {
         run_type: "llm",
         inputs: {
           messages: [
@@ -444,13 +443,13 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   });
 
   // Runs are created but not closed on abort (no end_time, no outputs)
-  expect(runs.data["anthropic.messages:0"].end_time).toBeUndefined();
-  expect(runs.data["step 0:1"].end_time).toBeUndefined();
+  expect(runs.data["ai.streamText:0"].end_time).toBeUndefined();
+  expect(runs.data["anthropic.messages:1"].end_time).toBeUndefined();
 });
 
 // Skipped due to high token usage
 test.skip("anthropic cache read and write tokens", async () => {
-  const callSpy = vi.fn(fetch);
+  const callSpy = jest.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,

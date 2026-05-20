@@ -84,7 +84,9 @@ async function simulateGenerateText(
     model != null &&
     typeof model.config?.provider === "string"
       ? model.config.provider
-      : typeof model === "object" && model != null && typeof model.provider === "string"
+      : typeof model === "object" &&
+          model != null &&
+          typeof model.provider === "string"
         ? model.provider
         : "test-provider";
   const steps = opts.steps ?? [
@@ -135,8 +137,9 @@ async function simulateGenerateText(
     // Handle tool calls within this step
     if (step.toolCalls && step.toolCalls.length > 0) {
       for (const tc of step.toolCalls) {
-        const messages =
-          opts.messages ?? [{ role: "user", content: opts.prompt ?? "test" }];
+        const messages = opts.messages ?? [
+          { role: "user", content: opts.prompt ?? "test" },
+        ];
         const callId = `call-${tc.toolCallId}`;
 
         integration.onToolExecutionStart?.({
@@ -1182,7 +1185,7 @@ describe("createLangSmithTelemetry", () => {
 
       // First call ends in error
       integration.onStart?.({
-        model: { modelId: "test-model" },
+        modelId: "test-model",
         prompt: "Error call",
       });
       integration.onStepStart?.({

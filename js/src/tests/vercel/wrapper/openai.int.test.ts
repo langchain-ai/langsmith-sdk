@@ -487,13 +487,16 @@ test("generateText with experimental_output should display as structured object 
   const result = await wrappedGenerateText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Prague? Return a structured response.",
+    // @ts-expect-error - experimental_output is not typed
     experimental_output: ai.Output.object({
       schema: outputSchema,
     }),
   });
 
   // Verify the output is returned correctly and can be parsed
+  // @ts-expect-error - experimental_output is not typed
   expect(result.experimental_output).toBeDefined();
+  // @ts-expect-error - experimental_output is not typed
   const parsedOutput = outputSchema.parse(result.experimental_output);
   expect(parsedOutput.city).toBeDefined();
   expect(parsedOutput.temperature).toBeDefined();
@@ -514,6 +517,7 @@ test("streamText with experimental_output should display as structured object in
   const result = wrappedStreamText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Paris? Return a structured response.",
+    // @ts-expect-error - experimental_output is not typed
     experimental_output: ai.Output.object({
       schema: outputSchema,
     }),

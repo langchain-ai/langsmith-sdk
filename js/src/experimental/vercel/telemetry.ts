@@ -172,7 +172,9 @@ function _formatStepOutput(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createLangSmithTelemetry(
   config?: LangSmithTelemetryConfig,
-): Telemetry {
+  // Ignore until Telemetry is released
+  // oxlint-disable-next-line typescript/no-explicit-any
+): any {
   const {
     name: customName,
     runType = "chain",
@@ -269,7 +271,7 @@ export function createLangSmithTelemetry(
     }
 
     const runTreeConfig: RunTreeConfig = {
-      name: customName ?? event.provider,
+      name: customName ?? event.operationId,
       run_type: runType,
       inputs,
       extra: {
@@ -323,15 +325,10 @@ export function createLangSmithTelemetry(
     }
 
     const stepRunTree = state.rootRunTree.createChild({
-      name: `step ${stepNumber}`,
+      name: event.provider,
       run_type: "llm",
       inputs,
-      extra: {
-        metadata: {
-          ai_sdk_method: "ai.step",
-          step_number: stepNumber,
-        },
-      },
+      extra: { metadata: { step_number: stepNumber } },
     });
 
     state.stepRunTrees.set(stepNumber, stepRunTree);
@@ -523,6 +520,7 @@ export function createLangSmithTelemetry(
   };
 
   const onError: Telemetry["onError"] = async (payload) => {
+    console.log("onError", payload);
     const callId =
       typeof payload === "object" &&
       payload !== null &&
@@ -586,5 +584,5 @@ export function createLangSmithTelemetry(
     onEnd,
     onError,
     executeTool,
-  };
+  } satisfies Telemetry;
 }
