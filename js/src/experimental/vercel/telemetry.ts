@@ -520,7 +520,6 @@ export function createLangSmithTelemetry(
   };
 
   const onError: Telemetry["onError"] = async (payload) => {
-    console.log("onError", payload);
     const callId =
       typeof payload === "object" &&
       payload !== null &&

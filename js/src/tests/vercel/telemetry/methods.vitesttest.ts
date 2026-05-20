@@ -70,9 +70,11 @@ async function simulateGenerateText(
     // Final result overrides
     totalUsage?: any;
     error?: Error;
+    operationId?: string;
   },
 ) {
   const generationCallId = opts.callId ?? "simulated-generation-call";
+  const operationId = opts.operationId ?? "ai.generateText";
 
   const model = opts.model ?? { modelId: "test-model" };
   const modelId =
@@ -102,11 +104,12 @@ async function simulateGenerateText(
   ];
 
   // onStart
-  integration.onStart?.({
+  await integration.onStart?.({
     model,
     modelId,
     provider,
     callId: generationCallId,
+    operationId,
     messages: opts.messages,
     prompt: opts.prompt,
     system: opts.system,
@@ -125,7 +128,8 @@ async function simulateGenerateText(
     const step = steps[i];
 
     // onStepStart
-    integration.onStepStart?.({
+    await integration.onStepStart?.({
+      callId: generationCallId,
       stepNumber: i,
       provider,
       modelId,
@@ -140,10 +144,9 @@ async function simulateGenerateText(
         const messages = opts.messages ?? [
           { role: "user", content: opts.prompt ?? "test" },
         ];
-        const callId = `call-${tc.toolCallId}`;
 
-        integration.onToolExecutionStart?.({
-          callId,
+        await integration.onToolExecutionStart?.({
+          callId: generationCallId,
           messages,
           toolCall: {
             type: "tool-call",
@@ -159,7 +162,7 @@ async function simulateGenerateText(
           let toolResult: unknown;
           try {
             toolResult = await integration.executeTool({
-              callId,
+              callId: generationCallId,
               toolCallId: tc.toolCallId,
               execute:
                 tc.execute ??
@@ -167,7 +170,7 @@ async function simulateGenerateText(
             });
           } catch (err) {
             await integration.onToolExecutionEnd?.({
-              callId,
+              callId: generationCallId,
               messages,
               toolCall: {
                 type: "tool-call",
@@ -189,7 +192,7 @@ async function simulateGenerateText(
           }
 
           await integration.onToolExecutionEnd?.({
-            callId,
+            callId: generationCallId,
             messages,
             toolCall: {
               type: "tool-call",
@@ -220,6 +223,7 @@ async function simulateGenerateText(
 
     // onStepFinish
     await integration.onStepFinish?.({
+      callId: generationCallId,
       stepNumber: i,
       text: step.text ?? "",
       toolCalls: step.toolCalls ?? [],
@@ -236,6 +240,7 @@ async function simulateGenerateText(
   // onEnd
   const lastStep = steps[steps.length - 1];
   await integration.onEnd?.({
+    callId: generationCallId,
     text: lastStep.text,
     toolCalls: lastStep.toolCalls ?? [],
     toolResults: lastStep.toolResults ?? [],
@@ -308,7 +313,7 @@ describe("createLangSmithTelemetry", () => {
       // Step run (LLM)
       const stepCreate = createRuns[1];
       expect(stepCreate.body.run_type).toBe("llm");
-      expect(stepCreate.body.name).toBe("step 0");
+      expect(stepCreate.body.name).toBe("test-provider");
       expect(stepCreate.body.parent_run_id).toBe(rootCreate.body.id);
 
       // Step update should have output
@@ -323,7 +328,7 @@ describe("createLangSmithTelemetry", () => {
       );
     });
 
-    it("should use model display name as default run name", async () => {
+    it("should use the AI SDK operation id as default run name", async () => {
       const integration = createLangSmithTelemetry({
         client: mockClient as any,
       });
@@ -338,8 +343,9 @@ describe("createLangSmithTelemetry", () => {
       const rootCreate = mockHttpRequests.find(
         (r) => r.type === "createRun" && r.body.run_type === "chain",
       );
-      expect(rootCreate.body.name).toBe("openai");
+      expect(rootCreate.body.name).toBe("ai.generateText");
       expect(rootCreate.body.extra.metadata.ls_model_name).toBe("gpt-4o");
+      expect(rootCreate.body.extra.metadata.ls_provider).toBe("openai");
     });
 
     it("should allow custom name override", async () => {
@@ -411,17 +417,26 @@ describe("createLangSmithTelemetry", () => {
       });
 
       // Start the lifecycle manually to simulate mid-step error
-      integration.onStart?.({
+      await integration.onStart?.({
+        callId: "error-call",
+        operationId: "ai.generateText",
+        provider: "test-provider",
         modelId: "test-model",
         prompt: "Test",
       } as any);
-      integration.onStepStart?.({
+      await integration.onStepStart?.({
+        callId: "error-call",
+        provider: "test-provider",
+        modelId: "test-model",
         stepNumber: 0,
         messages: [{ role: "user", content: "Test" }],
       } as any);
 
       // Error before step finishes
-      await integration.onError?.(new Error("Mid-step error"));
+      await integration.onError?.({
+        callId: "error-call",
+        error: new Error("Mid-step error"),
+      });
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -690,7 +705,8 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
+          r.body.run_type === "llm" &&
+          r.body.extra?.metadata?.step_number === 0,
       );
       expect(stepUpdate).toBeDefined();
       expect(stepUpdate.body.extra.metadata.usage_metadata).toMatchObject({
@@ -795,7 +811,8 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
+          r.body.run_type === "llm" &&
+          r.body.extra?.metadata?.step_number === 0,
       );
       expect(stepUpdate).toBeDefined();
       expect(stepUpdate.body.extra.metadata.usage_metadata).toMatchObject({
@@ -908,7 +925,8 @@ describe("createLangSmithTelemetry", () => {
       const stepUpdate = mockHttpRequests.find(
         (r) =>
           r.type === "updateRun" &&
-          r.body.extra?.metadata?.ai_sdk_method === "ai.step",
+          r.body.run_type === "llm" &&
+          r.body.extra?.metadata?.step_number === 0,
       );
       expect(stepUpdate.body.outputs.content).toBe("REDACTED_CHILD_OUTPUT");
     });
@@ -1184,15 +1202,24 @@ describe("createLangSmithTelemetry", () => {
       });
 
       // First call ends in error
-      integration.onStart?.({
+      await integration.onStart?.({
+        callId: "error-call",
+        operationId: "ai.generateText",
+        provider: "test-provider",
         modelId: "test-model",
         prompt: "Error call",
       });
-      integration.onStepStart?.({
+      await integration.onStepStart?.({
+        callId: "error-call",
+        provider: "test-provider",
+        modelId: "test-model",
         stepNumber: 0,
         messages: [{ role: "user", content: "Error call" }],
       });
-      await integration.onError?.(new Error("TOTALLY EXPECTED MOCK ERROR"));
+      await integration.onError?.({
+        callId: "error-call",
+        error: new Error("TOTALLY EXPECTED MOCK ERROR"),
+      });
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 

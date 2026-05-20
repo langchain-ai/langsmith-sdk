@@ -768,18 +768,18 @@ test("telemetry tool error handling", async () => {
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     edges: [
-      ["openai.responses:0", "step 0:1"],
-      ["step 0:1", "getWeather:2"],
+      ["ai.generateText:0", "openai.responses:1"],
+      ["openai.responses:1", "getWeather:2"],
     ],
     data: {
-      "openai.responses:0": {
+      "ai.generateText:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: "Get current weather in Tokyo" }],
           tools: ["getWeather"],
         },
       },
-      "step 0:1": { run_type: "llm" },
+      "openai.responses:1": { run_type: "llm" },
       "getWeather:2": {
         run_type: "tool",
         inputs: { city: "Tokyo" },
