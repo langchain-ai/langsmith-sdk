@@ -156,9 +156,9 @@
     "p-queue": "6.6.2"
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/provider": "^3.0.0",
+    "@ai-sdk/openai": "4.0.0-canary.59",
+    "@ai-sdk/provider": "4.0.0-canary.16",
+    "@ai-sdk/anthropic": "4.0.0-canary.55",
     "@anthropic-ai/claude-agent-sdk": "^0.2.83",
     "@anthropic-ai/sdk": "^0.95.0",
     "@babel/preset-env": "^7.22.4",
@@ -183,7 +183,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
     "@typescript-eslint/parser": "^5.59.8",
-    "ai": "^6.0.116",
+    "ai": "7.0.0-canary.142",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
@@ -475,11 +475,7 @@
   "pnpm": {
     "overrides": {
       "js-yaml": "^4.1.1",
-      "vite": "^7.3.2",
-      "ai": "canary",
-      "@ai-sdk/openai": "canary",
-      "@ai-sdk/provider": "canary",
-      "@ai-sdk/anthropic": "canary"
+      "vite": "^7.3.2"
     }
   },
   "browser": {
