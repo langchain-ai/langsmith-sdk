@@ -1,7 +1,16 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import type { LanguageModelV2DataContent } from "@ai-sdk/provider";
+import type {
+  LanguageModelV2DataContent,
+  LanguageModelV2Usage,
+  SharedV2ProviderMetadata,
+} from "@ai-sdk/provider";
 import type { ModelMessage, ToolCallPart } from "ai";
 import { isRecord } from "../../utils/types.js";
+import { RunTree } from "../../run_trees.js";
+import {
+  extractInputTokenDetails,
+  extractOutputTokenDetails,
+} from "../../utils/vercel.js";
 
 const guessMimetypeFromBase64 = (data: string) => {
   // Check magic bytes from base64 data
@@ -267,4 +276,110 @@ export const convertMessageToTracedFormat = (
     formattedMessage.response_metadata = responseMetadata;
   }
   return formattedMessage;
+};
+
+export const setUsageMetadataOnRunTree = (
+  result: {
+    usage?: LanguageModelV2Usage;
+    providerMetadata?: SharedV2ProviderMetadata;
+  },
+  runTree: RunTree,
+) => {
+  if (result.usage == null || typeof result.usage !== "object") {
+    return;
+  }
+
+  const usage = result.usage as Record<string, unknown>;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let totalTokens: number | undefined;
+
+  // AI SDK 6: Check for object-based token structures first
+  if (
+    isRecord(usage.inputTokens) &&
+    usage.inputTokens?.total != null &&
+    typeof usage.inputTokens.total === "number"
+  ) {
+    // AI SDK 6 detected
+    inputTokens = usage.inputTokens.total;
+
+    if (
+      isRecord(usage.outputTokens) &&
+      usage.outputTokens?.total != null &&
+      typeof usage.outputTokens.total === "number"
+    ) {
+      outputTokens = usage.outputTokens.total;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else if (typeof usage.inputTokens === "number") {
+    // AI SDK 5 detected
+    inputTokens = usage.inputTokens;
+
+    if (typeof usage.outputTokens === "number") {
+      outputTokens = usage.outputTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else {
+    // AI SDK 4 fallback
+    if (typeof usage.promptTokens === "number") {
+      inputTokens = usage.promptTokens;
+    }
+    if (typeof usage.completionTokens === "number") {
+      outputTokens = usage.completionTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  }
+
+  const langsmithUsage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
+  };
+  const inputTokenDetails = extractInputTokenDetails(
+    result.usage,
+    result.providerMetadata,
+  );
+  const outputTokenDetails = extractOutputTokenDetails(
+    result.usage,
+    result.providerMetadata,
+  );
+  runTree.extra = {
+    ...runTree.extra,
+    metadata: {
+      ...runTree.extra?.metadata,
+      usage_metadata: {
+        ...langsmithUsage,
+        input_token_details: {
+          ...inputTokenDetails,
+        },
+        output_token_details: {
+          ...outputTokenDetails,
+        },
+      },
+    },
+  };
 };

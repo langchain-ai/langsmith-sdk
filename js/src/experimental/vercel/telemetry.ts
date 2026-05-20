@@ -3,7 +3,7 @@ import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { isTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
-import { setUsageMetadataOnRunTree } from "./middleware.js";
+import { setUsageMetadataOnRunTree } from "./utils.js";
 import type { KVMap } from "../../schemas.js";
 import { isRecord } from "../../utils/types.js";
 
@@ -118,8 +118,7 @@ function _formatStepOutput(
   traceRawHttp?: boolean,
 ): KVMap {
   // Build an assistant-style message from the step result
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const output: Record<string, any> = { role: "assistant" };
+  const output: Record<string, unknown> = { role: "assistant" };
 
   // Text content
   if (event.text != null) {

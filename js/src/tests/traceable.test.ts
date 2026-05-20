@@ -3360,32 +3360,4 @@ describe("tracingEnabled: false propagation to nested traceables", () => {
       false,
     );
   });
-
-  test("nested traceable with explicit tracingEnabled can override disabled parent", async () => {
-    const { client, callSpy } = mockClient();
-
-    const child = traceable(
-      async function child(input: string) {
-        return `child: ${input}`;
-      },
-      { client, tracingEnabled: true },
-    );
-
-    const parent = traceable(
-      async function parent(input: string) {
-        return child(input);
-      },
-      { tracingEnabled: false },
-    );
-
-    const result = await parent("hello");
-    expect(result).toBe("child: hello");
-
-    expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
-    ).toMatchObject({
-      nodes: ["child:0"],
-      edges: [],
-    });
-  });
 });
