@@ -30,16 +30,16 @@ Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
-The sandbox module works out of the box for basic command execution (HTTP). For
-**real-time output** (streaming, callbacks, and `timeout=0`), install the
-optional dependency:
+The sandbox module is included with `langsmith` by default — no extra
+install step is required. The `websockets` package is a core dependency,
+so streaming output, `timeout=0`, and TCP tunnels work out of the box.
 
 ```bash
-pip install 'langsmith[sandbox]'
+pip install langsmith
 ```
 
-This pulls in the `websockets` package. Without it, `sb.run()` falls back to
-HTTP automatically.
+> The `langsmith[sandbox]` extra is still accepted for backward
+> compatibility, but it no longer installs anything extra.
 
 ## Configuration
 
@@ -79,8 +79,8 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 
 ## Streaming Output
 
-For long-running commands, you can stream output in real time. This requires
-the `websockets` package (`pip install 'langsmith[sandbox]'`).
+For long-running commands, you can stream output in real time. This uses the
+`websockets` package, which ships with `langsmith` by default.
 
 ### Callbacks
 
@@ -210,9 +210,10 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle.kill()  # stop when done
 ```
 
-> **Note:** `timeout=0` requires WebSocket support
-> (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
-> back to HTTP which has its own request-level timeout.
+> **Note:** `timeout=0` requires WebSocket support, which is enabled by
+> default via the bundled `websockets` dependency. If `websockets` is not
+> available, `run()` falls back to HTTP, which has its own request-level
+> timeout.
 
 ## Command Lifecycle & TTL
 
@@ -372,7 +373,7 @@ etc.) as if it were running on your local machine. The tunnel opens a local TCP
 port and forwards connections through a multiplexed WebSocket to the target port
 inside the sandbox.
 
-Requires the `websockets` package (`pip install 'langsmith[sandbox]'`).
+Uses the `websockets` package, which ships with `langsmith` by default.
 
 ### Basic Usage — PostgreSQL
 

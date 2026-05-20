@@ -163,8 +163,9 @@ def _ensure_websockets():
         return ws_connect
     except ImportError:
         raise ImportError(
-            "TCP tunnel requires the 'websockets' package. "
-            "Install it with: pip install 'langsmith[sandbox]'"
+            "TCP tunnel requires the 'websockets' package, which ships "
+            "with langsmith by default. Reinstall with: "
+            "pip install --upgrade langsmith"
         ) from None
 
 
