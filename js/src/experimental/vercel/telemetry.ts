@@ -397,13 +397,6 @@ export function createLangSmithTelemetry(
     await toolRunTree.patchRun({ excludeInputs: true });
   };
 
-  const onChunk: Telemetry["onChunk"] = (_event) => {
-    // For streaming: we could add new_token events, but the step's
-    // onStepFinish will capture the full output. We add a streaming
-    // event marker on the step run tree if it exists.
-    // Currently a no-op; the step finish will capture aggregated output.
-  };
-
   const onStepFinish: Telemetry["onStepFinish"] = async (event) => {
     const state = invocationsByCallId.get(event.callId);
     if (!state) return;
@@ -585,7 +578,6 @@ export function createLangSmithTelemetry(
     onStepStart,
     onToolExecutionStart,
     onToolExecutionEnd,
-    onChunk,
     onStepFinish,
     onEnd,
     onError,
