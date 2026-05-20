@@ -25,7 +25,11 @@ test("telemetry generateText", async () => {
         content: "What are my orders? My user ID is 123. Always use tools.",
       },
     ],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
     tools: {
       listOrders: tool({
         description: "list all orders",
@@ -85,7 +89,7 @@ test("telemetry generateText", async () => {
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
-              function: { name: "listOrders" },
+              function: expect.objectContaining({ name: "listOrders" }),
             }),
           ]),
           finish_reason: "tool-calls",
@@ -141,7 +145,11 @@ test("telemetry streamText", async () => {
         content: "What are my orders? My user ID is 123. Always use tools.",
       },
     ],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
     tools: {
       listOrders: tool({
         description: "list all orders",
@@ -205,7 +213,7 @@ test("telemetry streamText", async () => {
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
-              function: { name: "listOrders" },
+              function: expect.objectContaining({ name: "listOrders" }),
             }),
           ]),
           finish_reason: "tool-calls",
@@ -258,7 +266,11 @@ test("telemetry generateObject", async () => {
       },
     ],
     output: ai.Output.object({ schema }),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.output).toBeDefined();
@@ -326,7 +338,11 @@ test("telemetry streamObject via streamText with output", async () => {
       },
     ],
     output: ai.Output.object({ schema }),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   const chunks = [];
@@ -394,7 +410,11 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
         content: "Tell me a long story about a cat.",
       },
     ],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
     abortSignal: abortController.signal,
   });
 
@@ -475,7 +495,11 @@ test.skip("anthropic cache read and write tokens", async () => {
         ],
       },
     ],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(res.text).toBeDefined();

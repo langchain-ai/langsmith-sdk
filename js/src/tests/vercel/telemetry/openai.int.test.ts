@@ -34,7 +34,11 @@ test("telemetry generateText basic", async () => {
   const result = await ai.generateText({
     model,
     messages: [{ role: "user", content: userMessage }],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.text).toBeDefined();
@@ -107,7 +111,11 @@ test("telemetry generateText with tools", async () => {
       }),
     },
     stopWhen: stepCountIs(10),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.text).toBeDefined();
@@ -152,7 +160,7 @@ test("telemetry generateText with tools", async () => {
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
-              function: { name: "listOrders" },
+              function: expect.objectContaining({ name: "listOrders" }),
             }),
           ]),
           finish_reason: "tool-calls",
@@ -197,7 +205,11 @@ test("telemetry streamText", async () => {
   const streamResult = ai.streamText({
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userContent }],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
     tools: {
       listOrders: tool({
         description: "list all orders",
@@ -246,7 +258,7 @@ test("telemetry streamText", async () => {
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
-              function: { name: "listOrders" },
+              function: expect.objectContaining({ name: "listOrders" }),
             }),
           ]),
           finish_reason: "tool-calls",
@@ -285,7 +297,11 @@ test("telemetry generateText with flex service tier", async () => {
     model: openai("gpt-5-mini"),
     messages: [{ role: "user", content: userMessage }],
     providerOptions: { openai: { serviceTier: "flex" } },
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.text.length).toBeGreaterThan(0);
@@ -341,7 +357,11 @@ test("telemetry generateObject", async () => {
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userMessage }],
     output: ai.Output.object({ schema }),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.output).toBeDefined();
@@ -394,7 +414,11 @@ test("telemetry streamObject via streamText with output", async () => {
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userMessage }],
     output: ai.Output.object({ schema }),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   const chunks: unknown[] = [];
@@ -450,7 +474,11 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   const streamResult = ai.streamText({
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userMessage }],
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
     abortSignal: abortController.signal,
   });
 
@@ -575,7 +603,11 @@ test("telemetry nested under traceable parent", async () => {
       const result = await ai.generateText({
         model: openai("gpt-5-nano"),
         prompt: "What color is the sky? One word: blue.",
-        telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+        telemetry: {
+          integrations: [
+            createLangSmithTelemetry({ client, tracingEnabled: true }),
+          ],
+        },
       });
       return result.text;
     },
@@ -623,7 +655,10 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({ client });
+  const integration = createLangSmithTelemetry({
+    client,
+    tracingEnabled: true,
+  });
 
   const subAgent = traceable(
     async (query: string) => {
@@ -753,7 +788,11 @@ test("telemetry tool error handling", async () => {
       }),
     },
     stopWhen: stepCountIs(1),
-    telemetry: { integrations: [createLangSmithTelemetry({ client })] },
+    telemetry: {
+      integrations: [
+        createLangSmithTelemetry({ client, tracingEnabled: true }),
+      ],
+    },
   });
 
   expect(result.content.at(-1)).toMatchObject({
@@ -796,7 +835,10 @@ test("telemetry reuse across sequential generateText calls", async () => {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({ client });
+  const integration = createLangSmithTelemetry({
+    client,
+    tracingEnabled: true,
+  });
 
   const result1 = await ai.generateText({
     model: openai("gpt-5-nano"),
