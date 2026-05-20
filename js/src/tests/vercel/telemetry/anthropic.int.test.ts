@@ -3,7 +3,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import * as ai from "ai";
 import z from "zod";
 
-import { createLangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
+import { LangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
 import { generateLongContext } from "../../utils.js";
 import { getAssumedTreeFromCalls } from "../../utils/tree.js";
 import { Client } from "../../../index.js";
@@ -27,7 +27,7 @@ test("telemetry generateText", async () => {
     ],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
     tools: {
@@ -147,7 +147,7 @@ test("telemetry streamText", async () => {
     ],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
     tools: {
@@ -268,7 +268,7 @@ test("telemetry generateObject", async () => {
     output: ai.Output.object({ schema }),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -340,7 +340,7 @@ test("telemetry streamObject via streamText with output", async () => {
     output: ai.Output.object({ schema }),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -412,7 +412,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
     ],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
     abortSignal: abortController.signal,
@@ -497,7 +497,7 @@ test.skip("anthropic cache read and write tokens", async () => {
     ],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });

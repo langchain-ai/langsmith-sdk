@@ -160,9 +160,9 @@ function _formatStepOutput(
  *
  * ```ts
  * import { generateText } from "ai";
- * import { createLangSmithTelemetry } from "langsmith/experimental/vercel";
+ * import { LangSmithTelemetry } from "langsmith/experimental/vercel";
  *
- * const telemetry = createLangSmithTelemetry();
+ * const telemetry = LangSmithTelemetry();
  *
  * // Reuse across multiple calls
  * const result1 = await generateText({
@@ -185,7 +185,7 @@ function _formatStepOutput(
  *
  * @experimental Only available in Vercel AI SDK 7.
  */
-export function createLangSmithTelemetry(
+export function LangSmithTelemetry(
   config?: LangSmithTelemetryConfig,
   // Ignore until Telemetry is released
   // oxlint-disable-next-line typescript/no-explicit-any

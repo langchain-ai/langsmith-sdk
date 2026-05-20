@@ -9,7 +9,7 @@ import {
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 import { describe, it, expect, vi } from "vitest";
-import { createLangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
+import { LangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
 import { traceable } from "../../../traceable.js";
 import { Client } from "../../../index.js";
 import { getAssumedTreeFromCalls } from "../../utils/tree.js";
@@ -116,7 +116,7 @@ function createModel({
   });
 }
 
-function createTrace(config?: Parameters<typeof createLangSmithTelemetry>[0]) {
+function createTrace(config?: Parameters<typeof LangSmithTelemetry>[0]) {
   const callSpy = vi.fn(
     async () =>
       new Response("{}", {
@@ -129,7 +129,7 @@ function createTrace(config?: Parameters<typeof createLangSmithTelemetry>[0]) {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({
+  const integration = LangSmithTelemetry({
     tracingEnabled: true,
     client,
     ...config,
@@ -147,7 +147,7 @@ async function expectTree({
   return getAssumedTreeFromCalls(callSpy.mock.calls, client);
 }
 
-describe("createLangSmithTelemetry with MockLanguageModelV4", () => {
+describe("LangSmithTelemetry with MockLanguageModelV4", () => {
   describe("basic tracing", () => {
     it("should create root and step spans for a simple generateText", async () => {
       const trace = createTrace();

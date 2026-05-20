@@ -4,7 +4,7 @@ import { jest } from "@jest/globals";
 import * as ai from "ai";
 import z from "zod";
 
-import { createLangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
+import { LangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
 import { getAssumedTreeFromCalls } from "../../utils/tree.js";
 import { traceable } from "../../../traceable.js";
 import { Client } from "../../../index.js";
@@ -36,7 +36,7 @@ test("telemetry generateText basic", async () => {
     messages: [{ role: "user", content: userMessage }],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -113,7 +113,7 @@ test("telemetry generateText with tools", async () => {
     stopWhen: stepCountIs(10),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -207,7 +207,7 @@ test("telemetry streamText", async () => {
     messages: [{ role: "user", content: userContent }],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
     tools: {
@@ -299,7 +299,7 @@ test("telemetry generateText with flex service tier", async () => {
     providerOptions: { openai: { serviceTier: "flex" } },
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -359,7 +359,7 @@ test("telemetry generateObject", async () => {
     output: ai.Output.object({ schema }),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -416,7 +416,7 @@ test("telemetry streamObject via streamText with output", async () => {
     output: ai.Output.object({ schema }),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -476,7 +476,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
     messages: [{ role: "user", content: userMessage }],
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
     abortSignal: abortController.signal,
@@ -533,7 +533,7 @@ test("telemetry processInputs and processOutputs", async () => {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({
+  const integration = LangSmithTelemetry({
     client,
     processInputs: (inputs) => ({
       ...inputs,
@@ -605,7 +605,7 @@ test("telemetry nested under traceable parent", async () => {
         prompt: "What color is the sky? One word: blue.",
         telemetry: {
           integrations: [
-            createLangSmithTelemetry({ client, tracingEnabled: true }),
+            LangSmithTelemetry({ client, tracingEnabled: true }),
           ],
         },
       });
@@ -655,7 +655,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({
+  const integration = LangSmithTelemetry({
     client,
     tracingEnabled: true,
   });
@@ -790,7 +790,7 @@ test("telemetry tool error handling", async () => {
     stopWhen: stepCountIs(1),
     telemetry: {
       integrations: [
-        createLangSmithTelemetry({ client, tracingEnabled: true }),
+        LangSmithTelemetry({ client, tracingEnabled: true }),
       ],
     },
   });
@@ -835,7 +835,7 @@ test("telemetry reuse across sequential generateText calls", async () => {
     fetchImplementation: callSpy,
   });
 
-  const integration = createLangSmithTelemetry({
+  const integration = LangSmithTelemetry({
     client,
     tracingEnabled: true,
   });
