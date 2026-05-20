@@ -2,6 +2,7 @@
 import {
   generateText,
   isStepCount,
+  registerTelemetry,
   simulateReadableStream,
   streamText,
   tool,
@@ -163,9 +164,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
 
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             run_type: "chain",
             inputs: { messages: [{ role: "user", content: "Test prompt" }] },
             extra: { metadata: { ls_integration: "vercel-ai-sdk-telemetry" } },
@@ -180,7 +181,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
     });
 
-    it("should use the AI SDK operation id as default run name", async () => {
+    it("should use the provider as default run name and store the AI SDK operation id", async () => {
       const trace = createTrace();
 
       await generateText({
@@ -190,12 +191,13 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
 
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.generateText:0", "openai:1"]],
+        edges: [["openai:0", "openai:1"]],
         data: {
-          "ai.generateText:0": {
-            name: "ai.generateText",
+          "openai:0": {
+            name: "openai",
             extra: {
               metadata: {
+                ai_sdk_method: "ai.generateText",
                 ls_model_name: "gpt-4o",
                 ls_provider: "openai",
               },
@@ -233,7 +235,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             tags: ["test-tag", "v2"],
             extra: {
               metadata: {
@@ -245,6 +247,218 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
           },
         },
       });
+    });
+  });
+
+  describe("metadata", () => {
+    it("should set ai_sdk_method and root ls_agent_type on top-level runs", async () => {
+      const trace = createTrace();
+
+      await generateText({
+        model: createModel(),
+        prompt: "Metadata test",
+        telemetry: { integrations: [trace.integration] },
+      });
+
+      const tree = await expectTree(trace);
+      const rootRun = Object.values(tree.data).find(
+        (run) =>
+          run.run_type === "chain" &&
+          run.extra?.metadata?.ai_sdk_method === "ai.generateText",
+      );
+
+      expect(rootRun?.extra?.metadata).toMatchObject({
+        ai_sdk_method: "ai.generateText",
+        ls_agent_type: "root",
+      });
+    });
+
+    it("should set ls_agent_type to subagent for telemetry runs inside tools", async () => {
+      const trace = createTrace();
+
+      await generateText({
+        model: createModel({
+          responses: [
+            toolCallResult({
+              toolCallId: "tc-research-1",
+              toolName: "research",
+              input: { topic: "AI" },
+            }),
+            textResult("Research complete.", usage({ input: 20, output: 8 })),
+          ],
+        }),
+        prompt: "Use a tool with sub-agent",
+        tools: {
+          research: tool({
+            inputSchema: z.object({ topic: z.string() }),
+            execute: async () => {
+              const result = await generateText({
+                model: createModel({
+                  provider: "inner-provider",
+                  modelId: "inner-model",
+                  responses: [textResult("Inner result")],
+                }),
+                prompt: "Inner prompt",
+                telemetry: { integrations: [trace.integration] },
+              });
+              return result.text;
+            },
+          }),
+        },
+        stopWhen: isStepCount(10),
+        telemetry: { integrations: [trace.integration] },
+      });
+
+      await expect(expectTree(trace)).resolves.toMatchObject({
+        edges: [
+          ["test-provider:0", "test-provider:1"],
+          ["test-provider:1", "research:2"],
+          ["research:2", "inner-provider:3"],
+          ["inner-provider:3", "inner-provider:4"],
+          ["test-provider:0", "test-provider:5"],
+        ],
+        data: {
+          "test-provider:0": {
+            run_type: "chain",
+            extra: {
+              metadata: {
+                ai_sdk_method: "ai.generateText",
+                ls_agent_type: "root",
+              },
+            },
+          },
+          "test-provider:1": {
+            run_type: "llm",
+            extra: { metadata: { ls_agent_type: "root" } },
+          },
+          "research:2": {
+            run_type: "tool",
+            extra: { metadata: { ls_agent_type: "root" } },
+          },
+          "inner-provider:3": {
+            run_type: "chain",
+            extra: {
+              metadata: {
+                ai_sdk_method: "ai.generateText",
+                ls_agent_type: "subagent",
+              },
+            },
+          },
+          "inner-provider:4": {
+            run_type: "llm",
+            extra: { metadata: { ls_agent_type: "subagent" } },
+          },
+          "test-provider:5": {
+            run_type: "llm",
+            extra: { metadata: { ls_agent_type: "root" } },
+          },
+        },
+      });
+    });
+  });
+
+  describe("global telemetry registration", () => {
+    it("should trace globally registered telemetry and allow local child name override", async () => {
+      const trace = createTrace();
+      const previousGlobalIntegrations =
+        globalThis.AI_SDK_TELEMETRY_INTEGRATIONS;
+
+      try {
+        registerTelemetry(trace.integration);
+
+        await generateText({
+          model: createModel({
+            responses: [
+              toolCallResult({
+                toolCallId: "tc-delegate-1",
+                toolName: "delegate",
+                input: { task: "summarize" },
+              }),
+              textResult(
+                "Delegation complete.",
+                usage({ input: 20, output: 8 }),
+              ),
+            ],
+          }),
+          prompt: "Delegate this task",
+          tools: {
+            delegate: tool({
+              inputSchema: z.object({ task: z.string() }),
+              execute: async () => {
+                const result = await generateText({
+                  model: createModel({
+                    provider: "child-provider",
+                    modelId: "child-model",
+                    responses: [textResult("Child answer")],
+                  }),
+                  prompt: "Child prompt",
+                  telemetry: {
+                    integrations: [
+                      LangSmithTelemetry({
+                        client: trace.client,
+                        name: "child-agent",
+                        tracingEnabled: true,
+                      }),
+                    ],
+                  },
+                });
+                return result.text;
+              },
+            }),
+          },
+          stopWhen: isStepCount(10),
+        });
+
+        await expect(expectTree(trace)).resolves.toMatchObject({
+          edges: [
+            ["test-provider:0", "test-provider:1"],
+            ["test-provider:1", "delegate:2"],
+            ["delegate:2", "child-agent:3"],
+            ["child-agent:3", "child-provider:4"],
+            ["test-provider:0", "test-provider:5"],
+          ],
+          data: {
+            "test-provider:0": {
+              run_type: "chain",
+              inputs: {
+                messages: [{ role: "user", content: "Delegate this task" }],
+                tools: ["delegate"],
+              },
+              extra: {
+                metadata: {
+                  ai_sdk_method: "ai.generateText",
+                  ls_agent_type: "root",
+                },
+              },
+            },
+            "delegate:2": {
+              run_type: "tool",
+              inputs: { task: "summarize" },
+              outputs: { output: "Child answer" },
+            },
+            "child-agent:3": {
+              name: "child-agent",
+              run_type: "chain",
+              inputs: {
+                messages: [{ role: "user", content: "Child prompt" }],
+              },
+              outputs: { content: "Child answer" },
+              extra: {
+                metadata: {
+                  ai_sdk_method: "ai.generateText",
+                  ls_agent_type: "subagent",
+                },
+              },
+            },
+            "child-provider:4": {
+              run_type: "llm",
+              extra: { metadata: { ls_agent_type: "subagent" } },
+            },
+          },
+        });
+      } finally {
+        globalThis.AI_SDK_TELEMETRY_INTEGRATIONS = previousGlobalIntegrations;
+      }
     });
   });
 
@@ -264,9 +478,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       ).rejects.toThrow("TOTALLY EXPECTED MOCK ERROR");
 
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
           },
         },
@@ -289,9 +503,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       ).rejects.toThrow("Mid-step error");
 
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             error: expect.stringContaining("Mid-step error"),
           },
           "test-provider:1": {
@@ -336,12 +550,12 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
-          ["ai.generateText:0", "test-provider:1"],
+          ["test-provider:0", "test-provider:1"],
           ["test-provider:1", "search:2"],
-          ["ai.generateText:0", "test-provider:3"],
+          ["test-provider:0", "test-provider:3"],
         ],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             inputs: {
               messages: [{ role: "user", content: "Multi-step test" }],
               tools: ["search"],
@@ -394,9 +608,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
-          ["ai.generateText:0", "test-provider:1"],
+          ["test-provider:0", "test-provider:1"],
           ["test-provider:1", "calculator:2"],
-          ["ai.generateText:0", "test-provider:3"],
+          ["test-provider:0", "test-provider:3"],
         ],
         data: {
           "calculator:2": {
@@ -444,10 +658,10 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
-          ["ai.generateText:0", "test-provider:1"],
+          ["test-provider:0", "test-provider:1"],
           ["test-provider:1", "research:2"],
           ["research:2", "inner-agent-call:3"],
-          ["ai.generateText:0", "test-provider:4"],
+          ["test-provider:0", "test-provider:4"],
         ],
         data: {
           "research:2": {
@@ -525,7 +739,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             extra: {
               metadata: {
                 usage_metadata: {
@@ -601,7 +815,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             inputs: { messages: [{ role: "user", content: "REDACTED" }] },
           },
         },
@@ -626,7 +840,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": { outputs: { content: "REDACTED" } },
+          "test-provider:0": { outputs: { content: "REDACTED" } },
         },
       });
     });
@@ -700,10 +914,10 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       const tree = await expectTree(trace);
       expect(tree).toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
       });
 
-      const root = tree.data["ai.generateText:0"];
+      const root = tree.data["test-provider:0"];
       const step = tree.data["test-provider:1"];
       expect(step.trace_id).toBe(root.trace_id);
       const rootDottedOrder = root.dotted_order;
@@ -745,12 +959,12 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
-          ["outer-traceable:0", "ai.generateText:1"],
-          ["ai.generateText:1", "test-provider:2"],
+          ["outer-traceable:0", "test-provider:1"],
+          ["test-provider:1", "test-provider:2"],
         ],
         data: {
           "outer-traceable:0": { name: "outer-traceable" },
-          "ai.generateText:1": {
+          "test-provider:1": {
             run_type: "chain",
             extra: {
               metadata: {
@@ -780,7 +994,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             outputs: {
               steps: [
                 expect.objectContaining({
@@ -804,7 +1018,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
 
       const tree = await expectTree(trace);
-      expect(tree.data["ai.generateText:0"].outputs?.steps).toBeUndefined();
+      expect(tree.data["test-provider:0"].outputs?.steps).toBeUndefined();
     });
   });
 
@@ -820,9 +1034,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(result.text).resolves.toBe("Hello world");
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.streamText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.streamText:0": {
+          "test-provider:0": {
             run_type: "chain",
             outputs: { content: "Hello world", finish_reason: "stop" },
           },
@@ -863,7 +1077,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": { session_name: "my-custom-project" },
+          "test-provider:0": { session_name: "my-custom-project" },
         },
       });
     });
@@ -883,15 +1097,15 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       const firstTree = await expectTree(trace);
       expect(firstTree).toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             inputs: { messages: [{ role: "user", content: "First call" }] },
             outputs: { content: "First response" },
           },
         },
       });
-      const firstRoot = firstTree.data["ai.generateText:0"];
+      const firstRoot = firstTree.data["test-provider:0"];
 
       trace.callSpy.mockClear();
 
@@ -907,15 +1121,15 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       const secondTree = await expectTree(trace);
       expect(secondTree).toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             inputs: { messages: [{ role: "user", content: "Second call" }] },
             outputs: { content: "Second response" },
           },
         },
       });
-      const secondRoot = secondTree.data["ai.generateText:0"];
+      const secondRoot = secondTree.data["test-provider:0"];
       expect(secondRoot.id).not.toBe(firstRoot.id);
       expect(secondRoot.trace_id).not.toBe(firstRoot.trace_id);
     });
@@ -937,7 +1151,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
           },
         },
@@ -953,9 +1167,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
 
       await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["ai.generateText:0", "test-provider:1"]],
+        edges: [["test-provider:0", "test-provider:1"]],
         data: {
-          "ai.generateText:0": {
+          "test-provider:0": {
             inputs: { messages: [{ role: "user", content: "Recovery call" }] },
             outputs: { content: "Recovered" },
           },
@@ -989,7 +1203,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       });
 
       const firstTree = await expectTree(trace);
-      const firstTraceId = firstTree.data["ai.generateText:0"].trace_id;
+      const firstTraceId = firstTree.data["test-provider:0"].trace_id;
       trace.callSpy.mockClear();
 
       await generateText({
@@ -1017,9 +1231,9 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
       const secondTree = await expectTree(trace);
       expect(secondTree).toMatchObject({
         edges: [
-          ["ai.generateText:0", "test-provider:1"],
+          ["test-provider:0", "test-provider:1"],
           ["test-provider:1", "calculator:2"],
-          ["ai.generateText:0", "test-provider:3"],
+          ["test-provider:0", "test-provider:3"],
         ],
         data: {
           "calculator:2": {
@@ -1029,7 +1243,7 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
           },
         },
       });
-      expect(secondTree.data["ai.generateText:0"].trace_id).not.toBe(
+      expect(secondTree.data["test-provider:0"].trace_id).not.toBe(
         firstTraceId,
       );
     });

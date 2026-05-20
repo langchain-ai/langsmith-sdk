@@ -144,6 +144,13 @@ function _formatStepOutput(
   return convertMessageToTracedFormat(output) as KVMap;
 }
 
+function _getLsAgentType(parentRunTree: unknown): "subagent" | "root" {
+  if (isRunTree(parentRunTree) && parentRunTree.run_type === "tool") {
+    return "subagent";
+  }
+  return "root";
+}
+
 /**
  * Creates a LangSmith `TelemetryIntegration` for the Vercel AI SDK.
  *
@@ -286,7 +293,7 @@ export function LangSmithTelemetry(
     }
 
     const runTreeConfig: RunTreeConfig = {
-      name: customName ?? event.operationId,
+      name: customName ?? event.provider,
       run_type: runType,
       inputs,
       tracingEnabled: true,
@@ -294,6 +301,8 @@ export function LangSmithTelemetry(
         ...customExtra,
         metadata: {
           ...customMetadata,
+          ai_sdk_method: event.operationId,
+          ls_agent_type: _getLsAgentType(parentRunTree),
           ls_model_name: event.modelId,
           ls_provider: event.provider,
           ls_integration: "vercel-ai-sdk-telemetry",

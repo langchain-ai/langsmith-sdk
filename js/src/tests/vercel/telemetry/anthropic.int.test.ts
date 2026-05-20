@@ -26,9 +26,7 @@ test("telemetry generateText", async () => {
       },
     ],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
     tools: {
       listOrders: tool({
@@ -50,12 +48,12 @@ test("telemetry generateText", async () => {
 
   expect(runs).toMatchObject({
     edges: [
-      ["ai.generateText:0", "anthropic.messages:1"],
+      ["anthropic.messages:0", "anthropic.messages:1"],
       ["anthropic.messages:1", "listOrders:2"],
-      ["ai.generateText:0", "anthropic.messages:3"],
+      ["anthropic.messages:0", "anthropic.messages:3"],
     ],
     data: {
-      "ai.generateText:0": {
+      "anthropic.messages:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -125,7 +123,7 @@ test("telemetry generateText", async () => {
   });
 
   expect(
-    runs.data["ai.generateText:0"].extra?.metadata?.usage_metadata
+    runs.data["anthropic.messages:0"].extra?.metadata?.usage_metadata
       ?.total_tokens,
   ).toBeGreaterThan(0);
 });
@@ -146,9 +144,7 @@ test("telemetry streamText", async () => {
       },
     ],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
     tools: {
       listOrders: tool({
@@ -174,12 +170,12 @@ test("telemetry streamText", async () => {
 
   expect(runs).toMatchObject({
     edges: [
-      ["ai.streamText:0", "anthropic.messages:1"],
+      ["anthropic.messages:0", "anthropic.messages:1"],
       ["anthropic.messages:1", "listOrders:2"],
-      ["ai.streamText:0", "anthropic.messages:3"],
+      ["anthropic.messages:0", "anthropic.messages:3"],
     ],
     data: {
-      "ai.streamText:0": {
+      "anthropic.messages:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -267,9 +263,7 @@ test("telemetry generateObject", async () => {
     ],
     output: ai.Output.object({ schema }),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -281,9 +275,9 @@ test("telemetry generateObject", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["ai.generateText:0", "anthropic.messages:1"]],
+    edges: [["anthropic.messages:0", "anthropic.messages:1"]],
     data: {
-      "ai.generateText:0": {
+      "anthropic.messages:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -339,9 +333,7 @@ test("telemetry streamObject via streamText with output", async () => {
     ],
     output: ai.Output.object({ schema }),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -356,9 +348,9 @@ test("telemetry streamObject via streamText with output", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["ai.streamText:0", "anthropic.messages:1"]],
+    edges: [["anthropic.messages:0", "anthropic.messages:1"]],
     data: {
-      "ai.streamText:0": {
+      "anthropic.messages:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -411,9 +403,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
       },
     ],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
     abortSignal: abortController.signal,
   });
@@ -435,9 +425,9 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["ai.streamText:0", "anthropic.messages:1"]],
+    edges: [["anthropic.messages:0", "anthropic.messages:1"]],
     data: {
-      "ai.streamText:0": {
+      "anthropic.messages:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -463,7 +453,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   });
 
   // Runs are created but not closed on abort (no end_time, no outputs)
-  expect(runs.data["ai.streamText:0"].end_time).toBeUndefined();
+  expect(runs.data["anthropic.messages:0"].end_time).toBeUndefined();
   expect(runs.data["anthropic.messages:1"].end_time).toBeUndefined();
 });
 
@@ -496,9 +486,7 @@ test.skip("anthropic cache read and write tokens", async () => {
       },
     ],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -509,10 +497,10 @@ test.skip("anthropic cache read and write tokens", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["anthropic.messages:0", "step 0:1"]],
+    edges: [["anthropic.messages:0", "anthropic.messages:1"]],
     data: {
       "anthropic.messages:0": { run_type: "chain" },
-      "step 0:1": { run_type: "llm" },
+      "anthropic.messages:1": { run_type: "llm" },
     },
   });
 

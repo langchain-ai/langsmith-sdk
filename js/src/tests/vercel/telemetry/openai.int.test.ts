@@ -35,9 +35,7 @@ test("telemetry generateText basic", async () => {
     model,
     messages: [{ role: "user", content: userMessage }],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -49,9 +47,9 @@ test("telemetry generateText basic", async () => {
   expect(
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userMessage }],
@@ -112,9 +110,7 @@ test("telemetry generateText with tools", async () => {
     },
     stopWhen: stepCountIs(10),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -127,12 +123,12 @@ test("telemetry generateText with tools", async () => {
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     edges: [
-      ["ai.generateText:0", "openai.responses:1"],
+      ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "listOrders:2"],
-      ["ai.generateText:0", "openai.responses:3"],
+      ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userContent }],
@@ -206,9 +202,7 @@ test("telemetry streamText", async () => {
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userContent }],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
     tools: {
       listOrders: tool({
@@ -233,12 +227,12 @@ test("telemetry streamText", async () => {
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     edges: [
-      ["ai.streamText:0", "openai.responses:1"],
+      ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "listOrders:2"],
-      ["ai.streamText:0", "openai.responses:3"],
+      ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
-      "ai.streamText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userContent }],
@@ -298,9 +292,7 @@ test("telemetry generateText with flex service tier", async () => {
     messages: [{ role: "user", content: userMessage }],
     providerOptions: { openai: { serviceTier: "flex" } },
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -310,9 +302,9 @@ test("telemetry generateText with flex service tier", async () => {
   expect(
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userMessage }],
@@ -358,9 +350,7 @@ test("telemetry generateObject", async () => {
     messages: [{ role: "user", content: userMessage }],
     output: ai.Output.object({ schema }),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -372,9 +362,9 @@ test("telemetry generateObject", async () => {
   expect(
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userMessage }],
@@ -415,9 +405,7 @@ test("telemetry streamObject via streamText with output", async () => {
     messages: [{ role: "user", content: userMessage }],
     output: ai.Output.object({ schema }),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -433,9 +421,9 @@ test("telemetry streamObject via streamText with output", async () => {
   expect(
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
-    edges: [["ai.streamText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.streamText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userMessage }],
@@ -475,9 +463,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
     model: openai("gpt-5-nano"),
     messages: [{ role: "user", content: userMessage }],
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
     abortSignal: abortController.signal,
   });
@@ -502,9 +488,9 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
   expect(runs).toMatchObject({
-    edges: [["ai.streamText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.streamText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: userMessage }],
@@ -521,7 +507,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
   });
 
   if (abortedAfterDeltas) {
-    expect(runs.data["ai.streamText:0"].end_time).toBeUndefined();
+    expect(runs.data["openai.responses:0"].end_time).toBeUndefined();
     expect(runs.data["openai.responses:1"].end_time).toBeUndefined();
   }
 }, 30_000);
@@ -573,9 +559,9 @@ test("telemetry processInputs and processOutputs", async () => {
   expect(
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         inputs: { prompt: "REDACTED" },
         outputs: { content: "REDACTED" },
       },
@@ -604,9 +590,7 @@ test("telemetry nested under traceable parent", async () => {
         model: openai("gpt-5-nano"),
         prompt: "What color is the sky? One word: blue.",
         telemetry: {
-          integrations: [
-            LangSmithTelemetry({ client, tracingEnabled: true }),
-          ],
+          integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
         },
       });
       return result.text;
@@ -621,17 +605,17 @@ test("telemetry nested under traceable parent", async () => {
 
   const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
   expect(runs).toMatchObject({
-    nodes: ["outer-traceable:0", "ai.generateText:1", "openai.responses:2"],
+    nodes: ["outer-traceable:0", "openai.responses:1", "openai.responses:2"],
     edges: [
-      ["outer-traceable:0", "ai.generateText:1"],
-      ["ai.generateText:1", "openai.responses:2"],
+      ["outer-traceable:0", "openai.responses:1"],
+      ["openai.responses:1", "openai.responses:2"],
     ],
 
     data: {
       "outer-traceable:0": {
         name: "outer-traceable",
       },
-      "ai.generateText:1": {
+      "openai.responses:1": {
         trace_id: runs.data["outer-traceable:0"].trace_id,
         run_type: "chain",
         extra: {
@@ -691,14 +675,14 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
 
   expect(runs).toMatchObject({
     edges: [
-      ["ai.generateText:0", "openai.responses:1"],
+      ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "research:2"],
       ["research:2", "sub-agent:3"],
-      ["sub-agent:3", "ai.generateText:4"],
-      ["ai.generateText:4", "openai.responses:5"],
+      ["sub-agent:3", "openai.responses:4"],
+      ["openai.responses:4", "openai.responses:5"],
     ],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -740,7 +724,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
         inputs: { input: "AI trends" },
         outputs: { outputs: "AI trends" },
       },
-      "ai.generateText:4": {
+      "openai.responses:4": {
         run_type: "chain",
         inputs: {
           messages: [
@@ -789,9 +773,7 @@ test("telemetry tool error handling", async () => {
     },
     stopWhen: stepCountIs(1),
     telemetry: {
-      integrations: [
-        LangSmithTelemetry({ client, tracingEnabled: true }),
-      ],
+      integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
   });
 
@@ -807,11 +789,11 @@ test("telemetry tool error handling", async () => {
     await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     edges: [
-      ["ai.generateText:0", "openai.responses:1"],
+      ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "getWeather:2"],
     ],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         run_type: "chain",
         inputs: {
           messages: [{ role: "user", content: "Get current weather in Tokyo" }],
@@ -852,9 +834,9 @@ test("telemetry reuse across sequential generateText calls", async () => {
 
   const firstRuns = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
   expect(firstRuns).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         inputs: {
           messages: [
             {
@@ -868,7 +850,7 @@ test("telemetry reuse across sequential generateText calls", async () => {
       "openai.responses:1": expect.objectContaining({ run_type: "llm" }),
     },
   });
-  const firstChain = firstRuns.data["ai.generateText:0"]!;
+  const firstChain = firstRuns.data["openai.responses:0"]!;
 
   const firstPosts = callSpy.mock.calls.filter(
     (call) => (call[1] as { method?: string })?.method === "POST",
@@ -889,9 +871,9 @@ test("telemetry reuse across sequential generateText calls", async () => {
 
   const secondRuns = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
   expect(secondRuns).toMatchObject({
-    edges: [["ai.generateText:0", "openai.responses:1"]],
+    edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
-      "ai.generateText:0": {
+      "openai.responses:0": {
         inputs: {
           messages: [
             {
@@ -905,7 +887,7 @@ test("telemetry reuse across sequential generateText calls", async () => {
       "openai.responses:1": expect.objectContaining({ run_type: "llm" }),
     },
   });
-  const secondChain = secondRuns.data["ai.generateText:0"]!;
+  const secondChain = secondRuns.data["openai.responses:0"]!;
 
   expect(secondChain.id).not.toBe(firstChain.id);
   expect(secondChain.trace_id).not.toBe(firstChain.trace_id);
