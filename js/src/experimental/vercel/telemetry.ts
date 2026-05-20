@@ -121,10 +121,10 @@ function _formatStepOutput(
   const output: Record<string, unknown> = { role: "assistant" };
 
   // Text content
-  if (event.text != null) {
-    output.content = event.text;
-  } else if (event.content != null) {
+  if (event.content != null) {
     output.content = event.content;
+  } else if (event.text != null) {
+    output.content = event.text;
   }
 
   // Tool calls
@@ -360,6 +360,36 @@ export function LangSmithTelemetry(
     await stepRunTree.postRun();
   };
 
+  const onLanguageModelCallStart: Telemetry["onLanguageModelCallStart"] =
+    async (event) => {
+      const state = invocationsByCallId.get(event.callId);
+      if (!state) return;
+
+      const stepRunTree = getOpenStepOrRoot(state);
+      if (stepRunTree.run_type !== "llm") return;
+
+      // Insert tools as invocation_params
+      if (event.tools != null) {
+        stepRunTree.extra = {
+          ...stepRunTree.extra,
+          invocation_params: {
+            ...(isRecord(stepRunTree.extra?.invocation_params)
+              ? stepRunTree.extra.invocation_params
+              : {}),
+            tools: event.tools.map((tool) => {
+              const newTool = { ...tool };
+
+              if ("inputSchema" in newTool) {
+                newTool.input_schema = newTool.inputSchema;
+                delete newTool.inputSchema;
+              }
+              return newTool;
+            }),
+          },
+        };
+      }
+    };
+
   const onToolExecutionStart: Telemetry["onToolExecutionStart"] = async (
     event,
   ) => {
@@ -424,7 +454,6 @@ export function LangSmithTelemetry(
     if (!stepRunTree) return;
 
     let outputs = _formatStepOutput(event, traceRawHttp);
-
     if (processChildLLMRunOutputs) {
       try {
         outputs = processChildLLMRunOutputs(outputs);
@@ -471,6 +500,10 @@ export function LangSmithTelemetry(
       outputs.content = event.text;
     } else if ("content" in event && event.content != null) {
       outputs.content = event.content;
+    }
+
+    if (outputs.content != null) {
+      outputs.role = "assistant";
     }
 
     if ("object" in event && event.object != null) {
@@ -583,6 +616,7 @@ export function LangSmithTelemetry(
   return {
     onStart,
     onStepStart,
+    onLanguageModelCallStart,
     onToolExecutionStart,
     onToolExecutionEnd,
     onStepFinish,

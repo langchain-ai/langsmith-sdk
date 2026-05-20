@@ -72,6 +72,16 @@ test("telemetry generateText", async () => {
       },
       "anthropic.messages:1": {
         run_type: "llm",
+        extra: {
+          invocation_params: {
+            tools: [
+              expect.objectContaining({
+                name: "listOrders",
+                input_schema: expect.objectContaining({ type: "object" }),
+              }),
+            ],
+          },
+        },
         inputs: {
           messages: [
             {
@@ -83,7 +93,12 @@ test("telemetry generateText", async () => {
         },
         outputs: {
           role: "assistant",
-          content: "",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolName: "listOrders",
+            }),
+          ]),
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
@@ -115,12 +130,21 @@ test("telemetry generateText", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/order/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/order/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
     },
   });
+
+  expect(
+    runs.data["anthropic.messages:1"].extra?.invocation_params?.tools?.[0],
+  ).not.toHaveProperty("inputSchema");
 
   expect(
     runs.data["anthropic.messages:0"].extra?.metadata?.usage_metadata
@@ -194,6 +218,16 @@ test("telemetry streamText", async () => {
       },
       "anthropic.messages:1": {
         run_type: "llm",
+        extra: {
+          invocation_params: {
+            tools: [
+              expect.objectContaining({
+                name: "listOrders",
+                input_schema: expect.objectContaining({ type: "object" }),
+              }),
+            ],
+          },
+        },
         inputs: {
           messages: [
             {
@@ -205,7 +239,12 @@ test("telemetry streamText", async () => {
         },
         outputs: {
           role: "assistant",
-          content: "",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolName: "listOrders",
+            }),
+          ]),
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
@@ -237,12 +276,21 @@ test("telemetry streamText", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/order/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/order/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
     },
   });
+
+  expect(
+    runs.data["anthropic.messages:1"].extra?.invocation_params?.tools?.[0],
+  ).not.toHaveProperty("inputSchema");
 }, 30_000);
 
 test("telemetry generateObject", async () => {
@@ -304,7 +352,12 @@ test("telemetry generateObject", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
@@ -377,7 +430,12 @@ test("telemetry streamObject via streamText with output", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },

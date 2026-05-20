@@ -44,9 +44,8 @@ test("telemetry generateText basic", async () => {
 
   await client.awaitPendingTraceBatches();
 
-  expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
-  ).toMatchObject({
+  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(runs).toMatchObject({
     edges: [["openai.responses:0", "openai.responses:1"]],
     data: {
       "openai.responses:0": {
@@ -71,7 +70,12 @@ test("telemetry generateText basic", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/blue/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/blue/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
         extra: {
@@ -119,9 +123,8 @@ test("telemetry generateText with tools", async () => {
 
   await client.awaitPendingTraceBatches();
 
-  expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
-  ).toMatchObject({
+  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "listOrders:2"],
@@ -146,13 +149,28 @@ test("telemetry generateText with tools", async () => {
       },
       "openai.responses:1": {
         run_type: "llm",
-        extra: { metadata: { step_number: 0 } },
+        extra: {
+          metadata: { step_number: 0 },
+          invocation_params: {
+            tools: [
+              expect.objectContaining({
+                name: "listOrders",
+                input_schema: expect.objectContaining({ type: "object" }),
+              }),
+            ],
+          },
+        },
         inputs: {
           messages: [{ role: "user", content: userContent }],
         },
         outputs: {
           role: "assistant",
-          content: "",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolName: "listOrders",
+            }),
+          ]),
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
@@ -181,12 +199,21 @@ test("telemetry generateText with tools", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/order/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/order/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
     },
   });
+
+  expect(
+    runs.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
+  ).not.toHaveProperty("inputSchema");
 }, 30_000);
 
 test("telemetry streamText", async () => {
@@ -223,9 +250,8 @@ test("telemetry streamText", async () => {
 
   await client.awaitPendingTraceBatches();
 
-  expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
-  ).toMatchObject({
+  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "listOrders:2"],
@@ -245,10 +271,25 @@ test("telemetry streamText", async () => {
       },
       "openai.responses:1": {
         run_type: "llm",
-        extra: { metadata: { step_number: 0 } },
+        extra: {
+          metadata: { step_number: 0 },
+          invocation_params: {
+            tools: [
+              expect.objectContaining({
+                name: "listOrders",
+                input_schema: expect.objectContaining({ type: "object" }),
+              }),
+            ],
+          },
+        },
         outputs: {
           role: "assistant",
-          content: "",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolName: "listOrders",
+            }),
+          ]),
           tool_calls: expect.arrayContaining([
             expect.objectContaining({
               type: "function",
@@ -270,12 +311,21 @@ test("telemetry streamText", async () => {
         extra: { metadata: { step_number: 1 } },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/order/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/order/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
     },
   });
+
+  expect(
+    runs.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
+  ).not.toHaveProperty("inputSchema");
 }, 30_000);
 
 test("telemetry generateText with flex service tier", async () => {
@@ -318,7 +368,12 @@ test("telemetry generateText with flex service tier", async () => {
         run_type: "llm",
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/blue/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/blue/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
         extra: {
@@ -382,7 +437,12 @@ test("telemetry generateObject", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
@@ -441,7 +501,12 @@ test("telemetry streamObject via streamText with output", async () => {
         },
         outputs: {
           role: "assistant",
-          content: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "text",
+              text: expect.stringMatching(/"color"\s*:\s*"blue"/i),
+            }),
+          ]),
           finish_reason: "stop",
         },
       },
@@ -700,6 +765,16 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
       },
       "openai.responses:1": {
         run_type: "llm",
+        extra: {
+          invocation_params: {
+            tools: [
+              expect.objectContaining({
+                name: "research",
+                input_schema: expect.objectContaining({ type: "object" }),
+              }),
+            ],
+          },
+        },
         inputs: {
           messages: [
             {
@@ -710,6 +785,12 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
         },
         outputs: {
           role: "assistant",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolName: "research",
+            }),
+          ]),
           tool_calls: [{ type: "function", function: { name: "research" } }],
           finish_reason: "tool-calls",
         },

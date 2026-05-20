@@ -169,12 +169,15 @@ describe("basic tracing", () => {
           run_type: "chain",
           inputs: { messages: [{ role: "user", content: "Test prompt" }] },
           extra: { metadata: { ls_integration: "vercel-ai-sdk-telemetry" } },
-          outputs: { content: "Test response" },
+          outputs: { role: "assistant", content: "Test response" },
         },
         "test-provider:1": {
           run_type: "llm",
           inputs: { messages: [{ role: "user", content: "Test prompt" }] },
-          outputs: { role: "assistant", content: "Test response" },
+          outputs: {
+            role: "assistant",
+            content: [{ type: "text", text: "Test response" }],
+          },
         },
       },
     });
@@ -543,7 +546,8 @@ describe("multi-step tracing", () => {
       telemetry: { integrations: [trace.integration] },
     });
 
-    await expect(expectTree(trace)).resolves.toMatchObject({
+    const tree = await expectTree(trace);
+    expect(tree).toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
         ["test-provider:1", "search:2"],
@@ -558,7 +562,37 @@ describe("multi-step tracing", () => {
         },
         "test-provider:1": {
           run_type: "llm",
-          extra: { metadata: { step_number: 0 } },
+          extra: {
+            metadata: { step_number: 0 },
+            invocation_params: {
+              tools: [
+                expect.objectContaining({
+                  name: "search",
+                  input_schema: expect.objectContaining({
+                    type: "object",
+                    properties: {
+                      query: expect.objectContaining({ type: "string" }),
+                    },
+                  }),
+                }),
+              ],
+            },
+          },
+          outputs: {
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-call",
+                toolName: "search",
+                input: { query: "weather" },
+              }),
+            ]),
+            tool_calls: expect.arrayContaining([
+              expect.objectContaining({
+                type: "function",
+                function: expect.objectContaining({ name: "search" }),
+              }),
+            ]),
+          },
         },
         "search:2": {
           run_type: "tool",
@@ -568,10 +602,18 @@ describe("multi-step tracing", () => {
         "test-provider:3": {
           run_type: "llm",
           extra: { metadata: { step_number: 1 } },
-          outputs: { content: "The weather is sunny and 72F." },
+          outputs: {
+            content: [
+              { type: "text", text: "The weather is sunny and 72F." },
+            ],
+          },
         },
       },
     });
+
+    expect(
+      tree.data["test-provider:1"].extra?.invocation_params?.tools?.[0],
+    ).not.toHaveProperty("inputSchema");
   });
 });
 
@@ -992,7 +1034,7 @@ describe("traceResponseMetadata", () => {
             steps: [
               expect.objectContaining({
                 step_number: 0,
-                content: "Step 1",
+                content: [{ type: "text", text: "Step 1" }],
               }),
             ],
           },
@@ -1031,11 +1073,18 @@ describe("streaming (onChunk)", () => {
       data: {
         "test-provider:0": {
           run_type: "chain",
-          outputs: { content: "Hello world", finish_reason: "stop" },
+          outputs: {
+            role: "assistant",
+            content: "Hello world",
+            finish_reason: "stop",
+          },
         },
         "test-provider:1": {
           run_type: "llm",
-          outputs: { role: "assistant", content: "Hello world" },
+          outputs: {
+            role: "assistant",
+            content: [{ type: "text", text: "Hello world" }],
+          },
         },
       },
     });
