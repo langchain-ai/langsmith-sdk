@@ -80,9 +80,23 @@ export function extractOutputTokenDetails(
     ? `${openAIServiceTier}_`
     : "";
   const outputTokenDetails: Record<string, number> = {};
-  if (typeof usage?.reasoningTokens === "number") {
+  const normalizedOutputTokenDetails = (
+    usage as {
+      outputTokenDetails?: {
+        reasoningTokens?: unknown;
+      };
+    }
+  ).outputTokenDetails;
+  const reasoningTokens =
+    normalizedOutputTokenDetails != null &&
+    typeof normalizedOutputTokenDetails.reasoningTokens === "number"
+      ? normalizedOutputTokenDetails.reasoningTokens
+      : typeof usage?.reasoningTokens === "number"
+        ? usage.reasoningTokens
+        : undefined;
+  if (typeof reasoningTokens === "number" && reasoningTokens > 0) {
     outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
-      usage.reasoningTokens;
+      reasoningTokens;
   }
   if (openAIServiceTier && typeof usage?.outputTokens === "number") {
     // Avoid counting reasoning tokens towards the output token count
@@ -172,6 +186,52 @@ export function extractInputTokenDetails(
     );
   }
   let inputTokenDetails: Record<string, number> = {};
+  const normalizedInputTokenDetails = (
+    usage as {
+      inputTokenDetails?: {
+        cacheReadTokens?: unknown;
+        cacheWriteTokens?: unknown;
+      };
+    }
+  ).inputTokenDetails;
+  if (
+    normalizedInputTokenDetails != null &&
+    typeof normalizedInputTokenDetails === "object"
+  ) {
+    if (
+      typeof normalizedInputTokenDetails.cacheReadTokens === "number" &&
+      normalizedInputTokenDetails.cacheReadTokens > 0
+    ) {
+      inputTokenDetails.cache_read =
+        normalizedInputTokenDetails.cacheReadTokens;
+    }
+    if (
+      typeof normalizedInputTokenDetails.cacheWriteTokens === "number" &&
+      normalizedInputTokenDetails.cacheWriteTokens > 0
+    ) {
+      inputTokenDetails.cache_creation =
+        normalizedInputTokenDetails.cacheWriteTokens;
+    }
+
+    const openAIServiceTier = extractTraceableServiceTier(
+      providerMetadata ?? {},
+    );
+    if (openAIServiceTier) {
+      const serviceTierPrefix = `${openAIServiceTier}_`;
+      if (inputTokenDetails.cache_read != null) {
+        inputTokenDetails[`${serviceTierPrefix}cache_read`] =
+          inputTokenDetails.cache_read;
+        delete inputTokenDetails.cache_read;
+      }
+      if (typeof usage?.inputTokens === "number") {
+        inputTokenDetails[openAIServiceTier] =
+          usage.inputTokens -
+          (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
+      }
+    }
+
+    return inputTokenDetails;
+  }
   if (
     providerMetadata?.anthropic != null &&
     typeof providerMetadata?.anthropic === "object"

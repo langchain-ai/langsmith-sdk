@@ -77,6 +77,12 @@ export interface LangSmithTelemetryConfig {
    * Additional RunTree configuration to pass through.
    */
   extra?: KVMap;
+
+  /**
+   * Whether to enable tracing.
+   * @default true if LANGSMITH_TRACING is set to "true"
+   */
+  tracingEnabled?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,6 +194,7 @@ export function createLangSmithTelemetry(
     processChildLLMRunOutputs,
     traceResponseMetadata,
     traceRawHttp,
+    tracingEnabled,
     extra: customExtra,
   } = config ?? {};
 
@@ -234,7 +241,7 @@ export function createLangSmithTelemetry(
   const invocationsByCallId = new Map<string, InvocationState>();
 
   const onStart: Telemetry["onStart"] = async (event) => {
-    if (!isTracingEnabled()) return;
+    if (!isTracingEnabled(tracingEnabled)) return;
     if (!("callId" in event) || typeof event.callId !== "string") return;
 
     // If called within an existing traceable context, nest under it
