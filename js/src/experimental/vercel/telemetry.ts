@@ -1,4 +1,4 @@
-import type { Telemetry } from "ai";
+import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
 import { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { isTracingEnabled } from "../../env.js";
@@ -85,22 +85,32 @@ export interface LangSmithTelemetryConfig {
   tracingEnabled?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function _formatMessages(messages: any[]): any[] {
+function _formatMessages(messages: ModelMessage[]): Record<string, unknown>[] {
   if (!Array.isArray(messages)) return messages;
   return messages.map((msg) => convertMessageToTracedFormat(msg));
 }
 
+// oxlint-disable-next-line typescript/no-explicit-any
+function _formatToolCalls(toolCalls: TypedToolCall<any>[]) {
+  return toolCalls.map((tc) => ({
+    id: tc.toolCallId,
+    type: "function",
+    function: {
+      name: tc.toolName,
+      arguments:
+        typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input),
+    },
+  }));
+}
+
 function _formatStepOutput(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  event: Record<string, any>,
+  // oxlint-disable-next-line typescript/no-explicit-any
+  event: StepResult<any, any>,
   traceRawHttp?: boolean,
 ): KVMap {
   // Build an assistant-style message from the step result
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const output: Record<string, any> = {
-    role: "assistant",
-  };
+  const output: Record<string, any> = { role: "assistant" };
 
   // Text content
   if (event.text != null) {
@@ -111,18 +121,7 @@ function _formatStepOutput(
 
   // Tool calls
   if (Array.isArray(event.toolCalls) && event.toolCalls.length > 0) {
-    output.tool_calls = event.toolCalls.map(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (tc: any) => ({
-        id: tc.toolCallId,
-        type: "function",
-        function: {
-          name: tc.toolName,
-          arguments:
-            typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args),
-        },
-      }),
-    );
+    output.tool_calls = _formatToolCalls(event.toolCalls);
   }
 
   if (event.finishReason != null) {
@@ -174,8 +173,9 @@ function _formatStepOutput(
  * `withRunTree` via `executeTool` for nesting, and `onToolExecutionEnd`
  * records outputs or errors (including tool results not visible to `executeTool`
  * alone).
+ *
+ * @experimental Only available in Vercel AI SDK 7.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createLangSmithTelemetry(
   config?: LangSmithTelemetryConfig,
   // Ignore until Telemetry is released
@@ -464,18 +464,7 @@ export function createLangSmithTelemetry(
       Array.isArray(event.toolCalls) &&
       event.toolCalls.length > 0
     ) {
-      outputs.tool_calls = event.toolCalls.map(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (tc: any) => ({
-          id: tc.toolCallId,
-          type: "function",
-          function: {
-            name: tc.toolName,
-            arguments:
-              typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args),
-          },
-        }),
-      );
+      outputs.tool_calls = _formatToolCalls(event.toolCalls);
     }
 
     if ("finishReason" in event && event.finishReason != null) {
