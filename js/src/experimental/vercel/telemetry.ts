@@ -1,5 +1,5 @@
 import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
-import { RunTree, RunTreeConfig } from "../../run_trees.js";
+import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
 import { isTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
@@ -290,6 +290,7 @@ export function createLangSmithTelemetry(
       name: customName ?? event.operationId,
       run_type: runType,
       inputs,
+      tracingEnabled: true,
       extra: {
         ...customExtra,
         metadata: {
@@ -305,7 +306,7 @@ export function createLangSmithTelemetry(
     };
 
     let rootRunTree: RunTree;
-    if (parentRunTree != null) {
+    if (isRunTree(parentRunTree)) {
       rootRunTree = parentRunTree.createChild(runTreeConfig);
     } else {
       rootRunTree = new RunTree(runTreeConfig);

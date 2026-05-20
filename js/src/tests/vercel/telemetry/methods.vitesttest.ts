@@ -737,6 +737,7 @@ describe("createLangSmithTelemetry with MockLanguageModelV4", () => {
         {
           name: "outer-traceable",
           client: trace.client,
+          tracingEnabled: true,
         },
       );
 
