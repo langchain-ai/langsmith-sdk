@@ -90,6 +90,14 @@ function _formatMessages(messages: ModelMessage[]): Record<string, unknown>[] {
   return messages.map((msg) => convertMessageToTracedFormat(msg));
 }
 
+function _isPrimitive(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
 // oxlint-disable-next-line typescript/no-explicit-any
 function _formatToolCalls(toolCalls: TypedToolCall<any>[]) {
   return toolCalls.map((tc) => ({
@@ -97,8 +105,9 @@ function _formatToolCalls(toolCalls: TypedToolCall<any>[]) {
     type: "function",
     function: {
       name: tc.toolName,
-      arguments:
-        typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input),
+      arguments: _isPrimitive(tc.input)
+        ? String(tc.input)
+        : JSON.stringify(tc.input),
     },
   }));
 }
