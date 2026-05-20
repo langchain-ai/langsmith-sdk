@@ -788,11 +788,10 @@ class ListThreadsItem(TypedDict):
     max_start_time: Optional[str]
 
 
-class Client:
+class Client(_langsmith_api_module.Langsmith):
     """Client for interacting with the LangSmith API."""
 
     __slots__ = [
-        "__weakref__",
         "api_url",
         "_api_key",
         "_oauth_access_token",
@@ -1387,7 +1386,7 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        self._langsmith_api = _langsmith_api_module.Langsmith(
+        super().__init__(
             api_key=self._api_key,
             bearer_token=self._oauth_access_token,
             tenant_id=str(self._workspace_id) if self._workspace_id else None,
@@ -1400,38 +1399,6 @@ class Client:
             ),
             default_headers=self._custom_headers or None,
         )
-
-    # ------------------------------------------------------------------
-    # Stainless v2 resource accessors
-    # Only resources that target /v2/ endpoints are exposed here.
-    # @property is used (not @cached_property) because __slots__ disables
-    # __dict__; the stainless client caches each resource internally.
-    # ------------------------------------------------------------------
-
-    @property
-    def runs(self) -> "RunsResource":
-        return self._langsmith_api.runs
-
-    @property
-    def threads(self) -> "ThreadsResource":
-        return self._langsmith_api.threads
-
-    @property
-    def traces(self) -> "TracesResource":
-        return self._langsmith_api.traces
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
-        try:
-            api_client = object.__getattribute__(self, "_langsmith_api")
-        except AttributeError:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
-        return getattr(api_client, name)
 
     def _dump_failed_trace(
         self,

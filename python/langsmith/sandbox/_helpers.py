@@ -37,6 +37,8 @@ def merge_headers(
     """Merge request headers, giving precedence to overrides."""
     merged: dict[str, str] = dict(base_headers or {})
     if override_headers:
+        override_keys_lower = {k.lower() for k in override_headers}
+        merged = {k: v for k, v in merged.items() if k.lower() not in override_keys_lower}
         merged.update(override_headers)
     return merged
 

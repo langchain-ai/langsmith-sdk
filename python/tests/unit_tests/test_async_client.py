@@ -3,11 +3,9 @@
 import json
 import pathlib
 import uuid
-import warnings
 from datetime import datetime
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 import httpx
 import pytest
@@ -25,61 +23,65 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LANGSMITH_API_KEY",
         "LANGCHAIN_ENDPOINT",
         "LANGSMITH_ENDPOINT",
-        "LANGSMITH_PROFILE",
+        "LANGSMITH_OAUTH_ACCESS_TOKEN",
     ):
         monkeypatch.delenv(key, raising=False)
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_custom_headers(mock_client_cls: mock.Mock) -> None:
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
+def _fake_httpx_client_cls() -> type:
+    """Return a fresh httpx.AsyncClient subclass that records constructor kwargs.
 
-    AsyncClient(
-        api_url="http://localhost:1984",
-        api_key="test-api-key",
-        headers={
-            "X-Custom-Header": "custom-value",
-            "X-Another-Header": "another-value",
-        },
-    )
+    Using a real subclass keeps isinstance(x, httpx.AsyncClient) == True,
+    which the stainless-generated base client requires.
+    """
 
-    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    class _FakeClient(httpx.AsyncClient):
+        last_init_kwargs: dict = {}
+
+        def __init__(self, **kwargs):
+            type(self).last_init_kwargs = dict(kwargs)
+            super().__init__(**kwargs)
+
+    return _FakeClient
+
+
+def test_async_client_custom_headers() -> None:
+    fake_cls = _fake_httpx_client_cls()
+    with mock.patch("langsmith.async_client.httpx.AsyncClient", fake_cls):
+        AsyncClient(
+            api_url="http://localhost:1984",
+            api_key="test-api-key",
+            headers={
+                "X-Custom-Header": "custom-value",
+                "X-Another-Header": "another-value",
+            },
+        )
+
+    passed_headers = fake_cls.last_init_kwargs["headers"]
     assert passed_headers["X-Custom-Header"] == "custom-value"
     assert passed_headers["X-Another-Header"] == "another-value"
     assert passed_headers["Content-Type"] == "application/json"
     assert passed_headers["x-api-key"] == "test-api-key"
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_headers_dont_override_required(
-    mock_client_cls: mock.Mock,
-) -> None:
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
+def test_async_client_headers_dont_override_required() -> None:
+    fake_cls = _fake_httpx_client_cls()
+    with mock.patch("langsmith.async_client.httpx.AsyncClient", fake_cls):
+        AsyncClient(
+            api_url="http://localhost:1984",
+            api_key="correct-api-key",
+            headers={
+                "x-api-key": "wrong-key",
+                "X-Custom-Header": "custom-value",
+            },
+        )
 
-    AsyncClient(
-        api_url="http://localhost:1984",
-        api_key="correct-api-key",
-        headers={
-            "x-api-key": "wrong-key",
-            "X-Custom-Header": "custom-value",
-        },
-    )
-
-    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    passed_headers = fake_cls.last_init_kwargs["headers"]
     assert passed_headers["x-api-key"] == "correct-api-key"
     assert passed_headers["X-Custom-Header"] == "custom-value"
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_headers_property_setter(mock_client_cls: mock.Mock) -> None:
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
-
+def test_async_client_headers_property_setter() -> None:
     client = AsyncClient(
         api_url="http://localhost:1984",
         api_key="test-api-key",
@@ -97,12 +99,7 @@ def test_async_client_headers_property_setter(mock_client_cls: mock.Mock) -> Non
     assert "x-initial-header" not in client._headers
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_headers_property_getter(mock_client_cls: mock.Mock) -> None:
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
-
+def test_async_client_headers_property_getter() -> None:
     custom_headers = {"X-Custom-Header": "custom-value"}
     client = AsyncClient(
         api_url="http://localhost:1984",
@@ -113,32 +110,25 @@ def test_async_client_headers_property_getter(mock_client_cls: mock.Mock) -> Non
     assert client.headers == custom_headers
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_no_custom_headers(mock_client_cls: mock.Mock) -> None:
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
+def test_async_client_no_custom_headers() -> None:
+    fake_cls = _fake_httpx_client_cls()
+    with mock.patch("langsmith.async_client.httpx.AsyncClient", fake_cls):
+        AsyncClient(
+            api_url="http://localhost:1984",
+            api_key="test-api-key",
+        )
 
-    AsyncClient(
-        api_url="http://localhost:1984",
-        api_key="test-api-key",
-    )
-
-    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    passed_headers = fake_cls.last_init_kwargs["headers"]
     assert passed_headers["Content-Type"] == "application/json"
     assert passed_headers["x-api-key"] == "test-api-key"
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
 def test_async_client_profile_config_uses_oauth_access_token(
-    mock_client_cls: mock.Mock,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
     _clear_profile_env(monkeypatch)
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
+    fake_cls = _fake_httpx_client_cls()
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -155,28 +145,22 @@ def test_async_client_profile_config_uses_oauth_access_token(
     )
     monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
 
-    AsyncClient()
+    with mock.patch("langsmith.async_client.httpx.AsyncClient", fake_cls):
+        AsyncClient()
 
-    assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
-    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert fake_cls.last_init_kwargs["base_url"] == "https://profile.example.com"
+    passed_headers = fake_cls.last_init_kwargs["headers"]
     assert passed_headers["Authorization"] == "Bearer profile-access-token"
     assert "x-api-key" not in passed_headers
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
-    mock_client_cls: mock.Mock,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
     _clear_profile_env(monkeypatch)
-    mock_httpx_client = mock.AsyncMock()
-    mock_httpx_client.headers = httpx.Headers()
-    response = mock.Mock()
-    response.status_code = 200
-    mock_httpx_client.request.return_value = response
-    mock_client_cls.return_value = mock_httpx_client
+    fake_cls = _fake_httpx_client_cls()
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -208,8 +192,15 @@ async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
         return response
 
     monkeypatch.setattr(requests, "post", mock_post)
-    client = AsyncClient()
-    snapshotted_headers = dict(mock_client_cls.call_args.kwargs["headers"])
+
+    with mock.patch("langsmith.async_client.httpx.AsyncClient", fake_cls):
+        client = AsyncClient()
+
+    snapshotted_headers = dict(fake_cls.last_init_kwargs["headers"])
+
+    mock_response = mock.Mock()
+    mock_response.status_code = 200
+    client._client.request = AsyncMock(return_value=mock_response)
 
     await client._arequest_with_retries(
         "GET",
@@ -217,28 +208,22 @@ async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
         headers=snapshotted_headers,
     )
 
-    request_headers = mock_httpx_client.request.call_args.kwargs["headers"]
+    request_headers = client._client.request.call_args.kwargs["headers"]
     assert request_headers["Authorization"] == "Bearer new-access-token"
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 @patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
 @patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
 async def test_arequest_with_retries_retries_on_502(
     mock_raise_for_status: mock.Mock,
     _mock_sleep: AsyncMock,
-    mock_client_cls: mock.Mock,
 ) -> None:
-    mock_httpx_client = AsyncMock()
-    mock_client_cls.return_value = mock_httpx_client
-
     first_response = MagicMock()
     first_response.status_code = 502
 
     second_response = MagicMock()
     second_response.status_code = 200
-    mock_httpx_client.request.side_effect = [first_response, second_response]
 
     def _raise_for_status(response):
         if response.status_code >= 400:
@@ -251,22 +236,19 @@ async def test_arequest_with_retries_retries_on_502(
     mock_raise_for_status.side_effect = _raise_for_status
 
     client = AsyncClient(retry_config={"max_retries": 2})
+    client._client.request = AsyncMock(side_effect=[first_response, second_response])
+
     response = await client._arequest_with_retries("GET", "/repos/-/test")
     assert response == second_response
-    assert mock_httpx_client.request.call_count == 2
+    assert client._client.request.call_count == 2
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
-async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
+async def test__create_commit_tags() -> None:
     try:
         from langchain_core.prompts import ChatPromptTemplate
     except ImportError:
         pytest.skip("Skipping test that requires langchain-core")
-
-    mock_httpx_client = AsyncMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
 
     async def mock_request(method, url, **kwargs):
         response = MagicMock()
@@ -288,24 +270,23 @@ async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
 
         return response
 
-    mock_httpx_client.request.side_effect = mock_request
-    mock_client_cls.return_value = mock_httpx_client
-
     client = AsyncClient(
         api_url="http://localhost:1984",
         api_key="test_api_key",
     )
+    mock_request_fn = AsyncMock(side_effect=mock_request)
+    client._client.request = mock_request_fn
 
     # Test 1: _update_prompt_tags with multiple tags
-    mock_httpx_client.request.reset_mock()
-    mock_httpx_client.request.return_value = mock_response
+    mock_request_fn.reset_mock()
+    mock_request_fn.side_effect = mock_request
     tags = ["tag1", "tag2", "tag3"]
     commit_id = "abc123"
     await client._create_commit_tags("test-owner/test-repo", commit_id, tags)
 
     post_calls = [
         call
-        for call in mock_httpx_client.request.call_args_list
+        for call in mock_request_fn.call_args_list
         if call[0][0] == "POST" and "/repos/" in str(call)
     ]
     assert len(post_calls) == 3
@@ -318,19 +299,20 @@ async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
         }
 
     # Test 2: Empty tags list
-    mock_httpx_client.request.reset_mock()
+    mock_request_fn.reset_mock()
+    mock_request_fn.side_effect = mock_request
     await client._create_commit_tags("owner/repo", "commit123", [])
 
     post_calls = [
         call
-        for call in mock_httpx_client.request.call_args_list
+        for call in mock_request_fn.call_args_list
         if call[0][0] == "POST" and "/repos/" in str(call)
     ]
     assert len(post_calls) == 0
 
     # Test 3: create_commit with tags
-    mock_httpx_client.request.reset_mock()
-    mock_httpx_client.request.side_effect = mock_request
+    mock_request_fn.reset_mock()
+    mock_request_fn.side_effect = mock_request
 
     with patch.object(AsyncClient, "_prompt_exists", return_value=True):
         with patch.object(AsyncClient, "_current_tenant_is_owner", return_value=True):
@@ -358,7 +340,7 @@ async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
 
                 tag_post_calls = [
                     call
-                    for call in mock_httpx_client.request.call_args_list
+                    for call in mock_request_fn.call_args_list
                     if call[0][0] == "POST"
                     and "/repos/" in str(call)
                     and "/tags" in str(call)
@@ -370,8 +352,8 @@ async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
                 assert "v1.0" in tag_names
 
     # Test 4: create_commit without tags
-    mock_httpx_client.request.reset_mock()
-    mock_httpx_client.request.side_effect = mock_request
+    mock_request_fn.reset_mock()
+    mock_request_fn.side_effect = mock_request
 
     with patch.object(AsyncClient, "_prompt_exists", return_value=True):
         with patch.object(AsyncClient, "_current_tenant_is_owner", return_value=True):
@@ -390,7 +372,7 @@ async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
 
                 tag_post_calls = [
                     call
-                    for call in mock_httpx_client.request.call_args_list
+                    for call in mock_request_fn.call_args_list
                     if call[0][0] == "POST"
                     and "/repos/" in str(call)
                     and "/tags" in str(call)
@@ -421,23 +403,14 @@ async def test_push_prompt_forwards_commit_tags(
     assert kwargs["tags"] == commit_tags
 
 
-@mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_repr_hides_sensitive_info(mock_client_cls: mock.Mock) -> None:
+def test_async_client_repr_hides_sensitive_info() -> None:
     """Test that __repr__ does not expose sensitive information like API keys."""
-    mock_httpx_client = mock.Mock()
-    mock_httpx_client.base_url = "https://api.smith.langchain.com"
-    mock_httpx_client.headers = httpx.Headers()
-    mock_client_cls.return_value = mock_httpx_client
-
     client = AsyncClient(
         api_url="https://api.smith.langchain.com",
         api_key="super-secret-api-key-12345",
     )
 
     repr_str = repr(client)
-    # Ensure API key is NOT in the repr
     assert "super-secret-api-key-12345" not in repr_str
-    # Ensure the repr shows the API URL
     assert "https://api.smith.langchain.com" in repr_str
-    # Ensure it's properly formatted
     assert repr_str == "AsyncClient (API URL: https://api.smith.langchain.com)"
