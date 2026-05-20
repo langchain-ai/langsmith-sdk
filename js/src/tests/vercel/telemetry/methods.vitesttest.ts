@@ -416,6 +416,7 @@ describe("createLangSmithTelemetry with MockLanguageModelV4", () => {
           name: "inner-agent-call",
           run_type: "chain",
           client: trace.client,
+          tracingEnabled: true,
         },
       );
 
