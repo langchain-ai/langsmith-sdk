@@ -148,178 +148,277 @@ async function expectTree({
   return getAssumedTreeFromCalls(callSpy.mock.calls, client);
 }
 
-describe("LangSmithTelemetry with MockLanguageModelV4", () => {
-  describe("basic tracing", () => {
-    it("should create root and step spans for a simple generateText", async () => {
-      const trace = createTrace();
+describe("basic tracing", () => {
+  it("should create root and step spans for a simple generateText", async () => {
+    const trace = createTrace();
 
-      await generateText({
-        model: createModel({
-          responses: [
-            textResult("Test response", usage({ input: 5, output: 3 })),
-          ],
-        }),
-        prompt: "Test prompt",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            run_type: "chain",
-            inputs: { messages: [{ role: "user", content: "Test prompt" }] },
-            extra: { metadata: { ls_integration: "vercel-ai-sdk-telemetry" } },
-            outputs: { content: "Test response" },
-          },
-          "test-provider:1": {
-            run_type: "llm",
-            inputs: { messages: [{ role: "user", content: "Test prompt" }] },
-            outputs: { role: "assistant", content: "Test response" },
-          },
-        },
-      });
+    await generateText({
+      model: createModel({
+        responses: [
+          textResult("Test response", usage({ input: 5, output: 3 })),
+        ],
+      }),
+      prompt: "Test prompt",
+      telemetry: { integrations: [trace.integration] },
     });
 
-    it("should use the provider as default run name and store the AI SDK operation id", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({ provider: "openai", modelId: "gpt-4o" }),
-        prompt: "Hello",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["openai:0", "openai:1"]],
-        data: {
-          "openai:0": {
-            name: "openai",
-            extra: {
-              metadata: {
-                ai_sdk_method: "ai.generateText",
-                ls_model_name: "gpt-4o",
-                ls_provider: "openai",
-              },
-            },
-          },
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          run_type: "chain",
+          inputs: { messages: [{ role: "user", content: "Test prompt" }] },
+          extra: { metadata: { ls_integration: "vercel-ai-sdk-telemetry" } },
+          outputs: { content: "Test response" },
         },
-      });
-    });
-
-    it("should allow custom name override", async () => {
-      const trace = createTrace({ name: "my-agent" });
-      await generateText({
-        model: createModel(),
-        prompt: "Hello",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["my-agent:0", "test-provider:1"]],
-        data: { "my-agent:0": { name: "my-agent", run_type: "chain" } },
-      });
-    });
-
-    it("should apply custom metadata and tags", async () => {
-      const trace = createTrace({
-        metadata: { customField: "test-value", version: "2.0" },
-        tags: ["test-tag", "v2"],
-      });
-
-      await generateText({
-        model: createModel(),
-        prompt: "Test with metadata",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": {
-            tags: ["test-tag", "v2"],
-            extra: {
-              metadata: {
-                customField: "test-value",
-                version: "2.0",
-                ls_integration: "vercel-ai-sdk-telemetry",
-              },
-            },
-          },
+        "test-provider:1": {
+          run_type: "llm",
+          inputs: { messages: [{ role: "user", content: "Test prompt" }] },
+          outputs: { role: "assistant", content: "Test response" },
         },
-      });
+      },
     });
   });
 
-  describe("metadata", () => {
-    it("should set ai_sdk_method and root ls_agent_type on top-level runs", async () => {
-      const trace = createTrace();
+  it("should use the provider as default run name and store the AI SDK operation id", async () => {
+    const trace = createTrace();
 
-      await generateText({
-        model: createModel(),
-        prompt: "Metadata test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const tree = await expectTree(trace);
-      const rootRun = Object.values(tree.data).find(
-        (run) =>
-          run.run_type === "chain" &&
-          run.extra?.metadata?.ai_sdk_method === "ai.generateText",
-      );
-
-      expect(rootRun?.extra?.metadata).toMatchObject({
-        ai_sdk_method: "ai.generateText",
-        ls_agent_type: "root",
-      });
+    await generateText({
+      model: createModel({ provider: "openai", modelId: "gpt-4o" }),
+      prompt: "Hello",
+      telemetry: { integrations: [trace.integration] },
     });
 
-    it("should set ls_agent_type to subagent for telemetry runs inside tools", async () => {
-      const trace = createTrace();
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["openai:0", "openai:1"]],
+      data: {
+        "openai:0": {
+          name: "openai",
+          extra: {
+            metadata: {
+              ai_sdk_method: "ai.generateText",
+              ls_model_name: "gpt-4o",
+              ls_provider: "openai",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("should allow custom name override", async () => {
+    const trace = createTrace({ name: "my-agent" });
+    await generateText({
+      model: createModel(),
+      prompt: "Hello",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["my-agent:0", "test-provider:1"]],
+      data: { "my-agent:0": { name: "my-agent", run_type: "chain" } },
+    });
+  });
+
+  it("should apply custom metadata and tags", async () => {
+    const trace = createTrace({
+      metadata: { customField: "test-value", version: "2.0" },
+      tags: ["test-tag", "v2"],
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Test with metadata",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": {
+          tags: ["test-tag", "v2"],
+          extra: {
+            metadata: {
+              customField: "test-value",
+              version: "2.0",
+              ls_integration: "vercel-ai-sdk-telemetry",
+            },
+          },
+        },
+      },
+    });
+  });
+});
+
+describe("metadata", () => {
+  it("should set ai_sdk_method and root ls_agent_type on top-level runs", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel(),
+      prompt: "Metadata test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    const rootRun = Object.values(tree.data).find(
+      (run) =>
+        run.run_type === "chain" &&
+        run.extra?.metadata?.ai_sdk_method === "ai.generateText",
+    );
+
+    expect(rootRun?.extra?.metadata).toMatchObject({
+      ai_sdk_method: "ai.generateText",
+      ls_agent_type: "root",
+    });
+  });
+
+  it("should set ls_agent_type to subagent for telemetry runs inside tools", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-research-1",
+            toolName: "research",
+            input: { topic: "AI" },
+          }),
+          textResult("Research complete.", usage({ input: 20, output: 8 })),
+        ],
+      }),
+      prompt: "Use a tool with sub-agent",
+      tools: {
+        research: tool({
+          inputSchema: z.object({ topic: z.string() }),
+          execute: async () => {
+            const result = await generateText({
+              model: createModel({
+                provider: "inner-provider",
+                modelId: "inner-model",
+                responses: [textResult("Inner result")],
+              }),
+              prompt: "Inner prompt",
+              telemetry: { integrations: [trace.integration] },
+            });
+            return result.text;
+          },
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "research:2"],
+        ["research:2", "inner-provider:3"],
+        ["inner-provider:3", "inner-provider:4"],
+        ["test-provider:0", "test-provider:5"],
+      ],
+      data: {
+        "test-provider:0": {
+          run_type: "chain",
+          extra: {
+            metadata: {
+              ai_sdk_method: "ai.generateText",
+              ls_agent_type: "root",
+            },
+          },
+        },
+        "test-provider:1": {
+          run_type: "llm",
+          extra: { metadata: { ls_agent_type: "root" } },
+        },
+        "research:2": {
+          run_type: "tool",
+          extra: { metadata: { ls_agent_type: "root" } },
+        },
+        "inner-provider:3": {
+          run_type: "chain",
+          extra: {
+            metadata: {
+              ai_sdk_method: "ai.generateText",
+              ls_agent_type: "subagent",
+            },
+          },
+        },
+        "inner-provider:4": {
+          run_type: "llm",
+          extra: { metadata: { ls_agent_type: "subagent" } },
+        },
+        "test-provider:5": {
+          run_type: "llm",
+          extra: { metadata: { ls_agent_type: "root" } },
+        },
+      },
+    });
+  });
+});
+
+describe("global telemetry registration", () => {
+  it("should trace globally registered telemetry and allow local child name override", async () => {
+    const trace = createTrace();
+    const previousGlobalIntegrations = globalThis.AI_SDK_TELEMETRY_INTEGRATIONS;
+
+    try {
+      registerTelemetry(trace.integration);
 
       await generateText({
         model: createModel({
           responses: [
             toolCallResult({
-              toolCallId: "tc-research-1",
-              toolName: "research",
-              input: { topic: "AI" },
+              toolCallId: "tc-delegate-1",
+              toolName: "delegate",
+              input: { task: "summarize" },
             }),
-            textResult("Research complete.", usage({ input: 20, output: 8 })),
+            textResult("Delegation complete.", usage({ input: 20, output: 8 })),
           ],
         }),
-        prompt: "Use a tool with sub-agent",
+        prompt: "Delegate this task",
         tools: {
-          research: tool({
-            inputSchema: z.object({ topic: z.string() }),
+          delegate: tool({
+            inputSchema: z.object({ task: z.string() }),
             execute: async () => {
               const result = await generateText({
                 model: createModel({
-                  provider: "inner-provider",
-                  modelId: "inner-model",
-                  responses: [textResult("Inner result")],
+                  provider: "child-provider",
+                  modelId: "child-model",
+                  responses: [textResult("Child answer")],
                 }),
-                prompt: "Inner prompt",
-                telemetry: { integrations: [trace.integration] },
+                prompt: "Child prompt",
+                telemetry: {
+                  integrations: [
+                    LangSmithTelemetry({
+                      client: trace.client,
+                      name: "child-agent",
+                      tracingEnabled: true,
+                    }),
+                  ],
+                },
               });
               return result.text;
             },
           }),
         },
         stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
       });
 
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
           ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "research:2"],
-          ["research:2", "inner-provider:3"],
-          ["inner-provider:3", "inner-provider:4"],
+          ["test-provider:1", "delegate:2"],
+          ["delegate:2", "child-agent:3"],
+          ["child-agent:3", "child-provider:4"],
           ["test-provider:0", "test-provider:5"],
         ],
         data: {
           "test-provider:0": {
             run_type: "chain",
+            inputs: {
+              messages: [{ role: "user", content: "Delegate this task" }],
+              tools: ["delegate"],
+            },
             extra: {
               metadata: {
                 ai_sdk_method: "ai.generateText",
@@ -327,16 +426,18 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
               },
             },
           },
-          "test-provider:1": {
-            run_type: "llm",
-            extra: { metadata: { ls_agent_type: "root" } },
-          },
-          "research:2": {
+          "delegate:2": {
             run_type: "tool",
-            extra: { metadata: { ls_agent_type: "root" } },
+            inputs: { task: "summarize" },
+            outputs: { output: "Child answer" },
           },
-          "inner-provider:3": {
+          "child-agent:3": {
+            name: "child-agent",
             run_type: "chain",
+            inputs: {
+              messages: [{ role: "user", content: "Child prompt" }],
+            },
+            outputs: { content: "Child answer" },
             extra: {
               metadata: {
                 ai_sdk_method: "ai.generateText",
@@ -344,908 +445,797 @@ describe("LangSmithTelemetry with MockLanguageModelV4", () => {
               },
             },
           },
-          "inner-provider:4": {
+          "child-provider:4": {
             run_type: "llm",
             extra: { metadata: { ls_agent_type: "subagent" } },
           },
-          "test-provider:5": {
-            run_type: "llm",
-            extra: { metadata: { ls_agent_type: "root" } },
-          },
         },
       });
+    } finally {
+      globalThis.AI_SDK_TELEMETRY_INTEGRATIONS = previousGlobalIntegrations;
+    }
+  });
+});
+
+describe("error handling", () => {
+  it("should capture errors on the root span", async () => {
+    const trace = createTrace();
+    await expect(
+      generateText({
+        model: createModel({
+          doGenerate: async () => {
+            throw new Error("TOTALLY EXPECTED MOCK ERROR");
+          },
+        }),
+        prompt: "This should fail",
+        telemetry: { integrations: [trace.integration] },
+      }),
+    ).rejects.toThrow("TOTALLY EXPECTED MOCK ERROR");
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
+        },
+      },
     });
   });
 
-  describe("global telemetry registration", () => {
-    it("should trace globally registered telemetry and allow local child name override", async () => {
-      const trace = createTrace();
-      const previousGlobalIntegrations =
-        globalThis.AI_SDK_TELEMETRY_INTEGRATIONS;
+  it("should close open step runs on error", async () => {
+    const trace = createTrace();
 
-      try {
-        registerTelemetry(trace.integration);
-
-        await generateText({
-          model: createModel({
-            responses: [
-              toolCallResult({
-                toolCallId: "tc-delegate-1",
-                toolName: "delegate",
-                input: { task: "summarize" },
-              }),
-              textResult(
-                "Delegation complete.",
-                usage({ input: 20, output: 8 }),
-              ),
-            ],
-          }),
-          prompt: "Delegate this task",
-          tools: {
-            delegate: tool({
-              inputSchema: z.object({ task: z.string() }),
-              execute: async () => {
-                const result = await generateText({
-                  model: createModel({
-                    provider: "child-provider",
-                    modelId: "child-model",
-                    responses: [textResult("Child answer")],
-                  }),
-                  prompt: "Child prompt",
-                  telemetry: {
-                    integrations: [
-                      LangSmithTelemetry({
-                        client: trace.client,
-                        name: "child-agent",
-                        tracingEnabled: true,
-                      }),
-                    ],
-                  },
-                });
-                return result.text;
-              },
-            }),
-          },
-          stopWhen: isStepCount(10),
-        });
-
-        await expect(expectTree(trace)).resolves.toMatchObject({
-          edges: [
-            ["test-provider:0", "test-provider:1"],
-            ["test-provider:1", "delegate:2"],
-            ["delegate:2", "child-agent:3"],
-            ["child-agent:3", "child-provider:4"],
-            ["test-provider:0", "test-provider:5"],
-          ],
-          data: {
-            "test-provider:0": {
-              run_type: "chain",
-              inputs: {
-                messages: [{ role: "user", content: "Delegate this task" }],
-                tools: ["delegate"],
-              },
-              extra: {
-                metadata: {
-                  ai_sdk_method: "ai.generateText",
-                  ls_agent_type: "root",
-                },
-              },
-            },
-            "delegate:2": {
-              run_type: "tool",
-              inputs: { task: "summarize" },
-              outputs: { output: "Child answer" },
-            },
-            "child-agent:3": {
-              name: "child-agent",
-              run_type: "chain",
-              inputs: {
-                messages: [{ role: "user", content: "Child prompt" }],
-              },
-              outputs: { content: "Child answer" },
-              extra: {
-                metadata: {
-                  ai_sdk_method: "ai.generateText",
-                  ls_agent_type: "subagent",
-                },
-              },
-            },
-            "child-provider:4": {
-              run_type: "llm",
-              extra: { metadata: { ls_agent_type: "subagent" } },
-            },
-          },
-        });
-      } finally {
-        globalThis.AI_SDK_TELEMETRY_INTEGRATIONS = previousGlobalIntegrations;
-      }
-    });
-  });
-
-  describe("error handling", () => {
-    it("should capture errors on the root span", async () => {
-      const trace = createTrace();
-      await expect(
-        generateText({
-          model: createModel({
-            doGenerate: async () => {
-              throw new Error("TOTALLY EXPECTED MOCK ERROR");
-            },
-          }),
-          prompt: "This should fail",
-          telemetry: { integrations: [trace.integration] },
-        }),
-      ).rejects.toThrow("TOTALLY EXPECTED MOCK ERROR");
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
-          },
-        },
-      });
-    });
-
-    it("should close open step runs on error", async () => {
-      const trace = createTrace();
-
-      await expect(
-        generateText({
-          model: createModel({
-            doGenerate: async () => {
-              throw new Error("Mid-step error");
-            },
-          }),
-          prompt: "Test",
-          telemetry: { integrations: [trace.integration] },
-        }),
-      ).rejects.toThrow("Mid-step error");
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            error: expect.stringContaining("Mid-step error"),
-          },
-          "test-provider:1": {
-            error: expect.stringContaining("Mid-step error"),
-          },
-        },
-      });
-    });
-  });
-
-  describe("multi-step tracing", () => {
-    it("should create separate LLM spans for each step", async () => {
-      const trace = createTrace();
-
-      await generateText({
+    await expect(
+      generateText({
         model: createModel({
-          responses: [
-            toolCallResult(
-              {
-                toolCallId: "tc-1",
-                toolName: "search",
-                input: { query: "weather" },
-              },
-              usage({ input: 10, output: 5 }),
-            ),
-            textResult(
-              "The weather is sunny and 72F.",
-              usage({ input: 20, output: 8 }),
-            ),
-          ],
-        }),
-        prompt: "Multi-step test",
-        tools: {
-          search: tool({
-            inputSchema: z.object({ query: z.string() }),
-            execute: async () => "Sunny, 72F",
-          }),
-        },
-        stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [
-          ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "search:2"],
-          ["test-provider:0", "test-provider:3"],
-        ],
-        data: {
-          "test-provider:0": {
-            inputs: {
-              messages: [{ role: "user", content: "Multi-step test" }],
-              tools: ["search"],
-            },
+          doGenerate: async () => {
+            throw new Error("Mid-step error");
           },
-          "test-provider:1": {
-            run_type: "llm",
-            extra: { metadata: { step_number: 0 } },
-          },
-          "search:2": {
-            run_type: "tool",
-            inputs: { query: "weather" },
-            outputs: { output: "Sunny, 72F" },
-          },
-          "test-provider:3": {
-            run_type: "llm",
-            extra: { metadata: { step_number: 1 } },
-            outputs: { content: "The weather is sunny and 72F." },
-          },
-        },
-      });
-    });
-  });
-
-  describe("tool tracing via executeTool", () => {
-    it("should create tool spans and record outputs on onToolExecutionEnd", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            toolCallResult({
-              toolCallId: "tc-calc-1",
-              toolName: "calculator",
-              input: { expression: "2+2" },
-            }),
-            textResult("2+2 = 4", usage({ input: 15, output: 5 })),
-          ],
-        }),
-        prompt: "Use a tool",
-        tools: {
-          calculator: tool({
-            inputSchema: z.object({ expression: z.string() }),
-            execute: async () => 4,
-          }),
-        },
-        stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [
-          ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "calculator:2"],
-          ["test-provider:0", "test-provider:3"],
-        ],
-        data: {
-          "calculator:2": {
-            run_type: "tool",
-            inputs: { expression: "2+2" },
-            outputs: { output: 4 },
-          },
-        },
-      });
-    });
-
-    it("should nest sub-agent calls inside tool spans", async () => {
-      const trace = createTrace();
-      const innerTraceable = traceable(
-        async (input: string) => `Processed: ${input}`,
-        {
-          name: "inner-agent-call",
-          run_type: "chain",
-          client: trace.client,
-          tracingEnabled: true,
-        },
-      );
-
-      await generateText({
-        model: createModel({
-          responses: [
-            toolCallResult({
-              toolCallId: "tc-research-1",
-              toolName: "research",
-              input: { topic: "AI" },
-            }),
-            textResult("Research complete.", usage({ input: 20, output: 8 })),
-          ],
-        }),
-        prompt: "Use a tool with sub-agent",
-        tools: {
-          research: tool({
-            inputSchema: z.object({ topic: z.string() }),
-            execute: async () => innerTraceable("AI research"),
-          }),
-        },
-        stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [
-          ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "research:2"],
-          ["research:2", "inner-agent-call:3"],
-          ["test-provider:0", "test-provider:4"],
-        ],
-        data: {
-          "research:2": {
-            run_type: "tool",
-            inputs: { topic: "AI" },
-            outputs: { output: "Processed: AI research" },
-          },
-          "inner-agent-call:3": {
-            run_type: "chain",
-            inputs: { input: "AI research" },
-            outputs: { outputs: "Processed: AI research" },
-          },
-        },
-      });
-    });
-  });
-
-  describe("usage metadata tracking", () => {
-    it("should track AI SDK 6 token usage on step runs", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            textResult(
-              "Response",
-              usage({
-                input: 100,
-                output: 25,
-                cacheRead: 30,
-                cacheWrite: 20,
-                reasoning: 10,
-              }),
-            ),
-          ],
-        }),
-        prompt: "Token test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:1": {
-            extra: {
-              metadata: {
-                usage_metadata: {
-                  input_tokens: 100,
-                  output_tokens: 25,
-                  total_tokens: 125,
-                  input_token_details: {
-                    cache_read: 30,
-                    cache_creation: 20,
-                  },
-                  output_token_details: { reasoning: 10 },
-                },
-              },
-            },
-          },
-        },
-      });
-    });
-
-    it("should track aggregated usage on the root span", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            textResult("Step response", usage({ input: 30, output: 15 })),
-          ],
-        }),
-        prompt: "Aggregate test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": {
-            extra: {
-              metadata: {
-                usage_metadata: {
-                  input_tokens: 30,
-                  output_tokens: 15,
-                  total_tokens: 45,
-                },
-              },
-            },
-          },
-        },
-      });
-    });
-
-    it("should track OpenAI flex service tier tokens", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          provider: "openai",
-          responses: [
-            textResult(
-              "Response",
-              usage({
-                input: 100,
-                output: 30,
-                cacheRead: 20,
-                reasoning: 5,
-              }),
-            ),
-          ],
-        }),
-        prompt: "Flex tier test",
-        providerOptions: { openai: { serviceTier: "flex" } },
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "openai:1": {
-            extra: {
-              metadata: {
-                usage_metadata: {
-                  input_tokens: 100,
-                  output_tokens: 30,
-                  total_tokens: 130,
-                },
-              },
-            },
-          },
-        },
-      });
-    });
-  });
-
-  describe("processInputs / processOutputs", () => {
-    it("should apply processInputs to the root span", async () => {
-      const trace = createTrace({
-        processInputs: (inputs) => ({
-          ...inputs,
-          messages: (inputs.messages ?? []).map((m: any) => ({
-            ...m,
-            content: "REDACTED",
-          })),
-        }),
-      });
-
-      await generateText({
-        model: createModel(),
-        prompt: "Secret prompt",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": {
-            inputs: { messages: [{ role: "user", content: "REDACTED" }] },
-          },
-        },
-      });
-    });
-
-    it("should apply processOutputs to the root span", async () => {
-      const trace = createTrace({
-        processOutputs: (outputs) => ({
-          ...outputs,
-          content: "REDACTED",
-        }),
-      });
-
-      await generateText({
-        model: createModel({
-          responses: [textResult("Secret response")],
         }),
         prompt: "Test",
         telemetry: { integrations: [trace.integration] },
-      });
+      }),
+    ).rejects.toThrow("Mid-step error");
 
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": { outputs: { content: "REDACTED" } },
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          error: expect.stringContaining("Mid-step error"),
         },
-      });
-    });
-
-    it("should apply processChildLLMRunInputs to step spans", async () => {
-      const trace = createTrace({
-        processChildLLMRunInputs: (inputs) => ({
-          messages: (inputs.messages ?? []).map((m: any) => ({
-            ...m,
-            content: "REDACTED_CHILD_INPUT",
-          })),
-        }),
-      });
-
-      await generateText({
-        model: createModel(),
-        prompt: "Test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:1": {
-            inputs: {
-              messages: [{ role: "user", content: "REDACTED_CHILD_INPUT" }],
-            },
-          },
+        "test-provider:1": {
+          error: expect.stringContaining("Mid-step error"),
         },
-      });
-    });
-
-    it("should apply processChildLLMRunOutputs to step spans", async () => {
-      const trace = createTrace({
-        processChildLLMRunOutputs: (outputs) => ({
-          ...outputs,
-          content: "REDACTED_CHILD_OUTPUT",
-          role: "assistant",
-        }),
-      });
-
-      await generateText({
-        model: createModel({
-          responses: [textResult("Secret step output")],
-        }),
-        prompt: "Test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:1": {
-            outputs: {
-              role: "assistant",
-              content: "REDACTED_CHILD_OUTPUT",
-            },
-          },
-        },
-      });
+      },
     });
   });
+});
 
-  describe("dotted order and trace hierarchy", () => {
-    it("should maintain correct parent-child dotted order", async () => {
-      const trace = createTrace();
+describe("multi-step tracing", () => {
+  it("should create separate LLM spans for each step", async () => {
+    const trace = createTrace();
 
-      await generateText({
-        model: createModel(),
-        prompt: "Hierarchy test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const tree = await expectTree(trace);
-      expect(tree).toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-      });
-
-      const root = tree.data["test-provider:0"];
-      const step = tree.data["test-provider:1"];
-      expect(step.trace_id).toBe(root.trace_id);
-      const rootDottedOrder = root.dotted_order;
-      const stepDottedOrder = step.dotted_order;
-      expect(rootDottedOrder).toEqual(expect.any(String));
-      expect(stepDottedOrder).toEqual(expect.any(String));
-      if (
-        typeof rootDottedOrder !== "string" ||
-        typeof stepDottedOrder !== "string"
-      ) {
-        throw new Error(
-          "Expected dotted order to be set on root and step runs",
-        );
-      }
-      expect(stepDottedOrder.startsWith(rootDottedOrder)).toBe(true);
-      expect(stepDottedOrder.split(".").length).toBe(
-        rootDottedOrder.split(".").length + 1,
-      );
-    });
-
-    it("should nest under an existing traceable context", async () => {
-      const trace = createTrace();
-      const outerFn = traceable(
-        async () => {
-          await generateText({
-            model: createModel(),
-            prompt: "Nested test",
-            telemetry: { integrations: [trace.integration] },
-          });
-        },
-        {
-          name: "outer-traceable",
-          client: trace.client,
-          tracingEnabled: true,
-        },
-      );
-
-      await outerFn();
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [
-          ["outer-traceable:0", "test-provider:1"],
-          ["test-provider:1", "test-provider:2"],
-        ],
-        data: {
-          "outer-traceable:0": { name: "outer-traceable" },
-          "test-provider:1": {
-            run_type: "chain",
-            extra: {
-              metadata: {
-                ls_integration: "vercel-ai-sdk-telemetry",
-              },
-            },
-          },
-          "test-provider:2": { run_type: "llm" },
-        },
-      });
-    });
-  });
-
-  describe("traceResponseMetadata", () => {
-    it("should include steps in output when traceResponseMetadata is true", async () => {
-      const trace = createTrace({
-        traceResponseMetadata: true,
-      });
-
-      await generateText({
-        model: createModel({
-          responses: [textResult("Step 1")],
-        }),
-        prompt: "Response metadata test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": {
-            outputs: {
-              steps: [
-                expect.objectContaining({
-                  step_number: 0,
-                  content: "Step 1",
-                }),
-              ],
-            },
-          },
-        },
-      });
-    });
-
-    it("should not include steps when traceResponseMetadata is false", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel(),
-        prompt: "No metadata test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const tree = await expectTree(trace);
-      expect(tree.data["test-provider:0"].outputs?.steps).toBeUndefined();
-    });
-  });
-
-  describe("streaming (onChunk)", () => {
-    it("should handle onChunk as a no-op without errors", async () => {
-      const trace = createTrace();
-
-      const result = streamText({
-        model: createModel(),
-        prompt: "Stream test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(result.text).resolves.toBe("Hello world");
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            run_type: "chain",
-            outputs: { content: "Hello world", finish_reason: "stop" },
-          },
-          "test-provider:1": {
-            run_type: "llm",
-            outputs: { role: "assistant", content: "Hello world" },
-          },
-        },
-      });
-    });
-  });
-
-  describe("tracing disabled", () => {
-    it("should not create runs when tracing is disabled", async () => {
-      const trace = createTrace({ tracingEnabled: false });
-
-      await generateText({
-        model: createModel(),
-        prompt: "Should not trace",
-        telemetry: { integrations: [trace.integration] },
-      });
-      await trace.client.awaitPendingTraceBatches();
-      expect(trace.callSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("project name configuration", () => {
-    it("should use custom project name", async () => {
-      const trace = createTrace({
-        projectName: "my-custom-project",
-      });
-
-      await generateText({
-        model: createModel(),
-        prompt: "Project test",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": { session_name: "my-custom-project" },
-        },
-      });
-    });
-  });
-
-  describe("integration reuse", () => {
-    it("should create separate traces when reusing the same integration sequentially", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          responses: [textResult("First response")],
-        }),
-        prompt: "First call",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const firstTree = await expectTree(trace);
-      expect(firstTree).toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            inputs: { messages: [{ role: "user", content: "First call" }] },
-            outputs: { content: "First response" },
-          },
-        },
-      });
-      const firstRoot = firstTree.data["test-provider:0"];
-
-      trace.callSpy.mockClear();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            textResult("Second response", usage({ input: 7, output: 4 })),
-          ],
-        }),
-        prompt: "Second call",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const secondTree = await expectTree(trace);
-      expect(secondTree).toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            inputs: { messages: [{ role: "user", content: "Second call" }] },
-            outputs: { content: "Second response" },
-          },
-        },
-      });
-      const secondRoot = secondTree.data["test-provider:0"];
-      expect(secondRoot.id).not.toBe(firstRoot.id);
-      expect(secondRoot.trace_id).not.toBe(firstRoot.trace_id);
-    });
-
-    it("should not leak state between sequential invocations after error", async () => {
-      const trace = createTrace();
-
-      await expect(
-        generateText({
-          model: createModel({
-            doGenerate: async () => {
-              throw new Error("TOTALLY EXPECTED MOCK ERROR");
-            },
-          }),
-          prompt: "Error call",
-          telemetry: { integrations: [trace.integration] },
-        }),
-      ).rejects.toThrow("TOTALLY EXPECTED MOCK ERROR");
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        data: {
-          "test-provider:0": {
-            error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
-          },
-        },
-      });
-      trace.callSpy.mockClear();
-
-      await generateText({
-        model: createModel({
-          responses: [textResult("Recovered")],
-        }),
-        prompt: "Recovery call",
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      await expect(expectTree(trace)).resolves.toMatchObject({
-        edges: [["test-provider:0", "test-provider:1"]],
-        data: {
-          "test-provider:0": {
-            inputs: { messages: [{ role: "user", content: "Recovery call" }] },
-            outputs: { content: "Recovered" },
-          },
-        },
-      });
-    });
-
-    it("should handle reuse with tools across invocations", async () => {
-      const trace = createTrace();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            toolCallResult({
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult(
+            {
               toolCallId: "tc-1",
               toolName: "search",
-              input: { query: "first" },
-            }),
-            textResult("First answer", usage({ input: 20, output: 8 })),
-          ],
-        }),
-        prompt: "First tool call",
-        tools: {
-          search: tool({
-            inputSchema: z.object({ query: z.string() }),
-            execute: async () => "first result",
-          }),
-        },
-        stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const firstTree = await expectTree(trace);
-      const firstTraceId = firstTree.data["test-provider:0"].trace_id;
-      trace.callSpy.mockClear();
-
-      await generateText({
-        model: createModel({
-          responses: [
-            toolCallResult({
-              toolCallId: "tc-2",
-              toolName: "calculator",
-              input: { expression: "1+1" },
-            }),
-            textResult("1+1 = 2", usage({ input: 15, output: 5 })),
-          ],
-        }),
-        prompt: "Second tool call",
-        tools: {
-          calculator: tool({
-            inputSchema: z.object({ expression: z.string() }),
-            execute: async () => 2,
-          }),
-        },
-        stopWhen: isStepCount(10),
-        telemetry: { integrations: [trace.integration] },
-      });
-
-      const secondTree = await expectTree(trace);
-      expect(secondTree).toMatchObject({
-        edges: [
-          ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "calculator:2"],
-          ["test-provider:0", "test-provider:3"],
+              input: { query: "weather" },
+            },
+            usage({ input: 10, output: 5 }),
+          ),
+          textResult(
+            "The weather is sunny and 72F.",
+            usage({ input: 20, output: 8 }),
+          ),
         ],
-        data: {
-          "calculator:2": {
-            run_type: "tool",
-            inputs: { expression: "1+1" },
-            outputs: { output: 2 },
+      }),
+      prompt: "Multi-step test",
+      tools: {
+        search: tool({
+          inputSchema: z.object({ query: z.string() }),
+          execute: async () => "Sunny, 72F",
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "search:2"],
+        ["test-provider:0", "test-provider:3"],
+      ],
+      data: {
+        "test-provider:0": {
+          inputs: {
+            messages: [{ role: "user", content: "Multi-step test" }],
+            tools: ["search"],
           },
         },
-      });
-      expect(secondTree.data["test-provider:0"].trace_id).not.toBe(
-        firstTraceId,
-      );
+        "test-provider:1": {
+          run_type: "llm",
+          extra: { metadata: { step_number: 0 } },
+        },
+        "search:2": {
+          run_type: "tool",
+          inputs: { query: "weather" },
+          outputs: { output: "Sunny, 72F" },
+        },
+        "test-provider:3": {
+          run_type: "llm",
+          extra: { metadata: { step_number: 1 } },
+          outputs: { content: "The weather is sunny and 72F." },
+        },
+      },
     });
+  });
+});
+
+describe("tool tracing via executeTool", () => {
+  it("should create tool spans and record outputs on onToolExecutionEnd", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-calc-1",
+            toolName: "calculator",
+            input: { expression: "2+2" },
+          }),
+          textResult("2+2 = 4", usage({ input: 15, output: 5 })),
+        ],
+      }),
+      prompt: "Use a tool",
+      tools: {
+        calculator: tool({
+          inputSchema: z.object({ expression: z.string() }),
+          execute: async () => 4,
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "calculator:2"],
+        ["test-provider:0", "test-provider:3"],
+      ],
+      data: {
+        "calculator:2": {
+          run_type: "tool",
+          inputs: { expression: "2+2" },
+          outputs: { output: 4 },
+        },
+      },
+    });
+  });
+
+  it("should nest sub-agent calls inside tool spans", async () => {
+    const trace = createTrace();
+    const innerTraceable = traceable(
+      async (input: string) => `Processed: ${input}`,
+      {
+        name: "inner-agent-call",
+        run_type: "chain",
+        client: trace.client,
+        tracingEnabled: true,
+      },
+    );
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-research-1",
+            toolName: "research",
+            input: { topic: "AI" },
+          }),
+          textResult("Research complete.", usage({ input: 20, output: 8 })),
+        ],
+      }),
+      prompt: "Use a tool with sub-agent",
+      tools: {
+        research: tool({
+          inputSchema: z.object({ topic: z.string() }),
+          execute: async () => innerTraceable("AI research"),
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "research:2"],
+        ["research:2", "inner-agent-call:3"],
+        ["test-provider:0", "test-provider:4"],
+      ],
+      data: {
+        "research:2": {
+          run_type: "tool",
+          inputs: { topic: "AI" },
+          outputs: { output: "Processed: AI research" },
+        },
+        "inner-agent-call:3": {
+          run_type: "chain",
+          inputs: { input: "AI research" },
+          outputs: { outputs: "Processed: AI research" },
+        },
+      },
+    });
+  });
+});
+
+describe("usage metadata tracking", () => {
+  it("should track AI SDK 6 token usage on step runs", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          textResult(
+            "Response",
+            usage({
+              input: 100,
+              output: 25,
+              cacheRead: 30,
+              cacheWrite: 20,
+              reasoning: 10,
+            }),
+          ),
+        ],
+      }),
+      prompt: "Token test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:1": {
+          extra: {
+            metadata: {
+              usage_metadata: {
+                input_tokens: 100,
+                output_tokens: 25,
+                total_tokens: 125,
+                input_token_details: {
+                  cache_read: 30,
+                  cache_creation: 20,
+                },
+                output_token_details: { reasoning: 10 },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("should track aggregated usage on the root span", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          textResult("Step response", usage({ input: 30, output: 15 })),
+        ],
+      }),
+      prompt: "Aggregate test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": {
+          extra: {
+            metadata: {
+              usage_metadata: {
+                input_tokens: 30,
+                output_tokens: 15,
+                total_tokens: 45,
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("should track OpenAI flex service tier tokens", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        provider: "openai",
+        responses: [
+          textResult(
+            "Response",
+            usage({
+              input: 100,
+              output: 30,
+              cacheRead: 20,
+              reasoning: 5,
+            }),
+          ),
+        ],
+      }),
+      prompt: "Flex tier test",
+      providerOptions: { openai: { serviceTier: "flex" } },
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "openai:1": {
+          extra: {
+            metadata: {
+              usage_metadata: {
+                input_tokens: 100,
+                output_tokens: 30,
+                total_tokens: 130,
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+});
+
+describe("processInputs / processOutputs", () => {
+  it("should apply processInputs to the root span", async () => {
+    const trace = createTrace({
+      processInputs: (inputs) => ({
+        ...inputs,
+        messages: (inputs.messages ?? []).map((m: any) => ({
+          ...m,
+          content: "REDACTED",
+        })),
+      }),
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Secret prompt",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": {
+          inputs: { messages: [{ role: "user", content: "REDACTED" }] },
+        },
+      },
+    });
+  });
+
+  it("should apply processOutputs to the root span", async () => {
+    const trace = createTrace({
+      processOutputs: (outputs) => ({
+        ...outputs,
+        content: "REDACTED",
+      }),
+    });
+
+    await generateText({
+      model: createModel({
+        responses: [textResult("Secret response")],
+      }),
+      prompt: "Test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": { outputs: { content: "REDACTED" } },
+      },
+    });
+  });
+
+  it("should apply processChildLLMRunInputs to step spans", async () => {
+    const trace = createTrace({
+      processChildLLMRunInputs: (inputs) => ({
+        messages: (inputs.messages ?? []).map((m: any) => ({
+          ...m,
+          content: "REDACTED_CHILD_INPUT",
+        })),
+      }),
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:1": {
+          inputs: {
+            messages: [{ role: "user", content: "REDACTED_CHILD_INPUT" }],
+          },
+        },
+      },
+    });
+  });
+
+  it("should apply processChildLLMRunOutputs to step spans", async () => {
+    const trace = createTrace({
+      processChildLLMRunOutputs: (outputs) => ({
+        ...outputs,
+        content: "REDACTED_CHILD_OUTPUT",
+        role: "assistant",
+      }),
+    });
+
+    await generateText({
+      model: createModel({
+        responses: [textResult("Secret step output")],
+      }),
+      prompt: "Test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:1": {
+          outputs: {
+            role: "assistant",
+            content: "REDACTED_CHILD_OUTPUT",
+          },
+        },
+      },
+    });
+  });
+});
+
+describe("dotted order and trace hierarchy", () => {
+  it("should maintain correct parent-child dotted order", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel(),
+      prompt: "Hierarchy test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree).toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+    });
+
+    const root = tree.data["test-provider:0"];
+    const step = tree.data["test-provider:1"];
+    expect(step.trace_id).toBe(root.trace_id);
+    const rootDottedOrder = root.dotted_order;
+    const stepDottedOrder = step.dotted_order;
+    expect(rootDottedOrder).toEqual(expect.any(String));
+    expect(stepDottedOrder).toEqual(expect.any(String));
+    if (
+      typeof rootDottedOrder !== "string" ||
+      typeof stepDottedOrder !== "string"
+    ) {
+      throw new Error("Expected dotted order to be set on root and step runs");
+    }
+    expect(stepDottedOrder.startsWith(rootDottedOrder)).toBe(true);
+    expect(stepDottedOrder.split(".").length).toBe(
+      rootDottedOrder.split(".").length + 1,
+    );
+  });
+
+  it("should nest under an existing traceable context", async () => {
+    const trace = createTrace();
+    const outerFn = traceable(
+      async () => {
+        await generateText({
+          model: createModel(),
+          prompt: "Nested test",
+          telemetry: { integrations: [trace.integration] },
+        });
+      },
+      {
+        name: "outer-traceable",
+        client: trace.client,
+        tracingEnabled: true,
+      },
+    );
+
+    await outerFn();
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [
+        ["outer-traceable:0", "test-provider:1"],
+        ["test-provider:1", "test-provider:2"],
+      ],
+      data: {
+        "outer-traceable:0": { name: "outer-traceable" },
+        "test-provider:1": {
+          run_type: "chain",
+          extra: {
+            metadata: {
+              ls_integration: "vercel-ai-sdk-telemetry",
+            },
+          },
+        },
+        "test-provider:2": { run_type: "llm" },
+      },
+    });
+  });
+});
+
+describe("traceResponseMetadata", () => {
+  it("should include steps in output when traceResponseMetadata is true", async () => {
+    const trace = createTrace({
+      traceResponseMetadata: true,
+    });
+
+    await generateText({
+      model: createModel({
+        responses: [textResult("Step 1")],
+      }),
+      prompt: "Response metadata test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": {
+          outputs: {
+            steps: [
+              expect.objectContaining({
+                step_number: 0,
+                content: "Step 1",
+              }),
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("should not include steps when traceResponseMetadata is false", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel(),
+      prompt: "No metadata test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].outputs?.steps).toBeUndefined();
+  });
+});
+
+describe("streaming (onChunk)", () => {
+  it("should handle onChunk as a no-op without errors", async () => {
+    const trace = createTrace();
+
+    const result = streamText({
+      model: createModel(),
+      prompt: "Stream test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(result.text).resolves.toBe("Hello world");
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          run_type: "chain",
+          outputs: { content: "Hello world", finish_reason: "stop" },
+        },
+        "test-provider:1": {
+          run_type: "llm",
+          outputs: { role: "assistant", content: "Hello world" },
+        },
+      },
+    });
+  });
+});
+
+describe("tracing disabled", () => {
+  it("should not create runs when tracing is disabled", async () => {
+    const trace = createTrace({ tracingEnabled: false });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Should not trace",
+      telemetry: { integrations: [trace.integration] },
+    });
+    await trace.client.awaitPendingTraceBatches();
+    expect(trace.callSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("project name configuration", () => {
+  it("should use custom project name", async () => {
+    const trace = createTrace({
+      projectName: "my-custom-project",
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Project test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": { session_name: "my-custom-project" },
+      },
+    });
+  });
+});
+
+describe("integration reuse", () => {
+  it("should create separate traces when reusing the same integration sequentially", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [textResult("First response")],
+      }),
+      prompt: "First call",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const firstTree = await expectTree(trace);
+    expect(firstTree).toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          inputs: { messages: [{ role: "user", content: "First call" }] },
+          outputs: { content: "First response" },
+        },
+      },
+    });
+    const firstRoot = firstTree.data["test-provider:0"];
+
+    trace.callSpy.mockClear();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          textResult("Second response", usage({ input: 7, output: 4 })),
+        ],
+      }),
+      prompt: "Second call",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const secondTree = await expectTree(trace);
+    expect(secondTree).toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          inputs: { messages: [{ role: "user", content: "Second call" }] },
+          outputs: { content: "Second response" },
+        },
+      },
+    });
+    const secondRoot = secondTree.data["test-provider:0"];
+    expect(secondRoot.id).not.toBe(firstRoot.id);
+    expect(secondRoot.trace_id).not.toBe(firstRoot.trace_id);
+  });
+
+  it("should not leak state between sequential invocations after error", async () => {
+    const trace = createTrace();
+
+    await expect(
+      generateText({
+        model: createModel({
+          doGenerate: async () => {
+            throw new Error("TOTALLY EXPECTED MOCK ERROR");
+          },
+        }),
+        prompt: "Error call",
+        telemetry: { integrations: [trace.integration] },
+      }),
+    ).rejects.toThrow("TOTALLY EXPECTED MOCK ERROR");
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      data: {
+        "test-provider:0": {
+          error: expect.stringContaining("TOTALLY EXPECTED MOCK ERROR"),
+        },
+      },
+    });
+    trace.callSpy.mockClear();
+
+    await generateText({
+      model: createModel({
+        responses: [textResult("Recovered")],
+      }),
+      prompt: "Recovery call",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["test-provider:0", "test-provider:1"]],
+      data: {
+        "test-provider:0": {
+          inputs: { messages: [{ role: "user", content: "Recovery call" }] },
+          outputs: { content: "Recovered" },
+        },
+      },
+    });
+  });
+
+  it("should handle reuse with tools across invocations", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-1",
+            toolName: "search",
+            input: { query: "first" },
+          }),
+          textResult("First answer", usage({ input: 20, output: 8 })),
+        ],
+      }),
+      prompt: "First tool call",
+      tools: {
+        search: tool({
+          inputSchema: z.object({ query: z.string() }),
+          execute: async () => "first result",
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const firstTree = await expectTree(trace);
+    const firstTraceId = firstTree.data["test-provider:0"].trace_id;
+    trace.callSpy.mockClear();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-2",
+            toolName: "calculator",
+            input: { expression: "1+1" },
+          }),
+          textResult("1+1 = 2", usage({ input: 15, output: 5 })),
+        ],
+      }),
+      prompt: "Second tool call",
+      tools: {
+        calculator: tool({
+          inputSchema: z.object({ expression: z.string() }),
+          execute: async () => 2,
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const secondTree = await expectTree(trace);
+    expect(secondTree).toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "calculator:2"],
+        ["test-provider:0", "test-provider:3"],
+      ],
+      data: {
+        "calculator:2": {
+          run_type: "tool",
+          inputs: { expression: "1+1" },
+          outputs: { output: 2 },
+        },
+      },
+    });
+    expect(secondTree.data["test-provider:0"].trace_id).not.toBe(firstTraceId);
   });
 });
