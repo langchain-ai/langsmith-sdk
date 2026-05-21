@@ -237,40 +237,42 @@ export function LangSmithTelemetry(
     const parentRunTree = getCurrentRunTree(true);
 
     let inputs: KVMap = {};
-    if ("messages" in event && event.messages != null) {
-      inputs.messages = _formatMessages(event.messages);
-    }
+    if (event.recordInputs !== false) {
+      if ("messages" in event && event.messages != null) {
+        inputs.messages = _formatMessages(event.messages);
+      }
 
-    if ("prompt" in event && event.prompt != null) {
-      inputs.prompt = event.prompt;
-    }
+      if ("prompt" in event && event.prompt != null) {
+        inputs.prompt = event.prompt;
+      }
 
-    if ("instructions" in event && event.instructions != null) {
-      inputs.instructions = event.instructions;
-    }
+      if ("instructions" in event && event.instructions != null) {
+        inputs.instructions = event.instructions;
+      }
 
-    if ("system" in event && event.system != null) {
-      inputs.system = event.system;
-    }
+      if ("system" in event && event.system != null) {
+        inputs.system = event.system;
+      }
 
-    if ("tools" in event && event.tools != null) {
-      inputs.tools = Object.keys(event.tools);
-    }
+      if ("tools" in event && event.tools != null) {
+        inputs.tools = Object.keys(event.tools);
+      }
 
-    if ("runtimeContext" in event && event.runtimeContext != null) {
-      inputs.runtimeContext = event.runtimeContext;
-    }
+      if ("runtimeContext" in event && event.runtimeContext != null) {
+        inputs.runtimeContext = event.runtimeContext;
+      }
 
-    if ("toolsContext" in event && event.toolsContext != null) {
-      inputs.toolsContext = event.toolsContext;
-    }
+      if ("toolsContext" in event && event.toolsContext != null) {
+        inputs.toolsContext = event.toolsContext;
+      }
 
-    // Apply user-provided input processing
-    if (processInputs) {
-      try {
-        inputs = processInputs(inputs);
-      } catch (e) {
-        console.error("Error in processInputs, using raw inputs:", e);
+      // Apply user-provided input processing
+      if (processInputs) {
+        try {
+          inputs = processInputs(inputs);
+        } catch (e) {
+          console.error("Error in processInputs, using raw inputs:", e);
+        }
       }
     }
 
@@ -316,26 +318,28 @@ export function LangSmithTelemetry(
     const stepNumber: number = event.stepNumber ?? 0;
 
     let inputs: KVMap = {};
-    if ("messages" in event && event.messages != null) {
-      inputs.messages = _formatMessages(event.messages);
-    }
+    if (event.recordInputs !== false) {
+      if ("messages" in event && event.messages != null) {
+        inputs.messages = _formatMessages(event.messages);
+      }
 
-    if ("runtimeContext" in event && event.runtimeContext != null) {
-      inputs.runtimeContext = event.runtimeContext;
-    }
+      if ("runtimeContext" in event && event.runtimeContext != null) {
+        inputs.runtimeContext = event.runtimeContext;
+      }
 
-    if ("toolsContext" in event && event.toolsContext != null) {
-      inputs.toolsContext = event.toolsContext;
-    }
+      if ("toolsContext" in event && event.toolsContext != null) {
+        inputs.toolsContext = event.toolsContext;
+      }
 
-    if (processChildLLMRunInputs) {
-      try {
-        inputs = processChildLLMRunInputs(inputs);
-      } catch (e) {
-        console.error(
-          "Error in processChildLLMRunInputs, using raw inputs:",
-          e,
-        );
+      if (processChildLLMRunInputs) {
+        try {
+          inputs = processChildLLMRunInputs(inputs);
+        } catch (e) {
+          console.error(
+            "Error in processChildLLMRunInputs, using raw inputs:",
+            e,
+          );
+        }
       }
     }
 
@@ -399,14 +403,19 @@ export function LangSmithTelemetry(
 
     const parentRunTree = getOpenStepOrRoot(state);
 
-    const inputs: KVMap = isRecord(event.toolCall.input)
-      ? { ...event.toolCall.input }
-      : typeof event.toolCall.input !== "undefined"
-        ? { input: event.toolCall.input }
-        : {};
+    let inputs: KVMap = {};
+    if (event.recordInputs !== false) {
+      if (isRecord(event.toolCall.input)) {
+        inputs = { ...event.toolCall.input };
+      } else if (typeof event.toolCall.input !== "undefined") {
+        inputs = { input: event.toolCall.input };
+      }
 
-    if ("toolContext" in event && event.toolContext != null) {
-      inputs.toolContext = event.toolContext;
+      if ("toolContext" in event && event.toolContext != null) {
+        inputs.toolContext = event.toolContext;
+      }
+    } else {
+      inputs = {};
     }
 
     const toolRunTree = parentRunTree.createChild({
@@ -435,11 +444,15 @@ export function LangSmithTelemetry(
     let outputs: KVMap | undefined;
     let error: string | undefined;
 
-    if (event.toolOutput.type === "tool-result") {
-      outputs = { output: event.toolOutput.output };
-    } else if (event.toolOutput.type === "tool-error") {
-      const err = event.toolOutput.error;
-      error = err instanceof Error ? err.message : String(err);
+    if (event.recordOutputs !== false) {
+      if (event.toolOutput.type === "tool-result") {
+        outputs = { output: event.toolOutput.output };
+      } else if (event.toolOutput.type === "tool-error") {
+        const err = event.toolOutput.error;
+        error = err instanceof Error ? err.message : String(err);
+      }
+    } else {
+      outputs = {};
     }
 
     await toolRunTree.end(
@@ -458,15 +471,19 @@ export function LangSmithTelemetry(
     const stepRunTree = state.stepRunTrees.get(stepNumber);
     if (!stepRunTree) return;
 
-    let outputs = _formatStepOutput(event, traceRawHttp);
-    if (processChildLLMRunOutputs) {
-      try {
-        outputs = processChildLLMRunOutputs(outputs);
-      } catch (e) {
-        console.error(
-          "Error in processChildLLMRunOutputs, using raw outputs:",
-          e,
-        );
+    let outputs = {};
+    if (event.recordOutputs !== false) {
+      outputs = _formatStepOutput(event, traceRawHttp);
+
+      if (processChildLLMRunOutputs) {
+        try {
+          outputs = processChildLLMRunOutputs(outputs);
+        } catch (e) {
+          console.error(
+            "Error in processChildLLMRunOutputs, using raw outputs:",
+            e,
+          );
+        }
       }
     }
 
@@ -500,42 +517,52 @@ export function LangSmithTelemetry(
 
     let outputs: KVMap = {};
 
-    // Final result output
-    if ("text" in event && event.text != null) {
-      outputs.content = event.text;
-    } else if ("content" in event && event.content != null) {
-      outputs.content = event.content;
-    }
+    if (event.recordOutputs !== false) {
+      // Final result output
+      if ("text" in event && event.text != null) {
+        outputs.content = event.text;
+      } else if ("content" in event && event.content != null) {
+        outputs.content = event.content;
+      }
 
-    if (outputs.content != null) {
-      outputs.role = "assistant";
-    }
+      if (outputs.content != null) {
+        outputs.role = "assistant";
+      }
 
-    if ("object" in event && event.object != null) {
-      outputs.object = event.object;
-    }
+      if ("object" in event && event.object != null) {
+        outputs.object = event.object;
+      }
 
-    if (
-      "toolCalls" in event &&
-      Array.isArray(event.toolCalls) &&
-      event.toolCalls.length > 0
-    ) {
-      outputs.tool_calls = _formatToolCalls(event.toolCalls);
-    }
+      if (
+        "toolCalls" in event &&
+        Array.isArray(event.toolCalls) &&
+        event.toolCalls.length > 0
+      ) {
+        outputs.tool_calls = _formatToolCalls(event.toolCalls);
+      }
 
-    if ("finishReason" in event && event.finishReason != null) {
-      outputs.finish_reason = event.finishReason;
-    }
+      if ("finishReason" in event && event.finishReason != null) {
+        outputs.finish_reason = event.finishReason;
+      }
 
-    if (
-      traceResponseMetadata &&
-      "steps" in event &&
-      Array.isArray(event.steps)
-    ) {
-      outputs.steps = event.steps.map((step, idx) => ({
-        step_number: idx,
-        ..._formatStepOutput(step, traceRawHttp),
-      }));
+      if (
+        traceResponseMetadata &&
+        "steps" in event &&
+        Array.isArray(event.steps)
+      ) {
+        outputs.steps = event.steps.map((step, idx) => ({
+          step_number: idx,
+          ..._formatStepOutput(step, traceRawHttp),
+        }));
+      }
+
+      if (processOutputs) {
+        try {
+          outputs = processOutputs(outputs);
+        } catch (e) {
+          console.error("Error in processOutputs, using raw outputs:", e);
+        }
+      }
     }
 
     // Set aggregated usage on root
@@ -548,14 +575,6 @@ export function LangSmithTelemetry(
     } else if ("usage" in event && event.usage != null) {
       // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
       setUsageMetadataOnRunTree(event, rootRunTree);
-    }
-
-    if (processOutputs) {
-      try {
-        outputs = processOutputs(outputs);
-      } catch (e) {
-        console.error("Error in processOutputs, using raw outputs:", e);
-      }
     }
 
     await rootRunTree.end(outputs);

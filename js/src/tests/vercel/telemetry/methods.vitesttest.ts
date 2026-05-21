@@ -280,6 +280,93 @@ describe("basic tracing", () => {
       },
     });
   });
+
+  it("should not record root, step, or tool inputs when recordInputs is false", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-sensitive-1",
+            toolName: "sensitiveTool",
+            input: { secret: "tool-secret" },
+          }),
+          textResult("Safe response", usage({ input: 12, output: 4 })),
+        ],
+      }),
+      prompt: "Sensitive prompt",
+      tools: {
+        sensitiveTool: tool({
+          inputSchema: z.object({ secret: z.string() }),
+          execute: async () => "tool result",
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: {
+        integrations: [trace.integration],
+        recordInputs: false,
+      },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].inputs).toEqual({});
+    expect(tree.data["test-provider:1"].inputs).toEqual({});
+    expect(tree.data["sensitiveTool:2"].inputs).toEqual({});
+    expect(tree.data["test-provider:3"].inputs).toEqual({});
+  });
+
+  it("should not record root, step, or tool outputs when recordOutputs is false", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-sensitive-1",
+            toolName: "sensitiveTool",
+            input: { query: "safe input" },
+          }),
+          textResult(
+            "Sensitive final response",
+            usage({ input: 12, output: 4 }),
+          ),
+        ],
+      }),
+      prompt: "Use a tool",
+      tools: {
+        sensitiveTool: tool({
+          inputSchema: z.object({ query: z.string() }),
+          execute: async () => "sensitive tool output",
+        }),
+      },
+      stopWhen: isStepCount(10),
+      telemetry: {
+        integrations: [trace.integration],
+        recordOutputs: false,
+      },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].outputs ?? {}).toEqual({});
+    expect(tree.data["test-provider:1"].outputs ?? {}).toEqual({});
+    expect(tree.data["sensitiveTool:2"].outputs ?? {}).toEqual({});
+    expect(tree.data["test-provider:3"].outputs ?? {}).toEqual({});
+    expect(tree.data["test-provider:0"].extra?.metadata).toMatchObject({
+      usage_metadata: {
+        input_tokens: 22,
+        output_tokens: 9,
+        total_tokens: 31,
+      },
+    });
+    expect(tree.data["test-provider:3"].extra?.metadata).toMatchObject({
+      usage_metadata: {
+        input_tokens: 12,
+        output_tokens: 4,
+        total_tokens: 16,
+      },
+    });
+  });
 });
 
 describe("metadata", () => {
