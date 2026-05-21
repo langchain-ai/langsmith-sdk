@@ -209,6 +209,36 @@ describe("basic tracing", () => {
     });
   });
 
+  it("should use the AI SDK function id as the default run name when present", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel(),
+      prompt: "Hello",
+      telemetry: {
+        integrations: [trace.integration],
+        functionId: "summarize-endpoint",
+      },
+    });
+
+    await expect(expectTree(trace)).resolves.toMatchObject({
+      edges: [["summarize-endpoint:0", "test-provider:1"]],
+      data: {
+        "summarize-endpoint:0": {
+          name: "summarize-endpoint",
+          run_type: "chain",
+          extra: {
+            metadata: {
+              ai_sdk_method: "ai.generateText",
+              ls_model_name: "test-model",
+              ls_provider: "test-provider",
+            },
+          },
+        },
+      },
+    });
+  });
+
   it("should allow custom name override", async () => {
     const trace = createTrace({ name: "my-agent" });
     await generateText({
@@ -603,9 +633,7 @@ describe("multi-step tracing", () => {
           run_type: "llm",
           extra: { metadata: { step_number: 1 } },
           outputs: {
-            content: [
-              { type: "text", text: "The weather is sunny and 72F." },
-            ],
+            content: [{ type: "text", text: "The weather is sunny and 72F." }],
           },
         },
       },
@@ -829,6 +857,55 @@ describe("usage metadata tracking", () => {
         },
       },
     });
+  });
+});
+
+describe("invocation params", () => {
+  it("should record language model call params on step spans", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel(),
+      prompt: "Call settings test",
+      maxOutputTokens: 25,
+      temperature: 0.2,
+      topP: 0.9,
+      seed: 42,
+      telemetry: {
+        integrations: [trace.integration],
+        functionId: "settings-endpoint",
+        recordInputs: false,
+        recordOutputs: false,
+      },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree).toMatchObject({
+      edges: [["settings-endpoint:0", "test-provider:1"]],
+      data: {
+        "test-provider:1": {
+          run_type: "llm",
+          extra: {
+            invocation_params: {
+              callId: expect.any(String),
+              functionId: "settings-endpoint",
+              maxOutputTokens: 25,
+              temperature: 0.2,
+              topP: 0.9,
+              seed: 42,
+            },
+          },
+        },
+      },
+    });
+
+    const invocationParams =
+      tree.data["test-provider:1"].extra?.invocation_params;
+    expect(invocationParams).not.toHaveProperty("messages");
+    expect(invocationParams).not.toHaveProperty("provider");
+    expect(invocationParams).not.toHaveProperty("modelId");
+    expect(invocationParams).not.toHaveProperty("recordInputs");
+    expect(invocationParams).not.toHaveProperty("recordOutputs");
   });
 });
 

@@ -526,7 +526,7 @@ test.skip("anthropic cache read and write tokens", async () => {
   const errorMessage = generateLongContext();
 
   const res = await ai.generateText({
-    model: anthropic("claude-3-5-haiku-20241022"),
+    model: anthropic("claude-sonnet-4-6"),
     messages: [
       {
         role: "user",
@@ -562,8 +562,13 @@ test.skip("anthropic cache read and write tokens", async () => {
     },
   });
 
-  const stepData = runs.data["step 0:1"];
   expect(
-    stepData.extra?.metadata?.usage_metadata?.input_tokens,
+    runs.data["anthropic.messages:1"]?.extra?.metadata?.usage_metadata
+      ?.input_tokens,
+  ).toBeGreaterThan(0);
+
+  expect(
+    runs.data["anthropic.messages:1"]?.extra?.metadata?.usage_metadata
+      ?.input_token_details?.cache_creation,
   ).toBeGreaterThan(0);
 });

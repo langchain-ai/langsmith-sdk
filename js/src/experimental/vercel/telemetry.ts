@@ -293,7 +293,7 @@ export function LangSmithTelemetry(
     }
 
     const runTreeConfig: RunTreeConfig = {
-      name: customName ?? event.provider,
+      name: customName ?? event.functionId ?? event.provider,
       run_type: runType,
       inputs,
       tracingEnabled: true,
@@ -368,26 +368,37 @@ export function LangSmithTelemetry(
       const stepRunTree = getOpenStepOrRoot(state);
       if (stepRunTree.run_type !== "llm") return;
 
-      // Insert tools as invocation_params
-      if (event.tools != null) {
-        stepRunTree.extra = {
-          ...stepRunTree.extra,
-          invocation_params: {
-            ...(isRecord(stepRunTree.extra?.invocation_params)
-              ? stepRunTree.extra.invocation_params
-              : {}),
-            tools: event.tools.map((tool) => {
-              const newTool = { ...tool };
+      const prevParams = isRecord(stepRunTree.extra?.invocation_params)
+        ? stepRunTree.extra.invocation_params
+        : {};
 
-              if ("inputSchema" in newTool) {
-                newTool.input_schema = newTool.inputSchema;
-                delete newTool.inputSchema;
-              }
-              return newTool;
-            }),
-          },
-        };
-      }
+      type AsPlain<T> = { -readonly [K in keyof T]?: T[K] };
+      const nextParams: AsPlain<typeof event> = { ...event };
+
+      // Remove properties that are already in the step run tree
+      delete nextParams.messages;
+      delete nextParams.provider;
+      delete nextParams.modelId;
+
+      // Remove telemetry options (except functionId)
+      delete nextParams.recordInputs;
+      delete nextParams.recordOutputs;
+      delete nextParams.includeToolsContext;
+
+      // Massage tools for LangSmith to render schema nicely
+      nextParams.tools = nextParams.tools?.map((tool) => {
+        const newTool = { ...tool };
+        if ("inputSchema" in newTool) {
+          newTool.input_schema = newTool.inputSchema;
+          delete newTool.inputSchema;
+        }
+        return newTool;
+      });
+
+      stepRunTree.extra = {
+        ...stepRunTree.extra,
+        invocation_params: { ...prevParams, ...nextParams },
+      };
     };
 
   const onToolExecutionStart: Telemetry["onToolExecutionStart"] = async (
