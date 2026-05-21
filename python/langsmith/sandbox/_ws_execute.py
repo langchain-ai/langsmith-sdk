@@ -24,8 +24,9 @@ def _ensure_websockets():
         return ws_connect, ConnectionClosed, InvalidStatus
     except ImportError:
         raise ImportError(
-            "WebSocket-based execution requires the 'websockets' package. "
-            "Install it with: pip install 'langsmith[sandbox]'"
+            "WebSocket-based execution requires the 'websockets' package, "
+            "which ships with langsmith by default. Reinstall with: "
+            "pip install --upgrade langsmith"
         ) from None
 
 
@@ -38,8 +39,9 @@ def _ensure_websockets_async():
         return ws_connect_async, ConnectionClosed, InvalidStatus
     except ImportError:
         raise ImportError(
-            "WebSocket-based execution requires the 'websockets' package. "
-            "Install it with: pip install 'langsmith[sandbox]'"
+            "WebSocket-based execution requires the 'websockets' package, "
+            "which ships with langsmith by default. Reinstall with: "
+            "pip install --upgrade langsmith"
         ) from None
 
 
