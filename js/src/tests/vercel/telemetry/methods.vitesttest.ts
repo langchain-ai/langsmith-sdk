@@ -818,46 +818,6 @@ describe("usage metadata tracking", () => {
       },
     });
   });
-
-  it("should track OpenAI flex service tier tokens", async () => {
-    const trace = createTrace();
-
-    await generateText({
-      model: createModel({
-        provider: "openai",
-        responses: [
-          textResult(
-            "Response",
-            usage({
-              input: 100,
-              output: 30,
-              cacheRead: 20,
-              reasoning: 5,
-            }),
-          ),
-        ],
-      }),
-      prompt: "Flex tier test",
-      providerOptions: { openai: { serviceTier: "flex" } },
-      telemetry: { integrations: [trace.integration] },
-    });
-
-    await expect(expectTree(trace)).resolves.toMatchObject({
-      data: {
-        "openai:1": {
-          extra: {
-            metadata: {
-              usage_metadata: {
-                input_tokens: 100,
-                output_tokens: 30,
-                total_tokens: 130,
-              },
-            },
-          },
-        },
-      },
-    });
-  });
 });
 
 describe("invocation params", () => {

@@ -123,8 +123,8 @@ test("telemetry generateText with tools", async () => {
 
   await client.awaitPendingTraceBatches();
 
-  const runs = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  expect(runs).toMatchObject({
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
       ["openai.responses:1", "listOrders:2"],
@@ -212,7 +212,7 @@ test("telemetry generateText with tools", async () => {
   });
 
   expect(
-    runs.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
+    tree.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
   ).not.toHaveProperty("inputSchema");
 }, 30_000);
 
@@ -382,6 +382,11 @@ test("telemetry generateText with flex service tier", async () => {
             usage_metadata: {
               input_tokens: new GreaterThanMatcher(0),
               output_tokens: new GreaterThanMatcher(0),
+              input_token_details: { flex: new GreaterThanMatcher(0) },
+              output_token_details: {
+                flex: new GreaterThanMatcher(0),
+                flex_reasoning: new GreaterThanMatcher(0),
+              },
             },
           },
         },
