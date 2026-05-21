@@ -1782,8 +1782,8 @@ describe("wrapAISDK", () => {
     });
   });
 
-  describe("experimental_output handling", () => {
-    it("should preserve experimental_output as structured object in outputs", async () => {
+  describe("output handling", () => {
+    it("should preserve output as structured object in outputs", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
@@ -1824,7 +1824,7 @@ describe("wrapAISDK", () => {
       await wrappedMethods.generateText({
         model: mockLangModel,
         prompt: "What's the weather?",
-        experimental_output: ai.Output.object({
+        output: ai.Output.object({
           schema: z.object({
             city: z.string(),
             temperature: z.number(),
@@ -1859,7 +1859,7 @@ describe("wrapAISDK", () => {
       expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
     });
 
-    it("should preserve experimental_output as structured object in streamText", async () => {
+    it("should preserve output as structured object in streamText", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
@@ -1906,7 +1906,7 @@ describe("wrapAISDK", () => {
       const result = wrappedMethods.streamText({
         model: mockLangModel,
         prompt: "What's the weather?",
-        experimental_output: ai.Output.object({
+        output: ai.Output.object({
           schema: z.object({
             city: z.string(),
             temperature: z.number(),

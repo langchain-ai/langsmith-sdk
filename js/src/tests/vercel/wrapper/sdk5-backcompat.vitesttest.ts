@@ -1386,6 +1386,7 @@ describe("wrapAISDK", () => {
       await wrappedMethods.generateText({
         model: mockLangModel,
         prompt: "What's the weather?",
+        // @ts-expect-error - experimental_output is not typed
         experimental_output: ai.Output.object({
           schema: z.object({
             city: z.string(),
@@ -1463,6 +1464,7 @@ describe("wrapAISDK", () => {
       const result = wrappedMethods.streamText({
         model: mockLangModel,
         prompt: "What's the weather?",
+        // @ts-expect-error - experimental_output is not typed
         experimental_output: ai.Output.object({
           schema: z.object({
             city: z.string(),

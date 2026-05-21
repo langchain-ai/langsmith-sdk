@@ -4,17 +4,15 @@ import type {
   LanguageModelV2StreamPart,
   LanguageModelV2CallOptions,
   LanguageModelV2Message,
-  LanguageModelV2Usage,
   SharedV2ProviderMetadata,
   LanguageModelV2FinishReason,
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import {
-  extractInputTokenDetails,
-  extractOutputTokenDetails,
-} from "../../utils/vercel.js";
-import { convertMessageToTracedFormat } from "./utils.js";
+  convertMessageToTracedFormat,
+  setUsageMetadataOnRunTree,
+} from "./utils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
@@ -52,110 +50,6 @@ const _formatTracedOutputs = (
   return convertMessageToTracedFormat(
     formattedOutputs as LanguageModelV2Message,
   );
-};
-
-const setUsageMetadataOnRunTree = (
-  result: {
-    usage?: LanguageModelV2Usage;
-    providerMetadata?: SharedV2ProviderMetadata;
-  },
-  runTree: RunTree,
-) => {
-  if (result.usage == null || typeof result.usage !== "object") {
-    return;
-  }
-
-  const usage = result.usage as Record<string, any>;
-  let inputTokens: number | undefined;
-  let outputTokens: number | undefined;
-  let totalTokens: number | undefined;
-
-  // AI SDK 6: Check for object-based token structures first
-  if (
-    typeof usage.inputTokens === "object" &&
-    usage.inputTokens?.total != null
-  ) {
-    // AI SDK 6 detected
-    inputTokens = usage.inputTokens.total;
-
-    if (
-      typeof usage.outputTokens === "object" &&
-      usage.outputTokens?.total != null
-    ) {
-      outputTokens = usage.outputTokens.total;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  } else if (typeof usage.inputTokens === "number") {
-    // AI SDK 5 detected
-    inputTokens = usage.inputTokens;
-
-    if (typeof usage.outputTokens === "number") {
-      outputTokens = usage.outputTokens;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  } else {
-    // AI SDK 4 fallback
-    if (typeof usage.promptTokens === "number") {
-      inputTokens = usage.promptTokens;
-    }
-    if (typeof usage.completionTokens === "number") {
-      outputTokens = usage.completionTokens;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  }
-
-  const langsmithUsage = {
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    total_tokens: totalTokens,
-  };
-  const inputTokenDetails = extractInputTokenDetails(
-    result.usage,
-    result.providerMetadata,
-  );
-  const outputTokenDetails = extractOutputTokenDetails(
-    result.usage,
-    result.providerMetadata,
-  );
-  runTree.extra = {
-    ...runTree.extra,
-    metadata: {
-      ...runTree.extra?.metadata,
-      usage_metadata: {
-        ...langsmithUsage,
-        input_token_details: {
-          ...inputTokenDetails,
-        },
-        output_token_details: {
-          ...outputTokenDetails,
-        },
-      },
-    },
-  };
 };
 
 type StandardTextBlock = { type: "text"; text: string };

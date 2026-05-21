@@ -474,7 +474,7 @@ test("process inputs and outputs", async () => {
   expect(text).not.toContain("REDACTED");
 });
 
-test("generateText with experimental_output should display as structured object in LangSmith", async () => {
+test("generateText with output should display as structured object in LangSmith", async () => {
   const outputSchema = z.object({
     city: z.string(),
     temperature: z.number().nullable(),
@@ -487,21 +487,19 @@ test("generateText with experimental_output should display as structured object 
   const result = await wrappedGenerateText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Prague? Return a structured response.",
-    experimental_output: ai.Output.object({
-      schema: outputSchema,
-    }),
+    output: ai.Output.object({ schema: outputSchema }),
   });
 
   // Verify the output is returned correctly and can be parsed
-  expect(result.experimental_output).toBeDefined();
-  const parsedOutput = outputSchema.parse(result.experimental_output);
+  expect(result.output).toBeDefined();
+  const parsedOutput = outputSchema.parse(result.output);
   expect(parsedOutput.city).toBeDefined();
   expect(parsedOutput.temperature).toBeDefined();
   expect(parsedOutput.unit).toBeDefined();
   expect(parsedOutput.conditions).toBeDefined();
 });
 
-test("streamText with experimental_output should display as structured object in LangSmith", async () => {
+test("streamText with output should display as structured object in LangSmith", async () => {
   const outputSchema = z.object({
     city: z.string(),
     temperature: z.number().nullable(),
@@ -514,7 +512,7 @@ test("streamText with experimental_output should display as structured object in
   const result = wrappedStreamText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Paris? Return a structured response.",
-    experimental_output: ai.Output.object({
+    output: ai.Output.object({
       schema: outputSchema,
     }),
   });
