@@ -1318,7 +1318,19 @@ describe("tracing disabled", () => {
     await generateText({
       model: createModel(),
       prompt: "Should not trace",
-      telemetry: { integrations: [trace.integration] },
+      telemetry: { isEnabled: true, integrations: [trace.integration] },
+    });
+    await trace.client.awaitPendingTraceBatches();
+    expect(trace.callSpy).not.toHaveBeenCalled();
+  });
+
+  it("should not create runs when telemetry is disabled for a call", async () => {
+    const trace = createTrace({ tracingEnabled: true });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Should not trace",
+      telemetry: { isEnabled: false, integrations: [trace.integration] },
     });
     await trace.client.awaitPendingTraceBatches();
     expect(trace.callSpy).not.toHaveBeenCalled();
