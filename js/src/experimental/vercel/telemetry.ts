@@ -144,42 +144,24 @@ function _getLsAgentType(parentRunTree: unknown): "subagent" | "root" {
 }
 
 /**
- * Creates a LangSmith `TelemetryIntegration` for the Vercel AI SDK.
+ * Creates a LangSmith `Telemetry` for the Vercel AI SDK.
  *
- * This adapter implements the Vercel AI SDK's `TelemetryIntegration` interface
+ * This adapter implements the Vercel AI SDK's `Telemetry` interface
  * and maps lifecycle events to LangSmith traces. It creates a root span for
  * the entire generation, child LLM spans for each step, and tool spans for
  * tool calls.
  *
- * The integration object is **reusable** — create it once and pass it to
- * multiple `generateText`/`streamText` calls. Each call gets its own
- * isolated trace state. State is keyed by the AI SDK `callId`, so nested
- * `generateText` / `streamText` calls can safely share one integration instance.
- *
  * ```ts
- * import { generateText } from "ai";
+ * import { generateText, registerTelemetry } from "ai";
  * import { LangSmithTelemetry } from "langsmith/experimental/vercel";
  *
- * const telemetry = LangSmithTelemetry();
+ * registerTelemetry(LangSmithTelemetry());
  *
- * // Reuse across multiple calls
- * const result1 = await generateText({
+ * const result = await generateText({
  *   model: openai("gpt-4o"),
  *   prompt: "Hello!",
- *   experimental_telemetry: { integrations: [telemetry] },
- * });
- *
- * const result2 = await generateText({
- *   model: openai("gpt-4o"),
- *   prompt: "Goodbye!",
- *   experimental_telemetry: { integrations: [telemetry] },
  * });
  * ```
- *
- * Tool spans are created in `onToolExecutionStart`, execution runs under
- * `withRunTree` via `executeTool` for nesting, and `onToolExecutionEnd`
- * records outputs or errors (including tool results not visible to `executeTool`
- * alone).
  *
  * @experimental Only available in Vercel AI SDK 7.
  */
