@@ -594,7 +594,7 @@ test("telemetry processInputs and processOutputs", async () => {
     processInputs: (inputs) => ({
       ...inputs,
       prompt: "REDACTED",
-      messages: (inputs.messages ?? []).map((m: any) => ({
+      messages: (inputs.messages ?? []).map((m: Record<string, unknown>) => ({
         ...m,
         content: "REDACTED",
       })),
@@ -604,7 +604,7 @@ test("telemetry processInputs and processOutputs", async () => {
       content: "REDACTED",
     }),
     processChildLLMRunInputs: (inputs) => ({
-      messages: (inputs.messages ?? []).map((m: any) => ({
+      messages: (inputs.messages ?? []).map((m: Record<string, unknown>) => ({
         ...m,
         content: "REDACTED CHILD INPUTS",
       })),
