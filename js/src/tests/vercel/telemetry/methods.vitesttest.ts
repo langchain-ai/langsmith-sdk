@@ -909,6 +909,102 @@ describe("invocation params", () => {
   });
 });
 
+describe("runtime and tool context", () => {
+  it("should trace telemetry-filtered runtime and tool context", async () => {
+    const trace = createTrace();
+
+    await generateText({
+      model: createModel({
+        responses: [
+          toolCallResult({
+            toolCallId: "tc-weather-1",
+            toolName: "weather",
+            input: { location: "Prague" },
+          }),
+          textResult("It is 21 degrees.", usage({ input: 20, output: 6 })),
+        ],
+      }),
+      prompt: "Check the weather",
+      runtimeContext: {
+        requestId: "req-123",
+        userId: "user-secret",
+      },
+      tools: {
+        weather: tool({
+          inputSchema: z.object({ location: z.string() }),
+          contextSchema: z.object({
+            defaultUnit: z.enum(["celsius", "fahrenheit"]),
+            apiKey: z.string(),
+          }),
+          execute: async ({ location }, { context }) => ({
+            location,
+            unit: context.defaultUnit,
+          }),
+        }),
+      },
+      toolsContext: {
+        weather: {
+          defaultUnit: "celsius",
+          apiKey: "weather-secret",
+        },
+      },
+      stopWhen: isStepCount(10),
+      telemetry: {
+        integrations: [trace.integration],
+        includeRuntimeContext: {
+          requestId: true,
+        },
+        includeToolsContext: {
+          weather: {
+            defaultUnit: true,
+          },
+        },
+      },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree).toMatchObject({
+      edges: [
+        ["test-provider:0", "test-provider:1"],
+        ["test-provider:1", "weather:2"],
+        ["test-provider:0", "test-provider:3"],
+      ],
+      data: {
+        "test-provider:0": {
+          inputs: {
+            runtimeContext: { requestId: "req-123" },
+            toolsContext: {
+              weather: { defaultUnit: "celsius" },
+            },
+          },
+        },
+        "test-provider:1": {
+          inputs: {
+            runtimeContext: { requestId: "req-123" },
+            toolsContext: {
+              weather: { defaultUnit: "celsius" },
+            },
+          },
+        },
+        "weather:2": {
+          run_type: "tool",
+          inputs: {
+            location: "Prague",
+            toolContext: { defaultUnit: "celsius" },
+          },
+          outputs: {
+            output: { location: "Prague", unit: "celsius" },
+          },
+        },
+      },
+    });
+
+    const serializedTree = JSON.stringify(tree);
+    expect(serializedTree).not.toContain("user-secret");
+    expect(serializedTree).not.toContain("weather-secret");
+  });
+});
+
 describe("processInputs / processOutputs", () => {
   it("should apply processInputs to the root span", async () => {
     const trace = createTrace({

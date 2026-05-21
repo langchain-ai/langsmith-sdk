@@ -5,7 +5,7 @@ import { isTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./utils.js";
 import type { KVMap } from "../../schemas.js";
-import { isRecord } from "../../utils/types.js";
+import { isPrimitive, isRecord } from "../../utils/types.js";
 
 /**
  * Configuration options for creating a LangSmith telemetry integration
@@ -90,14 +90,6 @@ function _formatMessages(messages: ModelMessage[]): Record<string, unknown>[] {
   return messages.map((msg) => convertMessageToTracedFormat(msg));
 }
 
-function _isPrimitive(value: unknown): value is string | number | boolean {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
-}
-
 // oxlint-disable-next-line typescript/no-explicit-any
 function _formatToolCalls(toolCalls: TypedToolCall<any>[]) {
   return toolCalls.map((tc) => ({
@@ -105,7 +97,7 @@ function _formatToolCalls(toolCalls: TypedToolCall<any>[]) {
     type: "function",
     function: {
       name: tc.toolName,
-      arguments: _isPrimitive(tc.input)
+      arguments: isPrimitive(tc.input)
         ? String(tc.input)
         : JSON.stringify(tc.input),
     },
@@ -283,6 +275,14 @@ export function LangSmithTelemetry(
       inputs.tools = Object.keys(event.tools);
     }
 
+    if ("runtimeContext" in event && event.runtimeContext != null) {
+      inputs.runtimeContext = event.runtimeContext;
+    }
+
+    if ("toolsContext" in event && event.toolsContext != null) {
+      inputs.toolsContext = event.toolsContext;
+    }
+
     // Apply user-provided input processing
     if (processInputs) {
       try {
@@ -336,6 +336,14 @@ export function LangSmithTelemetry(
     let inputs: KVMap = {};
     if ("messages" in event && event.messages != null) {
       inputs.messages = _formatMessages(event.messages);
+    }
+
+    if ("runtimeContext" in event && event.runtimeContext != null) {
+      inputs.runtimeContext = event.runtimeContext;
+    }
+
+    if ("toolsContext" in event && event.toolsContext != null) {
+      inputs.toolsContext = event.toolsContext;
     }
 
     if (processChildLLMRunInputs) {
@@ -409,11 +417,15 @@ export function LangSmithTelemetry(
 
     const parentRunTree = getOpenStepOrRoot(state);
 
-    const inputs = isRecord(event.toolCall.input)
+    const inputs: KVMap = isRecord(event.toolCall.input)
       ? { ...event.toolCall.input }
       : typeof event.toolCall.input !== "undefined"
         ? { input: event.toolCall.input }
         : {};
+
+    if ("toolContext" in event && event.toolContext != null) {
+      inputs.toolContext = event.toolContext;
+    }
 
     const toolRunTree = parentRunTree.createChild({
       name: event.toolCall.toolName,
