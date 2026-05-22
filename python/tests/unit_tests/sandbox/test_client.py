@@ -181,6 +181,17 @@ class TestSandboxClientInit:
         }
         client.close()
 
+    def test_ws_default_headers_includes_profile_auth(self):
+        """_ws_default_headers includes profile auth when no API key is set."""
+        client = SandboxClient(api_endpoint="http://localhost:8080", api_key="api-key")
+        client._api_key = None
+        client._profile_auth_headers = {"X-Api-Key": "profile-token"}
+        assert client._ws_default_headers({"X-Test": "v"}) == {
+            "X-Api-Key": "profile-token",
+            "X-Test": "v",
+        }
+        client.close()
+
     def test_ws_default_headers_returns_none_when_unset(self):
         """When no constructor headers and no per-request headers, return None."""
         client = SandboxClient(
@@ -1082,19 +1093,69 @@ class TestSnapshotOperations:
                 "snap",
                 dockerfile="Dockerfile",
                 context=tmp_path,
-                fs_capacity_bytes=4294967296,
             )
 
         sandbox_mock.assert_called_once()
+        assert "fs_capacity_bytes" not in sandbox_mock.call_args.kwargs
         assert fake_sandbox.writes[0][0] == "/tmp/langsmith-docker-context.tar"
         assert fake_sandbox.writes[0][1] == b"tar"
         assert "tar -xf" in fake_sandbox.commands[0][0]
-        assert "docker build --progress=plain" in fake_sandbox.commands[1][0]
+        assert "docker ps" in fake_sandbox.commands[1][0]
+        assert "docker build" in fake_sandbox.commands[2][0]
         capture_mock.assert_called_once()
         assert capture_mock.call_args.kwargs["docker_image"].startswith(
             "langsmith-snapshot-build:"
         )
+        assert "fs_capacity_bytes" not in capture_mock.call_args.kwargs
         assert snapshot.id == "snap-1"
+
+    def test_create_snapshot_from_dockerfile_forwards_capacity(
+        self, client: SandboxClient, tmp_path
+    ):
+        """Test Dockerfile snapshot wrapper forwards explicit capacity."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                return None
+
+            def run(self, command, **kwargs):
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        with (
+            patch.object(client, "sandbox", return_value=FakeSandbox()) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=8589934592,
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            client.create_snapshot(
+                "snap",
+                dockerfile="Dockerfile",
+                context=tmp_path,
+                fs_capacity_bytes=8589934592,
+            )
+
+        assert sandbox_mock.call_args.kwargs["fs_capacity_bytes"] == 8589934592
+        assert capture_mock.call_args.kwargs["fs_capacity_bytes"] == 8589934592
 
     def test_capture_snapshot_not_found(
         self, client: SandboxClient, httpx_mock: HTTPXMock

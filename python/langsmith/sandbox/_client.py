@@ -180,9 +180,19 @@ class SandboxClient:
         Used by the WebSocket exec path so headers like ``X-Service-Key``
         set on the client are attached to the WS upgrade request.
         """
-        if not self._default_headers and headers is None:
+        self._ensure_profile_auth()
+        client_headers: dict[str, str] = {}
+        if self._api_key is None and self._profile_auth_headers:
+            client_headers.update(self._profile_auth_headers)
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
+        if headers is not None:
+            client_headers = merge_headers(client_headers, headers)
+        if self._profile_auth is not None:
+            client_headers = self._profile_auth.prepare_request_headers(client_headers)
+        if not client_headers:
             return None
-        return merge_headers(self._default_headers, headers)
+        return client_headers
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -634,7 +644,9 @@ class SandboxClient:
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
             )
             response.raise_for_status()
             return ServiceURL.from_dict(response.json(), _refresher=_refresher)
@@ -785,7 +797,10 @@ class SandboxClient:
         Args:
             name: Snapshot name.
             docker_image: Docker image to build from (e.g., "python:3.12-slim").
-            fs_capacity_bytes: Filesystem capacity in bytes.
+            fs_capacity_bytes: Filesystem capacity in bytes. Required for
+                ``docker_image`` snapshots. Optional for ``dockerfile`` snapshots;
+                when omitted, the builder sandbox uses the platform default and
+                the exported snapshot inherits that capacity.
             dockerfile: Local Dockerfile path. When set, the SDK creates a
                 temporary builder sandbox, uploads ``context``, streams
                 ``docker build``, and exports the built image into the snapshot.
@@ -857,7 +872,10 @@ class SandboxClient:
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
+                timeout=timeout,
             )
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())
@@ -880,9 +898,6 @@ class SandboxClient:
         timeout: int,
         headers: RequestHeaders,
     ) -> Snapshot:
-        if fs_capacity_bytes is None:
-            raise ValueError("fs_capacity_bytes is required")
-
         context_path = Path(context).expanduser().resolve()
         dockerfile_path = Path(dockerfile).expanduser()
         if not dockerfile_path.is_absolute():
@@ -902,12 +917,15 @@ class SandboxClient:
         remote_tar = "/tmp/langsmith-docker-context.tar"
         image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
 
-        with self.sandbox(
-            name=builder_name,
-            timeout=timeout,
-            fs_capacity_bytes=fs_capacity_bytes,
-            headers=headers,
-        ) as sandbox:
+        sandbox_kwargs: dict[str, Any] = {
+            "name": builder_name,
+            "timeout": timeout,
+            "headers": headers,
+        }
+        if fs_capacity_bytes is not None:
+            sandbox_kwargs["fs_capacity_bytes"] = fs_capacity_bytes
+
+        with self.sandbox(**sandbox_kwargs) as sandbox:
             sandbox.write(
                 remote_tar,
                 _make_docker_context_tar(context_path),
@@ -930,10 +948,24 @@ class SandboxClient:
             dockerfile_remote = posixpath.join(
                 remote_context, dockerfile_rel.as_posix()
             )
+            ready = sandbox.run(
+                "i=0; while ! timeout 5 docker ps >/dev/null 2>&1; do "
+                'i=$((i+1)); if [ "$i" -gt 300 ]; then '
+                "echo dockerd did not become ready >&2; exit 1; fi; sleep 1; done",
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if ready.exit_code != 0:
+                raise ResourceCreationError(
+                    "Docker daemon did not become ready",
+                    resource_type="snapshot",
+                )
+
             command = [
                 "docker",
                 "build",
-                "--progress=plain",
                 "-t",
                 image_ref,
                 "-f",
@@ -957,14 +989,14 @@ class SandboxClient:
                     "Dockerfile snapshot build failed",
                     resource_type="snapshot",
                 )
-            return self.capture_snapshot(
-                sandbox.name,
-                name,
-                docker_image=image_ref,
-                fs_capacity_bytes=fs_capacity_bytes,
-                timeout=timeout,
-                headers=headers,
-            )
+            capture_kwargs: dict[str, Any] = {
+                "docker_image": image_ref,
+                "timeout": timeout,
+                "headers": headers,
+            }
+            if fs_capacity_bytes is not None:
+                capture_kwargs["fs_capacity_bytes"] = fs_capacity_bytes
+            return self.capture_snapshot(sandbox.name, name, **capture_kwargs)
 
     def capture_snapshot(
         self,
@@ -1004,7 +1036,10 @@ class SandboxClient:
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
+                timeout=timeout,
             )
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())
