@@ -678,7 +678,10 @@ export interface FeedbackConfigSchema {
   is_lower_score_better?: boolean | null;
 }
 
-export interface RunWithAnnotationQueueInfo extends BaseRun {
+export interface RunWithAnnotationQueueInfo extends Exclude<BaseRun, "id"> {
+  /** An unique identifier for the run. */
+  id: string;
+
   /** The last time this run was reviewed. */
   last_reviewed_time?: string;
 

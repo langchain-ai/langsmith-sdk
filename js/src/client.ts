@@ -5616,6 +5616,46 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * List the runs in an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   * @param options - The options for listing runs in the annotation queue
+   * @param options.status - Filter runs by review status. If omitted, returns
+   * runs across all review states.
+   * @param options.limit - The maximum number of runs to return
+   * @returns An iterator of RunWithAnnotationQueueInfo objects
+   */
+  public async *listRunsFromAnnotationQueue(
+    queueId: string,
+    options: {
+      status?: "needs_my_review" | "needs_others_review" | "completed";
+      limit?: number;
+    } = {},
+  ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
+    const { status, limit: userLimit } = options;
+    const params = new URLSearchParams();
+    const limit =
+      userLimit !== undefined && Number.isFinite(userLimit)
+        ? Math.min(userLimit, 100)
+        : 100;
+
+    if (status) params.append("status", status);
+    params.append("limit", limit.toString());
+
+    let count = 0;
+    const path = `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`;
+    for await (const runs of this._getPaginated<RunWithAnnotationQueueInfo>(
+      path,
+      params,
+    )) {
+      for (const run of runs) {
+        yield _normalizeRunTimestamps(run);
+        count++;
+        if (count >= limit) return;
+      }
+    }
+  }
+
+  /**
    * Delete a run from an an annotation queue.
    * @param queueId - The ID of the annotation queue to delete the run from
    * @param queueRunId - The ID of the run to delete from the annotation queue
