@@ -5631,13 +5631,15 @@ export class Client implements LangSmithTracingClientInterface {
       limit?: number;
     } = {},
   ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
-    const { status, limit } = options;
+    const { status, limit: userLimit } = options;
     const params = new URLSearchParams();
+    const limit =
+      userLimit !== undefined && Number.isFinite(userLimit)
+        ? Math.min(userLimit, 100)
+        : 100;
+
     if (status) params.append("status", status);
-    params.append(
-      "limit",
-      (limit !== undefined ? Math.min(limit, 100) : 100).toString(),
-    );
+    params.append("limit", limit.toString());
 
     let count = 0;
     const path = `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`;
@@ -5646,11 +5648,9 @@ export class Client implements LangSmithTracingClientInterface {
       params,
     )) {
       for (const run of runs) {
-        yield _normalizeRunTimestamps(
-          run as unknown as Run,
-        ) as unknown as RunWithAnnotationQueueInfo;
+        yield _normalizeRunTimestamps(run);
         count++;
-        if (limit !== undefined && count >= limit) return;
+        if (count >= limit) return;
       }
     }
   }
