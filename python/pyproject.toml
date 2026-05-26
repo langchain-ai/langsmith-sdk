@@ -159,6 +159,7 @@ exclude = [".test", ".venv*"]
 packages = ["langsmith"]
 
 [tool.ruff]
+exclude = ["langsmith_api"]
 lint.select = [
   "E",    # pycodestyle
   "F",    # pyflakes
