@@ -38,6 +38,12 @@ _HUB_METHODS = [
     "_hub_repo_exists",
     "_create_hub_repo",
     "_update_hub_repo_metadata",
+    "list_prompts",
+    "get_prompt",
+    "create_prompt",
+    "update_prompt",
+    "push_prompt",
+    "_prompt_exists",
 ]
 
 
@@ -77,6 +83,29 @@ def _response(data: dict) -> MagicMock:
     resp = MagicMock()
     resp.json.return_value = data
     return resp
+
+
+def _prompt_response(prompt_id: str = "00000000-0000-0000-0000-000000000001") -> dict:
+    return {
+        "repo_handle": "my-prompt",
+        "description": "",
+        "readme": "",
+        "id": prompt_id,
+        "tenant_id": "00000000-0000-0000-0000-000000000002",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+        "is_public": False,
+        "is_archived": False,
+        "tags": [],
+        "owner": "-",
+        "full_name": "-/my-prompt",
+        "num_likes": 0,
+        "num_downloads": 0,
+        "num_views": 0,
+        "liked_by_auth_user": False,
+        "last_commit_hash": None,
+        "num_commits": 0,
+    }
 
 
 def test_entry_discriminator_picks_file() -> None:
@@ -142,6 +171,56 @@ def test_repo_handle_pattern(handle: str, valid: bool) -> None:
     from langsmith._internal._hub import REPO_HANDLE_PATTERN
 
     assert bool(REPO_HANDLE_PATTERN.match(handle)) is valid
+
+
+def test_list_prompts_filters_by_application_tag() -> None:
+    client = _mock_sync_client()
+    client.request_with_retries.return_value = _response({"repos": [], "total": 0})
+
+    client.list_prompts(application_tag="my-app")
+
+    call = client.request_with_retries.call_args
+    assert call.args == ("GET", "/repos/")
+    assert call.kwargs["params"]["application_tag"] == "my-app"
+
+
+def test_create_prompt_sends_application_tag() -> None:
+    client = _mock_sync_client()
+    prompt = _prompt_response()
+    client.request_with_retries.return_value = _response({"repo": prompt})
+
+    client.create_prompt("-/my-prompt", application_tag="new-app")
+
+    call = client.request_with_retries.call_args
+    assert call.args == ("POST", "/repos/")
+    assert call.kwargs["json"]["application_tag"] == "new-app"
+
+
+def test_push_prompt_updates_application_tag_in_single_patch() -> None:
+    client = _mock_sync_client()
+    client._get_prompt_url.return_value = "https://smith.langchain.com/hub/-/my-prompt"
+    prompt = _prompt_response()
+    client.request_with_retries.side_effect = [
+        _response({"repo": prompt}),
+        _response({"repo": prompt}),
+    ]
+
+    client.push_prompt("-/my-prompt", application_tag="my-app")
+
+    patch_call = client.request_with_retries.call_args_list[1]
+    assert patch_call.args == ("PATCH", "/repos/-/my-prompt")
+    assert patch_call.kwargs["json"] == {"application_tag": "my-app"}
+
+
+async def test_async_list_prompts_filters_by_application_tag() -> None:
+    client = _mock_async_client()
+    client._arequest_with_retries.return_value = _response({"repos": [], "total": 0})
+
+    await client.list_prompts(application_tag="my-app")
+
+    call = client._arequest_with_retries.call_args
+    assert call.args == ("GET", "/repos/")
+    assert call.kwargs["params"]["application_tag"] == "my-app"
 
 
 def test_pull_agent_hits_correct_url_and_parses() -> None:
