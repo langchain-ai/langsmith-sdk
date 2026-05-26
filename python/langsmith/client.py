@@ -95,6 +95,7 @@ from langsmith._internal._hub import (
 from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
+    _multipart_part_size,
     join_multipart_parts_and_context,
 )
 from langsmith._internal._operations import (
@@ -2974,43 +2975,61 @@ class Client:
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
     ) -> None:
-        parts: list[MultipartPartsAndContext] = []
-        opened_files_dict: dict[str, io.BufferedReader] = {}
+        size_limit_bytes = (
+            self._max_batch_size_bytes
+            or (self.info.batch_ingest_config or {}).get("size_limit_bytes")
+            or _SIZE_LIMIT_BYTES
+        )
+        all_opened_files: dict[str, io.BufferedReader] = {}
+        op_and_parts: list[
+            tuple[
+                Union[SerializedRunOperation, SerializedFeedbackOperation],
+                MultipartPartsAndContext,
+            ]
+        ] = []
         for op in ops:
             if isinstance(op, SerializedRunOperation):
                 (
                     part,
                     opened_files,
                 ) = serialized_run_operation_to_multipart_parts_and_context(op)
-                parts.append(part)
-                opened_files_dict.update(opened_files)
+                all_opened_files.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
-                parts.append(
-                    serialized_feedback_operation_to_multipart_parts_and_context(op)
-                )
+                part = serialized_feedback_operation_to_multipart_parts_and_context(op)
             else:
                 logger.error("Unknown operation type in tracing queue: %s", type(op))
-        acc_multipart = join_multipart_parts_and_context(parts)
-        if acc_multipart:
-            try:
-                self._send_multipart_req(
-                    acc_multipart,
-                    api_url=api_url,
-                    api_key=api_key,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
-            except ls_utils.LangSmithNotFoundError:
-                # Fallback to batch ingest if multipart endpoint returns 404
-                # Disable multipart for future requests
-                self._multipart_disabled = True
-                # Filter out feedback operations as they're not supported in non-multipart mode
-                run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
-                if run_ops:
-                    self._batch_ingest_run_ops(
-                        run_ops,
+                continue
+            op_and_parts.append((op, part))
+
+        try:
+            # Split into size-bounded batches, mirroring _batch_ingest_run_ops
+            batches: list[
+                tuple[
+                    list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+                    list[MultipartPartsAndContext],
+                ]
+            ] = []
+            cur_batch_ops: list[
+                Union[SerializedRunOperation, SerializedFeedbackOperation]
+            ] = []
+            cur_batch_parts: list[MultipartPartsAndContext] = []
+            cur_batch_size = 0
+            for op, part in op_and_parts:
+                part_size = _multipart_part_size(part)
+                if cur_batch_size > 0 and cur_batch_size + part_size > size_limit_bytes:
+                    batches.append((cur_batch_ops, cur_batch_parts))
+                    cur_batch_ops, cur_batch_parts, cur_batch_size = [], [], 0
+                cur_batch_ops.append(op)
+                cur_batch_parts.append(part)
+                cur_batch_size += part_size
+            if cur_batch_ops:
+                batches.append((cur_batch_ops, cur_batch_parts))
+
+            for batch_ops, batch_parts in batches:
+                acc_multipart = join_multipart_parts_and_context(batch_parts)
+                try:
+                    self._send_multipart_req(
+                        acc_multipart,
                         api_url=api_url,
                         api_key=api_key,
                         service_key=service_key,
@@ -3018,8 +3037,26 @@ class Client:
                         authorization=authorization,
                         cookie=cookie,
                     )
-            finally:
-                _close_files(list(opened_files_dict.values()))
+                except ls_utils.LangSmithNotFoundError:
+                    # Fallback to batch ingest if multipart endpoint returns 404
+                    # Disable multipart for future requests
+                    self._multipart_disabled = True
+                    # Feedback ops are not supported in non-multipart mode
+                    run_ops = [
+                        o for o in batch_ops if isinstance(o, SerializedRunOperation)
+                    ]
+                    if run_ops:
+                        self._batch_ingest_run_ops(
+                            run_ops,
+                            api_url=api_url,
+                            api_key=api_key,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
+                        )
+        finally:
+            _close_files(list(all_opened_files.values()))
 
     def multipart_ingest(
         self,

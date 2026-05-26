@@ -2014,8 +2014,9 @@ def test_batch_ingest_run_splits_large_batches(
 
     if use_multipart_endpoint:
         client.multipart_ingest(create=posts, update=patches)
-        # multipart endpoint should only send one request
-        expected_num_requests = 1
+        # multipart now enforces the same size_limit_bytes as batch_ingest_runs
+        max_in_batch = max(1, (20 * MB) // (payload_size + 20))
+        expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
         # count the number of POST requests
         assert sum(
             [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
@@ -4375,6 +4376,88 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
                 break
 
     assert not found_zstd, "Expected no zstd compressed request"
+
+
+def test_multipart_ingest_ops_splits_by_size() -> None:
+    """_multipart_ingest_ops must split ops into multiple requests when payload exceeds size_limit_bytes."""
+    from langsmith._internal._operations import SerializedRunOperation
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+    # Each op has ~500 bytes of outputs; limit of 600 means two ops cannot fit in one request.
+    client._max_batch_size_bytes = 600
+
+    def make_op(output_size: int) -> SerializedRunOperation:
+        run_id = uuid.uuid4()
+        none_bytes = json.dumps(
+            {
+                "id": str(run_id),
+                "name": "test",
+                "run_type": "chain",
+                "trace_id": str(run_id),
+                "dotted_order": str(run_id),
+            }
+        ).encode()
+        return SerializedRunOperation(
+            operation="post",
+            id=run_id,
+            trace_id=run_id,
+            _none=none_bytes,
+            outputs=b"x" * output_size,
+        )
+
+    op1 = make_op(500)
+    op2 = make_op(500)
+    op3 = make_op(500)
+
+    with mock.patch.object(Client, "_send_multipart_req") as mock_send:
+        client._multipart_ingest_ops([op1, op2, op3])
+
+    assert mock_send.call_count == 3, (
+        f"Expected 3 multipart requests (one per op due to size limit), got {mock_send.call_count}"
+    )
+
+
+def test_multipart_ingest_ops_no_split_when_within_limit() -> None:
+    """_multipart_ingest_ops sends a single request when total size is within limit."""
+    from langsmith._internal._operations import SerializedRunOperation
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+    # Large enough limit that two small ops both fit in one request.
+    client._max_batch_size_bytes = 10_000
+
+    def make_op() -> SerializedRunOperation:
+        run_id = uuid.uuid4()
+        none_bytes = json.dumps(
+            {
+                "id": str(run_id),
+                "name": "test",
+                "run_type": "chain",
+                "trace_id": str(run_id),
+                "dotted_order": str(run_id),
+            }
+        ).encode()
+        return SerializedRunOperation(
+            operation="post",
+            id=run_id,
+            trace_id=run_id,
+            _none=none_bytes,
+            outputs=b"y" * 100,
+        )
+
+    with mock.patch.object(Client, "_send_multipart_req") as mock_send:
+        client._multipart_ingest_ops([make_op(), make_op()])
+
+    assert mock_send.call_count == 1, (
+        f"Expected 1 multipart request when ops fit within limit, got {mock_send.call_count}"
+    )
 
 
 def test__dataset_examples_path():

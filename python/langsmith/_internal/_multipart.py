@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from io import BufferedReader
 from typing import Union
@@ -18,6 +19,20 @@ class MultipartPartsAndContext:
     def __init__(self, parts: list[MultipartPart], context: str) -> None:
         self.parts = parts
         self.context = context
+
+
+def _multipart_part_size(part: MultipartPartsAndContext) -> int:
+    """Estimate byte size of a MultipartPartsAndContext for batch splitting."""
+    total = 0
+    for _, (_, data, _, _) in part.parts:
+        if isinstance(data, bytes):
+            total += len(data)
+        elif isinstance(data, BufferedReader):
+            try:
+                total += os.fstat(data.fileno()).st_size
+            except Exception:
+                pass
+    return total
 
 
 def join_multipart_parts_and_context(
