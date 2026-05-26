@@ -6912,15 +6912,11 @@ export class Client implements LangSmithTracingClientInterface {
     });
     const data = (await response.json()) as DirectoryCommitResponse;
     const commitHash = data.commit.commit_hash;
-    let ownerForUrl = owner;
-    if (owner === "-") {
-      const settings = await this._getSettings();
-      ownerForUrl = settings.tenant_handle || owner;
-    }
-    return `${this.getHostUrl()}/hub/${ownerForUrl}/${name}:${commitHash.slice(
+    const settings = await this._getSettings();
+    return `${this.getHostUrl()}/context/${name}/${commitHash.slice(
       0,
       8,
-    )}`;
+    )}?organizationId=${settings.id}`;
   }
 
   private async _deleteDirectory(identifier: string): Promise<void> {
@@ -6978,6 +6974,7 @@ export class Client implements LangSmithTracingClientInterface {
       repo_handle: name,
       repo_type: repoType,
       is_public: !!options.isPublic,
+      source: "internal",
     };
     if (options.description !== undefined)
       body.description = options.description;

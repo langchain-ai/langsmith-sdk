@@ -46,7 +46,7 @@ def _mock_sync_client() -> MagicMock:
     client._host_url = "https://smith.langchain.com"
     client._current_tenant_is_owner.return_value = True
     client._get_settings.return_value = SimpleNamespace(
-        tenant_handle="workspace-handle"
+        id="tenant-id", tenant_handle="workspace-handle"
     )
     client._owner_conflict_error.return_value = ls_utils.LangSmithUserError(
         "owner mismatch"
@@ -62,7 +62,7 @@ def _mock_async_client() -> MagicMock:
     client._host_url = "https://smith.langchain.com"
     client._current_tenant_is_owner = AsyncMock(return_value=True)
     client._get_settings = AsyncMock(
-        return_value=SimpleNamespace(tenant_handle="workspace-handle")
+        return_value=SimpleNamespace(id="tenant-id", tenant_handle="workspace-handle")
     )
     client._owner_conflict_error = AsyncMock(
         return_value=ls_utils.LangSmithUserError("owner mismatch")
@@ -211,13 +211,17 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     url = ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/workspace-handle/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
     assert client.request_with_retries.call_count == 3
 
     create_call = client.request_with_retries.call_args_list[1]
     assert create_call.args == ("POST", "/repos/")
     assert create_call.kwargs["json"]["repo_type"] == "agent"
     assert create_call.kwargs["json"]["repo_handle"] == "my-agent"
+    assert create_call.kwargs["json"]["source"] == "internal"
 
     commit_call = client.request_with_retries.call_args_list[2]
     assert commit_call.args == (
@@ -229,7 +233,7 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     }
 
 
-def test_push_agent_preserves_explicit_owner_in_url() -> None:
+def test_push_agent_explicit_owner_returns_context_url() -> None:
     client = _mock_sync_client()
     client.request_with_retries.side_effect = [
         ls_utils.LangSmithNotFoundError("not found"),
@@ -246,10 +250,13 @@ def test_push_agent_preserves_explicit_owner_in_url() -> None:
     url = client.push_agent(
         "explicit-owner/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/explicit-owner/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
 
 
-def test_push_agent_name_only_identifier_uses_workspace_handle_in_url() -> None:
+def test_push_agent_name_only_identifier_returns_context_url() -> None:
     client = _mock_sync_client()
     client.request_with_retries.side_effect = [
         ls_utils.LangSmithNotFoundError("not found"),
@@ -268,7 +275,7 @@ def test_push_agent_name_only_identifier_uses_workspace_handle_in_url() -> None:
     )
     assert (
         url
-        == "https://smith.langchain.com/hub/workspace-handle/email-assistant:abc12345"
+        == "https://smith.langchain.com/context/email-assistant/abc12345?organizationId=tenant-id"
     )
     commit_call = client.request_with_retries.call_args_list[2]
     assert commit_call.args == (
@@ -277,9 +284,11 @@ def test_push_agent_name_only_identifier_uses_workspace_handle_in_url() -> None:
     )
 
 
-def test_push_agent_falls_back_to_dash_owner_when_tenant_handle_missing() -> None:
+def test_push_agent_uses_tenant_id_when_tenant_handle_missing() -> None:
     client = _mock_sync_client()
-    client._get_settings.return_value = SimpleNamespace(tenant_handle=None)
+    client._get_settings.return_value = SimpleNamespace(
+        id="tenant-id", tenant_handle=None
+    )
     client.request_with_retries.side_effect = [
         ls_utils.LangSmithNotFoundError("not found"),
         _response({}),
@@ -295,7 +304,10 @@ def test_push_agent_falls_back_to_dash_owner_when_tenant_handle_missing() -> Non
     url = client.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/-/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
 
 
 def test_push_agent_updates_metadata_when_repo_exists() -> None:
@@ -494,13 +506,20 @@ async def test_async_push_agent_creates_and_commits() -> None:
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/workspace-handle/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
     assert client._arequest_with_retries.await_count == 3
+    create_call = client._arequest_with_retries.call_args_list[1]
+    assert create_call.kwargs["json"]["source"] == "internal"
 
 
-async def test_async_push_agent_falls_back_to_dash_without_tenant_handle() -> None:
+async def test_async_push_agent_uses_tenant_id_when_tenant_handle_missing() -> None:
     client = _mock_async_client()
-    client._get_settings = AsyncMock(return_value=SimpleNamespace(tenant_handle=None))
+    client._get_settings = AsyncMock(
+        return_value=SimpleNamespace(id="tenant-id", tenant_handle=None)
+    )
     client._arequest_with_retries.side_effect = [
         ls_utils.LangSmithNotFoundError("not found"),
         _response({}),
@@ -516,7 +535,10 @@ async def test_async_push_agent_falls_back_to_dash_without_tenant_handle() -> No
     url = await client.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/-/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
 
 
 async def test_async_push_agent_accepts_tools_json_as_normal_file_entry() -> None:
@@ -562,7 +584,10 @@ async def test_async_create_repo_swallows_conflict() -> None:
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert url == "https://smith.langchain.com/hub/workspace-handle/my-agent:abc12345"
+    assert (
+        url
+        == "https://smith.langchain.com/context/my-agent/abc12345?organizationId=tenant-id"
+    )
     assert client._arequest_with_retries.await_count == 3
 
 

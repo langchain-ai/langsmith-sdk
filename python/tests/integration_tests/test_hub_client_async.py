@@ -34,7 +34,7 @@ async def test_push_and_pull_agent_roundtrip(
             files={"AGENTS.md": ls_schemas.FileEntry(content="# Test Agent\n")},
             description="integration test agent",
         )
-        assert "/hub/" in url
+        assert "/context/" in url
 
         agent = await ctx.pull_agent(agent_identifier)
         assert isinstance(agent, ls_schemas.AgentContext)
@@ -60,7 +60,7 @@ async def test_push_and_pull_skill_roundtrip(
             files={"SKILL.md": ls_schemas.FileEntry(content="# Test Skill\n")},
             description="integration test skill",
         )
-        assert "/hub/" in url
+        assert "/context/" in url
 
         skill = await ctx.pull_skill(skill_identifier)
         assert isinstance(skill, ls_schemas.SkillContext)

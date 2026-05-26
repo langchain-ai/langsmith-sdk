@@ -8,7 +8,7 @@ function _mockClient() {
   jest.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(true);
   jest
     .spyOn(client as any, "_getSettings")
-    .mockResolvedValue({ tenant_handle: "workspace-handle" });
+    .mockResolvedValue({ id: "tenant-id", tenant_handle: "workspace-handle" });
   jest
     .spyOn(client as any, "_ownerConflictError")
     .mockImplementation(async () => new Error("owner mismatch"));
@@ -149,7 +149,9 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("-/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/workspace-handle/my-agent:abc12345");
+      expect(url).toContain(
+        "/context/my-agent/abc12345?organizationId=tenant-id",
+      );
 
       const calls = fetchSpy.mock.calls as [string, any][];
       expect(calls).toHaveLength(3);
@@ -162,6 +164,7 @@ describe("Context (agent/skill) on Client", () => {
       const createBody = JSON.parse(calls[1][1].body);
       expect(createBody.repo_handle).toBe("my-agent");
       expect(createBody.repo_type).toBe("agent");
+      expect(createBody.source).toBe("internal");
       // 3. commit
       expect(calls[2][0]).toContain(
         "/v1/platform/hub/repos/-/my-agent/directories/commits",
@@ -280,10 +283,12 @@ describe("Context (agent/skill) on Client", () => {
         client.pushAgent("-/my-agent", {
           files: { "main.py": { type: "file", content: "x" } },
         }),
-      ).resolves.toContain("/hub/workspace-handle/my-agent:abc12345");
+      ).resolves.toContain(
+        "/context/my-agent/abc12345?organizationId=tenant-id",
+      );
     });
 
-    it("keeps explicit owner in returned URL", async () => {
+    it("returns the Context Hub URL for explicit owner identifiers", async () => {
       const client = _mockClient();
       _setFetchSequence(client, [
         _response({ detail: "Not Found" }, 404),
@@ -299,12 +304,15 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("explicit-owner/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/explicit-owner/my-agent:abc12345");
+      expect(url).toContain(
+        "/context/my-agent/abc12345?organizationId=tenant-id",
+      );
     });
 
-    it("falls back to dash owner when tenant_handle is missing", async () => {
+    it("uses the tenant ID in the returned URL when tenant_handle is missing", async () => {
       const client = _mockClient();
       jest.spyOn(client as any, "_getSettings").mockResolvedValue({
+        id: "tenant-id",
         tenant_handle: "",
       });
       _setFetchSequence(client, [
@@ -321,10 +329,12 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("-/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/-/my-agent:abc12345");
+      expect(url).toContain(
+        "/context/my-agent/abc12345?organizationId=tenant-id",
+      );
     });
 
-    it("supports name-only identifier and returns workspace-handle URL", async () => {
+    it("supports name-only identifier and returns a Context Hub URL", async () => {
       const client = _mockClient();
       const fetchSpy = _setFetchSequence(client, [
         _response({ detail: "Not Found" }, 404),
@@ -340,7 +350,9 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("email-assistant", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/workspace-handle/email-assistant:abc12345");
+      expect(url).toContain(
+        "/context/email-assistant/abc12345?organizationId=tenant-id",
+      );
 
       const calls = fetchSpy.mock.calls as [string, any][];
       expect(calls[0][0]).toContain("/repos/-/email-assistant");
