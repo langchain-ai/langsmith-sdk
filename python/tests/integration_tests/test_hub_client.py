@@ -42,7 +42,7 @@ def test_push_and_pull_agent_roundtrip(
             files={"AGENTS.md": ls_schemas.FileEntry(content="# Test Agent\n")},
             description="integration test agent",
         )
-        assert "/hub/" in url
+        assert "/context/" in url
 
         agent = ctx.pull_agent(agent_identifier)
         assert isinstance(agent, ls_schemas.AgentContext)
@@ -68,7 +68,7 @@ def test_push_and_pull_agent_tools_json_roundtrip(
             files={"tools.json": ls_schemas.FileEntry(content=TOOLS_JSON)},
             description="integration test agent tools",
         )
-        assert "/hub/" in url
+        assert "/context/" in url
 
         agent = ctx.pull_agent(agent_identifier)
         assert isinstance(agent, ls_schemas.AgentContext)
@@ -94,7 +94,7 @@ def test_push_and_pull_skill_roundtrip(
             files={"SKILL.md": ls_schemas.FileEntry(content="# Test Skill\n")},
             description="integration test skill",
         )
-        assert "/hub/" in url
+        assert "/context/" in url
 
         skill = ctx.pull_skill(skill_identifier)
         assert isinstance(skill, ls_schemas.SkillContext)

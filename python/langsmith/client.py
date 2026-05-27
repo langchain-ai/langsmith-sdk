@@ -89,7 +89,6 @@ from langsmith._internal._hub import (
     PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
-    resolve_owner_for_url,
     validate_parent_commit,
 )
 from langsmith._internal._multipart import (
@@ -9726,9 +9725,12 @@ class Client:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        tenant_handle = self._get_settings().tenant_handle if owner == "-" else None
-        owner_for_url = resolve_owner_for_url(owner, tenant_handle)
-        return build_commit_url(self._host_url, owner_for_url, name, commit_hash)
+        return build_commit_url(
+            self._host_url,
+            name,
+            commit_hash,
+            tenant_id=self._get_settings().id,
+        )
 
     def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""
@@ -9792,6 +9794,7 @@ class Client:
             "repo_handle": name,
             "repo_type": repo_type,
             "is_public": is_public,
+            "source": "internal",
         }
         if description is not None:
             body["description"] = description
