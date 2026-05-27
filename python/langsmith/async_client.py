@@ -2391,13 +2391,7 @@ class AsyncClient:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        settings = await self._get_settings()
-        return build_commit_url(
-            self._host_url,
-            name,
-            commit_hash,
-            tenant_id=settings.id,
-        )
+        return build_commit_url(self._host_url, name, commit_hash)
 
     async def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""

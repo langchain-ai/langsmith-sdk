@@ -12,14 +12,9 @@ PLATFORM_HUB = "/v1/platform/hub/repos"
 HUB = "/repos"
 
 
-def build_commit_url(
-    host: str, name: str, commit_hash: str, *, tenant_id: Optional[str]
-) -> str:
+def build_commit_url(host: str, name: str, commit_hash: str) -> str:
     """Build the URL for a hub directory commit."""
-    url = f"{host}/context/{name}/{commit_hash[:8]}"
-    if tenant_id:
-        url += f"?organizationId={tenant_id}"
-    return url
+    return f"{host}/context/{name}/{commit_hash[:8]}"
 
 
 def validate_parent_commit(parent_commit: Optional[str]) -> None:
