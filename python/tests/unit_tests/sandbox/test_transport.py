@@ -294,9 +294,7 @@ class TestAsyncRetryTransport:
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("_patch_sleep")
     async def test_exhausted_retries_on_connect_timeout_raises(self):
-        mock = MockAsyncTransport(
-            [httpx.ConnectTimeout(f"fail {i}") for i in range(4)]
-        )
+        mock = MockAsyncTransport([httpx.ConnectTimeout(f"fail {i}") for i in range(4)])
         transport = AsyncRetryTransport(max_retries=3, transport=mock)
         with pytest.raises(SandboxConnectionError, match="4 attempts"):
             await transport.handle_async_request(_make_request())
