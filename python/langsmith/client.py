@@ -9789,7 +9789,6 @@ class Client:
             "repo_handle": name,
             "repo_type": repo_type,
             "is_public": is_public,
-            "source": "internal",
         }
         if description is not None:
             body["description"] = description

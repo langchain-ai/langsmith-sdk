@@ -221,7 +221,6 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     assert create_call.args == ("POST", "/repos/")
     assert create_call.kwargs["json"]["repo_type"] == "agent"
     assert create_call.kwargs["json"]["repo_handle"] == "my-agent"
-    assert create_call.kwargs["json"]["source"] == "internal"
 
     commit_call = client.request_with_retries.call_args_list[2]
     assert commit_call.args == (
@@ -509,8 +508,6 @@ async def test_async_push_agent_creates_and_commits() -> None:
         == "https://smith.langchain.com/context/my-agent/abc12345"
     )
     assert client._arequest_with_retries.await_count == 3
-    create_call = client._arequest_with_retries.call_args_list[1]
-    assert create_call.kwargs["json"]["source"] == "internal"
 
 
 async def test_async_push_agent_context_url_without_tenant_handle() -> None:
