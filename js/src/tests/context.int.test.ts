@@ -43,7 +43,7 @@ describe("Context integration (agent/skill)", () => {
         },
         description: "integration test agent (js)",
       });
-      expect(url).toContain("/hub/");
+      expect(url).toContain("/context/");
 
       const agent: AgentContext = await client.pullAgent(identifier);
       expect(agent.files["AGENTS.md"]).toBeDefined();
@@ -64,7 +64,7 @@ describe("Context integration (agent/skill)", () => {
         },
         description: "integration test skill (js)",
       });
-      expect(url).toContain("/hub/");
+      expect(url).toContain("/context/");
 
       const skill: SkillContext = await client.pullSkill(identifier);
       expect(skill.files["SKILL.md"]).toBeDefined();
@@ -83,7 +83,7 @@ describe("Context integration (agent/skill)", () => {
           "tools.json": { type: "file", content: TOOLS_JSON },
         },
       });
-      expect(url).toContain("/hub/");
+      expect(url).toContain("/context/");
 
       const agent: AgentContext = await client.pullAgent(identifier);
       expect(agent.files["tools.json"]).toBeDefined();
