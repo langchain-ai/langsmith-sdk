@@ -788,10 +788,11 @@ class ListThreadsItem(TypedDict):
     max_start_time: Optional[str]
 
 
-class Client(_langsmith_api_module.Langsmith):
+class Client:
     """Client for interacting with the LangSmith API."""
 
     __slots__ = [
+        "__weakref__",
         "api_url",
         "_api_key",
         "_oauth_access_token",
@@ -1386,7 +1387,7 @@ class Client(_langsmith_api_module.Langsmith):
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        super().__init__(
+        self._langsmith_api = _langsmith_api_module.Langsmith(
             api_key=self._api_key,
             bearer_token=self._oauth_access_token,
             tenant_id=str(self._workspace_id) if self._workspace_id else None,
@@ -1399,6 +1400,25 @@ class Client(_langsmith_api_module.Langsmith):
             ),
             default_headers=self._custom_headers or None,
         )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> "RunsResource":
+        return self._langsmith_api.runs
+
+    @property
+    def threads(self) -> "ThreadsResource":
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> "TracesResource":
+        return self._langsmith_api.traces
 
     def _dump_failed_trace(
         self,

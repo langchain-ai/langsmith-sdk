@@ -11,6 +11,7 @@ import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     Optional,
@@ -20,6 +21,11 @@ from typing import (
 
 import httpx
 import langsmith_api as _langsmith_api_module
+
+if TYPE_CHECKING:
+    from langsmith_api.resources.runs import AsyncRunsResource
+    from langsmith_api.resources.threads import AsyncThreadsResource
+    from langsmith_api.resources.traces import AsyncTracesResource
 
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -39,7 +45,7 @@ from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleto
 ID_TYPE = Union[uuid.UUID, str]
 
 
-class AsyncClient(_langsmith_api_module.AsyncLangsmith):
+class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
     __slots__ = (
@@ -53,6 +59,7 @@ class AsyncClient(_langsmith_api_module.AsyncLangsmith):
         "_oauth_access_token",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     )
 
     _custom_headers: dict[str, str]
@@ -183,20 +190,13 @@ class AsyncClient(_langsmith_api_module.AsyncLangsmith):
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
-            timeout_obj = httpx.Timeout(None, connect=timeout_ms / 1000, read=None)
         elif isinstance(timeout_ms, tuple):
             timeout_ = tuple([t / 1000 if t is not None else None for t in timeout_ms])
-            t_list = list(timeout_)
-            timeout_obj = httpx.Timeout(
-                None,
-                connect=t_list[0] if len(t_list) > 0 else None,
-                read=t_list[1] if len(t_list) > 1 else None,
-                write=t_list[2] if len(t_list) > 2 else None,
-                pool=t_list[3] if len(t_list) > 3 else None,
-            )
         else:
             timeout_ = 10
-            timeout_obj = httpx.Timeout(10)
+        self._client = httpx.AsyncClient(
+            base_url=api_url, headers=_headers, timeout=timeout_
+        )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
@@ -237,17 +237,32 @@ class AsyncClient(_langsmith_api_module.AsyncLangsmith):
         else:
             self._cache = None
 
-        self._client = httpx.AsyncClient(
-            base_url=api_url, headers=_headers, timeout=timeout_
-        )
-        super().__init__(
-            base_url=api_url,
+        self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
             api_key=self._api_key,
             bearer_token=self._oauth_access_token,
+            base_url=str(self._client.base_url),
+            timeout=self._client.timeout,
             default_headers=self._custom_headers or None,
-            timeout=timeout_obj,
-            http_client=self._client,
         )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> "AsyncRunsResource":
+        return self._langsmith_api.runs
+
+    @property
+    def threads(self) -> "AsyncThreadsResource":
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> "AsyncTracesResource":
+        return self._langsmith_api.traces
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
