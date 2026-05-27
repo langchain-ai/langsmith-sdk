@@ -211,10 +211,7 @@ def test_push_agent_creates_new_repo_and_commits() -> None:
     url = ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
     assert client.request_with_retries.call_count == 3
 
     create_call = client.request_with_retries.call_args_list[1]
@@ -249,10 +246,7 @@ def test_push_agent_explicit_owner_returns_context_url() -> None:
     url = client.push_agent(
         "explicit-owner/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
 
 
 def test_push_agent_name_only_identifier_returns_context_url() -> None:
@@ -272,10 +266,7 @@ def test_push_agent_name_only_identifier_returns_context_url() -> None:
     url = client.push_agent(
         "email-assistant", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/email-assistant/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/email-assistant/abc12345"
     commit_call = client.request_with_retries.call_args_list[2]
     assert commit_call.args == (
         "POST",
@@ -301,10 +292,7 @@ def test_push_agent_returns_context_url_when_tenant_handle_missing() -> None:
     url = client.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
 
 
 def test_push_agent_updates_metadata_when_repo_exists() -> None:
@@ -503,10 +491,7 @@ async def test_async_push_agent_creates_and_commits() -> None:
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
     assert client._arequest_with_retries.await_count == 3
 
 
@@ -528,10 +513,7 @@ async def test_async_push_agent_context_url_without_tenant_handle() -> None:
     url = await client.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
 
 
 async def test_async_push_agent_accepts_tools_json_as_normal_file_entry() -> None:
@@ -577,10 +559,7 @@ async def test_async_create_repo_swallows_conflict() -> None:
     url = await ctx.push_agent(
         "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
     )
-    assert (
-        url
-        == "https://smith.langchain.com/context/my-agent/abc12345"
-    )
+    assert url == "https://smith.langchain.com/context/my-agent/abc12345"
     assert client._arequest_with_retries.await_count == 3
 
 
