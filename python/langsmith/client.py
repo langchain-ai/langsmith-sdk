@@ -9725,7 +9725,8 @@ class Client:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return build_commit_url(self._host_url, name, commit_hash)
+        settings = self._get_settings()
+        return build_commit_url(self._host_url, name, commit_hash, settings.id)
 
     def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""
