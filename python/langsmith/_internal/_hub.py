@@ -12,16 +12,9 @@ PLATFORM_HUB = "/v1/platform/hub/repos"
 HUB = "/repos"
 
 
-def build_commit_url(host: str, owner: str, name: str, commit_hash: str) -> str:
+def build_commit_url(host: str, name: str, commit_hash: str) -> str:
     """Build the URL for a hub directory commit."""
-    return f"{host}/hub/{owner}/{name}:{commit_hash[:8]}"
-
-
-def resolve_owner_for_url(owner: str, tenant_handle: Optional[str]) -> str:
-    """Resolve internal owner sentinel to a user-visible owner in URLs."""
-    if owner == "-" and tenant_handle:
-        return tenant_handle
-    return owner
+    return f"{host}/context/{name}/{commit_hash[:8]}"
 
 
 def validate_parent_commit(parent_commit: Optional[str]) -> None:
