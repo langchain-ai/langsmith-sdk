@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Optional
+import io
+import os
+import posixpath
+import shlex
+import tarfile
+import uuid
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any, Optional, Union
 
 import httpx
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _profiles
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -31,12 +39,14 @@ from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
 
-def _get_default_api_endpoint() -> str:
+def _get_default_api_endpoint(api_url: Optional[str] = None) -> str:
     """Get the default sandbox API endpoint from environment.
 
     Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
     """
-    base = ls_utils.get_env_var("ENDPOINT", default="https://api.smith.langchain.com")
+    base = ls_utils.get_env_var(
+        "ENDPOINT", default=api_url or "https://api.smith.langchain.com"
+    )
     return f"{base.rstrip('/')}/v2/sandboxes"
 
 
@@ -46,6 +56,17 @@ def _get_default_api_key() -> Optional[str]:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
+
+
+def _make_docker_context_tar(context_path: Path) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for path in sorted(context_path.rglob("*")):
+            rel = path.relative_to(context_path)
+            if rel.parts and rel.parts[0] == ".git":
+                continue
+            tar.add(path, arcname=rel.as_posix(), recursive=False)
+    return buf.getvalue()
 
 
 class SandboxClient:
@@ -94,25 +115,64 @@ class SandboxClient:
                      and the ``/execute/ws`` WebSocket upgrade. Use this to pass
                      additional auth headers (e.g. ``X-Service-Key``).
         """
-        self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
-        resolved_api_key = api_key or _get_default_api_key()
+        profile_config = _profiles.load_profile_client_config()
+        self._base_url = (
+            api_endpoint or _get_default_api_endpoint(profile_config.api_url)
+        ).rstrip("/")
+        env_api_key = _get_default_api_key()
+        profile_auth_enabled = api_key is None and env_api_key is None
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
+        resolved_api_key = (
+            api_key
+            if api_key is not None
+            else env_api_key
+            if env_api_key is not None
+            else None
+            if use_profile_oauth
+            else profile_config.api_key
+        )
         self._api_key = resolved_api_key
-        self._default_headers: dict[str, str] = dict(headers) if headers else {}
-        client_headers: dict[str, str] = {}
-        if resolved_api_key:
-            client_headers["X-Api-Key"] = resolved_api_key
-        if self._default_headers:
-            client_headers = merge_headers(client_headers, self._default_headers)
+        self._default_headers = dict(headers or {})
+        self._profile_auth: Optional[_profiles.ProfileAuth] = None
+        self._profile_auth_headers: dict[str, str] = {}
+        if use_profile_oauth:
+            self._profile_auth = _profiles.ProfileAuth(
+                profile_config,
+                api_key_header="X-Api-Key",
+            )
+            self._profile_auth_headers = self._profile_auth.current_auth_headers()
+
         transport = RetryTransport(max_retries=max_retries)
         self._http = httpx.Client(
-            transport=transport, timeout=timeout, headers=client_headers
+            transport=transport, timeout=timeout, headers=self._http_default_headers()
         )
+
+    def _http_default_headers(self) -> dict[str, str]:
+        """Return client-level headers, including profile-managed auth."""
+        client_headers: dict[str, str] = {}
+        if self._api_key:
+            client_headers["X-Api-Key"] = self._api_key
+        elif self._profile_auth_headers:
+            client_headers.update(self._profile_auth_headers)
+        return merge_headers(client_headers, self._default_headers)
+
+    def _ensure_profile_auth(self) -> None:
+        if self._api_key or self._profile_auth is None:
+            return
+        self._profile_auth_headers = self._profile_auth.get_auth_headers()
+        self._http.headers = httpx.Headers(self._http_default_headers())
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge default client headers with per-request overrides."""
+        self._ensure_profile_auth()
         if headers is None:
             return None
-        return merge_headers(self._http.headers, headers)
+        request_headers = merge_headers(self._http.headers, headers)
+        if self._profile_auth is not None:
+            request_headers = self._profile_auth.prepare_request_headers(
+                request_headers
+            )
+        return request_headers
 
     def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge constructor-supplied default headers with per-request overrides.
@@ -120,9 +180,19 @@ class SandboxClient:
         Used by the WebSocket exec path so headers like ``X-Service-Key``
         set on the client are attached to the WS upgrade request.
         """
-        if not self._default_headers and headers is None:
+        self._ensure_profile_auth()
+        client_headers: dict[str, str] = {}
+        if self._api_key is None and self._profile_auth_headers:
+            client_headers.update(self._profile_auth_headers)
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
+        if headers is not None:
+            client_headers = merge_headers(client_headers, headers)
+        if self._profile_auth is not None:
+            client_headers = self._profile_auth.prepare_request_headers(client_headers)
+        if not client_headers:
             return None
-        return merge_headers(self._default_headers, headers)
+        return client_headers
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -574,7 +644,9 @@ class SandboxClient:
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
             )
             response.raise_for_status()
             return ServiceURL.from_dict(response.json(), _refresher=_refresher)
@@ -703,9 +775,14 @@ class SandboxClient:
     def create_snapshot(
         self,
         name: str,
-        docker_image: str,
-        fs_capacity_bytes: int,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         *,
+        dockerfile: Optional[Union[str, os.PathLike[str]]] = None,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
         registry_id: Optional[str] = None,
         registry_url: Optional[str] = None,
         registry_username: Optional[str] = None,
@@ -713,14 +790,25 @@ class SandboxClient:
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
-        """Build a snapshot from a Docker image.
+        """Build a snapshot from a Docker image or local Dockerfile context.
 
         Blocks until the snapshot is ready (polls with 2s interval).
 
         Args:
             name: Snapshot name.
             docker_image: Docker image to build from (e.g., "python:3.12-slim").
-            fs_capacity_bytes: Filesystem capacity in bytes.
+            fs_capacity_bytes: Filesystem capacity in bytes. Required for
+                ``docker_image`` snapshots. Optional for ``dockerfile`` snapshots;
+                when omitted, the builder sandbox uses the platform default and
+                the exported snapshot inherits that capacity.
+            dockerfile: Local Dockerfile path. When set, the SDK creates a
+                temporary builder sandbox, uploads ``context``, streams
+                ``docker build``, and exports the built image into the snapshot.
+                Mutually exclusive with ``docker_image``.
+            context: Local Docker build context directory for ``dockerfile``.
+            build_args: Docker build args passed as ``--build-arg``.
+            target: Optional Dockerfile target stage.
+            on_build_log: Callback for Docker build stdout/stderr chunks.
             registry_id: Private registry ID (alternative to URL/credentials).
             registry_url: Registry URL for private images.
             registry_username: Registry username.
@@ -735,6 +823,37 @@ class SandboxClient:
             ResourceCreationError: If snapshot build fails.
             SandboxClientError: For other errors.
         """
+        if dockerfile is not None:
+            if docker_image is not None:
+                raise ValueError("docker_image and dockerfile are mutually exclusive")
+            if any(
+                value is not None
+                for value in (
+                    registry_id,
+                    registry_url,
+                    registry_username,
+                    registry_password,
+                )
+            ):
+                raise ValueError(
+                    "registry options are only supported with docker_image"
+                )
+            return self._create_snapshot_from_dockerfile(
+                name=name,
+                dockerfile=dockerfile,
+                context=context,
+                fs_capacity_bytes=fs_capacity_bytes,
+                build_args=build_args,
+                target=target,
+                on_build_log=on_build_log,
+                timeout=timeout,
+                headers=headers,
+            )
+        if docker_image is None:
+            raise ValueError("docker_image is required when dockerfile is not set")
+        if fs_capacity_bytes is None:
+            raise ValueError("fs_capacity_bytes is required")
+
         url = f"{self._base_url}/snapshots"
 
         payload: dict[str, Any] = {
@@ -753,7 +872,10 @@ class SandboxClient:
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
+                timeout=timeout,
             )
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())
@@ -763,11 +885,126 @@ class SandboxClient:
 
         return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
 
+    def _create_snapshot_from_dockerfile(
+        self,
+        *,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        context: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: Optional[int],
+        build_args: Optional[Mapping[str, str]],
+        target: Optional[str],
+        on_build_log: Optional[Callable[[str], Any]],
+        timeout: int,
+        headers: RequestHeaders,
+    ) -> Snapshot:
+        context_path = Path(context).expanduser().resolve()
+        dockerfile_path = Path(dockerfile).expanduser()
+        if not dockerfile_path.is_absolute():
+            dockerfile_path = context_path / dockerfile_path
+        dockerfile_path = dockerfile_path.resolve()
+        if not context_path.is_dir():
+            raise ValueError(f"context must be a directory: {context_path}")
+        if not dockerfile_path.is_file():
+            raise ValueError(f"dockerfile must be a file: {dockerfile_path}")
+        try:
+            dockerfile_rel = dockerfile_path.relative_to(context_path)
+        except ValueError as exc:
+            raise ValueError("dockerfile must be inside context") from exc
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        remote_context = "/tmp/langsmith-docker-context"
+        remote_tar = "/tmp/langsmith-docker-context.tar"
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+
+        sandbox_kwargs: dict[str, Any] = {
+            "name": builder_name,
+            "timeout": timeout,
+            "headers": headers,
+        }
+        if fs_capacity_bytes is not None:
+            sandbox_kwargs["fs_capacity_bytes"] = fs_capacity_bytes
+
+        with self.sandbox(**sandbox_kwargs) as sandbox:
+            sandbox.write(
+                remote_tar,
+                _make_docker_context_tar(context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            sandbox.run(
+                "rm -rf "
+                + shlex.quote(remote_context)
+                + " && mkdir -p "
+                + shlex.quote(remote_context)
+                + " && tar -xf "
+                + shlex.quote(remote_tar)
+                + " -C "
+                + shlex.quote(remote_context),
+                timeout=timeout,
+                headers=headers,
+            )
+
+            dockerfile_remote = posixpath.join(
+                remote_context, dockerfile_rel.as_posix()
+            )
+            ready = sandbox.run(
+                "i=0; while ! timeout 5 docker ps >/dev/null 2>&1; do "
+                'i=$((i+1)); if [ "$i" -gt 300 ]; then '
+                "echo dockerd did not become ready >&2; exit 1; fi; sleep 1; done",
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if ready.exit_code != 0:
+                raise ResourceCreationError(
+                    "Docker daemon did not become ready",
+                    resource_type="snapshot",
+                )
+
+            command = [
+                "docker",
+                "build",
+                "-t",
+                image_ref,
+                "-f",
+                dockerfile_remote,
+            ]
+            if target is not None:
+                command.extend(["--target", target])
+            for key, value in (build_args or {}).items():
+                command.extend(["--build-arg", f"{key}={value}"])
+            command.append(remote_context)
+
+            result = sandbox.run(
+                shlex.join(command),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            capture_kwargs: dict[str, Any] = {
+                "docker_image": image_ref,
+                "timeout": timeout,
+                "headers": headers,
+            }
+            if fs_capacity_bytes is not None:
+                capture_kwargs["fs_capacity_bytes"] = fs_capacity_bytes
+            return self.capture_snapshot(sandbox.name, name, **capture_kwargs)
+
     def capture_snapshot(
         self,
         sandbox_name: str,
         name: str,
         *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -792,10 +1029,17 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
             response = self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+                url,
+                json=payload,
+                headers=self._request_headers(headers),
+                timeout=timeout,
             )
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())

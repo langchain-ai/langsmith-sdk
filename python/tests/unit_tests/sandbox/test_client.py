@@ -1,5 +1,6 @@
 """Tests for SandboxClient."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -14,13 +15,22 @@ from langsmith.sandbox import (
     SandboxClient,
     SandboxConnectionError,
     ServiceURL,
+    Snapshot,
 )
+from langsmith.sandbox._models import ExecutionResult
 
 
 @pytest.fixture
 def client():
     """Create a SandboxClient with retries disabled for test isolation."""
     return SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+
+
+@pytest.fixture(autouse=True)
+def isolate_profile_config(monkeypatch, tmp_path):
+    """Keep unit tests from using the developer machine's active profile."""
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(tmp_path / "missing-config.json"))
+    monkeypatch.delenv("LANGSMITH_PROFILE", raising=False)
 
 
 class TestSandboxClientInit:
@@ -72,6 +82,42 @@ class TestSandboxClientInit:
             client = SandboxClient(api_endpoint="http://explicit:8080")
             assert client._base_url == "http://explicit:8080"
             client.close()
+
+    def test_profile_config_uses_oauth_access_token(self, tmp_path, monkeypatch):
+        """Test local profile auth is used when env/constructor auth is absent."""
+        for env_var in (
+            "LANGCHAIN_API_KEY",
+            "LANGCHAIN_ENDPOINT",
+            "LANGSMITH_API_KEY",
+            "LANGSMITH_ENDPOINT",
+            "LANGSMITH_PROFILE",
+        ):
+            monkeypatch.delenv(env_var, raising=False)
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "current_profile": "local",
+                    "profiles": {
+                        "local": {
+                            "api_url": "http://profile.example.com",
+                            "oauth": {"access_token": "profile-access-token"},
+                        }
+                    },
+                }
+            )
+        )
+        monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+        client = SandboxClient(max_retries=0)
+
+        assert client._base_url == "http://profile.example.com/v2/sandboxes"
+        assert client._http.headers.get("Authorization") == (
+            "Bearer profile-access-token"
+        )
+        assert "X-Api-Key" not in client._http.headers
+        client.close()
 
     def test_api_key_from_parameter(self):
         """Test API key from parameter."""
@@ -132,6 +178,17 @@ class TestSandboxClientInit:
         }
         assert client._ws_default_headers({"X-Service-Key": "override"}) == {
             "X-Service-Key": "override"
+        }
+        client.close()
+
+    def test_ws_default_headers_includes_profile_auth(self):
+        """_ws_default_headers includes profile auth when no API key is set."""
+        client = SandboxClient(api_endpoint="http://localhost:8080", api_key="api-key")
+        client._api_key = None
+        client._profile_auth_headers = {"X-Api-Key": "profile-token"}
+        assert client._ws_default_headers({"X-Test": "v"}) == {
+            "X-Api-Key": "profile-token",
+            "X-Test": "v",
         }
         client.close()
 
@@ -935,6 +992,170 @@ class TestSnapshotOperations:
         assert snapshot.id == "snap-2"
         assert snapshot.status == "ready"
         assert snapshot.source_sandbox_id == "my-vm"
+
+    def test_capture_snapshot_from_docker_image(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test exporting a sandbox-local Docker image into a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-2",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+        )
+
+        snapshot = client.capture_snapshot(
+            "my-vm",
+            "captured",
+            docker_image="local-image:latest",
+            fs_capacity_bytes=4294967296,
+        )
+
+        req = httpx_mock.get_request(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+        )
+        assert req is not None
+        assert req.read() == (
+            b'{"name":"captured","docker_image":"local-image:latest",'
+            b'"fs_capacity_bytes":4294967296}'
+        )
+        assert snapshot.id == "snap-2"
+        assert snapshot.status == "ready"
+        assert snapshot.docker_image == "local-image:latest"
+
+    def test_create_snapshot_from_dockerfile_orchestrates(
+        self, client: SandboxClient, tmp_path
+    ):
+        """Test Dockerfile snapshot wrapper syncs, builds, and finalizes."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM scratch\nCOPY hello.txt /hello.txt\n"
+        )
+        (tmp_path / "hello.txt").write_text("hello")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __init__(self):
+                self.writes = []
+                self.commands = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                self.writes.append((path, content, kwargs))
+
+            def run(self, command, **kwargs):
+                self.commands.append((command, kwargs))
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        fake_sandbox = FakeSandbox()
+
+        with (
+            patch.object(client, "sandbox", return_value=fake_sandbox) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=4294967296,
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            snapshot = client.create_snapshot(
+                "snap",
+                dockerfile="Dockerfile",
+                context=tmp_path,
+            )
+
+        sandbox_mock.assert_called_once()
+        assert "fs_capacity_bytes" not in sandbox_mock.call_args.kwargs
+        assert fake_sandbox.writes[0][0] == "/tmp/langsmith-docker-context.tar"
+        assert fake_sandbox.writes[0][1] == b"tar"
+        assert "tar -xf" in fake_sandbox.commands[0][0]
+        assert "docker ps" in fake_sandbox.commands[1][0]
+        assert "docker build" in fake_sandbox.commands[2][0]
+        capture_mock.assert_called_once()
+        assert capture_mock.call_args.kwargs["docker_image"].startswith(
+            "langsmith-snapshot-build:"
+        )
+        assert "fs_capacity_bytes" not in capture_mock.call_args.kwargs
+        assert snapshot.id == "snap-1"
+
+    def test_create_snapshot_from_dockerfile_forwards_capacity(
+        self, client: SandboxClient, tmp_path
+    ):
+        """Test Dockerfile snapshot wrapper forwards explicit capacity."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                return None
+
+            def run(self, command, **kwargs):
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        with (
+            patch.object(client, "sandbox", return_value=FakeSandbox()) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=8589934592,
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            client.create_snapshot(
+                "snap",
+                dockerfile="Dockerfile",
+                context=tmp_path,
+                fs_capacity_bytes=8589934592,
+            )
+
+        assert sandbox_mock.call_args.kwargs["fs_capacity_bytes"] == 8589934592
+        assert capture_mock.call_args.kwargs["fs_capacity_bytes"] == 8589934592
 
     def test_capture_snapshot_not_found(
         self, client: SandboxClient, httpx_mock: HTTPXMock
