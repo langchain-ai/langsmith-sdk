@@ -924,20 +924,20 @@ class SandboxClient:
                 "--oci-worker-binary buildkit-runc "
                 f"> {shlex.quote(buildkit_run + '/buildkitd.log')} 2>&1 &\n"
                 "buildkitd_pid=$!\n"
-                "cleanup() { kill \"$buildkitd_pid\" >/dev/null 2>&1 || true; }\n"
+                'cleanup() { kill "$buildkitd_pid" >/dev/null 2>&1 || true; }\n'
                 "trap cleanup EXIT\n"
                 "for i in $(seq 1 300); do\n"
                 f"  if buildctl --addr {shlex.quote('unix://' + socket_path)} "
                 "debug workers >/dev/null 2>&1; then break; fi\n"
-                "  if ! kill -0 \"$buildkitd_pid\" >/dev/null 2>&1; then "
+                '  if ! kill -0 "$buildkitd_pid" >/dev/null 2>&1; then '
                 f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
-                "  if [ \"$i\" = 300 ]; then "
+                '  if [ "$i" = 300 ]; then '
                 f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
                 "  sleep 0.1\n"
                 "done\n"
                 "for i in $(seq 1 300); do\n"
                 "  if docker info >/dev/null 2>&1; then break; fi\n"
-                "  if [ \"$i\" = 300 ]; then docker info; exit 1; fi\n"
+                '  if [ "$i" = 300 ]; then docker info; exit 1; fi\n'
                 "  sleep 0.1\n"
                 "done\n"
                 f"{shlex.join(buildctl)} | docker load\n"

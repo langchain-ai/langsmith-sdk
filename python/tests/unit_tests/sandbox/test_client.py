@@ -1051,8 +1051,7 @@ class TestSnapshotOperations:
             )
         ]
         assert (
-            "tar -xf /tmp/langsmith-docker-context.tar"
-            in fake_sandbox.commands[0][0]
+            "tar -xf /tmp/langsmith-docker-context.tar" in fake_sandbox.commands[0][0]
         )
         assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
         assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
