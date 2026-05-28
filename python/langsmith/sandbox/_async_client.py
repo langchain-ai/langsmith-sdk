@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from typing import Any, Optional
+import os
+import uuid
+from collections.abc import Callable, Mapping
+from typing import Any, Optional, Union
 
 import httpx
 
 from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
+from langsmith.sandbox._client import (
+    _make_docker_context_tar,
+    _make_dockerfile_build_command,
+    _resolve_dockerfile_context,
+)
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -784,11 +791,90 @@ class AsyncSandboxClient:
             snapshot.id, timeout=timeout, headers=headers
         )
 
+    async def create_snapshot_from_dockerfile(
+        self,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: int,
+        *,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a local Dockerfile context."""
+        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        remote_context = "/tmp/langsmith-docker-context"
+        remote_tar = "/tmp/langsmith-docker-context.tar"
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+        buildkit_root = f"/tmp/langsmith-buildkit-root-{uuid.uuid4().hex[:12]}"
+        buildkit_run = f"/tmp/langsmith-buildkit-run-{uuid.uuid4().hex[:12]}"
+
+        async with await self.sandbox(
+            name=builder_name,
+            timeout=timeout,
+            fs_capacity_bytes=fs_capacity_bytes,
+            headers=headers,
+        ) as sandbox:
+            await sandbox.write(
+                remote_tar,
+                await asyncio.to_thread(_make_docker_context_tar, context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            await sandbox.run(
+                "rm -rf "
+                + remote_context
+                + " && mkdir -p "
+                + remote_context
+                + " && tar -xf "
+                + remote_tar
+                + " -C "
+                + remote_context,
+                timeout=timeout,
+                headers=headers,
+            )
+
+            result = await sandbox.run(
+                _make_dockerfile_build_command(
+                    remote_context=remote_context,
+                    dockerfile_rel=dockerfile_rel,
+                    image_ref=image_ref,
+                    buildkit_root=buildkit_root,
+                    buildkit_run=buildkit_run,
+                    build_args=build_args,
+                    target=target,
+                ),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            return await self.capture_snapshot(
+                sandbox.name,
+                name,
+                docker_image=image_ref,
+                fs_capacity_bytes=fs_capacity_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+
     async def capture_snapshot(
         self,
         sandbox_name: str,
         name: str,
         *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -813,6 +899,10 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
             response = await self._http.post(
