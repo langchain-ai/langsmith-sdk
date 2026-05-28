@@ -590,7 +590,7 @@ class CommandHandle:
                 )
                 self._exhausted = True
                 return
-        self._exhausted = True
+        raise SandboxConnectionError("Command stream ended without exit message")
 
     def __iter__(self) -> Iterator[OutputChunk]:
         """Iterate over output chunks, auto-reconnecting on transient errors.
@@ -837,7 +837,7 @@ class AsyncCommandHandle:
                 )
                 self._exhausted = True
                 return
-        self._exhausted = True
+        raise SandboxConnectionError("Command stream ended without exit message")
 
     async def __aiter__(self) -> AsyncIterator[OutputChunk]:
         """Async iterate with auto-reconnect on transient errors."""
