@@ -14,7 +14,9 @@ from langsmith.sandbox import (
     SandboxClient,
     SandboxConnectionError,
     ServiceURL,
+    Snapshot,
 )
+from langsmith.sandbox._models import ExecutionResult
 
 
 @pytest.fixture
@@ -935,6 +937,132 @@ class TestSnapshotOperations:
         assert snapshot.id == "snap-2"
         assert snapshot.status == "ready"
         assert snapshot.source_sandbox_id == "my-vm"
+
+    def test_capture_snapshot_from_docker_image(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test exporting a sandbox-local Docker image into a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-2",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+        )
+
+        snapshot = client.capture_snapshot(
+            "my-vm",
+            "captured",
+            docker_image="local-image:latest",
+            fs_capacity_bytes=4294967296,
+        )
+
+        req = httpx_mock.get_request(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+        )
+        assert req is not None
+        assert req.read() == (
+            b'{"name":"captured","docker_image":"local-image:latest",'
+            b'"fs_capacity_bytes":4294967296}'
+        )
+        assert snapshot.id == "snap-2"
+        assert snapshot.status == "ready"
+        assert snapshot.docker_image == "local-image:latest"
+
+    def test_create_snapshot_from_dockerfile_orchestrates(
+        self, client: SandboxClient, tmp_path
+    ):
+        """Test Dockerfile snapshot wrapper syncs, builds, and finalizes."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM scratch\nCOPY hello.txt /hello.txt\n"
+        )
+        (tmp_path / "hello.txt").write_text("hello")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __init__(self):
+                self.writes = []
+                self.commands = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                self.writes.append((path, content, kwargs))
+
+            def run(self, command, **kwargs):
+                self.commands.append((command, kwargs))
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        fake_sandbox = FakeSandbox()
+
+        with (
+            patch.object(client, "sandbox", return_value=fake_sandbox) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=4294967296,
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            snapshot = client.create_snapshot(
+                "snap",
+                dockerfile="Dockerfile",
+                context=tmp_path,
+                fs_capacity_bytes=4294967296,
+            )
+
+        assert snapshot.id == "snap-1"
+        sandbox_mock.assert_called_once()
+        assert fake_sandbox.writes == [
+            (
+                "/tmp/langsmith-docker-context.tar",
+                b"tar",
+                {"timeout": 60, "headers": None},
+            )
+        ]
+        assert (
+            "tar -xf /tmp/langsmith-docker-context.tar"
+            in fake_sandbox.commands[0][0]
+        )
+        assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
+        assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
+        assert "| docker load" in fake_sandbox.commands[1][0]
+        capture_mock.assert_called_once()
+        _, args, kwargs = capture_mock.mock_calls[0]
+        assert args[0] == "builder"
+        assert args[1] == "snap"
+        assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
+        assert kwargs["fs_capacity_bytes"] == 4294967296
 
     def test_capture_snapshot_not_found(
         self, client: SandboxClient, httpx_mock: HTTPXMock
