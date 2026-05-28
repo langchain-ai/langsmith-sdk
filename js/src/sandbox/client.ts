@@ -7,7 +7,6 @@ import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import type {
   CaptureSnapshotOptions,
-  CreateDockerfileSnapshotOptions,
   CreateSandboxOptions,
   CreateSnapshotOptions,
   ListSnapshotsOptions,
@@ -34,7 +33,6 @@ import {
   handleSandboxCreationError,
   validateTtl,
 } from "./helpers.js";
-import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 
 /**
  * Sleep that can be interrupted by an AbortSignal.
@@ -44,18 +42,17 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
-  const abortSignal = signal;
-  abortSignal.throwIfAborted();
+  signal.throwIfAborted();
   return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
-      abortSignal.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
     function onAbort() {
       clearTimeout(timer);
-      reject(abortSignal.reason);
+      reject(signal!.reason);
     }
-    abortSignal.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -76,255 +73,6 @@ function getDefaultApiEndpoint(): string {
  */
 function getDefaultApiKey(): string | undefined {
   return getLangSmithEnvironmentVariable("API_KEY");
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function writeString(
-  header: Buffer,
-  value: string,
-  offset: number,
-  length: number,
-): void {
-  header.write(value.slice(0, length), offset, length, "utf8");
-}
-
-function writeOctal(
-  header: Buffer,
-  value: number,
-  offset: number,
-  length: number,
-): void {
-  const octal = value.toString(8).padStart(length - 1, "0");
-  header.write(octal.slice(-length + 1) + "\0", offset, length, "ascii");
-}
-
-function splitTarPath(name: string): { name: string; prefix: string } {
-  if (Buffer.byteLength(name) <= 100) {
-    return { name, prefix: "" };
-  }
-  const parts = name.split("/");
-  for (let i = 1; i < parts.length; i += 1) {
-    const prefix = parts.slice(0, i).join("/");
-    const basename = parts.slice(i).join("/");
-    if (
-      Buffer.byteLength(prefix) <= 155 &&
-      Buffer.byteLength(basename) <= 100
-    ) {
-      return { name: basename, prefix };
-    }
-  }
-  throw new Error(`Docker build context path is too long for tar: ${name}`);
-}
-
-function makeTarHeader(args: {
-  name: string;
-  mode: number;
-  size: number;
-  type: "file" | "directory" | "symlink";
-  linkName?: string;
-  mtimeMs: number;
-}): Buffer {
-  const header = Buffer.alloc(512, 0);
-  const split = splitTarPath(args.name);
-  writeString(header, split.name, 0, 100);
-  writeOctal(header, args.mode, 100, 8);
-  writeOctal(header, 0, 108, 8);
-  writeOctal(header, 0, 116, 8);
-  writeOctal(header, args.size, 124, 12);
-  writeOctal(header, Math.floor(args.mtimeMs / 1000), 136, 12);
-  header.fill(" ", 148, 156);
-  writeString(
-    header,
-    args.type === "directory" ? "5" : args.type === "symlink" ? "2" : "0",
-    156,
-    1,
-  );
-  if (args.linkName) {
-    writeString(header, args.linkName, 157, 100);
-  }
-  writeString(header, "ustar", 257, 6);
-  writeString(header, "00", 263, 2);
-  if (split.prefix) {
-    writeString(header, split.prefix, 345, 155);
-  }
-  let checksum = 0;
-  for (const byte of header) {
-    checksum += byte;
-  }
-  header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, 8, "ascii");
-  return header;
-}
-
-async function makeDockerContextTar(contextPath: string): Promise<Uint8Array> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const contextRoot = path.resolve(contextPath);
-  const chunks: Buffer[] = [];
-
-  async function addEntry(absPath: string): Promise<void> {
-    const rel = path.relative(contextRoot, absPath);
-    if (!rel || rel.split(path.sep).includes(".git")) {
-      return;
-    }
-    const tarPath = rel.split(path.sep).join("/");
-    const stat = await fs.lstat(absPath);
-    if (stat.isDirectory()) {
-      chunks.push(
-        makeTarHeader({
-          name: tarPath.endsWith("/") ? tarPath : `${tarPath}/`,
-          mode: stat.mode & 0o777,
-          size: 0,
-          type: "directory",
-          mtimeMs: stat.mtimeMs,
-        }),
-      );
-      const entries = await fs.readdir(absPath);
-      for (const entry of entries.sort()) {
-        await addEntry(path.join(absPath, entry));
-      }
-      return;
-    }
-    if (stat.isSymbolicLink()) {
-      chunks.push(
-        makeTarHeader({
-          name: tarPath,
-          mode: stat.mode & 0o777,
-          size: 0,
-          type: "symlink",
-          linkName: await fs.readlink(absPath),
-          mtimeMs: stat.mtimeMs,
-        }),
-      );
-      return;
-    }
-    if (!stat.isFile()) {
-      return;
-    }
-    const content = await fs.readFile(absPath);
-    chunks.push(
-      makeTarHeader({
-        name: tarPath,
-        mode: stat.mode & 0o777,
-        size: content.byteLength,
-        type: "file",
-        mtimeMs: stat.mtimeMs,
-      }),
-      content,
-    );
-    const padding = (512 - (content.byteLength % 512)) % 512;
-    if (padding) {
-      chunks.push(Buffer.alloc(padding, 0));
-    }
-  }
-
-  const rootEntries = await fs.readdir(contextRoot);
-  for (const entry of rootEntries.sort()) {
-    await addEntry(path.join(contextRoot, entry));
-  }
-  chunks.push(Buffer.alloc(1024, 0));
-  return new Uint8Array(Buffer.concat(chunks));
-}
-
-async function resolveDockerfileContext(
-  dockerfile: string,
-  context: string,
-): Promise<{ contextPath: string; dockerfileRel: string }> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const contextPath = path.resolve(context);
-  const dockerfilePath = path.resolve(contextPath, dockerfile);
-  const contextStat = await fs.stat(contextPath);
-  if (!contextStat.isDirectory()) {
-    throw new Error(`context must be a directory: ${contextPath}`);
-  }
-  const dockerfileStat = await fs.stat(dockerfilePath);
-  if (!dockerfileStat.isFile()) {
-    throw new Error(`dockerfile must be a file: ${dockerfilePath}`);
-  }
-  const dockerfileRel = path.relative(contextPath, dockerfilePath);
-  if (
-    dockerfileRel === "" ||
-    dockerfileRel.startsWith("..") ||
-    path.isAbsolute(dockerfileRel)
-  ) {
-    throw new Error("dockerfile must be inside context");
-  }
-  return {
-    contextPath,
-    dockerfileRel: dockerfileRel.split(path.sep).join("/"),
-  };
-}
-
-function makeDockerfileBuildCommand(args: {
-  remoteContext: string;
-  dockerfileRel: string;
-  imageRef: string;
-  buildkitRoot: string;
-  buildkitRun: string;
-  buildArgs?: Record<string, string>;
-  target?: string;
-}): string {
-  const dockerfileRemote = `${args.remoteContext}/${args.dockerfileRel}`;
-  const dockerfileDir = dockerfileRemote.split("/").slice(0, -1).join("/");
-  const dockerfileName = dockerfileRemote.split("/").at(-1) ?? "Dockerfile";
-  const socketPath = `${args.buildkitRun}/buildkitd.sock`;
-  const buildctl = [
-    "buildctl",
-    "--addr",
-    `unix://${socketPath}`,
-    "build",
-    "--progress=plain",
-    "--frontend",
-    "dockerfile.v0",
-    "--local",
-    `context=${args.remoteContext}`,
-    "--local",
-    `dockerfile=${dockerfileDir}`,
-    "--opt",
-    `filename=${dockerfileName}`,
-    "--output",
-    `type=docker,name=${args.imageRef}`,
-  ];
-  if (args.target !== undefined) {
-    buildctl.push("--opt", `target=${args.target}`);
-  }
-  for (const [key, value] of Object.entries(args.buildArgs ?? {}).sort()) {
-    buildctl.push("--opt", `build-arg:${key}=${value}`);
-  }
-  return [
-    "set -euo pipefail",
-    `mkdir -p ${shellQuote(args.buildkitRoot)} ${shellQuote(args.buildkitRun)}`,
-    `buildkitd --addr ${shellQuote(`unix://${socketPath}`)} --root ${shellQuote(
-      args.buildkitRoot,
-    )} --oci-worker=true --containerd-worker=false --oci-worker-snapshotter=native --oci-worker-binary buildkit-runc > ${shellQuote(
-      `${args.buildkitRun}/buildkitd.log`,
-    )} 2>&1 &`,
-    "buildkitd_pid=$!",
-    'cleanup() { kill "$buildkitd_pid" >/dev/null 2>&1 || true; }',
-    "trap cleanup EXIT",
-    "for i in $(seq 1 300); do",
-    `  if buildctl --addr ${shellQuote(
-      `unix://${socketPath}`,
-    )} debug workers >/dev/null 2>&1; then break; fi`,
-    `  if ! kill -0 "$buildkitd_pid" >/dev/null 2>&1; then cat ${shellQuote(
-      `${args.buildkitRun}/buildkitd.log`,
-    )}; exit 1; fi`,
-    `  if [ "$i" = 300 ]; then cat ${shellQuote(
-      `${args.buildkitRun}/buildkitd.log`,
-    )}; exit 1; fi`,
-    "  sleep 0.1",
-    "done",
-    "for i in $(seq 1 300); do",
-    "  if docker info >/dev/null 2>&1; then break; fi",
-    '  if [ "$i" = 300 ]; then docker info; exit 1; fi',
-    "  sleep 0.1",
-    "done",
-    `${buildctl.map(shellQuote).join(" ")} | docker load`,
-    "",
-  ].join("\n");
 }
 
 /**
@@ -904,100 +652,6 @@ export class SandboxClient {
   }
 
   /**
-   * Build a snapshot from a local Dockerfile context.
-   *
-   * Creates a temporary builder sandbox, uploads the Docker build context,
-   * runs BuildKit inside the sandbox, and captures the built image as a
-   * LangSmith snapshot.
-   *
-   * @param name - Snapshot name.
-   * @param dockerfile - Local Dockerfile path, relative to context by default.
-   * @param fsCapacityBytes - Filesystem capacity in bytes.
-   * @param options - Build context, args, target, build log callback, timeout.
-   * @returns Snapshot in "ready" status.
-   */
-  async createSnapshotFromDockerfile(
-    name: string,
-    dockerfile: string,
-    fsCapacityBytes: number,
-    options: CreateDockerfileSnapshotOptions = {},
-  ): Promise<Snapshot> {
-    const {
-      context = ".",
-      buildArgs,
-      target,
-      onBuildLog,
-      timeout = 60,
-    } = options;
-    const { contextPath, dockerfileRel } = await resolveDockerfileContext(
-      dockerfile,
-      context,
-    );
-
-    const builderName = `snapshot-builder-${uuidv4().replace(/-/g, "").slice(0, 12)}`;
-    const remoteContext = "/tmp/langsmith-docker-context";
-    const remoteTar = "/tmp/langsmith-docker-context.tar";
-    const imageRef = `langsmith-snapshot-build:${uuidv4().replace(/-/g, "")}`;
-    const buildkitRoot = `/tmp/langsmith-buildkit-root-${uuidv4()
-      .replace(/-/g, "")
-      .slice(0, 12)}`;
-    const buildkitRun = `/tmp/langsmith-buildkit-run-${uuidv4()
-      .replace(/-/g, "")
-      .slice(0, 12)}`;
-
-    const builder = await this.createSandbox({
-      name: builderName,
-      timeout,
-      fsCapacityBytes,
-    });
-    try {
-      await builder.write(
-        remoteTar,
-        await makeDockerContextTar(contextPath),
-        timeout,
-      );
-      await builder.run(
-        [
-          `rm -rf ${shellQuote(remoteContext)}`,
-          `mkdir -p ${shellQuote(remoteContext)}`,
-          `tar -xf ${shellQuote(remoteTar)} -C ${shellQuote(remoteContext)}`,
-        ].join(" && "),
-        { timeout },
-      );
-
-      const result = await builder.run(
-        makeDockerfileBuildCommand({
-          remoteContext,
-          dockerfileRel,
-          imageRef,
-          buildkitRoot,
-          buildkitRun,
-          buildArgs,
-          target,
-        }),
-        {
-          timeout,
-          onStdout: onBuildLog,
-          onStderr: onBuildLog,
-        },
-      );
-      if (result.exit_code !== 0) {
-        throw new LangSmithResourceCreationError(
-          "Dockerfile snapshot build failed",
-          "snapshot",
-        );
-      }
-      return await this.captureSnapshot(builder.name, name, {
-        dockerImage: imageRef,
-        fsCapacityBytes,
-        timeout,
-      });
-    } finally {
-      await builder.delete();
-    }
-  }
-
-  /**
    * Capture a snapshot from a running sandbox.
    *
    * Blocks until the snapshot is ready (polls with 2s interval).
@@ -1012,18 +666,12 @@ export class SandboxClient {
     name: string,
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const { dockerImage, fsCapacityBytes, timeout = 60, signal } = options;
+    const { timeout = 60, signal } = options;
     const url = `${this._baseUrl}/boxes/${encodeURIComponent(
       sandboxName,
     )}/snapshot`;
 
     const payload: Record<string, unknown> = { name };
-    if (dockerImage !== undefined) {
-      payload.docker_image = dockerImage;
-    }
-    if (fsCapacityBytes !== undefined) {
-      payload.fs_capacity_bytes = fsCapacityBytes;
-    }
 
     const response = await this._postJson(url, payload, { signal });
     const snapshot = (await response.json()) as Snapshot;

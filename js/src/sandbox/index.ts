@@ -48,7 +48,6 @@ export type {
   SandboxAccessControl,
   SandboxProxyConfig,
   CreateSnapshotOptions,
-  CreateDockerfileSnapshotOptions,
   CaptureSnapshotOptions,
   ListSnapshotsOptions,
   WaitForSnapshotOptions,
