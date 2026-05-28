@@ -1034,11 +1034,11 @@ class TestSnapshotOperations:
                 return_value=b"tar",
             ),
         ):
-            snapshot = client.create_snapshot(
+            snapshot = client.create_snapshot_from_dockerfile(
                 "snap",
-                dockerfile="Dockerfile",
+                "Dockerfile",
+                4294967296,
                 context=tmp_path,
-                fs_capacity_bytes=4294967296,
             )
 
         assert snapshot.id == "snap-1"

@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspect } from "node:util";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
@@ -1314,6 +1317,84 @@ describe("SandboxClient - snapshot operations", () => {
     expect(snapshot.id).toBe("snap-1");
     expect(snapshot.status).toBe("ready");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const writes: unknown[] = [];
+    const commands: string[] = [];
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockImplementation(async (path, content) => {
+          writes.push([path, content]);
+        }),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockImplementation(async (command) => {
+          commands.push(command);
+          return { stdout: "", stderr: "", exit_code: 0 };
+        }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const mockSnapshot = {
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    const captureSnapshotSpy = jest
+      .spyOn(client, "captureSnapshot")
+      .mockResolvedValue(mockSnapshot);
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      const snapshot = await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        { context },
+      );
+
+      expect(snapshot).toEqual(mockSnapshot);
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: expect.stringMatching(/^snapshot-builder-/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      expect(writes[0]).toEqual([
+        "/tmp/langsmith-docker-context.tar",
+        expect.any(Uint8Array),
+      ]);
+      expect(commands[0]).toContain("tar -xf");
+      expect(commands[0]).toContain("/tmp/langsmith-docker-context.tar");
+      expect(commands[1]).toContain("--frontend");
+      expect(commands[1]).toContain("dockerfile.v0");
+      expect(commands[1]).toContain("docker info >/dev/null 2>&1");
+      expect(commands[1]).toContain("| docker load");
+      expect(captureSnapshotSpy).toHaveBeenCalledWith(
+        "builder",
+        "snap",
+        expect.objectContaining({
+          dockerImage: expect.stringMatching(/^langsmith-snapshot-build:/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      expect(fakeSandbox.delete).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
   });
 
   it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {
