@@ -274,7 +274,7 @@ class TestCommandHandle:
         with pytest.raises(SandboxOperationError, match="before 'started'"):
             CommandHandle(stream, None, sandbox)
 
-    def test_stream_ends_without_exit(self):
+    def test_stream_end_without_exit_reconnects(self):
         stream = _make_stream(
             [
                 _started_msg(),
@@ -282,10 +282,22 @@ class TestCommandHandle:
             ]
         )
         sandbox = self._make_sandbox_mock()
+        reconnect_handle = MagicMock()
+        reconnect_handle._stream = _make_stream([_exit_msg(0)])
+        reconnect_handle._control = None
+        sandbox.reconnect.return_value = reconnect_handle
         handle = CommandHandle(stream, None, sandbox)
-        list(handle)  # Exhaust
-        with pytest.raises(SandboxOperationError, match="without exit"):
-            _ = handle.result
+        with patch("time.sleep") as mock_sleep:
+            chunks = list(handle)
+        assert [chunk.data for chunk in chunks] == ["data"]
+        assert handle.result.stdout == "data"
+        assert handle.result.exit_code == 0
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123",
+            stdout_offset=len("data".encode("utf-8")),
+            stderr_offset=0,
+        )
+        mock_sleep.assert_called_once_with(0.5)
 
     def test_kill(self):
         ctrl = _WSStreamControl()

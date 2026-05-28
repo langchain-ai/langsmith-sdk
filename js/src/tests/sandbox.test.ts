@@ -1090,18 +1090,35 @@ describe("CommandHandle", () => {
       expect(result.exit_code).toBe(0);
     });
 
-    it("should throw if stream ends without exit message", async () => {
+    it("should reconnect if stream ends without exit message", async () => {
       const stream = createMockStream([
         { type: "started", command_id: "cmd-123", pid: 42 },
         { type: "stdout", data: "hello\n", offset: 0 },
       ]);
 
-      const handle = new CommandHandle(stream, null, createMockSandbox());
-      await handle._ensureStarted();
+      const sandbox = createMockSandbox();
+      const reconnectHandle = {
+        _stream: createMockStream([{ type: "exit", exit_code: 0 }]),
+        _control: null,
+      };
+      (sandbox.reconnect as any).mockResolvedValue(reconnectHandle);
 
-      await expect(handle.result).rejects.toThrow(
-        "Command stream ended without exit message",
-      );
+      const handle = new CommandHandle(stream, null, sandbox);
+      await handle._ensureStarted();
+      const backoffBase = CommandHandle.BACKOFF_BASE;
+      CommandHandle.BACKOFF_BASE = 0;
+      try {
+        const result = await handle.result;
+
+        expect(result.stdout).toBe("hello\n");
+        expect(result.exit_code).toBe(0);
+        expect(sandbox.reconnect).toHaveBeenCalledWith("cmd-123", {
+          stdoutOffset: 6,
+          stderrOffset: 0,
+        });
+      } finally {
+        CommandHandle.BACKOFF_BASE = backoffBase;
+      }
     });
   });
 
