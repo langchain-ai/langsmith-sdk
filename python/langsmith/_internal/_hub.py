@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional
+from urllib.parse import urlencode
 
 from langsmith import utils as ls_utils
 
@@ -12,9 +13,12 @@ PLATFORM_HUB = "/v1/platform/hub/repos"
 HUB = "/repos"
 
 
-def build_commit_url(host: str, name: str, commit_hash: str) -> str:
+def build_commit_url(
+    host: str, name: str, commit_hash: str, organization_id: str
+) -> str:
     """Build the URL for a hub directory commit."""
-    return f"{host}/context/{name}/{commit_hash[:8]}"
+    query = urlencode({"organizationId": organization_id})
+    return f"{host}/context/{name}/{commit_hash[:8]}?{query}"
 
 
 def validate_parent_commit(parent_commit: Optional[str]) -> None:
