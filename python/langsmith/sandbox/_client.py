@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Optional
+import io
+import os
+import posixpath
+import shlex
+import tarfile
+import uuid
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any, Optional, Union
 
 import httpx
 
@@ -46,6 +53,102 @@ def _get_default_api_key() -> Optional[str]:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
+
+
+def _make_docker_context_tar(context_path: Path) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for path in sorted(context_path.rglob("*")):
+            rel = path.relative_to(context_path)
+            if rel.parts and rel.parts[0] == ".git":
+                continue
+            tar.add(path, arcname=rel.as_posix(), recursive=False)
+    return buf.getvalue()
+
+
+def _resolve_dockerfile_context(
+    dockerfile: Union[str, os.PathLike[str]],
+    context: Union[str, os.PathLike[str]],
+) -> tuple[Path, str]:
+    context_path = Path(context).expanduser().resolve()
+    dockerfile_path = Path(dockerfile).expanduser()
+    if not dockerfile_path.is_absolute():
+        dockerfile_path = context_path / dockerfile_path
+    dockerfile_path = dockerfile_path.resolve()
+    if not context_path.is_dir():
+        raise ValueError(f"context must be a directory: {context_path}")
+    if not dockerfile_path.is_file():
+        raise ValueError(f"dockerfile must be a file: {dockerfile_path}")
+    try:
+        dockerfile_rel = dockerfile_path.relative_to(context_path)
+    except ValueError as exc:
+        raise ValueError("dockerfile must be inside context") from exc
+    return context_path, dockerfile_rel.as_posix()
+
+
+def _make_dockerfile_build_command(
+    *,
+    remote_context: str,
+    dockerfile_rel: str,
+    image_ref: str,
+    buildkit_root: str,
+    buildkit_run: str,
+    build_args: Optional[Mapping[str, str]],
+    target: Optional[str],
+) -> str:
+    dockerfile_remote = posixpath.join(remote_context, dockerfile_rel)
+    dockerfile_dir = posixpath.dirname(dockerfile_remote)
+    dockerfile_name = posixpath.basename(dockerfile_remote)
+    socket_path = posixpath.join(buildkit_run, "buildkitd.sock")
+    buildctl = [
+        "buildctl",
+        "--addr",
+        "unix://" + socket_path,
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--local",
+        "context=" + remote_context,
+        "--local",
+        "dockerfile=" + dockerfile_dir,
+        "--opt",
+        "filename=" + dockerfile_name,
+        "--output",
+        "type=docker,name=" + image_ref,
+    ]
+    if target is not None:
+        buildctl.extend(["--opt", "target=" + target])
+    for key, value in sorted((build_args or {}).items()):
+        buildctl.extend(["--opt", f"build-arg:{key}={value}"])
+    return (
+        "set -euo pipefail\n"
+        f"mkdir -p {shlex.quote(buildkit_root)} {shlex.quote(buildkit_run)}\n"
+        f"buildkitd --addr {shlex.quote('unix://' + socket_path)} "
+        f"--root {shlex.quote(buildkit_root)} "
+        "--oci-worker=true --containerd-worker=false "
+        "--oci-worker-snapshotter=native "
+        "--oci-worker-binary buildkit-runc "
+        f"> {shlex.quote(buildkit_run + '/buildkitd.log')} 2>&1 &\n"
+        "buildkitd_pid=$!\n"
+        'cleanup() { kill "$buildkitd_pid" >/dev/null 2>&1 || true; }\n'
+        "trap cleanup EXIT\n"
+        "for i in $(seq 1 300); do\n"
+        f"  if buildctl --addr {shlex.quote('unix://' + socket_path)} "
+        "debug workers >/dev/null 2>&1; then break; fi\n"
+        '  if ! kill -0 "$buildkitd_pid" >/dev/null 2>&1; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        '  if [ "$i" = 300 ]; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        "  sleep 0.1\n"
+        "done\n"
+        "for i in $(seq 1 300); do\n"
+        "  if docker info >/dev/null 2>&1; then break; fi\n"
+        '  if [ "$i" = 300 ]; then docker info; exit 1; fi\n'
+        "  sleep 0.1\n"
+        "done\n"
+        f"{shlex.join(buildctl)} | docker load\n"
+    )
 
 
 class SandboxClient:
@@ -763,11 +866,90 @@ class SandboxClient:
 
         return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
 
+    def create_snapshot_from_dockerfile(
+        self,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: int,
+        *,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a local Dockerfile context."""
+        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        remote_context = "/tmp/langsmith-docker-context"
+        remote_tar = "/tmp/langsmith-docker-context.tar"
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+        buildkit_root = f"/tmp/langsmith-buildkit-root-{uuid.uuid4().hex[:12]}"
+        buildkit_run = f"/tmp/langsmith-buildkit-run-{uuid.uuid4().hex[:12]}"
+
+        with self.sandbox(
+            name=builder_name,
+            timeout=timeout,
+            fs_capacity_bytes=fs_capacity_bytes,
+            headers=headers,
+        ) as sandbox:
+            sandbox.write(
+                remote_tar,
+                _make_docker_context_tar(context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            sandbox.run(
+                "rm -rf "
+                + shlex.quote(remote_context)
+                + " && mkdir -p "
+                + shlex.quote(remote_context)
+                + " && tar -xf "
+                + shlex.quote(remote_tar)
+                + " -C "
+                + shlex.quote(remote_context),
+                timeout=timeout,
+                headers=headers,
+            )
+
+            result = sandbox.run(
+                _make_dockerfile_build_command(
+                    remote_context=remote_context,
+                    dockerfile_rel=dockerfile_rel,
+                    image_ref=image_ref,
+                    buildkit_root=buildkit_root,
+                    buildkit_run=buildkit_run,
+                    build_args=build_args,
+                    target=target,
+                ),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            return self.capture_snapshot(
+                sandbox.name,
+                name,
+                docker_image=image_ref,
+                fs_capacity_bytes=fs_capacity_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+
     def capture_snapshot(
         self,
         sandbox_name: str,
         name: str,
         *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -778,6 +960,9 @@ class SandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
+            docker_image: Optional Docker image tag inside the sandbox to export
+                into the snapshot instead of capturing the live root filesystem.
+            fs_capacity_bytes: Filesystem capacity in bytes for Docker image export.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -792,6 +977,10 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
             response = self._http.post(
