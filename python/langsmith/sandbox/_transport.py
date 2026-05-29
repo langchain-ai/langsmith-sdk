@@ -94,7 +94,7 @@ class RetryTransport(httpx.BaseTransport):
 
                 return response
 
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
                 if not is_last_attempt:
                     sleep_time = _compute_backoff(attempt)
                     logger.debug(
@@ -180,7 +180,7 @@ class AsyncRetryTransport(httpx.AsyncBaseTransport):
 
                 return response
 
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
                 if not is_last_attempt:
                     sleep_time = _compute_backoff(attempt)
                     logger.debug(
