@@ -300,6 +300,11 @@ export class _ExperimentManager {
 
   _examples?: Example[];
 
+  /** Raw dataset cardinality before repetition. Sent to the backend as the
+   * transport-only ``num_examples`` field; the backend multiplies it by
+   * ``num_repetitions`` to compute ``expected_run_count``. */
+  _rawExampleCount?: number;
+
   _numRepetitions?: number;
 
   _runsArray?: Run[];
@@ -341,6 +346,7 @@ export class _ExperimentManager {
       for await (const example of unresolvedData) {
         exs.push(example);
       }
+      this._rawExampleCount = exs.length;
       if (this._numRepetitions && this._numRepetitions > 0) {
         const repeatedExamples = [];
         for (let i = 0; i < this._numRepetitions; i++) {
@@ -468,11 +474,7 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
-    // Transport-only fields the backend folds into `extra.__progress` so the UI
-    // can render a determinate loading state. Examples are already materialized
-    // by `getExamples()` before this runs, so `length` is available with no
-    // extra round-trip.
-    const numExamples = this._examples?.length ?? null;
+    const numExamples = this._rawExampleCount ?? null;
     const numRepetitions = this._numRepetitions ?? null;
     for (let i = 0; i < 10; i++) {
       try {

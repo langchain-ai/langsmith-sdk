@@ -627,9 +627,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
         self._num_examples = (
-            _resolve_num_examples(
-                data, client=self.client, num_repetitions=num_repetitions
-            )
+            _resolve_num_examples(data, client=self.client)
             if upload_results
             else None
         )
