@@ -502,12 +502,15 @@ describe("evaluation runner internals", () => {
       getDatasetUrl: async () => "http://test.com",
     } as any;
 
-    const results = await evaluate(async (input: any) => ({ result: input.value }), {
-      data: examples,
-      evaluators: [],
-      numRepetitions: 4,
-      client: mockClient,
-    });
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [],
+        numRepetitions: 4,
+        client: mockClient,
+      },
+    );
     const collected = [];
     for await (const r of results) {
       collected.push(r);
