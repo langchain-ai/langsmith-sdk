@@ -1262,6 +1262,10 @@ class _ExperimentManagerMixin:
         # There is a chance of name collision, so we'll retry
         starting_name = self._experiment_name
         num_attempts = 10
+        # Transport-only fields that the backend folds into
+        # ``extra.__progress`` so the UI can render a determinate loading state.
+        num_examples = getattr(self, "_num_examples", None)
+        num_repetitions = getattr(self, "_num_repetitions", None)
         for _ in range(num_attempts):
             try:
                 return self.client.create_project(
@@ -1269,6 +1273,8 @@ class _ExperimentManagerMixin:
                     description=self._description,
                     reference_dataset_id=dataset_id,
                     metadata=metadata,
+                    num_examples=num_examples,
+                    num_repetitions=num_repetitions,
                 )
             except ls_utils.LangSmithConflictError:
                 self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
@@ -1368,6 +1374,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
+        self._num_examples = (
+            _resolve_num_examples(
+                data, client=self.client, num_repetitions=num_repetitions
+            )
+            if upload_results
+            else None
+        )
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1981,6 +1994,41 @@ def _resolve_data(
             dataset_id=data.id, include_attachments=include_attachments
         )
     return data
+
+
+def _resolve_num_examples(
+    data: Any,
+    *,
+    client: langsmith.Client,
+    num_repetitions: int = 1,
+) -> Optional[int]:
+    """Return the up-front example count for ``data``, multiplied by repetitions.
+
+    Used to populate experiment metadata before runs start so the UI can render
+    a determinate loading state. Returns None when the count cannot be known
+    without consuming the input (e.g., generators, async iterables).
+    """
+    try:
+        if isinstance(data, uuid.UUID):
+            count = client.read_dataset(dataset_id=data).example_count
+        elif isinstance(data, str) and _is_valid_uuid(data):
+            count = client.read_dataset(dataset_id=uuid.UUID(data)).example_count
+        elif isinstance(data, str):
+            count = client.read_dataset(dataset_name=data).example_count
+        elif isinstance(data, schemas.Dataset):
+            count = data.example_count
+            if count is None:
+                count = client.read_dataset(dataset_id=data.id).example_count
+        else:
+            try:
+                count = len(data)
+            except TypeError:
+                return None
+    except Exception:
+        return None
+    if count is None:
+        return None
+    return count * max(num_repetitions, 1)
 
 
 def _default_process_inputs(inputs: dict) -> dict:

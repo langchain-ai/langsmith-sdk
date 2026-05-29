@@ -560,6 +560,17 @@ export type CreateProjectParams = {
   upsert?: boolean;
   projectExtra?: RecordStringAny | null;
   referenceDatasetId?: string | null;
+  /**
+   * Expected number of examples. Transport-only field the backend folds into
+   * `extra.__progress` to drive experiment progress in the UI; not round-tripped
+   * as a response field.
+   */
+  numExamples?: number | null;
+  /**
+   * Number of repetitions per example. Combined with `numExamples` to compute
+   * `expected_run_count`. Transport-only.
+   */
+  numRepetitions?: number | null;
 };
 
 type AutoBatchQueueItem = {
@@ -3546,6 +3557,8 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
+    numExamples = null,
+    numRepetitions = null,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -3560,6 +3573,12 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
+    }
+    if (numExamples != null) {
+      body["num_examples"] = numExamples;
+    }
+    if (numRepetitions != null) {
+      body["num_repetitions"] = numRepetitions;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {

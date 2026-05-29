@@ -468,6 +468,12 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
+    // Transport-only fields the backend folds into `extra.__progress` so the UI
+    // can render a determinate loading state. Examples are already materialized
+    // by `getExamples()` before this runs, so `length` is available with no
+    // extra round-trip.
+    const numExamples = this._examples?.length ?? null;
+    const numRepetitions = this._numRepetitions ?? null;
     for (let i = 0; i < 10; i++) {
       try {
         project = await this.client.createProject({
@@ -475,6 +481,8 @@ export class _ExperimentManager {
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
           description: this._description,
+          numExamples,
+          numRepetitions,
         });
         return project;
       } catch (e) {

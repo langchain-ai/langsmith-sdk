@@ -46,6 +46,7 @@ from langsmith.evaluation._runner import (
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
+    _resolve_num_examples,
     _target_include_attachments,
     _to_pandas,
     _wrap_summary_evaluators,
@@ -625,6 +626,13 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
+        self._num_examples = (
+            _resolve_num_examples(
+                data, client=self.client, num_repetitions=num_repetitions
+            )
+            if upload_results
+            else None
+        )
 
     def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
         """Reset attachment readers for an example.
