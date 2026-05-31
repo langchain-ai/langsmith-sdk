@@ -878,16 +878,17 @@ class TestAsyncSandboxOperations:
 
         assert snapshot.id == "snap-1"
         sandbox_mock.assert_awaited_once()
-        assert fake_sandbox.writes == [
-            (
-                "/tmp/langsmith-docker-context.tar",
-                b"tar",
-                {"timeout": 60, "headers": None},
-            )
-        ]
-        assert (
-            "tar -xf /tmp/langsmith-docker-context.tar" in fake_sandbox.commands[0][0]
-        )
+        # Build scratch must live on the capacity-backed root filesystem, not
+        # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
+        assert len(fake_sandbox.writes) == 1
+        tar_path, tar_content, tar_kwargs = fake_sandbox.writes[0]
+        assert tar_path.startswith("/var/lib/langsmith-build/")
+        assert tar_path.endswith("/context.tar")
+        assert tar_content == b"tar"
+        assert tar_kwargs == {"timeout": 60, "headers": None}
+        assert "/tmp" not in fake_sandbox.commands[0][0]
+        assert "/tmp" not in fake_sandbox.commands[1][0]
+        assert f"tar -xf {tar_path}" in fake_sandbox.commands[0][0]
         assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
         assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
         assert "| docker load" in fake_sandbox.commands[1][0]
