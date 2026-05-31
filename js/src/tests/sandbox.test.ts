@@ -1373,12 +1373,17 @@ describe("SandboxClient - snapshot operations", () => {
           fsCapacityBytes: 4294967296,
         }),
       );
-      expect(writes[0]).toEqual([
-        "/tmp/langsmith-docker-context.tar",
-        expect.any(Uint8Array),
-      ]);
+      // Build scratch must live on the capacity-backed root filesystem, not
+      // the RAM-backed /tmp tmpfs that fsCapacityBytes does not size.
+      const tarPath = writes[0][0];
+      expect(tarPath).toMatch(
+        /^\/var\/lib\/langsmith-build\/[^/]+\/context\.tar$/,
+      );
+      expect(writes[0][1]).toEqual(expect.any(Uint8Array));
       expect(commands[0]).toContain("tar -xf");
-      expect(commands[0]).toContain("/tmp/langsmith-docker-context.tar");
+      expect(commands[0]).toContain(tarPath);
+      expect(commands[0]).not.toContain("/tmp");
+      expect(commands[1]).not.toContain("/tmp");
       expect(commands[1]).toContain("--frontend");
       expect(commands[1]).toContain("dockerfile.v0");
       expect(commands[1]).toContain("docker info >/dev/null 2>&1");

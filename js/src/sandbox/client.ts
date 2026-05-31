@@ -323,6 +323,7 @@ function makeDockerfileBuildCommand(args: {
     "  sleep 0.1",
     "done",
     `${buildctl.map(shellQuote).join(" ")} | docker load`,
+    `rm -rf ${shellQuote(args.buildkitRoot)} || true`,
     "",
   ].join("\n");
 }
@@ -935,15 +936,19 @@ export class SandboxClient {
     );
 
     const builderName = `snapshot-builder-${uuidv4().replace(/-/g, "").slice(0, 12)}`;
-    const remoteContext = "/tmp/langsmith-docker-context";
-    const remoteTar = "/tmp/langsmith-docker-context.tar";
+    // Stage the build on the capacity-backed root filesystem, not /tmp.
+    // Inside the sandbox /tmp is a RAM-backed tmpfs that fsCapacityBytes does
+    // not size, and BuildKit's native snapshotter writes a full copy of every
+    // layer under its root, so a /tmp build exhausts guest RAM and fails with
+    // "No space left on device".
+    const buildRoot = `/var/lib/langsmith-build/${uuidv4()
+      .replace(/-/g, "")
+      .slice(0, 12)}`;
+    const remoteContext = `${buildRoot}/context`;
+    const remoteTar = `${buildRoot}/context.tar`;
     const imageRef = `langsmith-snapshot-build:${uuidv4().replace(/-/g, "")}`;
-    const buildkitRoot = `/tmp/langsmith-buildkit-root-${uuidv4()
-      .replace(/-/g, "")
-      .slice(0, 12)}`;
-    const buildkitRun = `/tmp/langsmith-buildkit-run-${uuidv4()
-      .replace(/-/g, "")
-      .slice(0, 12)}`;
+    const buildkitRoot = `${buildRoot}/buildkit-root`;
+    const buildkitRun = `${buildRoot}/buildkit-run`;
 
     const builder = await this.createSandbox({
       name: builderName,
