@@ -1322,7 +1322,7 @@ describe("SandboxClient - snapshot operations", () => {
   it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
     const client = createClientWithMock(jest.fn<typeof fetch>());
-    const writes: unknown[] = [];
+    const writes: [string, string | Uint8Array][] = [];
     const commands: string[] = [];
     const fakeSandbox = {
       name: "builder",
