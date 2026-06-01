@@ -1,6 +1,6 @@
 """Tests for AsyncSandboxClient."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -8,12 +8,14 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     AsyncSandboxClient,
     AsyncServiceURL,
+    ExecutionResult,
     ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
     ResourceStatus,
     ResourceTimeoutError,
     SandboxConnectionError,
+    Snapshot,
 )
 
 
@@ -814,6 +816,88 @@ class TestAsyncSandboxOperations:
         request = httpx_mock.get_request()
         params = dict(request.url.params)
         assert params == {"name_contains": "env", "limit": "10", "offset": "5"}
+
+    async def test_create_snapshot_from_dockerfile_orchestrates(
+        self, client: AsyncSandboxClient, tmp_path
+    ):
+        """Test async Dockerfile snapshot wrapper syncs, builds, and finalizes."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM scratch\nCOPY hello.txt /hello.txt\n"
+        )
+        (tmp_path / "hello.txt").write_text("hello")
+
+        class FakeAsyncSandbox:
+            name = "builder"
+
+            def __init__(self):
+                self.writes = []
+                self.commands = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def write(self, path, content, **kwargs):
+                self.writes.append((path, content, kwargs))
+
+            async def run(self, command, **kwargs):
+                self.commands.append((command, kwargs))
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        fake_sandbox = FakeAsyncSandbox()
+
+        with (
+            patch.object(
+                client, "sandbox", AsyncMock(return_value=fake_sandbox)
+            ) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                AsyncMock(
+                    return_value=Snapshot(
+                        id="snap-1",
+                        name="snap",
+                        status="ready",
+                        fs_capacity_bytes=4294967296,
+                    )
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._async_client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            snapshot = await client.create_snapshot_from_dockerfile(
+                "snap",
+                "Dockerfile",
+                4294967296,
+                context=tmp_path,
+            )
+
+        assert snapshot.id == "snap-1"
+        sandbox_mock.assert_awaited_once()
+        # Build scratch must live on the capacity-backed root filesystem, not
+        # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
+        assert len(fake_sandbox.writes) == 1
+        tar_path, tar_content, tar_kwargs = fake_sandbox.writes[0]
+        assert tar_path.startswith("/var/lib/langsmith-build/")
+        assert tar_path.endswith("/context.tar")
+        assert tar_content == b"tar"
+        assert tar_kwargs == {"timeout": 60, "headers": None}
+        assert "/tmp" not in fake_sandbox.commands[0][0]
+        assert "/tmp" not in fake_sandbox.commands[1][0]
+        assert f"tar -xf {tar_path}" in fake_sandbox.commands[0][0]
+        assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
+        assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
+        assert "| docker load" in fake_sandbox.commands[1][0]
+        capture_mock.assert_awaited_once()
+        _, args, kwargs = capture_mock.mock_calls[0]
+        assert args[0] == "builder"
+        assert args[1] == "snap"
+        assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
+        assert kwargs["fs_capacity_bytes"] == 4294967296
 
 
 class TestAsyncConnectionErrors:

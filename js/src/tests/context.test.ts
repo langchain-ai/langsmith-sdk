@@ -3,12 +3,18 @@ import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
 
+const WORKSPACE_ID = "00000000-0000-0000-0000-000000000000";
+const ORGANIZATION_QUERY = `?organizationId=${WORKSPACE_ID}`;
+
 function _mockClient() {
   const client = new Client({ apiKey: "test-api-key" });
   jest.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(true);
-  jest
-    .spyOn(client as any, "_getSettings")
-    .mockResolvedValue({ tenant_handle: "workspace-handle" });
+  jest.spyOn(client as any, "_getSettings").mockResolvedValue({
+    id: WORKSPACE_ID,
+    display_name: "Test Workspace",
+    created_at: "2026-05-27T00:00:00Z",
+    tenant_handle: "workspace-handle",
+  });
   jest
     .spyOn(client as any, "_ownerConflictError")
     .mockImplementation(async () => new Error("owner mismatch"));
@@ -149,7 +155,9 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("-/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/workspace-handle/my-agent:abc12345");
+      expect(url).toBe(
+        `https://smith.langchain.com/context/my-agent/abc12345${ORGANIZATION_QUERY}`,
+      );
 
       const calls = fetchSpy.mock.calls as [string, any][];
       expect(calls).toHaveLength(3);
@@ -280,10 +288,12 @@ describe("Context (agent/skill) on Client", () => {
         client.pushAgent("-/my-agent", {
           files: { "main.py": { type: "file", content: "x" } },
         }),
-      ).resolves.toContain("/hub/workspace-handle/my-agent:abc12345");
+      ).resolves.toBe(
+        `https://smith.langchain.com/context/my-agent/abc12345${ORGANIZATION_QUERY}`,
+      );
     });
 
-    it("keeps explicit owner in returned URL", async () => {
+    it("returns context URL without explicit owner", async () => {
       const client = _mockClient();
       _setFetchSequence(client, [
         _response({ detail: "Not Found" }, 404),
@@ -299,13 +309,19 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("explicit-owner/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/explicit-owner/my-agent:abc12345");
+      expect(url).toBe(
+        `https://smith.langchain.com/context/my-agent/abc12345${ORGANIZATION_QUERY}`,
+      );
     });
 
-    it("falls back to dash owner when tenant_handle is missing", async () => {
+    it("returns context URL with organizationId when tenant_handle is missing", async () => {
       const client = _mockClient();
-      jest.spyOn(client as any, "_getSettings").mockResolvedValue({
-        tenant_handle: "",
+      const settingsSpy = jest.spyOn(client as any, "_getSettings");
+      settingsSpy.mockResolvedValue({
+        id: WORKSPACE_ID,
+        display_name: "Test Workspace",
+        created_at: "2026-05-27T00:00:00Z",
+        tenant_handle: undefined,
       });
       _setFetchSequence(client, [
         _response({ detail: "Not Found" }, 404),
@@ -321,10 +337,13 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("-/my-agent", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/-/my-agent:abc12345");
+      expect(url).toBe(
+        `https://smith.langchain.com/context/my-agent/abc12345${ORGANIZATION_QUERY}`,
+      );
+      expect(settingsSpy).toHaveBeenCalled();
     });
 
-    it("supports name-only identifier and returns workspace-handle URL", async () => {
+    it("supports name-only identifier and returns context URL", async () => {
       const client = _mockClient();
       const fetchSpy = _setFetchSequence(client, [
         _response({ detail: "Not Found" }, 404),
@@ -340,7 +359,9 @@ describe("Context (agent/skill) on Client", () => {
       const url = await client.pushAgent("email-assistant", {
         files: { "main.py": { type: "file", content: "x" } },
       });
-      expect(url).toContain("/hub/workspace-handle/email-assistant:abc12345");
+      expect(url).toBe(
+        `https://smith.langchain.com/context/email-assistant/abc12345${ORGANIZATION_QUERY}`,
+      );
 
       const calls = fetchSpy.mock.calls as [string, any][];
       expect(calls[0][0]).toContain("/repos/-/email-assistant");

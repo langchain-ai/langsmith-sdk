@@ -159,7 +159,7 @@ class TestAsyncCommandHandle:
             await handle._ensure_started()
 
     @pytest.mark.asyncio
-    async def test_stream_ends_without_exit(self):
+    async def test_stream_end_without_exit_reconnects(self):
         stream = _make_async_stream(
             [
                 _started_msg(),
@@ -167,12 +167,26 @@ class TestAsyncCommandHandle:
             ]
         )
         sandbox = self._make_sandbox_mock()
+        reconnect_handle = MagicMock()
+        reconnect_handle._stream = _make_async_stream([_exit_msg(0)])
+        reconnect_handle._control = None
+        sandbox.reconnect.return_value = reconnect_handle
         handle = AsyncCommandHandle(stream, None, sandbox)
         await handle._ensure_started()
 
-        _ = [c async for c in handle]  # Exhaust
-        with pytest.raises(SandboxOperationError, match="without exit"):
-            await handle.result
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            chunks = [c async for c in handle]
+
+        assert [chunk.data for chunk in chunks] == ["data"]
+        result = await handle.result
+        assert result.stdout == "data"
+        assert result.exit_code == 0
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123",
+            stdout_offset=len("data".encode("utf-8")),
+            stderr_offset=0,
+        )
+        mock_sleep.assert_called_once_with(0.5)
 
     @pytest.mark.asyncio
     async def test_kill(self):
