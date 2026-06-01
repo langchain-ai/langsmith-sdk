@@ -178,6 +178,7 @@
     "@opentelemetry/sdk-trace-node": "^2.0.0",
     "@tsconfig/recommended": "^1.0.2",
     "@types/jest": "^29.5.1",
+    "@types/node": "^25.9.1",
     "@types/node-fetch": "^2.6.12",
     "@types/semver": "^7.7.1",
     "@types/ws": "^8.18.1",
