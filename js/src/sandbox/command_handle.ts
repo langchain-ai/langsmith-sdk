@@ -174,7 +174,9 @@ export class CommandHandle {
         return;
       }
     }
-    this._exhausted = true;
+    throw new LangSmithSandboxConnectionError(
+      "Command stream ended without exit message",
+    );
   }
 
   /**

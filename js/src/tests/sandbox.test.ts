@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspect } from "node:util";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
@@ -1090,18 +1093,35 @@ describe("CommandHandle", () => {
       expect(result.exit_code).toBe(0);
     });
 
-    it("should throw if stream ends without exit message", async () => {
+    it("should reconnect if stream ends without exit message", async () => {
       const stream = createMockStream([
         { type: "started", command_id: "cmd-123", pid: 42 },
         { type: "stdout", data: "hello\n", offset: 0 },
       ]);
 
-      const handle = new CommandHandle(stream, null, createMockSandbox());
-      await handle._ensureStarted();
+      const sandbox = createMockSandbox();
+      const reconnectHandle = {
+        _stream: createMockStream([{ type: "exit", exit_code: 0 }]),
+        _control: null,
+      };
+      (sandbox.reconnect as any).mockResolvedValue(reconnectHandle);
 
-      await expect(handle.result).rejects.toThrow(
-        "Command stream ended without exit message",
-      );
+      const handle = new CommandHandle(stream, null, sandbox);
+      await handle._ensureStarted();
+      const backoffBase = CommandHandle.BACKOFF_BASE;
+      CommandHandle.BACKOFF_BASE = 0;
+      try {
+        const result = await handle.result;
+
+        expect(result.stdout).toBe("hello\n");
+        expect(result.exit_code).toBe(0);
+        expect(sandbox.reconnect).toHaveBeenCalledWith("cmd-123", {
+          stdoutOffset: 6,
+          stderrOffset: 0,
+        });
+      } finally {
+        CommandHandle.BACKOFF_BASE = backoffBase;
+      }
     });
   });
 
@@ -1297,6 +1317,89 @@ describe("SandboxClient - snapshot operations", () => {
     expect(snapshot.id).toBe("snap-1");
     expect(snapshot.status).toBe("ready");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const writes: [string, string | Uint8Array][] = [];
+    const commands: string[] = [];
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockImplementation(async (path, content) => {
+          writes.push([path, content]);
+        }),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockImplementation(async (command) => {
+          commands.push(command);
+          return { stdout: "", stderr: "", exit_code: 0 };
+        }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const mockSnapshot = {
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    const captureSnapshotSpy = jest
+      .spyOn(client, "captureSnapshot")
+      .mockResolvedValue(mockSnapshot);
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      const snapshot = await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        { context },
+      );
+
+      expect(snapshot).toEqual(mockSnapshot);
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: expect.stringMatching(/^snapshot-builder-/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      // Build scratch must live on the capacity-backed root filesystem, not
+      // the RAM-backed /tmp tmpfs that fsCapacityBytes does not size.
+      const tarPath = writes[0][0];
+      expect(tarPath).toMatch(
+        /^\/var\/lib\/langsmith-build\/[^/]+\/context\.tar$/,
+      );
+      expect(writes[0][1]).toEqual(expect.any(Uint8Array));
+      expect(commands[0]).toContain("tar -xf");
+      expect(commands[0]).toContain(tarPath);
+      expect(commands[0]).not.toContain("/tmp");
+      expect(commands[1]).not.toContain("/tmp");
+      expect(commands[1]).toContain("--frontend");
+      expect(commands[1]).toContain("dockerfile.v0");
+      expect(commands[1]).toContain("docker info >/dev/null 2>&1");
+      expect(commands[1]).toContain("| docker load");
+      expect(captureSnapshotSpy).toHaveBeenCalledWith(
+        "builder",
+        "snap",
+        expect.objectContaining({
+          dockerImage: expect.stringMatching(/^langsmith-snapshot-build:/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      expect(fakeSandbox.delete).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
   });
 
   it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {

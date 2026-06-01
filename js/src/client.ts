@@ -6912,15 +6912,12 @@ export class Client implements LangSmithTracingClientInterface {
     });
     const data = (await response.json()) as DirectoryCommitResponse;
     const commitHash = data.commit.commit_hash;
-    let ownerForUrl = owner;
-    if (owner === "-") {
-      const settings = await this._getSettings();
-      ownerForUrl = settings.tenant_handle || owner;
-    }
-    return `${this.getHostUrl()}/hub/${ownerForUrl}/${name}:${commitHash.slice(
+    const settings = await this._getSettings();
+    const query = new URLSearchParams({ organizationId: settings.id });
+    return `${this.getHostUrl()}/context/${name}/${commitHash.slice(
       0,
       8,
-    )}`;
+    )}?${query.toString()}`;
   }
 
   private async _deleteDirectory(identifier: string): Promise<void> {
