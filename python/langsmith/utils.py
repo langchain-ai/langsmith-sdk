@@ -862,6 +862,11 @@ def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
     return workspace_id_.strip().strip('"').strip("'")
 
 
+_LOCALHOST_NAMES = frozenset(
+    {"localhost", "127.0.0.1", "0.0.0.0", "::1", "0:0:0:0:0:0:0:1"}
+)
+
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
@@ -876,10 +881,13 @@ def _is_localhost(url: str) -> bool:
         True if the URL is localhost, False otherwise.
     """
     try:
-        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0].lower().strip("[]")
+        if netloc in _LOCALHOST_NAMES:
+            return True
         ip = socket.gethostbyname(netloc)
         return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
-    except socket.gaierror:
+    except (socket.gaierror, RuntimeError):
+        # RuntimeError catches pytest-socket's SocketBlockedError in test environments
         return False
 
 
