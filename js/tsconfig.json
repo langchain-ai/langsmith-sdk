@@ -21,6 +21,7 @@
     "stripInternal": true,
     "allowJs": true,
     "strict": true,
+    "rootDir": "./src",
     "outDir": "dist"
   },
   "include": [
