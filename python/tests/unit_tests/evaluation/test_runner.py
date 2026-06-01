@@ -1299,3 +1299,269 @@ async def test_invalid_aevaluate_args() -> None:
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         await aevaluate((lambda x: x), data="data", load_nested=True)
+
+
+# ---------------------------------------------------------------------------
+# Separate target / evaluation concurrency tests
+# ---------------------------------------------------------------------------
+
+
+def _make_concurrency_client(
+    num_examples: int = 6,
+) -> tuple:
+    """Create a mock client and example list for concurrency tests."""
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = tenant_id  # type: ignore
+    ds_examples = [e[0] for e in ds_example_responses]
+    return client, ds_examples[:num_examples]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
+@pytest.mark.parametrize(
+    "max_conc, target_conc, eval_conc, expect_max_target, expect_max_eval",
+    [
+        # Both explicit: target=1, eval=2
+        (None, 1, 2, 1, 2),
+        # Only target_concurrency set; eval falls back to max_concurrency=3
+        (3, 1, None, 1, 3),
+        # Only max_concurrency set; both stages use it
+        (2, None, None, 2, 2),
+        # target_concurrency=0 means fully sequential
+        (None, 0, None, 1, 1),
+    ],
+    ids=[
+        "both_explicit",
+        "one_override_target",
+        "fallback_to_max",
+        "zero_sequential",
+    ],
+)
+def test_evaluate_concurrency_limits(
+    max_conc: int,
+    target_conc: int,
+    eval_conc: int,
+    expect_max_target: int,
+    expect_max_eval: int,
+) -> None:
+    """Sync evaluate respects separate concurrency limits."""
+    import threading
+
+    client, dev_split = _make_concurrency_client()
+
+    max_target_active = 0
+    current_target_active = 0
+    max_eval_active = 0
+    current_eval_active = 0
+    target_lock = threading.Lock()
+    eval_lock = threading.Lock()
+
+    def predict(inputs: dict) -> dict:
+        nonlocal max_target_active, current_target_active
+        with target_lock:
+            current_target_active += 1
+            max_target_active = max(max_target_active, current_target_active)
+        time.sleep(0.02)
+        with target_lock:
+            current_target_active -= 1
+        return {"output": 1}
+
+    def evaluator(run, example):
+        nonlocal max_eval_active, current_eval_active
+        with eval_lock:
+            current_eval_active += 1
+            max_eval_active = max(max_eval_active, current_eval_active)
+        time.sleep(0.02)
+        with eval_lock:
+            current_eval_active -= 1
+        return {"score": 1}
+
+    kwargs: dict = {}
+    if max_conc is not None:
+        kwargs["max_concurrency"] = max_conc
+    if target_conc is not None:
+        kwargs["target_concurrency"] = target_conc
+    if eval_conc is not None:
+        kwargs["evaluation_concurrency"] = eval_conc
+
+    results = evaluate(
+        predict,
+        client=client,
+        data=dev_split,
+        evaluators=[evaluator],
+        **kwargs,
+    )
+    list(results)
+
+    assert max_target_active <= expect_max_target, (
+        f"Expected max_target_active<={expect_max_target}, got {max_target_active}"
+    )
+    assert max_eval_active <= expect_max_eval, (
+        f"Expected max_eval_active<={expect_max_eval}, got {max_eval_active}"
+    )
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
+@pytest.mark.parametrize(
+    "max_conc, target_conc, eval_conc, expect_max_target, expect_max_eval",
+    [
+        # Both explicit: target=1, eval=2
+        (None, 1, 2, 1, 2),
+        # Only eval_concurrency set; target falls back to max_concurrency=3
+        (3, None, 1, 3, 1),
+        # Only max_concurrency set; both stages use it
+        (2, None, None, 2, 2),
+        # target_concurrency=0 means fully sequential end-to-end
+        (None, 0, None, 1, 1),
+    ],
+    ids=[
+        "both_explicit",
+        "one_override_eval",
+        "fallback_to_max",
+        "zero_sequential",
+    ],
+)
+async def test_aevaluate_concurrency_limits(
+    max_conc: int,
+    target_conc: int,
+    eval_conc: int,
+    expect_max_target: int,
+    expect_max_eval: int,
+) -> None:
+    """Async evaluate respects separate concurrency limits."""
+    client, dev_split = _make_concurrency_client()
+
+    max_target_active = 0
+    current_target_active = 0
+    max_eval_active = 0
+    current_eval_active = 0
+    target_lock = asyncio.Lock()
+    eval_lock = asyncio.Lock()
+
+    async def predict(inputs: dict) -> dict:
+        nonlocal max_target_active, current_target_active
+        async with target_lock:
+            current_target_active += 1
+            max_target_active = max(max_target_active, current_target_active)
+        await asyncio.sleep(0.02)
+        async with target_lock:
+            current_target_active -= 1
+        return {"output": 1}
+
+    async def evaluator(run, example):
+        nonlocal max_eval_active, current_eval_active
+        async with eval_lock:
+            current_eval_active += 1
+            max_eval_active = max(max_eval_active, current_eval_active)
+        await asyncio.sleep(0.02)
+        async with eval_lock:
+            current_eval_active -= 1
+        return {"score": 1}
+
+    kwargs: dict = {}
+    if max_conc is not None:
+        kwargs["max_concurrency"] = max_conc
+    if target_conc is not None:
+        kwargs["target_concurrency"] = target_conc
+    if eval_conc is not None:
+        kwargs["evaluation_concurrency"] = eval_conc
+
+    results = await aevaluate(
+        predict,
+        client=client,
+        data=dev_split,
+        evaluators=[evaluator],
+        **kwargs,
+    )
+    async for _ in results:
+        pass
+
+    assert max_target_active <= expect_max_target, (
+        f"Expected max_target_active<={expect_max_target}, got {max_target_active}"
+    )
+    assert max_eval_active <= expect_max_eval, (
+        f"Expected max_eval_active<={expect_max_eval}, got {max_eval_active}"
+    )
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
+async def test_aevaluate_pipelining() -> None:
+    """Evaluations on fast predictions run before slow predictions finish.
+
+    With separate concurrency, the pipeline should not wait for all
+    predictions to complete before starting evaluations.
+    """
+    client, _ = _make_concurrency_client(num_examples=3)
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    examples = [e[0] for e in ds_example_responses[:3]]
+
+    prediction_times: dict = {}
+    evaluation_times: dict = {}
+    start = time.monotonic()
+
+    # Example 0 is slow (1 s), examples 1-2 are fast (10 ms).
+    delays = {0: 1.0, 1: 0.01, 2: 0.01}
+
+    async def predict(inputs: dict) -> dict:
+        idx = inputs.get("in", 0)
+        await asyncio.sleep(delays.get(idx, 0.01))
+        prediction_times[idx] = time.monotonic() - start
+        return {"output": idx}
+
+    async def evaluator(run, example):
+        idx = example.inputs.get("in", 0)
+        evaluation_times[idx] = time.monotonic() - start
+        return {"score": 1}
+
+    results = await aevaluate(
+        predict,
+        client=client,
+        data=examples,
+        evaluators=[evaluator],
+        target_concurrency=3,
+        evaluation_concurrency=3,
+    )
+    async for _ in results:
+        pass
+
+    # Fast predictions (1, 2) should complete before the slow one (0).
+    assert prediction_times[1] < prediction_times[0], (
+        f"Fast prediction 1 ({prediction_times[1]:.3f}s) should finish "
+        f"before slow prediction 0 ({prediction_times[0]:.3f}s)"
+    )
+    assert prediction_times[2] < prediction_times[0], (
+        f"Fast prediction 2 ({prediction_times[2]:.3f}s) should finish "
+        f"before slow prediction 0 ({prediction_times[0]:.3f}s)"
+    )
+
+    # Fast predictions should be *evaluated* before the slow prediction
+    # even finishes predicting — this proves pipelining is working.
+    assert evaluation_times[1] < prediction_times[0], (
+        f"Evaluation of example 1 ({evaluation_times[1]:.3f}s) should run "
+        f"before slow prediction 0 finishes ({prediction_times[0]:.3f}s)"
+    )
+    assert evaluation_times[2] < prediction_times[0], (
+        f"Evaluation of example 2 ({evaluation_times[2]:.3f}s) should run "
+        f"before slow prediction 0 finishes ({prediction_times[0]:.3f}s)"
+    )

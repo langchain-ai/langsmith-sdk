@@ -92,6 +92,8 @@ async def aevaluate(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
     error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
     **kwargs: Any,
 ) -> AsyncExperimentResults:
     r"""Evaluate an async target system on a given dataset.
@@ -116,6 +118,20 @@ async def aevaluate(
             evaluations to run.
 
             If `None` then no limit is set. If `0` then no concurrency.
+        target_concurrency (int | None): The maximum number of concurrent
+            predictions to run. If not provided, defaults to `max_concurrency`.
+            When set, predictions and evaluations are pipelined so
+            evaluations can start before all predictions complete.
+
+            If `None` then no limit is set. If `0` then no concurrency
+            (fully sequential end-to-end).
+        evaluation_concurrency (int | None): The maximum number of concurrent
+            evaluators to run. If not provided, defaults to `max_concurrency`.
+            When set, predictions and evaluations are pipelined so
+            evaluations can start before all predictions complete.
+
+            If `None` then no limit is set. If `0` then no concurrency
+            (fully sequential end-to-end).
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
         client (Optional[langsmith.Client]): The LangSmith client to use.
@@ -242,6 +258,19 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
+        Setting separate concurrency limits for predictions and evaluators:
+
+        >>> results = asyncio.run(
+        ...     aevaluate(
+        ...         apredict,
+        ...         data=dataset_name,
+        ...         evaluators=[accuracy],
+        ...         target_concurrency=2,
+        ...         evaluation_concurrency=4,
+        ...     )
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+
         Using Async evaluators:
 
         >>> async def helpfulness(run: Run, example: Example):
@@ -336,6 +365,8 @@ async def aevaluate(
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            target_concurrency=target_concurrency,
+            evaluation_concurrency=evaluation_concurrency,
         )
 
 
@@ -484,6 +515,8 @@ async def _aevaluate(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
     error_handling: Literal["log", "ignore"] = "log",
+    target_concurrency: Optional[int] = None,
+    evaluation_concurrency: Optional[int] = None,
 ) -> AsyncExperimentResults:
     is_async_target = (
         asyncio.iscoroutinefunction(target)
@@ -524,20 +557,33 @@ async def _aevaluate(
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if is_async_target:
             if evaluators:
-                # Run predictions and evaluations in a single pipeline
                 manager = await manager.awith_predictions_and_evaluators(
-                    cast(ATARGET_T, target), evaluators, max_concurrency=max_concurrency
+                    cast(ATARGET_T, target),
+                    evaluators,
+                    max_concurrency=max_concurrency,
+                    target_concurrency=target_concurrency,
+                    evaluation_concurrency=evaluation_concurrency,
                 )
             else:
                 manager = await manager.awith_predictions(
-                    cast(ATARGET_T, target), max_concurrency=max_concurrency
+                    cast(ATARGET_T, target),
+                    max_concurrency=(
+                        target_concurrency
+                        if target_concurrency is not None
+                        else max_concurrency
+                    ),
                 )
             if summary_evaluators:
                 manager = await manager.awith_summary_evaluators(summary_evaluators)
         else:
             if evaluators:
                 manager = await manager.awith_evaluators(
-                    evaluators, max_concurrency=max_concurrency
+                    evaluators,
+                    max_concurrency=(
+                        evaluation_concurrency
+                        if evaluation_concurrency is not None
+                        else max_concurrency
+                    ),
                 )
             if summary_evaluators:
                 manager = await manager.awith_summary_evaluators(summary_evaluators)
@@ -794,6 +840,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[Union[EVALUATOR_T, AEVALUATOR_T]],
         /,
         max_concurrency: Optional[int] = None,
+        target_concurrency: Optional[int] = None,
+        evaluation_concurrency: Optional[int] = None,
     ) -> _AsyncExperimentManager:
         """Run predictions and evaluations in a single pipeline.
 
@@ -807,28 +855,114 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
         traceable_target = _ensure_async_traceable(target)
 
-        async def process_example(example: schemas.Example):
-            # Yield the coroutine to be awaited later
-            pred = await _aforward(
-                traceable_target,
-                self._get_example_with_readers(example),
-                self.experiment_name,
-                self._metadata,
-                self.client,
-                _target_include_attachments(target),
-                self._error_handling,
-            )
-            example, run = pred["example"], pred["run"]
-            result = await self._arun_evaluators(
-                evaluators,
-                {
-                    "run": run,
-                    "example": example,
-                    "evaluation_results": {"results": []},
-                },
-                feedback_executor=self._evaluation_feedback_executor,
-            )
-            return result
+        # Determine whether the caller requested per-stage concurrency
+        # controls.  When neither override is provided we preserve the
+        # legacy single-semaphore behaviour (outer limiter = max_concurrency,
+        # no inner semaphores).
+        _has_explicit = (
+            target_concurrency is not None or evaluation_concurrency is not None
+        )
+
+        # Resolve per-stage values, falling back to max_concurrency.
+        _target_conc = (
+            target_concurrency if target_concurrency is not None else max_concurrency
+        )
+        _eval_conc = (
+            evaluation_concurrency
+            if evaluation_concurrency is not None
+            else max_concurrency
+        )
+
+        if _has_explicit and _target_conc != 0 and _eval_conc != 0:
+            # Per-stage semaphores throttle predictions and evaluations
+            # independently within the same pipeline.  The outer limiter
+            # bounds total in-flight tasks to avoid unbounded memory growth.
+            def _make_sem(
+                n: Optional[int],
+            ) -> asyncio.Semaphore | aitertools.NoLock:
+                if n is None:
+                    return aitertools.NoLock()
+                return asyncio.Semaphore(max(n, 1))
+
+            _target_sem = _make_sem(_target_conc)
+            _eval_sem = _make_sem(_eval_conc)
+
+            async def process_example(example: schemas.Example):
+                async with _target_sem:
+                    pred = await _aforward(
+                        traceable_target,
+                        self._get_example_with_readers(example),
+                        self.experiment_name,
+                        self._metadata,
+                        self.client,
+                        _target_include_attachments(target),
+                        self._error_handling,
+                    )
+                example, run = pred["example"], pred["run"]
+                async with _eval_sem:
+                    result = await self._arun_evaluators(
+                        evaluators,
+                        {
+                            "run": run,
+                            "example": example,
+                            "evaluation_results": {"results": []},
+                        },
+                        feedback_executor=self._evaluation_feedback_executor,
+                    )
+                return result
+
+            # Compute a bounded outer concurrency window.  This limits the
+            # total number of in-flight tasks (and therefore memory) while
+            # still allowing prediction/evaluation overlap across examples.
+            # Note: _has_explicit guarantees at least one of _target_conc /
+            # _eval_conc is an explicit int (not inherited None), so the
+            # outer window is always bounded when we reach this branch.
+            if _target_conc is not None and _eval_conc is not None:
+                _outer_concurrency: Optional[int] = _target_conc + _eval_conc
+            elif _target_conc is not None:
+                _outer_concurrency = _target_conc
+            else:
+                # _eval_conc must be not-None here (at least one explicit).
+                _outer_concurrency = _eval_conc
+        else:
+            # TODO: Deprecate this legacy path in favour of always using
+            # per-stage semaphores.  Keeping it for now to preserve the
+            # exact old behaviour when callers only set max_concurrency.
+            #
+            # Legacy path: a single outer semaphore governs the whole
+            # predict-then-evaluate coroutine per example.  No inner
+            # semaphores — concurrency is controlled entirely by the
+            # outer aiter_with_concurrency call.  This is also the
+            # fallback when either stage is set to 0 (true sequential),
+            # which maps to aiter_with_concurrency(0, ...) for genuine
+            # no-task-spawn sequential execution.
+            if not _has_explicit:
+                _outer_concurrency = max_concurrency
+            else:
+                # At least one stage is explicitly 0 — run fully sequential.
+                _outer_concurrency = 0
+
+            async def process_example(example: schemas.Example):
+                pred = await _aforward(
+                    traceable_target,
+                    self._get_example_with_readers(example),
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    _target_include_attachments(target),
+                    self._error_handling,
+                )
+                example, run = pred["example"], pred["run"]
+                result = await self._arun_evaluators(
+                    evaluators,
+                    {
+                        "run": run,
+                        "example": example,
+                        "evaluation_results": {"results": []},
+                    },
+                    feedback_executor=self._evaluation_feedback_executor,
+                )
+                return result
 
         async def process_examples():
             """Create a single task per example.
@@ -841,11 +975,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
             await self._aend()
 
-        # Run the per-example tasks with max-concurrency
-        # This guarantees that max_concurrency is the upper limit
-        # for the number of target/evaluators that can be run in parallel
         experiment_results = aitertools.aiter_with_concurrency(
-            max_concurrency,
+            _outer_concurrency,
             process_examples(),
             _eager_consumption_timeout=0.001,
         )
