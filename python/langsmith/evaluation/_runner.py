@@ -1850,6 +1850,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def _copy(self, *args: Any, **kwargs: Any) -> _ExperimentManager:
         default_args = (self._data,)
+        # num_repetitions is intentionally NOT propagated: the first manager
+        # expands examples by num_repetitions on first access to `self.examples`
+        # and passes the already-expanded iterable forward as the copy's data.
+        # Propagating num_repetitions would cause the copy to re-expand and
+        # multiply the run count.
         default_kwargs = {
             "experiment": self._experiment,
             "metadata": self._metadata,
@@ -1857,7 +1862,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "client": self.client,
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
-            "num_repetitions": self._num_repetitions,
             "num_examples": self._num_examples,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
