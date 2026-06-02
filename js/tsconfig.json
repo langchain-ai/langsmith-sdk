@@ -21,6 +21,8 @@
     "stripInternal": true,
     "allowJs": true,
     "strict": true,
+    "types": ["jest", "node"],
+    "rootDir": "./src",
     "outDir": "dist"
   },
   "include": [
