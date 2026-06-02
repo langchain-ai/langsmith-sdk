@@ -548,6 +548,8 @@ export class _ExperimentManager {
       client: this.client,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -583,6 +585,8 @@ export class _ExperimentManager {
           yield pred.run;
         }
       })(),
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -617,6 +621,8 @@ export class _ExperimentManager {
           }
         })(),
       summaryResults: this._summaryResults,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -636,6 +642,8 @@ export class _ExperimentManager {
       evaluationResults: this._evaluationResults,
       resultRows: this._resultRows,
       summaryResults: aggregateFeedbackGen,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
       includeAttachments: this._includeAttachments,
     });
   }

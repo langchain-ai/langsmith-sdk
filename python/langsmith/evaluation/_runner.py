@@ -1857,6 +1857,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "client": self.client,
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
+            "num_repetitions": self._num_repetitions,
+            "num_examples": self._num_examples,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,
