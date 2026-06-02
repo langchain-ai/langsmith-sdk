@@ -21,14 +21,25 @@ async def fake_server():
     config = Config(app=fake_app, loop="asyncio", port=8000, log_level="info")
     server = Server(config=config)
 
-    asyncio.create_task(server.serve())
-    await asyncio.sleep(0.1)
+    task = asyncio.create_task(server.serve())
+    # Wait until startup actually completes (which is what populates
+    # ``server.servers``) instead of guessing with a fixed sleep. If the serve
+    # task exits early — e.g. the port is unavailable — surface that error
+    # rather than hanging.
+    while not server.started:
+        if task.done():
+            task.result()
+            raise RuntimeError("uvicorn server exited before startup completed")
+        await asyncio.sleep(0.01)
 
-    yield
     try:
-        await server.shutdown()
-    except RuntimeError:
-        pass
+        yield
+    finally:
+        # Shut down gracefully: signal serve() to exit and let it run its own
+        # shutdown. Calling server.shutdown() directly races startup and
+        # raises AttributeError on server.servers before it is set.
+        server.should_exit = True
+        await task
 
 
 @traceable
