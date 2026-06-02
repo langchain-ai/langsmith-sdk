@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v6
       - run: SHA=$(git rev-parse HEAD) && echo "SHA=$SHA" >> $GITHUB_ENV
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           python-version: 3.11
           enable-cache: true

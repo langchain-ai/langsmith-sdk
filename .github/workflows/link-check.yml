@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Check links in Markdown files
-        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        uses: gaurav-nelson/github-action-markdown-link-check@499c1e7f3637c131334fa8e937c45144f79d72d2 # v1
         with:
           # Do not check the `vendor/` directory.
           folder-path: .github,js,openapi,python
