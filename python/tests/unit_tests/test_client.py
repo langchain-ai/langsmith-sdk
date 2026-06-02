@@ -4470,10 +4470,17 @@ def test_compressed_traces_queue_limit_drops_new_items(
     )
 
 
+@mock.patch("langsmith.client._tracing_control_thread_func")
 def test_tracing_queue_limit_drops_when_full(
+    mock_tracing_thread: mock.Mock,
     caplog: pytest.LogCaptureFixture,
 ):
-    """Ensure the uncompressed tracing queue drops items when full."""
+    """Ensure the uncompressed tracing queue drops items when full.
+
+    The background drain thread is patched to a no-op so it can't pull items
+    off the queue while we fill it to capacity; otherwise ``qsize()`` races the
+    drainer and is non-deterministic under load.
+    """
     from langsmith._internal._background_thread import TracingQueueItem
     from langsmith._internal._operations import SerializedFeedbackOperation
     from langsmith.client import _reset_tracing_drop_log
@@ -4515,7 +4522,9 @@ def test_tracing_queue_limit_drops_when_full(
         "Dropped" in record.getMessage() and "tracing queue full" in record.getMessage()
         for record in caplog.records
     )
-    client.cleanup()
+    # The drain thread is disabled, so the enqueued items are never marked
+    # done; skip the flush/join (timeout=0) so cleanup doesn't block on them.
+    client.cleanup(timeout=0)
 
 
 def test_tracing_queue_default_maxsize():
