@@ -140,6 +140,7 @@ interface _ExperimentManagerArgs {
   >;
   examples?: Example[];
   numRepetitions?: number;
+  numExamples?: number;
   _runsArray?: Run[];
   resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
   includeAttachments?: boolean;
@@ -177,6 +178,13 @@ type BaseEvaluateOptions = {
    * @default 1
    */
   numRepetitions?: number;
+  /**
+   * Optional total number of examples that will be evaluated. When provided,
+   * sent to the backend so the UI can render a determinate progress bar.
+   * If not provided, the backend resolves the count from the reference dataset.
+   * @default undefined
+   */
+  numExamples?: number;
 };
 
 export interface EvaluateOptions extends BaseEvaluateOptions {
@@ -300,10 +308,11 @@ export class _ExperimentManager {
 
   _examples?: Example[];
 
-  /** Raw dataset cardinality before repetition. Sent to the backend as the
-   * transport-only ``num_examples`` field; the backend multiplies it by
-   * ``num_repetitions`` to compute ``expected_run_count``. */
-  _rawExampleCount?: number;
+  /** Caller-supplied raw dataset cardinality before repetition. Sent to the
+   * backend as the transport-only ``num_examples`` field; the backend multiplies
+   * it by ``num_repetitions`` to compute ``expected_run_count``. When
+   * unspecified the backend resolves the count from the reference dataset. */
+  _numExamples?: number;
 
   _numRepetitions?: number;
 
@@ -346,7 +355,6 @@ export class _ExperimentManager {
       for await (const example of unresolvedData) {
         exs.push(example);
       }
-      this._rawExampleCount = exs.length;
       if (this._numRepetitions && this._numRepetitions > 0) {
         const repeatedExamples = [];
         for (let i = 0; i < this._numRepetitions; i++) {
@@ -438,6 +446,7 @@ export class _ExperimentManager {
     this._summaryResults = args.summaryResults;
     this._resultRows = args.resultRows;
     this._numRepetitions = args.numRepetitions;
+    this._numExamples = args.numExamples;
     this._includeAttachments = args.includeAttachments;
   }
 
@@ -474,7 +483,7 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
-    const numExamples = this._rawExampleCount ?? null;
+    const numExamples = this._numExamples ?? null;
     const numRepetitions = this._numRepetitions ?? null;
     for (let i = 0; i < 10; i++) {
       try {
@@ -1073,6 +1082,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
+    numExamples: fields.numExamples,
     includeAttachments: standardFields.includeAttachments,
   }).start();
 

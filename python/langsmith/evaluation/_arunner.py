@@ -46,7 +46,6 @@ from langsmith.evaluation._runner import (
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
-    _resolve_num_examples,
     _target_include_attachments,
     _to_pandas,
     _wrap_summary_evaluators,
@@ -88,6 +87,7 @@ async def aevaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -119,6 +119,10 @@ async def aevaluate(
             If `None` then no limit is set. If `0` then no concurrency.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
+        num_examples (Optional[int]): Optional total number of examples that will
+            be evaluated. When provided, sent to the backend so the UI can render
+            a determinate progress bar. If not provided, the backend resolves the
+            count from the reference dataset.
         client (Optional[langsmith.Client]): The LangSmith client to use.
         blocking (bool): Whether to block until the evaluation is complete.
         experiment (Optional[schemas.TracerSession]): An existing experiment to
@@ -332,6 +336,7 @@ async def aevaluate(
             description=description,
             max_concurrency=max_concurrency,
             num_repetitions=num_repetitions,
+            num_examples=num_examples,
             client=client,
             blocking=blocking,
             experiment=experiment,
@@ -480,6 +485,7 @@ async def _aevaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -510,6 +516,7 @@ async def _aevaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        num_examples=num_examples,
         runs=runs,
         include_attachments=num_include_attachments > 0,
         reuse_attachments=num_repetitions * num_include_attachments > 1,
@@ -601,6 +608,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        num_examples: Optional[int] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -621,14 +629,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._num_examples = num_examples
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
-        self._num_examples = (
-            _resolve_num_examples(data, client=self.client) if upload_results else None
-        )
 
     def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
         """Reset attachment readers for an example.

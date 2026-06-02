@@ -4703,7 +4703,7 @@ class Client:
 
         Args:
             project_name (str): The name of the project.
-            project_extra (Optional[dict]): Additional project information.
+            project_extra (Optional[dit]): Additional project information.
             metadata (Optional[dict]): Additional metadata to associate with the project.
             description (Optional[str]): The description of the project.
             upsert (bool, default=False): Whether to update the project if it already exists.

@@ -106,6 +106,7 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -126,6 +127,7 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -147,6 +149,7 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -183,6 +186,10 @@ def evaluate(
         blocking (bool): Whether to block until the evaluation is complete.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
+        num_examples (int | None): Optional total number of examples that will be
+            evaluated. When provided, sent to the backend so the UI can render a
+            determinate progress bar. If not provided, the backend resolves the
+            count from the reference dataset.
         experiment (schemas.TracerSession | None): An existing experiment to
             extend.
 
@@ -407,6 +414,7 @@ def evaluate(
             description=description,
             max_concurrency=max_concurrency,
             num_repetitions=num_repetitions,
+            num_examples=num_examples,
             client=client,
             blocking=blocking,
             experiment=experiment,
@@ -1072,6 +1080,7 @@ def _evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
+    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -1090,6 +1099,7 @@ def _evaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        num_examples=num_examples,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -1349,6 +1359,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        num_examples: Optional[int] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -1367,14 +1378,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._num_examples = num_examples
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
-        self._num_examples = (
-            _resolve_num_examples(data, client=self.client) if upload_results else None
-        )
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1988,38 +1997,6 @@ def _resolve_data(
             dataset_id=data.id, include_attachments=include_attachments
         )
     return data
-
-
-def _resolve_num_examples(
-    data: Any,
-    *,
-    client: langsmith.Client,
-) -> Optional[int]:
-    """Return the raw example count for ``data``, or None if unknowable up-front.
-
-    Used to populate experiment metadata before runs start so the UI can render
-    a determinate loading state. The backend multiplies this by
-    ``num_repetitions`` to compute the expected run count — callers should pass
-    the unmultiplied dataset cardinality. Returns None when the count cannot be
-    known without consuming the input (e.g., generators, async iterables).
-    """
-    try:
-        if isinstance(data, uuid.UUID):
-            return client.read_dataset(dataset_id=data).example_count
-        if isinstance(data, str) and _is_valid_uuid(data):
-            return client.read_dataset(dataset_id=uuid.UUID(data)).example_count
-        if isinstance(data, str):
-            return client.read_dataset(dataset_name=data).example_count
-        if isinstance(data, schemas.Dataset):
-            if data.example_count is not None:
-                return data.example_count
-            return client.read_dataset(dataset_id=data.id).example_count
-        try:
-            return len(data)
-        except TypeError:
-            return None
-    except Exception:
-        return None
 
 
 def _default_process_inputs(inputs: dict) -> dict:

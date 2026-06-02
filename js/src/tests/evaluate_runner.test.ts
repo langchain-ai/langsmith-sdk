@@ -507,6 +507,7 @@ describe("evaluation runner internals", () => {
       {
         data: examples,
         evaluators: [],
+        numExamples: 3,
         numRepetitions: 4,
         client: mockClient,
       },
@@ -519,5 +520,47 @@ describe("evaluation runner internals", () => {
     expect(createProjectCalls).toHaveLength(1);
     expect(createProjectCalls[0].numExamples).toBe(3);
     expect(createProjectCalls[0].numRepetitions).toBe(4);
+  });
+
+  test("evaluate omits num_examples when caller does not pass it", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [],
+        client: mockClient,
+      },
+    );
+    for await (const _ of results) {
+      // drain
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].numExamples).toBeNull();
+    expect(createProjectCalls[0].numRepetitions).toBe(1);
   });
 });

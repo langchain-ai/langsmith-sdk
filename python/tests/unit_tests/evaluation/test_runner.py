@@ -20,7 +20,7 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._runner import _get_target_args, _resolve_num_examples
+from langsmith.evaluation._runner import _get_target_args
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -1301,47 +1301,12 @@ async def test_invalid_aevaluate_args() -> None:
         await aevaluate((lambda x: x), data="data", load_nested=True)
 
 
-def _fake_dataset(example_count: int | None = 7) -> ls_schemas.Dataset:
-    return ls_schemas.Dataset(
-        id=uuid.uuid4(),
-        name="ds",
-        created_at=datetime.now(timezone.utc),
-        example_count=example_count,
-    )
-
-
-def test_resolve_num_examples() -> None:
-    """Cover each branch of the input-type dispatch."""
-    ds = _fake_dataset(example_count=7)
-    client = mock.Mock()
-    client.read_dataset = mock.Mock(return_value=ds)
-
-    assert _resolve_num_examples(ds.id, client=client) == 7
-    assert _resolve_num_examples(str(ds.id), client=client) == 7
-    assert _resolve_num_examples("my-ds", client=client) == 7
-
-    client.read_dataset.reset_mock()
-    assert _resolve_num_examples(ds, client=client) == 7
-    client.read_dataset.assert_not_called()
-
-    bare = _fake_dataset(example_count=None)
-    client.read_dataset = mock.Mock(return_value=ds)
-    assert _resolve_num_examples(bare, client=client) == 7
-
-    client.read_dataset = mock.Mock()
-    assert _resolve_num_examples([1, 2, 3], client=client) == 3
-    client.read_dataset.assert_not_called()
-
-    assert _resolve_num_examples((x for x in range(3)), client=client) is None
-    failing = mock.Mock()
-    failing.read_dataset = mock.Mock(side_effect=RuntimeError("boom"))
-    assert _resolve_num_examples("missing", client=failing) is None
-
-
-def test_evaluate_sends_num_examples_to_create_project() -> None:
-    """End-to-end: ``evaluate()`` forwards ``num_examples``/``num_repetitions``
+def test_evaluate_forwards_num_examples_and_repetitions_when_passed() -> None:
+    """``evaluate()`` forwards caller-supplied ``num_examples``/``num_repetitions``
     as top-level fields on the POST /sessions body so the backend can populate
-    ``extra.__progress`` for UI loading state.
+    ``extra.__progress`` for UI loading state. When the caller does not pass
+    ``num_examples``, the SDK should not synthesize one — the backend resolves
+    the count from the reference dataset.
     """
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -1376,6 +1341,7 @@ def test_evaluate_sends_num_examples_to_create_project() -> None:
         (lambda inputs: {"output": inputs["in"] + 1}),
         data=examples,
         client=client,
+        num_examples=num_examples,
         num_repetitions=num_repetitions,
         blocking=True,
     )
@@ -1383,3 +1349,46 @@ def test_evaluate_sends_num_examples_to_create_project() -> None:
     assert fake_request.created_session is not None
     assert fake_request.created_session["num_examples"] == num_examples
     assert fake_request.created_session["num_repetitions"] == num_repetitions
+
+
+def test_evaluate_omits_num_examples_when_not_passed() -> None:
+    """Without an explicit ``num_examples`` the SDK should not include the field
+    in the create-project payload — the backend resolves it from the dataset.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(3)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = tenant_id  # type: ignore
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=examples,
+        client=client,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert "num_examples" not in fake_request.created_session
+    assert fake_request.created_session.get("num_repetitions") == 1
