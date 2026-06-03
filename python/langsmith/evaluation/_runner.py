@@ -892,13 +892,12 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
-    _print_comparative_experiment_start(
-        cast(
-            tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
-            tuple(projects),
-        ),
-        comparative_experiment,
+    experiments_tuple = cast(
+        tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+        tuple(projects),
     )
+    comparison_url = _build_comparative_url(experiments_tuple, comparative_experiment)
+    _print_comparative_experiment_start(comparison_url)
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
@@ -1000,7 +999,12 @@ def evaluate_comparative(
                 example_id, result = future.result()
                 results[example_id][f"feedback.{result.key}"] = result
 
-    return ComparativeExperimentResults(results, data)
+    return ComparativeExperimentResults(
+        results,
+        data,
+        comparative_experiment=comparative_experiment,
+        url=comparison_url,
+    )
 
 
 class ComparativeExperimentResults:
@@ -1019,9 +1023,23 @@ class ComparativeExperimentResults:
         self,
         results: dict,
         examples: Optional[dict[uuid.UUID, schemas.Example]] = None,
+        comparative_experiment: Optional[schemas.ComparativeExperiment] = None,
+        url: Optional[str] = None,
     ):
         self._results = results
         self._examples = examples
+        self._comparative_experiment = comparative_experiment
+        self._url = url
+
+    @property
+    def comparative_experiment(self) -> Optional[schemas.ComparativeExperiment]:
+        """The comparative experiment, exposing its id, dataset, and metadata."""
+        return self._comparative_experiment
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of the pairwise comparison view in the LangSmith UI."""
+        return self._url
 
     def __getitem__(self, key):
         """Return the result associated with the given key."""
@@ -1038,20 +1056,27 @@ class ComparativeExperimentResults:
 ## Private API
 
 
-def _print_comparative_experiment_start(
+def _build_comparative_url(
     experiments: tuple[schemas.TracerSession, schemas.TracerSession],
     comparative_experiment: schemas.ComparativeExperiment,
-) -> None:
+) -> Optional[str]:
     url = experiments[0].url or experiments[1].url
-    if url:
-        project_url = url.split("?")[0]
-        dataset_id = comparative_experiment.reference_dataset_id
-        base_url = project_url.split("/projects/p/")[0]
-        comparison_url = (
-            f"{base_url}/datasets/{dataset_id}/compare?"
-            f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
-            f"&comparativeExperiment={comparative_experiment.id}"
-        )
+    if not url:
+        return None
+    project_url = url.split("?")[0]
+    dataset_id = comparative_experiment.reference_dataset_id
+    base_url = project_url.split("/projects/p/")[0]
+    return (
+        f"{base_url}/datasets/{dataset_id}/compare?"
+        f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
+        f"&comparativeExperiment={comparative_experiment.id}"
+    )
+
+
+def _print_comparative_experiment_start(
+    comparison_url: Optional[str],
+) -> None:
+    if comparison_url:
         print(  # noqa: T201
             f"View the pairwise evaluation results at:\n{comparison_url}\n\n"
         )
