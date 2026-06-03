@@ -899,6 +899,60 @@ class TestAsyncSandboxOperations:
         assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
         assert kwargs["fs_capacity_bytes"] == 4294967296
 
+    async def test_create_snapshot_from_dockerfile_forwards_builder_size(
+        self, client: AsyncSandboxClient, tmp_path
+    ):
+        """vcpus/mem_bytes are forwarded to the builder sandbox."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+
+        class FakeAsyncSandbox:
+            name = "builder"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def write(self, path, content, **kwargs):
+                pass
+
+            async def run(self, command, **kwargs):
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        with (
+            patch.object(
+                client, "sandbox", AsyncMock(return_value=FakeAsyncSandbox())
+            ) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                AsyncMock(
+                    return_value=Snapshot(
+                        id="snap-1",
+                        name="snap",
+                        status="ready",
+                        fs_capacity_bytes=4294967296,
+                    )
+                ),
+            ),
+            patch(
+                "langsmith.sandbox._async_client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            await client.create_snapshot_from_dockerfile(
+                "snap",
+                "Dockerfile",
+                4294967296,
+                context=tmp_path,
+                vcpus=2,
+                mem_bytes=8589934592,
+            )
+
+        assert sandbox_mock.call_args.kwargs["vcpus"] == 2
+        assert sandbox_mock.call_args.kwargs["mem_bytes"] == 8589934592
+
 
 class TestAsyncConnectionErrors:
     """Tests for async connection error handling."""
