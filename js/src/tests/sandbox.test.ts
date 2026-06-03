@@ -1432,11 +1432,16 @@ describe("SandboxClient - snapshot operations", () => {
     try {
       await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-      await client.createSnapshotFromDockerfile("snap", "Dockerfile", 4294967296, {
-        context,
-        vCpus: 2,
-        memBytes: 8589934592,
-      });
+      await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        {
+          context,
+          vCpus: 2,
+          memBytes: 8589934592,
+        },
+      );
 
       expect(createSandboxSpy).toHaveBeenCalledWith(
         expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
