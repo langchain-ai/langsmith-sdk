@@ -2539,9 +2539,7 @@ def test_ls_message_view_exclude_metadata_round_trips_to_run() -> None:
 
     with tracing_context(enabled=True):
 
-        @traceable(
-            client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True}
-        )
+        @traceable(client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
         def classify(x: str) -> str:
             return x
 
@@ -2569,9 +2567,7 @@ def test_ls_message_view_exclude_metadata_cascades_to_child_runs() -> None:
         def child() -> str:
             return "ok"
 
-        @traceable(
-            client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True}
-        )
+        @traceable(client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
         def parent() -> str:
             return child()
 
@@ -2579,16 +2575,12 @@ def test_ls_message_view_exclude_metadata_cascades_to_child_runs() -> None:
 
     mock_calls = _get_calls(mock_client, minimum=2)
     payloads = [p for _, p in _get_data(mock_calls)]
-    assert len(payloads) >= 2, (
-        f"expected parent + child payloads, got {len(payloads)}"
-    )
+    assert len(payloads) >= 2, f"expected parent + child payloads, got {len(payloads)}"
 
     excluded = [
         p
         for p in payloads
-        if (p.get("extra") or {}).get("metadata", {}).get(
-            LS_MESSAGE_VIEW_EXCLUDE
-        )
+        if (p.get("extra") or {}).get("metadata", {}).get(LS_MESSAGE_VIEW_EXCLUDE)
         is True
     ]
     assert len(excluded) == len(payloads), (
