@@ -1086,9 +1086,7 @@ class TestSnapshotOperations:
                 return ExecutionResult(stdout="", stderr="", exit_code=0)
 
         with (
-            patch.object(
-                client, "sandbox", return_value=FakeSandbox()
-            ) as sandbox_mock,
+            patch.object(client, "sandbox", return_value=FakeSandbox()) as sandbox_mock,
             patch.object(
                 client,
                 "capture_snapshot",
