@@ -1402,6 +1402,50 @@ describe("SandboxClient - snapshot operations", () => {
     }
   });
 
+  it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockResolvedValue(undefined),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    });
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      await client.createSnapshotFromDockerfile("snap", "Dockerfile", 4294967296, {
+        context,
+        vCpus: 2,
+        memBytes: 8589934592,
+      });
+
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
+      );
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
+  });
+
   it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {
     const mockFetch = jest
       .fn<typeof fetch>()
