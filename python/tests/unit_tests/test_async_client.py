@@ -253,6 +253,96 @@ async def test_arequest_with_retries_retries_on_502(
     client = AsyncClient(retry_config={"max_retries": 2})
     response = await client._arequest_with_retries("GET", "/repos/-/test")
     assert response == second_response
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_create_feedback_forwards_trace_id(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    run_id = uuid4()
+    trace_id = uuid4()
+    now = datetime(2024, 1, 1).isoformat()
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {
+        "id": str(uuid4()),
+        "created_at": now,
+        "modified_at": now,
+        "run_id": str(run_id),
+        "trace_id": str(trace_id),
+        "key": "quality",
+    }
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    await client.create_feedback(run_id, key="quality", score=1, trace_id=trace_id)
+
+    call = mock_httpx_client.request.call_args
+    assert call.args[0] == "POST"
+    assert call.args[1] == "/feedback"
+    body = json.loads(call.kwargs["content"])
+    assert uuid.UUID(body["run_id"]) == run_id
+    assert uuid.UUID(body["trace_id"]) == trace_id
+    assert body["key"] == "quality"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_create_feedback_retries_on_not_found(
+    mock_raise_for_status: mock.Mock,
+    _mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+
+    run_id = uuid4()
+    trace_id = uuid4()
+    now = datetime(2024, 1, 1).isoformat()
+
+    not_found = MagicMock()
+    not_found.status_code = 404
+    success = MagicMock()
+    success.status_code = 200
+    success.json.return_value = {
+        "id": str(uuid4()),
+        "created_at": now,
+        "modified_at": now,
+        "run_id": str(run_id),
+        "trace_id": str(trace_id),
+        "key": "quality",
+    }
+    mock_httpx_client.request.side_effect = [not_found, success]
+
+    def _raise_for_status(response: mock.Mock) -> None:
+        if response.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "status error",
+                request=httpx.Request("POST", "http://test"),
+                response=response,
+            )
+
+    mock_raise_for_status.side_effect = _raise_for_status
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test",
+        retry_config={"max_retries": 2},
+    )
+    feedback = await client.create_feedback(run_id, key="quality", trace_id=trace_id)
+
+    # A 404 (run not yet ingested) is retried, unlike other 4xx.
+    assert mock_httpx_client.request.call_count == 2
+    assert str(feedback.run_id) == str(run_id)
     assert mock_httpx_client.request.call_count == 2
 
 

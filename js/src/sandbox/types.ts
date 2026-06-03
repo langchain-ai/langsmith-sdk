@@ -359,6 +359,15 @@ export interface CreateDockerfileSnapshotOptions {
   target?: string;
   /** Callback for Docker build stdout/stderr chunks. */
   onBuildLog?: (data: string) => void;
+  /**
+   * Number of vCPUs for the temporary builder sandbox. The build runs
+   * BuildKit plus the native snapshotter's layer copies inside it, which
+   * contend for a single core by default, so an extra vCPU can cut a cold
+   * build's wall time substantially.
+   */
+  vCpus?: number;
+  /** Memory in bytes for the temporary builder sandbox. */
+  memBytes?: number;
   /** Timeout in seconds for builder sandbox operations. Default: 60. */
   timeout?: number;
 }
