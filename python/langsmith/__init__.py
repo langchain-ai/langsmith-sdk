@@ -1,6 +1,6 @@
 """LangSmith Client."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
@@ -31,6 +31,24 @@ if TYPE_CHECKING:
 
 __version__ = "0.8.9"
 version = __version__  # for backwards compatibility
+
+LS_MESSAGE_VIEW_EXCLUDE: Final = "ls_message_view_exclude"
+"""Metadata key that hides a traced run from LangSmith's Messages View.
+
+Set as a key on a `@traceable`'s `metadata` arg with a truthy value to
+prevent the run from appearing in Messages View. The run is still
+recorded in full — only the Messages View renderer hides it. Useful
+for tagging middleware-style runs (classifiers, guardrails, internal
+rewrites) so they don't appear in the chat-style rendering.
+
+Note: when set on a parent run, this metadata key cascades to all
+child runs via the tracing contextvar.
+
+Example:
+    @traceable(metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
+    def classify_query(text: str) -> str:
+        ...
+"""
 
 
 def __getattr__(name: str) -> Any:
@@ -200,4 +218,5 @@ __all__ = [
     "uuid7",
     "uuid7_from_datetime",
     "set_runtime_overrides",
+    "LS_MESSAGE_VIEW_EXCLUDE",
 ]
