@@ -1,6 +1,7 @@
 import { v4 as uuid4, validate } from "../utils/uuid/src/index.js";
 import { Client } from "../index.js";
 import {
+  ComparativeExperiment,
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,
   Example,
   Run,
@@ -132,6 +133,10 @@ export interface EvaluateComparativeOptions {
 export interface ComparisonEvaluationResults {
   experimentName: string;
   results: ComparisonEvaluationResultRow[];
+  /** URL of the pairwise comparison view in the LangSmith UI, if available. */
+  url: string | null;
+  /** The comparative experiment, exposing its id, dataset, and metadata. */
+  comparativeExperiment: ComparativeExperiment;
 }
 
 /** @deprecated Use `evaluate` and pass two experiments as targets. */
@@ -410,5 +415,5 @@ export async function evaluateComparative(
 
   const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
   await client.awaitPendingTraceBatches();
-  return { experimentName, results };
+  return { experimentName, results, url: viewUrl, comparativeExperiment };
 }
