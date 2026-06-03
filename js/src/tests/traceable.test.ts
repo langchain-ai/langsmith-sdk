@@ -12,7 +12,11 @@ import {
 } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
-import { Client, overrideFetchImplementation } from "../index.js";
+import {
+  Client,
+  LS_MESSAGE_VIEW_EXCLUDE,
+  overrideFetchImplementation,
+} from "../index.js";
 import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
@@ -3360,4 +3364,53 @@ describe("tracingEnabled: false propagation to nested traceables", () => {
       false,
     );
   });
+});
+
+test("LS_MESSAGE_VIEW_EXCLUDE constant is exported with the correct value", () => {
+  expect(LS_MESSAGE_VIEW_EXCLUDE).toBe("ls_message_view_exclude");
+});
+
+test("LS_MESSAGE_VIEW_EXCLUDE metadata round-trips to run via traceable", async () => {
+  const { client, callSpy } = mockClient();
+  const classify = traceable(async (x: string): Promise<string> => x, {
+    client,
+    name: "classify",
+    metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
+    tracingEnabled: true,
+  });
+
+  await classify("hello");
+
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    nodes: ["classify:0"],
+    edges: [],
+    data: {
+      "classify:0": {
+        extra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } },
+      },
+    },
+  });
+});
+
+test("LS_MESSAGE_VIEW_EXCLUDE metadata cascades from parent to child runs", async () => {
+  const { client, callSpy } = mockClient();
+  const child = traceable(async (): Promise<string> => "ok", { name: "child" });
+  const parent = traceable(async (): Promise<string> => child(), {
+    client,
+    name: "parent",
+    metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
+    tracingEnabled: true,
+  });
+
+  await parent();
+
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  const runs = Object.values(tree.data);
+  expect(runs.length).toBeGreaterThanOrEqual(2);
+  for (const run of runs) {
+    const md = ((run.extra as any) ?? {}).metadata ?? {};
+    expect(md[LS_MESSAGE_VIEW_EXCLUDE]).toBe(true);
+  }
 });
