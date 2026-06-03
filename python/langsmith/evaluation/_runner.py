@@ -1010,13 +1010,14 @@ def evaluate_comparative(
 class ComparativeExperimentResults:
     """Represents the results of an evaluate_comparative() call.
 
-    This class provides an iterator interface to iterate over the experiment results
-    as they become available. It also provides methods to access the experiment name,
-    the number of results, and to wait for the results to be processed.
+    This class provides an iterator interface to iterate over the comparison results,
+    indexed access by example ID, and properties to access the pairwise comparison
+    URL and the underlying comparative experiment.
 
-    Methods:
-        experiment_name() -> str: Returns the name of the experiment.
-        wait() -> None: Waits for the experiment data to be processed.
+    Attributes:
+        url (Optional[str]): URL of the pairwise comparison view in the LangSmith UI.
+        comparative_experiment (Optional[schemas.ComparativeExperiment]): The
+        comparative experiment, exposing its id, dataset, and metadata.
     """
 
     def __init__(
