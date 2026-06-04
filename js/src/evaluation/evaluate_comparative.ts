@@ -131,7 +131,9 @@ export interface EvaluateComparativeOptions {
 }
 
 export interface ComparisonEvaluationResults {
+  /** The name of the comparative experiment. */
   experimentName: string;
+  /** The per-example comparison results. */
   results: ComparisonEvaluationResultRow[];
   /** URL of the pairwise comparison view in the LangSmith UI, if available. */
   url: string | null;
