@@ -49,6 +49,69 @@ const client = new SandboxClient({
 });
 ```
 
+## AWS Auth Proxy
+
+Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
+Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
+credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
+SigV4. The real credentials stay outside the sandbox.
+
+This lets code inside the sandbox use normal AWS tooling without exposing
+long-lived AWS credentials in sandbox files, environment variables, shell
+history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
+reference those secret names in the proxy config:
+
+```typescript
+import {
+  SandboxClient,
+  awsAuthProxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "aws-sandbox",
+  proxyConfig: awsAuthProxyConfig({
+    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  }),
+});
+
+try {
+  const result = await sandbox.run("node your-aws-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Inside `your-aws-script.js`, use AWS SDKs normally. For example, if
+`@aws-sdk/client-s3` is installed in the sandbox snapshot:
+
+```typescript
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({});
+const response = await s3.send(new ListBucketsCommand({}));
+console.log(response.Buckets?.map((bucket) => bucket.Name));
+```
+
+If your application mints short-lived AWS credentials, pass them as write-only
+opaque values instead:
+
+```typescript
+import { awsAuthProxyConfig, opaqueSecret } from "langsmith/sandbox";
+
+const proxyConfig = awsAuthProxyConfig({
+  accessKeyId: opaqueSecret(accessKeyId),
+  secretAccessKey: opaqueSecret(secretAccessKey),
+});
+```
+
+Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
+credential values are not supported by the AWS auth proxy.
+
 ## Running Commands
 
 ```typescript
