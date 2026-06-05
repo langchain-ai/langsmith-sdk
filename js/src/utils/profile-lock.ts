@@ -51,7 +51,10 @@ function lockOwner(lockDir: string): string | undefined {
 
 async function removeStaleLock(lockDir: string): Promise<boolean> {
   const createdAt = lockCreatedAtMs(lockDir);
-  if (createdAt === undefined || Date.now() - createdAt <= LOCK_STALE_AFTER_MS) {
+  if (
+    createdAt === undefined ||
+    Date.now() - createdAt <= LOCK_STALE_AFTER_MS
+  ) {
     return false;
   }
   await fsUtils.rmRecursive(lockDir);
@@ -69,7 +72,7 @@ async function removeStaleLock(lockDir: string): Promise<boolean> {
  */
 export async function acquireOAuthRefreshLock(
   configPath: string,
-  deadline: number,
+  deadline: number
 ): Promise<OAuthRefreshLock> {
   const lockDir = `${configPath}.oauth.lock.lock`;
   const parent = fsUtils.path.dirname(lockDir);
@@ -89,7 +92,7 @@ export async function acquireOAuthRefreshLock(
           throw new Error("timed out acquiring OAuth refresh lock");
         }
         await sleep(
-          Math.min(LOCK_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())),
+          Math.min(LOCK_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))
         );
       }
       continue;
@@ -97,7 +100,7 @@ export async function acquireOAuthRefreshLock(
     try {
       await fsUtils.writeFileAtomic(
         fsUtils.path.join(lockDir, LOCK_METADATA_FILE),
-        `${new Date().toISOString()}\n${owner}\n`,
+        `${new Date().toISOString()}\n${owner}\n`
       );
     } catch (err) {
       await fsUtils.rmRecursive(lockDir);
