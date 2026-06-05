@@ -366,6 +366,7 @@ class AsyncClient:
         self,
         path: str,
         params: Optional[dict[str, Any]] = None,
+        data_key: Optional[str] = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Get a paginated list of items."""
         params = params or {}
@@ -374,7 +375,8 @@ class AsyncClient:
         while True:
             params["offset"] = offset
             response = await self._arequest_with_retries("GET", path, params=params)
-            items = response.json()
+            response_body = response.json()
+            items = response_body.get(data_key, []) if data_key else response_body
             if not items:
                 break
             for item in items:
@@ -1417,6 +1419,271 @@ class AsyncClient:
             "DELETE",
             "/feedback-configs",
             params={"feedback_key": feedback_key},
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    # Online Evaluator API
+
+    async def create_evaluator(
+        self,
+        *,
+        name: str,
+        evaluator_type: ls_schemas.EvaluatorType,
+        feedback_keys: Optional[Sequence[str]] = None,
+        llm_evaluator: Optional[
+            Union[ls_schemas.CreateLLMEvaluatorRequest, dict[str, Any]]
+        ] = None,
+        code_evaluator: Optional[
+            Union[ls_schemas.CreateCodeEvaluatorRequest, dict[str, Any]]
+        ] = None,
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Create an online evaluator."""
+        if evaluator_type == "llm" and llm_evaluator is None:
+            raise ValueError("llm_evaluator is required for an LLM evaluator.")
+        if evaluator_type == "code" and code_evaluator is None:
+            raise ValueError("code_evaluator is required for a code evaluator.")
+
+        payload = ls_schemas.EvaluatorCreate(
+            name=name,
+            type=evaluator_type,
+            feedback_keys=list(feedback_keys or ()),
+            llm_evaluator=(
+                llm_evaluator
+                if isinstance(llm_evaluator, ls_schemas.CreateLLMEvaluatorRequest)
+                else (
+                    ls_schemas.CreateLLMEvaluatorRequest(**llm_evaluator)
+                    if llm_evaluator is not None
+                    else None
+                )
+            ),
+            code_evaluator=(
+                code_evaluator
+                if isinstance(code_evaluator, ls_schemas.CreateCodeEvaluatorRequest)
+                else (
+                    ls_schemas.CreateCodeEvaluatorRequest(**code_evaluator)
+                    if code_evaluator is not None
+                    else None
+                )
+            ),
+            run_rules=(
+                [
+                    rule
+                    if isinstance(rule, ls_schemas.EvaluatorRunRule)
+                    else ls_schemas.EvaluatorRunRule(**rule)
+                    for rule in run_rules
+                ]
+                if run_rules is not None
+                else None
+            ),
+        )
+        response = await self._arequest_with_retries(
+            "POST",
+            "/v1/platform/evaluators",
+            content=ls_client._dumps_json(payload.model_dump(exclude_none=True)),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Evaluator(**response.json()["evaluator"])
+
+    async def create_llm_evaluator(
+        self,
+        *,
+        name: str,
+        prompt_repo_handle: Optional[str] = None,
+        feedback_keys: Optional[Sequence[str]] = None,
+        variable_mapping: Optional[dict[str, Any]] = None,
+        commit_hash_or_tag: Optional[str] = None,
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Create an LLM-as-judge online evaluator."""
+        return await self.create_evaluator(
+            name=name,
+            evaluator_type="llm",
+            feedback_keys=feedback_keys,
+            llm_evaluator=ls_schemas.CreateLLMEvaluatorRequest(
+                prompt_repo_handle=prompt_repo_handle,
+                variable_mapping=variable_mapping,
+                commit_hash_or_tag=commit_hash_or_tag,
+            ),
+            run_rules=run_rules,
+        )
+
+    async def create_code_evaluator(
+        self,
+        *,
+        name: str,
+        code: str,
+        feedback_keys: Optional[Sequence[str]] = None,
+        language: str = "python",
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Create a code online evaluator."""
+        return await self.create_evaluator(
+            name=name,
+            evaluator_type="code",
+            feedback_keys=feedback_keys,
+            code_evaluator=ls_schemas.CreateCodeEvaluatorRequest(
+                code=code,
+                language=language,
+            ),
+            run_rules=run_rules,
+        )
+
+    async def read_evaluator(self, evaluator_id: ID_TYPE) -> ls_schemas.Evaluator:
+        """Read an online evaluator by ID."""
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/v1/platform/evaluators/{ls_client._as_uuid(evaluator_id, 'evaluator_id')}",
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Evaluator(**response.json())
+
+    async def list_evaluators(
+        self,
+        *,
+        evaluator_ids: Optional[Sequence[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        evaluator_type: Optional[ls_schemas.EvaluatorType] = None,
+        sort_by: Optional[ls_schemas.EvaluatorSortBy] = None,
+        sort_by_desc: Optional[bool] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.Evaluator]:
+        """List online evaluators."""
+        params: dict[str, Any] = {
+            "evaluator_id": (
+                [
+                    ls_client._as_uuid(evaluator_id, f"evaluator_ids[{i}]")
+                    for i, evaluator_id in enumerate(evaluator_ids)
+                ]
+                if evaluator_ids is not None
+                else None
+            ),
+            "name_contains": name,
+            "type": evaluator_type,
+            "sort_by": sort_by,
+            "sort_by_desc": sort_by_desc,
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        ix = 0
+        async for evaluator in self._aget_paginated_list(
+            "/v1/platform/evaluators", params=params, data_key="evaluators"
+        ):
+            yield ls_schemas.Evaluator(**evaluator)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
+
+    async def update_evaluator(
+        self,
+        evaluator_id: ID_TYPE,
+        *,
+        name: Optional[str] = None,
+        feedback_keys: Optional[Sequence[str]] = None,
+        llm_evaluator: Optional[
+            Union[ls_schemas.UpdateLLMEvaluatorRequest, dict[str, Any]]
+        ] = None,
+        code_evaluator: Optional[
+            Union[ls_schemas.UpdateCodeEvaluatorRequest, dict[str, Any]]
+        ] = None,
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Update an online evaluator."""
+        payload = ls_schemas.EvaluatorUpdate(
+            name=name,
+            feedback_keys=list(feedback_keys) if feedback_keys is not None else None,
+            llm_evaluator=(
+                llm_evaluator
+                if isinstance(llm_evaluator, ls_schemas.UpdateLLMEvaluatorRequest)
+                else (
+                    ls_schemas.UpdateLLMEvaluatorRequest(**llm_evaluator)
+                    if llm_evaluator is not None
+                    else None
+                )
+            ),
+            code_evaluator=(
+                code_evaluator
+                if isinstance(code_evaluator, ls_schemas.UpdateCodeEvaluatorRequest)
+                else (
+                    ls_schemas.UpdateCodeEvaluatorRequest(**code_evaluator)
+                    if code_evaluator is not None
+                    else None
+                )
+            ),
+            run_rules=(
+                [
+                    rule
+                    if isinstance(rule, ls_schemas.EvaluatorRunRule)
+                    else ls_schemas.EvaluatorRunRule(**rule)
+                    for rule in run_rules
+                ]
+                if run_rules is not None
+                else None
+            ),
+        )
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/v1/platform/evaluators/{ls_client._as_uuid(evaluator_id, 'evaluator_id')}",
+            content=ls_client._dumps_json(payload.model_dump(exclude_none=True)),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Evaluator(**response.json()["evaluator"])
+
+    async def update_llm_evaluator(
+        self,
+        evaluator_id: ID_TYPE,
+        *,
+        name: Optional[str] = None,
+        feedback_keys: Optional[Sequence[str]] = None,
+        prompt_repo_handle: Optional[str] = None,
+        variable_mapping: Optional[dict[str, Any]] = None,
+        commit_hash_or_tag: Optional[str] = None,
+        use_corrections_dataset: Optional[bool] = None,
+        num_few_shot_examples: Optional[int] = None,
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Update an LLM-as-judge online evaluator."""
+        llm_payload = {
+            "prompt_repo_handle": prompt_repo_handle,
+            "variable_mapping": variable_mapping,
+            "commit_hash_or_tag": commit_hash_or_tag,
+            "use_corrections_dataset": use_corrections_dataset,
+            "num_few_shot_examples": num_few_shot_examples,
+        }
+        llm_payload = {k: v for k, v in llm_payload.items() if v is not None}
+        return await self.update_evaluator(
+            evaluator_id,
+            name=name,
+            feedback_keys=feedback_keys,
+            llm_evaluator=llm_payload or None,
+            run_rules=run_rules,
+        )
+
+    async def update_code_evaluator(
+        self,
+        evaluator_id: ID_TYPE,
+        *,
+        name: Optional[str] = None,
+        feedback_keys: Optional[Sequence[str]] = None,
+        code: Optional[str] = None,
+        language: Optional[str] = None,
+        run_rules: Optional[Sequence[Union[ls_schemas.EvaluatorRunRule, dict]]] = None,
+    ) -> ls_schemas.Evaluator:
+        """Update a code online evaluator."""
+        code_payload = {"code": code, "language": language}
+        code_payload = {k: v for k, v in code_payload.items() if v is not None}
+        return await self.update_evaluator(
+            evaluator_id,
+            name=name,
+            feedback_keys=feedback_keys,
+            code_evaluator=code_payload or None,
+            run_rules=run_rules,
+        )
+
+    async def delete_evaluator(self, evaluator_id: ID_TYPE) -> None:
+        """Delete an online evaluator by ID."""
+        response = await self._arequest_with_retries(
+            "DELETE",
+            f"/v1/platform/evaluators/{ls_client._as_uuid(evaluator_id, 'evaluator_id')}",
         )
         ls_utils.raise_for_status_with_text(response)
 

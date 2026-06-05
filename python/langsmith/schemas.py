@@ -1690,3 +1690,115 @@ class FeedbackConfigSchema(BaseModel):
     """When this feedback configuration was last modified."""
     is_lower_score_better: Optional[bool] = None
     """Whether a lower score is considered better for this feedback key."""
+
+
+EvaluatorType = Literal["llm", "code"]
+EvaluatorSortBy = Literal["created_at", "updated_at"]
+
+
+class EvaluatorRunRule(BaseModel):
+    """A run rule that uses an online evaluator."""
+
+    id: Optional[UUID] = None
+    session_id: Optional[UUID] = None
+    session_name: Optional[str] = None
+    dataset_id: Optional[UUID] = None
+    dataset_name: Optional[str] = None
+    group_by: Optional[str] = None
+    use_corrections_dataset: bool = False
+    num_few_shot_examples: Optional[int] = None
+    corrections_dataset_id: Optional[UUID] = None
+    spend_usd: Optional[float] = None
+    trace_count: Optional[int] = None
+    spend_limit: Optional[dict[str, Any]] = None
+
+
+class LLMEvaluator(BaseModel):
+    """Configuration for an LLM-as-judge online evaluator."""
+
+    evaluator_id: UUID
+    prompt_id: UUID
+    prompt_repo_handle: str
+    variable_mapping: Optional[dict[str, Any]] = None
+    commit_hash_or_tag: Optional[str] = None
+    annotation_queue_id: Optional[UUID] = None
+    corrections_dataset_id: Optional[UUID] = None
+    use_corrections_dataset: Optional[bool] = None
+    num_few_shot_examples: Optional[int] = None
+
+
+class CodeEvaluator(BaseModel):
+    """Configuration for a code online evaluator."""
+
+    evaluator_id: UUID
+    code: str
+    language: str = "python"
+
+
+class Evaluator(BaseModel):
+    """An online evaluator in a LangSmith workspace."""
+
+    id: UUID
+    tenant_id: UUID
+    name: str
+    type: EvaluatorType
+    created_at: datetime
+    updated_at: datetime
+    feedback_keys: list[str] = Field(default_factory=list)
+    created_by: Optional[str] = None
+    llm_evaluator: Optional[LLMEvaluator] = None
+    code_evaluator: Optional[CodeEvaluator] = None
+    run_rules: list[EvaluatorRunRule] = Field(default_factory=list)
+
+
+class CreateLLMEvaluatorRequest(BaseModel):
+    """Payload for creating an LLM-as-judge online evaluator."""
+
+    prompt_repo_handle: Optional[str] = None
+    variable_mapping: Optional[dict[str, Any]] = None
+    commit_hash_or_tag: Optional[str] = None
+
+
+class CreateCodeEvaluatorRequest(BaseModel):
+    """Payload for creating a code online evaluator."""
+
+    code: str
+    language: str = "python"
+
+
+class EvaluatorCreate(BaseModel):
+    """Payload for creating an online evaluator."""
+
+    name: str
+    type: EvaluatorType
+    feedback_keys: list[str] = Field(default_factory=list)
+    llm_evaluator: Optional[CreateLLMEvaluatorRequest] = None
+    code_evaluator: Optional[CreateCodeEvaluatorRequest] = None
+    run_rules: Optional[list[EvaluatorRunRule]] = None
+
+
+class UpdateLLMEvaluatorRequest(BaseModel):
+    """Payload for updating an LLM-as-judge online evaluator."""
+
+    prompt_repo_handle: Optional[str] = None
+    variable_mapping: Optional[dict[str, Any]] = None
+    commit_hash_or_tag: Optional[str] = None
+    use_corrections_dataset: Optional[bool] = None
+    num_few_shot_examples: Optional[int] = None
+
+
+class UpdateCodeEvaluatorRequest(BaseModel):
+    """Payload for updating a code online evaluator."""
+
+    code: Optional[str] = None
+    language: Optional[str] = None
+
+
+class EvaluatorUpdate(BaseModel):
+    """Payload for updating an online evaluator."""
+
+    name: Optional[str] = None
+    feedback_keys: Optional[list[str]] = None
+    llm_evaluator: Optional[UpdateLLMEvaluatorRequest] = None
+    code_evaluator: Optional[UpdateCodeEvaluatorRequest] = None
+    run_rules: Optional[list[EvaluatorRunRule]] = None

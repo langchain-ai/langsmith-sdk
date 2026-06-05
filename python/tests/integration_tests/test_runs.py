@@ -339,6 +339,7 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
     }
 
 
+@skip_if_rate_limited
 async def test_async_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator"
     run_meta = uuid.uuid4().hex

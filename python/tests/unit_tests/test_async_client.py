@@ -563,3 +563,178 @@ def test_async_client_repr_hides_sensitive_info(mock_client_cls: mock.Mock) -> N
     assert "https://api.smith.langchain.com" in repr_str
     # Ensure it's properly formatted
     assert repr_str == "AsyncClient (API URL: https://api.smith.langchain.com)"
+
+
+def _online_evaluator_response(
+    evaluator_id: uuid.UUID,
+    *,
+    evaluator_type: str = "llm",
+) -> dict:
+    response = {
+        "id": str(evaluator_id),
+        "tenant_id": str(uuid.uuid4()),
+        "name": "quality judge",
+        "type": evaluator_type,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-02T00:00:00Z",
+        "feedback_keys": ["quality"],
+        "created_by": "tester",
+        "run_rules": [],
+    }
+    if evaluator_type == "llm":
+        response["llm_evaluator"] = {
+            "evaluator_id": str(evaluator_id),
+            "prompt_id": str(uuid.uuid4()),
+            "prompt_repo_handle": "owner/quality-judge",
+            "variable_mapping": {"input": "inputs.question"},
+            "commit_hash_or_tag": "latest",
+        }
+    else:
+        response["code_evaluator"] = {
+            "evaluator_id": str(evaluator_id),
+            "code": "def score(run): return True",
+            "language": "python",
+        }
+    return response
+
+
+def _without_bound_client(args: tuple, client: AsyncClient) -> tuple:
+    return args[1:] if args and args[0] is client else args
+
+
+@pytest.mark.asyncio
+async def test_async_create_llm_evaluator_posts_payload() -> None:
+    evaluator_id = uuid.uuid4()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = {
+        "evaluator": _online_evaluator_response(evaluator_id)
+    }
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+
+    with patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = mock_response
+        evaluator = await client.create_llm_evaluator(
+            name="quality judge",
+            prompt_repo_handle="owner/quality-judge",
+            feedback_keys=["quality"],
+            variable_mapping={"input": "inputs.question"},
+            commit_hash_or_tag="latest",
+            run_rules=[{"session_name": "default", "trace_count": 10}],
+        )
+
+    assert evaluator.id == evaluator_id
+    mock_request.assert_awaited_once()
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("POST", "/v1/platform/evaluators")
+    body = json.loads(mock_request.call_args.kwargs["content"])
+    assert body == {
+        "name": "quality judge",
+        "type": "llm",
+        "feedback_keys": ["quality"],
+        "llm_evaluator": {
+            "prompt_repo_handle": "owner/quality-judge",
+            "variable_mapping": {"input": "inputs.question"},
+            "commit_hash_or_tag": "latest",
+        },
+        "run_rules": [
+            {
+                "session_name": "default",
+                "use_corrections_dataset": False,
+                "trace_count": 10,
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_async_update_code_evaluator_patches_payload() -> None:
+    evaluator_id = uuid.uuid4()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = {
+        "evaluator": _online_evaluator_response(evaluator_id, evaluator_type="code")
+    }
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+
+    with patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = mock_response
+        evaluator = await client.update_code_evaluator(
+            evaluator_id,
+            name="updated judge",
+            feedback_keys=["correctness"],
+            code="def score(run): return False",
+        )
+
+    assert evaluator.type == "code"
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == (
+        "PATCH",
+        f"/v1/platform/evaluators/{evaluator_id}",
+    )
+    body = json.loads(mock_request.call_args.kwargs["content"])
+    assert body == {
+        "name": "updated judge",
+        "feedback_keys": ["correctness"],
+        "code_evaluator": {"code": "def score(run): return False"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_async_read_list_delete_evaluators() -> None:
+    evaluator_id = uuid.uuid4()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = _online_evaluator_response(evaluator_id)
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+
+    with patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = mock_response
+        evaluator = await client.read_evaluator(evaluator_id)
+
+    assert evaluator.id == evaluator_id
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("GET", f"/v1/platform/evaluators/{evaluator_id}")
+
+    with patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as mock_request:
+        list_response = MagicMock(status_code=200)
+        list_response.json.return_value = {
+            "evaluators": [_online_evaluator_response(evaluator_id)]
+        }
+        mock_request.return_value = list_response
+        evaluators = [
+            evaluator
+            async for evaluator in client.list_evaluators(
+                evaluator_ids=[evaluator_id],
+                evaluator_type="llm",
+                sort_by="created_at",
+                sort_by_desc=True,
+                limit=1,
+            )
+        ]
+
+    assert [evaluator.id for evaluator in evaluators] == [evaluator_id]
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("GET", "/v1/platform/evaluators")
+    assert mock_request.call_args.kwargs["params"]["evaluator_id"] == [evaluator_id]
+    assert mock_request.call_args.kwargs["params"]["type"] == "llm"
+    assert mock_request.call_args.kwargs["params"]["sort_by"] == "created_at"
+    assert mock_request.call_args.kwargs["params"]["sort_by_desc"] is True
+    assert mock_request.call_args.kwargs["params"]["limit"] == 1
+
+    with patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = mock_response
+        await client.delete_evaluator(evaluator_id)
+
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == (
+        "DELETE",
+        f"/v1/platform/evaluators/{evaluator_id}",
+    )

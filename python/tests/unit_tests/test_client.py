@@ -5139,6 +5139,16 @@ class TestEndToEndWorkspaceFlow:
             "/api/v1/stuff",
             "https://self-hosted.smith.langchain.com/api/v1/stuff",
         ),
+        (
+            "http://localhost:1980/api",
+            "/v1/platform/evaluators",
+            "http://localhost:1980/v1/platform/evaluators",
+        ),
+        (
+            "https://self-hosted.smith.langchain.com/api",
+            "/v1/platform/evaluators",
+            "https://self-hosted.smith.langchain.com/v1/platform/evaluators",
+        ),
         # Self-hosted API URL with /api/v1: https://self-hosted.smith.langchain.com/api/v1
         (
             "https://self-hosted.smith.langchain.com/api/v1",
@@ -6344,3 +6354,203 @@ def test_client_close_idempotent_no_error() -> None:
     )
     client.close()
     client.close()
+
+
+def _online_evaluator_response(
+    evaluator_id: uuid.UUID,
+    *,
+    evaluator_type: Literal["llm", "code"] = "llm",
+) -> dict:
+    tenant_id = uuid.uuid4()
+    response = {
+        "id": str(evaluator_id),
+        "tenant_id": str(tenant_id),
+        "name": "quality judge",
+        "type": evaluator_type,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-02T00:00:00Z",
+        "feedback_keys": ["quality"],
+        "created_by": "tester",
+        "run_rules": [],
+    }
+    if evaluator_type == "llm":
+        response["llm_evaluator"] = {
+            "evaluator_id": str(evaluator_id),
+            "prompt_id": str(uuid.uuid4()),
+            "prompt_repo_handle": "owner/quality-judge",
+            "variable_mapping": {"input": "inputs.question"},
+            "commit_hash_or_tag": "latest",
+        }
+    else:
+        response["code_evaluator"] = {
+            "evaluator_id": str(evaluator_id),
+            "code": "def score(run): return True",
+            "language": "python",
+        }
+    return response
+
+
+def _without_bound_client(args: tuple, client: Client) -> tuple:
+    return args[1:] if args and args[0] is client else args
+
+
+def test_create_llm_evaluator_posts_payload() -> None:
+    evaluator_id = uuid.uuid4()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = {
+        "evaluator": _online_evaluator_response(evaluator_id)
+    }
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+
+    with patch.object(
+        Client, "request_with_retries", return_value=mock_response
+    ) as mock_request:
+        evaluator = client.create_llm_evaluator(
+            name="quality judge",
+            prompt_repo_handle="owner/quality-judge",
+            feedback_keys=["quality"],
+            variable_mapping={"input": "inputs.question"},
+            commit_hash_or_tag="latest",
+            run_rules=[
+                {
+                    "session_name": "default",
+                    "trace_count": 10,
+                    "spend_limit": {"limit": 1.0, "period": "day"},
+                }
+            ],
+        )
+
+    assert evaluator.id == evaluator_id
+    mock_request.assert_called_once()
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("POST", "/v1/platform/evaluators")
+    body = json.loads(mock_request.call_args.kwargs["request_kwargs"]["data"])
+    assert body == {
+        "name": "quality judge",
+        "type": "llm",
+        "feedback_keys": ["quality"],
+        "llm_evaluator": {
+            "prompt_repo_handle": "owner/quality-judge",
+            "variable_mapping": {"input": "inputs.question"},
+            "commit_hash_or_tag": "latest",
+        },
+        "run_rules": [
+            {
+                "session_name": "default",
+                "use_corrections_dataset": False,
+                "trace_count": 10,
+                "spend_limit": {"limit": 1.0, "period": "day"},
+            }
+        ],
+    }
+
+
+def test_create_evaluator_requires_matching_config() -> None:
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+
+    with pytest.raises(ValueError, match="llm_evaluator is required"):
+        client.create_evaluator(name="missing config", evaluator_type="llm")
+
+    with pytest.raises(ValueError, match="code_evaluator is required"):
+        client.create_evaluator(name="missing config", evaluator_type="code")
+
+
+def test_update_code_evaluator_patches_payload() -> None:
+    evaluator_id = uuid.uuid4()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = {
+        "evaluator": _online_evaluator_response(evaluator_id, evaluator_type="code")
+    }
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+
+    with patch.object(
+        Client, "request_with_retries", return_value=mock_response
+    ) as mock_request:
+        evaluator = client.update_code_evaluator(
+            evaluator_id,
+            name="updated judge",
+            feedback_keys=["correctness"],
+            code="def score(run): return False",
+        )
+
+    assert evaluator.type == "code"
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == (
+        "PATCH",
+        f"/v1/platform/evaluators/{evaluator_id}",
+    )
+    body = json.loads(mock_request.call_args.kwargs["request_kwargs"]["data"])
+    assert body == {
+        "name": "updated judge",
+        "feedback_keys": ["correctness"],
+        "code_evaluator": {"code": "def score(run): return False"},
+    }
+
+
+def test_read_list_delete_evaluators() -> None:
+    evaluator_id = uuid.uuid4()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test",
+        auto_batch_tracing=False,
+    )
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = _online_evaluator_response(evaluator_id)
+
+    with patch.object(
+        Client, "request_with_retries", return_value=mock_response
+    ) as mock_request:
+        evaluator = client.read_evaluator(evaluator_id)
+
+    assert evaluator.id == evaluator_id
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("GET", f"/v1/platform/evaluators/{evaluator_id}")
+
+    list_response = MagicMock(status_code=200)
+    list_response.json.return_value = {
+        "evaluators": [_online_evaluator_response(evaluator_id)]
+    }
+    with patch.object(
+        Client, "request_with_retries", return_value=list_response
+    ) as mock_request:
+        evaluators = list(
+            client.list_evaluators(
+                evaluator_ids=[evaluator_id],
+                evaluator_type="llm",
+                sort_by="created_at",
+                sort_by_desc=True,
+                limit=1,
+            )
+        )
+
+    assert [evaluator.id for evaluator in evaluators] == [evaluator_id]
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == ("GET", "/v1/platform/evaluators")
+    assert mock_request.call_args.kwargs["params"]["evaluator_id"] == [evaluator_id]
+    assert mock_request.call_args.kwargs["params"]["type"] == "llm"
+    assert mock_request.call_args.kwargs["params"]["sort_by"] == "created_at"
+    assert mock_request.call_args.kwargs["params"]["sort_by_desc"] is True
+    assert mock_request.call_args.kwargs["params"]["limit"] == 1
+
+    with patch.object(
+        Client, "request_with_retries", return_value=mock_response
+    ) as mock_request:
+        client.delete_evaluator(evaluator_id)
+
+    request_args = _without_bound_client(mock_request.call_args.args, client)
+    assert request_args[:2] == (
+        "DELETE",
+        f"/v1/platform/evaluators/{evaluator_id}",
+    )
