@@ -34,6 +34,7 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
@@ -277,7 +278,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
@@ -323,7 +324,8 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Sandbox instance.
@@ -364,7 +366,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -404,7 +406,8 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
