@@ -206,7 +206,7 @@ def test_evaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -501,7 +501,7 @@ async def test_aevaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -1001,7 +1001,7 @@ def test_passing_kwargs_is_working():
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     def _valid_mixed_positional_and_keyword_with_reference_outputs(
         inputs, outputs, *, reference_outputs, optional=None
@@ -1048,7 +1048,7 @@ async def test_normalize_evaluator_func_valid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     if is_async:
         await aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
@@ -1074,7 +1074,7 @@ def test_normalize_evaluator_func_invalid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     with pytest.raises(ValueError, match="Invalid evaluator function"):
         if is_async:
@@ -1337,7 +1337,7 @@ def test_evaluate_infers_num_examples_from_list() -> None:
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     evaluate(
         (lambda inputs: {"output": inputs["in"] + 1}),
@@ -1382,7 +1382,7 @@ def test_evaluate_omits_num_examples_for_generator() -> None:
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     evaluate(
         (lambda inputs: {"output": inputs["in"] + 1}),

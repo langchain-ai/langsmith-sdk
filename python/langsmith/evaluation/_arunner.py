@@ -629,7 +629,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._num_examples = (
             num_examples
             if num_examples is not None
-            else _resolve_num_examples(data, client=self.client)  # type: ignore[arg-type]
+            else _resolve_num_examples(data, client=self.client)
         )
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments

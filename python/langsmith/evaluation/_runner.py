@@ -16,7 +16,15 @@ import random
 import textwrap
 import threading
 import uuid
-from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
+from collections.abc import (
+    AsyncIterable,
+    Awaitable,
+    Generator,
+    Iterable,
+    Iterator,
+    Sequence,
+    Sized,
+)
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
@@ -2029,7 +2037,7 @@ def _collect_evaluator_keys(
 
 
 def _resolve_num_examples(
-    data: DATA_T,
+    data: Union[DATA_T, AsyncIterable[schemas.Example]],
     *,
     client: langsmith.Client,
 ) -> Optional[int]:
@@ -2051,10 +2059,9 @@ def _resolve_num_examples(
             if _is_valid_uuid(data):
                 return client.read_dataset(dataset_id=uuid.UUID(data)).example_count
             return client.read_dataset(dataset_name=data).example_count
-        try:
-            return len(data)  # type: ignore[arg-type]
-        except TypeError:
-            return None
+        if isinstance(data, Sized):
+            return len(data)
+        return None
     except Exception:
         return None
 
