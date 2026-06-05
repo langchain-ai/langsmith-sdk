@@ -9903,7 +9903,6 @@ class Client:
         description: Optional[str] = None,
         max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
-        num_examples: Optional[int] = None,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
@@ -9923,7 +9922,6 @@ class Client:
         description: Optional[str] = None,
         max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
-        num_examples: Optional[int] = None,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
@@ -9946,7 +9944,6 @@ class Client:
         description: Optional[str] = None,
         max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
-        num_examples: Optional[int] = None,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
@@ -9981,10 +9978,6 @@ class Client:
             num_repetitions (int, default=1): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
-            num_examples (Optional[int]): Optional total number of examples that will
-                be evaluated. When provided, sent to the backend so the UI can render
-                a determinate progress bar. If not provided, the backend resolves the
-                count from the reference dataset.
             experiment (Optional[EXPERIMENT_T]): An existing experiment to
                 extend.
 
@@ -10155,7 +10148,6 @@ class Client:
             description=description,
             max_concurrency=max_concurrency,
             num_repetitions=num_repetitions,
-            num_examples=num_examples,
             client=self,
             blocking=blocking,
             experiment=experiment,
@@ -10185,7 +10177,6 @@ class Client:
         description: Optional[str] = None,
         max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
-        num_examples: Optional[int] = None,
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
@@ -10217,10 +10208,6 @@ class Client:
             num_repetitions (int, default=1): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
-            num_examples (Optional[int]): Optional total number of examples that will
-                be evaluated. When provided, sent to the backend so the UI can render
-                a determinate progress bar. If not provided, the backend resolves the
-                count from the reference dataset.
             blocking (bool, default=True): Whether to block until the evaluation is complete.
             experiment (Optional[TracerSession]): An existing experiment to
                 extend.
@@ -10412,7 +10399,6 @@ class Client:
             description=description,
             max_concurrency=max_concurrency,
             num_repetitions=num_repetitions,
-            num_examples=num_examples,
             client=self,
             blocking=blocking,
             experiment=experiment,

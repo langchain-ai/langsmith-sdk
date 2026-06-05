@@ -178,13 +178,6 @@ type BaseEvaluateOptions = {
    * @default 1
    */
   numRepetitions?: number;
-  /**
-   * Optional total number of examples that will be evaluated. When provided,
-   * sent to the backend so the UI can render a determinate progress bar.
-   * If not provided, the backend resolves the count from the reference dataset.
-   * @default undefined
-   */
-  numExamples?: number;
 };
 
 export interface EvaluateOptions extends BaseEvaluateOptions {
@@ -308,10 +301,10 @@ export class _ExperimentManager {
 
   _examples?: Example[];
 
-  /** Caller-supplied raw dataset cardinality before repetition. Sent to the
-   * backend as the transport-only ``num_examples`` field; the backend multiplies
-   * it by ``num_repetitions`` to compute ``expected_run_count``. When
-   * unspecified the backend resolves the count from the reference dataset. */
+  /** Raw dataset cardinality before repetition. Auto-resolved from `data` in
+   * `_createProject` (list length, or readDataset for name/id). Sent to the
+   * backend as the transport-only `num_examples` field; the backend multiplies
+   * it by `num_repetitions` to compute `expected_run_count`. */
   _numExamples?: number;
 
   _numRepetitions?: number;
@@ -483,6 +476,9 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
+    if (this._numExamples === undefined) {
+      this._numExamples = await _resolveNumExamples(this._data, this.client);
+    }
     const numExamples = this._numExamples ?? null;
     const numRepetitions = this._numRepetitions ?? null;
     for (let i = 0; i < 10; i++) {
@@ -1090,7 +1086,6 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
-    numExamples: fields.numExamples,
     includeAttachments: standardFields.includeAttachments,
   }).start();
 
@@ -1228,6 +1223,38 @@ Try setting "LANGSMITH_TRACING=true" in your environment.`);
     run,
     example,
   };
+}
+
+async function _resolveNumExamples(
+  data: DataT | undefined,
+  client: Client,
+): Promise<number | undefined> {
+  // Best-effort dataset size for the experiment progress hint. Returns
+  // undefined for lazy async iterators where size cannot be inferred without
+  // consuming. Never throws — failures (e.g. transient readDataset error)
+  // degrade to undefined and the backend resolves the count from the dataset.
+  if (data === undefined) return undefined;
+  try {
+    if (Array.isArray(data)) {
+      return data.length;
+    }
+    if (typeof data === "string") {
+      let isUUID = false;
+      try {
+        assertUuid(data);
+        isUUID = true;
+      } catch (_) {
+        isUUID = false;
+      }
+      const dataset = isUUID
+        ? await client.readDataset({ datasetId: data })
+        : await client.readDataset({ datasetName: data });
+      return dataset.example_count ?? undefined;
+    }
+    return undefined;
+  } catch (_) {
+    return undefined;
+  }
 }
 
 function _resolveData(

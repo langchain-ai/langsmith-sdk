@@ -477,7 +477,7 @@ describe("evaluation runner internals", () => {
     expect(executionOrder).toEqual([1, 2, 3]);
   }, 10000);
 
-  test("evaluate forwards num_examples/num_repetitions to createProject", async () => {
+  test("evaluate infers numExamples from list data", async () => {
     const now = new Date().toISOString();
     const examples: Example[] = [1, 2, 3].map((v) => ({
       id: `e${v}`,
@@ -507,7 +507,6 @@ describe("evaluation runner internals", () => {
       {
         data: examples,
         evaluators: [],
-        numExamples: 3,
         numRepetitions: 4,
         client: mockClient,
       },
@@ -522,7 +521,7 @@ describe("evaluation runner internals", () => {
     expect(createProjectCalls[0].numRepetitions).toBe(4);
   });
 
-  test("evaluate omits num_examples when caller does not pass it", async () => {
+  test("evaluate omits numExamples for async-iterable data", async () => {
     const now = new Date().toISOString();
     const examples: Example[] = [1, 2, 3].map((v) => ({
       id: `e${v}`,
@@ -533,6 +532,10 @@ describe("evaluation runner internals", () => {
       modified_at: now,
       runs: [],
     }));
+
+    async function* exampleGen() {
+      for (const e of examples) yield e;
+    }
 
     const createProjectCalls: any[] = [];
     const mockClient = {
@@ -550,7 +553,7 @@ describe("evaluation runner internals", () => {
     const results = await evaluate(
       async (input: any) => ({ result: input.value }),
       {
-        data: examples,
+        data: exampleGen(),
         evaluators: [],
         client: mockClient,
       },

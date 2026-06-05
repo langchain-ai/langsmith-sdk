@@ -1301,12 +1301,10 @@ async def test_invalid_aevaluate_args() -> None:
         await aevaluate((lambda x: x), data="data", load_nested=True)
 
 
-def test_evaluate_forwards_num_examples_and_repetitions_when_passed() -> None:
-    """``evaluate()`` forwards caller-supplied ``num_examples``/``num_repetitions``
-    as top-level fields on the POST /sessions body so the backend can populate
-    ``extra.__progress`` for UI loading state. When the caller does not pass
-    ``num_examples``, the SDK should not synthesize one — the backend resolves
-    the count from the reference dataset.
+def test_evaluate_infers_num_examples_from_list() -> None:
+    """When ``data`` is a sized iterable (list/tuple), the SDK should auto-resolve
+    ``num_examples`` from ``len(data)`` and forward it on the POST /sessions
+    body so the backend can populate ``extra.__progress`` for UI loading state.
     """
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -1341,7 +1339,6 @@ def test_evaluate_forwards_num_examples_and_repetitions_when_passed() -> None:
         (lambda inputs: {"output": inputs["in"] + 1}),
         data=examples,
         client=client,
-        num_examples=num_examples,
         num_repetitions=num_repetitions,
         blocking=True,
     )
@@ -1351,9 +1348,10 @@ def test_evaluate_forwards_num_examples_and_repetitions_when_passed() -> None:
     assert fake_request.created_session["num_repetitions"] == num_repetitions
 
 
-def test_evaluate_omits_num_examples_when_not_passed() -> None:
-    """Without an explicit ``num_examples`` the SDK should not include the field
-    in the create-project payload — the backend resolves it from the dataset.
+def test_evaluate_omits_num_examples_for_generator() -> None:
+    """When ``data`` is a lazy generator, the SDK cannot infer size without
+    consuming it, so ``num_examples`` should be omitted from the create-project
+    payload and the backend falls back to resolving it from the dataset.
     """
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -1384,7 +1382,7 @@ def test_evaluate_omits_num_examples_when_not_passed() -> None:
 
     evaluate(
         (lambda inputs: {"output": inputs["in"] + 1}),
-        data=examples,
+        data=(e for e in examples),
         client=client,
         blocking=True,
     )

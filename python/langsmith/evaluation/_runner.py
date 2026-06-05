@@ -106,7 +106,6 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
-    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -127,7 +126,6 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
-    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -149,7 +147,6 @@ def evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
-    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
@@ -186,10 +183,6 @@ def evaluate(
         blocking (bool): Whether to block until the evaluation is complete.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
-        num_examples (int | None): Optional total number of examples that will be
-            evaluated. When provided, sent to the backend so the UI can render a
-            determinate progress bar. If not provided, the backend resolves the
-            count from the reference dataset.
         experiment (schemas.TracerSession | None): An existing experiment to
             extend.
 
@@ -414,7 +407,6 @@ def evaluate(
             description=description,
             max_concurrency=max_concurrency,
             num_repetitions=num_repetitions,
-            num_examples=num_examples,
             client=client,
             blocking=blocking,
             experiment=experiment,
@@ -1080,7 +1072,6 @@ def _evaluate(
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
-    num_examples: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -1099,7 +1090,6 @@ def _evaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
-        num_examples=num_examples,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -1378,7 +1368,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
-        self._num_examples = num_examples
+        self._num_examples = (
+            num_examples
+            if num_examples is not None
+            else _resolve_num_examples(data, client=self.client)
+        )
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
@@ -1977,6 +1971,37 @@ def _is_valid_uuid(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _resolve_num_examples(
+    data: DATA_T,
+    *,
+    client: langsmith.Client,
+) -> Optional[int]:
+    """Best-effort dataset size for the experiment progress hint.
+
+    Returns ``None`` for lazy iterators where size cannot be inferred without
+    consuming the iterable. Never raises — failures (e.g. transient backend
+    error during ``read_dataset``) degrade to ``None`` and the backend resolves
+    the count from the dataset at experiment start.
+    """
+    try:
+        if isinstance(data, schemas.Dataset):
+            if data.example_count is not None:
+                return data.example_count
+            return client.read_dataset(dataset_id=data.id).example_count
+        if isinstance(data, uuid.UUID):
+            return client.read_dataset(dataset_id=data).example_count
+        if isinstance(data, str):
+            if _is_valid_uuid(data):
+                return client.read_dataset(dataset_id=uuid.UUID(data)).example_count
+            return client.read_dataset(dataset_name=data).example_count
+        try:
+            return len(data)  # type: ignore[arg-type]
+        except TypeError:
+            return None
+    except Exception:
+        return None
 
 
 def _resolve_data(
