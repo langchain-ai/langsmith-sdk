@@ -25,6 +25,47 @@ A typical workflow looks like:
 
 We'll walk through these steps in more detail below.
 
+## Sandbox AWS auth proxy
+
+When you create a LangSmith sandbox that needs to call AWS services, use the
+sandbox AWS auth proxy helpers. The proxy keeps the real AWS credentials outside
+the sandbox and signs supported AWS HTTPS requests with SigV4, so code in the
+sandbox can use AWS SDKs normally without storing long-lived AWS keys in files,
+environment variables, shell history, or logs.
+
+First, store `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as LangSmith
+workspace secrets. Then create the sandbox with an AWS auth proxy config:
+
+```ts
+import {
+  SandboxClient,
+  awsAuthProxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "aws-sandbox",
+  proxyConfig: awsAuthProxyConfig({
+    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  }),
+});
+
+try {
+  // Your sandbox code can use the AWS SDK, the AWS CLI, or other AWS tooling normally.
+  const result = await sandbox.run("node your-aws-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Use `opaqueSecret("...")` instead of `workspaceSecret(...)` when your application
+needs to pass short-lived write-only AWS credentials at sandbox creation time.
+Plaintext AWS credential values are not supported.
+
 ## 1. Connect to LangSmith
 
 Sign up for [LangSmith](https://smith.langchain.com/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
