@@ -560,16 +560,7 @@ export type CreateProjectParams = {
   upsert?: boolean;
   projectExtra?: RecordStringAny | null;
   referenceDatasetId?: string | null;
-  /**
-   * Expected number of examples. Transport-only field the backend folds into
-   * `extra.__progress` to drive experiment progress in the UI; not round-tripped
-   * as a response field.
-   */
   numExamples?: number | null;
-  /**
-   * Number of repetitions per example. Combined with `numExamples` to compute
-   * `expected_run_count`. Transport-only.
-   */
   numRepetitions?: number | null;
 };
 

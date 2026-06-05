@@ -1169,11 +1169,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
     def _copy(self, *args: Any, **kwargs: Any) -> _AsyncExperimentManager:
         default_args = (self._data,)
-        # num_repetitions is intentionally NOT propagated: the first manager
-        # expands examples by num_repetitions on first access to `self.examples`
-        # and passes the already-expanded iterable forward as the copy's data.
-        # Propagating num_repetitions would cause the copy to re-expand and
-        # multiply the run count.
         default_kwargs = {
             "experiment": self._experiment,
             "metadata": self._metadata,

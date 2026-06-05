@@ -298,28 +298,15 @@ export class _ExperimentManager {
   >;
 
   _resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
-
   _examples?: Example[];
-
-  /** Raw dataset cardinality before repetition. Auto-resolved from `data` in
-   * `_createProject` (list length, or readDataset for name/id). Sent to the
-   * backend as the transport-only `num_examples` field; the backend multiplies
-   * it by `num_repetitions` to compute `expected_run_count`. */
   _numExamples?: number;
-
   _numRepetitions?: number;
-
   _runsArray?: Run[];
-
   client: Client;
-
   _experiment?: TracerSession;
-
   _experimentName: string;
-
   _metadata: KVMap;
   _description?: string;
-
   _includeAttachments?: boolean;
 
   get experimentName(): string {
@@ -1231,8 +1218,7 @@ async function _resolveNumExamples(
 ): Promise<number | undefined> {
   // Best-effort dataset size for the experiment progress hint. Returns
   // undefined for lazy async iterators where size cannot be inferred without
-  // consuming. Never throws — failures (e.g. transient readDataset error)
-  // degrade to undefined and the backend resolves the count from the dataset.
+  // consuming.
   if (data === undefined) return undefined;
   try {
     if (Array.isArray(data)) {
