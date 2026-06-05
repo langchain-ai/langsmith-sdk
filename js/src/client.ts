@@ -52,6 +52,15 @@ import {
   AnnotationQueueWithDetails,
   AnnotationQueueRubricItem,
   FeedbackConfigSchema,
+  CreateCodeEvaluatorRequest,
+  CreateLLMEvaluatorRequest,
+  Evaluator,
+  EvaluatorRunRule,
+  EvaluatorSortBy,
+  EvaluatorType,
+  EvaluatorUpdate,
+  UpdateCodeEvaluatorRequest,
+  UpdateLLMEvaluatorRequest,
   AgentContext,
   SkillContext,
   Entry,
@@ -5378,6 +5387,362 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Create an online evaluator on the LangSmith API.
+   * @param options - The options for creating the evaluator
+   * @param options.name - The evaluator name
+   * @param options.evaluatorType - The evaluator type
+   * @param options.feedbackKeys - The feedback keys this evaluator writes
+   * @param options.llmEvaluator - LLM-as-judge evaluator configuration
+   * @param options.codeEvaluator - Code evaluator configuration
+   * @param options.runRules - Rules that determine where this evaluator runs
+   * @returns The created Evaluator object
+   */
+  public async createEvaluator(options: {
+    name: string;
+    evaluatorType: EvaluatorType;
+    feedbackKeys?: string[];
+    llmEvaluator?: CreateLLMEvaluatorRequest;
+    codeEvaluator?: CreateCodeEvaluatorRequest;
+    runRules?: EvaluatorRunRule[];
+  }): Promise<Evaluator> {
+    const {
+      name,
+      evaluatorType,
+      feedbackKeys,
+      llmEvaluator,
+      codeEvaluator,
+      runRules,
+    } = options;
+    if (evaluatorType === "llm" && llmEvaluator === undefined) {
+      throw new Error("llmEvaluator is required for an LLM evaluator.");
+    }
+    if (evaluatorType === "code" && codeEvaluator === undefined) {
+      throw new Error("codeEvaluator is required for a code evaluator.");
+    }
+
+    const body: Record<string, unknown> = {
+      name,
+      type: evaluatorType,
+      feedback_keys: feedbackKeys ?? [],
+      llm_evaluator: llmEvaluator,
+      code_evaluator: codeEvaluator,
+      run_rules: runRules,
+    };
+    const serializedBody = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(body).filter(([_, value]) => value !== undefined),
+      ),
+    );
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath("evaluators")}`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: serializedBody,
+        },
+      );
+      await raiseForStatus(res, "create evaluator");
+      return res;
+    });
+    const { evaluator } = await response.json();
+    return evaluator;
+  }
+
+  /**
+   * Create an LLM-as-judge online evaluator.
+   */
+  public async createLLMEvaluator(options: {
+    name: string;
+    promptRepoHandle?: string;
+    feedbackKeys?: string[];
+    variableMapping?: Record<string, unknown>;
+    commitHashOrTag?: string;
+    runRules?: EvaluatorRunRule[];
+  }): Promise<Evaluator> {
+    const {
+      name,
+      promptRepoHandle,
+      feedbackKeys,
+      variableMapping,
+      commitHashOrTag,
+      runRules,
+    } = options;
+    return this.createEvaluator({
+      name,
+      evaluatorType: "llm",
+      feedbackKeys,
+      llmEvaluator: {
+        prompt_repo_handle: promptRepoHandle,
+        variable_mapping: variableMapping,
+        commit_hash_or_tag: commitHashOrTag,
+      },
+      runRules,
+    });
+  }
+
+  /**
+   * Create a code online evaluator.
+   */
+  public async createCodeEvaluator(options: {
+    name: string;
+    code: string;
+    feedbackKeys?: string[];
+    language?: string;
+    runRules?: EvaluatorRunRule[];
+  }): Promise<Evaluator> {
+    const { name, code, feedbackKeys, language = "python", runRules } = options;
+    return this.createEvaluator({
+      name,
+      evaluatorType: "code",
+      feedbackKeys,
+      codeEvaluator: {
+        code,
+        language,
+      },
+      runRules,
+    });
+  }
+
+  /**
+   * Read an online evaluator by ID.
+   * @param evaluatorId - The ID of the evaluator to read
+   * @returns The Evaluator object
+   */
+  public async readEvaluator(evaluatorId: string): Promise<Evaluator> {
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `evaluators/${assertUuid(evaluatorId, "evaluatorId")}`,
+        )}`,
+        {
+          method: "GET",
+          headers: this._mergedHeaders,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        },
+      );
+      await raiseForStatus(res, "read evaluator");
+      return res;
+    });
+    return response.json();
+  }
+
+  /**
+   * List online evaluators on the LangSmith API.
+   * @param options - The options for listing evaluators
+   * @param options.evaluatorIds - Filter by evaluator IDs
+   * @param options.name - Filter by evaluator name
+   * @param options.evaluatorType - Filter by evaluator type
+   * @param options.sortBy - Field to sort by
+   * @param options.sortByDesc - Whether to sort descending
+   * @param options.limit - The maximum number of evaluators to return
+   * @returns An async iterator of Evaluator objects
+   */
+  public async *listEvaluators(
+    options: {
+      evaluatorIds?: string[];
+      name?: string;
+      evaluatorType?: EvaluatorType;
+      sortBy?: EvaluatorSortBy;
+      sortByDesc?: boolean;
+      limit?: number;
+    } = {},
+  ): AsyncIterableIterator<Evaluator> {
+    const { evaluatorIds, name, evaluatorType, sortBy, sortByDesc, limit } =
+      options;
+    const params = new URLSearchParams();
+    if (evaluatorIds) {
+      evaluatorIds.forEach((id, i) => {
+        assertUuid(id, `evaluatorIds[${i}]`);
+        params.append("evaluator_id", id);
+      });
+    }
+    if (name) params.append("name_contains", name);
+    if (evaluatorType) params.append("type", evaluatorType);
+    if (sortBy) params.append("sort_by", sortBy);
+    if (sortByDesc !== undefined)
+      params.append("sort_by_desc", String(sortByDesc));
+    params.append(
+      "limit",
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString(),
+    );
+
+    let count = 0;
+    for await (const evaluators of this._getPaginated<
+      Evaluator,
+      { evaluators?: Evaluator[] }
+    >(
+      this._getPlatformEndpointPath("evaluators"),
+      params,
+      (data: { evaluators?: Evaluator[] }) => data.evaluators ?? [],
+    )) {
+      for (const evaluator of evaluators) {
+        yield evaluator;
+        count++;
+        if (limit !== undefined && count >= limit) return;
+      }
+    }
+  }
+
+  /**
+   * Update an online evaluator.
+   * @param evaluatorId - The ID of the evaluator to update
+   * @param options - The options for updating the evaluator
+   * @returns The updated Evaluator object
+   */
+  public async updateEvaluator(
+    evaluatorId: string,
+    options: {
+      name?: string;
+      feedbackKeys?: string[];
+      llmEvaluator?: UpdateLLMEvaluatorRequest;
+      codeEvaluator?: UpdateCodeEvaluatorRequest;
+      runRules?: EvaluatorRunRule[];
+    },
+  ): Promise<Evaluator> {
+    const { name, feedbackKeys, llmEvaluator, codeEvaluator, runRules } =
+      options;
+    const body: EvaluatorUpdate = {
+      name,
+      feedback_keys: feedbackKeys,
+      llm_evaluator: llmEvaluator,
+      code_evaluator: codeEvaluator,
+      run_rules: runRules,
+    };
+    const serializedBody = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(body).filter(([_, value]) => value !== undefined),
+      ),
+    );
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `evaluators/${assertUuid(evaluatorId, "evaluatorId")}`,
+        )}`,
+        {
+          method: "PATCH",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: serializedBody,
+        },
+      );
+      await raiseForStatus(res, "update evaluator");
+      return res;
+    });
+    const { evaluator } = await response.json();
+    return evaluator;
+  }
+
+  /**
+   * Update an LLM-as-judge online evaluator.
+   */
+  public async updateLLMEvaluator(
+    evaluatorId: string,
+    options: {
+      name?: string;
+      feedbackKeys?: string[];
+      promptRepoHandle?: string;
+      variableMapping?: Record<string, unknown>;
+      commitHashOrTag?: string;
+      useCorrectionsDataset?: boolean;
+      numFewShotExamples?: number;
+      runRules?: EvaluatorRunRule[];
+    },
+  ): Promise<Evaluator> {
+    const {
+      name,
+      feedbackKeys,
+      promptRepoHandle,
+      variableMapping,
+      commitHashOrTag,
+      useCorrectionsDataset,
+      numFewShotExamples,
+      runRules,
+    } = options;
+    const llmEvaluator = Object.fromEntries(
+      Object.entries({
+        prompt_repo_handle: promptRepoHandle,
+        variable_mapping: variableMapping,
+        commit_hash_or_tag: commitHashOrTag,
+        use_corrections_dataset: useCorrectionsDataset,
+        num_few_shot_examples: numFewShotExamples,
+      }).filter(([_, value]) => value !== undefined),
+    ) as UpdateLLMEvaluatorRequest;
+
+    return this.updateEvaluator(evaluatorId, {
+      name,
+      feedbackKeys,
+      llmEvaluator:
+        Object.keys(llmEvaluator).length > 0 ? llmEvaluator : undefined,
+      runRules,
+    });
+  }
+
+  /**
+   * Update a code online evaluator.
+   */
+  public async updateCodeEvaluator(
+    evaluatorId: string,
+    options: {
+      name?: string;
+      feedbackKeys?: string[];
+      code?: string;
+      language?: string;
+      runRules?: EvaluatorRunRule[];
+    },
+  ): Promise<Evaluator> {
+    const { name, feedbackKeys, code, language, runRules } = options;
+    const codeEvaluator = Object.fromEntries(
+      Object.entries({
+        code,
+        language,
+      }).filter(([_, value]) => value !== undefined),
+    ) as UpdateCodeEvaluatorRequest;
+
+    return this.updateEvaluator(evaluatorId, {
+      name,
+      feedbackKeys,
+      codeEvaluator:
+        Object.keys(codeEvaluator).length > 0 ? codeEvaluator : undefined,
+      runRules,
+    });
+  }
+
+  /**
+   * Delete an online evaluator by ID.
+   * @param evaluatorId - The ID of the evaluator to delete
+   */
+  public async deleteEvaluator(evaluatorId: string): Promise<void> {
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `evaluators/${assertUuid(evaluatorId, "evaluatorId")}`,
+        )}`,
+        {
+          method: "DELETE",
+          headers: { ...this._mergedHeaders, Accept: "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        },
+      );
+      await raiseForStatus(res, "delete evaluator", true);
+      return res;
+    });
+  }
+
+  /**
    * API for managing annotation queues
    */
 
@@ -5750,36 +6115,6 @@ export class Client implements LangSmithTracingClientInterface {
     return json.commits[0].commit_hash;
   }
 
-  protected async _createCommitTags(
-    promptOwnerAndName: string,
-    commitId: string,
-    tags: string | string[],
-  ): Promise<void> {
-    const tagList = typeof tags === "string" ? [tags] : tags;
-
-    await Promise.all(
-      tagList.map(async (tag) =>
-        this.caller.call(async () => {
-          const res = await this._fetch(
-            `${this.apiUrl}/repos/${promptOwnerAndName}/tags`,
-            {
-              method: "POST",
-              headers: {
-                ...this._mergedHeaders,
-                "Content-Type": "application/json",
-              },
-              signal: AbortSignal.timeout(this.timeout_ms),
-              ...this.fetchOptions,
-              body: JSON.stringify({ tag_name: tag, commit_id: commitId }),
-            },
-          );
-          await raiseForStatus(res, "create commit tag");
-          return res;
-        }),
-      ),
-    );
-  }
-
   protected async _likeOrUnlikePrompt(
     promptIdentifier: string,
     like: boolean,
@@ -6108,8 +6443,6 @@ export class Client implements LangSmithTracingClientInterface {
    * @param object - The prompt object/manifest to commit (e.g., ChatPromptTemplate, messages array, etc.)
    * @param options - Optional configuration for the commit
    * @param options.parentCommitHash - The parent commit hash. Defaults to "latest" (the most recent commit).
-   * @param options.tags - A tag or list of tags to apply to the commit.
-   * @param options.description - A description for the commit.
    * @returns A Promise that resolves to the URL of the newly created commit
    * @throws {Error} If the prompt does not exist
    * @example
@@ -6125,9 +6458,9 @@ export class Client implements LangSmithTracingClientInterface {
    * const commitUrl = await client.createCommit("my-prompt", template);
    * console.log(`Commit created: ${commitUrl}`);
    *
-   * // Create a commit with tags
+   * // Create a commit based on a specific parent commit
    * const commitUrl2 = await client.createCommit("my-prompt", template, {
-   *   tags: ["production", "v1"]
+   *   parentCommitHash: "abc123def456"
    * });
    * ```
    */
@@ -6136,7 +6469,6 @@ export class Client implements LangSmithTracingClientInterface {
     object: any,
     options?: {
       parentCommitHash?: string;
-      tags?: string | string[];
       description?: string;
     },
   ): Promise<string> {
@@ -6178,16 +6510,10 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const result = await response.json();
-    const commit = result.commit ?? result;
-    if (options?.tags) {
-      await this._createCommitTags(
-        `${owner}/${promptName}`,
-        commit.id,
-        options.tags,
-      );
-    }
     return this._getPromptUrl(
-      `${owner}/${promptName}${commit.commit_hash ? `:${commit.commit_hash}` : ""}`,
+      `${owner}/${promptName}${
+        result.commit_hash ? `:${result.commit_hash}` : ""
+      }`,
     );
   }
 
@@ -6677,18 +7003,12 @@ export class Client implements LangSmithTracingClientInterface {
       description?: string;
       readme?: string;
       tags?: string[];
-      commitTags?: string | string[];
       commitDescription?: string;
     },
   ): Promise<string> {
     // Create or update prompt metadata
     if (await this.promptExists(promptIdentifier)) {
-      if (
-        options &&
-        ["description", "readme", "tags", "isPublic"].some(
-          (key) => options[key as keyof typeof options] !== undefined,
-        )
-      ) {
+      if (options && Object.keys(options).some((key) => key !== "object")) {
         await this.updatePrompt(promptIdentifier, {
           description: options?.description,
           readme: options?.readme,
@@ -6712,7 +7032,6 @@ export class Client implements LangSmithTracingClientInterface {
     // Create a commit with the new manifest
     const url = await this.createCommit(promptIdentifier, options?.object, {
       parentCommitHash: options?.parentCommitHash,
-      tags: options?.commitTags,
       description: options?.commitDescription,
     });
     return url;

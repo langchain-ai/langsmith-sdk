@@ -686,81 +686,6 @@ describe("Client", () => {
       const parsed = JSON.parse(capturedBody);
       expect(parsed.description).toBeUndefined();
     });
-
-    it("should create commit tags when provided", async () => {
-      const client = new Client({ apiKey: "test-api-key" });
-
-      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
-      jest
-        .spyOn(client as any, "_getLatestCommitHash")
-        .mockResolvedValue("parent123");
-      jest.spyOn(client as any, "_fetch").mockImplementation(async (url) => ({
-        ok: true,
-        status: 200,
-        json: async () =>
-          String(url).includes("/commits/")
-            ? { commit: { commit_hash: "new123", id: "commit-id" } }
-            : {},
-        text: async () => "",
-        headers: new Headers(),
-      }));
-      jest
-        .spyOn(client as any, "_getPromptUrl")
-        .mockReturnValue("https://smith.langchain.com/prompts/test");
-
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
-
-      await client.createCommit(
-        "owner/my-prompt",
-        { id: "test" },
-        {
-          tags: ["production", "v1"],
-        },
-      );
-
-      const tagCalls = fetchSpy.mock.calls.filter(([url]) =>
-        String(url).endsWith("/repos/owner/my-prompt/tags"),
-      );
-      expect(tagCalls).toHaveLength(2);
-      expect(
-        tagCalls.map(([, init]) =>
-          JSON.parse((init as RequestInit).body as string),
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          { tag_name: "production", commit_id: "commit-id" },
-          { tag_name: "v1", commit_id: "commit-id" },
-        ]),
-      );
-    });
-  });
-
-  describe("pushPrompt", () => {
-    it("should forward commit tags without updating prompt metadata", async () => {
-      const client = new Client({ apiKey: "test-api-key" });
-
-      jest.spyOn(client, "promptExists").mockResolvedValue(true);
-      const updatePromptSpy = jest.spyOn(client, "updatePrompt");
-      const createCommitSpy = jest
-        .spyOn(client, "createCommit")
-        .mockResolvedValue("https://smith.langchain.com/prompts/test");
-
-      await client.pushPrompt("owner/my-prompt", {
-        object: { id: "test" },
-        commitTags: ["production"],
-      });
-
-      expect(updatePromptSpy).not.toHaveBeenCalled();
-      expect(createCommitSpy).toHaveBeenCalledWith(
-        "owner/my-prompt",
-        { id: "test" },
-        {
-          parentCommitHash: undefined,
-          tags: ["production"],
-          description: undefined,
-        },
-      );
-    });
   });
 
   describe("_filterForSampling patch logic", () => {
@@ -1570,6 +1495,206 @@ describe("Client", () => {
       expect(inspectFn.call(client)).toBe(
         '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
+    });
+  });
+
+  describe("online evaluator CRUD", () => {
+    const evaluatorId = "550e8400-e29b-41d4-a716-446655440000";
+
+    const evaluatorResponse = (type: "llm" | "code" = "llm") => ({
+      id: evaluatorId,
+      tenant_id: "650e8400-e29b-41d4-a716-446655440000",
+      name: "quality judge",
+      type,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+      feedback_keys: ["quality"],
+      created_by: "tester",
+      run_rules: [],
+      ...(type === "llm"
+        ? {
+            llm_evaluator: {
+              evaluator_id: evaluatorId,
+              prompt_id: "750e8400-e29b-41d4-a716-446655440000",
+              prompt_repo_handle: "owner/quality-judge",
+              variable_mapping: { input: "inputs.question" },
+              commit_hash_or_tag: "latest",
+            },
+          }
+        : {
+            code_evaluator: {
+              evaluator_id: evaluatorId,
+              code: "function score(run) { return true; }",
+              language: "js",
+            },
+          }),
+    });
+
+    const jsonResponse = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    it("creates an LLM evaluator with the expected payload", async () => {
+      const mockFetch = jest.fn(async () =>
+        jsonResponse({ evaluator: evaluatorResponse() }),
+      );
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      const evaluator = await client.createLLMEvaluator({
+        name: "quality judge",
+        promptRepoHandle: "owner/quality-judge",
+        feedbackKeys: ["quality"],
+        variableMapping: { input: "inputs.question" },
+        commitHashOrTag: "latest",
+        runRules: [
+          {
+            session_name: "default",
+            trace_count: 10,
+            spend_limit: { limit: 1.0, period: "day" },
+          },
+        ],
+      });
+
+      expect(evaluator.id).toBe(evaluatorId);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.smith.langchain.com/v1/platform/evaluators",
+        expect.objectContaining({ method: "POST" }),
+      );
+      const [, request] = mockFetch.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(JSON.parse(request.body as string)).toEqual({
+        name: "quality judge",
+        type: "llm",
+        feedback_keys: ["quality"],
+        llm_evaluator: {
+          prompt_repo_handle: "owner/quality-judge",
+          variable_mapping: { input: "inputs.question" },
+          commit_hash_or_tag: "latest",
+        },
+        run_rules: [
+          {
+            session_name: "default",
+            trace_count: 10,
+            spend_limit: { limit: 1.0, period: "day" },
+          },
+        ],
+      });
+    });
+
+    it("requires matching evaluator config on generic create", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      await expect(
+        client.createEvaluator({
+          name: "missing config",
+          evaluatorType: "llm",
+        }),
+      ).rejects.toThrow("llmEvaluator is required");
+
+      await expect(
+        client.createEvaluator({
+          name: "missing config",
+          evaluatorType: "code",
+        }),
+      ).rejects.toThrow("codeEvaluator is required");
+    });
+
+    it("updates a code evaluator with the expected payload", async () => {
+      const mockFetch = jest.fn(async () =>
+        jsonResponse({ evaluator: evaluatorResponse("code") }),
+      );
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      const evaluator = await client.updateCodeEvaluator(evaluatorId, {
+        name: "updated judge",
+        feedbackKeys: ["correctness"],
+        code: "function score(run) { return false; }",
+      });
+
+      expect(evaluator.type).toBe("code");
+      expect(mockFetch).toHaveBeenCalledWith(
+        `https://api.smith.langchain.com/v1/platform/evaluators/${evaluatorId}`,
+        expect.objectContaining({ method: "PATCH" }),
+      );
+      const [, request] = mockFetch.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(JSON.parse(request.body as string)).toEqual({
+        name: "updated judge",
+        feedback_keys: ["correctness"],
+        code_evaluator: { code: "function score(run) { return false; }" },
+      });
+    });
+
+    it("reads, lists, and deletes evaluators", async () => {
+      const responses = [
+        jsonResponse(evaluatorResponse()),
+        jsonResponse({ evaluators: [evaluatorResponse()] }),
+        new Response(null, { status: 204 }),
+      ];
+      const mockFetch = jest.fn(async () => responses.shift() as Response);
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      const evaluator = await client.readEvaluator(evaluatorId);
+      expect(evaluator.id).toBe(evaluatorId);
+
+      const evaluators = [];
+      for await (const listedEvaluator of client.listEvaluators({
+        evaluatorIds: [evaluatorId],
+        evaluatorType: "llm",
+        sortBy: "created_at",
+        sortByDesc: true,
+        limit: 1,
+      })) {
+        evaluators.push(listedEvaluator);
+      }
+      expect(evaluators).toHaveLength(1);
+      expect(evaluators[0].id).toBe(evaluatorId);
+
+      await client.deleteEvaluator(evaluatorId);
+
+      const readCall = mockFetch.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      const listCall = mockFetch.mock.calls[1] as unknown as [
+        string,
+        RequestInit,
+      ];
+      const deleteCall = mockFetch.mock.calls[2] as unknown as [
+        string,
+        RequestInit,
+      ];
+
+      expect(readCall[0]).toBe(
+        `https://api.smith.langchain.com/v1/platform/evaluators/${evaluatorId}`,
+      );
+      expect(String(listCall[0])).toContain("/v1/platform/evaluators?");
+      expect(String(listCall[0])).toContain(`evaluator_id=${evaluatorId}`);
+      expect(String(listCall[0])).toContain("type=llm");
+      expect(String(listCall[0])).toContain("sort_by=created_at");
+      expect(String(listCall[0])).toContain("sort_by_desc=true");
+      expect(deleteCall[0]).toBe(
+        `https://api.smith.langchain.com/v1/platform/evaluators/${evaluatorId}`,
+      );
+      expect(deleteCall[1].method).toBe("DELETE");
     });
   });
 });

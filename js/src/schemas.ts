@@ -678,6 +678,204 @@ export interface FeedbackConfigSchema {
   is_lower_score_better?: boolean | null;
 }
 
+export type EvaluatorType = "llm" | "code";
+
+export type EvaluatorSortBy = "created_at" | "updated_at";
+
+export interface EvaluatorRunRule {
+  /** The unique identifier of the run rule. */
+  id?: string;
+
+  /** The project/session ID this evaluator should run on. */
+  session_id?: string;
+
+  /** The project/session name this evaluator should run on. */
+  session_name?: string;
+
+  /** The dataset ID this evaluator should use. */
+  dataset_id?: string;
+
+  /** The dataset name this evaluator should use. */
+  dataset_name?: string;
+
+  /** How traces should be grouped before evaluation. */
+  group_by?: string;
+
+  /** Whether to use the corrections dataset for few-shot examples. */
+  use_corrections_dataset?: boolean;
+
+  /** Number of few-shot examples to include. */
+  num_few_shot_examples?: number;
+
+  /** The corrections dataset ID. */
+  corrections_dataset_id?: string;
+
+  /** The current USD spend for this rule. */
+  spend_usd?: number;
+
+  /** The current number of traces evaluated by this rule. */
+  trace_count?: number;
+
+  /** The spend limit configuration. */
+  spend_limit?: Record<string, unknown>;
+}
+
+export interface LLMEvaluator {
+  /** The parent online evaluator ID. */
+  evaluator_id: string;
+
+  /** The prompt ID used by the evaluator. */
+  prompt_id: string;
+
+  /** The prompt repo handle used by the evaluator. */
+  prompt_repo_handle: string;
+
+  /** Maps evaluator prompt variables to run fields. */
+  variable_mapping?: Record<string, unknown>;
+
+  /** The prompt commit hash or tag to use. */
+  commit_hash_or_tag?: string;
+
+  /** Optional annotation queue ID for corrections. */
+  annotation_queue_id?: string;
+
+  /** Optional corrections dataset ID. */
+  corrections_dataset_id?: string;
+
+  /** Whether to use the corrections dataset for few-shot examples. */
+  use_corrections_dataset?: boolean;
+
+  /** Number of few-shot examples to include. */
+  num_few_shot_examples?: number;
+}
+
+export interface CodeEvaluator {
+  /** The parent online evaluator ID. */
+  evaluator_id: string;
+
+  /** The evaluator source code. */
+  code: string;
+
+  /** The evaluator language. */
+  language: string;
+}
+
+export interface Evaluator {
+  /** The unique identifier of the online evaluator. */
+  id: string;
+
+  /** The ID of the tenant that owns this evaluator. */
+  tenant_id: string;
+
+  /** The evaluator name. */
+  name: string;
+
+  /** The evaluator type. */
+  type: EvaluatorType;
+
+  /** When this evaluator was created. */
+  created_at: string;
+
+  /** When this evaluator was last updated. */
+  updated_at: string;
+
+  /** The feedback keys this evaluator writes. */
+  feedback_keys: string[];
+
+  /** The user that created this evaluator. */
+  created_by?: string;
+
+  /** LLM-as-judge evaluator configuration. */
+  llm_evaluator?: LLMEvaluator;
+
+  /** Code evaluator configuration. */
+  code_evaluator?: CodeEvaluator;
+
+  /** Rules that determine where this evaluator runs. */
+  run_rules: EvaluatorRunRule[];
+}
+
+export interface CreateLLMEvaluatorRequest {
+  /** The prompt repo handle used by the evaluator. */
+  prompt_repo_handle?: string;
+
+  /** Maps evaluator prompt variables to run fields. */
+  variable_mapping?: Record<string, unknown>;
+
+  /** The prompt commit hash or tag to use. */
+  commit_hash_or_tag?: string;
+}
+
+export interface CreateCodeEvaluatorRequest {
+  /** The evaluator source code. */
+  code: string;
+
+  /** The evaluator language. */
+  language?: string;
+}
+
+export interface EvaluatorCreate {
+  /** The evaluator name. */
+  name: string;
+
+  /** The evaluator type. */
+  type: EvaluatorType;
+
+  /** The feedback keys this evaluator writes. */
+  feedback_keys?: string[];
+
+  /** LLM-as-judge evaluator configuration. */
+  llm_evaluator?: CreateLLMEvaluatorRequest;
+
+  /** Code evaluator configuration. */
+  code_evaluator?: CreateCodeEvaluatorRequest;
+
+  /** Rules that determine where this evaluator runs. */
+  run_rules?: EvaluatorRunRule[];
+}
+
+export interface UpdateLLMEvaluatorRequest {
+  /** The prompt repo handle used by the evaluator. */
+  prompt_repo_handle?: string;
+
+  /** Maps evaluator prompt variables to run fields. */
+  variable_mapping?: Record<string, unknown>;
+
+  /** The prompt commit hash or tag to use. */
+  commit_hash_or_tag?: string;
+
+  /** Whether to use the corrections dataset for few-shot examples. */
+  use_corrections_dataset?: boolean;
+
+  /** Number of few-shot examples to include. */
+  num_few_shot_examples?: number;
+}
+
+export interface UpdateCodeEvaluatorRequest {
+  /** The evaluator source code. */
+  code?: string;
+
+  /** The evaluator language. */
+  language?: string;
+}
+
+export interface EvaluatorUpdate {
+  /** The evaluator name. */
+  name?: string;
+
+  /** The feedback keys this evaluator writes. */
+  feedback_keys?: string[];
+
+  /** LLM-as-judge evaluator configuration. */
+  llm_evaluator?: UpdateLLMEvaluatorRequest;
+
+  /** Code evaluator configuration. */
+  code_evaluator?: UpdateCodeEvaluatorRequest;
+
+  /** Rules that determine where this evaluator runs. */
+  run_rules?: EvaluatorRunRule[];
+}
+
 export interface RunWithAnnotationQueueInfo extends Exclude<BaseRun, "id"> {
   /** An unique identifier for the run. */
   id: string;
