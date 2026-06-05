@@ -67,6 +67,17 @@ async def test_dynamic_comparison_run_evaluator():
         repr(e)
 
 
+def test_dynamic_comparison_run_evaluator_sync_call_async_evaluator():
+    async def afoo(runs: list, example):
+        return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
+
+    evaluator = DynamicComparisonRunEvaluator(afoo)
+
+    res = evaluator.compare_runs([], None)
+
+    assert res.key == "bar"
+
+
 def test_run_evaluator_decorator_dict(run_1: Run, example_1: Example):
     @run_evaluator
     def sample_evaluator(run: Run, example: Optional[Example]) -> dict:
@@ -180,6 +191,22 @@ async def test_run_evaluator_decorator_async(run_1: Run, example_1: Example):
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
     with tracing_context(enabled=False):
         result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    assert isinstance(result, EvaluationResult)
+    assert result.key == "test"
+    assert result.score == 1.0
+
+
+def test_run_evaluator_decorator_async_sync_call(run_1: Run, example_1: Example):
+    @run_evaluator
+    async def sample_evaluator(
+        run: Run, example: Optional[Example]
+    ) -> EvaluationResult:
+        await asyncio.sleep(0.01)
+        return EvaluationResult(key="test", score=1.0)
+
+    assert isinstance(sample_evaluator, DynamicRunEvaluator)
+    with tracing_context(enabled=False):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0

@@ -275,10 +275,28 @@ class AsyncClient:
         self,
         method: str,
         endpoint: str,
+        retry_on: Optional[Sequence[type[BaseException]]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make an async HTTP request with retries."""
+        """Make an async HTTP request with retries.
+
+        Args:
+            method: The HTTP method.
+            endpoint: The request endpoint (appended to the API base URL).
+            retry_on: Additional exception types to retry on, beyond the
+                connection/timeout/server-error set that is always retried.
+            **kwargs: Forwarded to the underlying httpx request.
+        """
         max_retries = cast(int, self._retry_config.get("max_retries", 3))
+        # Transient connection/timeout/server errors are always retried; callers
+        # can opt into retrying additional types (e.g. LangSmithNotFoundError
+        # when writing against a run that may not be ingested yet).
+        retry_on_: tuple[type[BaseException], ...] = (
+            ls_utils.LangSmithConnectionError,
+            ls_utils.LangSmithRequestTimeout,
+            ls_utils.LangSmithAPIError,
+            *(retry_on or ()),
+        )
 
         # Python requests library used by the normal Client filters out params with None values
         # The httpx library does not. Filter them out here to keep behavior consistent
@@ -335,11 +353,7 @@ class AsyncClient:
                     raise ls_utils.LangSmithConnectionError(
                         f"Request error: {repr(e)}"
                     ) from e
-            except (
-                ls_utils.LangSmithConnectionError,
-                ls_utils.LangSmithRequestTimeout,
-                ls_utils.LangSmithAPIError,
-            ):
+            except retry_on_:
                 if attempt == max_retries - 1:
                     raise
                 sleep_time = 2**attempt + (random.random() * 0.5)
@@ -837,6 +851,7 @@ class AsyncClient:
         score: Optional[float] = None,
         value: Union[float, int, bool, str, dict, None] = None,
         comment: Optional[str] = None,
+        trace_id: Optional[ls_client.ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -849,6 +864,10 @@ class AsyncClient:
             score: The score to rate this run on the metric or aspect.
             value: The display value or non-numeric value for this feedback.
             comment: A comment about this feedback.
+            trace_id: The trace ID of the run to provide feedback for. For a
+                root run this equals `run_id`. Passing it lets the backend
+                route the write without a run->trace lookup, which is
+                recommended for latency-sensitive callers.
             **kwargs: Additional keyword arguments to include in the feedback data.
 
         Returns:
@@ -859,14 +878,20 @@ class AsyncClient:
         """  # noqa: E501
         data = {
             "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
+            "trace_id": ls_client._ensure_uuid(trace_id, accept_null=True),
             "key": key,
             "score": score,
             "value": value,
             "comment": comment,
             **kwargs,
         }
+        # Retry on NotFound: the run referenced by run_id/trace_id may have been
+        # submitted moments ago and not yet ingested when this write lands.
         response = await self._arequest_with_retries(
-            "POST", "/feedback", content=ls_client._dumps_json(data)
+            "POST",
+            "/feedback",
+            content=ls_client._dumps_json(data),
+            retry_on=(ls_utils.LangSmithNotFoundError,),
         )
         return ls_schemas.Feedback(**response.json())
 
@@ -2391,7 +2416,8 @@ class AsyncClient:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        return build_commit_url(self._host_url, name, commit_hash)
+        settings = await self._get_settings()
+        return build_commit_url(self._host_url, name, commit_hash, settings.id)
 
     async def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""

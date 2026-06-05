@@ -686,6 +686,81 @@ describe("Client", () => {
       const parsed = JSON.parse(capturedBody);
       expect(parsed.description).toBeUndefined();
     });
+
+    it("should create commit tags when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockImplementation(async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          String(url).includes("/commits/")
+            ? { commit: { commit_hash: "new123", id: "commit-id" } }
+            : {},
+        text: async () => "",
+        headers: new Headers(),
+      }));
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          tags: ["production", "v1"],
+        },
+      );
+
+      const tagCalls = fetchSpy.mock.calls.filter(([url]) =>
+        String(url).endsWith("/repos/owner/my-prompt/tags"),
+      );
+      expect(tagCalls).toHaveLength(2);
+      expect(
+        tagCalls.map(([, init]) =>
+          JSON.parse((init as RequestInit).body as string),
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          { tag_name: "production", commit_id: "commit-id" },
+          { tag_name: "v1", commit_id: "commit-id" },
+        ]),
+      );
+    });
+  });
+
+  describe("pushPrompt", () => {
+    it("should forward commit tags without updating prompt metadata", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client, "promptExists").mockResolvedValue(true);
+      const updatePromptSpy = jest.spyOn(client, "updatePrompt");
+      const createCommitSpy = jest
+        .spyOn(client, "createCommit")
+        .mockResolvedValue("https://smith.langchain.com/prompts/test");
+
+      await client.pushPrompt("owner/my-prompt", {
+        object: { id: "test" },
+        commitTags: ["production"],
+      });
+
+      expect(updatePromptSpy).not.toHaveBeenCalled();
+      expect(createCommitSpy).toHaveBeenCalledWith(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          parentCommitHash: undefined,
+          tags: ["production"],
+          description: undefined,
+        },
+      );
+    });
   });
 
   describe("_filterForSampling patch logic", () => {

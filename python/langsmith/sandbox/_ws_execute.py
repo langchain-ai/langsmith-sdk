@@ -310,7 +310,7 @@ def run_ws_stream(
             raise SandboxConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
-        except OSError as e:
+        except (OSError, RuntimeError) as e:
             raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
         finally:
             control._unbind()
@@ -393,7 +393,7 @@ def reconnect_ws_stream(
             raise SandboxConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
-        except OSError as e:
+        except (OSError, RuntimeError) as e:
             raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
         finally:
             control._unbind()
@@ -491,7 +491,7 @@ async def run_ws_stream_async(
             raise SandboxConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
-        except OSError as e:
+        except (OSError, RuntimeError) as e:
             raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
         finally:
             control._unbind()
@@ -559,7 +559,7 @@ async def reconnect_ws_stream_async(
             raise SandboxConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
-        except OSError as e:
+        except (OSError, RuntimeError) as e:
             raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
         finally:
             control._unbind()

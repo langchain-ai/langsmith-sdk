@@ -348,9 +348,41 @@ export interface CreateSnapshotOptions {
 }
 
 /**
+ * Options for creating a snapshot from a local Dockerfile context.
+ */
+export interface CreateDockerfileSnapshotOptions {
+  /** Local Docker build context directory. Default: current working directory. */
+  context?: string;
+  /** Docker build args passed as BuildKit build-arg opts. */
+  buildArgs?: Record<string, string>;
+  /** Optional Dockerfile target stage. */
+  target?: string;
+  /** Callback for Docker build stdout/stderr chunks. */
+  onBuildLog?: (data: string) => void;
+  /**
+   * Number of vCPUs for the temporary builder sandbox. The build runs
+   * BuildKit plus the native snapshotter's layer copies inside it, which
+   * contend for a single core by default, so an extra vCPU can cut a cold
+   * build's wall time substantially.
+   */
+  vCpus?: number;
+  /** Memory in bytes for the temporary builder sandbox. */
+  memBytes?: number;
+  /** Timeout in seconds for builder sandbox operations. Default: 60. */
+  timeout?: number;
+}
+
+/**
  * Options for capturing a snapshot from a running sandbox.
  */
 export interface CaptureSnapshotOptions {
+  /**
+   * Docker image tag inside the sandbox to export into the snapshot instead
+   * of capturing the live root filesystem.
+   */
+  dockerImage?: string;
+  /** Filesystem capacity in bytes for Docker image export. */
+  fsCapacityBytes?: number;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */

@@ -20,7 +20,11 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._runner import _get_target_args
+from langsmith.evaluation._runner import (
+    ComparativeExperimentResults,
+    _build_comparative_url,
+    _get_target_args,
+)
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -1390,3 +1394,72 @@ def test_evaluate_omits_num_examples_for_generator() -> None:
     assert fake_request.created_session is not None
     assert "num_examples" not in fake_request.created_session
     assert fake_request.created_session.get("num_repetitions") == 1
+
+
+def _make_session(host_url, tenant_id, dataset_id, name):
+    return ls_schemas.TracerSessionResult(
+        _host_url=host_url,
+        id=uuid.uuid4(),
+        name=name,
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        start_time=datetime.now(timezone.utc),
+    )
+
+
+def _make_comparative_experiment(tenant_id, dataset_id):
+    return ls_schemas.ComparativeExperiment(
+        id=uuid.uuid4(),
+        name="a vs. b",
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+
+def test_build_comparative_url() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    host = "https://smith.langchain.com"
+    exp_a = _make_session(host, tenant_id, dataset_id, "a")
+    exp_b = _make_session(host, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    url = _build_comparative_url((exp_a, exp_b), comparative_experiment)
+
+    assert url is not None
+    assert url.startswith(f"{host}/o/{tenant_id}/datasets/{dataset_id}/compare?")
+    assert f"selectedSessions={exp_a.id}%2C{exp_b.id}" in url
+    assert f"comparativeExperiment={comparative_experiment.id}" in url
+
+
+def test_build_comparative_url_no_host_returns_none() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    # Sessions without a host URL cannot produce a comparison link.
+    exp_a = _make_session(None, tenant_id, dataset_id, "a")
+    exp_b = _make_session(None, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    assert _build_comparative_url((exp_a, exp_b), comparative_experiment) is None
+
+
+def test_comparative_experiment_results_exposes_url_and_experiment() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    results = ComparativeExperimentResults(
+        results={},
+        examples={},
+        comparative_experiment=comparative_experiment,
+        url="https://smith.langchain.com/compare",
+    )
+    assert results.url == "https://smith.langchain.com/compare"
+    assert results.comparative_experiment is comparative_experiment
+
+    # Existing callers that omit the new args still work, defaulting to None.
+    legacy = ComparativeExperimentResults(results={}, examples={})
+    assert legacy.url is None
+    assert legacy.comparative_experiment is None

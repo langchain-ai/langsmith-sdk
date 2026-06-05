@@ -148,6 +148,7 @@ def _make_dockerfile_build_command(
         "  sleep 0.1\n"
         "done\n"
         f"{shlex.join(buildctl)} | docker load\n"
+        f"rm -rf {shlex.quote(buildkit_root)} || true\n"
     )
 
 
@@ -876,22 +877,38 @@ class SandboxClient:
         build_args: Optional[Mapping[str, str]] = None,
         target: Optional[str] = None,
         on_build_log: Optional[Callable[[str], Any]] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
-        """Build a snapshot from a local Dockerfile context."""
+        """Build a snapshot from a local Dockerfile context.
+
+        ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
+        build runs BuildKit plus the native snapshotter's layer copies inside
+        it, which contend for a single core by default, so giving the builder
+        an extra vCPU can cut a cold build's wall time substantially.
+        """
         context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
 
         builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
-        remote_context = "/tmp/langsmith-docker-context"
-        remote_tar = "/tmp/langsmith-docker-context.tar"
+        # Stage the build on the capacity-backed root filesystem, not /tmp.
+        # Inside the sandbox /tmp is a RAM-backed tmpfs that fs_capacity_bytes
+        # does not size, and BuildKit's native snapshotter writes a full copy
+        # of every layer under its root, so a /tmp build exhausts guest RAM and
+        # fails with "No space left on device".
+        build_root = f"/var/lib/langsmith-build/{uuid.uuid4().hex[:12]}"
+        remote_context = posixpath.join(build_root, "context")
+        remote_tar = posixpath.join(build_root, "context.tar")
         image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
-        buildkit_root = f"/tmp/langsmith-buildkit-root-{uuid.uuid4().hex[:12]}"
-        buildkit_run = f"/tmp/langsmith-buildkit-run-{uuid.uuid4().hex[:12]}"
+        buildkit_root = posixpath.join(build_root, "buildkit-root")
+        buildkit_run = posixpath.join(build_root, "buildkit-run")
 
         with self.sandbox(
             name=builder_name,
             timeout=timeout,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
             headers=headers,
         ) as sandbox:

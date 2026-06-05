@@ -120,6 +120,28 @@ class TestRetryTransport:
         assert mock_sleep.call_count == 1
 
     @patch("langsmith.sandbox._transport.time.sleep")
+    def test_retries_on_pool_timeout_then_succeeds(self, mock_sleep):
+        mock = MockTransport(
+            [
+                httpx.PoolTimeout("pool timed out"),
+                httpx.Response(200),
+            ]
+        )
+        transport = RetryTransport(max_retries=3, transport=mock)
+        response = transport.handle_request(_make_request())
+        assert response.status_code == 200
+        assert mock.call_count == 2
+        assert mock_sleep.call_count == 1
+
+    @patch("langsmith.sandbox._transport.time.sleep")
+    def test_exhausted_retries_on_pool_timeout_raises(self, mock_sleep):
+        mock = MockTransport([httpx.PoolTimeout(f"fail {i}") for i in range(4)])
+        transport = RetryTransport(max_retries=3, transport=mock)
+        with pytest.raises(SandboxConnectionError, match="4 attempts"):
+            transport.handle_request(_make_request())
+        assert mock.call_count == 4
+
+    @patch("langsmith.sandbox._transport.time.sleep")
     def test_exhausted_retries_on_server_error_returns_response(self, mock_sleep):
         mock = MockTransport([httpx.Response(502)] * 4)
         transport = RetryTransport(max_retries=3, transport=mock)
@@ -272,6 +294,29 @@ class TestAsyncRetryTransport:
         response = await transport.handle_async_request(_make_request())
         assert response.status_code == 200
         assert mock.call_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("_patch_sleep")
+    async def test_retries_on_pool_timeout_then_succeeds(self):
+        mock = MockAsyncTransport(
+            [
+                httpx.PoolTimeout("pool timed out"),
+                httpx.Response(200),
+            ]
+        )
+        transport = AsyncRetryTransport(max_retries=3, transport=mock)
+        response = await transport.handle_async_request(_make_request())
+        assert response.status_code == 200
+        assert mock.call_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("_patch_sleep")
+    async def test_exhausted_retries_on_pool_timeout_raises(self):
+        mock = MockAsyncTransport([httpx.PoolTimeout(f"fail {i}") for i in range(4)])
+        transport = AsyncRetryTransport(max_retries=3, transport=mock)
+        with pytest.raises(SandboxConnectionError, match="4 attempts"):
+            await transport.handle_async_request(_make_request())
+        assert mock.call_count == 4
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("_patch_sleep")

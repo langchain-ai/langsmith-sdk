@@ -1043,16 +1043,17 @@ class TestSnapshotOperations:
 
         assert snapshot.id == "snap-1"
         sandbox_mock.assert_called_once()
-        assert fake_sandbox.writes == [
-            (
-                "/tmp/langsmith-docker-context.tar",
-                b"tar",
-                {"timeout": 60, "headers": None},
-            )
-        ]
-        assert (
-            "tar -xf /tmp/langsmith-docker-context.tar" in fake_sandbox.commands[0][0]
-        )
+        # Build scratch must live on the capacity-backed root filesystem, not
+        # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
+        assert len(fake_sandbox.writes) == 1
+        tar_path, tar_content, tar_kwargs = fake_sandbox.writes[0]
+        assert tar_path.startswith("/var/lib/langsmith-build/")
+        assert tar_path.endswith("/context.tar")
+        assert tar_content == b"tar"
+        assert tar_kwargs == {"timeout": 60, "headers": None}
+        assert "/tmp" not in fake_sandbox.commands[0][0]
+        assert "/tmp" not in fake_sandbox.commands[1][0]
+        assert f"tar -xf {tar_path}" in fake_sandbox.commands[0][0]
         assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
         assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
         assert "| docker load" in fake_sandbox.commands[1][0]
@@ -1062,6 +1063,56 @@ class TestSnapshotOperations:
         assert args[1] == "snap"
         assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
         assert kwargs["fs_capacity_bytes"] == 4294967296
+
+    def test_create_snapshot_from_dockerfile_forwards_builder_size(
+        self, client: SandboxClient, tmp_path
+    ):
+        """vcpus/mem_bytes are forwarded to the builder sandbox."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                pass
+
+            def run(self, command, **kwargs):
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        with (
+            patch.object(client, "sandbox", return_value=FakeSandbox()) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=4294967296,
+                ),
+            ),
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            client.create_snapshot_from_dockerfile(
+                "snap",
+                "Dockerfile",
+                4294967296,
+                context=tmp_path,
+                vcpus=2,
+                mem_bytes=8589934592,
+            )
+
+        assert sandbox_mock.call_args.kwargs["vcpus"] == 2
+        assert sandbox_mock.call_args.kwargs["mem_bytes"] == 8589934592
 
     def test_capture_snapshot_not_found(
         self, client: SandboxClient, httpx_mock: HTTPXMock
