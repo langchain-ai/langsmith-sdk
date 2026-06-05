@@ -5,8 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_httpx import HTTPXMock
 
+from langsmith import Client
+from langsmith.run_helpers import get_tracing_context, tracing_context
 from langsmith.sandbox import (
     DataplaneNotConfiguredError,
+    ExecutionResult,
     ResourceNotFoundError,
     SandboxClient,
     SandboxConnectionError,
@@ -14,6 +17,31 @@ from langsmith.sandbox import (
     ServiceURL,
 )
 from langsmith.sandbox._sandbox import Sandbox
+from tests.unit_tests.conftest import parse_request_data
+
+
+def _get_trace_client() -> Client:
+    """Create a LangSmith client with mocked transport for tracing assertions."""
+    return Client(session=MagicMock(), api_key="test", auto_batch_tracing=False)
+
+
+def _trace_payloads(trace_client: Client) -> list[dict]:
+    """Return parsed LangSmith trace request payloads from a mocked client."""
+    payloads = []
+    for call in trace_client.session.request.mock_calls:  # type: ignore[union-attr]
+        if not call.args or call.args[0] not in {"POST", "PATCH"}:
+            continue
+        data = parse_request_data(call.kwargs["data"])
+        for key in ("post", "patch"):
+            payloads.extend(data.get(key) or [])
+        if data.get("name"):
+            payloads.append(data)
+    return payloads
+
+
+def _trace_payload(trace_client: Client, name: str) -> dict:
+    """Return the first trace payload with the given run name."""
+    return next(p for p in _trace_payloads(trace_client) if p.get("name") == name)
 
 
 @pytest.fixture
@@ -300,6 +328,84 @@ class TestSandboxRun:
         payload = json.loads(request.content)
         assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
 
+    def test_run_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
+        """Test that run() creates a trace with sandbox metadata in context."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        observed = {}
+
+        def fake_run_ws(*args, **kwargs):
+            observed["metadata"] = dict(get_tracing_context()["metadata"])
+            return ExecutionResult(stdout="hello\n", stderr="", exit_code=0)
+
+        monkeypatch.setattr(sandbox, "_run_ws", fake_run_ws)
+
+        with tracing_context(
+            enabled=True,
+            client=trace_client,
+            metadata={"sandbox_id": "outer", "sandbox_name": "outer"},
+        ):
+            result = sandbox.run("echo $SECRET", env={"SECRET": "redacted"}, cwd="/tmp")
+
+        assert result.stdout == "hello\n"
+        assert observed["metadata"]["sandbox_id"] == "sandbox-123"
+        payloads = _trace_payloads(trace_client)
+        run_payload = next(p for p in payloads if p.get("name") == "Sandbox.run")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"]["cwd"] == "/tmp"
+        assert "redacted" not in str(run_payload["inputs"])
+
+    def test_reconnect_traces_invocation_with_sandbox_metadata(
+        self, client, monkeypatch
+    ):
+        """Test reconnect() traces sanitized dataplane inputs."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        def fake_reconnect_ws_stream(*args, **kwargs):
+            return iter(()), None
+
+        monkeypatch.setattr(
+            "langsmith.sandbox._ws_execute.reconnect_ws_stream",
+            fake_reconnect_ws_stream,
+        )
+
+        with tracing_context(
+            enabled=True,
+            client=trace_client,
+            metadata={"sandbox_id": "outer", "sandbox_name": "outer"},
+        ):
+            handle = sandbox.reconnect("cmd-123", stdout_offset=7, stderr_offset=11)
+
+        assert handle.command_id == "cmd-123"
+        run_payload = _trace_payload(trace_client, "Sandbox.reconnect")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "command_id": "cmd-123",
+            "stdout_offset": 7,
+            "stderr_offset": 11,
+        }
+
     def test_run_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a command with per-request headers."""
         httpx_mock.add_response(
@@ -462,6 +568,40 @@ class TestSandboxWrite:
 
         assert "test-sandbox" in str(exc_info.value)
 
+    def test_write_traces_invocation_with_sandbox_metadata(
+        self, client, httpx_mock: HTTPXMock
+    ):
+        """Test write() traces file metadata without file contents."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/upload?path=%2Fapp%2Ftest.txt",
+            json={"path": "/app/test.txt", "written": 6},
+        )
+
+        with tracing_context(enabled=True, client=trace_client):
+            sandbox.write("/app/test.txt", "secret", timeout=12)
+
+        run_payload = _trace_payload(trace_client, "Sandbox.write")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "path": "/app/test.txt",
+            "timeout": 12,
+            "content_bytes": 6,
+        }
+        assert "secret" not in str(run_payload["inputs"])
+
 
 class TestSandboxRead:
     """Tests for sandbox file read."""
@@ -522,6 +662,75 @@ class TestSandboxRead:
             sandbox.read("/app/test.txt")
 
         assert "test-sandbox" in str(exc_info.value)
+
+    def test_read_traces_invocation_with_sandbox_metadata(
+        self, client, httpx_mock: HTTPXMock
+    ):
+        """Test read() traces path metadata without file contents in inputs."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="https://sandbox-router.example.com/sb-123/download?path=%2Fapp%2Ftest.txt",
+            content=b"secret",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+        with tracing_context(enabled=True, client=trace_client):
+            content = sandbox.read("/app/test.txt", timeout=12)
+
+        assert content == b"secret"
+        run_payload = _trace_payload(trace_client, "Sandbox.read")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {"path": "/app/test.txt", "timeout": 12}
+        assert "secret" not in str(run_payload["inputs"])
+
+
+class TestSandboxTunnel:
+    """Tests for sandbox TCP tunnels."""
+
+    def test_tunnel_traces_invocation_with_sandbox_metadata(self, client, monkeypatch):
+        """Test tunnel() traces dataplane tunnel parameters."""
+        trace_client = _get_trace_client()
+        sandbox = Sandbox.from_dict(
+            data={
+                "id": "sandbox-123",
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        monkeypatch.setattr("langsmith.sandbox._tunnel.Tunnel._start", lambda *a: None)
+
+        with tracing_context(enabled=True, client=trace_client):
+            tunnel = sandbox.tunnel(
+                5432,
+                local_port=15432,
+                max_reconnects=5,
+            )
+
+        assert tunnel.remote_port == 5432
+        assert tunnel.local_port == 15432
+        run_payload = _trace_payload(trace_client, "Sandbox.tunnel")
+        assert run_payload["run_type"] == "tool"
+        assert run_payload["extra"]["metadata"]["sandbox_id"] == "sandbox-123"
+        assert run_payload["extra"]["metadata"]["sandbox_name"] == "test-sandbox"
+        assert run_payload["inputs"] == {
+            "remote_port": 5432,
+            "local_port": 15432,
+            "max_reconnects": 5,
+        }
 
 
 class TestSandboxContextManager:

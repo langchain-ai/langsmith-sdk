@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+import contextlib
+import functools
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
 import httpx
 
+from langsmith import run_helpers as rh
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
@@ -29,6 +32,102 @@ if TYPE_CHECKING:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
+
+
+def _trace_run_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "command": inputs["command"],
+        "timeout": inputs["timeout"],
+        "shell": inputs["shell"],
+        "has_stdout_callback": inputs["on_stdout"] is not None,
+        "has_stderr_callback": inputs["on_stderr"] is not None,
+        "idle_timeout": inputs["idle_timeout"],
+        "kill_on_disconnect": inputs["kill_on_disconnect"],
+        "ttl_seconds": inputs["ttl_seconds"],
+        "pty": inputs["pty"],
+        "wait": inputs["wait"],
+    }
+    if inputs["cwd"] is not None:
+        result["cwd"] = inputs["cwd"]
+    return result
+
+
+def _trace_execution_outputs(
+    result: Union[ExecutionResult, AsyncCommandHandle],
+) -> dict[str, Any]:
+    if isinstance(result, AsyncCommandHandle):
+        return {"command_id": result.command_id, "pid": result.pid}
+    return {
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.exit_code,
+    }
+
+
+def _trace_reconnect_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "command_id": inputs["command_id"],
+        "stdout_offset": inputs["stdout_offset"],
+        "stderr_offset": inputs["stderr_offset"],
+    }
+
+
+def _trace_reconnect_outputs(handle: AsyncCommandHandle) -> dict[str, Any]:
+    return {"command_id": handle.command_id, "pid": handle.pid}
+
+
+def _trace_write_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    content = inputs["content"]
+    content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+    return {
+        "path": inputs["path"],
+        "timeout": inputs["timeout"],
+        "content_bytes": len(content_bytes),
+    }
+
+
+def _trace_read_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    return {"path": inputs["path"], "timeout": inputs["timeout"]}
+
+
+def _trace_read_outputs(content: bytes) -> dict[str, Any]:
+    return {"bytes": len(content)}
+
+
+def _trace_tunnel_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "remote_port": inputs["remote_port"],
+        "local_port": inputs["local_port"],
+        "max_reconnects": inputs["max_reconnects"],
+    }
+
+
+def _trace_tunnel_outputs(tunnel: AsyncTunnel) -> dict[str, Any]:
+    return {"remote_port": tunnel.remote_port, "local_port": tunnel.local_port}
+
+
+def _sandbox_traceable(
+    *,
+    name: str,
+    process_inputs: Callable[[dict[str, Any]], dict[str, Any]],
+    process_outputs: Optional[Callable[[Any], dict[str, Any]]] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
+        async def wrapper(self: AsyncSandbox, *args: Any, **kwargs: Any) -> Any:
+            traced = rh.traceable(
+                name=name,
+                run_type="tool",
+                metadata=self._trace_metadata(),
+                process_inputs=process_inputs,
+                process_outputs=process_outputs,
+            )(func)
+            with self._sandbox_trace_context():
+                return await traced(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -171,6 +270,33 @@ class AsyncSandbox:
             )
         return self.dataplane_url
 
+    def _trace_metadata(self) -> dict[str, str]:
+        """Return metadata attached to sandbox execution traces."""
+        metadata = {"sandbox_name": self.name}
+        if self.id:
+            metadata["sandbox_id"] = self.id
+        return metadata
+
+    @contextlib.contextmanager
+    def _sandbox_trace_context(self) -> Iterator[None]:
+        """Inject sandbox metadata into the active tracing context."""
+        current_context = rh.get_tracing_context()
+        merged_metadata = {
+            **(current_context.get("metadata") or {}),
+            **self._trace_metadata(),
+        }
+        with rh.tracing_context(
+            project_name=current_context.get("project_name"),
+            tags=current_context.get("tags"),
+            metadata=merged_metadata,
+            parent=current_context.get("parent"),
+            enabled=current_context.get("enabled"),
+            client=current_context.get("client"),
+            replicas=current_context.get("replicas"),
+            distributed_parent_id=current_context.get("distributed_parent_id"),
+        ):
+            yield
+
     @overload
     async def run(
         self,
@@ -209,6 +335,11 @@ class AsyncSandbox:
         wait: Literal[False],
     ) -> AsyncCommandHandle: ...
 
+    @_sandbox_traceable(
+        name="Sandbox.run",
+        process_inputs=_trace_run_inputs,
+        process_outputs=_trace_execution_outputs,
+    )
     async def run(
         self,
         command: str,
@@ -289,7 +420,6 @@ class AsyncSandbox:
                 env=env,
                 cwd=cwd,
                 shell=shell,
-                wait=wait,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
                 idle_timeout=idle_timeout,
@@ -297,6 +427,7 @@ class AsyncSandbox:
                 ttl_seconds=ttl_seconds,
                 pty=pty,
                 headers=headers,
+                wait=wait,
             )
 
         # Catch broad exceptions so that unexpected WS failures (e.g. version
@@ -422,6 +553,11 @@ class AsyncSandbox:
             handle_sandbox_http_error(e)
             raise  # pragma: no cover
 
+    @_sandbox_traceable(
+        name="Sandbox.reconnect",
+        process_inputs=_trace_reconnect_inputs,
+        process_outputs=_trace_reconnect_outputs,
+    )
     async def reconnect(
         self,
         command_id: str,
@@ -476,6 +612,7 @@ class AsyncSandbox:
             stderr_offset=stderr_offset,
         )
 
+    @_sandbox_traceable(name="Sandbox.write", process_inputs=_trace_write_inputs)
     async def write(
         self,
         path: str,
@@ -498,14 +635,11 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/upload"
 
-        # Ensure content is bytes for multipart upload
-        if isinstance(content, str):
-            content = content.encode("utf-8")
-
-        files = {"file": ("file", content)}
+        files = {"file": ("file", content_bytes)}
 
         try:
             response = await self._client._http.post(
@@ -519,6 +653,11 @@ class AsyncSandbox:
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
+    @_sandbox_traceable(
+        name="Sandbox.read",
+        process_inputs=_trace_read_inputs,
+        process_outputs=_trace_read_outputs,
+    )
     async def read(
         self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
     ) -> bytes:
@@ -562,6 +701,11 @@ class AsyncSandbox:
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
 
+    @_sandbox_traceable(
+        name="Sandbox.tunnel",
+        process_inputs=_trace_tunnel_inputs,
+        process_outputs=_trace_tunnel_outputs,
+    )
     async def tunnel(
         self,
         remote_port: int,
