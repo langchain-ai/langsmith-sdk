@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 
 from langsmith._internal import _oauth_refresh_lock as lock_mod
+from langsmith._internal import _profiles
 
 
 def _write_meta(lock_dir: str, created_at: str, owner: str) -> None:
@@ -95,3 +98,61 @@ def test_oauth_refresh_lock_serializes_same_path(tmp_path):
                 config_path, deadline=time.monotonic() + 0.05
             ):
                 pass
+
+
+def _write_config(path: Path, *, access_token: str, expires_at: str) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "current_profile": "default",
+                "profiles": {
+                    "default": {
+                        "api_url": "https://api.smith.langchain.com",
+                        "oauth": {
+                            "access_token": access_token,
+                            "refresh_token": "refresh-abc",
+                            "expires_at": expires_at,
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_refresh_skips_network_when_disk_already_fresh(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    past = "2000-01-01T00:00:00Z"  # already expired -> should_refresh == True
+    _write_config(config_path, access_token="stale", expires_at=past)
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    calls = {"n": 0}
+
+    def fake_refresh(api_url, refresh_token, timeout=None):
+        calls["n"] += 1
+        return {
+            "access_token": "network-token",
+            "refresh_token": "refresh-xyz",
+            "expires_in": 3600,
+        }
+
+    monkeypatch.setattr(_profiles, "_refresh_profile_oauth_token", fake_refresh)
+
+    # Two independent loads simulate two processes: each gets its own
+    # in-memory state, so B does NOT see A's refresh except via disk.
+    auth_a = _profiles.ProfileAuth(
+        _profiles.load_profile_client_config(), api_key_header="x-api-key"
+    )
+    auth_b = _profiles.ProfileAuth(
+        _profiles.load_profile_client_config(), api_key_header="x-api-key"
+    )
+
+    headers_a = auth_a.get_auth_headers()
+    headers_b = auth_b.get_auth_headers()
+
+    assert calls["n"] == 1
+    assert headers_a == {"Authorization": "Bearer network-token"}
+    assert headers_b == {"Authorization": "Bearer network-token"}
+    on_disk = json.loads(config_path.read_text())
+    assert on_disk["profiles"]["default"]["oauth"]["access_token"] == "network-token"

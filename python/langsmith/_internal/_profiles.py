@@ -6,11 +6,14 @@ import datetime
 import json
 import os
 import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, TypedDict, cast
 
 import requests
+
+from langsmith._internal._oauth_refresh_lock import oauth_refresh_lock
 
 _OAUTH_CLIENT_ID = "langsmith-cli"
 _TOKEN_REFRESH_LEEWAY = datetime.timedelta(minutes=1)
@@ -160,7 +163,7 @@ def should_refresh_profile_token(profile: ProfileConfig) -> bool:
 
 
 def _refresh_profile_oauth_token(
-    api_url: Optional[str], refresh_token: str
+    api_url: Optional[str], refresh_token: str, timeout: float = _TOKEN_REFRESH_TIMEOUT
 ) -> Optional[dict[str, Any]]:
     refresh_url = _normalize_profile_api_url(
         api_url or "https://api.smith.langchain.com"
@@ -174,7 +177,7 @@ def _refresh_profile_oauth_token(
                 "refresh_token": refresh_token,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=_TOKEN_REFRESH_TIMEOUT,
+            timeout=timeout,
         )
     except requests.RequestException:
         return None
@@ -288,24 +291,65 @@ class ProfileAuth:
             with self._lock:
                 profile = self._profile()
                 if profile is not None and should_refresh_profile_token(profile):
-                    self._refresh(profile)
+                    profile = self._refresh(profile)
         return self._headers_from_profile(profile)
 
-    def _refresh(self, profile: ProfileConfig) -> None:
-        refresh_token = trim_auth_value(
-            (profile.get("oauth") or {}).get("refresh_token")
+    def _reload_profile(self) -> Optional[ProfileConfig]:
+        if self._state is None:
+            return None
+        try:
+            raw = json.loads(self._state.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(raw, dict):
+            return None
+        profiles = raw.get("profiles")
+        if not isinstance(profiles, dict):
+            return None
+        profile = profiles.get(self._state.profile_name)
+        if not isinstance(profile, dict):
+            return None
+        self._state = ProfileState(
+            self._state.path,
+            cast(ProfileConfigFile, raw),
+            self._state.profile_name,
         )
-        if refresh_token is None or self._state is None:
-            return
-        api_url = profile.get("api_url")
-        token = _refresh_profile_oauth_token(api_url, refresh_token)
-        if token is None:
-            return
-        _apply_profile_token_response(profile, token)
-        profiles = self._state.config.get("profiles") or {}
-        profiles[self._state.profile_name] = profile
-        self._state.config["profiles"] = profiles
-        _save_profile_config(self._state.path, self._state.config)
+        return cast(ProfileConfig, profile)
+
+    def _refresh(self, profile: ProfileConfig) -> ProfileConfig:
+        if self._state is None:
+            return profile
+        if trim_auth_value((profile.get("oauth") or {}).get("refresh_token")) is None:
+            return profile
+        deadline = time.monotonic() + _TOKEN_REFRESH_TIMEOUT
+        try:
+            with oauth_refresh_lock(self._state.path, deadline=deadline):
+                fresh = self._reload_profile()
+                if fresh is not None:
+                    profile = fresh
+                    if not should_refresh_profile_token(profile):
+                        return profile
+                refresh_token = trim_auth_value(
+                    (profile.get("oauth") or {}).get("refresh_token")
+                )
+                if refresh_token is None:
+                    return profile
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return profile
+                token = _refresh_profile_oauth_token(
+                    profile.get("api_url"), refresh_token, timeout=remaining
+                )
+                if token is None:
+                    return profile
+                _apply_profile_token_response(profile, token)
+                profiles = self._state.config.get("profiles") or {}
+                profiles[self._state.profile_name] = profile
+                self._state.config["profiles"] = profiles
+                _save_profile_config(self._state.path, self._state.config)
+                return profile
+        except OSError:
+            return profile
 
     def _headers_from_profile(self, profile: Optional[ProfileConfig]) -> dict[str, str]:
         if profile is None:
