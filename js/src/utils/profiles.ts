@@ -1,5 +1,6 @@
 import { getEnv, getEnvironmentVariable } from "./env.js";
 import * as fsUtils from "./fs.js";
+import { acquireOAuthRefreshLock } from "./profile-lock.js";
 
 export const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -65,7 +66,7 @@ function getProfileConfigPath(): string | undefined {
 }
 
 function resolveProfileName(
-  config: LangSmithProfileConfigFile,
+  config: LangSmithProfileConfigFile
 ): string | undefined {
   const envProfile = getEnvironmentVariable("LANGSMITH_PROFILE");
   if (envProfile) {
@@ -90,7 +91,7 @@ function loadProfileState(): LangSmithProfileState | undefined {
   }
   try {
     const config = JSON.parse(
-      fsUtils.readFileSync(configPath),
+      fsUtils.readFileSync(configPath)
     ) as LangSmithProfileConfigFile;
     const profileName = resolveProfileName(config);
     const profile = profileName ? config.profiles?.[profileName] : undefined;
@@ -146,7 +147,7 @@ function applyTokenResponse(
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
-  },
+  }
 ): void {
   profile.oauth ??= {};
   if (token.access_token) {
@@ -157,7 +158,7 @@ function applyTokenResponse(
   }
   if (typeof token.expires_in === "number" && token.expires_in > 0) {
     profile.oauth.expires_at = new Date(
-      Date.now() + token.expires_in * 1000,
+      Date.now() + token.expires_in * 1000
     ).toISOString();
   }
 }
@@ -171,7 +172,7 @@ function getAbortReason(signal: AbortSignal): unknown {
 
 async function waitForAbortSignal<T>(
   promise: Promise<T>,
-  signal?: AbortSignal | null,
+  signal?: AbortSignal | null
 ): Promise<T> {
   if (!signal) {
     return promise;
@@ -235,12 +236,12 @@ export class ProfileAuth {
 
   async getAuthHeader(
     fetchImplementation: typeof fetch,
-    signal?: AbortSignal | null,
+    signal?: AbortSignal | null
   ): Promise<ProfileAuthHeader | undefined> {
     if (shouldRefreshProfileToken(this.state.profile)) {
       if (!this.refreshPromise) {
         this.refreshPromise = this.refreshOAuthToken(
-          fetchImplementation,
+          fetchImplementation
         ).finally(() => {
           this.refreshPromise = undefined;
         });
@@ -256,8 +257,25 @@ export class ProfileAuth {
     return value === this.managedAuthorizationValue;
   }
 
+  private reloadProfile(): LangSmithProfile | undefined {
+    try {
+      const config = JSON.parse(
+        fsUtils.readFileSync(this.state.configPath)
+      ) as LangSmithProfileConfigFile;
+      const profile = config.profiles?.[this.state.profileName];
+      if (!profile) {
+        return undefined;
+      }
+      this.state.config = config;
+      this.state.profile = profile;
+      return profile;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async refreshOAuthToken(
-    fetchImplementation: typeof fetch,
+    fetchImplementation: typeof fetch
   ): Promise<void> {
     const refreshToken = this.state.profile.oauth?.refresh_token;
     if (!refreshToken) {
@@ -265,11 +283,18 @@ export class ProfileAuth {
     }
     const refreshApiUrl =
       trimConfigValue(this.state.profile.api_url) ?? DEFAULT_API_URL;
+    const deadline = Date.now() + TOKEN_REFRESH_TIMEOUT_MS;
+    let lock: { release(): Promise<void> } | undefined;
     try {
+      lock = await acquireOAuthRefreshLock(this.state.configPath, deadline);
+      const fresh = this.reloadProfile();
+      if (fresh && !shouldRefreshProfileToken(this.state.profile)) {
+        return;
+      }
       const body = new URLSearchParams({
         grant_type: "refresh_token",
         client_id: OAUTH_CLIENT_ID,
-        refresh_token: refreshToken,
+        refresh_token: this.state.profile.oauth?.refresh_token ?? refreshToken,
       });
       const response = await fetchImplementation(
         `${normalizeConfigUrl(refreshApiUrl)}/oauth/token`,
@@ -279,8 +304,8 @@ export class ProfileAuth {
             "Content-Type": "application/x-www-form-urlencoded",
           },
           body: body.toString(),
-          signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
-        },
+          signal: AbortSignal.timeout(Math.max(0, deadline - Date.now())),
+        }
       );
       if (!response.ok) {
         return;
@@ -298,15 +323,17 @@ export class ProfileAuth {
       this.state.config.profiles[this.state.profileName] = this.state.profile;
       await fsUtils.writeFileAtomic(
         this.state.configPath,
-        `${JSON.stringify(this.state.config, null, 2)}\n`,
+        `${JSON.stringify(this.state.config, null, 2)}\n`
       );
     } catch {
       return;
+    } finally {
+      await lock?.release();
     }
   }
 
   private rememberProfileAuthHeader(
-    header: ProfileAuthHeader | undefined,
+    header: ProfileAuthHeader | undefined
   ): void {
     this.managedAuthorizationValue =
       header?.name === "Authorization" ? header.value : undefined;
@@ -314,7 +341,7 @@ export class ProfileAuth {
 }
 
 function currentAuthHeaderFromProfile(
-  profile: LangSmithProfile,
+  profile: LangSmithProfile
 ): ProfileAuthHeader | undefined {
   const oauthAccessToken = trimConfigValue(profile.oauth?.access_token);
   if (oauthAccessToken) {
@@ -327,7 +354,7 @@ function currentAuthHeaderFromProfile(
 }
 
 function authHeaderFromProfile(
-  profile: LangSmithProfile,
+  profile: LangSmithProfile
 ): ProfileAuthHeader | undefined {
   const oauthAccessToken = trimConfigValue(profile.oauth?.access_token);
   if (oauthAccessToken) {
