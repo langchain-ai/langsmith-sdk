@@ -205,6 +205,10 @@ plugins = ["pydantic.mypy"]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
 
+[[tool.mypy.overrides]]
+module = "langsmith._openapi_client.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
