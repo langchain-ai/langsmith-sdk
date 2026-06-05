@@ -206,7 +206,7 @@ def test_evaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -501,7 +501,7 @@ async def test_aevaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -1001,7 +1001,7 @@ def test_passing_kwargs_is_working():
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     def _valid_mixed_positional_and_keyword_with_reference_outputs(
         inputs, outputs, *, reference_outputs, optional=None
@@ -1048,7 +1048,7 @@ async def test_normalize_evaluator_func_valid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     if is_async:
         await aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
@@ -1074,7 +1074,7 @@ def test_normalize_evaluator_func_invalid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     with pytest.raises(ValueError, match="Invalid evaluator function"):
         if is_async:
@@ -1303,6 +1303,97 @@ async def test_invalid_aevaluate_args() -> None:
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         await aevaluate((lambda x: x), data="data", load_nested=True)
+
+
+def test_evaluate_infers_num_examples_from_list() -> None:
+    """When ``data`` is a sized iterable (list/tuple), the SDK should auto-resolve
+    ``num_examples`` from ``len(data)`` and forward it on the POST /sessions
+    body so the backend can populate ``extra.__progress`` for UI loading state.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+    num_examples = 5
+    num_repetitions = 3
+
+    ds_example_responses = [_create_example(i) for i in range(num_examples)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=examples,
+        client=client,
+        num_repetitions=num_repetitions,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert fake_request.created_session["num_examples"] == num_examples
+    assert fake_request.created_session["num_repetitions"] == num_repetitions
+
+
+def test_evaluate_omits_num_examples_for_generator() -> None:
+    """When ``data`` is a lazy generator, the SDK cannot infer size without
+    consuming it, so ``num_examples`` should be omitted from the create-project
+    payload and the backend falls back to resolving it from the dataset.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(3)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=(e for e in examples),
+        client=client,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert "num_examples" not in fake_request.created_session
+    assert fake_request.created_session.get("num_repetitions") == 1
 
 
 def _make_session(host_url, tenant_id, dataset_id, name):

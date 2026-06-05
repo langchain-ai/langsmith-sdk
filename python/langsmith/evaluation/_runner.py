@@ -16,7 +16,15 @@ import random
 import textwrap
 import threading
 import uuid
-from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
+from collections.abc import (
+    AsyncIterable,
+    Awaitable,
+    Generator,
+    Iterable,
+    Iterator,
+    Sequence,
+    Sized,
+)
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
@@ -1116,6 +1124,7 @@ def _evaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        evaluator_keys=_collect_evaluator_keys(evaluators),
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -1288,6 +1297,9 @@ class _ExperimentManagerMixin:
         # There is a chance of name collision, so we'll retry
         starting_name = self._experiment_name
         num_attempts = 10
+        num_examples = getattr(self, "_num_examples", None)
+        num_repetitions = getattr(self, "_num_repetitions", None)
+        evaluator_keys = getattr(self, "_evaluator_keys", None)
         for _ in range(num_attempts):
             try:
                 return self.client.create_project(
@@ -1295,6 +1307,9 @@ class _ExperimentManagerMixin:
                     description=self._description,
                     reference_dataset_id=dataset_id,
                     metadata=metadata,
+                    num_examples=num_examples,
+                    num_repetitions=num_repetitions,
+                    evaluator_keys=evaluator_keys,
                 )
             except ls_utils.LangSmithConflictError:
                 self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
@@ -1371,6 +1386,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        num_examples: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -1384,11 +1401,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
             description=description,
         )
         self._data = data
+        self._evaluator_keys = evaluator_keys
         self._examples: Optional[Iterable[schemas.Example]] = None
         self._runs = runs
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._num_examples = (
+            num_examples
+            if num_examples is not None
+            else _resolve_num_examples(data, client=self.client)
+        )
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
@@ -1867,6 +1890,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "client": self.client,
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
+            "num_examples": self._num_examples,
+            "evaluator_keys": self._evaluator_keys,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,
@@ -1981,6 +2006,65 @@ def _is_valid_uuid(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _collect_evaluator_keys(
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, RunEvaluator, AEVALUATOR_T]]],
+) -> list[str]:
+    """Best-effort extraction of feedback keys for the progress hint.
+
+    Used to populate ``extra.__progress.evaluator_keys`` on the experiment
+    session so the UI can render per-evaluator progress. Returns an empty list
+    when keys cannot be statically inferred (e.g. arbitrary callables whose
+    return shape isn't visible to AST inspection).
+    """
+    if not evaluators:
+        return []
+    keys: list[str] = []
+    try:
+        for ev in _resolve_evaluators(evaluators):
+            for k in _extract_feedback_keys(ev) or []:
+                if k:
+                    keys.append(k)
+    except Exception:
+        return keys
+    return keys
+
+
+def _resolve_num_examples(
+    data: Union[DATA_T, AsyncIterable[schemas.Example]],
+    *,
+    client: langsmith.Client,
+) -> Optional[int]:
+    """Best-effort dataset size for the experiment progress hint.
+
+    Returns ``None`` for lazy iterators where size cannot be inferred without
+    consuming the iterable. Never raises — failures (e.g. transient backend
+    error during ``read_dataset``) degrade to ``None`` and the backend resolves
+    the count from the dataset at experiment start.
+    """
+    try:
+        # Case 1: already-materialized collection — count locally.
+        if isinstance(data, Sized) and not isinstance(data, str):
+            return len(data)
+        # Case 2: dataset id — Dataset object, UUID, or UUID-shaped string.
+        dataset_id: Optional[uuid.UUID] = None
+        if isinstance(data, schemas.Dataset):
+            if data.example_count is not None:
+                return data.example_count
+            dataset_id = data.id
+        elif isinstance(data, uuid.UUID):
+            dataset_id = data
+        elif isinstance(data, str) and _is_valid_uuid(data):
+            dataset_id = uuid.UUID(data)
+        if dataset_id is not None:
+            return client.read_dataset(dataset_id=dataset_id).example_count
+        # Case 3: dataset name.
+        if isinstance(data, str):
+            return client.read_dataset(dataset_name=data).example_count
+        return None
+    except Exception:
+        return None
 
 
 def _resolve_data(

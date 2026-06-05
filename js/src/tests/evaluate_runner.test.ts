@@ -476,4 +476,94 @@ describe("evaluation runner internals", () => {
     // Verify sequential execution - order should match input order
     expect(executionOrder).toEqual([1, 2, 3]);
   }, 10000);
+
+  test("evaluate infers numExamples from list data", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [],
+        numRepetitions: 4,
+        client: mockClient,
+      },
+    );
+    const collected = [];
+    for await (const r of results) {
+      collected.push(r);
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].numExamples).toBe(3);
+    expect(createProjectCalls[0].numRepetitions).toBe(4);
+  });
+
+  test("evaluate omits numExamples for async-iterable data", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    async function* exampleGen() {
+      for (const e of examples) yield e;
+    }
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: exampleGen(),
+        evaluators: [],
+        client: mockClient,
+      },
+    );
+    for await (const _ of results) {
+      // drain
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].numExamples).toBeNull();
+    expect(createProjectCalls[0].numRepetitions).toBe(1);
+  });
 });
