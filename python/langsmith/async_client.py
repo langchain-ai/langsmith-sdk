@@ -33,6 +33,7 @@ from langsmith._internal._hub import (
     validate_parent_commit,
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
+from langsmith._openapi_client.resources.info import AsyncInfoResource
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -235,6 +236,10 @@ class AsyncClient:
             timeout=self._client.timeout,
             default_headers=self._custom_headers or None,
         )
+
+    @property
+    def info(self) -> "AsyncInfoResource":
+        return self._langsmith_api.info
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

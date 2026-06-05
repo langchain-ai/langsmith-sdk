@@ -112,6 +112,7 @@ from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
+from langsmith._openapi_client.resources.info import InfoResource
 
 logger = logging.getLogger(__name__)
 
@@ -1400,6 +1401,10 @@ class Client:
             ),
             default_headers=self._custom_headers or None,
         )
+
+    @property
+    def info(self) -> "InfoResource":
+        return self._langsmith_api.info
 
     def _dump_failed_trace(
         self,
