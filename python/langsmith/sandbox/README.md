@@ -59,6 +59,63 @@ client = SandboxClient(
 )
 ```
 
+## AWS Auth Proxy
+
+Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
+Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
+credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
+SigV4. The real credentials stay outside the sandbox.
+
+This lets code inside the sandbox use normal AWS tooling without exposing
+long-lived AWS credentials in sandbox files, environment variables, shell
+history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
+reference those secret names in the proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth_proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+with client.sandbox(
+    name="aws-sandbox",
+    proxy_config=aws_auth_proxy_config(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    ),
+) as sb:
+    result = sb.run("python your_aws_script.py")
+    print(result.stdout)
+```
+
+Inside `your_aws_script.py`, use AWS SDKs normally. For example, if `boto3` is
+installed in the sandbox snapshot:
+
+```python
+import boto3
+
+s3 = boto3.client("s3")
+print([bucket["Name"] for bucket in s3.list_buckets()["Buckets"]])
+```
+
+If your application mints short-lived AWS credentials, pass them as write-only
+opaque values instead:
+
+```python
+from langsmith.sandbox import aws_auth_proxy_config, opaque_secret
+
+proxy_config = aws_auth_proxy_config(
+    access_key_id=opaque_secret(access_key_id),
+    secret_access_key=opaque_secret(secret_access_key),
+)
+```
+
+Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
+credential values are not supported by the AWS auth proxy.
+
 ## Running Commands
 
 ```python
