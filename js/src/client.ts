@@ -562,6 +562,7 @@ export type CreateProjectParams = {
   referenceDatasetId?: string | null;
   numExamples?: number | null;
   numRepetitions?: number | null;
+  evaluatorKeys?: string[] | null;
 };
 
 type AutoBatchQueueItem = {
@@ -3550,6 +3551,7 @@ export class Client implements LangSmithTracingClientInterface {
     referenceDatasetId = null,
     numExamples = null,
     numRepetitions = null,
+    evaluatorKeys = null,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -3570,6 +3572,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (numRepetitions != null) {
       body["num_repetitions"] = numRepetitions;
+    }
+    if (evaluatorKeys != null && evaluatorKeys.length > 0) {
+      body["evaluator_keys"] = evaluatorKeys;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {

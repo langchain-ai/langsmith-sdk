@@ -141,6 +141,7 @@ interface _ExperimentManagerArgs {
   examples?: Example[];
   numRepetitions?: number;
   numExamples?: number;
+  evaluatorKeys?: string[];
   _runsArray?: Run[];
   resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
   includeAttachments?: boolean;
@@ -301,6 +302,7 @@ export class _ExperimentManager {
   _examples?: Example[];
   _numExamples?: number;
   _numRepetitions?: number;
+  _evaluatorKeys?: string[];
   _runsArray?: Run[];
   client: Client;
   _experiment?: TracerSession;
@@ -427,6 +429,7 @@ export class _ExperimentManager {
     this._resultRows = args.resultRows;
     this._numRepetitions = args.numRepetitions;
     this._numExamples = args.numExamples;
+    this._evaluatorKeys = args.evaluatorKeys;
     this._includeAttachments = args.includeAttachments;
   }
 
@@ -468,6 +471,7 @@ export class _ExperimentManager {
     }
     const numExamples = this._numExamples ?? null;
     const numRepetitions = this._numRepetitions ?? null;
+    const evaluatorKeys = this._evaluatorKeys ?? null;
     for (let i = 0; i < 10; i++) {
       try {
         project = await this.client.createProject({
@@ -477,6 +481,7 @@ export class _ExperimentManager {
           description: this._description,
           numExamples,
           numRepetitions,
+          evaluatorKeys,
         });
         return project;
       } catch (e) {
@@ -533,6 +538,7 @@ export class _ExperimentManager {
       summaryResults: this._summaryResults,
       numRepetitions: this._numRepetitions,
       numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -570,6 +576,7 @@ export class _ExperimentManager {
       })(),
       numRepetitions: this._numRepetitions,
       numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -606,6 +613,7 @@ export class _ExperimentManager {
       summaryResults: this._summaryResults,
       numRepetitions: this._numRepetitions,
       numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -627,6 +635,7 @@ export class _ExperimentManager {
       summaryResults: aggregateFeedbackGen,
       numRepetitions: this._numRepetitions,
       numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -1073,6 +1082,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
+    evaluatorKeys: _collectEvaluatorKeys(standardFields.evaluators),
     includeAttachments: standardFields.includeAttachments,
   }).start();
 
@@ -1210,6 +1220,18 @@ Try setting "LANGSMITH_TRACING=true" in your environment.`);
     run,
     example,
   };
+}
+
+function _collectEvaluatorKeys(
+  evaluators: Array<EvaluatorT | RunEvaluator> | undefined,
+): string[] {
+  if (!evaluators) return [];
+  const keys: string[] = [];
+  for (const ev of evaluators) {
+    const name = (ev as { name?: string }).name;
+    if (name && name.length > 0) keys.push(name);
+  }
+  return keys;
 }
 
 async function _resolveNumExamples(

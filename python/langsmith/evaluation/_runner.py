@@ -1116,6 +1116,7 @@ def _evaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        evaluator_keys=_collect_evaluator_keys(evaluators),
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -1290,6 +1291,7 @@ class _ExperimentManagerMixin:
         num_attempts = 10
         num_examples = getattr(self, "_num_examples", None)
         num_repetitions = getattr(self, "_num_repetitions", None)
+        evaluator_keys = getattr(self, "_evaluator_keys", None)
         for _ in range(num_attempts):
             try:
                 return self.client.create_project(
@@ -1299,6 +1301,7 @@ class _ExperimentManagerMixin:
                     metadata=metadata,
                     num_examples=num_examples,
                     num_repetitions=num_repetitions,
+                    evaluator_keys=evaluator_keys,
                 )
             except ls_utils.LangSmithConflictError:
                 self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
@@ -1376,6 +1379,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         num_examples: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -1389,6 +1393,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             description=description,
         )
         self._data = data
+        self._evaluator_keys = evaluator_keys
         self._examples: Optional[Iterable[schemas.Example]] = None
         self._runs = runs
         self._evaluation_results = evaluation_results
@@ -1883,6 +1888,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
             "num_examples": self._num_examples,
+            "evaluator_keys": self._evaluator_keys,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,
@@ -1997,6 +2003,29 @@ def _is_valid_uuid(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _collect_evaluator_keys(
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, RunEvaluator, AEVALUATOR_T]]],
+) -> list[str]:
+    """Best-effort extraction of feedback keys for the progress hint.
+
+    Used to populate ``extra.__progress.evaluator_keys`` on the experiment
+    session so the UI can render per-evaluator progress. Returns an empty list
+    when keys cannot be statically inferred (e.g. arbitrary callables whose
+    return shape isn't visible to AST inspection).
+    """
+    if not evaluators:
+        return []
+    keys: list[str] = []
+    try:
+        for ev in _resolve_evaluators(evaluators):
+            for k in _extract_feedback_keys(ev) or []:
+                if k:
+                    keys.append(k)
+    except Exception:
+        return keys
+    return keys
 
 
 def _resolve_num_examples(

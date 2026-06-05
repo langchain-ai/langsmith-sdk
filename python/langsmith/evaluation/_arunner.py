@@ -33,6 +33,7 @@ from langsmith.evaluation._runner import (
     DATA_T,
     EVALUATOR_T,
     ExperimentResultRow,
+    _collect_evaluator_keys,
     _evaluators_include_attachments,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
@@ -510,6 +511,7 @@ async def _aevaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        evaluator_keys=_collect_evaluator_keys(evaluators),
         runs=runs,
         include_attachments=num_include_attachments > 0,
         reuse_attachments=num_repetitions * num_include_attachments > 1,
@@ -602,6 +604,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         num_examples: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -615,6 +618,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             description=description,
         )
         self._data = data
+        self._evaluator_keys = evaluator_keys
         self._examples: Optional[AsyncIterable[schemas.Example]] = None
         self._runs = (
             aitertools.ensure_async_iterator(runs) if runs is not None else None
@@ -1177,6 +1181,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
             "num_examples": self._num_examples,
+            "evaluator_keys": self._evaluator_keys,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,
