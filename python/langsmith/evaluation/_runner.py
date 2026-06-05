@@ -2044,18 +2044,24 @@ def _resolve_num_examples(
     the count from the dataset at experiment start.
     """
     try:
+        # Case 1: already-materialized collection — count locally.
+        if isinstance(data, Sized) and not isinstance(data, str):
+            return len(data)
+        # Case 2: dataset id — Dataset object, UUID, or UUID-shaped string.
+        dataset_id: Optional[uuid.UUID] = None
         if isinstance(data, schemas.Dataset):
             if data.example_count is not None:
                 return data.example_count
-            return client.read_dataset(dataset_id=data.id).example_count
-        if isinstance(data, uuid.UUID):
-            return client.read_dataset(dataset_id=data).example_count
+            dataset_id = data.id
+        elif isinstance(data, uuid.UUID):
+            dataset_id = data
+        elif isinstance(data, str) and _is_valid_uuid(data):
+            dataset_id = uuid.UUID(data)
+        if dataset_id is not None:
+            return client.read_dataset(dataset_id=dataset_id).example_count
+        # Case 3: dataset name.
         if isinstance(data, str):
-            if _is_valid_uuid(data):
-                return client.read_dataset(dataset_id=uuid.UUID(data)).example_count
             return client.read_dataset(dataset_name=data).example_count
-        if isinstance(data, Sized):
-            return len(data)
         return None
     except Exception:
         return None
