@@ -19,6 +19,7 @@ from typing import (
 )
 
 import httpx
+from _openapi_client import AsyncLangsmith as _AsyncOpenAPILangsmith
 
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -50,6 +51,7 @@ class AsyncClient:
         "_oauth_access_token",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     )
 
     _custom_headers: dict[str, str]
@@ -226,6 +228,13 @@ class AsyncClient:
             self._cache = async_prompt_cache_singleton
         else:
             self._cache = None
+
+        self._langsmith_api = _AsyncOpenAPILangsmith(
+            api_key=self._api_key,
+            base_url=str(self._client.base_url),
+            timeout=self._client.timeout,
+            default_headers=self._custom_headers or None,
+        )
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

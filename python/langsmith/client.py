@@ -76,6 +76,8 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
+from _openapi_client import Langsmith as _OpenAPILangsmith
+from _openapi_client import Timeout as _OAPITimeout
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -835,6 +837,7 @@ class Client:
         "_tracing_mode",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     ]
 
     _api_key: Optional[str]
@@ -1382,6 +1385,21 @@ class Client:
                 _max_mb_str,
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+        _oapic_headers: dict[str, str] = {**(self._custom_headers or {})}
+
+        self._langsmith_api = _OpenAPILangsmith(
+            api_key=self._api_key,
+            tenant_id=str(self._workspace_id) if self._workspace_id else None,
+            base_url=self.api_url,
+            timeout=_OAPITimeout(
+                connect=self._timeout[0],
+                read=self._timeout[1],
+                write=self._timeout[1],
+                pool=self._timeout[0],
+            ),
+            default_headers=self._custom_headers or None,
+        )
 
     def _dump_failed_trace(
         self,
