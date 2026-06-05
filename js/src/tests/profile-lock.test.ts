@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -14,7 +15,7 @@ function writeMeta(lockDir: string, iso: string, owner: string): void {
   fs.mkdirSync(lockDir, { recursive: true });
   fs.writeFileSync(
     path.join(lockDir, _internal.LOCK_METADATA_FILE),
-    `${iso}\n${owner}\n`
+    `${iso}\n${owner}\n`,
   );
 }
 
@@ -31,7 +32,7 @@ test("acquire times out when the lock is held", async () => {
   const configPath = newConfigPath();
   const held = await acquireOAuthRefreshLock(configPath, Date.now() + 5000);
   await expect(
-    acquireOAuthRefreshLock(configPath, Date.now() + 50)
+    acquireOAuthRefreshLock(configPath, Date.now() + 50),
   ).rejects.toThrow(/timed out/);
   await held.release();
 });
@@ -40,7 +41,7 @@ test("a stale lock (expired timestamp) is broken and reacquired", async () => {
   const configPath = newConfigPath();
   const lockDir = `${configPath}.oauth.lock.lock`;
   const stale = new Date(
-    Date.now() - _internal.LOCK_STALE_AFTER_MS - 1000
+    Date.now() - _internal.LOCK_STALE_AFTER_MS - 1000,
   ).toISOString();
   writeMeta(lockDir, stale, "someone-else");
   const lock = await acquireOAuthRefreshLock(configPath, Date.now() + 5000);
@@ -75,7 +76,7 @@ test("two ProfileAuth instances refresh the token endpoint only once", async () 
           },
         },
       },
-    })
+    }),
   );
   const prev = process.env.LANGSMITH_CONFIG_FILE;
   process.env.LANGSMITH_CONFIG_FILE = configPath;
@@ -93,13 +94,16 @@ test("two ProfileAuth instances refresh the token endpoint only once", async () 
       } as unknown as Response;
     });
 
-    const authA = loadProfileClientConfig().profileAuth!;
-    const authB = loadProfileClientConfig().profileAuth!;
+    const authA = loadProfileClientConfig().profileAuth;
+    const authB = loadProfileClientConfig().profileAuth;
+    if (!authA || !authB) {
+      throw new Error("expected profileAuth to be defined");
+    }
     const headerA = await authA.getAuthHeader(
-      fakeFetch as unknown as typeof fetch
+      fakeFetch as unknown as typeof fetch,
     );
     const headerB = await authB.getAuthHeader(
-      fakeFetch as unknown as typeof fetch
+      fakeFetch as unknown as typeof fetch,
     );
 
     expect(calls).toBe(1);

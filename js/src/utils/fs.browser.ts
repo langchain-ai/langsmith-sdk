@@ -20,7 +20,7 @@ export async function mkdir(_dir: string): Promise<void> {}
 
 export async function writeFileAtomic(
   _filePath: string,
-  _content: string
+  _content: string,
 ): Promise<void> {}
 
 export async function readdir(_dir: string): Promise<string[]> {
