@@ -25,10 +25,8 @@ async def fake_server():
     await asyncio.sleep(0.1)
 
     yield
-    try:
-        await server.shutdown()
-    except RuntimeError:
-        pass
+    server.should_exit = True
+    await asyncio.sleep(0.1)
 
 
 @traceable
