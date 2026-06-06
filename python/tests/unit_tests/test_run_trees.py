@@ -357,8 +357,12 @@ def test_remap_for_project():
     assert r1 == r2  # Deterministic
 
 
-def test_inputs_attachment_moved_to_attachments():
+def test_inputs_attachment_moved_to_attachments(monkeypatch: pytest.MonkeyPatch):
     """Ensure Attachment values in inputs are moved to attachments."""
+    from langsmith import utils as ls_utils
+
+    monkeypatch.setenv("LANGSMITH_DISABLE_RUN_COMPRESSION", "true")
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         info=ls_schemas.LangSmithInfo(
             instance_flags={
