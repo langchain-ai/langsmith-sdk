@@ -149,6 +149,7 @@ async def test_list_runs_multi_project(langchain_client: Client):
     assert runs[0].session_id != runs[1].session_id
 
 
+@skip_if_rate_limited
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = (
