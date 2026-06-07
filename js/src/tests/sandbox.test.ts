@@ -8,6 +8,11 @@ import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
 import {
+  awsAuthProxyConfig,
+  opaqueSecret,
+  workspaceSecret,
+} from "../sandbox/index.js";
+import {
   buildWsUrl,
   buildAuthHeaders,
   WSStreamControl,
@@ -44,6 +49,60 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
+
+describe("sandbox proxy config helpers", () => {
+  it("workspaceSecret wraps names and preserves references", () => {
+    expect(workspaceSecret("AWS_KEY_ID_REF")).toEqual({
+      type: "workspace_secret",
+      value: "{AWS_KEY_ID_REF}",
+    });
+    expect(workspaceSecret("{AWS_KEY_VALUE_REF}")).toEqual({
+      type: "workspace_secret",
+      value: "{AWS_KEY_VALUE_REF}",
+    });
+  });
+
+  it.each(["", "   ", "{}", "{AWS_KEY_ID_REF"])(
+    "workspaceSecret rejects invalid name %p",
+    (name) => {
+      expect(() => workspaceSecret(name)).toThrow();
+    },
+  );
+
+  it("opaqueSecret builds a write-only secret value", () => {
+    expect(opaqueSecret("AKIAFAKE")).toEqual({
+      type: "opaque",
+      value: "AKIAFAKE",
+    });
+  });
+
+  it("awsAuthProxyConfig builds an AWS auth rule", () => {
+    expect(
+      awsAuthProxyConfig({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+      }),
+    ).toEqual({
+      rules: [
+        {
+          name: "aws",
+          type: "aws",
+          enabled: true,
+          aws: {
+            access_key_id: {
+              type: "workspace_secret",
+              value: "{AWS_KEY_ID_REF}",
+            },
+            secret_access_key: {
+              type: "workspace_secret",
+              value: "{AWS_KEY_VALUE_REF}",
+            },
+          },
+        },
+      ],
+    });
+  });
+});
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -451,6 +510,27 @@ describe("SandboxClient - createSandbox", () => {
         allow_list: ["github.com", "*.example.com"],
       },
     };
+    await client.createSandbox("snap-123", { proxyConfig });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toEqual(proxyConfig);
+  });
+
+  it("should forward AWS auth proxy config in the request body", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const proxyConfig = awsAuthProxyConfig({
+      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    });
     await client.createSandbox("snap-123", { proxyConfig });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -1397,6 +1477,55 @@ describe("SandboxClient - snapshot operations", () => {
         }),
       );
       expect(fakeSandbox.delete).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
+  });
+
+  it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockResolvedValue(undefined),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    });
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        {
+          context,
+          vCpus: 2,
+          memBytes: 8589934592,
+        },
+      );
+
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
+      );
     } finally {
       await rm(context, { recursive: true, force: true });
     }

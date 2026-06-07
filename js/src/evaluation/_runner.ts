@@ -140,6 +140,8 @@ interface _ExperimentManagerArgs {
   >;
   examples?: Example[];
   numRepetitions?: number;
+  numExamples?: number;
+  evaluatorKeys?: string[];
   _runsArray?: Run[];
   resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
   includeAttachments?: boolean;
@@ -297,22 +299,16 @@ export class _ExperimentManager {
   >;
 
   _resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
-
   _examples?: Example[];
-
+  _numExamples?: number;
   _numRepetitions?: number;
-
+  _evaluatorKeys?: string[];
   _runsArray?: Run[];
-
   client: Client;
-
   _experiment?: TracerSession;
-
   _experimentName: string;
-
   _metadata: KVMap;
   _description?: string;
-
   _includeAttachments?: boolean;
 
   get experimentName(): string {
@@ -432,6 +428,8 @@ export class _ExperimentManager {
     this._summaryResults = args.summaryResults;
     this._resultRows = args.resultRows;
     this._numRepetitions = args.numRepetitions;
+    this._numExamples = args.numExamples;
+    this._evaluatorKeys = args.evaluatorKeys;
     this._includeAttachments = args.includeAttachments;
   }
 
@@ -468,6 +466,12 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
+    if (this._numExamples === undefined) {
+      this._numExamples = await _resolveNumExamples(this._data, this.client);
+    }
+    const numExamples = this._numExamples ?? null;
+    const numRepetitions = this._numRepetitions ?? null;
+    const evaluatorKeys = this._evaluatorKeys ?? null;
     for (let i = 0; i < 10; i++) {
       try {
         project = await this.client.createProject({
@@ -475,6 +479,9 @@ export class _ExperimentManager {
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
           description: this._description,
+          numExamples,
+          numRepetitions,
+          evaluatorKeys,
         });
         return project;
       } catch (e) {
@@ -529,6 +536,9 @@ export class _ExperimentManager {
       client: this.client,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -564,6 +574,9 @@ export class _ExperimentManager {
           yield pred.run;
         }
       })(),
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -598,6 +611,9 @@ export class _ExperimentManager {
           }
         })(),
       summaryResults: this._summaryResults,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -617,6 +633,9 @@ export class _ExperimentManager {
       evaluationResults: this._evaluationResults,
       resultRows: this._resultRows,
       summaryResults: aggregateFeedbackGen,
+      numRepetitions: this._numRepetitions,
+      numExamples: this._numExamples,
+      evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
     });
   }
@@ -1063,6 +1082,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
+    evaluatorKeys: _collectEvaluatorKeys(standardFields.evaluators),
     includeAttachments: standardFields.includeAttachments,
   }).start();
 
@@ -1200,6 +1220,49 @@ Try setting "LANGSMITH_TRACING=true" in your environment.`);
     run,
     example,
   };
+}
+
+function _collectEvaluatorKeys(
+  evaluators: Array<EvaluatorT | RunEvaluator> | undefined,
+): string[] {
+  if (!evaluators) return [];
+  const keys: string[] = [];
+  for (const ev of evaluators) {
+    const name = (ev as { name?: string }).name;
+    if (name && name.length > 0) keys.push(name);
+  }
+  return keys;
+}
+
+async function _resolveNumExamples(
+  data: DataT | undefined,
+  client: Client,
+): Promise<number | undefined> {
+  // Best-effort dataset size for the experiment progress hint. Returns
+  // undefined for lazy async iterators where size cannot be inferred without
+  // consuming.
+  if (data === undefined) return undefined;
+  try {
+    if (Array.isArray(data)) {
+      return data.length;
+    }
+    if (typeof data === "string") {
+      let isUUID = false;
+      try {
+        assertUuid(data);
+        isUUID = true;
+      } catch (_) {
+        isUUID = false;
+      }
+      const dataset = isUUID
+        ? await client.readDataset({ datasetId: data })
+        : await client.readDataset({ datasetName: data });
+      return dataset.example_count ?? undefined;
+    }
+    return undefined;
+  } catch (_) {
+    return undefined;
+  }
 }
 
 function _resolveData(

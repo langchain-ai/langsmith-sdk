@@ -914,7 +914,8 @@ export class SandboxClient {
    * @param name - Snapshot name.
    * @param dockerfile - Local Dockerfile path, relative to context by default.
    * @param fsCapacityBytes - Filesystem capacity in bytes.
-   * @param options - Build context, args, target, build log callback, timeout.
+   * @param options - Build context, args, target, build log callback, builder
+   *   vCPUs/memory, timeout.
    * @returns Snapshot in "ready" status.
    */
   async createSnapshotFromDockerfile(
@@ -928,6 +929,8 @@ export class SandboxClient {
       buildArgs,
       target,
       onBuildLog,
+      vCpus,
+      memBytes,
       timeout = 60,
     } = options;
     const { contextPath, dockerfileRel } = await resolveDockerfileContext(
@@ -953,6 +956,8 @@ export class SandboxClient {
     const builder = await this.createSandbox({
       name: builderName,
       timeout,
+      vCpus,
+      memBytes,
       fsCapacityBytes,
     });
     try {

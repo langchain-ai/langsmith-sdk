@@ -260,6 +260,29 @@ export interface SandboxAccessControl {
   deny_list?: string[];
 }
 
+/** Secret value reference for sandbox proxy rules. */
+export interface SandboxProxySecret {
+  /** `workspace_secret` references a workspace secret; `opaque` is write-only. */
+  type: "workspace_secret" | "opaque";
+  /** Workspace secret reference or opaque secret value. */
+  value: string;
+}
+
+/** AWS auth rule for sandbox proxy SigV4 signing. */
+export interface SandboxAwsAuthRule {
+  /** Rule name. */
+  name: string;
+  /** AWS auth rules are matched by the sandbox proxy's AWS endpoint matcher. */
+  type: "aws";
+  /** Whether the rule is enabled. */
+  enabled?: boolean;
+  /** AWS credentials used by the proxy signer. */
+  aws: {
+    access_key_id: SandboxProxySecret;
+    secret_access_key: SandboxProxySecret;
+  };
+}
+
 /**
  * Full proxy configuration forwarded to the sandbox server as-is (snake_case
  * so it's wire-compatible with the backend). Mirrors the server's
@@ -324,7 +347,8 @@ export interface CreateSandboxOptions {
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
-   * server as-is on the wire.
+   * server as-is on the wire. Use `awsAuthProxyConfig` to let the proxy sign
+   * supported AWS HTTPS requests on the sandbox's behalf.
    */
   proxyConfig?: SandboxProxyConfig;
 }
@@ -359,6 +383,15 @@ export interface CreateDockerfileSnapshotOptions {
   target?: string;
   /** Callback for Docker build stdout/stderr chunks. */
   onBuildLog?: (data: string) => void;
+  /**
+   * Number of vCPUs for the temporary builder sandbox. The build runs
+   * BuildKit plus the native snapshotter's layer copies inside it, which
+   * contend for a single core by default, so an extra vCPU can cut a cold
+   * build's wall time substantially.
+   */
+  vCpus?: number;
+  /** Memory in bytes for the temporary builder sandbox. */
+  memBytes?: number;
   /** Timeout in seconds for builder sandbox operations. Default: 60. */
   timeout?: number;
 }

@@ -124,7 +124,7 @@ dev = [
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.39",
+    "ty==0.0.44",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
@@ -159,7 +159,7 @@ exclude = [".test", ".venv*"]
 packages = ["langsmith"]
 
 [tool.ruff]
-exclude = ["langsmith_api"]
+exclude = ["_openapi_client"]
 lint.select = [
   "E",    # pycodestyle
   "F",    # pyflakes
@@ -204,6 +204,10 @@ docstring-code-line-length = 80
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
+
+[[tool.mypy.overrides]]
+module = "langsmith._openapi_client.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

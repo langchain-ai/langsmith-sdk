@@ -560,6 +560,9 @@ export type CreateProjectParams = {
   upsert?: boolean;
   projectExtra?: RecordStringAny | null;
   referenceDatasetId?: string | null;
+  numExamples?: number | null;
+  numRepetitions?: number | null;
+  evaluatorKeys?: string[] | null;
 };
 
 type AutoBatchQueueItem = {
@@ -3546,6 +3549,9 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
+    numExamples = null,
+    numRepetitions = null,
+    evaluatorKeys = null,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -3560,6 +3566,15 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
+    }
+    if (numExamples != null) {
+      body["num_examples"] = numExamples;
+    }
+    if (numRepetitions != null) {
+      body["num_repetitions"] = numRepetitions;
+    }
+    if (evaluatorKeys != null && evaluatorKeys.length > 0) {
+      body["evaluator_keys"] = evaluatorKeys;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
@@ -5750,6 +5765,36 @@ export class Client implements LangSmithTracingClientInterface {
     return json.commits[0].commit_hash;
   }
 
+  protected async _createCommitTags(
+    promptOwnerAndName: string,
+    commitId: string,
+    tags: string | string[],
+  ): Promise<void> {
+    const tagList = typeof tags === "string" ? [tags] : tags;
+
+    await Promise.all(
+      tagList.map(async (tag) =>
+        this.caller.call(async () => {
+          const res = await this._fetch(
+            `${this.apiUrl}/repos/${promptOwnerAndName}/tags`,
+            {
+              method: "POST",
+              headers: {
+                ...this._mergedHeaders,
+                "Content-Type": "application/json",
+              },
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+              body: JSON.stringify({ tag_name: tag, commit_id: commitId }),
+            },
+          );
+          await raiseForStatus(res, "create commit tag");
+          return res;
+        }),
+      ),
+    );
+  }
+
   protected async _likeOrUnlikePrompt(
     promptIdentifier: string,
     like: boolean,
@@ -6078,6 +6123,8 @@ export class Client implements LangSmithTracingClientInterface {
    * @param object - The prompt object/manifest to commit (e.g., ChatPromptTemplate, messages array, etc.)
    * @param options - Optional configuration for the commit
    * @param options.parentCommitHash - The parent commit hash. Defaults to "latest" (the most recent commit).
+   * @param options.tags - A tag or list of tags to apply to the commit.
+   * @param options.description - A description for the commit.
    * @returns A Promise that resolves to the URL of the newly created commit
    * @throws {Error} If the prompt does not exist
    * @example
@@ -6093,9 +6140,9 @@ export class Client implements LangSmithTracingClientInterface {
    * const commitUrl = await client.createCommit("my-prompt", template);
    * console.log(`Commit created: ${commitUrl}`);
    *
-   * // Create a commit based on a specific parent commit
+   * // Create a commit with tags
    * const commitUrl2 = await client.createCommit("my-prompt", template, {
-   *   parentCommitHash: "abc123def456"
+   *   tags: ["production", "v1"]
    * });
    * ```
    */
@@ -6104,6 +6151,7 @@ export class Client implements LangSmithTracingClientInterface {
     object: any,
     options?: {
       parentCommitHash?: string;
+      tags?: string | string[];
       description?: string;
     },
   ): Promise<string> {
@@ -6145,10 +6193,16 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const result = await response.json();
+    const commit = result.commit ?? result;
+    if (options?.tags) {
+      await this._createCommitTags(
+        `${owner}/${promptName}`,
+        commit.id,
+        options.tags,
+      );
+    }
     return this._getPromptUrl(
-      `${owner}/${promptName}${
-        result.commit_hash ? `:${result.commit_hash}` : ""
-      }`,
+      `${owner}/${promptName}${commit.commit_hash ? `:${commit.commit_hash}` : ""}`,
     );
   }
 
@@ -6638,12 +6692,18 @@ export class Client implements LangSmithTracingClientInterface {
       description?: string;
       readme?: string;
       tags?: string[];
+      commitTags?: string | string[];
       commitDescription?: string;
     },
   ): Promise<string> {
     // Create or update prompt metadata
     if (await this.promptExists(promptIdentifier)) {
-      if (options && Object.keys(options).some((key) => key !== "object")) {
+      if (
+        options &&
+        ["description", "readme", "tags", "isPublic"].some(
+          (key) => options[key as keyof typeof options] !== undefined,
+        )
+      ) {
         await this.updatePrompt(promptIdentifier, {
           description: options?.description,
           readme: options?.readme,
@@ -6667,6 +6727,7 @@ export class Client implements LangSmithTracingClientInterface {
     // Create a commit with the new manifest
     const url = await this.createCommit(promptIdentifier, options?.object, {
       parentCommitHash: options?.parentCommitHash,
+      tags: options?.commitTags,
       description: options?.commitDescription,
     });
     return url;

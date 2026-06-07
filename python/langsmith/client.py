@@ -4696,6 +4696,9 @@ class Client:
         upsert: bool = False,
         project_extra: Optional[dict] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
+        num_examples: Optional[int] = None,
+        num_repetitions: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -4706,6 +4709,17 @@ class Client:
             description (Optional[str]): The description of the project.
             upsert (bool, default=False): Whether to update the project if it already exists.
             reference_dataset_id (Optional[Union[UUID, str]): The ID of the reference dataset to associate with the project.
+            num_examples (Optional[int]): The expected number of examples that will be
+                run against this project. Used by the backend to populate experiment
+                progress; sent as a transport-only field and not round-tripped as a
+                response field.
+            num_repetitions (Optional[int]): The number of repetitions per example.
+                Combined with ``num_examples`` to compute expected run count for
+                progress tracking. Transport-only.
+            evaluator_keys (Optional[list[str]]): Feedback keys produced by the
+                row-level evaluators that will run against this project. Used by
+                the backend to populate per-evaluator experiment progress.
+                Transport-only.
 
         Returns:
             TracerSession: The created project.
@@ -4725,6 +4739,12 @@ class Client:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
+        if num_examples is not None:
+            body["num_examples"] = num_examples
+        if num_repetitions is not None:
+            body["num_repetitions"] = num_repetitions
+        if evaluator_keys:
+            body["evaluator_keys"] = evaluator_keys
         response = self.request_with_retries(
             "POST",
             endpoint,

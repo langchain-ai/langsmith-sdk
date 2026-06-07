@@ -1,6 +1,6 @@
 """LangSmith Client."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
@@ -29,8 +29,11 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.8.8"
+__version__ = "0.8.9"
 version = __version__  # for backwards compatibility
+
+# Metadata key to hide a traced run from LangSmith's Messages View.
+LS_MESSAGE_VIEW_EXCLUDE: Final = "ls_message_view_exclude"
 
 
 def __getattr__(name: str) -> Any:
@@ -200,4 +203,5 @@ __all__ = [
     "uuid7",
     "uuid7_from_datetime",
     "set_runtime_overrides",
+    "LS_MESSAGE_VIEW_EXCLUDE",
 ]

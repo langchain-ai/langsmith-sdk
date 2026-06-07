@@ -1,0 +1,81 @@
+"""Helpers for building sandbox proxy configurations."""
+
+from __future__ import annotations
+
+from typing import Any, Literal, TypedDict
+
+
+class SandboxProxySecret(TypedDict):
+    """A secret value that can be used by sandbox proxy rules."""
+
+    type: Literal["workspace_secret", "opaque"]
+    value: str
+
+
+SandboxProxyConfig = dict[str, Any]
+
+
+def _require_non_empty_string(value: str, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def workspace_secret(name: str) -> SandboxProxySecret:
+    """Create a LangSmith workspace secret reference for a proxy configuration.
+
+    Args:
+        name: Workspace secret name, with or without surrounding braces.
+
+    Returns:
+        A proxy secret reference such as
+        ``{"type": "workspace_secret", "value": "{AWS_ACCESS_KEY_ID}"}``.
+    """
+    normalized = _require_non_empty_string(name, "name")
+    starts = normalized.startswith("{")
+    ends = normalized.endswith("}")
+    if starts != ends:
+        raise ValueError("workspace secret must be a name or a {NAME} reference")
+    if starts and not normalized[1:-1].strip():
+        raise ValueError("workspace secret reference must contain a name")
+    value = normalized if starts else f"{{{normalized}}}"
+    return {"type": "workspace_secret", "value": value}
+
+
+def opaque_secret(value: str) -> SandboxProxySecret:
+    """Provide a write-only secret value for a proxy configuration.
+
+    The value is sent when creating or updating the sandbox proxy config, but
+    LangSmith stores it as an opaque secret and does not return it from the API.
+    """
+    return {"type": "opaque", "value": _require_non_empty_string(value, "value")}
+
+
+def aws_auth_proxy_config(
+    *,
+    access_key_id: SandboxProxySecret,
+    secret_access_key: SandboxProxySecret,
+    name: str = "aws",
+    enabled: bool = True,
+) -> SandboxProxyConfig:
+    """Build a sandbox proxy config that signs AWS HTTPS requests.
+
+    The sandbox proxy keeps the real AWS credentials outside the sandbox and
+    signs supported AWS requests with SigV4 on the sandbox's behalf. AWS
+    credentials must be supplied as ``workspace_secret`` or ``opaque`` values;
+    plaintext AWS credentials are intentionally not supported.
+    """
+    rule_name = _require_non_empty_string(name, "name")
+    return {
+        "rules": [
+            {
+                "name": rule_name,
+                "type": "aws",
+                "enabled": enabled,
+                "aws": {
+                    "access_key_id": access_key_id,
+                    "secret_access_key": secret_access_key,
+                },
+            }
+        ]
+    }

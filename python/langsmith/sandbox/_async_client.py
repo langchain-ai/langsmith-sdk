@@ -37,6 +37,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     Snapshot,
 )
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 
@@ -185,7 +186,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -231,7 +232,8 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             AsyncSandbox instance.
@@ -272,7 +274,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -312,7 +314,8 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -802,10 +805,18 @@ class AsyncSandboxClient:
         build_args: Optional[Mapping[str, str]] = None,
         target: Optional[str] = None,
         on_build_log: Optional[Callable[[str], Any]] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
-        """Build a snapshot from a local Dockerfile context."""
+        """Build a snapshot from a local Dockerfile context.
+
+        ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
+        build runs BuildKit plus the native snapshotter's layer copies inside
+        it, which contend for a single core by default, so giving the builder
+        an extra vCPU can cut a cold build's wall time substantially.
+        """
         context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
 
         builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
@@ -824,6 +835,8 @@ class AsyncSandboxClient:
         async with await self.sandbox(
             name=builder_name,
             timeout=timeout,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
             headers=headers,
         ) as sandbox:
