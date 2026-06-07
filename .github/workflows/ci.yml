@@ -410,6 +410,49 @@ jobs:
       - name: Test Metro exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
 
+  js-deepagent-compat:
+    name: "JS deepagent compat"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: js/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: js
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: js
+        run: pnpm build
+      - name: Test deepagent compat
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-deepagent-compat
+
+  python-deepagent-compat:
+    name: "Python deepagent compat"
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
+      - name: Install local langsmith
+        run: uv pip install -e python/
+      - name: Install deepagents
+        run: uv pip install deepagents
+      - name: Run smoke test
+        run: uv run python -m pytest python/tests/external/test_deepagent_compat.py -v --noconftest
+
   # ============================================================================
   # Integration Tests
   # ============================================================================
@@ -610,6 +653,9 @@ jobs:
       - js-exports-webpack
       - js-exports-esbuild
       - js-exports-metro
+      - js-deepagent-compat
+      # Compatibility
+      - python-deepagent-compat
       # Integration
       - integration-changes
       - python-integration
