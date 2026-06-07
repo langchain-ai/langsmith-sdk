@@ -441,17 +441,22 @@ jobs:
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           python-version: "3.11"
-      - name: Install local langsmith
-        run: uv pip install --system -e python/
+      - name: Create venv and install local langsmith
+        run: |
+          uv venv
+          uv pip install -e .
       - name: Install deepagents
-        run: uv pip install --system deepagents
+        run: uv pip install deepagents
       - name: Run smoke test
-        run: uv run --system python -m pytest python/tests/external/test_deepagent_compat.py -v --noconftest
+        run: uv run python -m pytest tests/external/test_deepagent_compat.py -v --noconftest
 
   # ============================================================================
   # Integration Tests
