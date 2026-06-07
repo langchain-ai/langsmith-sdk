@@ -447,11 +447,11 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install local langsmith
-        run: uv pip install -e python/
+        run: uv pip install --system -e python/
       - name: Install deepagents
-        run: uv pip install deepagents
+        run: uv pip install --system deepagents
       - name: Run smoke test
-        run: uv run python -m pytest python/tests/external/test_deepagent_compat.py -v --noconftest
+        run: uv run --system python -m pytest python/tests/external/test_deepagent_compat.py -v --noconftest
 
   # ============================================================================
   # Integration Tests
