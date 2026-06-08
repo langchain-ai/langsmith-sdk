@@ -6,6 +6,8 @@ on:
     paths:
       - "python/langsmith/_openapi_client/**"
 
+permissions: {}
+
 jobs:
   check-openapi-client-changes:
     name: Block unauthorized changes to _openapi_client
