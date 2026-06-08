@@ -9,6 +9,10 @@ import pytest
 import vcr
 import vcr.patch
 
+from langsmith._internal import _patch as patch_vcr
+
+patch_vcr.patch_vcr_aiohttp()
+
 
 def get_request_hash(request):
     """Generate a hash based on important parts of the request body."""

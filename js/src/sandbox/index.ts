@@ -32,6 +32,11 @@
 export { SandboxClient } from "./client.js";
 export { Sandbox } from "./sandbox.js";
 export { CommandHandle } from "./command_handle.js";
+export {
+  awsAuthProxyConfig,
+  opaqueSecret,
+  workspaceSecret,
+} from "./proxy_config.js";
 
 // Types
 export type {
@@ -46,8 +51,11 @@ export type {
   RunOptions,
   CreateSandboxOptions,
   SandboxAccessControl,
+  SandboxAwsAuthRule,
   SandboxProxyConfig,
+  SandboxProxySecret,
   CreateSnapshotOptions,
+  CreateDockerfileSnapshotOptions,
   CaptureSnapshotOptions,
   ListSnapshotsOptions,
   WaitForSnapshotOptions,

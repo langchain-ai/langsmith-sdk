@@ -280,17 +280,30 @@ class AsyncClient:
         retry_on: Optional[Sequence[type[BaseException]]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make an async HTTP request with retries."""
+        """Make an async HTTP request with retries.
+
+        Args:
+            method: The HTTP method.
+            endpoint: The request endpoint (appended to the API base URL).
+            stop_after_attempt: The number of attempts to make. If unset, uses
+                the client's configured max retries.
+            retry_on: Additional exception types to retry on, beyond the
+                connection/timeout/server-error set that is always retried.
+            **kwargs: Forwarded to the underlying httpx request.
+        """
         max_retries = (
             stop_after_attempt
             if stop_after_attempt is not None
             else cast(int, self._retry_config.get("max_retries", 3))
         )
+        # Transient connection/timeout/server errors are always retried; callers
+        # can opt into retrying additional types (e.g. LangSmithNotFoundError
+        # when writing against a run that may not be ingested yet).
         retry_on_: tuple[type[BaseException], ...] = (
-            *(retry_on or ()),
             ls_utils.LangSmithConnectionError,
             ls_utils.LangSmithRequestTimeout,
             ls_utils.LangSmithAPIError,
+            *(retry_on or ()),
         )
 
         # Python requests library used by the normal Client filters out params with None values
@@ -972,6 +985,8 @@ class AsyncClient:
             extra=extra,
             error=error,
         )
+        # Retry on NotFound: the run referenced by run_id/trace_id may have been
+        # submitted moments ago and not yet ingested when this write lands.
         await self._arequest_with_retries(
             "POST",
             "/feedback",

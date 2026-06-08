@@ -20,7 +20,11 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._runner import _get_target_args
+from langsmith.evaluation._runner import (
+    ComparativeExperimentResults,
+    _build_comparative_url,
+    _get_target_args,
+)
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -202,7 +206,7 @@ def test_evaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -497,7 +501,7 @@ async def test_aevaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -997,7 +1001,7 @@ def test_passing_kwargs_is_working():
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     def _valid_mixed_positional_and_keyword_with_reference_outputs(
         inputs, outputs, *, reference_outputs, optional=None
@@ -1044,7 +1048,7 @@ async def test_normalize_evaluator_func_valid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     if is_async:
         await aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
@@ -1070,7 +1074,7 @@ def test_normalize_evaluator_func_invalid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     with pytest.raises(ValueError, match="Invalid evaluator function"):
         if is_async:
@@ -1299,3 +1303,163 @@ async def test_invalid_aevaluate_args() -> None:
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         await aevaluate((lambda x: x), data="data", load_nested=True)
+
+
+def test_evaluate_infers_num_examples_from_list() -> None:
+    """When ``data`` is a sized iterable (list/tuple), the SDK should auto-resolve
+    ``num_examples`` from ``len(data)`` and forward it on the POST /sessions
+    body so the backend can populate ``extra.__progress`` for UI loading state.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+    num_examples = 5
+    num_repetitions = 3
+
+    ds_example_responses = [_create_example(i) for i in range(num_examples)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=examples,
+        client=client,
+        num_repetitions=num_repetitions,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert fake_request.created_session["num_examples"] == num_examples
+    assert fake_request.created_session["num_repetitions"] == num_repetitions
+
+
+def test_evaluate_omits_num_examples_for_generator() -> None:
+    """When ``data`` is a lazy generator, the SDK cannot infer size without
+    consuming it, so ``num_examples`` should be omitted from the create-project
+    payload and the backend falls back to resolving it from the dataset.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(3)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=(e for e in examples),
+        client=client,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert "num_examples" not in fake_request.created_session
+    assert fake_request.created_session.get("num_repetitions") == 1
+
+
+def _make_session(host_url, tenant_id, dataset_id, name):
+    return ls_schemas.TracerSessionResult(
+        _host_url=host_url,
+        id=uuid.uuid4(),
+        name=name,
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        start_time=datetime.now(timezone.utc),
+    )
+
+
+def _make_comparative_experiment(tenant_id, dataset_id):
+    return ls_schemas.ComparativeExperiment(
+        id=uuid.uuid4(),
+        name="a vs. b",
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+
+def test_build_comparative_url() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    host = "https://smith.langchain.com"
+    exp_a = _make_session(host, tenant_id, dataset_id, "a")
+    exp_b = _make_session(host, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    url = _build_comparative_url((exp_a, exp_b), comparative_experiment)
+
+    assert url is not None
+    assert url.startswith(f"{host}/o/{tenant_id}/datasets/{dataset_id}/compare?")
+    assert f"selectedSessions={exp_a.id}%2C{exp_b.id}" in url
+    assert f"comparativeExperiment={comparative_experiment.id}" in url
+
+
+def test_build_comparative_url_no_host_returns_none() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    # Sessions without a host URL cannot produce a comparison link.
+    exp_a = _make_session(None, tenant_id, dataset_id, "a")
+    exp_b = _make_session(None, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    assert _build_comparative_url((exp_a, exp_b), comparative_experiment) is None
+
+
+def test_comparative_experiment_results_exposes_url_and_experiment() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    results = ComparativeExperimentResults(
+        results={},
+        examples={},
+        comparative_experiment=comparative_experiment,
+        url="https://smith.langchain.com/compare",
+    )
+    assert results.url == "https://smith.langchain.com/compare"
+    assert results.comparative_experiment is comparative_experiment
+
+    # Existing callers that omit the new args still work, defaulting to None.
+    legacy = ComparativeExperimentResults(results={}, examples={})
+    assert legacy.url is None
+    assert legacy.comparative_experiment is None

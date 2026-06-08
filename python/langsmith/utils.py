@@ -595,6 +595,7 @@ def with_cache(
     from langsmith._internal import _patch as patch_urllib3
 
     patch_urllib3.patch_urllib3()
+    patch_urllib3.patch_vcr_aiohttp()
 
     cache_dir, cache_file = os.path.split(path)
 
@@ -697,8 +698,11 @@ def is_version_greater_or_equal(current_version: str, target_version: str) -> bo
     """Check if the current version is greater or equal to the target version."""
     from packaging import version
 
-    current = version.parse(current_version)
-    target = version.parse(target_version)
+    try:
+        current = version.parse(current_version)
+        target = version.parse(target_version)
+    except version.InvalidVersion:
+        return False
     return current >= target
 
 
@@ -862,6 +866,11 @@ def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
     return workspace_id_.strip().strip('"').strip("'")
 
 
+_LOCALHOST_NAMES = frozenset(
+    {"localhost", "127.0.0.1", "0.0.0.0", "::1", "0:0:0:0:0:0:0:1"}
+)
+
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
@@ -876,10 +885,13 @@ def _is_localhost(url: str) -> bool:
         True if the URL is localhost, False otherwise.
     """
     try:
-        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0].lower().strip("[]")
+        if netloc in _LOCALHOST_NAMES:
+            return True
         ip = socket.gethostbyname(netloc)
         return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
-    except socket.gaierror:
+    except (socket.gaierror, RuntimeError):
+        # RuntimeError catches pytest-socket's SocketBlockedError in test environments
         return False
 
 

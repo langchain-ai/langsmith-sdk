@@ -650,6 +650,19 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   expect(compareRes.results).toBeDefined();
   expect(Array.isArray(compareRes.results)).toBe(true);
 
+  // The pairwise comparison URL and comparative experiment are exposed on the result
+  expect(compareRes).toHaveProperty("url");
+  expect(typeof compareRes.url === "string" || compareRes.url === null).toBe(
+    true,
+  );
+  expect(compareRes.comparativeExperiment).toBeDefined();
+  expect(compareRes.comparativeExperiment.id).toBeDefined();
+  if (compareRes.url != null) {
+    expect(compareRes.url).toContain(
+      `comparativeExperiment=${compareRes.comparativeExperiment.id}`,
+    );
+  }
+
   // Check structure of comparison results
   for (const result of compareRes.results) {
     expect(result.key).toBe("comparative_score");
