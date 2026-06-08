@@ -595,6 +595,7 @@ def with_cache(
     from langsmith._internal import _patch as patch_urllib3
 
     patch_urllib3.patch_urllib3()
+    patch_urllib3.patch_vcr_aiohttp()
 
     cache_dir, cache_file = os.path.split(path)
 
