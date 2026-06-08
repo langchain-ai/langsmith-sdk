@@ -258,6 +258,227 @@ async def test_arequest_with_retries_retries_on_502(
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
+async def test_async_create_feedback_includes_trace_id_and_feedback_id(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    feedback_id = uuid.uuid4()
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={
+            "id": str(feedback_id),
+            "run_id": str(run_id),
+            "trace_id": str(trace_id),
+            "key": "test_key",
+            "score": 0.9,
+            "value": "test_value",
+            "comment": "test_comment",
+            "created_at": datetime.now().isoformat(),
+            "modified_at": datetime.now().isoformat(),
+        },
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        feedback_id=feedback_id,
+        key="test_key",
+        score=0.9,
+        value="test_value",
+        comment="test_comment",
+    )
+
+    assert feedback.id == feedback_id
+    assert feedback.run_id == run_id
+    assert feedback.trace_id == trace_id
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert body["id"] == str(feedback_id)
+    assert body["run_id"] == str(run_id)
+    assert body["trace_id"] == str(trace_id)
+    assert body["key"] == "test_key"
+    assert body["score"] == 0.9
+    assert body["value"] == "test_value"
+    assert body["comment"] == "test_comment"
+    assert body["feedback_source"]["type"] == "api"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_matches_sync_payload_fields(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    source_run_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    comparative_experiment_id = uuid.uuid4()
+    feedback_group_id = uuid.uuid4()
+    start_time = datetime.now()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        key="test_key",
+        score=0.123456,
+        value="test_value",
+        correction={"expected": "answer"},
+        feedback_config={"type": "continuous", "min": 0, "max": 1},
+        feedback_source_type="model",
+        source_info={"source": "evaluator"},
+        source_run_id=source_run_id,
+        comparative_experiment_id=comparative_experiment_id,
+        feedback_group_id=feedback_group_id,
+        extra={"extra_key": "extra_value"},
+        error=True,
+        session_id=session_id,
+        start_time=start_time,
+    )
+
+    assert feedback.run_id == run_id
+    assert feedback.trace_id == trace_id
+    assert feedback.score == 0.1235
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert body["run_id"] == str(run_id)
+    assert body["trace_id"] == str(trace_id)
+    assert body["score"] == 0.1235
+    assert body["correction"] == {"expected": "answer"}
+    assert body["feedback_config"] == {"type": "continuous", "min": 0, "max": 1}
+    assert body["feedback_source"] == {
+        "type": "model",
+        "metadata": {
+            "source": "evaluator",
+            "__run": {"run_id": str(source_run_id)},
+        },
+    }
+    assert body["comparative_experiment_id"] == str(comparative_experiment_id)
+    assert body["feedback_group_id"] == str(feedback_group_id)
+    assert body["extra"] == {"extra_key": "extra_value"}
+    assert body["error"] is True
+    assert body["session_id"] == str(session_id)
+    assert body["start_time"] == start_time.isoformat()
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_project_feedback_validation(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    project_id = uuid.uuid4()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(project_id=project_id, key="test_key")
+
+    assert feedback.run_id is None
+    assert feedback.session_id == project_id
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert "run_id" not in body
+    assert body["session_id"] == str(project_id)
+
+    with pytest.raises(ValueError, match="project_id cannot be provided"):
+        await client.create_feedback(
+            run_id=uuid.uuid4(),
+            project_id=project_id,
+            key="test_key",
+        )
+
+    with pytest.raises(ValueError, match="One of run_id, trace_id, or project_id"):
+        await client.create_feedback(key="test_key")
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_warns_and_ignores_unused_kwargs(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    with pytest.warns(DeprecationWarning, match="no longer used"):
+        await client.create_feedback(
+            run_id=uuid.uuid4(),
+            key="test_key",
+            unused_argument="unused",
+        )
+
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert "unused_argument" not in body
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_create_feedback_retries_on_not_found(
+    mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    feedback_id = uuid.uuid4()
+    request = httpx.Request("POST", "http://localhost:1984/feedback")
+    mock_httpx_client.request.side_effect = [
+        httpx.Response(404, text="not found", request=request),
+        httpx.Response(
+            200,
+            json={
+                "id": str(feedback_id),
+                "run_id": str(run_id),
+                "trace_id": str(trace_id),
+                "key": "test_key",
+                "created_at": datetime.now().isoformat(),
+                "modified_at": datetime.now().isoformat(),
+            },
+            request=request,
+        ),
+    ]
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        feedback_id=feedback_id,
+        key="test_key",
+        stop_after_attempt=2,
+    )
+
+    assert feedback.id == feedback_id
+    assert mock_httpx_client.request.call_count == 2
+    mock_sleep.assert_awaited_once()
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
 async def test_list_runs_child_run_ids_deprecation_warning(
     mock_client_cls: mock.Mock,
 ) -> None:
