@@ -216,11 +216,13 @@ def _create_usage_metadata(gemini_usage_metadata: dict) -> UsageMetadata:
 
     input_token_details: dict = {}
     if cached_content_token_count:
-        input_token_details["cache_read"] = cached_content_token_count
+        input_token_details["cache_read"] = min(cached_content_token_count, 200000)
         input_token_details["cache_read_over_200k"] = max(
             0, cached_content_token_count - 200000
         )
-        input_token_details["over_200k"] = max(0, prompt_token_count - 200000)
+        input_token_details["over_200k"] = max(
+            0, prompt_token_count - cached_content_token_count - 200000
+        )
 
     output_token_details: dict = {}
     if thoughts_token_count:
