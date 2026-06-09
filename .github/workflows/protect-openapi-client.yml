@@ -1,0 +1,40 @@
+name: Protect OpenAPI Client
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "python/langsmith/_openapi_client/**"
+
+permissions: {}
+
+jobs:
+  check-openapi-client-changes:
+    name: Block unauthorized changes to _openapi_client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR is from the authorized sync workflow
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          echo "PR branch: $HEAD_REF"
+          echo "PR author: $PR_AUTHOR"
+
+          # The only authorized source for changes to python/langsmith/_openapi_client/
+          # is the sync_python_sdk workflow in langchain-ai/langchainplus, which opens
+          # PRs from the 'sync/langsmith-api' branch via the 'langtions-bot' app.
+          if [[ "$HEAD_REF" == "sync/langsmith-api" && "$PR_AUTHOR" == "langtions-bot[bot]" ]]; then
+            echo "✅ Changes to python/langsmith/_openapi_client/ are authorized (sync workflow)."
+            exit 0
+          fi
+
+          echo ""
+          echo "❌ Unauthorized changes detected in python/langsmith/_openapi_client/"
+          echo ""
+          echo "This directory is auto-generated and must only be updated via the"
+          echo "sync_python_sdk workflow in langchain-ai/langchainplus:"
+          echo "https://github.com/langchain-ai/langchainplus/actions/workflows/sync_python_sdk.yml"
+          echo ""
+          echo "Please remove any modifications to python/langsmith/_openapi_client/ from this PR."
+          exit 1
