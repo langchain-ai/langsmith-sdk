@@ -2,29 +2,19 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-> ⚠️ **Warning**: This module is experimental (alpha). Features and APIs may change, and breaking changes are expected as we iterate.
-
 ## Quick Start
 
-Sandboxes are created from **snapshots**. A snapshot is a filesystem image you
-build once from a Docker image (or capture from a running sandbox) and then
-reuse to boot as many sandboxes as you need.
+By default, sandboxes are created with the server's standard runtime. You only
+need a snapshot when you want to boot from a reusable custom filesystem image.
 
 ```typescript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
 
-// Build a snapshot from a Docker image (do this once)
-const snapshot = await client.createSnapshot(
-  "python",
-  "python:3.12-slim",
-  1_073_741_824, // 1 GiB filesystem
-);
-
-// Create a sandbox from the snapshot and run code
-const sandbox = await client.createSandbox(snapshot.id);
+// Create a sandbox with the default runtime and run code
+const sandbox = await client.createSandbox();
 try {
   const result = await sandbox.run("python -c 'print(2 + 2)'");
   console.log(result.stdout); // "4\n"
@@ -38,16 +28,14 @@ const existingSb = await client.getSandbox("your-sandbox");
 const res = await existingSb.run("python -c 'print(2 + 2)'");
 ```
 
-If you already have a snapshot ID (for example, listed with
-`client.listSnapshots()`), you can skip the `createSnapshot` step and call
-`client.createSandbox(snapshotId)` directly.
+If you have a reusable snapshot ID, pass it to `client.createSandbox(snapshotId)`.
 
 ## Configuration
 
 The client automatically uses LangSmith environment variables:
 
 ```typescript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 // Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY
 const client = new SandboxClient();
@@ -60,6 +48,69 @@ const client = new SandboxClient({
   maxConcurrency: 10,   // Max concurrent requests (default: Infinity)
 });
 ```
+
+## AWS Auth Proxy
+
+Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
+Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
+credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
+SigV4. The real credentials stay outside the sandbox.
+
+This lets code inside the sandbox use normal AWS tooling without exposing
+long-lived AWS credentials in sandbox files, environment variables, shell
+history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
+reference those secret names in the proxy config:
+
+```typescript
+import {
+  SandboxClient,
+  awsAuthProxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "aws-sandbox",
+  proxyConfig: awsAuthProxyConfig({
+    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  }),
+});
+
+try {
+  const result = await sandbox.run("node your-aws-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Inside `your-aws-script.js`, use AWS SDKs normally. For example, if
+`@aws-sdk/client-s3` is installed in the sandbox snapshot:
+
+```typescript
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({});
+const response = await s3.send(new ListBucketsCommand({}));
+console.log(response.Buckets?.map((bucket) => bucket.Name));
+```
+
+If your application mints short-lived AWS credentials, pass them as write-only
+opaque values instead:
+
+```typescript
+import { awsAuthProxyConfig, opaqueSecret } from "langsmith/sandbox";
+
+const proxyConfig = awsAuthProxyConfig({
+  accessKeyId: opaqueSecret(accessKeyId),
+  secretAccessKey: opaqueSecret(secretAccessKey),
+});
+```
+
+Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
+credential values are not supported by the AWS auth proxy.
 
 ## Running Commands
 
@@ -388,10 +439,9 @@ console.log(captured.id, captured.source_sandbox_id);
 // Boot a new sandbox from the captured snapshot
 const resumed = await client.createSandbox(captured.id);
 
-// Or resolve by snapshot name instead of ID — the server looks up the
-// snapshot owned by your tenant. Exactly one of the positional `snapshotId`
-// or `options.snapshotName` must be provided.
-const byName = await client.createSandbox(undefined, {
+// Or resolve by snapshot name instead of ID. This is optional; omitting both
+// snapshotId and snapshotName uses the default runtime.
+const byName = await client.createSandbox({
   snapshotName: "with-data",
 });
 
@@ -417,11 +467,10 @@ await client.deleteSnapshot(snapshot.id);
 ### Sizing and Resources
 
 `createSandbox` accepts optional per-sandbox resource limits. If omitted, the
-server-side defaults are used. `fsCapacityBytes` defaults to the snapshot's
-size.
+server-side defaults are used.
 
 ```typescript
-const sandbox = await client.createSandbox(snapshot.id, {
+const sandbox = await client.createSandbox({
   vCpus: 2,
   memBytes: 2_147_483_648,        // 2 GiB
   fsCapacityBytes: 5_368_709_120, // 5 GiB
@@ -460,7 +509,7 @@ import {
   LangSmithCommandTimeoutError,       // Command exceeded its timeout
   LangSmithQuotaExceededError,        // Quota limit reached
   LangSmithValidationError,           // Invalid input
-} from "langsmith/experimental/sandbox";
+} from "langsmith/sandbox";
 
 const client = new SandboxClient();
 
@@ -486,7 +535,7 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `createSandbox(snapshotId?, options?)` | Create a sandbox from a snapshot. Exactly one of the positional `snapshotId` or `options.snapshotName` must be provided. |
+| `createSandbox(options?)` / `createSandbox(snapshotId?, options?)` | Create a sandbox. Pass `snapshotId` or `options.snapshotName` to boot from a reusable snapshot. |
 | `getSandbox(name)` | Get an existing sandbox by name |
 | `listSandboxes()` | List all sandboxes |
 | `updateSandbox(name, options)` | Rename or adjust retention (idle stop, delete-after-stop) on a sandbox |
@@ -549,7 +598,7 @@ try {
 
 | Property | Description |
 |----------|-------------|
-| `snapshotName?` | Snapshot name to boot from. Mutually exclusive with the positional `snapshotId` argument on `createSandbox`; exactly one must be set. |
+| `snapshotName?` | Optional snapshot name to boot from. Mutually exclusive with the positional `snapshotId`. |
 | `name?` | Custom sandbox name |
 | `timeout?` | Wait timeout in seconds |
 | `waitForReady?` | Wait for the sandbox to be ready before returning (default: `true`) |

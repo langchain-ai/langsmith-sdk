@@ -1,6 +1,16 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import type { LanguageModelV2DataContent } from "@ai-sdk/provider";
-import type { ToolCallPart } from "ai";
+import type {
+  LanguageModelV2DataContent,
+  LanguageModelV2Usage,
+  SharedV2ProviderMetadata,
+} from "@ai-sdk/provider";
+import type { ModelMessage, ToolCallPart } from "ai";
+import { isRecord } from "../../utils/types.js";
+import { RunTree } from "../../run_trees.js";
+import {
+  extractInputTokenDetails,
+  extractOutputTokenDetails,
+} from "../../utils/vercel.js";
 
 const guessMimetypeFromBase64 = (data: string) => {
   // Check magic bytes from base64 data
@@ -60,68 +70,127 @@ const guessMimetypeFromBase64 = (data: string) => {
   return undefined;
 };
 
+// Extracted from AI SDK's FileData type
+type AISDKDataContent = string | Uint8Array | ArrayBuffer | Buffer;
+type AISDKProviderReference = { [provider: string]: string } & { type?: never };
+
+// TODO: add support for AI SDK FileData
+type AISDKFileData =
+  | { type: "data"; data: AISDKDataContent }
+  | { type: "url"; url: URL }
+  | { type: "reference"; reference: AISDKProviderReference }
+  | { type: "text"; text: string };
+
+function _isAISDKFileData(input: unknown): input is AISDKFileData {
+  if (!isRecord(input)) return false;
+  if (input.type === "data" && "data" in input) return true;
+  if (input.type === "url" && "url" in input) return true;
+  if (input.type === "reference" && "reference" in input) return true;
+  if (input.type === "text" && "text" in input) return true;
+  return false;
+}
+
+function _toUint8Array(fileData: unknown): Uint8Array | undefined {
+  // Covers `fileData: ArrayBuffer | Buffer | Uint8Array`
+  if (fileData instanceof Uint8Array) {
+    return fileData;
+  }
+
+  if (
+    fileData != null &&
+    typeof fileData === "object" &&
+    "type" in fileData &&
+    "data" in fileData &&
+    typeof fileData.data === "object" &&
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    fileData.data instanceof Uint8Array
+  ) {
+    return fileData.data;
+    // eslint-disable-next-line no-instanceof/no-instanceof
+  }
+
+  if (fileData instanceof ArrayBuffer) {
+    return new Uint8Array(fileData);
+  }
+
+  return undefined;
+}
+
 export const normalizeFileDataAsDataURL = (
-  fileData: LanguageModelV2DataContent | ArrayBuffer,
-  mimeType?: string,
+  fileData:
+    | AISDKFileData
+    | AISDKDataContent
+    | LanguageModelV2DataContent
+    | AISDKProviderReference
+    | URL,
+  mimeType: string | undefined,
 ): string => {
-  // eslint-disable-next-line no-instanceof/no-instanceof
+  if (_isAISDKFileData(fileData)) {
+    if (fileData.type === "data") {
+      return normalizeFileDataAsDataURL(fileData.data, mimeType);
+    }
+
+    if (fileData.type === "url") {
+      return fileData.url.toString();
+    }
+
+    if (fileData.type === "reference") {
+      // TODO: figure out if we can store the reference in a more reasonable format
+      return `data:application/octet-stream;base64,${btoa(JSON.stringify(fileData.reference))}`;
+    }
+
+    if (fileData.type === "text") {
+      return `data:text/plain;base64,${btoa(fileData.text)}`;
+    }
+
+    throw new Error("AISDKFileData is not supported");
+  }
+
   if (fileData instanceof URL) {
     return fileData.toString();
   }
-  let normalizedFileData: string;
+
   if (typeof fileData !== "string") {
-    let uint8Array;
-    // eslint-disable-next-line no-instanceof/no-instanceof
-    if (fileData instanceof Uint8Array) {
-      uint8Array = fileData;
-    } else if (
-      fileData != null &&
-      typeof fileData === "object" &&
-      "type" in fileData &&
-      "data" in fileData &&
-      typeof fileData.data === "object" &&
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      fileData.data instanceof Uint8Array
-    ) {
-      uint8Array = fileData.data;
-      // eslint-disable-next-line no-instanceof/no-instanceof
-    } else if (fileData instanceof ArrayBuffer) {
-      uint8Array = new Uint8Array(fileData);
-    }
+    const uint8Array = _toUint8Array(fileData);
     if (uint8Array) {
       let binary = "";
       for (let i = 0; i < uint8Array.length; i++) {
         binary += String.fromCharCode(uint8Array[i]);
       }
       const base64 = btoa(binary);
-      normalizedFileData = `data:${
+      const dataType =
         mimeType ??
         guessMimetypeFromBase64(base64) ??
-        "application/octet-stream"
-      };base64,${base64}`;
-    } else {
-      normalizedFileData = "";
+        "application/octet-stream";
+
+      return `data:${dataType};base64,${base64}`;
     }
-  } else {
+  }
+
+  if (typeof fileData === "string") {
     if (fileData.startsWith("http://") || fileData.startsWith("https://")) {
-      normalizedFileData = fileData;
-    } else if (!fileData.startsWith("data:")) {
-      normalizedFileData = `data:${
+      return fileData;
+    }
+
+    if (!fileData.startsWith("data:")) {
+      return `data:${
         mimeType ??
         guessMimetypeFromBase64(fileData) ??
         "application/octet-stream"
       };base64,${fileData}`;
-    } else {
-      normalizedFileData = fileData;
     }
+
+    return fileData;
   }
-  return normalizedFileData;
+
+  return "";
 };
 
 export const convertMessageToTracedFormat = (
-  message: Record<string, unknown>,
+  rawMessage: Record<string, unknown>,
   responseMetadata?: Record<string, unknown>,
 ) => {
+  const message = rawMessage as ModelMessage;
   const formattedMessage: Record<string, unknown> = {
     ...message,
   };
@@ -207,4 +276,110 @@ export const convertMessageToTracedFormat = (
     formattedMessage.response_metadata = responseMetadata;
   }
   return formattedMessage;
+};
+
+export const setUsageMetadataOnRunTree = (
+  result: {
+    usage?: LanguageModelV2Usage;
+    providerMetadata?: SharedV2ProviderMetadata;
+  },
+  runTree: RunTree,
+) => {
+  if (result.usage == null || typeof result.usage !== "object") {
+    return;
+  }
+
+  const usage = result.usage as Record<string, unknown>;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let totalTokens: number | undefined;
+
+  // AI SDK 6: Check for object-based token structures first
+  if (
+    isRecord(usage.inputTokens) &&
+    usage.inputTokens?.total != null &&
+    typeof usage.inputTokens.total === "number"
+  ) {
+    // AI SDK 6 detected
+    inputTokens = usage.inputTokens.total;
+
+    if (
+      isRecord(usage.outputTokens) &&
+      usage.outputTokens?.total != null &&
+      typeof usage.outputTokens.total === "number"
+    ) {
+      outputTokens = usage.outputTokens.total;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else if (typeof usage.inputTokens === "number") {
+    // AI SDK 5 detected
+    inputTokens = usage.inputTokens;
+
+    if (typeof usage.outputTokens === "number") {
+      outputTokens = usage.outputTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else {
+    // AI SDK 4 fallback
+    if (typeof usage.promptTokens === "number") {
+      inputTokens = usage.promptTokens;
+    }
+    if (typeof usage.completionTokens === "number") {
+      outputTokens = usage.completionTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  }
+
+  const langsmithUsage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
+  };
+  const inputTokenDetails = extractInputTokenDetails(
+    result.usage,
+    result.providerMetadata,
+  );
+  const outputTokenDetails = extractOutputTokenDetails(
+    result.usage,
+    result.providerMetadata,
+  );
+  runTree.extra = {
+    ...runTree.extra,
+    metadata: {
+      ...runTree.extra?.metadata,
+      usage_metadata: {
+        ...langsmithUsage,
+        input_token_details: {
+          ...inputTokenDetails,
+        },
+        output_token_details: {
+          ...outputTokenDetails,
+        },
+      },
+    },
+  };
 };

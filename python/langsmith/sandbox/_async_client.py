@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from typing import Any, Optional
+import os
+import posixpath
+import uuid
+from collections.abc import Callable, Mapping
+from typing import Any, Optional, Union
 
 import httpx
 
 from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
+from langsmith.sandbox._client import (
+    _make_docker_context_tar,
+    _make_dockerfile_build_command,
+    _resolve_dockerfile_context,
+)
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -29,6 +37,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     Snapshot,
 )
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 
@@ -57,10 +66,8 @@ class AsyncSandboxClient:
     Example:
         # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
         async with AsyncSandboxClient() as client:
-            # Create a sandbox from a snapshot and run commands
-            async with await client.sandbox(
-                snapshot_id="<snapshot-uuid>"
-            ) as sandbox:
+            # Create a sandbox with the default runtime and run commands
+            async with await client.sandbox() as sandbox:
                 result = await sandbox.run("python --version")
                 print(result.stdout)
     """
@@ -72,6 +79,7 @@ class AsyncSandboxClient:
         timeout: float = 10.0,
         api_key: Optional[str] = None,
         max_retries: int = 3,
+        headers: Optional[Mapping[str, str]] = None,
     ):
         """Initialize the AsyncSandboxClient.
 
@@ -84,16 +92,23 @@ class AsyncSandboxClient:
             max_retries: Maximum number of retries for transient errors (502, 503,
                          504), rate limits (429), and connection failures. Set to 0
                          to disable retries. Default: 3.
+            headers: Optional default headers attached to every request on this
+                     client, including the data-plane ``/execute`` HTTP endpoint
+                     and the ``/execute/ws`` WebSocket upgrade. Use this to pass
+                     additional auth headers (e.g. ``X-Service-Key``).
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
-        headers: dict[str, str] = {}
+        self._default_headers: dict[str, str] = dict(headers) if headers else {}
+        client_headers: dict[str, str] = {}
         if resolved_api_key:
-            headers["X-Api-Key"] = resolved_api_key
+            client_headers["X-Api-Key"] = resolved_api_key
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
         transport = AsyncRetryTransport(max_retries=max_retries)
         self._http = httpx.AsyncClient(
-            transport=transport, timeout=timeout, headers=headers
+            transport=transport, timeout=timeout, headers=client_headers
         )
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
@@ -101,6 +116,16 @@ class AsyncSandboxClient:
         if headers is None:
             return None
         return merge_headers(self._http.headers, headers)
+
+    def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge constructor-supplied default headers with per-request overrides.
+
+        Used by the WebSocket exec path so headers like ``X-Service-Key``
+        set on the client are attached to the WS upgrade request.
+        """
+        if not self._default_headers and headers is None:
+            return None
+        return merge_headers(self._default_headers, headers)
 
     async def aclose(self) -> None:
         """Close the async HTTP client."""
@@ -161,7 +186,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -180,11 +205,11 @@ class AsyncSandboxClient:
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             idle_ttl_seconds: Idle timeout in seconds. The launcher
@@ -207,7 +232,8 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             AsyncSandbox instance.
@@ -216,8 +242,8 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
         sb = await self.create_sandbox(
             snapshot_id,
@@ -248,7 +274,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -257,11 +283,11 @@ class AsyncSandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -288,7 +314,8 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -298,11 +325,11 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
-        if bool(snapshot_id) == bool(snapshot_name):
-            raise ValueError("Exactly one of snapshot_id or snapshot_name must be set")
+        if snapshot_id and snapshot_name:
+            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
 
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
@@ -768,11 +795,106 @@ class AsyncSandboxClient:
             snapshot.id, timeout=timeout, headers=headers
         )
 
+    async def create_snapshot_from_dockerfile(
+        self,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: int,
+        *,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a local Dockerfile context.
+
+        ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
+        build runs BuildKit plus the native snapshotter's layer copies inside
+        it, which contend for a single core by default, so giving the builder
+        an extra vCPU can cut a cold build's wall time substantially.
+        """
+        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        # Stage the build on the capacity-backed root filesystem, not /tmp.
+        # Inside the sandbox /tmp is a RAM-backed tmpfs that fs_capacity_bytes
+        # does not size, and BuildKit's native snapshotter writes a full copy
+        # of every layer under its root, so a /tmp build exhausts guest RAM and
+        # fails with "No space left on device".
+        build_root = f"/var/lib/langsmith-build/{uuid.uuid4().hex[:12]}"
+        remote_context = posixpath.join(build_root, "context")
+        remote_tar = posixpath.join(build_root, "context.tar")
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+        buildkit_root = posixpath.join(build_root, "buildkit-root")
+        buildkit_run = posixpath.join(build_root, "buildkit-run")
+
+        async with await self.sandbox(
+            name=builder_name,
+            timeout=timeout,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
+            fs_capacity_bytes=fs_capacity_bytes,
+            headers=headers,
+        ) as sandbox:
+            await sandbox.write(
+                remote_tar,
+                await asyncio.to_thread(_make_docker_context_tar, context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            await sandbox.run(
+                "rm -rf "
+                + remote_context
+                + " && mkdir -p "
+                + remote_context
+                + " && tar -xf "
+                + remote_tar
+                + " -C "
+                + remote_context,
+                timeout=timeout,
+                headers=headers,
+            )
+
+            result = await sandbox.run(
+                _make_dockerfile_build_command(
+                    remote_context=remote_context,
+                    dockerfile_rel=dockerfile_rel,
+                    image_ref=image_ref,
+                    buildkit_root=buildkit_root,
+                    buildkit_run=buildkit_run,
+                    build_args=build_args,
+                    target=target,
+                ),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            return await self.capture_snapshot(
+                sandbox.name,
+                name,
+                docker_image=image_ref,
+                fs_capacity_bytes=fs_capacity_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+
     async def capture_snapshot(
         self,
         sandbox_name: str,
         name: str,
         *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -797,6 +919,10 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
             response = await self._http.post(

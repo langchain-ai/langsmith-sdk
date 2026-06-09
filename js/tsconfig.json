@@ -21,6 +21,8 @@
     "stripInternal": true,
     "allowJs": true,
     "strict": true,
+    "types": ["jest", "node"],
+    "rootDir": "./src",
     "outDir": "dist"
   },
   "include": [
@@ -57,7 +59,8 @@
       "src/experimental/otel/processor.ts",
       "src/experimental/vercel/index.ts",
       "src/experimental/anthropic/index.ts",
-      "src/experimental/sandbox/index.ts"
+      "src/sandbox/index.ts",
+      "src/sandbox/index.ts"
     ]
   }
 }

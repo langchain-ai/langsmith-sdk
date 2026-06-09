@@ -1,15 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspect } from "node:util";
-import { SandboxClient } from "../experimental/sandbox/client.js";
-import { Sandbox } from "../experimental/sandbox/sandbox.js";
-import { CommandHandle } from "../experimental/sandbox/command_handle.js";
+import { SandboxClient } from "../sandbox/client.js";
+import { Sandbox } from "../sandbox/sandbox.js";
+import { CommandHandle } from "../sandbox/command_handle.js";
+import {
+  awsAuthProxyConfig,
+  opaqueSecret,
+  workspaceSecret,
+} from "../sandbox/index.js";
 import {
   buildWsUrl,
   buildAuthHeaders,
   WSStreamControl,
   raiseForWsError,
-} from "../experimental/sandbox/ws_execute.js";
+} from "../sandbox/ws_execute.js";
 import {
   LangSmithResourceCreationError,
   LangSmithResourceNotFoundError,
@@ -22,9 +30,9 @@ import {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
-} from "../experimental/sandbox/errors.js";
-import type { WsMessage, OutputChunk } from "../experimental/sandbox/types.js";
-import { validateTtl } from "../experimental/sandbox/helpers.js";
+} from "../sandbox/errors.js";
+import type { WsMessage, OutputChunk } from "../sandbox/types.js";
+import { validateTtl } from "../sandbox/helpers.js";
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
@@ -37,9 +45,64 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
   ({
     _fetch: createMockFetch({}),
     getApiKey: () => "test-key",
+    getDefaultHeaders: () => ({}),
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
+
+describe("sandbox proxy config helpers", () => {
+  it("workspaceSecret wraps names and preserves references", () => {
+    expect(workspaceSecret("AWS_KEY_ID_REF")).toEqual({
+      type: "workspace_secret",
+      value: "{AWS_KEY_ID_REF}",
+    });
+    expect(workspaceSecret("{AWS_KEY_VALUE_REF}")).toEqual({
+      type: "workspace_secret",
+      value: "{AWS_KEY_VALUE_REF}",
+    });
+  });
+
+  it.each(["", "   ", "{}", "{AWS_KEY_ID_REF"])(
+    "workspaceSecret rejects invalid name %p",
+    (name) => {
+      expect(() => workspaceSecret(name)).toThrow();
+    },
+  );
+
+  it("opaqueSecret builds a write-only secret value", () => {
+    expect(opaqueSecret("AKIAFAKE")).toEqual({
+      type: "opaque",
+      value: "AKIAFAKE",
+    });
+  });
+
+  it("awsAuthProxyConfig builds an AWS auth rule", () => {
+    expect(
+      awsAuthProxyConfig({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+      }),
+    ).toEqual({
+      rules: [
+        {
+          name: "aws",
+          type: "aws",
+          enabled: true,
+          aws: {
+            access_key_id: {
+              type: "workspace_secret",
+              value: "{AWS_KEY_ID_REF}",
+            },
+            secret_access_key: {
+              type: "workspace_secret",
+              value: "{AWS_KEY_VALUE_REF}",
+            },
+          },
+        },
+      ],
+    });
+  });
+});
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
@@ -57,6 +120,26 @@ describe("SandboxClient", () => {
         apiKey: "test-key",
       });
       expect((client as any)._baseUrl).toBe("https://custom.api.com/sandboxes");
+    });
+
+    it("should expose constructor headers via getDefaultHeaders()", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "test-key",
+        headers: { "X-Service-Key": "svc-jwt" },
+      });
+      expect(client.getDefaultHeaders()).toEqual({
+        "X-Service-Key": "svc-jwt",
+      });
+      expect(client.getApiKey()).toBe("test-key");
+    });
+
+    it("should default to empty default headers", () => {
+      const client = new SandboxClient({
+        apiEndpoint: "https://custom.api.com/sandboxes",
+        apiKey: "test-key",
+      });
+      expect(client.getDefaultHeaders()).toEqual({});
     });
   });
 
@@ -427,6 +510,27 @@ describe("SandboxClient - createSandbox", () => {
         allow_list: ["github.com", "*.example.com"],
       },
     };
+    await client.createSandbox("snap-123", { proxyConfig });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.proxy_config).toEqual(proxyConfig);
+  });
+
+  it("should forward AWS auth proxy config in the request body", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const proxyConfig = awsAuthProxyConfig({
+      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    });
     await client.createSandbox("snap-123", { proxyConfig });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -831,6 +935,23 @@ describe("buildAuthHeaders", () => {
   it("should return empty headers when no key", () => {
     expect(buildAuthHeaders(undefined)).toEqual({});
   });
+
+  it("should return extra headers when provided", () => {
+    expect(buildAuthHeaders(undefined, { "X-Service-Key": "svc-jwt" })).toEqual(
+      {
+        "X-Service-Key": "svc-jwt",
+      },
+    );
+  });
+
+  it("should merge X-Api-Key with extra headers", () => {
+    expect(buildAuthHeaders("api-key", { "X-Service-Key": "svc-jwt" })).toEqual(
+      {
+        "X-Api-Key": "api-key",
+        "X-Service-Key": "svc-jwt",
+      },
+    );
+  });
 });
 
 describe("WSStreamControl", () => {
@@ -1052,18 +1173,35 @@ describe("CommandHandle", () => {
       expect(result.exit_code).toBe(0);
     });
 
-    it("should throw if stream ends without exit message", async () => {
+    it("should reconnect if stream ends without exit message", async () => {
       const stream = createMockStream([
         { type: "started", command_id: "cmd-123", pid: 42 },
         { type: "stdout", data: "hello\n", offset: 0 },
       ]);
 
-      const handle = new CommandHandle(stream, null, createMockSandbox());
-      await handle._ensureStarted();
+      const sandbox = createMockSandbox();
+      const reconnectHandle = {
+        _stream: createMockStream([{ type: "exit", exit_code: 0 }]),
+        _control: null,
+      };
+      (sandbox.reconnect as any).mockResolvedValue(reconnectHandle);
 
-      await expect(handle.result).rejects.toThrow(
-        "Command stream ended without exit message",
-      );
+      const handle = new CommandHandle(stream, null, sandbox);
+      await handle._ensureStarted();
+      const backoffBase = CommandHandle.BACKOFF_BASE;
+      CommandHandle.BACKOFF_BASE = 0;
+      try {
+        const result = await handle.result;
+
+        expect(result.stdout).toBe("hello\n");
+        expect(result.exit_code).toBe(0);
+        expect(sandbox.reconnect).toHaveBeenCalledWith("cmd-123", {
+          stdoutOffset: 6,
+          stderrOffset: 0,
+        });
+      } finally {
+        CommandHandle.BACKOFF_BASE = backoffBase;
+      }
     });
   });
 
@@ -1167,7 +1305,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const sandbox = await client.createSandbox(undefined, {
+    const sandbox = await client.createSandbox({
       snapshotName: "my-snap",
     });
 
@@ -1179,17 +1317,23 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     expect(sandbox.snapshot_id).toBe("snap-1");
   });
 
-  it("should throw when neither snapshotId nor snapshotName is provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
+  it("should omit snapshot_id when no snapshot is provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        dataplane_url: "https://dp.example.com",
+        status: "ready",
+      }),
+    } as Response);
     const client = createClientWithMock(mockFetch);
 
-    await expect(client.createSandbox()).rejects.toThrow(
-      LangSmithValidationError,
-    );
-    await expect(client.createSandbox()).rejects.toThrow(
-      /Exactly one of snapshotId or options\.snapshotName must be set/,
-    );
-    expect(mockFetch).not.toHaveBeenCalled();
+    await client.createSandbox({ name: "test-sb" });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.snapshot_id).toBeUndefined();
+    expect(body.snapshot_name).toBeUndefined();
   });
 
   it("should throw when both snapshotId and snapshotName are provided", async () => {
@@ -1199,6 +1343,11 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
     await expect(
       client.createSandbox("snap-1", { snapshotName: "my-snap" }),
     ).rejects.toThrow(LangSmithValidationError);
+    await expect(
+      client.createSandbox("snap-1", { snapshotName: "my-snap" }),
+    ).rejects.toThrow(
+      /At most one of snapshotId or options\.snapshotName may be set/,
+    );
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
@@ -1248,6 +1397,138 @@ describe("SandboxClient - snapshot operations", () => {
     expect(snapshot.id).toBe("snap-1");
     expect(snapshot.status).toBe("ready");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const writes: [string, string | Uint8Array][] = [];
+    const commands: string[] = [];
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockImplementation(async (path, content) => {
+          writes.push([path, content]);
+        }),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockImplementation(async (command) => {
+          commands.push(command);
+          return { stdout: "", stderr: "", exit_code: 0 };
+        }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const mockSnapshot = {
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    const captureSnapshotSpy = jest
+      .spyOn(client, "captureSnapshot")
+      .mockResolvedValue(mockSnapshot);
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      const snapshot = await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        { context },
+      );
+
+      expect(snapshot).toEqual(mockSnapshot);
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: expect.stringMatching(/^snapshot-builder-/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      // Build scratch must live on the capacity-backed root filesystem, not
+      // the RAM-backed /tmp tmpfs that fsCapacityBytes does not size.
+      const tarPath = writes[0][0];
+      expect(tarPath).toMatch(
+        /^\/var\/lib\/langsmith-build\/[^/]+\/context\.tar$/,
+      );
+      expect(writes[0][1]).toEqual(expect.any(Uint8Array));
+      expect(commands[0]).toContain("tar -xf");
+      expect(commands[0]).toContain(tarPath);
+      expect(commands[0]).not.toContain("/tmp");
+      expect(commands[1]).not.toContain("/tmp");
+      expect(commands[1]).toContain("--frontend");
+      expect(commands[1]).toContain("dockerfile.v0");
+      expect(commands[1]).toContain("docker info >/dev/null 2>&1");
+      expect(commands[1]).toContain("| docker load");
+      expect(captureSnapshotSpy).toHaveBeenCalledWith(
+        "builder",
+        "snap",
+        expect.objectContaining({
+          dockerImage: expect.stringMatching(/^langsmith-snapshot-build:/),
+          fsCapacityBytes: 4294967296,
+        }),
+      );
+      expect(fakeSandbox.delete).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
+  });
+
+  it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockResolvedValue(undefined),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    const createSandboxSpy = jest
+      .spyOn(client, "createSandbox")
+      .mockResolvedValue(fakeSandbox as any);
+    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    });
+
+    try {
+      await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+      await client.createSnapshotFromDockerfile(
+        "snap",
+        "Dockerfile",
+        4294967296,
+        {
+          context,
+          vCpus: 2,
+          memBytes: 8589934592,
+        },
+      );
+
+      expect(createSandboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
+      );
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
   });
 
   it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {

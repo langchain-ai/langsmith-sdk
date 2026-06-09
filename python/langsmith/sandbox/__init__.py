@@ -64,6 +64,13 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
+from langsmith.sandbox._proxy_config import (
+    SandboxProxyConfig,
+    SandboxProxySecret,
+    aws_auth_proxy_config,
+    opaque_secret,
+    workspace_secret,
+)
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
 
@@ -83,6 +90,11 @@ __all__ = [
     "CommandHandle",
     "AsyncCommandHandle",
     "OutputChunk",
+    "SandboxProxyConfig",
+    "SandboxProxySecret",
+    "aws_auth_proxy_config",
+    "opaque_secret",
+    "workspace_secret",
     # Base and connection errors
     "SandboxClientError",
     "SandboxAPIError",
@@ -112,13 +124,3 @@ __all__ = [
     "TunnelConnectionRefusedError",
     "TunnelUnsupportedVersionError",
 ]
-
-# Emit warning on import
-import warnings
-
-warnings.warn(
-    "langsmith.sandbox is in alpha. "
-    "This feature is experimental, and breaking changes are expected.",
-    FutureWarning,
-    stacklevel=2,
-)

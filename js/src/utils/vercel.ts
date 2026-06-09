@@ -2,8 +2,10 @@ import type {
   LanguageModelV2Usage,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
+import type { LanguageModelUsage } from "ai";
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "./usage.js";
+import { isRecord } from "./types.js";
 
 function extractTraceableServiceTier(
   providerMetadata: Record<string, unknown>,
@@ -28,6 +30,19 @@ function isLanguageModelV3Usage(
   usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
 ): usage is Partial<LanguageModelV3Usage> {
   return usage.inputTokens != null && typeof usage.inputTokens === "object";
+}
+
+function isTelemetryLanguageModelUsage(
+  usage: unknown,
+): usage is Partial<LanguageModelUsage> {
+  if (!isRecord(usage)) return false;
+
+  return (
+    (usage.inputTokens == null || typeof usage.inputTokens === "number") &&
+    isRecord(usage.inputTokenDetails) &&
+    (usage.outputTokens == null || typeof usage.outputTokens === "number") &&
+    isRecord(usage.outputTokenDetails)
+  );
 }
 
 function extractAISDK6OutputTokenDetails(
@@ -61,6 +76,40 @@ function extractAISDK6OutputTokenDetails(
   return outputTokenDetails;
 }
 
+// TODO: verify service tier token counting
+function extractTelemetryOutputTokenDetails(
+  usage: Partial<LanguageModelUsage>,
+  providerMetadata: Record<string, unknown> | undefined,
+) {
+  const result: {
+    reasoning?: number;
+
+    flex?: number;
+    flex_reasoning?: number;
+
+    priority?: number;
+    priority_reasoning?: number;
+  } = {};
+
+  const serviceTier = extractTraceableServiceTier(providerMetadata ?? {});
+  const prefix = serviceTier ? (`${serviceTier}_` as const) : ("" as const);
+  const reasoning = usage.outputTokenDetails?.reasoningTokens ?? undefined;
+
+  if (typeof reasoning === "number" && reasoning > 0) {
+    const key = `${prefix}reasoning` as const;
+    result[key] = reasoning;
+  }
+
+  // Apply service tier logic
+  if (serviceTier != null) {
+    // Avoid counting reasoning tokens towards the output token count
+    // since service tier tokens are already priced differently
+    result[serviceTier] = (usage.outputTokens ?? 0) - (reasoning ?? 0);
+  }
+
+  return result;
+}
+
 export function extractOutputTokenDetails(
   usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
   providerMetadata?: Record<string, unknown>,
@@ -69,29 +118,31 @@ export function extractOutputTokenDetails(
     return {};
   }
 
+  // AI SDK 7: Use Telemetry Language Model Usage
+  if (isTelemetryLanguageModelUsage(usage)) {
+    return extractTelemetryOutputTokenDetails(usage, providerMetadata);
+  }
+
   // AI SDK 6: Check for built-in outputTokens breakdown first
   if (isLanguageModelV3Usage(usage)) {
     // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)
     return extractAISDK6OutputTokenDetails(usage, providerMetadata);
   }
 
+  // AI SDK <= 5
   const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
-  const outputTokenDetailsKeyPrefix = openAIServiceTier
-    ? `${openAIServiceTier}_`
-    : "";
-  const outputTokenDetails: Record<string, number> = {};
+  const prefix = openAIServiceTier ? `${openAIServiceTier}_` : "";
+  const result: Record<string, number> = {};
   if (typeof usage?.reasoningTokens === "number") {
-    outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
-      usage.reasoningTokens;
+    result[`${prefix}reasoning`] = usage.reasoningTokens;
   }
   if (openAIServiceTier && typeof usage?.outputTokens === "number") {
     // Avoid counting reasoning tokens towards the output token count
     // since service tier tokens are already priced differently
-    outputTokenDetails[openAIServiceTier] =
-      usage.outputTokens -
-      (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
+    result[openAIServiceTier] =
+      usage.outputTokens - (result[`${prefix}reasoning`] ?? 0);
   }
-  return outputTokenDetails;
+  return result;
 }
 
 function extractAISDK6InputTokenDetails(
@@ -156,6 +207,53 @@ function extractAISDK6InputTokenDetails(
   return inputTokenDetails;
 }
 
+function extractTelemetryInputTokenDetails(
+  usage: Partial<LanguageModelUsage>,
+  providerMetadata: Record<string, unknown> | undefined,
+) {
+  const result: {
+    cache_read?: number;
+    cache_creation?: number;
+
+    flex?: number;
+    flex_cache_read?: number;
+    flex_cache_creation?: number;
+
+    priority?: number;
+    priority_cache_read?: number;
+    priority_cache_creation?: number;
+  } = {};
+
+  const cacheRead = usage.inputTokenDetails?.cacheReadTokens ?? undefined;
+  const cacheWrite = usage.inputTokenDetails?.cacheWriteTokens ?? undefined;
+
+  if (typeof cacheRead === "number" && cacheRead > 0) {
+    result.cache_read = cacheRead;
+  }
+
+  if (typeof cacheWrite === "number" && cacheWrite > 0) {
+    result.cache_creation = cacheWrite;
+  }
+
+  const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
+  const prefix = openAIServiceTier
+    ? (`${openAIServiceTier}_` as const)
+    : ("" as const);
+
+  if (openAIServiceTier && typeof usage.inputTokens === "number") {
+    if (result.cache_read != null) {
+      result[`${prefix}cache_read` as const] = result.cache_read;
+      delete result.cache_read;
+    }
+
+    if (typeof usage?.inputTokens === "number") {
+      result[openAIServiceTier] =
+        usage.inputTokens - (result[`${prefix}cache_read`] ?? 0);
+    }
+  }
+  return result;
+}
+
 export function extractInputTokenDetails(
   usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
   providerMetadata?: Record<string, unknown>,
@@ -163,6 +261,12 @@ export function extractInputTokenDetails(
   if (usage == null) {
     return {};
   }
+
+  // AI SDK 7: Use Telemetry Language Model Usage
+  if (isTelemetryLanguageModelUsage(usage)) {
+    return extractTelemetryInputTokenDetails(usage, providerMetadata);
+  }
+
   // AI SDK 6: Check for built-in inputTokens breakdown first
   if (isLanguageModelV3Usage(usage)) {
     // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)

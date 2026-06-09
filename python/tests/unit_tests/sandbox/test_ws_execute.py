@@ -274,7 +274,7 @@ class TestCommandHandle:
         with pytest.raises(SandboxOperationError, match="before 'started'"):
             CommandHandle(stream, None, sandbox)
 
-    def test_stream_ends_without_exit(self):
+    def test_stream_end_without_exit_reconnects(self):
         stream = _make_stream(
             [
                 _started_msg(),
@@ -282,10 +282,22 @@ class TestCommandHandle:
             ]
         )
         sandbox = self._make_sandbox_mock()
+        reconnect_handle = MagicMock()
+        reconnect_handle._stream = _make_stream([_exit_msg(0)])
+        reconnect_handle._control = None
+        sandbox.reconnect.return_value = reconnect_handle
         handle = CommandHandle(stream, None, sandbox)
-        list(handle)  # Exhaust
-        with pytest.raises(SandboxOperationError, match="without exit"):
-            _ = handle.result
+        with patch("time.sleep") as mock_sleep:
+            chunks = list(handle)
+        assert [chunk.data for chunk in chunks] == ["data"]
+        assert handle.result.stdout == "data"
+        assert handle.result.exit_code == 0
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123",
+            stdout_offset=len("data".encode("utf-8")),
+            stderr_offset=0,
+        )
+        mock_sleep.assert_called_once_with(0.5)
 
     def test_kill(self):
         ctrl = _WSStreamControl()
@@ -559,12 +571,22 @@ class TestCommandHandle:
 class TestSandboxRunWs:
     """Test Sandbox.run() with mocked WebSocket layer."""
 
-    def _make_sandbox(self) -> Any:
+    def _make_sandbox(self, default_headers: Any = None) -> Any:
         """Create a Sandbox with mocked client."""
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
@@ -679,6 +701,21 @@ class TestSandboxRunWs:
             pty=False,
         )
 
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_forwards_client_default_headers(self, mock_run_ws):
+        """Default headers set on the client (e.g. X-Service-Key) are
+        forwarded to the WS layer."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox(default_headers={"X-Service-Key": "svc-jwt"})
+        sandbox.run("echo hello")
+
+        assert mock_run_ws.call_args.kwargs.get("headers") == {
+            "X-Service-Key": "svc-jwt"
+        }
+
     def test_run_wait_false_plus_callbacks_raises(self):
         """wait=False + callbacks raises ValueError."""
         sandbox = self._make_sandbox()
@@ -730,11 +767,21 @@ class TestSandboxRunWs:
 
 
 class TestSandboxReconnect:
-    def _make_sandbox(self):
+    def _make_sandbox(self, default_headers: Any = None):
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",

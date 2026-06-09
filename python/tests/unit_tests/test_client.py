@@ -4470,10 +4470,17 @@ def test_compressed_traces_queue_limit_drops_new_items(
     )
 
 
+@mock.patch("langsmith.client._tracing_control_thread_func")
 def test_tracing_queue_limit_drops_when_full(
+    mock_tracing_thread: mock.Mock,
     caplog: pytest.LogCaptureFixture,
 ):
-    """Ensure the uncompressed tracing queue drops items when full."""
+    """Ensure the uncompressed tracing queue drops items when full.
+
+    The background drain thread is patched to a no-op so it can't pull items
+    off the queue while we fill it to capacity; otherwise ``qsize()`` races the
+    drainer and is non-deterministic under load.
+    """
     from langsmith._internal._background_thread import TracingQueueItem
     from langsmith._internal._operations import SerializedFeedbackOperation
     from langsmith.client import _reset_tracing_drop_log
@@ -4515,7 +4522,9 @@ def test_tracing_queue_limit_drops_when_full(
         "Dropped" in record.getMessage() and "tracing queue full" in record.getMessage()
         for record in caplog.records
     )
-    client.cleanup()
+    # The drain thread is disabled, so the enqueued items are never marked
+    # done; skip the flush/join (timeout=0) so cleanup doesn't block on them.
+    client.cleanup(timeout=0)
 
 
 def test_tracing_queue_default_maxsize():
@@ -6267,3 +6276,44 @@ def test_client_repr_hides_sensitive_info() -> None:
     assert "https://api.smith.langchain.com" in repr_str
     # Ensure it's properly formatted
     assert repr_str == "Client (API URL: https://api.smith.langchain.com)"
+
+
+def test_client_close_releases_session_and_unregisters_atexit() -> None:
+    """``close()`` closes the session and unregisters its atexit handler."""
+    import atexit as _atexit
+
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        session=session,
+        auto_batch_tracing=False,
+    )
+
+    handler = client._atexit_handler
+    assert handler is not None
+
+    with mock.patch.object(_atexit, "unregister") as mock_unregister:
+        client.close()
+        mock_unregister.assert_called_once_with(handler)
+
+    session.close.assert_called()
+    assert client._atexit_handler is None
+
+    # Idempotent: calling close again does not raise or re-close.
+    session.close.reset_mock()
+    client.close()
+    session.close.assert_called()
+
+
+def test_client_close_idempotent_no_error() -> None:
+    """Calling ``close()`` multiple times must not raise."""
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        session=session,
+        auto_batch_tracing=False,
+    )
+    client.close()
+    client.close()

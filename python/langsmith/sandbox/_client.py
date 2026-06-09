@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Optional
+import io
+import os
+import posixpath
+import shlex
+import tarfile
+import uuid
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any, Optional, Union
 
 import httpx
 
@@ -27,6 +34,7 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
@@ -48,6 +56,103 @@ def _get_default_api_key() -> Optional[str]:
 RequestHeaders = Optional[Mapping[str, str]]
 
 
+def _make_docker_context_tar(context_path: Path) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for path in sorted(context_path.rglob("*")):
+            rel = path.relative_to(context_path)
+            if rel.parts and rel.parts[0] == ".git":
+                continue
+            tar.add(path, arcname=rel.as_posix(), recursive=False)
+    return buf.getvalue()
+
+
+def _resolve_dockerfile_context(
+    dockerfile: Union[str, os.PathLike[str]],
+    context: Union[str, os.PathLike[str]],
+) -> tuple[Path, str]:
+    context_path = Path(context).expanduser().resolve()
+    dockerfile_path = Path(dockerfile).expanduser()
+    if not dockerfile_path.is_absolute():
+        dockerfile_path = context_path / dockerfile_path
+    dockerfile_path = dockerfile_path.resolve()
+    if not context_path.is_dir():
+        raise ValueError(f"context must be a directory: {context_path}")
+    if not dockerfile_path.is_file():
+        raise ValueError(f"dockerfile must be a file: {dockerfile_path}")
+    try:
+        dockerfile_rel = dockerfile_path.relative_to(context_path)
+    except ValueError as exc:
+        raise ValueError("dockerfile must be inside context") from exc
+    return context_path, dockerfile_rel.as_posix()
+
+
+def _make_dockerfile_build_command(
+    *,
+    remote_context: str,
+    dockerfile_rel: str,
+    image_ref: str,
+    buildkit_root: str,
+    buildkit_run: str,
+    build_args: Optional[Mapping[str, str]],
+    target: Optional[str],
+) -> str:
+    dockerfile_remote = posixpath.join(remote_context, dockerfile_rel)
+    dockerfile_dir = posixpath.dirname(dockerfile_remote)
+    dockerfile_name = posixpath.basename(dockerfile_remote)
+    socket_path = posixpath.join(buildkit_run, "buildkitd.sock")
+    buildctl = [
+        "buildctl",
+        "--addr",
+        "unix://" + socket_path,
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--local",
+        "context=" + remote_context,
+        "--local",
+        "dockerfile=" + dockerfile_dir,
+        "--opt",
+        "filename=" + dockerfile_name,
+        "--output",
+        "type=docker,name=" + image_ref,
+    ]
+    if target is not None:
+        buildctl.extend(["--opt", "target=" + target])
+    for key, value in sorted((build_args or {}).items()):
+        buildctl.extend(["--opt", f"build-arg:{key}={value}"])
+    return (
+        "set -euo pipefail\n"
+        f"mkdir -p {shlex.quote(buildkit_root)} {shlex.quote(buildkit_run)}\n"
+        f"buildkitd --addr {shlex.quote('unix://' + socket_path)} "
+        f"--root {shlex.quote(buildkit_root)} "
+        "--oci-worker=true --containerd-worker=false "
+        "--oci-worker-snapshotter=native "
+        "--oci-worker-binary buildkit-runc "
+        f"> {shlex.quote(buildkit_run + '/buildkitd.log')} 2>&1 &\n"
+        "buildkitd_pid=$!\n"
+        'cleanup() { kill "$buildkitd_pid" >/dev/null 2>&1 || true; }\n'
+        "trap cleanup EXIT\n"
+        "for i in $(seq 1 300); do\n"
+        f"  if buildctl --addr {shlex.quote('unix://' + socket_path)} "
+        "debug workers >/dev/null 2>&1; then break; fi\n"
+        '  if ! kill -0 "$buildkitd_pid" >/dev/null 2>&1; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        '  if [ "$i" = 300 ]; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        "  sleep 0.1\n"
+        "done\n"
+        "for i in $(seq 1 300); do\n"
+        "  if docker info >/dev/null 2>&1; then break; fi\n"
+        '  if [ "$i" = 300 ]; then docker info; exit 1; fi\n'
+        "  sleep 0.1\n"
+        "done\n"
+        f"{shlex.join(buildctl)} | docker load\n"
+        f"rm -rf {shlex.quote(buildkit_root)} || true\n"
+    )
+
+
 class SandboxClient:
     """Client for interacting with the Sandbox Server API.
 
@@ -63,8 +168,8 @@ class SandboxClient:
             api_key="your-api-key",
         )
 
-        # Create a sandbox from a snapshot and run commands
-        with client.sandbox(snapshot_id="<snapshot-uuid>") as sandbox:
+        # Create a sandbox with the default runtime and run commands
+        with client.sandbox() as sandbox:
             result = sandbox.run("python --version")
             print(result.stdout)
     """
@@ -89,15 +194,20 @@ class SandboxClient:
             max_retries: Maximum number of retries for transient errors (502, 503,
                          504), rate limits (429), and connection failures. Set to 0
                          to disable retries. Default: 3.
+            headers: Optional default headers attached to every request on this
+                     client, including the data-plane ``/execute`` HTTP endpoint
+                     and the ``/execute/ws`` WebSocket upgrade. Use this to pass
+                     additional auth headers (e.g. ``X-Service-Key``).
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
             client_headers["X-Api-Key"] = resolved_api_key
-        if headers:
-            client_headers = merge_headers(client_headers, headers)
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
         transport = RetryTransport(max_retries=max_retries)
         self._http = httpx.Client(
             transport=transport, timeout=timeout, headers=client_headers
@@ -108,6 +218,16 @@ class SandboxClient:
         if headers is None:
             return None
         return merge_headers(self._http.headers, headers)
+
+    def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge constructor-supplied default headers with per-request overrides.
+
+        Used by the WebSocket exec path so headers like ``X-Service-Key``
+        set on the client are attached to the WS upgrade request.
+        """
+        if not self._default_headers and headers is None:
+            return None
+        return merge_headers(self._default_headers, headers)
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -158,7 +278,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
@@ -177,11 +297,11 @@ class SandboxClient:
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             idle_ttl_seconds: Idle timeout in seconds. The launcher
@@ -204,7 +324,8 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Sandbox instance.
@@ -213,8 +334,8 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
         sb = self.create_sandbox(
             snapshot_id,
@@ -245,7 +366,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
-        proxy_config: Optional[dict[str, Any]] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -254,11 +375,11 @@ class SandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            snapshot_id: Snapshot ID to boot from. Mutually exclusive with
-                ``snapshot_name``; exactly one must be provided.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
             snapshot_name: Snapshot name to boot from. Resolved server-side to a
                 snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``; exactly one must be provided.
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -285,7 +406,8 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``).
+                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
+                sign supported AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -295,11 +417,11 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if neither/both of
-                ``snapshot_id`` and ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
-        if bool(snapshot_id) == bool(snapshot_name):
-            raise ValueError("Exactly one of snapshot_id or snapshot_name must be set")
+        if snapshot_id and snapshot_name:
+            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
 
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
@@ -748,11 +870,106 @@ class SandboxClient:
 
         return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
 
+    def create_snapshot_from_dockerfile(
+        self,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: int,
+        *,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a local Dockerfile context.
+
+        ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
+        build runs BuildKit plus the native snapshotter's layer copies inside
+        it, which contend for a single core by default, so giving the builder
+        an extra vCPU can cut a cold build's wall time substantially.
+        """
+        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        # Stage the build on the capacity-backed root filesystem, not /tmp.
+        # Inside the sandbox /tmp is a RAM-backed tmpfs that fs_capacity_bytes
+        # does not size, and BuildKit's native snapshotter writes a full copy
+        # of every layer under its root, so a /tmp build exhausts guest RAM and
+        # fails with "No space left on device".
+        build_root = f"/var/lib/langsmith-build/{uuid.uuid4().hex[:12]}"
+        remote_context = posixpath.join(build_root, "context")
+        remote_tar = posixpath.join(build_root, "context.tar")
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+        buildkit_root = posixpath.join(build_root, "buildkit-root")
+        buildkit_run = posixpath.join(build_root, "buildkit-run")
+
+        with self.sandbox(
+            name=builder_name,
+            timeout=timeout,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
+            fs_capacity_bytes=fs_capacity_bytes,
+            headers=headers,
+        ) as sandbox:
+            sandbox.write(
+                remote_tar,
+                _make_docker_context_tar(context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            sandbox.run(
+                "rm -rf "
+                + shlex.quote(remote_context)
+                + " && mkdir -p "
+                + shlex.quote(remote_context)
+                + " && tar -xf "
+                + shlex.quote(remote_tar)
+                + " -C "
+                + shlex.quote(remote_context),
+                timeout=timeout,
+                headers=headers,
+            )
+
+            result = sandbox.run(
+                _make_dockerfile_build_command(
+                    remote_context=remote_context,
+                    dockerfile_rel=dockerfile_rel,
+                    image_ref=image_ref,
+                    buildkit_root=buildkit_root,
+                    buildkit_run=buildkit_run,
+                    build_args=build_args,
+                    target=target,
+                ),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            return self.capture_snapshot(
+                sandbox.name,
+                name,
+                docker_image=image_ref,
+                fs_capacity_bytes=fs_capacity_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+
     def capture_snapshot(
         self,
         sandbox_name: str,
         name: str,
         *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -763,6 +980,9 @@ class SandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
+            docker_image: Optional Docker image tag inside the sandbox to export
+                into the snapshot instead of capturing the live root filesystem.
+            fs_capacity_bytes: Filesystem capacity in bytes for Docker image export.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -777,6 +997,10 @@ class SandboxClient:
         url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
             response = self._http.post(

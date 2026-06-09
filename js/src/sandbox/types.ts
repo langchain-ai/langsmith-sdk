@@ -113,6 +113,13 @@ export interface SandboxClientConfig {
    * Defaults to Infinity (no limit).
    */
   maxConcurrency?: number;
+  /**
+   * Optional default headers attached to every request on this client,
+   * including the data-plane `/execute` HTTP endpoint and the `/execute/ws`
+   * WebSocket upgrade. Use this to pass additional auth headers
+   * (e.g. `X-Service-Key`).
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -171,6 +178,11 @@ export interface WsRunOptions {
   ttlSeconds?: number;
   /** Whether to allocate a PTY. */
   pty?: boolean;
+  /**
+   * Additional headers attached to the WebSocket upgrade request. Merged on
+   * top of any default headers the SandboxClient was constructed with.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -248,6 +260,29 @@ export interface SandboxAccessControl {
   deny_list?: string[];
 }
 
+/** Secret value reference for sandbox proxy rules. */
+export interface SandboxProxySecret {
+  /** `workspace_secret` references a workspace secret; `opaque` is write-only. */
+  type: "workspace_secret" | "opaque";
+  /** Workspace secret reference or opaque secret value. */
+  value: string;
+}
+
+/** AWS auth rule for sandbox proxy SigV4 signing. */
+export interface SandboxAwsAuthRule {
+  /** Rule name. */
+  name: string;
+  /** AWS auth rules are matched by the sandbox proxy's AWS endpoint matcher. */
+  type: "aws";
+  /** Whether the rule is enabled. */
+  enabled?: boolean;
+  /** AWS credentials used by the proxy signer. */
+  aws: {
+    access_key_id: SandboxProxySecret;
+    secret_access_key: SandboxProxySecret;
+  };
+}
+
 /**
  * Full proxy configuration forwarded to the sandbox server as-is (snake_case
  * so it's wire-compatible with the backend). Mirrors the server's
@@ -267,8 +302,8 @@ export interface SandboxProxyConfig {
  */
 export interface CreateSandboxOptions {
   /**
-   * Snapshot name to boot from. Mutually exclusive with the positional
-   * `snapshotId` argument on `createSandbox`; exactly one must be provided.
+   * Optional snapshot name to boot from. Mutually exclusive with the positional
+   * `snapshotId`.
    * Resolved server-side to a snapshot owned by the caller's tenant.
    */
   snapshotName?: string;
@@ -312,7 +347,8 @@ export interface CreateSandboxOptions {
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
-   * server as-is on the wire.
+   * server as-is on the wire. Use `awsAuthProxyConfig` to let the proxy sign
+   * supported AWS HTTPS requests on the sandbox's behalf.
    */
   proxyConfig?: SandboxProxyConfig;
 }
@@ -336,9 +372,41 @@ export interface CreateSnapshotOptions {
 }
 
 /**
+ * Options for creating a snapshot from a local Dockerfile context.
+ */
+export interface CreateDockerfileSnapshotOptions {
+  /** Local Docker build context directory. Default: current working directory. */
+  context?: string;
+  /** Docker build args passed as BuildKit build-arg opts. */
+  buildArgs?: Record<string, string>;
+  /** Optional Dockerfile target stage. */
+  target?: string;
+  /** Callback for Docker build stdout/stderr chunks. */
+  onBuildLog?: (data: string) => void;
+  /**
+   * Number of vCPUs for the temporary builder sandbox. The build runs
+   * BuildKit plus the native snapshotter's layer copies inside it, which
+   * contend for a single core by default, so an extra vCPU can cut a cold
+   * build's wall time substantially.
+   */
+  vCpus?: number;
+  /** Memory in bytes for the temporary builder sandbox. */
+  memBytes?: number;
+  /** Timeout in seconds for builder sandbox operations. Default: 60. */
+  timeout?: number;
+}
+
+/**
  * Options for capturing a snapshot from a running sandbox.
  */
 export interface CaptureSnapshotOptions {
+  /**
+   * Docker image tag inside the sandbox to export into the snapshot instead
+   * of capturing the live root filesystem.
+   */
+  dockerImage?: string;
+  /** Filesystem capacity in bytes for Docker image export. */
+  fsCapacityBytes?: number;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */

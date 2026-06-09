@@ -33,6 +33,7 @@ dependencies = [
     "packaging>=23.2",
     "uuid-utils>=0.12.0,<1.0",
     "xxhash>=3.0.0",
+    "websockets>=15.0",
 ]
 
 [project.urls]
@@ -75,8 +76,8 @@ pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 # VCR support
 vcr = ["vcrpy>=7.0.0"]
 
-# Enabled via `pip install langsmith[sandbox]`
-sandbox = ["websockets>=15.0"]
+# Kept for backward compatibility; `websockets` is now a core dependency.
+sandbox = []
 
 [dependency-groups]
 # Development dependencies
@@ -123,7 +124,7 @@ dev = [
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.32",
+    "ty==0.0.44",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
@@ -158,6 +159,7 @@ exclude = [".test", ".venv*"]
 packages = ["langsmith"]
 
 [tool.ruff]
+exclude = ["_openapi_client"]
 lint.select = [
   "E",    # pycodestyle
   "F",    # pyflakes
@@ -202,6 +204,10 @@ docstring-code-line-length = 80
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
+
+[[tool.mypy.overrides]]
+module = "langsmith._openapi_client.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

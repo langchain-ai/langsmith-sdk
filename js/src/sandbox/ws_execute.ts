@@ -54,11 +54,16 @@ export function buildWsUrl(dataplaneUrl: string): string {
  */
 export function buildAuthHeaders(
   apiKey: string | undefined,
+  extraHeaders?: Record<string, string>,
 ): Record<string, string> {
+  const headers: Record<string, string> = {};
   if (apiKey) {
-    return { "X-Api-Key": apiKey };
+    headers["X-Api-Key"] = apiKey;
   }
-  return {};
+  if (extraHeaders) {
+    Object.assign(headers, extraHeaders);
+  }
+  return headers;
 }
 
 // =============================================================================
@@ -303,10 +308,11 @@ export async function runWsStream(
     killOnDisconnect = false,
     ttlSeconds = 600,
     pty,
+    headers: extraHeaders,
   } = options;
 
   const wsUrl = buildWsUrl(dataplaneUrl);
-  const headers = buildAuthHeaders(apiKey);
+  const headers = buildAuthHeaders(apiKey, extraHeaders);
   const control = new WSStreamControl();
 
   async function* stream(): AsyncIterableIterator<WsMessage> {
@@ -376,12 +382,13 @@ export async function reconnectWsStream(
   options: {
     stdoutOffset?: number;
     stderrOffset?: number;
+    headers?: Record<string, string>;
   } = {},
 ): Promise<[AsyncIterableIterator<WsMessage>, WSStreamControl]> {
-  const { stdoutOffset = 0, stderrOffset = 0 } = options;
+  const { stdoutOffset = 0, stderrOffset = 0, headers: extraHeaders } = options;
 
   const wsUrl = buildWsUrl(dataplaneUrl);
-  const headers = buildAuthHeaders(apiKey);
+  const headers = buildAuthHeaders(apiKey, extraHeaders);
   const control = new WSStreamControl();
 
   async function* stream(): AsyncIterableIterator<WsMessage> {

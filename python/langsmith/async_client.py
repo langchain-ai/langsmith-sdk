@@ -37,7 +37,6 @@ from langsmith._internal._hub import (
     PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
-    resolve_owner_for_url,
     validate_parent_commit,
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
@@ -312,10 +311,36 @@ class AsyncClient:
         self,
         method: str,
         endpoint: str,
+        *,
+        stop_after_attempt: Optional[int] = None,
+        retry_on: Optional[Sequence[type[BaseException]]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make an async HTTP request with retries."""
-        max_retries = cast(int, self._retry_config.get("max_retries", 3))
+        """Make an async HTTP request with retries.
+
+        Args:
+            method: The HTTP method.
+            endpoint: The request endpoint (appended to the API base URL).
+            stop_after_attempt: The number of attempts to make. If unset, uses
+                the client's configured max retries.
+            retry_on: Additional exception types to retry on, beyond the
+                connection/timeout/server-error set that is always retried.
+            **kwargs: Forwarded to the underlying httpx request.
+        """
+        max_retries = (
+            stop_after_attempt
+            if stop_after_attempt is not None
+            else cast(int, self._retry_config.get("max_retries", 3))
+        )
+        # Transient connection/timeout/server errors are always retried; callers
+        # can opt into retrying additional types (e.g. LangSmithNotFoundError
+        # when writing against a run that may not be ingested yet).
+        retry_on_: tuple[type[BaseException], ...] = (
+            ls_utils.LangSmithConnectionError,
+            ls_utils.LangSmithRequestTimeout,
+            ls_utils.LangSmithAPIError,
+            *(retry_on or ()),
+        )
 
         # Python requests library used by the normal Client filters out params with None values
         # The httpx library does not. Filter them out here to keep behavior consistent
@@ -372,11 +397,7 @@ class AsyncClient:
                     raise ls_utils.LangSmithConnectionError(
                         f"Request error: {repr(e)}"
                     ) from e
-            except (
-                ls_utils.LangSmithConnectionError,
-                ls_utils.LangSmithRequestTimeout,
-                ls_utils.LangSmithAPIError,
-            ):
+            except retry_on_:
                 if attempt == max_retries - 1:
                     raise
                 sleep_time = 2**attempt + (random.random() * 0.5)
@@ -874,24 +895,60 @@ class AsyncClient:
 
     async def create_feedback(
         self,
-        run_id: Optional[ls_client.ID_TYPE],
-        key: str,
-        score: Optional[float] = None,
+        run_id: Optional[ls_client.ID_TYPE] = None,
+        key: str = "unnamed",
+        *,
+        score: Union[float, int, bool, None] = None,
         value: Union[float, int, bool, str, dict, None] = None,
+        trace_id: Optional[ls_client.ID_TYPE] = None,
+        correction: Union[dict, None] = None,
+        feedback_id: Optional[ls_client.ID_TYPE] = None,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        feedback_source_type: Union[
+            ls_schemas.FeedbackSourceType, str
+        ] = ls_schemas.FeedbackSourceType.API,
+        source_info: Optional[dict[str, Any]] = None,
+        source_run_id: Optional[ls_client.ID_TYPE] = None,
+        stop_after_attempt: int = 10,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+        comparative_experiment_id: Optional[ls_client.ID_TYPE] = None,
+        feedback_group_id: Optional[ls_client.ID_TYPE] = None,
+        extra: Optional[dict] = None,
+        error: Optional[bool] = None,
+        session_id: Optional[ls_client.ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
         Args:
-            run_id: The ID of the run to provide feedback for.
-
-                Can be `None` for project-level feedback.
-            key: The name of the metric or aspect this feedback is about.
+            run_id: The ID of the run to provide feedback for. At least one of
+                run_id, trace_id, or project_id must be specified.
+            key: The name of the feedback metric.
             score: The score to rate this run on the metric or aspect.
             value: The display value or non-numeric value for this feedback.
+            trace_id: The ID of the trace that contains the run.
+            correction: The proper ground truth for this run.
+            feedback_id: Optional ID to assign to the feedback.
+            feedback_config: Configuration specifying how to interpret this
+                feedback with this key.
+            feedback_source_type: The feedback source type, such as API or model.
+            source_info: Information about the source of this feedback.
+            source_run_id: The run that generated this feedback, if model-generated.
+            stop_after_attempt: The number of times to retry the request before
+                giving up.
+            project_id: The project or experiment ID for project-level feedback.
+            comparative_experiment_id: The comparative experiment ID for this
+                feedback.
+            feedback_group_id: The group ID for preference or comparative
+                feedback.
+            extra: Metadata for the feedback.
+            error: Whether the feedback represents an error.
+            session_id: The project ID of the run this feedback is for.
+            start_time: The start time of the run this feedback is for.
             comment: A comment about this feedback.
-            **kwargs: Additional keyword arguments to include in the feedback data.
+            **kwargs: Additional deprecated keyword arguments.
 
         Returns:
             The created feedback object.
@@ -899,18 +956,86 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        data = {
-            "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
-            "key": key,
-            "score": score,
-            "value": value,
-            "comment": comment,
-            **kwargs,
-        }
-        response = await self._arequest_with_retries(
-            "POST", "/feedback", content=ls_client._dumps_json(data)
+        run_id = run_id or trace_id
+        if run_id is None and project_id is None:
+            raise ValueError("One of run_id, trace_id, or project_id  must be provided")
+        if run_id is not None and project_id is not None:
+            raise ValueError(
+                "project_id cannot be provided if run_id or trace_id is provided"
+            )
+        if kwargs:
+            warnings.warn(
+                "The following arguments are no longer used in the create_feedback"
+                f" endpoint: {sorted(kwargs)}",
+                DeprecationWarning,
+            )
+        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
+        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+            feedback_source: ls_schemas.FeedbackSourceBase = (
+                ls_schemas.APIFeedbackSource(metadata=source_info)
+            )
+        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+        else:
+            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+        feedback_source.metadata = (
+            feedback_source.metadata if feedback_source.metadata is not None else {}
         )
-        return ls_schemas.Feedback(**response.json())
+        if source_run_id is not None and "__run" not in feedback_source.metadata:
+            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+        if feedback_source.metadata and "__run" in feedback_source.metadata:
+            run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
+            if hasattr(run_meta, "model_dump") and callable(
+                getattr(run_meta, "model_dump")
+            ):
+                run_meta = run_meta.model_dump()
+            if "run_id" in run_meta:
+                run_meta["run_id"] = str(
+                    ls_client._as_uuid(
+                        feedback_source.metadata["__run"]["run_id"],
+                        "feedback_source.metadata['__run']['run_id']",
+                    )
+                )
+            feedback_source.metadata["__run"] = run_meta
+
+        session_id_ = ls_client._ensure_uuid(
+            session_id if session_id is not None else project_id, accept_null=True
+        )
+        feedback = ls_schemas.FeedbackCreate(
+            id=ls_client._ensure_uuid(feedback_id),
+            run_id=ls_client._ensure_uuid(run_id, accept_null=True),
+            trace_id=ls_client._ensure_uuid(trace_id, accept_null=True),
+            key=key,
+            score=ls_client._format_feedback_score(score),
+            value=value,
+            correction=correction,
+            comment=comment,
+            feedback_source=feedback_source,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            modified_at=datetime.datetime.now(datetime.timezone.utc),
+            feedback_config=feedback_config,
+            session_id=session_id_,
+            start_time=start_time,
+            comparative_experiment_id=ls_client._ensure_uuid(
+                comparative_experiment_id, accept_null=True
+            ),
+            feedback_group_id=ls_client._ensure_uuid(
+                feedback_group_id, accept_null=True
+            ),
+            extra=extra,
+            error=error,
+        )
+        # Retry on NotFound: the run referenced by run_id/trace_id may have been
+        # submitted moments ago and not yet ingested when this write lands.
+        await self._arequest_with_retries(
+            "POST",
+            "/feedback",
+            content=ls_client._dumps_json(feedback.model_dump(exclude_none=True)),
+            stop_after_attempt=stop_after_attempt,
+            retry_on=(ls_utils.LangSmithNotFoundError,),
+        )
+        return ls_schemas.Feedback(**feedback.model_dump())
 
     async def create_feedback_from_token(
         self,
@@ -1275,6 +1400,41 @@ class AsyncClient:
         response = await self._arequest_with_retries("GET", f"{base_url}/{index}")
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
+
+    async def list_runs_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        status: Optional[
+            Literal["needs_my_review", "needs_others_review", "completed"]
+        ] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs in an annotation queue with the specified `queue_id`.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            status: Filter runs by review status. Must be one of
+                ``"needs_my_review"``, ``"needs_others_review"``, or
+                ``"completed"``. If None, returns runs across all review states.
+            limit: The maximum number of runs to return.
+
+        Yields:
+            The runs currently in the annotation queue, with queue metadata
+            (e.g. ``added_at``, ``last_reviewed_time``).
+        """
+        params: dict = {
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        if status is not None:
+            params["status"] = status
+        path = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        ix = 0
+        async for run in self._aget_paginated_list(path, params=params):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
 
     # Feedback Config API
 
@@ -2398,11 +2558,8 @@ class AsyncClient:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        tenant_handle = (
-            (await self._get_settings()).tenant_handle if owner == "-" else None
-        )
-        owner_for_url = resolve_owner_for_url(owner, tenant_handle)
-        return build_commit_url(self._host_url, owner_for_url, name, commit_hash)
+        settings = await self._get_settings()
+        return build_commit_url(self._host_url, name, commit_hash, settings.id)
 
     async def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""

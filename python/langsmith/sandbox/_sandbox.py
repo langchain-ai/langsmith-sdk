@@ -361,8 +361,9 @@ class Sandbox:
             "ttl_seconds": ttl_seconds,
             "pty": pty,
         }
-        if headers is not None:
-            ws_kwargs["headers"] = headers
+        merged = self._client._ws_default_headers(headers)
+        if merged:
+            ws_kwargs["headers"] = merged
 
         msg_stream, control = run_ws_stream(
             dataplane_url,
@@ -453,8 +454,9 @@ class Sandbox:
             "stdout_offset": stdout_offset,
             "stderr_offset": stderr_offset,
         }
-        if headers is not None:
-            reconnect_kwargs["headers"] = headers
+        merged = self._client._ws_default_headers(headers)
+        if merged:
+            reconnect_kwargs["headers"] = merged
 
         msg_stream, control = reconnect_ws_stream(
             dataplane_url,

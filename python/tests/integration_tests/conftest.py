@@ -7,6 +7,9 @@ import pytest
 import vcr
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _patch as patch_vcr
+
+patch_vcr.patch_vcr_aiohttp()
 
 
 def skip_if_rate_limited(fn):

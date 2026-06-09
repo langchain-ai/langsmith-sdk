@@ -2,8 +2,6 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-> ⚠️ **Warning**: This module is experimental. Features and APIs may change, and breaking changes are expected as we iterate.
-
 ## Quick Start
 
 ```python
@@ -12,21 +10,14 @@ from langsmith.sandbox import SandboxClient
 # Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 client = SandboxClient()
 
-# First, build a snapshot (defines the container image and root filesystem)
-snapshot = client.create_snapshot(
-    "python-snapshot",
-    docker_image="python:3.12-slim",
-    fs_capacity_bytes=4 * 1024**3,  # 4 GB
-)
-
-# Now create a sandbox from the snapshot and run code
-with client.sandbox(snapshot_id=snapshot.id) as sb:
+# Create a sandbox with the default runtime and run code
+with client.sandbox() as sb:
     result = sb.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
     print(result.success)  # True
 
 # Or create a sandbox to keep
-sb = client.create_sandbox(snapshot_id=snapshot.id)
+sb = client.create_sandbox()
 result = sb.run("python -c 'print(2 + 2)'")
 client.delete_sandbox(sb.name)  # Don't forget to clean up when done
 
@@ -35,23 +26,20 @@ sb = client.get_sandbox(name="your-sandbox")
 result = sb.run("python -c 'print(2 + 2)'")
 ```
 
-The examples below assume `snapshot_id` is bound to a snapshot UUID obtained
-from `client.create_snapshot(...)` (or `client.list_snapshots()` /
-`client.get_snapshot(...)`). You only need to build a snapshot once; many
-sandboxes can be created from the same `snapshot_id`.
+Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
-The sandbox module works out of the box for basic command execution (HTTP). For
-**real-time output** (streaming, callbacks, and `timeout=0`), install the
-optional dependency:
+The sandbox module is included with `langsmith` by default — no extra
+install step is required. The `websockets` package is a core dependency,
+so streaming output, `timeout=0`, and TCP tunnels work out of the box.
 
 ```bash
-pip install 'langsmith[sandbox]'
+pip install langsmith
 ```
 
-This pulls in the `websockets` package. Without it, `sb.run()` falls back to
-HTTP automatically.
+> The `langsmith[sandbox]` extra is still accepted for backward
+> compatibility, but it no longer installs anything extra.
 
 ## Configuration
 
@@ -70,6 +58,63 @@ client = SandboxClient(
     timeout=30.0,
 )
 ```
+
+## AWS Auth Proxy
+
+Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
+Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
+credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
+SigV4. The real credentials stay outside the sandbox.
+
+This lets code inside the sandbox use normal AWS tooling without exposing
+long-lived AWS credentials in sandbox files, environment variables, shell
+history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
+reference those secret names in the proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth_proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+with client.sandbox(
+    name="aws-sandbox",
+    proxy_config=aws_auth_proxy_config(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    ),
+) as sb:
+    result = sb.run("python your_aws_script.py")
+    print(result.stdout)
+```
+
+Inside `your_aws_script.py`, use AWS SDKs normally. For example, if `boto3` is
+installed in the sandbox snapshot:
+
+```python
+import boto3
+
+s3 = boto3.client("s3")
+print([bucket["Name"] for bucket in s3.list_buckets()["Buckets"]])
+```
+
+If your application mints short-lived AWS credentials, pass them as write-only
+opaque values instead:
+
+```python
+from langsmith.sandbox import aws_auth_proxy_config, opaque_secret
+
+proxy_config = aws_auth_proxy_config(
+    access_key_id=opaque_secret(access_key_id),
+    secret_access_key=opaque_secret(secret_access_key),
+)
+```
+
+Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
+credential values are not supported by the AWS auth proxy.
 
 ## Running Commands
 
@@ -91,8 +136,8 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 
 ## Streaming Output
 
-For long-running commands, you can stream output in real time. This requires
-the `websockets` package (`pip install 'langsmith[sandbox]'`).
+For long-running commands, you can stream output in real time. This uses the
+`websockets` package, which ships with `langsmith` by default.
 
 ### Callbacks
 
@@ -222,9 +267,10 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle.kill()  # stop when done
 ```
 
-> **Note:** `timeout=0` requires WebSocket support
-> (`pip install 'langsmith[sandbox]'`). Without WebSocket, `run()` falls
-> back to HTTP which has its own request-level timeout.
+> **Note:** `timeout=0` requires WebSocket support, which is enabled by
+> default via the bundled `websockets` dependency. If `websockets` is not
+> available, `run()` falls back to HTTP, which has its own request-level
+> timeout.
 
 ## Command Lifecycle & TTL
 
@@ -384,7 +430,7 @@ etc.) as if it were running on your local machine. The tunnel opens a local TCP
 port and forwards connections through a multiplexed WebSocket to the target port
 inside the sandbox.
 
-Requires the `websockets` package (`pip install 'langsmith[sandbox]'`).
+Uses the `websockets` package, which ships with `langsmith` by default.
 
 ### Basic Usage — PostgreSQL
 
@@ -592,14 +638,13 @@ snapshot = client.create_snapshot(
     fs_capacity_bytes=4 * 1024**3,  # 4 GB
 )
 
-# Create a sandbox from the snapshot (by ID)
+# Optionally create a sandbox from the snapshot (by ID)
 with client.sandbox(snapshot_id=snapshot.id) as sb:
     result = sb.run("python --version")
     print(result.stdout)
 
-# Or resolve by snapshot name — the server looks up the snapshot owned by
-# your tenant and boots from it. Exactly one of snapshot_id or snapshot_name
-# must be provided.
+# Or resolve by snapshot name. This is optional; omitting both snapshot_id and
+# snapshot_name uses the default runtime.
 with client.sandbox(snapshot_name="my-python-env") as sb:
     result = sb.run("python --version")
     print(result.stdout)
@@ -762,7 +807,7 @@ sb = client.update_sandbox(
 )
 ```
 
-> **Migration note (alpha):** the previous `ttl_seconds` (hard wall-clock
+> **Migration note:** the previous `ttl_seconds` (hard wall-clock
 > TTL) and `expires_at` fields were removed. The hard TTL never reliably
 > deleted stopped sandboxes; replace any usage with `idle_ttl_seconds` for
 > stopping and `delete_after_stop_seconds` for deletion.
@@ -902,8 +947,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox (auto-deleted on context exit). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox (requires explicit delete). Exactly one of `snapshot_id` / `snapshot_name` must be set. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |

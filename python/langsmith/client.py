@@ -92,7 +92,6 @@ from langsmith._internal._hub import (
     PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
-    resolve_owner_for_url,
     validate_parent_commit,
 )
 from langsmith._internal._multipart import (
@@ -822,6 +821,7 @@ class Client:
         "_write_api_urls",
         "_settings",
         "_manual_cleanup",
+        "_atexit_handler",
         "_pyo3_client",
         "compressed_traces",
         "_data_available_event",
@@ -1162,7 +1162,10 @@ class Client:
             else ls_schemas.LangSmithInfo(**info)
         )
         weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, session_)
+        self._atexit_handler: Optional[Callable[[], None]] = functools.partial(
+            close_session, session_
+        )
+        atexit.register(self._atexit_handler)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
@@ -4740,6 +4743,9 @@ class Client:
         upsert: bool = False,
         project_extra: Optional[dict] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
+        num_examples: Optional[int] = None,
+        num_repetitions: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -4750,6 +4756,17 @@ class Client:
             description (Optional[str]): The description of the project.
             upsert (bool, default=False): Whether to update the project if it already exists.
             reference_dataset_id (Optional[Union[UUID, str]): The ID of the reference dataset to associate with the project.
+            num_examples (Optional[int]): The expected number of examples that will be
+                run against this project. Used by the backend to populate experiment
+                progress; sent as a transport-only field and not round-tripped as a
+                response field.
+            num_repetitions (Optional[int]): The number of repetitions per example.
+                Combined with ``num_examples`` to compute expected run count for
+                progress tracking. Transport-only.
+            evaluator_keys (Optional[list[str]]): Feedback keys produced by the
+                row-level evaluators that will run against this project. Used by
+                the backend to populate per-evaluator experiment progress.
+                Transport-only.
 
         Returns:
             TracerSession: The created project.
@@ -4769,6 +4786,12 @@ class Client:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
+        if num_examples is not None:
+            body["num_examples"] = num_examples
+        if num_repetitions is not None:
+            body["num_repetitions"] = num_repetitions
+        if evaluator_keys:
+            body["evaluator_keys"] = evaluator_keys
         response = self.request_with_retries(
             "POST",
             endpoint,
@@ -8714,6 +8737,39 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
+    def list_runs_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        status: Optional[
+            Literal["needs_my_review", "needs_others_review", "completed"]
+        ] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs in an annotation queue with the specified `queue_id`.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            status (Optional[Literal["needs_my_review", "needs_others_review", "completed"]]):
+                Filter runs by review status. If None, returns runs across all
+                review states.
+            limit (Optional[int]): The maximum number of runs to return.
+
+        Yields:
+            The runs currently in the annotation queue, with queue metadata
+            (e.g. ``added_at``, ``last_reviewed_time``).
+        """
+        params: dict = {
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        if status is not None:
+            params["status"] = status
+        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
+        for i, run in enumerate(self._get_paginated_list(path, params=params)):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            if limit is not None and i + 1 >= limit:
+                break
+
     def create_comparative_experiment(
         self,
         name: str,
@@ -9736,9 +9792,8 @@ class Client:
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
-        tenant_handle = self._get_settings().tenant_handle if owner == "-" else None
-        owner_for_url = resolve_owner_for_url(owner, tenant_handle)
-        return build_commit_url(self._host_url, owner_for_url, name, commit_hash)
+        settings = self._get_settings()
+        return build_commit_url(self._host_url, name, commit_hash, settings.id)
 
     def _delete_hub_directory(self, identifier: str) -> None:
         """Delete a hub directory repo."""
@@ -9856,6 +9911,39 @@ class Client:
         self._manual_cleanup = True
         if self._cache is not None:
             self._cache.shutdown()
+
+    def close(self, timeout: Optional[float] = None) -> None:
+        """Release resources held by this client.
+
+        Calls :meth:`cleanup` to drain pending traces and stop background
+        threads, then closes the underlying ``requests.Session`` and
+        unregisters the ``atexit`` handler so the session is not pinned in
+        memory for the remainder of the process lifetime.
+
+        Safe to call multiple times.
+
+        Args:
+            timeout: Forwarded to :meth:`cleanup` / :meth:`flush`. Maximum
+                seconds to wait for pending traces to flush. ``None``
+                (default) waits indefinitely. Pass ``0`` to skip the drain.
+        """
+        try:
+            self.cleanup(timeout=timeout)
+        except Exception as e:
+            logger.warning("Error during cleanup while closing client: %s", e)
+        handler = self._atexit_handler
+        if handler is not None:
+            try:
+                atexit.unregister(handler)
+            except Exception as e:
+                logger.debug("Error unregistering atexit handler: %s", e)
+            self._atexit_handler = None
+        session = self.session
+        if session is not None:
+            try:
+                close_session(session)
+            except Exception as e:
+                logger.warning("Error closing client session: %s", e)
 
     @overload
     def evaluate(

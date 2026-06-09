@@ -14,7 +14,9 @@ from langsmith.sandbox import (
     SandboxClient,
     SandboxConnectionError,
     ServiceURL,
+    Snapshot,
 )
+from langsmith.sandbox._models import ExecutionResult
 
 
 @pytest.fixture
@@ -104,6 +106,45 @@ class TestSandboxClientInit:
             )
             assert client._http.headers.get("X-Api-Key") == "explicit-key"
             client.close()
+
+    def test_default_headers_attached_to_http_client(self):
+        """Constructor headers are attached on the HTTP client and tracked
+        separately so the WS exec path can replay them."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            headers={"X-Service-Key": "svc-jwt"},
+        )
+        assert client._http.headers.get("X-Service-Key") == "svc-jwt"
+        assert client._http.headers.get("X-Api-Key") == "api-key"
+        assert client._default_headers == {"X-Service-Key": "svc-jwt"}
+        client.close()
+
+    def test_ws_default_headers_merges_per_request(self):
+        """_ws_default_headers merges constructor headers with per-request overrides."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            headers={"X-Service-Key": "svc-jwt"},
+        )
+        assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
+        assert client._ws_default_headers({"X-Test": "v"}) == {
+            "X-Service-Key": "svc-jwt",
+            "X-Test": "v",
+        }
+        assert client._ws_default_headers({"X-Service-Key": "override"}) == {
+            "X-Service-Key": "override"
+        }
+        client.close()
+
+    def test_ws_default_headers_returns_none_when_unset(self):
+        """When no constructor headers and no per-request headers, return None."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+        )
+        assert client._ws_default_headers(None) is None
+        client.close()
 
     def test_max_retries_default(self):
         """Test default max_retries is 3."""
@@ -897,6 +938,182 @@ class TestSnapshotOperations:
         assert snapshot.status == "ready"
         assert snapshot.source_sandbox_id == "my-vm"
 
+    def test_capture_snapshot_from_docker_image(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test exporting a sandbox-local Docker image into a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-2",
+            json={
+                "id": "snap-2",
+                "name": "captured",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "docker_image": "local-image:latest",
+            },
+        )
+
+        snapshot = client.capture_snapshot(
+            "my-vm",
+            "captured",
+            docker_image="local-image:latest",
+            fs_capacity_bytes=4294967296,
+        )
+
+        req = httpx_mock.get_request(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+        )
+        assert req is not None
+        assert req.read() == (
+            b'{"name":"captured","docker_image":"local-image:latest",'
+            b'"fs_capacity_bytes":4294967296}'
+        )
+        assert snapshot.id == "snap-2"
+        assert snapshot.status == "ready"
+        assert snapshot.docker_image == "local-image:latest"
+
+    def test_create_snapshot_from_dockerfile_orchestrates(
+        self, client: SandboxClient, tmp_path
+    ):
+        """Test Dockerfile snapshot wrapper syncs, builds, and finalizes."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM scratch\nCOPY hello.txt /hello.txt\n"
+        )
+        (tmp_path / "hello.txt").write_text("hello")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __init__(self):
+                self.writes = []
+                self.commands = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                self.writes.append((path, content, kwargs))
+
+            def run(self, command, **kwargs):
+                self.commands.append((command, kwargs))
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        fake_sandbox = FakeSandbox()
+
+        with (
+            patch.object(client, "sandbox", return_value=fake_sandbox) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=4294967296,
+                ),
+            ) as capture_mock,
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            snapshot = client.create_snapshot_from_dockerfile(
+                "snap",
+                "Dockerfile",
+                4294967296,
+                context=tmp_path,
+            )
+
+        assert snapshot.id == "snap-1"
+        sandbox_mock.assert_called_once()
+        # Build scratch must live on the capacity-backed root filesystem, not
+        # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
+        assert len(fake_sandbox.writes) == 1
+        tar_path, tar_content, tar_kwargs = fake_sandbox.writes[0]
+        assert tar_path.startswith("/var/lib/langsmith-build/")
+        assert tar_path.endswith("/context.tar")
+        assert tar_content == b"tar"
+        assert tar_kwargs == {"timeout": 60, "headers": None}
+        assert "/tmp" not in fake_sandbox.commands[0][0]
+        assert "/tmp" not in fake_sandbox.commands[1][0]
+        assert f"tar -xf {tar_path}" in fake_sandbox.commands[0][0]
+        assert "--frontend dockerfile.v0" in fake_sandbox.commands[1][0]
+        assert "docker info >/dev/null 2>&1" in fake_sandbox.commands[1][0]
+        assert "| docker load" in fake_sandbox.commands[1][0]
+        capture_mock.assert_called_once()
+        _, args, kwargs = capture_mock.mock_calls[0]
+        assert args[0] == "builder"
+        assert args[1] == "snap"
+        assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
+        assert kwargs["fs_capacity_bytes"] == 4294967296
+
+    def test_create_snapshot_from_dockerfile_forwards_builder_size(
+        self, client: SandboxClient, tmp_path
+    ):
+        """vcpus/mem_bytes are forwarded to the builder sandbox."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+
+        class FakeSandbox:
+            name = "builder"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def write(self, path, content, **kwargs):
+                pass
+
+            def run(self, command, **kwargs):
+                return ExecutionResult(stdout="", stderr="", exit_code=0)
+
+        with (
+            patch.object(client, "sandbox", return_value=FakeSandbox()) as sandbox_mock,
+            patch.object(
+                client,
+                "capture_snapshot",
+                return_value=Snapshot(
+                    id="snap-1",
+                    name="snap",
+                    status="ready",
+                    fs_capacity_bytes=4294967296,
+                ),
+            ),
+            patch(
+                "langsmith.sandbox._client._make_docker_context_tar",
+                return_value=b"tar",
+            ),
+        ):
+            client.create_snapshot_from_dockerfile(
+                "snap",
+                "Dockerfile",
+                4294967296,
+                context=tmp_path,
+                vcpus=2,
+                mem_bytes=8589934592,
+            )
+
+        assert sandbox_mock.call_args.kwargs["vcpus"] == 2
+        assert sandbox_mock.call_args.kwargs["mem_bytes"] == 8589934592
+
     def test_capture_snapshot_not_found(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
@@ -1197,19 +1414,40 @@ class TestStartStopOperations:
         assert "snapshot_id" not in body
         assert "template_name" not in body
 
-    def test_create_sandbox_requires_exactly_one_identifier(
+    def test_create_sandbox_omits_snapshot_id_when_absent(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test creating a sandbox without a snapshot."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+            status_code=201,
+        )
+
+        sandbox = client.create_sandbox(name="my-vm")
+
+        assert sandbox.name == "my-vm"
+
+        import json
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert "snapshot_id" not in body
+        assert "snapshot_name" not in body
+
+    def test_create_sandbox_rejects_both_snapshot_identifiers(
         self, client: SandboxClient
     ):
-        """Test that exactly one of snapshot_id / snapshot_name must be set."""
-        with pytest.raises(
-            ValueError,
-            match="Exactly one of snapshot_id or snapshot_name must be set",
-        ):
-            client.create_sandbox()
+        """Test that snapshot_id / snapshot_name are mutually exclusive."""
 
         with pytest.raises(
             ValueError,
-            match="Exactly one of snapshot_id or snapshot_name must be set",
+            match="At most one of snapshot_id or snapshot_name may be set",
         ):
             client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
 
