@@ -5120,6 +5120,7 @@ class Client:
         outputs_schema: Optional[dict[str, Any]] = None,
         transformations: Optional[list[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
+        application_tag: Optional[str] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -5138,6 +5139,8 @@ class Client:
                 A list of transformations to apply to the dataset.
             metadata (Optional[dict]):
                 Additional metadata to associate with the dataset.
+            application_tag (Optional[str]):
+                Application tag name to assign.
 
         Returns:
             Dataset: The created dataset.
@@ -5166,6 +5169,8 @@ class Client:
 
         if outputs_schema is not None:
             dataset["outputs_schema_definition"] = outputs_schema
+        if application_tag is not None:
+            dataset["application_tag"] = application_tag
 
         response = self.request_with_retries(
             "POST",
@@ -5366,6 +5371,7 @@ class Client:
         dataset_name_contains: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
         limit: Optional[int] = None,
+        application_tag: Optional[str] = None,
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
 
@@ -5382,6 +5388,8 @@ class Client:
                 A dictionary of metadata to filter the results by.
             limit (Optional[int]):
                 The maximum number of datasets to return.
+            application_tag (Optional[str]):
+                Filter datasets by application tag name.
 
         Yields:
             The datasets.
@@ -5399,6 +5407,8 @@ class Client:
             params["name_contains"] = dataset_name_contains
         if metadata is not None:
             params["metadata"] = json.dumps(metadata)
+        if application_tag is not None:
+            params["application_tag"] = application_tag
         for i, dataset in enumerate(
             self._get_paginated_list("/datasets", params=params)
         ):
@@ -8950,6 +8960,7 @@ class Client:
         sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
+        application_tag: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List prompts with pagination.
 
@@ -8963,6 +8974,7 @@ class Client:
             sort_direction (Literal["desc", "asc"], default="desc"): The order to sort by.
                 Defaults to "desc".
             query (Optional[str]): Filter prompts by a search query.
+            application_tag (Optional[str]): Filter prompts by application tag name.
 
         Returns:
             ListPromptsResponse: A response object containing
@@ -8979,6 +8991,7 @@ class Client:
             "sort_direction": sort_direction,
             "query": query,
             "match_prefix": "true" if query else None,
+            "application_tag": application_tag,
         }
 
         response = self.request_with_retries("GET", "/repos/", params=params)
@@ -9016,6 +9029,7 @@ class Client:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         is_public: bool = False,
+        application_tag: Optional[str] = None,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
 
@@ -9028,6 +9042,7 @@ class Client:
             readme (Optional[str]): A readme for the prompt.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
             is_public (bool): Whether the prompt should be public.
+            application_tag (Optional[str]): Application tag name to assign.
 
         Returns:
             Prompt: The created prompt object.
@@ -9056,6 +9071,9 @@ class Client:
             "tags": tags or [],
             "is_public": is_public,
         }
+
+        if application_tag is not None:
+            json["application_tag"] = application_tag
 
         response = self.request_with_retries("POST", "/repos/", json=json)
         response.raise_for_status()
@@ -9142,6 +9160,7 @@ class Client:
         tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
+        application_tag: Optional[str] = None,
     ) -> dict[str, Any]:
         """Update a prompt's metadata.
 
@@ -9154,6 +9173,7 @@ class Client:
             tags (Optional[Sequence[str]]): New list of tags for the prompt.
             is_public (Optional[bool]): New public status for the prompt.
             is_archived (Optional[bool]): New archived status for the prompt.
+            application_tag (Optional[str]): Application tag name to assign.
 
         Returns:
             Dict[str, Any]: The updated prompt data as returned by the server.
@@ -9183,6 +9203,8 @@ class Client:
             json["is_archived"] = is_archived
         if tags is not None:
             json["tags"] = tags
+        if application_tag is not None:
+            json["application_tag"] = application_tag
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
@@ -9467,6 +9489,7 @@ class Client:
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
         commit_description: Optional[str] = None,
+        application_tag: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -9494,6 +9517,7 @@ class Client:
                 Defaults to an empty list.
             commit_description (Optional[str]): Optional human-readable description
                 for the commit (max 1000 chars). Defaults to None.
+            application_tag (Optional[str]): Application tag name to assign.
 
         Returns:
             str: The URL of the prompt.
@@ -9501,7 +9525,8 @@ class Client:
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
             if any(
-                param is not None for param in [is_public, description, readme, tags]
+                param is not None
+                for param in [is_public, description, readme, tags, application_tag]
             ):
                 self.update_prompt(
                     prompt_identifier,
@@ -9509,6 +9534,7 @@ class Client:
                     readme=readme,
                     tags=tags,
                     is_public=is_public,
+                    application_tag=application_tag,
                 )
         else:
             self.create_prompt(
@@ -9517,6 +9543,7 @@ class Client:
                 description=description,
                 readme=readme,
                 tags=tags,
+                application_tag=application_tag,
             )
 
         if object is None:
