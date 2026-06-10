@@ -13,6 +13,13 @@ PLATFORM_HUB = "/v1/platform/hub/repos"
 HUB = "/repos"
 
 
+def platform_hub_path(api_url: str) -> str:
+    """Hub repos path, omitting the ``/v1`` prefix when ``api_url`` ends in it."""
+    if api_url.rstrip("/").endswith("/v1"):
+        return "/platform/hub/repos"
+    return PLATFORM_HUB
+
+
 def build_commit_url(
     host: str, name: str, commit_hash: str, organization_id: str
 ) -> str:

@@ -43,8 +43,9 @@ _HUB_METHODS = [
 ]
 
 
-def _mock_sync_client() -> MagicMock:
+def _mock_sync_client(api_url: str = "https://api.smith.langchain.com") -> MagicMock:
     client = MagicMock()
+    client.api_url = api_url
     client._host_url = "https://smith.langchain.com"
     client._current_tenant_is_owner.return_value = True
     client._get_settings.return_value = SimpleNamespace(
@@ -59,8 +60,9 @@ def _mock_sync_client() -> MagicMock:
     return client
 
 
-def _mock_async_client() -> MagicMock:
+def _mock_async_client(api_url: str = "https://api.smith.langchain.com") -> MagicMock:
     client = MagicMock()
+    client._api_url = api_url
     client._host_url = "https://smith.langchain.com"
     client._current_tenant_is_owner = AsyncMock(return_value=True)
     client._get_settings = AsyncMock(
@@ -423,6 +425,55 @@ def test_delete_agent_hits_directories_delete() -> None:
     )
 
 
+@pytest.mark.parametrize("api_url", ["https://x.com/api/v1", "https://x.com/api/v1/"])
+def test_pull_agent_omits_v1_prefix_when_api_url_ends_in_v1(api_url: str) -> None:
+    client = _mock_sync_client(api_url=api_url)
+    client.request_with_retries.return_value = _response(
+        {
+            "commit_id": "00000000-0000-0000-0000-000000000000",
+            "commit_hash": "abc12345",
+            "files": {},
+        }
+    )
+    client.pull_agent("owner/my-agent")
+    call = client.request_with_retries.call_args
+    assert call.args == ("GET", "/platform/hub/repos/owner/my-agent/directories")
+
+
+def test_push_agent_omits_v1_prefix_when_api_url_ends_in_v1() -> None:
+    client = _mock_sync_client(api_url="https://x.com/api/v1")
+    client.request_with_retries.side_effect = [
+        ls_utils.LangSmithNotFoundError("not found"),
+        _response({}),
+        _response(
+            {
+                "commit": {
+                    "id": "00000000-0000-0000-0000-000000000000",
+                    "commit_hash": "abc12345",
+                }
+            }
+        ),
+    ]
+    client.push_agent(
+        "-/my-agent", files={"main.py": ls_schemas.FileEntry(content="x")}
+    )
+    commit_call = client.request_with_retries.call_args_list[2]
+    assert commit_call.args == (
+        "POST",
+        "/platform/hub/repos/-/my-agent/directories/commits",
+    )
+
+
+def test_delete_agent_omits_v1_prefix_when_api_url_ends_in_v1() -> None:
+    client = _mock_sync_client(api_url="https://x.com/api/v1")
+    client.request_with_retries.return_value = _response({})
+    client.delete_agent("-/old-agent")
+    assert client.request_with_retries.call_args.args == (
+        "DELETE",
+        "/platform/hub/repos/-/old-agent/directories",
+    )
+
+
 def test_agent_exists_returns_true_on_200() -> None:
     client = _mock_sync_client()
     client.request_with_retries.return_value = _response({})
@@ -598,6 +649,30 @@ async def test_async_delete_agent_hits_directories_delete() -> None:
     client._arequest_with_retries.assert_awaited_once_with(
         "DELETE",
         "/v1/platform/hub/repos/-/old-agent/directories",
+    )
+
+
+async def test_async_pull_agent_omits_v1_prefix_when_api_url_ends_in_v1() -> None:
+    client = _mock_async_client(api_url="https://x.com/api/v1")
+    client._arequest_with_retries.return_value = _response(
+        {
+            "commit_id": "00000000-0000-0000-0000-000000000000",
+            "commit_hash": "abc12345",
+            "files": {},
+        }
+    )
+    await client.pull_agent("owner/my-agent")
+    call = client._arequest_with_retries.call_args
+    assert call.args == ("GET", "/platform/hub/repos/owner/my-agent/directories")
+
+
+async def test_async_delete_agent_omits_v1_prefix_when_api_url_ends_in_v1() -> None:
+    client = _mock_async_client(api_url="https://x.com/api/v1")
+    client._arequest_with_retries.return_value = _response({})
+    await client.delete_agent("-/old-agent")
+    client._arequest_with_retries.assert_awaited_once_with(
+        "DELETE",
+        "/platform/hub/repos/-/old-agent/directories",
     )
 
 

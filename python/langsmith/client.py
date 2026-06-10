@@ -86,9 +86,9 @@ from langsmith._internal._constants import (
 )
 from langsmith._internal._hub import (
     HUB,
-    PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
+    platform_hub_path,
     validate_parent_commit,
 )
 from langsmith._internal._multipart import (
@@ -9679,7 +9679,7 @@ class Client:
             params["commit"] = target
         response = self.request_with_retries(
             "GET",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories",
             params=params,
         )
         return response.json()
@@ -9741,7 +9741,7 @@ class Client:
 
         response = self.request_with_retries(
             "POST",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories/commits",
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
@@ -9755,7 +9755,7 @@ class Client:
             raise self._owner_conflict_error("delete", owner)
         self.request_with_retries(
             "DELETE",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories",
         )
 
     def _list_hub_repos(
