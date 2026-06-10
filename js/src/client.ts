@@ -6884,7 +6884,9 @@ export class Client implements LangSmithTracingClientInterface {
       version ?? (parsedVersion !== "latest" ? parsedVersion : undefined);
 
     const url = new URL(
-      `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
+      `${this.apiUrl}${this._getPlatformEndpointPath(
+        `hub/repos/${owner}/${name}/directories`,
+      )}`,
     );
     url.searchParams.set("repo_type", repoType);
     if (resolvedVersion) {
@@ -6956,7 +6958,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
-        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories/commits`,
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories/commits`,
+        )}`,
         {
           method: "POST",
           headers: {
@@ -6988,7 +6992,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     await this.caller.call(async () => {
       const res = await this._fetch(
-        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories`,
+        )}`,
         {
           method: "DELETE",
           headers: this._mergedHeaders,

@@ -26,9 +26,9 @@ from langsmith import utils as ls_utils
 from langsmith._internal import _profiles
 from langsmith._internal._hub import (
     HUB,
-    PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
+    platform_hub_path,
     validate_parent_commit,
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
@@ -2451,7 +2451,7 @@ class AsyncClient:
             params["commit"] = target
         response = await self._arequest_with_retries(
             "GET",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories",
             params=params,
         )
         return response.json()
@@ -2513,7 +2513,7 @@ class AsyncClient:
 
         response = await self._arequest_with_retries(
             "POST",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories/commits",
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
@@ -2527,7 +2527,7 @@ class AsyncClient:
             raise (await self._owner_conflict_error("delete", owner))
         await self._arequest_with_retries(
             "DELETE",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories",
         )
 
     async def _list_hub_repos(

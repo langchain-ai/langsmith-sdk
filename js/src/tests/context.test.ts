@@ -415,6 +415,53 @@ describe("Context (agent/skill) on Client", () => {
     });
   });
 
+  describe("apiUrl ending in /v1", () => {
+    function _mockV1Client() {
+      const client = new Client({
+        apiKey: "test-api-key",
+        apiUrl: "https://example.com/api/v1",
+      });
+      jest
+        .spyOn(client as any, "_currentTenantIsOwner")
+        .mockResolvedValue(true);
+      jest.spyOn(client as any, "_getSettings").mockResolvedValue({
+        id: WORKSPACE_ID,
+        display_name: "Test Workspace",
+        created_at: "2026-05-27T00:00:00Z",
+        tenant_handle: "workspace-handle",
+      });
+      return client;
+    }
+
+    it("pullAgent does not duplicate the /v1 prefix", async () => {
+      const client = _mockV1Client();
+      const fetchSpy = _setFetchSequence(client, [
+        _response({
+          commit_id: "00000000-0000-0000-0000-000000000000",
+          commit_hash: "abc12345",
+          files: {},
+        }),
+      ]);
+      await client.pullAgent("owner/my-agent");
+      const [url] = fetchSpy.mock.calls[0] as [string, any];
+      expect(url).toContain(
+        "/api/v1/platform/hub/repos/owner/my-agent/directories",
+      );
+      expect(url).not.toContain("/v1/v1/");
+    });
+
+    it("deleteAgent does not duplicate the /v1 prefix", async () => {
+      const client = _mockV1Client();
+      const fetchSpy = _setFetchSequence(client, [_response({}, 204)]);
+      await client.deleteAgent("-/old-agent");
+      const [url] = fetchSpy.mock.calls[0] as [string, any];
+      expect(url).toContain(
+        "/api/v1/platform/hub/repos/-/old-agent/directories",
+      );
+      expect(url).not.toContain("/v1/v1/");
+    });
+  });
+
   describe("agentExists / skillExists", () => {
     it("agentExists returns true on 200", async () => {
       const client = _mockClient();
