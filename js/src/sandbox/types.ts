@@ -298,6 +298,38 @@ export interface SandboxProxyConfig {
 }
 
 /**
+ * S3 configuration for a sandbox mount. Field names are snake_case so the
+ * object is wire-compatible with the backend `MountSpec` type.
+ */
+export interface S3MountConfig {
+  /** S3 or S3-compatible endpoint URL. */
+  endpoint_url: string;
+  /** AWS region for signing and bucket access. */
+  region: string;
+  /** Bucket name. */
+  bucket: string;
+  /** Optional key prefix inside the bucket. */
+  prefix?: string;
+  /** Whether to use path-style addressing for S3-compatible endpoints. */
+  path_style?: boolean;
+}
+
+/** S3-backed sandbox mount specification. */
+export interface S3MountSpec {
+  /** Stable mount identifier. */
+  id: string;
+  /** Mount type. */
+  type: "s3";
+  /** Absolute path inside the sandbox where the mount appears. */
+  mount_path: string;
+  /** S3 mount configuration. */
+  s3: S3MountConfig;
+}
+
+/** Sandbox mount specification. */
+export type SandboxMount = S3MountSpec;
+
+/**
  * Options for creating a sandbox.
  */
 export interface CreateSandboxOptions {
@@ -343,6 +375,8 @@ export interface CreateSandboxOptions {
   memBytes?: number;
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
+  /** Mounts attached to the sandbox. */
+  mounts?: SandboxMount[];
   /**
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`

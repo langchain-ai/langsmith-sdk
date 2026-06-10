@@ -49,17 +49,16 @@ const client = new SandboxClient({
 });
 ```
 
-## AWS Auth Proxy
+## S3 Mounts and AWS Auth Proxy
 
-Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
-Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
-credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
-SigV4. The real credentials stay outside the sandbox.
+Use S3 mounts when sandbox code needs filesystem access to a bucket or prefix.
+S3 mounts use the sandbox AWS auth proxy for SigV4 signing, so the real AWS
+credentials stay outside the sandbox while mounted reads and writes are signed
+on the sandbox's behalf.
 
-This lets code inside the sandbox use normal AWS tooling without exposing
-long-lived AWS credentials in sandbox files, environment variables, shell
-history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
-reference those secret names in the proxy config:
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with both the mount spec and an AWS
+auth proxy config:
 
 ```typescript
 import {
@@ -71,23 +70,37 @@ import {
 const client = new SandboxClient();
 
 const sandbox = await client.createSandbox({
-  name: "aws-sandbox",
+  name: "s3-mount-sandbox",
+  mounts: [
+    {
+      id: "customer_data",
+      type: "s3",
+      mount_path: "/mnt/mounts/customer-data",
+      s3: {
+        endpoint_url: "https://s3.amazonaws.com",
+        region: "us-east-1",
+        bucket: "example-bucket",
+        prefix: "datasets/customer-data",
+        path_style: false,
+      },
+    },
+  ],
   proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
   }),
 });
 
 try {
-  const result = await sandbox.run("node your-aws-script.js");
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
   console.log(result.stdout);
 } finally {
   await sandbox.delete();
 }
 ```
 
-Inside `your-aws-script.js`, use AWS SDKs normally. For example, if
-`@aws-sdk/client-s3` is installed in the sandbox snapshot:
+Sandbox code can also use normal AWS SDKs through the same proxy config. For
+example, if `@aws-sdk/client-s3` is installed in the sandbox snapshot:
 
 ```typescript
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
@@ -110,7 +123,8 @@ const proxyConfig = awsAuthProxyConfig({
 ```
 
 Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
-credential values are not supported by the AWS auth proxy.
+credential values are not accepted directly by the AWS auth proxy; wrap
+short-lived write-only values with `opaqueSecret(...)`.
 
 ## Running Commands
 
@@ -607,6 +621,7 @@ try {
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
+| `mounts?` | Sandbox mount specs, such as S3 mounts using `{ id, type: "s3", mount_path, s3 }` |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
 
 ### ListSnapshotsOptions

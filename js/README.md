@@ -25,16 +25,17 @@ A typical workflow looks like:
 
 We'll walk through these steps in more detail below.
 
-## Sandbox AWS auth proxy
+## Sandbox S3 mounts and AWS auth proxy
 
-When you create a LangSmith sandbox that needs to call AWS services, use the
-sandbox AWS auth proxy helpers. The proxy keeps the real AWS credentials outside
-the sandbox and signs supported AWS HTTPS requests with SigV4, so code in the
-sandbox can use AWS SDKs normally without storing long-lived AWS keys in files,
+When you create a LangSmith sandbox that needs an S3-backed mount, pass a
+`mounts` array on sandbox creation. S3 mounts use the sandbox AWS auth proxy for
+SigV4 signing, so the real AWS credentials stay outside the sandbox and code can
+read and write the mounted path without storing long-lived AWS keys in files,
 environment variables, shell history, or logs.
 
-First, store `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as LangSmith
-workspace secrets. Then create the sandbox with an AWS auth proxy config:
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with both the mount spec and an AWS
+auth proxy config:
 
 ```ts
 import {
@@ -46,16 +47,29 @@ import {
 const client = new SandboxClient();
 
 const sandbox = await client.createSandbox({
-  name: "aws-sandbox",
+  name: "s3-mount-sandbox",
+  mounts: [
+    {
+      id: "customer_data",
+      type: "s3",
+      mount_path: "/mnt/mounts/customer-data",
+      s3: {
+        endpoint_url: "https://s3.amazonaws.com",
+        region: "us-east-1",
+        bucket: "example-bucket",
+        prefix: "datasets/customer-data",
+        path_style: false,
+      },
+    },
+  ],
   proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
   }),
 });
 
 try {
-  // Your sandbox code can use the AWS SDK, the AWS CLI, or other AWS tooling normally.
-  const result = await sandbox.run("node your-aws-script.js");
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
   console.log(result.stdout);
 } finally {
   await sandbox.delete();
@@ -64,7 +78,8 @@ try {
 
 Use `opaqueSecret("...")` instead of `workspaceSecret(...)` when your application
 needs to pass short-lived write-only AWS credentials at sandbox creation time.
-Plaintext AWS credential values are not supported.
+Plaintext AWS credential values are not accepted directly; wrap them as
+`opaqueSecret(...)` values.
 
 ## 1. Connect to LangSmith
 
