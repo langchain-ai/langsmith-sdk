@@ -1,5 +1,6 @@
 import { getEnv, getEnvironmentVariable } from "./env.js";
 import * as fsUtils from "./fs.js";
+import { acquireOAuthRefreshLock } from "./profile-lock.js";
 
 export const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -256,6 +257,23 @@ export class ProfileAuth {
     return value === this.managedAuthorizationValue;
   }
 
+  private reloadProfile(): LangSmithProfile | undefined {
+    try {
+      const config = JSON.parse(
+        fsUtils.readFileSync(this.state.configPath),
+      ) as LangSmithProfileConfigFile;
+      const profile = config.profiles?.[this.state.profileName];
+      if (!profile) {
+        return undefined;
+      }
+      this.state.config = config;
+      this.state.profile = profile;
+      return profile;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async refreshOAuthToken(
     fetchImplementation: typeof fetch,
   ): Promise<void> {
@@ -265,11 +283,18 @@ export class ProfileAuth {
     }
     const refreshApiUrl =
       trimConfigValue(this.state.profile.api_url) ?? DEFAULT_API_URL;
+    const deadline = Date.now() + TOKEN_REFRESH_TIMEOUT_MS;
+    let lock: { release(): Promise<void> } | undefined;
     try {
+      lock = await acquireOAuthRefreshLock(this.state.configPath, deadline);
+      const fresh = this.reloadProfile();
+      if (fresh && !shouldRefreshProfileToken(this.state.profile)) {
+        return;
+      }
       const body = new URLSearchParams({
         grant_type: "refresh_token",
         client_id: OAUTH_CLIENT_ID,
-        refresh_token: refreshToken,
+        refresh_token: this.state.profile.oauth?.refresh_token ?? refreshToken,
       });
       const response = await fetchImplementation(
         `${normalizeConfigUrl(refreshApiUrl)}/oauth/token`,
@@ -279,7 +304,7 @@ export class ProfileAuth {
             "Content-Type": "application/x-www-form-urlencoded",
           },
           body: body.toString(),
-          signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
+          signal: AbortSignal.timeout(Math.max(0, deadline - Date.now())),
         },
       );
       if (!response.ok) {
@@ -302,6 +327,8 @@ export class ProfileAuth {
       );
     } catch {
       return;
+    } finally {
+      await lock?.release();
     }
   }
 
