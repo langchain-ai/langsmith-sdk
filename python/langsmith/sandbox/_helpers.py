@@ -310,6 +310,7 @@ def handle_sandbox_http_error(error: httpx.HTTPStatusError) -> None:
     - ConnectionError (502) -> SandboxConnectionError
     - FileNotFound / 404 -> ResourceNotFoundError (resource_type="file")
     - NotReady (400) -> SandboxNotReadyError
+    - ServiceUnavailable (503) -> SandboxNotReadyError
     - 403 -> SandboxOperationError (permission denied)
     """
     data = parse_error_response_simple(error)
@@ -342,7 +343,9 @@ def handle_sandbox_http_error(error: httpx.HTTPStatusError) -> None:
         raise SandboxConnectionError(message) from error
 
     # Not ready / not found
-    if status == 400 and error_type == "NotReady":
+    if (status == 400 and error_type == "NotReady") or (
+        status == 503 and error_type == "ServiceUnavailable"
+    ):
         raise SandboxNotReadyError(message) from error
     if status == 404 or error_type == "FileNotFound":
         raise ResourceNotFoundError(message, resource_type="file") from error

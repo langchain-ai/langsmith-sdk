@@ -267,6 +267,25 @@ class TestSandboxRun:
         with pytest.raises(SandboxConnectionError):
             sandbox.run("echo hello")
 
+    def test_run_starting_sandbox_raises_not_ready(
+        self, sandbox, httpx_mock: HTTPXMock
+    ):
+        """Test run maps router startup refusals to SandboxNotReadyError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            status_code=503,
+            json={
+                "detail": {
+                    "error": "ServiceUnavailable",
+                    "message": "Sandbox is starting: sb-123",
+                }
+            },
+        )
+
+        with pytest.raises(SandboxNotReadyError, match="Sandbox is starting"):
+            sandbox.run("echo hello")
+
     def test_run_without_dataplane_url(self, client: SandboxClient):
         """Test run raises error when dataplane_url is not configured."""
         sandbox = Sandbox.from_dict(

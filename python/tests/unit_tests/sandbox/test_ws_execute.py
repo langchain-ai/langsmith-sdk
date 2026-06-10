@@ -11,6 +11,7 @@ import pytest
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
+    SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
 )
@@ -877,4 +878,15 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
+            _raise_for_invalid_status(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_503_raises_not_ready(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        exc = Exception("server rejected WebSocket connection: HTTP 503")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxNotReadyError, match="not ready"):
             _raise_for_invalid_status(exc, "ws://example.com/sb-123/execute/ws")
