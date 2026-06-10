@@ -59,17 +59,16 @@ client = SandboxClient(
 )
 ```
 
-## AWS Auth Proxy
+## S3 Mounts and AWS Auth Proxy
 
-Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
-Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
-credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
-SigV4. The real credentials stay outside the sandbox.
+Use S3 mounts when sandbox code needs filesystem access to a bucket or prefix.
+S3 mounts use the sandbox AWS auth proxy for SigV4 signing, so the real AWS
+credentials stay outside the sandbox while mounted reads and writes are signed
+on the sandbox's behalf.
 
-This lets code inside the sandbox use normal AWS tooling without exposing
-long-lived AWS credentials in sandbox files, environment variables, shell
-history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
-reference those secret names in the proxy config:
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with both the mount spec and an AWS
+auth proxy config:
 
 ```python
 from langsmith.sandbox import (
@@ -81,18 +80,32 @@ from langsmith.sandbox import (
 client = SandboxClient()
 
 with client.sandbox(
-    name="aws-sandbox",
+    name="s3-mount-sandbox",
+    mounts=[
+        {
+            "id": "customer_data",
+            "type": "s3",
+            "mount_path": "/mnt/mounts/customer-data",
+            "s3": {
+                "endpoint_url": "https://s3.amazonaws.com",
+                "region": "us-east-1",
+                "bucket": "example-bucket",
+                "prefix": "datasets/customer-data",
+                "path_style": False,
+            },
+        }
+    ],
     proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+        access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     ),
 ) as sb:
-    result = sb.run("python your_aws_script.py")
+    result = sb.run("ls /mnt/mounts/customer-data")
     print(result.stdout)
 ```
 
-Inside `your_aws_script.py`, use AWS SDKs normally. For example, if `boto3` is
-installed in the sandbox snapshot:
+Sandbox code can also use normal AWS SDKs through the same proxy config. For
+example, if `boto3` is installed in the sandbox snapshot:
 
 ```python
 import boto3
@@ -114,7 +127,8 @@ proxy_config = aws_auth_proxy_config(
 ```
 
 Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
-credential values are not supported by the AWS auth proxy.
+credential values are not accepted directly by the AWS auth proxy; wrap
+short-lived write-only values with `opaque_secret(...)`.
 
 ## Running Commands
 
@@ -947,8 +961,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, mounts=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, mounts=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |

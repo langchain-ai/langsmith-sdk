@@ -64,6 +64,11 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
+from langsmith.sandbox._mounts import (
+    S3MountConfig,
+    S3MountSpec,
+    SandboxMount,
+)
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
     SandboxProxySecret,
@@ -92,6 +97,9 @@ __all__ = [
     "OutputChunk",
     "SandboxProxyConfig",
     "SandboxProxySecret",
+    "SandboxMount",
+    "S3MountConfig",
+    "S3MountSpec",
     "aws_auth_proxy_config",
     "opaque_secret",
     "workspace_secret",
