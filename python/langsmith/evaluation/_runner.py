@@ -2249,6 +2249,8 @@ def _extract_feedback_keys(evaluator: RunEvaluator):
 
 
 def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
+    # Unwrap to the user's original function so key extraction reads their source.
+    func = getattr(func, "__wrapped_evaluator_func__", func)
     python_code = inspect.getsource(func)
 
     def extract_dict_keys(node):

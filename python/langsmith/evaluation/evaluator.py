@@ -725,6 +725,8 @@ def _normalize_evaluator_func(
                 if hasattr(func, "__name__")
                 else awrapper.__name__
             )
+            # Breadcrumb to the user's original function for feedback-key extraction.
+            awrapper.__wrapped_evaluator_func__ = func  # type: ignore[attr-defined]
             return (awrapper, _prepare_inputs)  # type: ignore[return-value]
 
         else:
@@ -769,6 +771,8 @@ def _normalize_evaluator_func(
                 if hasattr(func, "__name__")
                 else wrapper.__name__
             )
+            # Breadcrumb to the user's original function for feedback-key extraction.
+            wrapper.__wrapped_evaluator_func__ = func  # type: ignore[attr-defined]
             return (wrapper, _prepare_inputs)  # type: ignore[return-value]
 
 
