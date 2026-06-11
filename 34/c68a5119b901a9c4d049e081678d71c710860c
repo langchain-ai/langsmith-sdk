@@ -1,0 +1,25 @@
+.github/workflows/protect-openapi-client.yml
+  s_1034bd2bee2c25::t_0b9cb1f4afaacd 8
+  s_1034bd2bee2c25::t_7a15a0642353b9 34,36-38,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "34c68a5119b901a9c4d049e081678d71c710860c",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_1034bd2bee2c25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be9f573a-637f-4a87-8abf-042a5eddece4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
