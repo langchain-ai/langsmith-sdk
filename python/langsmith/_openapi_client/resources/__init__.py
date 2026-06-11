@@ -8,8 +8,22 @@ from .info import (
     InfoResourceWithStreamingResponse,
     AsyncInfoResourceWithStreamingResponse,
 )
+from .online_evaluators import (
+    OnlineEvaluatorsResource,
+    AsyncOnlineEvaluatorsResource,
+    OnlineEvaluatorsResourceWithRawResponse,
+    AsyncOnlineEvaluatorsResourceWithRawResponse,
+    OnlineEvaluatorsResourceWithStreamingResponse,
+    AsyncOnlineEvaluatorsResourceWithStreamingResponse,
+)
 
 __all__ = [
+    "OnlineEvaluatorsResource",
+    "AsyncOnlineEvaluatorsResource",
+    "OnlineEvaluatorsResourceWithRawResponse",
+    "AsyncOnlineEvaluatorsResourceWithRawResponse",
+    "OnlineEvaluatorsResourceWithStreamingResponse",
+    "AsyncOnlineEvaluatorsResourceWithStreamingResponse",
     "InfoResource",
     "AsyncInfoResource",
     "InfoResourceWithRawResponse",

@@ -36,8 +36,9 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info
+    from .resources import info, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
+    from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
 
 __all__ = [
     "Timeout",
@@ -118,6 +119,12 @@ class Langsmith(SyncAPIClient):
             custom_query=default_query,
             _strict_response_validation=_strict_response_validation,
         )
+
+    @cached_property
+    def online_evaluators(self) -> OnlineEvaluatorsResource:
+        from .resources.online_evaluators import OnlineEvaluatorsResource
+
+        return OnlineEvaluatorsResource(self)
 
     @cached_property
     def info(self) -> InfoResource:
@@ -334,6 +341,12 @@ class AsyncLangsmith(AsyncAPIClient):
         )
 
     @cached_property
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
+        from .resources.online_evaluators import AsyncOnlineEvaluatorsResource
+
+        return AsyncOnlineEvaluatorsResource(self)
+
+    @cached_property
     def info(self) -> AsyncInfoResource:
         from .resources.info import AsyncInfoResource
 
@@ -486,6 +499,12 @@ class LangsmithWithRawResponse:
         self._client = client
 
     @cached_property
+    def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithRawResponse:
+        from .resources.online_evaluators import OnlineEvaluatorsResourceWithRawResponse
+
+        return OnlineEvaluatorsResourceWithRawResponse(self._client.online_evaluators)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithRawResponse:
         from .resources.info import InfoResourceWithRawResponse
 
@@ -497,6 +516,12 @@ class AsyncLangsmithWithRawResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithRawResponse:
+        from .resources.online_evaluators import AsyncOnlineEvaluatorsResourceWithRawResponse
+
+        return AsyncOnlineEvaluatorsResourceWithRawResponse(self._client.online_evaluators)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithRawResponse:
@@ -512,6 +537,12 @@ class LangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
+    def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithStreamingResponse:
+        from .resources.online_evaluators import OnlineEvaluatorsResourceWithStreamingResponse
+
+        return OnlineEvaluatorsResourceWithStreamingResponse(self._client.online_evaluators)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithStreamingResponse:
         from .resources.info import InfoResourceWithStreamingResponse
 
@@ -523,6 +554,12 @@ class AsyncLangsmithWithStreamedResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithStreamingResponse:
+        from .resources.online_evaluators import AsyncOnlineEvaluatorsResourceWithStreamingResponse
+
+        return AsyncOnlineEvaluatorsResourceWithStreamingResponse(self._client.online_evaluators)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithStreamingResponse:
