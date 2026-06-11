@@ -54,6 +54,8 @@ export class CommandHandle {
   private _lastStdoutOffset: number;
   private _lastStderrOffset: number;
   private _started: boolean;
+  private _onStdout?: (data: string) => void;
+  private _onStderr?: (data: string) => void;
 
   /** @internal */
   constructor(
@@ -64,6 +66,8 @@ export class CommandHandle {
       commandId?: string;
       stdoutOffset?: number;
       stderrOffset?: number;
+      onStdout?: (data: string) => void;
+      onStderr?: (data: string) => void;
     },
   ) {
     this._stream = messageStream;
@@ -71,6 +75,10 @@ export class CommandHandle {
     this._sandbox = sandbox;
     this._lastStdoutOffset = options?.stdoutOffset ?? 0;
     this._lastStderrOffset = options?.stderrOffset ?? 0;
+    // Callbacks live on the handle (not the per-connection stream) so they
+    // keep firing for chunks delivered after an auto-reconnect.
+    this._onStdout = options?.onStdout;
+    this._onStderr = options?.onStderr;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -197,9 +205,11 @@ export class CommandHandle {
           if (chunk.stream === "stdout") {
             this._lastStdoutOffset =
               chunk.offset + new TextEncoder().encode(chunk.data).length;
+            this._onStdout?.(chunk.data);
           } else {
             this._lastStderrOffset =
               chunk.offset + new TextEncoder().encode(chunk.data).length;
+            this._onStderr?.(chunk.data);
           }
           yield chunk;
         }

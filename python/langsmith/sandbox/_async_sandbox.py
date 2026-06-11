@@ -355,8 +355,6 @@ class AsyncSandbox:
             "env": env,
             "cwd": cwd,
             "shell": shell,
-            "on_stdout": on_stdout,
-            "on_stderr": on_stderr,
             "idle_timeout": idle_timeout,
             "kill_on_disconnect": kill_on_disconnect,
             "ttl_seconds": ttl_seconds,
@@ -373,7 +371,15 @@ class AsyncSandbox:
             **ws_kwargs,
         )
 
-        handle = AsyncCommandHandle(msg_stream, control, self)
+        # Callbacks are attached to the handle, not the connection, so they
+        # keep firing for output delivered after an auto-reconnect.
+        handle = AsyncCommandHandle(
+            msg_stream,
+            control,
+            self,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+        )
         await handle._ensure_started()
 
         if not wait:
