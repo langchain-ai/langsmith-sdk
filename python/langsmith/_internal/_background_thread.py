@@ -37,6 +37,10 @@ logger = logging.getLogger("langsmith.client")
 
 LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
+# Persistent pool reused across batches in hybrid tracing mode so we don't
+# spawn and join two OS threads for every drained batch.
+LANGSMITH_HYBRID_TRACING_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=2)
+
 
 def _group_batch_by_api_endpoint(
     batch: list[TracingQueueItem],
@@ -476,30 +480,28 @@ def _hybrid_tracing_thread_handle_batch(
     otel_ops = copy.deepcopy(ops)
 
     try:
-        # Use ThreadPoolExecutor for parallel execution
-        with cf.ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit both tasks
-            future_langsmith = executor.submit(
-                _tracing_thread_handle_batch,
-                client,
-                tracing_queue,
-                batch,
-                use_multipart,
-                False,  # Don't mark tasks done - we'll do it once at the end
-                langsmith_ops,
-            )
-            future_otel = executor.submit(
-                _otel_tracing_thread_handle_batch,
-                client,
-                tracing_queue,
-                batch,
-                False,  # Don't mark tasks done - we'll do it once at the end
-                otel_ops,
-            )
+        # Reuse a persistent pool for parallel execution
+        future_langsmith = LANGSMITH_HYBRID_TRACING_THREAD_POOL.submit(
+            _tracing_thread_handle_batch,
+            client,
+            tracing_queue,
+            batch,
+            use_multipart,
+            False,  # Don't mark tasks done - we'll do it once at the end
+            langsmith_ops,
+        )
+        future_otel = LANGSMITH_HYBRID_TRACING_THREAD_POOL.submit(
+            _otel_tracing_thread_handle_batch,
+            client,
+            tracing_queue,
+            batch,
+            False,  # Don't mark tasks done - we'll do it once at the end
+            otel_ops,
+        )
 
-            # Wait for both to complete
-            future_langsmith.result()
-            future_otel.result()
+        # Wait for both to complete
+        future_langsmith.result()
+        future_otel.result()
     except RuntimeError as e:
         if "cannot schedule new futures after interpreter shutdown" in str(e):
             # During interpreter shutdown, ThreadPoolExecutor is blocked,
