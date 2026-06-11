@@ -12,6 +12,62 @@ import {
 import { parseHubIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
+  describe("onlineEvaluators", () => {
+    it("creates an online evaluator through the platform endpoint", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          evaluator: {
+            id: "eval-1",
+            name: "SDK smoke test code evaluator",
+            type: "code",
+          },
+        }),
+        text: async () =>
+          '{"evaluator":{"id":"eval-1","name":"SDK smoke test code evaluator","type":"code"}}',
+        headers: new Headers(),
+      } as Response);
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.onlineEvaluators.create({
+        name: "SDK smoke test code evaluator",
+        type: "code",
+        code_evaluator: {
+          code: "def perform_eval(run, example):\n    return {'score': 1}",
+          language: "python",
+        },
+      });
+
+      expect(response.evaluator.id).toBe("eval-1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8080/v1/platform/evaluators",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+            "x-api-key": "test-api-key",
+            "x-tenant-id": "test-workspace-id",
+          }),
+          body: JSON.stringify({
+            name: "SDK smoke test code evaluator",
+            type: "code",
+            code_evaluator: {
+              code: "def perform_eval(run, example):\n    return {'score': 1}",
+              language: "python",
+            },
+          }),
+        }),
+      );
+    });
+  });
+
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
