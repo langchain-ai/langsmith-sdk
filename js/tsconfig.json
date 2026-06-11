@@ -31,7 +31,8 @@
   "exclude": [
     "node_modules",
     "dist",
-    "coverage"
+    "coverage",
+    "src/_openapi_client"
   ],
   "includeVersion": true,
   "typedocOptions": {
