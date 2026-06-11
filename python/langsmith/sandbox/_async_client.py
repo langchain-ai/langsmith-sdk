@@ -37,6 +37,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     Snapshot,
 )
+from langsmith.sandbox._mounts import SandboxMount
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._transport import AsyncRetryTransport
 
@@ -186,6 +187,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -225,6 +227,11 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mounts: Optional mount specifications attached to the sandbox.
+                S3 mounts use the backend shape
+                ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
+                "s3": {"endpoint_url": "...", "region": "...",
+                "bucket": "...", "prefix": "...", "path_style": False}}``.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -255,6 +262,7 @@ class AsyncSandboxClient:
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
+            mounts=mounts,
             proxy_config=proxy_config,
             headers=headers,
         )
@@ -274,6 +282,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -307,6 +316,11 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mounts: Optional mount specifications attached to the sandbox.
+                S3 mounts use the backend shape
+                ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
+                "s3": {"endpoint_url": "...", "region": "...",
+                "bucket": "...", "prefix": "...", "path_style": False}}``.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -357,6 +371,8 @@ class AsyncSandboxClient:
             payload["mem_bytes"] = mem_bytes
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if mounts is not None:
+            payload["mounts"] = mounts
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 
