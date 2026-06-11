@@ -528,6 +528,22 @@ interface ProjectOptions {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RecordStringAny = Record<string, any>;
 
+export interface OnlineEvaluatorsClient {
+  create(body: RecordStringAny): Promise<RecordStringAny>;
+  retrieve(evaluatorId: string): Promise<RecordStringAny>;
+  update(evaluatorId: string, body: RecordStringAny): Promise<RecordStringAny>;
+  list(query?: RecordStringAny): Promise<RecordStringAny>;
+  delete(
+    evaluatorId: string,
+    params?: { delete_run_rules?: boolean },
+  ): Promise<void>;
+  bulkDelete(params: {
+    evaluator_ids: string[];
+    delete_run_rules?: boolean;
+  }): Promise<RecordStringAny>;
+  spend(query: RecordStringAny): Promise<RecordStringAny>;
+}
+
 export type FeedbackSourceType = "model" | "api" | "app";
 
 export type CreateExampleOptions = {
@@ -1386,6 +1402,77 @@ export class Client implements LangSmithTracingClientInterface {
     const needsV1Prefix =
       this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
+  private async _requestOnlineEvaluator<T>(
+    method: string,
+    path: string,
+    options: { body?: unknown; query?: RecordStringAny } = {},
+  ): Promise<T> {
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      if (value == null) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item) => queryParams.append(key, String(item)));
+      } else {
+        queryParams.set(key, String(value));
+      }
+    }
+    const queryString = queryParams.toString();
+    const endpoint = `${this.apiUrl}${path}${queryString ? `?${queryString}` : ""}`;
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(endpoint, {
+        method,
+        headers: {
+          ...this._mergedHeaders,
+          ...(options.body == null
+            ? {}
+            : { "Content-Type": "application/json" }),
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: options.body == null ? undefined : JSON.stringify(options.body),
+      });
+      await raiseForStatus(res, `Failed to ${method} ${path}`);
+      return res;
+    });
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    return response.json() as Promise<T>;
+  }
+
+  public get onlineEvaluators(): OnlineEvaluatorsClient {
+    const basePath = this._getPlatformEndpointPath("evaluators");
+    return {
+      create: (body) =>
+        this._requestOnlineEvaluator("POST", basePath, { body }),
+      retrieve: (evaluatorId) =>
+        this._requestOnlineEvaluator(
+          "GET",
+          `${basePath}/${encodeURIComponent(evaluatorId)}`,
+        ),
+      update: (evaluatorId, body) =>
+        this._requestOnlineEvaluator(
+          "PATCH",
+          `${basePath}/${encodeURIComponent(evaluatorId)}`,
+          { body },
+        ),
+      list: (query = {}) =>
+        this._requestOnlineEvaluator("GET", basePath, { query }),
+      delete: (evaluatorId, params = {}) =>
+        this._requestOnlineEvaluator(
+          "DELETE",
+          `${basePath}/${encodeURIComponent(evaluatorId)}`,
+          { query: params },
+        ),
+      bulkDelete: (params) =>
+        this._requestOnlineEvaluator("DELETE", basePath, { query: params }),
+      spend: (query) =>
+        this._requestOnlineEvaluator("GET", `${basePath}/spend`, { query }),
+    };
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
