@@ -1,0 +1,25 @@
+js/tsconfig.json
+  s_093082c1ca4651::t_b1ddeb3c0c593a 34-35
+js/.prettierignore
+  s_093082c1ca4651::t_2b8346b937f863 1
+js/tsconfig.cjs.json
+  s_093082c1ca4651::t_84b127eda2eab7 10-11
+js/package.json
+  s_093082c1ca4651::t_88f7a3e74fee18 131-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2cafa3785a95cddf176ce7898a36bb03146e1d1a",
+  "prompts": {},
+  "sessions": {
+    "s_093082c1ca4651": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0706e6f7-f371-43eb-9a5d-5e895145e494",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
