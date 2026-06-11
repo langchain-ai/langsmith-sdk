@@ -14,6 +14,7 @@ import httpx
 from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
+    SandboxClient,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
     _resolve_dockerfile_context,
@@ -100,6 +101,8 @@ class AsyncSandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._timeout = timeout
+        self._max_retries = max_retries
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
@@ -126,6 +129,24 @@ class AsyncSandboxClient:
         if not self._default_headers and headers is None:
             return None
         return merge_headers(self._default_headers, headers)
+
+    def to_sync(self) -> SandboxClient:
+        """Create a SandboxClient with the same configuration.
+
+        The returned client has its own HTTP connection pool; close it
+        independently (``client.close()`` or ``with``).
+
+        Returns:
+            SandboxClient with the same endpoint, credentials, timeout,
+            retry, and header configuration.
+        """
+        return SandboxClient(
+            api_endpoint=self._base_url,
+            timeout=self._timeout,
+            api_key=self._api_key,
+            max_retries=self._max_retries,
+            headers=self._default_headers or None,
+        )
 
     async def aclose(self) -> None:
         """Close the async HTTP client."""
