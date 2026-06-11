@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "python/langsmith/_openapi_client/**"
+      - "js/src/_openapi_client/**"
 
 permissions: {}
 
@@ -30,11 +31,11 @@ jobs:
           fi
 
           echo ""
-          echo "❌ Unauthorized changes detected in python/langsmith/_openapi_client/"
+          echo "❌ Unauthorized changes detected in python/langsmith/_openapi_client/ or js/src/_openapi_client/"
           echo ""
-          echo "This directory is auto-generated and must only be updated via the"
-          echo "sync_python_sdk workflow in langchain-ai/langchainplus:"
-          echo "https://github.com/langchain-ai/langchainplus/actions/workflows/sync_python_sdk.yml"
+          echo "These directories are auto-generated and must only be updated via the"
+          echo "stlc_sync_python_and_js_sdks workflow in langchain-ai/langchainplus:"
+          echo "https://github.com/langchain-ai/langchainplus/actions/workflows/stlc_sync_python_and_js_sdks.yml"
           echo ""
-          echo "Please remove any modifications to python/langsmith/_openapi_client/ from this PR."
+          echo "Please remove any modifications to python/langsmith/_openapi_client/ or js/src/_openapi_client/ from this PR."
           exit 1
