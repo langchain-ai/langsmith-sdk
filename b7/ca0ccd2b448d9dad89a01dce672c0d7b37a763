@@ -1,0 +1,36 @@
+python/langsmith/sandbox/_async_sandbox.py
+  s_bec47caa742a00::t_0a1b3f30be8dd4 136-171
+  s_bec47caa742a00::t_a2e902928799eb 29-30
+python/tests/unit_tests/sandbox/test_sync_async_conversion.py
+  s_bec47caa742a00::t_2e89cdda2c141e 110-112,118-120
+  s_bec47caa742a00::t_e46b3707b5b92c 1-109,113-117,121-133
+python/langsmith/sandbox/_sandbox.py
+  s_bec47caa742a00::t_30ef9e72d281b1 134-168
+  s_bec47caa742a00::t_2e89cdda2c141e 133
+  s_bec47caa742a00::t_ab925ad68271ad 27-28
+python/langsmith/sandbox/_async_client.py
+  s_bec47caa742a00::t_299765e21190ab 133-150
+  s_bec47caa742a00::t_599ce26f775470 17
+  s_bec47caa742a00::t_dce195280fb428 104-105
+python/langsmith/sandbox/_client.py
+  s_bec47caa742a00::t_f34456f8813f68 13
+  s_bec47caa742a00::t_b819f29a0700a3 237-256
+  s_bec47caa742a00::t_f5823ac2137c3e 208-209
+  s_bec47caa742a00::t_e2132862ea3a21 41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b7ca0ccd2b448d9dad89a01dce672c0d7b37a763",
+  "prompts": {},
+  "sessions": {
+    "s_bec47caa742a00": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1ef4f531-09c8-4ec0-a003-76b753ca4520",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Ramon Nogueira <ramon.nogueira@langchain.dev>"
+    }
+  }
+}
