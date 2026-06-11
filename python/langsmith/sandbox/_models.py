@@ -494,10 +494,16 @@ class CommandHandle:
         command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        on_stdout: Optional[Callable[[str], Any]] = None,
+        on_stderr: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
+        # Callbacks live on the handle (not the per-connection stream) so
+        # they keep firing for chunks delivered after an auto-reconnect.
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -611,10 +617,14 @@ class CommandHandle:
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stdout is not None:
+                            self._on_stdout(chunk.data)
                     else:
                         self._last_stderr_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stderr is not None:
+                            self._on_stderr(chunk.data)
                     yield chunk
                 return  # Stream ended normally (exit message received)
 
@@ -746,10 +756,16 @@ class AsyncCommandHandle:
         command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        on_stdout: Optional[Callable[[str], Any]] = None,
+        on_stderr: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
+        # Callbacks live on the handle (not the per-connection stream) so
+        # they keep firing for chunks delivered after an auto-reconnect.
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -852,10 +868,14 @@ class AsyncCommandHandle:
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stdout is not None:
+                            self._on_stdout(chunk.data)
                     else:
                         self._last_stderr_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stderr is not None:
+                            self._on_stderr(chunk.data)
                     yield chunk
                 return  # Stream ended normally
 
