@@ -10,7 +10,7 @@ import tarfile
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import httpx
 
@@ -37,6 +37,9 @@ from langsmith.sandbox._models import (
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
+
+if TYPE_CHECKING:
+    from langsmith.sandbox._async_client import AsyncSandboxClient
 
 
 def _get_default_api_endpoint() -> str:
@@ -202,6 +205,8 @@ class SandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._timeout = timeout
+        self._max_retries = max_retries
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
@@ -228,6 +233,26 @@ class SandboxClient:
         if not self._default_headers and headers is None:
             return None
         return merge_headers(self._default_headers, headers)
+
+    def to_async(self) -> AsyncSandboxClient:
+        """Create an AsyncSandboxClient with the same configuration.
+
+        The returned client has its own HTTP connection pool; close it
+        independently (``await client.aclose()`` or ``async with``).
+
+        Returns:
+            AsyncSandboxClient with the same endpoint, credentials, timeout,
+            retry, and header configuration.
+        """
+        from langsmith.sandbox._async_client import AsyncSandboxClient
+
+        return AsyncSandboxClient(
+            api_endpoint=self._base_url,
+            timeout=self._timeout,
+            api_key=self._api_key,
+            max_retries=self._max_retries,
+            headers=self._default_headers or None,
+        )
 
     def close(self) -> None:
         """Close the HTTP client."""

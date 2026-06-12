@@ -26,6 +26,8 @@ from langsmith.sandbox._tunnel import AsyncTunnel
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
+    from langsmith.sandbox._client import SandboxClient
+    from langsmith.sandbox._sandbox import Sandbox
 
 
 RequestHeaders = Optional[Mapping[str, str]]
@@ -129,6 +131,42 @@ class AsyncSandbox:
             fs_capacity_bytes=data.get("fs_capacity_bytes"),
             _client=client,
             _auto_delete=auto_delete,
+        )
+
+    def to_sync(self, *, client: Optional[SandboxClient] = None) -> Sandbox:
+        """Create a Sandbox for the same underlying sandbox.
+
+        The returned instance has ``auto_delete`` disabled so the sandbox's
+        lifecycle stays tied to this instance; both refer to the same
+        server-side sandbox.
+
+        Args:
+            client: SandboxClient to use for operations. If not provided,
+                one is created with the same configuration as this sandbox's
+                client (see :meth:`AsyncSandboxClient.to_sync`).
+
+        Returns:
+            Sandbox referring to the same sandbox.
+        """
+        from langsmith.sandbox._sandbox import Sandbox
+
+        return Sandbox(
+            name=self.name,
+            dataplane_url=self.dataplane_url,
+            id=self.id,
+            status=self.status,
+            status_message=self.status_message,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            idle_ttl_seconds=self.idle_ttl_seconds,
+            delete_after_stop_seconds=self.delete_after_stop_seconds,
+            stopped_at=self.stopped_at,
+            snapshot_id=self.snapshot_id,
+            vcpus=self.vcpus,
+            mem_bytes=self.mem_bytes,
+            fs_capacity_bytes=self.fs_capacity_bytes,
+            _client=client if client is not None else self._client.to_sync(),
+            _auto_delete=False,
         )
 
     async def __aenter__(self) -> AsyncSandbox:
