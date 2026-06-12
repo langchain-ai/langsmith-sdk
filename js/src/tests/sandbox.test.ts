@@ -1205,6 +1205,69 @@ describe("CommandHandle", () => {
     });
   });
 
+  describe("output callbacks", () => {
+    it("should invoke onStdout/onStderr for every chunk", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "out1", offset: 0 },
+        { type: "stderr", data: "err1", offset: 0 },
+        { type: "stdout", data: "out2", offset: 4 },
+        { type: "exit", exit_code: 0 },
+      ]);
+
+      const stdoutData: string[] = [];
+      const stderrData: string[] = [];
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        onStdout: (d) => stdoutData.push(d),
+        onStderr: (d) => stderrData.push(d),
+      });
+
+      const result = await handle.result;
+
+      expect(result.exit_code).toBe(0);
+      expect(stdoutData).toEqual(["out1", "out2"]);
+      expect(stderrData).toEqual(["err1"]);
+    });
+
+    it("should keep invoking callbacks for chunks received after a reconnect", async () => {
+      // Mid-stream disconnect: the first connection delivers part of the
+      // output and dies without an exit message; the reconnected stream
+      // delivers the tail. Callbacks must see ALL chunks (this is the bug
+      // that silently truncated tails for sandbox.run({ onStdout })).
+      const stream = createMockStream([
+        { type: "started", command_id: "cmd-123", pid: 42 },
+        { type: "stdout", data: "before-disconnect ", offset: 0 },
+      ]);
+
+      const sandbox = createMockSandbox();
+      const reconnectHandle = {
+        _stream: createMockStream([
+          { type: "stdout", data: "after-reconnect", offset: 18 },
+          { type: "exit", exit_code: 0 },
+        ]),
+        _control: null,
+      };
+      (sandbox.reconnect as any).mockResolvedValue(reconnectHandle);
+
+      const stdoutData: string[] = [];
+      const handle = new CommandHandle(stream, null, sandbox, {
+        onStdout: (d) => stdoutData.push(d),
+      });
+
+      const backoffBase = CommandHandle.BACKOFF_BASE;
+      CommandHandle.BACKOFF_BASE = 0;
+      try {
+        const result = await handle.result;
+
+        expect(result.exit_code).toBe(0);
+        expect(stdoutData).toEqual(["before-disconnect ", "after-reconnect"]);
+        expect(result.stdout).toBe("before-disconnect after-reconnect");
+      } finally {
+        CommandHandle.BACKOFF_BASE = backoffBase;
+      }
+    });
+  });
+
   describe("kill", () => {
     it("should call sendKill on control", () => {
       const control = new WSStreamControl();
