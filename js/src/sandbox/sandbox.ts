@@ -271,8 +271,6 @@ export class Sandbox {
       },
     );
 
-    // Callbacks are attached to the handle, not the connection, so they
-    // keep firing for output delivered after an auto-reconnect.
     const handle = new CommandHandle(stream, control, this, {
       onStdout,
       onStderr,

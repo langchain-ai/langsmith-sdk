@@ -75,8 +75,6 @@ export class CommandHandle {
     this._sandbox = sandbox;
     this._lastStdoutOffset = options?.stdoutOffset ?? 0;
     this._lastStderrOffset = options?.stderrOffset ?? 0;
-    // Callbacks live on the handle (not the per-connection stream) so they
-    // keep firing for chunks delivered after an auto-reconnect.
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
 
