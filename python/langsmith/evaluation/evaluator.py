@@ -23,6 +23,7 @@ from typing_extensions import TypedDict
 
 from langsmith import run_helpers as rh
 from langsmith import schemas
+from langsmith.evaluation._key_extraction import _safe_extract_feedback_keys
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,21 @@ class RunEvaluator:
 
         return await asyncio.get_running_loop().run_in_executor(None, _run_with_context)
 
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, when statically known.
+
+        Used to render per-evaluator experiment progress and to synthesize error
+        feedback when the evaluator raises. Best-effort: empty when the keys can't
+        be determined without running the evaluator. Subclasses that know their
+        keys should override this. The default also resolves evaluators that wrap
+        a single named inner evaluator exposed as ``.evaluator`` (e.g. the
+        LangChain string-evaluator integration).
+        """
+        inner = getattr(self, "evaluator", None)
+        name = getattr(inner, "evaluation_name", None)
+        return [name] if name else []
+
 
 _RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
 
@@ -205,6 +221,7 @@ class DynamicRunEvaluator(RunEvaluator):
             func (Callable): A function that takes a `Run` and an optional `Example` as
             arguments, and returns a dict or `ComparisonEvaluationResult`.
         """
+        self._feedback_keys = _safe_extract_feedback_keys(func)
         (func, prepare_inputs) = _normalize_evaluator_func(func)
         if afunc:
             (afunc, prepare_inputs) = _normalize_evaluator_func(afunc)  # type: ignore[assignment]
@@ -312,6 +329,15 @@ class DynamicRunEvaluator(RunEvaluator):
             bool: `True` if the evaluator function is asynchronous, `False` otherwise.
         """
         return hasattr(self, "afunc")
+
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, statically inferred from its source.
+
+        Best-effort: empty when keys can't be determined without running the
+        function (e.g. a dynamically computed key or unavailable source).
+        """
+        return self._feedback_keys
 
     def evaluate_run(
         self,
