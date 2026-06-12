@@ -1241,14 +1241,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
-    this.openAPIClient = new OpenAPILangsmith({
-      apiKey: this.apiKey,
-      tenantID: this.workspaceId,
-      baseURL: this._getOpenAPIBaseUrl(),
-      timeout: this.timeout_ms,
-      fetch: this._fetch,
-      fetchOptions: this.fetchOptions,
-    });
+    this.openAPIClient = this._newOpenAPIClient();
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     this._tracingMode = resolveTracingMode(config.tracingMode);
     if (this._tracingMode === "otel") {
@@ -1395,6 +1388,17 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _getOpenAPIBaseUrl(): string {
     return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+  }
+
+  private _newOpenAPIClient(): OpenAPILangsmith {
+    return new OpenAPILangsmith({
+      apiKey: this.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: this.fetchOptions,
+    });
   }
 
   private _getPlatformEndpointPath(path: string): string {
