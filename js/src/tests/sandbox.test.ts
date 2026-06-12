@@ -31,7 +31,7 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
 } from "../sandbox/errors.js";
-import type { WsMessage, OutputChunk } from "../sandbox/types.js";
+import type { WsMessage, OutputChunk, SandboxMount } from "../sandbox/types.js";
 import { validateTtl } from "../sandbox/helpers.js";
 
 // Helper to create typed mock functions
@@ -515,6 +515,37 @@ describe("SandboxClient - createSandbox", () => {
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.proxy_config).toEqual(proxyConfig);
+  });
+
+  it("should forward mounts in the request body", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const mounts: SandboxMount[] = [
+      {
+        id: "customer_data",
+        type: "s3",
+        mount_path: "/mnt/mounts/customer-data",
+        s3: {
+          endpoint_url: "https://s3.amazonaws.com",
+          region: "us-east-1",
+          bucket: "example-bucket",
+          prefix: "datasets/customer-data",
+          path_style: false,
+        },
+      },
+    ];
+    await client.createSandbox("snap-123", { mounts });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.mounts).toEqual(mounts);
   });
 
   it("should forward AWS auth proxy config in the request body", async () => {

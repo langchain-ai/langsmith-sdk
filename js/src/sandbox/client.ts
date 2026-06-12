@@ -503,6 +503,7 @@ export class SandboxClient {
       vCpus,
       memBytes,
       fsCapacityBytes,
+      mounts,
       proxyConfig,
     } = resolvedOptions;
 
@@ -547,6 +548,9 @@ export class SandboxClient {
     }
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
+    }
+    if (mounts !== undefined) {
+      payload.mounts = mounts;
     }
     if (proxyConfig !== undefined) {
       payload.proxy_config = proxyConfig;
