@@ -165,7 +165,8 @@ export class LangSmithValidationError extends LangSmithSandboxError {
 /**
  * Raised when organization quota limits are exceeded.
  *
- * Users should contact support@langchain.dev to increase quotas.
+ * Users should contact technical support via our Support Portal
+ * (https://support.langchain.com) to increase quotas.
  */
 export class LangSmithQuotaExceededError extends LangSmithSandboxError {
   quotaType?: string;
