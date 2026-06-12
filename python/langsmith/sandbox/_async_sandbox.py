@@ -371,8 +371,6 @@ class AsyncSandbox:
             **ws_kwargs,
         )
 
-        # Callbacks are attached to the handle, not the connection, so they
-        # keep firing for output delivered after an auto-reconnect.
         handle = AsyncCommandHandle(
             msg_stream,
             control,

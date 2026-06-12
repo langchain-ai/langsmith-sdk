@@ -370,8 +370,6 @@ class Sandbox:
             **ws_kwargs,
         )
 
-        # Callbacks are attached to the handle, not the connection, so they
-        # keep firing for output delivered after an auto-reconnect.
         handle = CommandHandle(
             msg_stream,
             control,

@@ -500,8 +500,6 @@ class CommandHandle:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
-        # Callbacks live on the handle (not the per-connection stream) so
-        # they keep firing for chunks delivered after an auto-reconnect.
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
@@ -762,8 +760,6 @@ class AsyncCommandHandle:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
-        # Callbacks live on the handle (not the per-connection stream) so
-        # they keep firing for chunks delivered after an auto-reconnect.
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
