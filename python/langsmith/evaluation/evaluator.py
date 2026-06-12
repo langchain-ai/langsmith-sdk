@@ -207,10 +207,6 @@ class DynamicRunEvaluator(RunEvaluator):
             func (Callable): A function that takes a `Run` and an optional `Example` as
             arguments, and returns a dict or `ComparisonEvaluationResult`.
         """
-        # Extract feedback keys from the user's original function before
-        # normalization wraps it: the wrapper's source is just `return func(...)`,
-        # with no `key:` literal to read. Stored once here so the runner can resolve
-        # feedback keys without holding on to the raw function.
         self._feedback_keys = _safe_extract_feedback_keys(func)
         (func, prepare_inputs) = _normalize_evaluator_func(func)
         if afunc:
