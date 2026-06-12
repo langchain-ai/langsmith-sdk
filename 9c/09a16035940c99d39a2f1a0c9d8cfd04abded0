@@ -1,0 +1,25 @@
+python/langsmith/evaluation/evaluator.py
+  s_290e011a833e1f::t_11f206efcd9f73 26
+python/langsmith/evaluation/_key_extraction.py
+  s_290e011a833e1f::t_2ba509035e4b45 1-153
+python/tests/unit_tests/evaluation/test_key_extraction.py
+  s_290e011a833e1f::t_af0a592a4e6514 33
+  s_290e011a833e1f::t_a1c6eeae648599 79-87
+  s_290e011a833e1f::t_efef132ada8e62 1-32,34-78,88-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "9c09a16035940c99d39a2f1a0c9d8cfd04abded0",
+  "prompts": {},
+  "sessions": {
+    "s_290e011a833e1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ce6552a-1f07-47d7-b3f7-758a6fe4d679",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Bagatur Askaryan <baskaryan@gmail.com>"
+    }
+  }
+}
