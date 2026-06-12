@@ -315,6 +315,15 @@ class DynamicRunEvaluator(RunEvaluator):
         """
         return hasattr(self, "afunc")
 
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, statically inferred from its source.
+
+        Best-effort: empty when keys can't be determined without running the
+        function (e.g. a dynamically computed key or unavailable source).
+        """
+        return self._feedback_keys
+
     def evaluate_run(
         self,
         run: Run,

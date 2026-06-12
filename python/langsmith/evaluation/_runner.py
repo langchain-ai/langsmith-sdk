@@ -2223,8 +2223,8 @@ def _get_random_name() -> str:
 
 def _extract_feedback_keys(evaluator: RunEvaluator):
     if isinstance(evaluator, DynamicRunEvaluator):
-        # Keys are precomputed from the user's original function at construction.
-        return getattr(evaluator, "_feedback_keys", None) or []
+        # Precomputed from the user's original function at construction.
+        return evaluator.feedback_keys
     # TODO: Support for DynamicComparisonRunEvaluator
     if hasattr(evaluator, "evaluator"):
         # LangChainStringEvaluator

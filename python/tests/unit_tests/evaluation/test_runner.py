@@ -1147,6 +1147,11 @@ def test_collect_evaluator_keys_mixes_legacy_and_modern():
     ) == ["correctness", "relevance", "legacy_key"]
 
 
+def test_dynamic_run_evaluator_exposes_feedback_keys_property():
+    """feedback_keys is public, so callers read it directly without a private attr."""
+    assert DynamicRunEvaluator(_modern_eval).feedback_keys == ["correctness"]
+
+
 def summary_eval_runs_examples(runs_, examples_):
     return {"score": len(runs_[0].dotted_order)}
 
