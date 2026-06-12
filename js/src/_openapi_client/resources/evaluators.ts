@@ -80,6 +80,8 @@ export interface Evaluator {
 
   evaluators?: Array<EvaluatorTopLevel> | null;
 
+  extend_evaluator_trace_retention?: boolean | null;
+
   extend_only?: boolean;
 
   filter?: string | null;

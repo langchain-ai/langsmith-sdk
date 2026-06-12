@@ -33,8 +33,9 @@ class OnlineEvaluatorRunRule(BaseModel):
 
     spend_usd: Optional[float] = None
     """
-    Per-rule spend for the current ISO week (omitted when feature is disabled).
-    LLM-evaluator rules are initialized to 0; code-evaluator rules remain nil.
+    Per-rule usage for the current ISO week (omitted when feature is disabled).
+    LLM-evaluator rules are initialized to 0; code-evaluator rules include trace
+    counts only.
     """
 
     trace_count: Optional[int] = None
