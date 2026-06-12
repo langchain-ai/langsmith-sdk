@@ -25,17 +25,18 @@ from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
     _collect_evaluator_keys,
-    _extract_feedback_keys,
     _get_target_args,
 )
 from langsmith.evaluation.evaluator import (
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
+    RunEvaluator,
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
     _normalize_summary_evaluator,
 )
+from langsmith.evaluation.string_evaluator import StringEvaluator
 from tests.unit_tests.conftest import parse_request_data
 
 
@@ -1126,7 +1127,7 @@ def _modern_multi_key_eval(inputs, outputs):
         (_modern_multi_key_eval, ["k1", "k2"]),
     ],
 )
-def test_extract_feedback_keys_unwraps_normalized_evaluator(func, expected):
+def test_feedback_keys_read_from_user_func_not_wrapper(func, expected):
     """Feedback keys are read from the user's function, not the (run, example) wrapper.
 
     Documented (inputs, outputs, reference_outputs) evaluators are rewritten into
@@ -1134,7 +1135,7 @@ def test_extract_feedback_keys_unwraps_normalized_evaluator(func, expected):
     to fall back to the name "wrapper".
     """
     evaluator = DynamicRunEvaluator(func)
-    assert _extract_feedback_keys(evaluator) == expected
+    assert evaluator.feedback_keys == expected
     # The wrapper must still present a (run, example) interface to the runner.
     target = evaluator.func if getattr(evaluator, "func", None) else evaluator.afunc
     assert list(inspect.signature(target).parameters)[:2] == ["run", "example"]
@@ -1145,6 +1146,48 @@ def test_collect_evaluator_keys_mixes_legacy_and_modern():
     assert _collect_evaluator_keys(
         [_modern_eval, _modern_subset_eval, _legacy_run_example_eval]
     ) == ["correctness", "relevance", "legacy_key"]
+
+
+def test_dynamic_run_evaluator_exposes_feedback_keys_property():
+    """feedback_keys is public, so callers read it directly without a private attr."""
+    assert DynamicRunEvaluator(_modern_eval).feedback_keys == ["correctness"]
+
+
+def test_base_run_evaluator_feedback_keys_default_empty():
+    """An evaluator with no statically known keys resolves to an empty list."""
+
+    class _Bare(RunEvaluator):
+        def evaluate_run(self, run, example=None, evaluator_run_id=None):
+            return EvaluationResult(key="x", score=1)
+
+    assert _Bare().feedback_keys == []
+
+
+def test_feedback_keys_resolves_named_inner_evaluator():
+    """Wrappers exposing a named inner evaluator as ``.evaluator`` report its name.
+
+    Covers the LangChain string-evaluator integration shape without that class
+    needing to know about feedback_keys.
+    """
+
+    class _Inner:
+        evaluation_name = "lc_score"
+
+    class _Wrapper(RunEvaluator):
+        evaluator = _Inner()
+
+        def evaluate_run(self, run, example=None, evaluator_run_id=None):
+            return EvaluationResult(key="x", score=1)
+
+    assert _Wrapper().feedback_keys == ["lc_score"]
+
+
+def test_string_evaluator_feedback_keys():
+    evaluator = StringEvaluator(
+        evaluation_name="accuracy",
+        grading_function=lambda *_: {"score": 1},
+    )
+    assert evaluator.feedback_keys == ["accuracy"]
 
 
 def summary_eval_runs_examples(runs_, examples_):
