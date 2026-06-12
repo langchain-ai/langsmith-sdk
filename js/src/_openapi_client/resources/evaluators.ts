@@ -153,6 +153,8 @@ export namespace EvaluatorTopLevel {
 
     model?: { [key: string]: unknown } | null;
 
+    playground_settings_id?: string | null;
+
     prompt?: Array<Array<unknown>> | null;
 
     schema?: { [key: string]: unknown } | null;
