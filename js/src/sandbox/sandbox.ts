@@ -242,6 +242,7 @@ export class Sandbox {
       shell = "/bin/bash",
       onStdout,
       onStderr,
+      commandId,
       idleTimeout,
       killOnDisconnect,
       ttlSeconds,
@@ -259,8 +260,7 @@ export class Sandbox {
         env,
         cwd,
         shell,
-        onStdout,
-        onStderr,
+        commandId,
         idleTimeout,
         killOnDisconnect,
         ttlSeconds,
@@ -271,7 +271,12 @@ export class Sandbox {
       },
     );
 
-    const handle = new CommandHandle(stream, control, this);
+    // Callbacks are attached to the handle, not the connection, so they
+    // keep firing for output delivered after an auto-reconnect.
+    const handle = new CommandHandle(stream, control, this, {
+      onStdout,
+      onStderr,
+    });
     await handle._ensureStarted();
     return handle;
   }
