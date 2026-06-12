@@ -36,7 +36,6 @@ from langsmith.evaluation._runner import (
     _collect_evaluator_keys,
     _evaluators_include_attachments,
     _ExperimentManagerMixin,
-    _extract_feedback_keys,
     _ForwardResults,
     _get_target_args,
     _is_langchain_runnable,
@@ -1027,7 +1026,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     return selected_results
                 except Exception as e:
                     try:
-                        feedback_keys = _extract_feedback_keys(evaluator)
+                        feedback_keys = evaluator.feedback_keys
 
                         error_response = EvaluationResults(
                             results=[

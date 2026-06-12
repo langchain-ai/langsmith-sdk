@@ -48,7 +48,6 @@ from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
-    DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -1686,7 +1685,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         )
                 except Exception as e:
                     try:
-                        feedback_keys = _extract_feedback_keys(evaluator)
+                        feedback_keys = evaluator.feedback_keys
 
                         error_response = EvaluationResults(
                             results=[
@@ -2010,7 +2009,7 @@ def _collect_evaluator_keys(
     keys: list[str] = []
     try:
         for ev in _resolve_evaluators(evaluators):
-            for k in _extract_feedback_keys(ev) or []:
+            for k in ev.feedback_keys:
                 if k:
                     keys.append(k)
     except Exception:
@@ -2219,18 +2218,6 @@ def _get_random_name() -> str:
     from langsmith.evaluation._name_generation import random_name  # noqa: F401
 
     return random_name()
-
-
-def _extract_feedback_keys(evaluator: RunEvaluator):
-    if isinstance(evaluator, DynamicRunEvaluator):
-        # Precomputed from the user's original function at construction.
-        return evaluator.feedback_keys
-    # TODO: Support for DynamicComparisonRunEvaluator
-    if hasattr(evaluator, "evaluator"):
-        # LangChainStringEvaluator
-        if getattr(getattr(evaluator, "evaluator"), "evaluation_name", None):
-            return [evaluator.evaluator.evaluation_name]
-    return []
 
 
 def _to_pandas(

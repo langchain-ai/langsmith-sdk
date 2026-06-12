@@ -148,6 +148,21 @@ class RunEvaluator:
 
         return await asyncio.get_running_loop().run_in_executor(None, _run_with_context)
 
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, when statically known.
+
+        Used to render per-evaluator experiment progress and to synthesize error
+        feedback when the evaluator raises. Best-effort: empty when the keys can't
+        be determined without running the evaluator. Subclasses that know their
+        keys should override this. The default also resolves evaluators that wrap
+        a single named inner evaluator exposed as ``.evaluator`` (e.g. the
+        LangChain string-evaluator integration).
+        """
+        inner = getattr(self, "evaluator", None)
+        name = getattr(inner, "evaluation_name", None)
+        return [name] if name else []
+
 
 _RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
 
