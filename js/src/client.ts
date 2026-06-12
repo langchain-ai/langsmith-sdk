@@ -1391,6 +1391,11 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _newOpenAPIClient(): OpenAPILangsmith {
+    const defaultHeaders =
+      this.apiKey === undefined && this.workspaceId === undefined
+        ? { "X-API-Key": null }
+        : undefined;
+
     return new OpenAPILangsmith({
       apiKey: this.apiKey,
       tenantID: this.workspaceId,
@@ -1398,6 +1403,7 @@ export class Client implements LangSmithTracingClientInterface {
       timeout: this.timeout_ms,
       fetch: this._fetch,
       fetchOptions: this.fetchOptions,
+      defaultHeaders,
     });
   }
 
