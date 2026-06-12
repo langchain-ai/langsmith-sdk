@@ -694,8 +694,6 @@ class TestSandboxRunWs:
             cwd=None,
             shell="/bin/bash",
             headers={"X-Test-Header": "sandbox-ws"},
-            on_stdout=None,
-            on_stderr=None,
             idle_timeout=300,
             kill_on_disconnect=False,
             ttl_seconds=600,

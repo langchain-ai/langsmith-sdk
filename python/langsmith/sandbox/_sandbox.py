@@ -354,8 +354,6 @@ class Sandbox:
             "env": env,
             "cwd": cwd,
             "shell": shell,
-            "on_stdout": on_stdout,
-            "on_stderr": on_stderr,
             "idle_timeout": idle_timeout,
             "kill_on_disconnect": kill_on_disconnect,
             "ttl_seconds": ttl_seconds,
@@ -372,7 +370,13 @@ class Sandbox:
             **ws_kwargs,
         )
 
-        handle = CommandHandle(msg_stream, control, self)
+        handle = CommandHandle(
+            msg_stream,
+            control,
+            self,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+        )
 
         if not wait:
             return handle
