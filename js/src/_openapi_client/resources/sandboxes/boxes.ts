@@ -224,6 +224,8 @@ export namespace BoxCreateResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -250,6 +252,22 @@ export namespace BoxCreateResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -394,6 +412,8 @@ export namespace BoxRetrieveResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -420,6 +440,22 @@ export namespace BoxRetrieveResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -564,6 +600,8 @@ export namespace BoxUpdateResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -590,6 +628,22 @@ export namespace BoxUpdateResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -741,6 +795,8 @@ export namespace BoxListResponse {
 
         enabled?: boolean;
 
+        gcp?: Rule.Gcp;
+
         headers?: Array<Rule.Header>;
 
         match_hosts?: Array<string>;
@@ -767,6 +823,22 @@ export namespace BoxListResponse {
           }
 
           export interface SecretAccessKey {
+            type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+            is_set?: boolean;
+
+            value?: string;
+          }
+        }
+
+        export interface Gcp {
+          scopes: Array<string>;
+
+          service_account_json: Gcp.ServiceAccountJson;
+        }
+
+        export namespace Gcp {
+          export interface ServiceAccountJson {
             type: 'plaintext' | 'opaque' | 'workspace_secret';
 
             is_set?: boolean;
@@ -963,6 +1035,8 @@ export namespace BoxStartResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -989,6 +1063,22 @@ export namespace BoxStartResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -1130,6 +1220,8 @@ export namespace BoxCreateParams {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -1156,6 +1248,22 @@ export namespace BoxCreateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -1244,6 +1352,8 @@ export namespace BoxUpdateParams {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -1270,6 +1380,22 @@ export namespace BoxUpdateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;

@@ -80,6 +80,8 @@ export interface Evaluator {
 
   evaluators?: Array<EvaluatorTopLevel> | null;
 
+  extend_evaluator_trace_retention?: boolean | null;
+
   extend_only?: boolean;
 
   filter?: string | null;
@@ -150,6 +152,8 @@ export namespace EvaluatorTopLevel {
     hub_ref?: string | null;
 
     model?: { [key: string]: unknown } | null;
+
+    playground_settings_id?: string | null;
 
     prompt?: Array<Array<unknown>> | null;
 

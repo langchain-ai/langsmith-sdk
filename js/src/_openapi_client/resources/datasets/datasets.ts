@@ -408,6 +408,8 @@ export interface DatasetCreateParams {
 
   outputs_schema_definition?: { [key: string]: unknown } | null;
 
+  tag_value_ids?: Array<string> | null;
+
   transformations?: Array<DatasetTransformation> | null;
 }
 
@@ -492,6 +494,8 @@ export interface DatasetCloneParams {
   examples?: Array<string>;
 
   split?: string | Array<string> | null;
+
+  tag_value_ids?: Array<string> | null;
 }
 
 export interface DatasetRetrieveCsvParams {
@@ -569,6 +573,8 @@ export interface DatasetUploadParams {
   output_keys?: Array<string>;
 
   outputs_schema_definition?: string | null;
+
+  tag_value_ids?: string | null;
 
   transformations?: string | null;
 }
