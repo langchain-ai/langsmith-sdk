@@ -46,15 +46,12 @@ describe("Client", () => {
       });
 
       expect(response.evaluator.id).toBe("eval-1");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8080/v1/platform/evaluators",
+      const [url, init] = mockFetch.mock.calls[0];
+      const headers = new Headers(init?.headers);
+      expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-            "x-api-key": "test-api-key",
-            "x-tenant-id": "test-workspace-id",
-          }),
           body: JSON.stringify({
             name: "SDK smoke test code evaluator",
             type: "code",
@@ -65,6 +62,9 @@ describe("Client", () => {
           }),
         }),
       );
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
     });
   });
 

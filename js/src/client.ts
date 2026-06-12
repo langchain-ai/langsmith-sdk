@@ -74,6 +74,8 @@ import {
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
+import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
@@ -527,22 +529,6 @@ interface ProjectOptions {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RecordStringAny = Record<string, any>;
-
-export interface OnlineEvaluatorsClient {
-  create(body: RecordStringAny): Promise<RecordStringAny>;
-  retrieve(evaluatorId: string): Promise<RecordStringAny>;
-  update(evaluatorId: string, body: RecordStringAny): Promise<RecordStringAny>;
-  list(query?: RecordStringAny): Promise<RecordStringAny>;
-  delete(
-    evaluatorId: string,
-    params?: { delete_run_rules?: boolean },
-  ): Promise<void>;
-  bulkDelete(params: {
-    evaluator_ids: string[];
-    delete_run_rules?: boolean;
-  }): Promise<RecordStringAny>;
-  spend(query: RecordStringAny): Promise<RecordStringAny>;
-}
 
 export type FeedbackSourceType = "model" | "api" | "app";
 
@@ -1397,6 +1383,10 @@ export class Client implements LangSmithTracingClientInterface {
     this._customHeaders = value ?? {};
   }
 
+  private _getOpenAPIBaseUrl(): string {
+    return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+  }
+
   private _getPlatformEndpointPath(path: string): string {
     // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
     const needsV1Prefix =
@@ -1404,75 +1394,15 @@ export class Client implements LangSmithTracingClientInterface {
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
   }
 
-  private async _requestOnlineEvaluator<T>(
-    method: string,
-    path: string,
-    options: { body?: unknown; query?: RecordStringAny } = {},
-  ): Promise<T> {
-    const queryParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(options.query ?? {})) {
-      if (value == null) {
-        continue;
-      }
-      if (Array.isArray(value)) {
-        value.forEach((item) => queryParams.append(key, String(item)));
-      } else {
-        queryParams.set(key, String(value));
-      }
-    }
-    const queryString = queryParams.toString();
-    const endpoint = `${this.apiUrl}${path}${queryString ? `?${queryString}` : ""}`;
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(endpoint, {
-        method,
-        headers: {
-          ...this._mergedHeaders,
-          ...(options.body == null
-            ? {}
-            : { "Content-Type": "application/json" }),
-        },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-        body: options.body == null ? undefined : JSON.stringify(options.body),
-      });
-      await raiseForStatus(res, `Failed to ${method} ${path}`);
-      return res;
-    });
-    if (response.status === 204) {
-      return undefined as T;
-    }
-    return response.json() as Promise<T>;
-  }
-
-  public get onlineEvaluators(): OnlineEvaluatorsClient {
-    const basePath = this._getPlatformEndpointPath("evaluators");
-    return {
-      create: (body) =>
-        this._requestOnlineEvaluator("POST", basePath, { body }),
-      retrieve: (evaluatorId) =>
-        this._requestOnlineEvaluator(
-          "GET",
-          `${basePath}/${encodeURIComponent(evaluatorId)}`,
-        ),
-      update: (evaluatorId, body) =>
-        this._requestOnlineEvaluator(
-          "PATCH",
-          `${basePath}/${encodeURIComponent(evaluatorId)}`,
-          { body },
-        ),
-      list: (query = {}) =>
-        this._requestOnlineEvaluator("GET", basePath, { query }),
-      delete: (evaluatorId, params = {}) =>
-        this._requestOnlineEvaluator(
-          "DELETE",
-          `${basePath}/${encodeURIComponent(evaluatorId)}`,
-          { query: params },
-        ),
-      bulkDelete: (params) =>
-        this._requestOnlineEvaluator("DELETE", basePath, { query: params }),
-      spend: (query) =>
-        this._requestOnlineEvaluator("GET", `${basePath}/spend`, { query }),
-    };
+  public get onlineEvaluators(): OnlineEvaluators {
+    return new OpenAPILangsmith({
+      apiKey: this.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: this.fetchOptions,
+    }).onlineEvaluators;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
