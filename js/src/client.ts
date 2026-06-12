@@ -866,6 +866,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private fetchOptions: RequestInit;
 
+  private openAPIClient: OpenAPILangsmith;
+
   private settings: Promise<LangSmithSettings> | null;
 
   private blockOnRootRunFinalization =
@@ -1239,6 +1241,14 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.openAPIClient = new OpenAPILangsmith({
+      apiKey: this.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: this.fetchOptions,
+    });
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     this._tracingMode = resolveTracingMode(config.tracingMode);
     if (this._tracingMode === "otel") {
@@ -1395,14 +1405,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get onlineEvaluators(): OnlineEvaluators {
-    return new OpenAPILangsmith({
-      apiKey: this.apiKey,
-      tenantID: this.workspaceId,
-      baseURL: this._getOpenAPIBaseUrl(),
-      timeout: this.timeout_ms,
-      fetch: this._fetch,
-      fetchOptions: this.fetchOptions,
-    }).onlineEvaluators;
+    return this.openAPIClient.onlineEvaluators;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
