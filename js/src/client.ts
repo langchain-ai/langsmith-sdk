@@ -74,6 +74,8 @@ import {
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
+import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
@@ -864,6 +866,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private fetchOptions: RequestInit;
 
+  private openAPIClient: OpenAPILangsmith;
+
   private settings: Promise<LangSmithSettings> | null;
 
   private blockOnRootRunFinalization =
@@ -1237,6 +1241,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.openAPIClient = this._newOpenAPIClient();
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     this._tracingMode = resolveTracingMode(config.tracingMode);
     if (this._tracingMode === "otel") {
@@ -1381,11 +1386,36 @@ export class Client implements LangSmithTracingClientInterface {
     this._customHeaders = value ?? {};
   }
 
+  private _getOpenAPIBaseUrl(): string {
+    return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+  }
+
+  private _newOpenAPIClient(): OpenAPILangsmith {
+    const defaultHeaders =
+      this.apiKey === undefined && this.workspaceId === undefined
+        ? { "X-API-Key": null }
+        : undefined;
+
+    return new OpenAPILangsmith({
+      apiKey: this.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: this.fetchOptions,
+      defaultHeaders,
+    });
+  }
+
   private _getPlatformEndpointPath(path: string): string {
     // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
     const needsV1Prefix =
       this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
+  public get onlineEvaluators(): OnlineEvaluators {
+    return this.openAPIClient.onlineEvaluators;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
