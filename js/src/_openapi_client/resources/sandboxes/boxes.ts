@@ -119,7 +119,9 @@ export interface BoxCreateResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxCreateResponse.Mount>;
+  mounts?: Array<
+    BoxCreateResponse.SandboxapiS3BucketMountSpec | BoxCreateResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -143,21 +145,23 @@ export interface BoxCreateResponse {
 }
 
 export namespace BoxCreateResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -174,6 +178,54 @@ export namespace BoxCreateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -307,7 +359,9 @@ export interface BoxRetrieveResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxRetrieveResponse.Mount>;
+  mounts?: Array<
+    BoxRetrieveResponse.SandboxapiS3BucketMountSpec | BoxRetrieveResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -331,21 +385,23 @@ export interface BoxRetrieveResponse {
 }
 
 export namespace BoxRetrieveResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -362,6 +418,54 @@ export namespace BoxRetrieveResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -495,7 +599,9 @@ export interface BoxUpdateResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxUpdateResponse.Mount>;
+  mounts?: Array<
+    BoxUpdateResponse.SandboxapiS3BucketMountSpec | BoxUpdateResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -519,21 +625,23 @@ export interface BoxUpdateResponse {
 }
 
 export namespace BoxUpdateResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -550,6 +658,54 @@ export namespace BoxUpdateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -690,7 +846,7 @@ export namespace BoxListResponse {
 
     mem_bytes?: number;
 
-    mounts?: Array<Sandbox.Mount>;
+    mounts?: Array<Sandbox.SandboxapiS3BucketMountSpec | Sandbox.SandboxapiGcsBucketMountSpec>;
 
     name?: string;
 
@@ -714,21 +870,23 @@ export namespace BoxListResponse {
   }
 
   export namespace Sandbox {
-    export interface Mount {
+    export interface SandboxapiS3BucketMountSpec {
       id: string;
 
       mount_path: string;
 
-      s3: Mount.S3;
+      s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3';
+      type: 's3' | 'gcs';
 
-      cache?: Mount.Cache;
+      cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
       read_only?: boolean;
     }
 
-    export namespace Mount {
+    export namespace SandboxapiS3BucketMountSpec {
       export interface S3 {
         bucket: string;
 
@@ -745,6 +903,54 @@ export namespace BoxListResponse {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
+
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
+    }
+
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
       }
     }
 
@@ -930,7 +1136,9 @@ export interface BoxStartResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxStartResponse.Mount>;
+  mounts?: Array<
+    BoxStartResponse.SandboxapiS3BucketMountSpec | BoxStartResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -954,21 +1162,23 @@ export interface BoxStartResponse {
 }
 
 export namespace BoxStartResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -985,6 +1195,54 @@ export namespace BoxStartResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -1112,7 +1370,7 @@ export interface BoxCreateParams {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxCreateParams.Mount>;
+  mounts?: Array<BoxCreateParams.SandboxapiS3BucketMountSpec | BoxCreateParams.SandboxapiGcsBucketMountSpec>;
 
   name?: string;
 
@@ -1139,21 +1397,23 @@ export interface BoxCreateParams {
 }
 
 export namespace BoxCreateParams {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -1170,6 +1430,54 @@ export namespace BoxCreateParams {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
