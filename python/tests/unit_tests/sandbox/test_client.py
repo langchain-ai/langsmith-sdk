@@ -246,12 +246,57 @@ class TestSandboxOperations:
                 "id": "customer_data",
                 "type": "s3",
                 "mount_path": "/mnt/mounts/customer-data",
+                "read_only": True,
+                "cache": {
+                    "max_size_bytes": 12345,
+                    "writeback_seconds": 7,
+                },
                 "s3": {
                     "endpoint_url": "https://s3.amazonaws.com",
                     "region": "us-east-1",
                     "bucket": "example-bucket",
                     "prefix": "datasets/customer-data",
                     "path_style": False,
+                },
+            }
+        ]
+        client.create_sandbox(
+            snapshot_id="snap-1",
+            mounts=mounts,
+        )
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["mounts"] == mounts
+
+    def test_create_sandbox_forwards_gcs_mounts(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """GCS mounts should appear verbatim in the POST body."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+            },
+            status_code=201,
+        )
+
+        mounts = [
+            {
+                "id": "customer_data",
+                "type": "gcs",
+                "mount_path": "/mnt/mounts/customer-data",
+                "read_only": False,
+                "cache": {
+                    "max_size_bytes": 12345,
+                    "writeback_seconds": 7,
+                },
+                "gcs": {
+                    "bucket": "example-bucket",
+                    "prefix": "datasets/customer-data",
                 },
             }
         ]

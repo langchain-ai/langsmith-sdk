@@ -48,17 +48,16 @@ A typical workflow looks like:
 
 We'll walk through these steps in more detail below.
 
-## Sandbox S3 mounts and AWS auth proxy
+## Sandbox AWS Auth Proxy
 
-When you create a LangSmith sandbox that needs an S3-backed mount, pass a
-`mounts` list on sandbox creation. S3 mounts use the sandbox AWS auth proxy for
-SigV4 signing, so the real AWS credentials stay outside the sandbox and code can
-read and write the mounted path without storing long-lived AWS keys in files,
-environment variables, shell history, or logs.
+When sandbox code needs to call AWS services, use the sandbox AWS auth proxy.
+The proxy keeps the real AWS credentials outside the sandbox and signs supported
+AWS HTTPS requests with SigV4, so code in the sandbox can use AWS SDKs normally
+without storing long-lived AWS keys in files, environment variables, shell
+history, or logs.
 
 Store AWS credentials as LangSmith workspace secrets using names that make sense
-for your workspace. Then create the sandbox with both the mount spec and an AWS
-auth proxy config:
+for your workspace. Then create the sandbox with an AWS auth proxy config:
 
 ```python
 from langsmith.sandbox import (
@@ -70,12 +69,71 @@ from langsmith.sandbox import (
 client = SandboxClient()
 
 with client.sandbox(
+    name="aws-sandbox",
+    proxy_config=aws_auth_proxy_config(
+        access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    ),
+) as sandbox:
+    result = sandbox.run("python your_aws_script.py")
+    print(result.stdout)
+```
+
+Use `opaque_secret("...")` instead of `workspace_secret(...)` when your
+application needs to pass short-lived write-only AWS credentials at sandbox
+creation time. Plaintext AWS credential values are not accepted directly; wrap
+them as `opaque_secret(...)` values.
+
+## Sandbox GCP Auth Proxy
+
+When sandbox code needs to call Google APIs, use the sandbox GCP auth proxy.
+The proxy keeps the service account JSON outside the sandbox and injects OAuth
+bearer tokens for the Google API hosts you explicitly match.
+
+Store the service account JSON as a LangSmith workspace secret. Then create the
+sandbox with a GCP auth proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth_proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+with client.sandbox(
+    name="gcp-sandbox",
+    proxy_config=gcp_auth_proxy_config(
+        service_account_json=workspace_secret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+    ),
+) as sandbox:
+    result = sandbox.run("python your_gcp_script.py")
+    print(result.stdout)
+```
+
+Use `opaque_secret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Sandbox Bucket Mounts
+
+When you create a LangSmith sandbox that needs filesystem access to a bucket or
+prefix, pass a `mounts` list on sandbox creation. Mount specs contain only the
+bucket target. Provider credentials stay in explicit proxy auth config.
+
+S3 mounts require an enabled AWS auth proxy rule:
+
+```python
+with client.sandbox(
     name="s3-mount-sandbox",
     mounts=[
         {
             "id": "customer_data",
             "type": "s3",
             "mount_path": "/mnt/mounts/customer-data",
+            "read_only": False,
             "s3": {
                 "endpoint_url": "https://s3.amazonaws.com",
                 "region": "us-east-1",
@@ -94,10 +152,34 @@ with client.sandbox(
     print(result.stdout)
 ```
 
-Use `opaque_secret("...")` instead of `workspace_secret(...)` when your
-application needs to pass short-lived write-only AWS credentials at sandbox
-creation time. Plaintext AWS credential values are not accepted directly; wrap
-them as `opaque_secret(...)` values.
+GCS mounts require an enabled GCP auth proxy rule that covers
+`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
+`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
+`devstorage.read_only`.
+
+```python
+with client.sandbox(
+    name="gcs-mount-sandbox",
+    mounts=[
+        {
+            "id": "customer_data",
+            "type": "gcs",
+            "mount_path": "/mnt/mounts/customer-data",
+            "gcs": {
+                "bucket": "example-bucket",
+                "prefix": "datasets/customer-data",
+            },
+        }
+    ],
+    proxy_config=gcp_auth_proxy_config(
+        service_account_json=workspace_secret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+    ),
+) as sandbox:
+    result = sandbox.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
 
 ## 1. Connect to LangSmith
 

@@ -8,6 +8,7 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     SandboxClient,
     aws_auth_proxy_config,
+    gcp_auth_proxy_config,
     opaque_secret,
     workspace_secret,
 )
@@ -62,6 +63,52 @@ def test_aws_auth_proxy_config_builds_aws_rule() -> None:
             }
         ]
     }
+
+
+def test_gcp_auth_proxy_config_builds_gcp_rule() -> None:
+    config = gcp_auth_proxy_config(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+    )
+
+    assert config == {
+        "rules": [
+            {
+                "name": "gcp",
+                "type": "gcp",
+                "enabled": True,
+                "match_hosts": ["storage.googleapis.com", "www.googleapis.com"],
+                "gcp": {
+                    "service_account_json": {
+                        "type": "workspace_secret",
+                        "value": "{GCP_SERVICE_ACCOUNT_JSON}",
+                    },
+                    "scopes": ["https://www.googleapis.com/auth/devstorage.read_write"],
+                },
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("scopes", "match_hosts"),
+    [
+        ([], ["storage.googleapis.com"]),
+        (["https://www.googleapis.com/auth/devstorage.read_write"], []),
+        ([""], ["storage.googleapis.com"]),
+        (["https://www.googleapis.com/auth/devstorage.read_write"], [""]),
+    ],
+)
+def test_gcp_auth_proxy_config_rejects_empty_scopes_and_hosts(
+    scopes: list[str], match_hosts: list[str]
+) -> None:
+    with pytest.raises(ValueError):
+        gcp_auth_proxy_config(
+            service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+            scopes=scopes,
+            match_hosts=match_hosts,
+        )
 
 
 def test_create_sandbox_forwards_aws_auth_proxy_config(

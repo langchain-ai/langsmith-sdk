@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal, TypedDict
 
 
@@ -19,6 +20,13 @@ def _require_non_empty_string(value: str, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a non-empty string")
     return value.strip()
+
+
+def _require_non_empty_string_list(values: Sequence[str], field: str) -> list[str]:
+    if isinstance(values, str) or not values:
+        raise ValueError(f"{field} must be a non-empty list of strings")
+    normalized = [_require_non_empty_string(value, field) for value in values]
+    return normalized
 
 
 def workspace_secret(name: str) -> SandboxProxySecret:
@@ -75,6 +83,41 @@ def aws_auth_proxy_config(
                 "aws": {
                     "access_key_id": access_key_id,
                     "secret_access_key": secret_access_key,
+                },
+            }
+        ]
+    }
+
+
+def gcp_auth_proxy_config(
+    *,
+    service_account_json: SandboxProxySecret,
+    scopes: Sequence[str],
+    match_hosts: Sequence[str],
+    name: str = "gcp",
+    enabled: bool = True,
+) -> SandboxProxyConfig:
+    """Build a sandbox proxy config that injects GCP OAuth bearer auth.
+
+    The sandbox proxy keeps the service account JSON outside the sandbox and
+    injects OAuth bearer tokens for the configured Google API hosts.
+    ``service_account_json`` must be supplied as a ``workspace_secret`` or
+    ``opaque`` value; plaintext service account JSON is intentionally not
+    supported.
+    """
+    rule_name = _require_non_empty_string(name, "name")
+    return {
+        "rules": [
+            {
+                "name": rule_name,
+                "type": "gcp",
+                "enabled": enabled,
+                "match_hosts": _require_non_empty_string_list(
+                    match_hosts, "match_hosts"
+                ),
+                "gcp": {
+                    "service_account_json": service_account_json,
+                    "scopes": _require_non_empty_string_list(scopes, "scopes"),
                 },
             }
         ]

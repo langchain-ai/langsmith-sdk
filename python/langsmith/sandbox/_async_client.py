@@ -228,10 +228,13 @@ class AsyncSandboxClient:
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
             mounts: Optional mount specifications attached to the sandbox.
-                S3 mounts use the backend shape
+                Bucket mounts use provider-specific backend shapes such as
                 ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
                 "s3": {"endpoint_url": "...", "region": "...",
-                "bucket": "...", "prefix": "...", "path_style": False}}``.
+                "bucket": "...", "prefix": "...", "path_style": False}}``
+                or ``{"id": "...", "type": "gcs", "mount_path": "/mnt/...",
+                "gcs": {"bucket": "...", "prefix": "..."}}``. Mounts also
+                support ``read_only`` and ``cache`` options.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -317,10 +320,13 @@ class AsyncSandboxClient:
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
             mounts: Optional mount specifications attached to the sandbox.
-                S3 mounts use the backend shape
+                Bucket mounts use provider-specific backend shapes such as
                 ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
                 "s3": {"endpoint_url": "...", "region": "...",
-                "bucket": "...", "prefix": "...", "path_style": False}}``.
+                "bucket": "...", "prefix": "...", "path_style": False}}``
+                or ``{"id": "...", "type": "gcs", "mount_path": "/mnt/...",
+                "gcs": {"bucket": "...", "prefix": "..."}}``. Mounts also
+                support ``read_only`` and ``cache`` options.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
