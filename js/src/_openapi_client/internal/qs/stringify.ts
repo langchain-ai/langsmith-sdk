@@ -1,7 +1,8 @@
-import { encode, is_buffer, maybe_map, has } from './utils';
-import { default_format, default_formatter, formatters } from './formats';
-import type { NonNullableProperties, StringifyOptions } from './types';
-import { isArray } from '../utils/values';
+// @ts-nocheck
+import { encode, is_buffer, maybe_map, has } from './utils.js';
+import { default_format, default_formatter, formatters } from './formats.js';
+import type { NonNullableProperties, StringifyOptions } from './types.js';
+import { isArray } from '../utils/values.js';
 
 const array_prefix_generators = {
   brackets(prefix: PropertyKey) {

@@ -1,20 +1,21 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import type { RequestInit, RequestInfo, BodyInit } from './internal/builtin-types';
-import type { HTTPMethod, PromiseOrValue, MergedRequestInit, FinalizedRequestInit } from './internal/types';
-import { uuid4 } from './internal/utils/uuid';
-import { validatePositiveInteger, isAbsoluteURL, safeJSON } from './internal/utils/values';
-import { sleep } from './internal/utils/sleep';
-export type { Logger, LogLevel } from './internal/utils/log';
-import { castToError, isAbortError } from './internal/errors';
-import type { APIResponseProps } from './internal/parse';
-import { getPlatformHeaders } from './internal/detect-platform';
-import * as Shims from './internal/shims';
-import * as Opts from './internal/request-options';
-import { stringifyQuery } from './internal/utils/query';
-import { VERSION } from './version';
-import * as Errors from './core/error';
-import * as Pagination from './core/pagination';
+import type { RequestInit, RequestInfo, BodyInit } from './internal/builtin-types.js';
+import type { HTTPMethod, PromiseOrValue, MergedRequestInit, FinalizedRequestInit } from './internal/types.js';
+import { uuid4 } from './internal/utils/uuid.js';
+import { validatePositiveInteger, isAbsoluteURL, safeJSON } from './internal/utils/values.js';
+import { sleep } from './internal/utils/sleep.js';
+export type { Logger, LogLevel } from './internal/utils/log.js';
+import { castToError, isAbortError } from './internal/errors.js';
+import type { APIResponseProps } from './internal/parse.js';
+import { getPlatformHeaders } from './internal/detect-platform.js';
+import * as Shims from './internal/shims.js';
+import * as Opts from './internal/request-options.js';
+import { stringifyQuery } from './internal/utils/query.js';
+import { VERSION } from './version.js';
+import * as Errors from './core/error.js';
+import * as Pagination from './core/pagination.js';
 import {
   AbstractPage,
   type CursorPaginationParams,
@@ -33,10 +34,10 @@ import {
   OffsetPaginationReposResponse,
   type OffsetPaginationTopLevelArrayParams,
   OffsetPaginationTopLevelArrayResponse,
-} from './core/pagination';
-import * as Uploads from './core/uploads';
-import * as API from './resources/index';
-import { APIPromise } from './core/api-promise';
+} from './core/pagination.js';
+import * as Uploads from './core/uploads.js';
+import * as API from './resources/index.js';
+import { APIPromise } from './core/api-promise.js';
 import {
   CommitCreateParams,
   CommitCreateResponse,
@@ -47,7 +48,7 @@ import {
   CommitWithLookups,
   CommitWithLookupsOffsetPaginationCommits,
   Commits,
-} from './resources/commits';
+} from './resources/commits.js';
 import {
   CodeEvaluatorTopLevel,
   Evaluator,
@@ -57,8 +58,8 @@ import {
   EvaluatorTopLevel,
   EvaluatorWebhook,
   Evaluators,
-} from './resources/evaluators';
-import { Info, InfoListResponse } from './resources/info';
+} from './resources/evaluators.js';
+import { Info, InfoListResponse } from './resources/info.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -87,8 +88,8 @@ import {
   UpdateOnlineEvaluatorRequest,
   UpdateOnlineEvaluatorResponse,
   UpdateOnlineLlmEvaluatorRequest,
-} from './resources/online-evaluators';
-import { AppHubCrudTenantsTenant, Settings } from './resources/settings';
+} from './resources/online-evaluators.js';
+import { AppHubCrudTenantsTenant, Settings } from './resources/settings.js';
 import {
   WorkspaceCreateParams,
   WorkspaceCreateResponse,
@@ -98,7 +99,7 @@ import {
   WorkspaceUpdateParams,
   WorkspaceUpdateResponse,
   Workspaces,
-} from './resources/workspaces';
+} from './resources/workspaces.js';
 import {
   AnnotationQueueAnnotationQueuesParams,
   AnnotationQueueCreateRunStatusParams,
@@ -123,7 +124,7 @@ import {
   AnnotationQueueUpdateResponse,
   AnnotationQueues,
   RunSchemaWithAnnotationQueueInfo,
-} from './resources/annotation-queues/annotation-queues';
+} from './resources/annotation-queues/annotation-queues.js';
 import {
   DataType,
   Dataset,
@@ -152,7 +153,7 @@ import {
   FeedbackCreateCoreSchema,
   Missing,
   SortByDatasetColumn,
-} from './resources/datasets/datasets';
+} from './resources/datasets/datasets.js';
 import {
   AttachmentsOperations,
   Example,
@@ -171,7 +172,7 @@ import {
   ExampleUploadFromCsvResponse,
   Examples,
   ExamplesOffsetPaginationTopLevelArray,
-} from './resources/examples/examples';
+} from './resources/examples/examples.js';
 import {
   APIFeedbackSource,
   AppFeedbackSource,
@@ -188,8 +189,8 @@ import {
   FeedbackUpdateParams,
   ModelFeedbackSource,
   SourceType,
-} from './resources/feedback/feedback';
-import { Public, PublicRetrieveFeedbacksParams } from './resources/public/public';
+} from './resources/feedback/feedback.js';
+import { Public, PublicRetrieveFeedbacksParams } from './resources/public/public.js';
 import {
   CreateRepoResponse,
   DemoConfig,
@@ -205,7 +206,7 @@ import {
   RepoWithLookups,
   RepoWithLookupsOffsetPaginationRepos,
   Repos,
-} from './resources/repos/repos';
+} from './resources/repos/repos.js';
 import {
   BodyParamsForRunSchema,
   RequestBodyForRunsGenerateQuery,
@@ -228,8 +229,8 @@ import {
   RunUpdateResponse,
   Runs,
   RunsFilterDataSourceTypeEnum,
-} from './resources/runs/runs';
-import { Sandboxes } from './resources/sandboxes/sandboxes';
+} from './resources/runs/runs.js';
+import { Sandboxes } from './resources/sandboxes/sandboxes.js';
 import {
   CustomChartsSection,
   CustomChartsSectionRequest,
@@ -246,19 +247,19 @@ import {
   TracerSession,
   TracerSessionWithoutVirtualFields,
   TracerSessionsOffsetPaginationTopLevelArray,
-} from './resources/sessions/sessions';
-import { type Fetch } from './internal/builtin-types';
-import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers';
-import { FinalRequestOptions, RequestOptions } from './internal/request-options';
-import { readEnv } from './internal/utils/env';
+} from './resources/sessions/sessions.js';
+import { type Fetch } from './internal/builtin-types.js';
+import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
+import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
+import { readEnv } from './internal/utils/env.js';
 import {
   type LogLevel,
   type Logger,
   formatRequestDetails,
   loggerFor,
   parseLogLevel,
-} from './internal/utils/log';
-import { isEmptyObj } from './internal/utils/values';
+} from './internal/utils/log.js';
+import { isEmptyObj } from './internal/utils/values.js';
 
 export interface ClientOptions {
   /**

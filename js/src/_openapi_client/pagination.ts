@@ -1,2 +1,3 @@
+// @ts-nocheck
 /** @deprecated Import from ./core/pagination instead */
-export * from './core/pagination';
+export * from './core/pagination.js';

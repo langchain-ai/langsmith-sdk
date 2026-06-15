@@ -1,7 +1,8 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as InsightsAPI from './insights';
+import { APIResource } from '../../core/resource.js';
+import * as InsightsAPI from './insights.js';
 import {
   CreateRunClusteringJobRequest,
   InsightCreateParams,
@@ -18,16 +19,16 @@ import {
   InsightUpdateParams,
   InsightUpdateResponse,
   Insights,
-} from './insights';
-import { APIPromise } from '../../core/api-promise';
+} from './insights.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { buildHeaders } from '../../internal/headers';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { buildHeaders } from '../../internal/headers.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Sessions extends APIResource {
   insights: InsightsAPI.Insights = new InsightsAPI.Insights(this._client);
@@ -134,7 +135,7 @@ export namespace CustomChartsSection {
     /**
      * Enum for custom chart types.
      */
-    chart_type: 'line' | 'bar';
+    chart_type: 'line' | 'bar' | 'table' | 'kpi' | 'top-k' | 'pie';
 
     data: Array<Chart.Data>;
 
@@ -165,11 +166,26 @@ export namespace CustomChartsSection {
     export interface Series {
       id: string;
 
+      name: string;
+
+      feedback_key?: string | null;
+
+      filter_definition?: Series.CustomChartFilterByTracingProject | Series.CustomChartFilterByDataset | null;
+
+      filters?: Series.Filters | null;
+
+      /**
+       * Include additional information about where the group_by param was set.
+       */
+      group_by?: Series.GroupBy | null;
+
+      group_by_definitions?: Array<Series.CustomChartGroupByPlain | Series.CustomChartGroupByComplex> | null;
+
       /**
        * Metrics you can chart. Feedback metrics are not available for
        * organization-scoped charts.
        */
-      metric:
+      metric?:
         | 'run_count'
         | 'latency_p50'
         | 'latency_p99'
@@ -194,18 +210,15 @@ export namespace CustomChartsSection {
         | 'error_rate'
         | 'streaming_rate'
         | 'cost_p50'
-        | 'cost_p99';
+        | 'cost_p99'
+        | null;
 
-      name: string;
-
-      feedback_key?: string | null;
-
-      filters?: Series.Filters | null;
-
-      /**
-       * Include additional information about where the group_by param was set.
-       */
-      group_by?: Series.GroupBy | null;
+      metric_definition?:
+        | Series.CustomChartMetricCount
+        | Series.CustomChartMetricScalar
+        | Series.CustomChartMetricPercentile
+        | Series.CustomChartMetricRatioOutput
+        | null;
 
       /**
        * LGP Metrics you can chart.
@@ -227,6 +240,24 @@ export namespace CustomChartsSection {
     }
 
     export namespace Series {
+      export interface CustomChartFilterByTracingProject {
+        project_ids: Array<string>;
+
+        source_type: 'tracing_project';
+
+        run_filter?: string | null;
+
+        trace_filter?: string | null;
+
+        tree_filter?: string | null;
+      }
+
+      export interface CustomChartFilterByDataset {
+        dataset_ids: Array<string>;
+
+        source_type: 'dataset';
+      }
+
       export interface Filters {
         filter?: string | null;
 
@@ -248,6 +279,170 @@ export namespace CustomChartsSection {
         path?: string | null;
 
         set_by?: 'section' | 'series' | null;
+      }
+
+      export interface CustomChartGroupByPlain {
+        attribute: 'name' | 'run_type' | 'tag' | 'project' | 'status';
+      }
+
+      export interface CustomChartGroupByComplex {
+        attribute: 'metadata' | 'feedback_label';
+
+        path: string;
+      }
+
+      export interface CustomChartMetricCount {
+        filter?: string | null;
+
+        type?: 'count';
+      }
+
+      export interface CustomChartMetricScalar {
+        field:
+          | 'latency_seconds'
+          | 'first_token_seconds'
+          | 'total_tokens'
+          | 'prompt_tokens'
+          | 'completion_tokens'
+          | 'total_cost'
+          | 'prompt_cost'
+          | 'completion_cost';
+
+        type: 'sum' | 'max' | 'min' | 'avg';
+
+        filter?: string | null;
+      }
+
+      export interface CustomChartMetricPercentile {
+        field:
+          | 'latency_seconds'
+          | 'first_token_seconds'
+          | 'total_tokens'
+          | 'prompt_tokens'
+          | 'completion_tokens'
+          | 'total_cost'
+          | 'prompt_cost'
+          | 'completion_cost';
+
+        params: CustomChartMetricPercentile.Params;
+
+        type: 'percentile';
+
+        filter?: string | null;
+      }
+
+      export namespace CustomChartMetricPercentile {
+        export interface Params {
+          p: number;
+        }
+      }
+
+      export interface CustomChartMetricRatioOutput {
+        denominator:
+          | CustomChartMetricRatioOutput.CustomChartMetricCount
+          | CustomChartMetricRatioOutput.CustomChartMetricScalar
+          | CustomChartMetricRatioOutput.CustomChartMetricPercentile;
+
+        numerator:
+          | CustomChartMetricRatioOutput.CustomChartMetricCount
+          | CustomChartMetricRatioOutput.CustomChartMetricScalar
+          | CustomChartMetricRatioOutput.CustomChartMetricPercentile;
+
+        type: 'ratio';
+      }
+
+      export namespace CustomChartMetricRatioOutput {
+        export interface CustomChartMetricCount {
+          filter?: string | null;
+
+          type?: 'count';
+        }
+
+        export interface CustomChartMetricScalar {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          type: 'sum' | 'max' | 'min' | 'avg';
+
+          filter?: string | null;
+        }
+
+        export interface CustomChartMetricPercentile {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          params: CustomChartMetricPercentile.Params;
+
+          type: 'percentile';
+
+          filter?: string | null;
+        }
+
+        export namespace CustomChartMetricPercentile {
+          export interface Params {
+            p: number;
+          }
+        }
+
+        export interface CustomChartMetricCount {
+          filter?: string | null;
+
+          type?: 'count';
+        }
+
+        export interface CustomChartMetricScalar {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          type: 'sum' | 'max' | 'min' | 'avg';
+
+          filter?: string | null;
+        }
+
+        export interface CustomChartMetricPercentile {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          params: CustomChartMetricPercentile.Params;
+
+          type: 'percentile';
+
+          filter?: string | null;
+        }
+
+        export namespace CustomChartMetricPercentile {
+          export interface Params {
+            p: number;
+          }
+        }
       }
     }
 
@@ -281,7 +476,7 @@ export namespace CustomChartsSection {
       /**
        * Enum for custom chart types.
        */
-      chart_type: 'line' | 'bar';
+      chart_type: 'line' | 'bar' | 'table' | 'kpi' | 'top-k' | 'pie';
 
       data: Array<Chart.Data>;
 
@@ -312,11 +507,31 @@ export namespace CustomChartsSection {
       export interface Series {
         id: string;
 
+        name: string;
+
+        feedback_key?: string | null;
+
+        filter_definition?:
+          | Series.CustomChartFilterByTracingProject
+          | Series.CustomChartFilterByDataset
+          | null;
+
+        filters?: Series.Filters | null;
+
+        /**
+         * Include additional information about where the group_by param was set.
+         */
+        group_by?: Series.GroupBy | null;
+
+        group_by_definitions?: Array<
+          Series.CustomChartGroupByPlain | Series.CustomChartGroupByComplex
+        > | null;
+
         /**
          * Metrics you can chart. Feedback metrics are not available for
          * organization-scoped charts.
          */
-        metric:
+        metric?:
           | 'run_count'
           | 'latency_p50'
           | 'latency_p99'
@@ -341,18 +556,15 @@ export namespace CustomChartsSection {
           | 'error_rate'
           | 'streaming_rate'
           | 'cost_p50'
-          | 'cost_p99';
+          | 'cost_p99'
+          | null;
 
-        name: string;
-
-        feedback_key?: string | null;
-
-        filters?: Series.Filters | null;
-
-        /**
-         * Include additional information about where the group_by param was set.
-         */
-        group_by?: Series.GroupBy | null;
+        metric_definition?:
+          | Series.CustomChartMetricCount
+          | Series.CustomChartMetricScalar
+          | Series.CustomChartMetricPercentile
+          | Series.CustomChartMetricRatioOutput
+          | null;
 
         /**
          * LGP Metrics you can chart.
@@ -374,6 +586,24 @@ export namespace CustomChartsSection {
       }
 
       export namespace Series {
+        export interface CustomChartFilterByTracingProject {
+          project_ids: Array<string>;
+
+          source_type: 'tracing_project';
+
+          run_filter?: string | null;
+
+          trace_filter?: string | null;
+
+          tree_filter?: string | null;
+        }
+
+        export interface CustomChartFilterByDataset {
+          dataset_ids: Array<string>;
+
+          source_type: 'dataset';
+        }
+
         export interface Filters {
           filter?: string | null;
 
@@ -395,6 +625,170 @@ export namespace CustomChartsSection {
           path?: string | null;
 
           set_by?: 'section' | 'series' | null;
+        }
+
+        export interface CustomChartGroupByPlain {
+          attribute: 'name' | 'run_type' | 'tag' | 'project' | 'status';
+        }
+
+        export interface CustomChartGroupByComplex {
+          attribute: 'metadata' | 'feedback_label';
+
+          path: string;
+        }
+
+        export interface CustomChartMetricCount {
+          filter?: string | null;
+
+          type?: 'count';
+        }
+
+        export interface CustomChartMetricScalar {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          type: 'sum' | 'max' | 'min' | 'avg';
+
+          filter?: string | null;
+        }
+
+        export interface CustomChartMetricPercentile {
+          field:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost';
+
+          params: CustomChartMetricPercentile.Params;
+
+          type: 'percentile';
+
+          filter?: string | null;
+        }
+
+        export namespace CustomChartMetricPercentile {
+          export interface Params {
+            p: number;
+          }
+        }
+
+        export interface CustomChartMetricRatioOutput {
+          denominator:
+            | CustomChartMetricRatioOutput.CustomChartMetricCount
+            | CustomChartMetricRatioOutput.CustomChartMetricScalar
+            | CustomChartMetricRatioOutput.CustomChartMetricPercentile;
+
+          numerator:
+            | CustomChartMetricRatioOutput.CustomChartMetricCount
+            | CustomChartMetricRatioOutput.CustomChartMetricScalar
+            | CustomChartMetricRatioOutput.CustomChartMetricPercentile;
+
+          type: 'ratio';
+        }
+
+        export namespace CustomChartMetricRatioOutput {
+          export interface CustomChartMetricCount {
+            filter?: string | null;
+
+            type?: 'count';
+          }
+
+          export interface CustomChartMetricScalar {
+            field:
+              | 'latency_seconds'
+              | 'first_token_seconds'
+              | 'total_tokens'
+              | 'prompt_tokens'
+              | 'completion_tokens'
+              | 'total_cost'
+              | 'prompt_cost'
+              | 'completion_cost';
+
+            type: 'sum' | 'max' | 'min' | 'avg';
+
+            filter?: string | null;
+          }
+
+          export interface CustomChartMetricPercentile {
+            field:
+              | 'latency_seconds'
+              | 'first_token_seconds'
+              | 'total_tokens'
+              | 'prompt_tokens'
+              | 'completion_tokens'
+              | 'total_cost'
+              | 'prompt_cost'
+              | 'completion_cost';
+
+            params: CustomChartMetricPercentile.Params;
+
+            type: 'percentile';
+
+            filter?: string | null;
+          }
+
+          export namespace CustomChartMetricPercentile {
+            export interface Params {
+              p: number;
+            }
+          }
+
+          export interface CustomChartMetricCount {
+            filter?: string | null;
+
+            type?: 'count';
+          }
+
+          export interface CustomChartMetricScalar {
+            field:
+              | 'latency_seconds'
+              | 'first_token_seconds'
+              | 'total_tokens'
+              | 'prompt_tokens'
+              | 'completion_tokens'
+              | 'total_cost'
+              | 'prompt_cost'
+              | 'completion_cost';
+
+            type: 'sum' | 'max' | 'min' | 'avg';
+
+            filter?: string | null;
+          }
+
+          export interface CustomChartMetricPercentile {
+            field:
+              | 'latency_seconds'
+              | 'first_token_seconds'
+              | 'total_tokens'
+              | 'prompt_tokens'
+              | 'completion_tokens'
+              | 'total_cost'
+              | 'prompt_cost'
+              | 'completion_cost';
+
+            params: CustomChartMetricPercentile.Params;
+
+            type: 'percentile';
+
+            filter?: string | null;
+          }
+
+          export namespace CustomChartMetricPercentile {
+            export interface Params {
+              p: number;
+            }
+          }
         }
       }
 

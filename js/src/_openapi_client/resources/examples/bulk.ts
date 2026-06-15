@@ -1,9 +1,10 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as ExamplesAPI from './examples';
-import { APIPromise } from '../../core/api-promise';
-import { RequestOptions } from '../../internal/request-options';
+import { APIResource } from '../../core/resource.js';
+import * as ExamplesAPI from './examples.js';
+import { APIPromise } from '../../core/api-promise.js';
+import { RequestOptions } from '../../internal/request-options.js';
 
 export class Bulk extends APIResource {
   /**

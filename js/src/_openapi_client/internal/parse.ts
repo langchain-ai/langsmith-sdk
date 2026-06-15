@@ -1,8 +1,9 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import type { FinalRequestOptions } from './request-options';
-import { type Langsmith } from '../client';
-import { formatRequestDetails, loggerFor } from './utils/log';
+import type { FinalRequestOptions } from './request-options.js';
+import { type Langsmith } from '../client.js';
+import { formatRequestDetails, loggerFor } from './utils/log.js';
 
 export type APIResponseProps = {
   response: Response;

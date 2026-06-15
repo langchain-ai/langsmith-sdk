@@ -1,8 +1,9 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { hasOwn } from './values';
-import { type Langsmith } from '../../client';
-import { RequestOptions } from '../request-options';
+import { hasOwn } from './values.js';
+import { type Langsmith } from '../../client.js';
+import { RequestOptions } from '../request-options.js';
 
 type LogFn = (message: string, ...rest: unknown[]) => void;
 export type Logger = {

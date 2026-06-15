@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -24,7 +25,7 @@ export {
   type AnnotationQueueRetrieveSizeParams,
   type AnnotationQueueRetrieveTotalArchivedParams,
   type AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray,
-} from './annotation-queues';
+} from './annotation-queues.js';
 export {
   Runs,
   type RunCreateResponse,
@@ -37,4 +38,4 @@ export {
   type RunListParams,
   type RunDeleteAllParams,
   type RunDeleteQueueParams,
-} from './runs';
+} from './runs.js';

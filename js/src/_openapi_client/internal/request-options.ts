@@ -1,10 +1,11 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { NullableHeaders } from './headers';
+import { NullableHeaders } from './headers.js';
 
-import type { BodyInit } from './builtin-types';
-import type { HTTPMethod, MergedRequestInit } from './types';
-import { type HeadersLike } from './headers';
+import type { BodyInit } from './builtin-types.js';
+import type { HTTPMethod, MergedRequestInit } from './types.js';
+import { type HeadersLike } from './headers.js';
 
 export type FinalRequestOptions = RequestOptions & { method: HTTPMethod; path: string };
 

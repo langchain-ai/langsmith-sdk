@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { VERSION } from '../version';
+import { VERSION } from '../version.js';
 
 export const isRunningInBrowser = () => {
   return (

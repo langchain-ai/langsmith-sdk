@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -16,7 +17,7 @@ export {
   type InsightRetrieveJobParams,
   type InsightRetrieveRunsParams,
   type InsightListResponsesOffsetPaginationInsightsClusteringJobs,
-} from './insights';
+} from './insights.js';
 export {
   Sessions,
   type CustomChartsSection,
@@ -33,4 +34,4 @@ export {
   type SessionListParams,
   type SessionDashboardParams,
   type TracerSessionsOffsetPaginationTopLevelArray,
-} from './sessions';
+} from './sessions.js';

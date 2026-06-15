@@ -1,9 +1,10 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as ConfigsAPI from './configs';
-import { ConfigDeleteParams, Configs } from './configs';
-import * as TokensAPI from './tokens';
+import { APIResource } from '../../core/resource.js';
+import * as ConfigsAPI from './configs.js';
+import { ConfigDeleteParams, Configs } from './configs.js';
+import * as TokensAPI from './tokens.js';
 import {
   FeedbackIngestTokenCreateSchema,
   FeedbackIngestTokenSchema,
@@ -16,15 +17,15 @@ import {
   TokenUpdateParams,
   TokenUpdateResponse,
   Tokens,
-} from './tokens';
-import { APIPromise } from '../../core/api-promise';
+} from './tokens.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Feedback extends APIResource {
   tokens: TokensAPI.Tokens = new TokensAPI.Tokens(this._client);

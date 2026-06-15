@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { isReadonlyArray } from './utils/values';
+import { isReadonlyArray } from './utils/values.js';
 
 type HeaderValue = string | undefined | null;
 export type HeadersLike =

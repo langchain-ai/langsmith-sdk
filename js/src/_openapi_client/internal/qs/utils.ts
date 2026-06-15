@@ -1,6 +1,7 @@
-import { RFC1738 } from './formats';
-import type { DefaultEncoder, Format } from './types';
-import { isArray } from '../utils/values';
+// @ts-nocheck
+import { RFC1738 } from './formats.js';
+import type { DefaultEncoder, Format } from './types.js';
+import { isArray } from '../utils/values.js';
 
 export let has = (obj: object, key: PropertyKey): boolean => (
   (has = (Object as any).hasOwn ?? Function.prototype.call.bind(Object.prototype.hasOwnProperty)),

@@ -1,20 +1,21 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as BulkAPI from './bulk';
-import { Bulk, BulkCreateParams, BulkCreateResponse, BulkPatchAllParams, BulkPatchAllResponse } from './bulk';
-import * as ValidateAPI from './validate';
-import { ExampleValidationResult, Validate, ValidateBulkResponse } from './validate';
-import { APIPromise } from '../../core/api-promise';
+import { APIResource } from '../../core/resource.js';
+import * as BulkAPI from './bulk.js';
+import { Bulk, BulkCreateParams, BulkCreateResponse, BulkPatchAllParams, BulkPatchAllResponse } from './bulk.js';
+import * as ValidateAPI from './validate.js';
+import { ExampleValidationResult, Validate, ValidateBulkResponse } from './validate.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { type Uploadable } from '../../core/uploads';
-import { RequestOptions } from '../../internal/request-options';
-import { multipartFormRequestOptions } from '../../internal/uploads';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { type Uploadable } from '../../core/uploads.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { multipartFormRequestOptions } from '../../internal/uploads.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Examples extends APIResource {
   bulk: BulkAPI.Bulk = new BulkAPI.Bulk(this._client);

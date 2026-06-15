@@ -1,4 +1,5 @@
-import type { Format } from './types';
+// @ts-nocheck
+import type { Format } from './types.js';
 
 export const default_format: Format = 'RFC3986';
 export const default_formatter = (v: PropertyKey) => String(v);

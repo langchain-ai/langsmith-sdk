@@ -1,12 +1,13 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { LangsmithError } from './error';
-import { FinalRequestOptions } from '../internal/request-options';
-import { defaultParseResponse } from '../internal/parse';
-import { type Langsmith } from '../client';
-import { APIPromise } from './api-promise';
-import { type APIResponseProps } from '../internal/parse';
-import { maybeObj } from '../internal/utils/values';
+import { LangsmithError } from './error.js';
+import { FinalRequestOptions } from '../internal/request-options.js';
+import { defaultParseResponse } from '../internal/parse.js';
+import { type Langsmith } from '../client.js';
+import { APIPromise } from './api-promise.js';
+import { type APIResponseProps } from '../internal/parse.js';
+import { maybeObj } from '../internal/utils/values.js';
 
 export type PageRequestOptions = Pick<FinalRequestOptions, 'query' | 'headers' | 'body' | 'path' | 'method'>;
 

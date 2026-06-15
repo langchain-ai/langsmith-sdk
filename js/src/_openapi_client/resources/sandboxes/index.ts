@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -15,8 +16,8 @@ export {
   type BoxListParams,
   type BoxCreateSnapshotParams,
   type BoxGenerateServiceURLParams,
-} from './boxes';
-export { Sandboxes } from './sandboxes';
+} from './boxes.js';
+export { Sandboxes } from './sandboxes.js';
 export {
   Snapshots,
   type SnapshotCreateResponse,
@@ -24,4 +25,4 @@ export {
   type SnapshotListResponse,
   type SnapshotCreateParams,
   type SnapshotListParams,
-} from './snapshots';
+} from './snapshots.js';
