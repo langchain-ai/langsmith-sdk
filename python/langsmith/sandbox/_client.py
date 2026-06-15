@@ -334,8 +334,9 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth_proxy_rule`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Sandbox instance.
@@ -426,8 +427,9 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth_proxy_rule`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have

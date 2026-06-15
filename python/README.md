@@ -62,18 +62,24 @@ for your workspace. Then create the sandbox with an AWS auth proxy config:
 ```python
 from langsmith.sandbox import (
     SandboxClient,
-    aws_auth_proxy_config,
+    aws_auth_proxy_rule,
+    proxy_config,
     workspace_secret,
 )
 
 client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        aws_auth_proxy_rule(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+)
 
 with client.sandbox(
     name="aws-sandbox",
-    proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-    ),
+    proxy_config=auth_config,
 ) as sandbox:
     result = sandbox.run("python your_aws_script.py")
     print(result.stdout)
@@ -96,19 +102,27 @@ sandbox with a GCP auth proxy config:
 ```python
 from langsmith.sandbox import (
     SandboxClient,
-    gcp_auth_proxy_config,
+    gcp_auth_proxy_rule,
+    proxy_config,
     workspace_secret,
 )
 
 client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        gcp_auth_proxy_rule(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+            match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+        )
+    ],
+)
 
 with client.sandbox(
     name="gcp-sandbox",
-    proxy_config=gcp_auth_proxy_config(
-        service_account_json=workspace_secret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-        match_hosts=["storage.googleapis.com", "www.googleapis.com"],
-    ),
+    proxy_config=auth_config,
 ) as sandbox:
     result = sandbox.run("python your_gcp_script.py")
     print(result.stdout)
@@ -143,9 +157,13 @@ with client.sandbox(
             },
         }
     ],
-    proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    proxy_config=proxy_config(
+        rules=[
+            aws_auth_proxy_rule(
+                access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+                secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+            )
+        ],
     ),
 ) as sandbox:
     result = sandbox.run("ls /mnt/mounts/customer-data")
@@ -171,10 +189,16 @@ with client.sandbox(
             },
         }
     ],
-    proxy_config=gcp_auth_proxy_config(
-        service_account_json=workspace_secret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-        match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+    proxy_config=proxy_config(
+        rules=[
+            gcp_auth_proxy_rule(
+                service_account_json=workspace_secret(
+                    "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+                ),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+                match_hosts=["storage.googleapis.com", "www.googleapis.com"],
+            )
+        ],
     ),
 ) as sandbox:
     result = sandbox.run("ls /mnt/mounts/customer-data")

@@ -74,10 +74,12 @@ from langsmith.sandbox._mounts import (
 )
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
+    SandboxProxyRule,
     SandboxProxySecret,
-    aws_auth_proxy_config,
-    gcp_auth_proxy_config,
+    aws_auth_proxy_rule,
+    gcp_auth_proxy_rule,
     opaque_secret,
+    proxy_config,
     workspace_secret,
 )
 from langsmith.sandbox._sandbox import Sandbox
@@ -100,6 +102,7 @@ __all__ = [
     "AsyncCommandHandle",
     "OutputChunk",
     "SandboxProxyConfig",
+    "SandboxProxyRule",
     "SandboxProxySecret",
     "SandboxMount",
     "MountCacheConfig",
@@ -107,9 +110,10 @@ __all__ = [
     "GCSMountSpec",
     "S3MountConfig",
     "S3MountSpec",
-    "aws_auth_proxy_config",
-    "gcp_auth_proxy_config",
+    "aws_auth_proxy_rule",
+    "gcp_auth_proxy_rule",
     "opaque_secret",
+    "proxy_config",
     "workspace_secret",
     # Base and connection errors
     "SandboxClientError",
