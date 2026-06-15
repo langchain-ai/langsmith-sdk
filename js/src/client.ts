@@ -1395,6 +1395,13 @@ export class Client implements LangSmithTracingClientInterface {
       this.apiKey === undefined && this.workspaceId === undefined
         ? { "X-API-Key": null }
         : undefined;
+    const {
+      method: _method,
+      headers: _headers,
+      body: _body,
+      signal: _signal,
+      ...openAPIFetchOptions
+    } = this.fetchOptions;
 
     return new OpenAPILangsmith({
       apiKey: this.apiKey,
@@ -1402,7 +1409,7 @@ export class Client implements LangSmithTracingClientInterface {
       baseURL: this._getOpenAPIBaseUrl(),
       timeout: this.timeout_ms,
       fetch: this._fetch,
-      fetchOptions: this.fetchOptions,
+      fetchOptions: openAPIFetchOptions,
       defaultHeaders,
     });
   }

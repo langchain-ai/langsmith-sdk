@@ -46,7 +46,7 @@ describe("Client", () => {
         },
       });
 
-      expect(response.evaluator.id).toBe("eval-1");
+      expect(response.evaluator?.id).toBe("eval-1");
       const [url, init] = mockFetch.mock.calls[0];
       const headers = new Headers(init?.headers);
       expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
