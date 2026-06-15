@@ -49,16 +49,15 @@ const client = new SandboxClient({
 });
 ```
 
-## S3 Mounts and AWS Auth Proxy
+## AWS Auth Proxy
 
-Use S3 mounts when sandbox code needs filesystem access to a bucket or prefix.
-S3 mounts use the sandbox AWS auth proxy for SigV4 signing, so the real AWS
-credentials stay outside the sandbox while mounted reads and writes are signed
-on the sandbox's behalf.
+Use the AWS auth proxy when sandbox code needs to call AWS services such as S3,
+Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
+credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
+SigV4. The real credentials stay outside the sandbox.
 
 Store AWS credentials as LangSmith workspace secrets using names that make sense
-for your workspace. Then create the sandbox with both the mount spec and an AWS
-auth proxy config:
+for your workspace. Then reference those secret names in the proxy config:
 
 ```typescript
 import {
@@ -70,21 +69,7 @@ import {
 const client = new SandboxClient();
 
 const sandbox = await client.createSandbox({
-  name: "s3-mount-sandbox",
-  mounts: [
-    {
-      id: "customer_data",
-      type: "s3",
-      mount_path: "/mnt/mounts/customer-data",
-      s3: {
-        endpoint_url: "https://s3.amazonaws.com",
-        region: "us-east-1",
-        bucket: "example-bucket",
-        prefix: "datasets/customer-data",
-        path_style: false,
-      },
-    },
-  ],
+  name: "aws-sandbox",
   proxyConfig: awsAuthProxyConfig({
     accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
     secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
@@ -92,15 +77,15 @@ const sandbox = await client.createSandbox({
 });
 
 try {
-  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  const result = await sandbox.run("node your-aws-script.js");
   console.log(result.stdout);
 } finally {
   await sandbox.delete();
 }
 ```
 
-Sandbox code can also use normal AWS SDKs through the same proxy config. For
-example, if `@aws-sdk/client-s3` is installed in the sandbox snapshot:
+Inside `your-aws-script.js`, use AWS SDKs normally. For example, if
+`@aws-sdk/client-s3` is installed in the sandbox snapshot:
 
 ```typescript
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
@@ -125,6 +110,119 @@ const proxyConfig = awsAuthProxyConfig({
 Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
 credential values are not accepted directly by the AWS auth proxy; wrap
 short-lived write-only values with `opaqueSecret(...)`.
+
+## GCP Auth Proxy
+
+Use the GCP auth proxy when sandbox code needs to call Google APIs. You
+configure service account JSON on the sandbox proxy, and the proxy injects OAuth
+bearer tokens for the Google API hosts you explicitly match. The real service
+account JSON stays outside the sandbox.
+
+Store the service account JSON as a LangSmith workspace secret, then reference
+that secret name in the proxy config:
+
+```typescript
+import {
+  SandboxClient,
+  gcpAuthProxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "gcp-sandbox",
+  proxyConfig: gcpAuthProxyConfig({
+    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+  }),
+});
+
+try {
+  const result = await sandbox.run("node your-gcp-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Use `opaqueSecret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Bucket Mounts
+
+Use bucket mounts when sandbox code needs filesystem access to a bucket or
+prefix. Mount specs contain only the bucket target. Provider credentials stay in
+explicit proxy auth config.
+
+S3 mounts require an enabled AWS auth proxy rule:
+
+```typescript
+const sandbox = await client.createSandbox({
+  name: "s3-mount-sandbox",
+  mounts: [
+    {
+      id: "customer_data",
+      type: "s3",
+      mount_path: "/mnt/mounts/customer-data",
+      read_only: false,
+      s3: {
+        endpoint_url: "https://s3.amazonaws.com",
+        region: "us-east-1",
+        bucket: "example-bucket",
+        prefix: "datasets/customer-data",
+        path_style: false,
+      },
+    },
+  ],
+  proxyConfig: awsAuthProxyConfig({
+    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+  }),
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+GCS mounts require an enabled GCP auth proxy rule covering
+`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
+`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
+`devstorage.read_only`.
+
+```typescript
+const sandbox = await client.createSandbox({
+  name: "gcs-mount-sandbox",
+  mounts: [
+    {
+      id: "customer_data",
+      type: "gcs",
+      mount_path: "/mnt/mounts/customer-data",
+      gcs: {
+        bucket: "example-bucket",
+        prefix: "datasets/customer-data",
+      },
+    },
+  ],
+  proxyConfig: gcpAuthProxyConfig({
+    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+  }),
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
 
 ## Running Commands
 

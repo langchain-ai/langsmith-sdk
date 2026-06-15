@@ -1,5 +1,6 @@
 import type {
   SandboxAwsAuthRule,
+  SandboxGcpAuthRule,
   SandboxProxyConfig,
   SandboxProxySecret,
 } from "./types.js";
@@ -9,6 +10,13 @@ function requireNonEmptyString(value: string, field: string): string {
     throw new Error(`${field} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function requireNonEmptyStringArray(values: string[], field: string): string[] {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(`${field} must be a non-empty array of strings`);
+  }
+  return values.map((value) => requireNonEmptyString(value, field));
 }
 
 /** Reference a LangSmith workspace secret in a sandbox proxy configuration. */
@@ -55,6 +63,33 @@ export function awsAuthProxyConfig({
     aws: {
       access_key_id: accessKeyId,
       secret_access_key: secretAccessKey,
+    },
+  };
+  return { rules: [rule] };
+}
+
+/** Build a sandbox proxy config that injects GCP OAuth bearer auth. */
+export function gcpAuthProxyConfig({
+  serviceAccountJson,
+  scopes,
+  matchHosts,
+  name = "gcp",
+  enabled = true,
+}: {
+  serviceAccountJson: SandboxProxySecret;
+  scopes: string[];
+  matchHosts: string[];
+  name?: string;
+  enabled?: boolean;
+}): SandboxProxyConfig {
+  const rule: SandboxGcpAuthRule = {
+    name: requireNonEmptyString(name, "name"),
+    type: "gcp",
+    enabled,
+    match_hosts: requireNonEmptyStringArray(matchHosts, "matchHosts"),
+    gcp: {
+      service_account_json: serviceAccountJson,
+      scopes: requireNonEmptyStringArray(scopes, "scopes"),
     },
   };
   return { rules: [rule] };

@@ -283,6 +283,23 @@ export interface SandboxAwsAuthRule {
   };
 }
 
+/** GCP auth rule for sandbox proxy OAuth bearer injection. */
+export interface SandboxGcpAuthRule {
+  /** Rule name. */
+  name: string;
+  /** GCP auth rules match explicit Google API host patterns. */
+  type: "gcp";
+  /** Whether the rule is enabled. */
+  enabled?: boolean;
+  /** Google API hosts covered by this rule, such as storage.googleapis.com. */
+  match_hosts: string[];
+  /** GCP service-account credential and OAuth scopes. */
+  gcp: {
+    service_account_json: SandboxProxySecret;
+    scopes: string[];
+  };
+}
+
 /**
  * Full proxy configuration forwarded to the sandbox server as-is (snake_case
  * so it's wire-compatible with the backend). Mirrors the server's
@@ -295,6 +312,25 @@ export interface SandboxProxyConfig {
   no_proxy?: string[];
   /** Allow/deny list enforced at the proxy sidecar. */
   access_control?: SandboxAccessControl;
+}
+
+/** Optional cache configuration shared by all sandbox mounts. */
+export interface MountCacheConfig {
+  /** Maximum VFS cache size in bytes. */
+  max_size_bytes?: number;
+  /** Seconds rclone waits before writing cached changes back. */
+  writeback_seconds?: number;
+}
+
+interface SandboxMountBase {
+  /** Stable mount identifier. */
+  id: string;
+  /** Absolute path inside the sandbox where the mount appears. */
+  mount_path: string;
+  /** Whether the mount should be read-only. */
+  read_only?: boolean;
+  /** Optional VFS cache configuration. */
+  cache?: MountCacheConfig;
 }
 
 /**
@@ -315,19 +351,31 @@ export interface S3MountConfig {
 }
 
 /** S3-backed sandbox mount specification. */
-export interface S3MountSpec {
-  /** Stable mount identifier. */
-  id: string;
+export interface S3MountSpec extends SandboxMountBase {
   /** Mount type. */
   type: "s3";
-  /** Absolute path inside the sandbox where the mount appears. */
-  mount_path: string;
   /** S3 mount configuration. */
   s3: S3MountConfig;
 }
 
+/** GCS configuration for a sandbox mount. */
+export interface GCSMountConfig {
+  /** GCS bucket name. */
+  bucket: string;
+  /** Optional object prefix inside the bucket. */
+  prefix?: string;
+}
+
+/** GCS-backed sandbox mount specification. */
+export interface GCSMountSpec extends SandboxMountBase {
+  /** Mount type. */
+  type: "gcs";
+  /** GCS mount configuration. */
+  gcs: GCSMountConfig;
+}
+
 /** Sandbox mount specification. */
-export type SandboxMount = S3MountSpec;
+export type SandboxMount = S3MountSpec | GCSMountSpec;
 
 /**
  * Options for creating a sandbox.
@@ -381,8 +429,8 @@ export interface CreateSandboxOptions {
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
-   * server as-is on the wire. Use `awsAuthProxyConfig` to let the proxy sign
-   * supported AWS HTTPS requests on the sandbox's behalf.
+   * server as-is on the wire. Use `awsAuthProxyConfig` for AWS SigV4 auth or
+   * `gcpAuthProxyConfig` for GCP OAuth bearer auth.
    */
   proxyConfig?: SandboxProxyConfig;
 }

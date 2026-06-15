@@ -9,6 +9,7 @@ import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
 import {
   awsAuthProxyConfig,
+  gcpAuthProxyConfig,
   opaqueSecret,
   workspaceSecret,
 } from "../sandbox/index.js";
@@ -102,6 +103,56 @@ describe("sandbox proxy config helpers", () => {
       ],
     });
   });
+
+  it("gcpAuthProxyConfig builds a GCP auth rule", () => {
+    expect(
+      gcpAuthProxyConfig({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+        matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+      }),
+    ).toEqual({
+      rules: [
+        {
+          name: "gcp",
+          type: "gcp",
+          enabled: true,
+          match_hosts: ["storage.googleapis.com", "www.googleapis.com"],
+          gcp: {
+            service_account_json: {
+              type: "workspace_secret",
+              value: "{GCP_SERVICE_ACCOUNT_JSON}",
+            },
+            scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+          },
+        },
+      ],
+    });
+  });
+
+  it.each([
+    { scopes: [], matchHosts: ["storage.googleapis.com"] },
+    {
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      matchHosts: [],
+    },
+    { scopes: [""], matchHosts: ["storage.googleapis.com"] },
+    {
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      matchHosts: [""],
+    },
+  ])(
+    "gcpAuthProxyConfig rejects empty scopes and match hosts",
+    ({ scopes, matchHosts }) => {
+      expect(() =>
+        gcpAuthProxyConfig({
+          serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+          scopes,
+          matchHosts,
+        }),
+      ).toThrow();
+    },
+  );
 });
 
 describe("SandboxClient", () => {
@@ -532,12 +583,50 @@ describe("SandboxClient - createSandbox", () => {
         id: "customer_data",
         type: "s3",
         mount_path: "/mnt/mounts/customer-data",
+        read_only: true,
+        cache: {
+          max_size_bytes: 12345,
+          writeback_seconds: 7,
+        },
         s3: {
           endpoint_url: "https://s3.amazonaws.com",
           region: "us-east-1",
           bucket: "example-bucket",
           prefix: "datasets/customer-data",
           path_style: false,
+        },
+      },
+    ];
+    await client.createSandbox("snap-123", { mounts });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.mounts).toEqual(mounts);
+  });
+
+  it("should forward GCS mounts in the request body", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const mounts: SandboxMount[] = [
+      {
+        id: "customer_data",
+        type: "gcs",
+        mount_path: "/mnt/mounts/customer-data",
+        read_only: false,
+        cache: {
+          max_size_bytes: 12345,
+          writeback_seconds: 7,
+        },
+        gcs: {
+          bucket: "example-bucket",
+          prefix: "datasets/customer-data",
         },
       },
     ];
