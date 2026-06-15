@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 /**
@@ -7,8 +8,8 @@
  * messages in cases where an environment isn't fully supported.
  */
 
-import type { Fetch } from './builtin-types';
-import type { ReadableStream } from './shim-types';
+import type { Fetch } from './builtin-types.js';
+import type { ReadableStream } from './shim-types.js';
 
 export function getDefaultFetch(): Fetch {
   if (typeof fetch !== 'undefined') {

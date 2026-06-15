@@ -1,15 +1,16 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../core/resource';
-import { APIPromise } from '../core/api-promise';
+import { APIResource } from '../core/resource.js';
+import { APIPromise } from '../core/api-promise.js';
 import {
   OffsetPaginationOnlineEvaluators,
   type OffsetPaginationOnlineEvaluatorsParams,
   PagePromise,
-} from '../core/pagination';
-import { buildHeaders } from '../internal/headers';
-import { RequestOptions } from '../internal/request-options';
-import { path } from '../internal/utils/path';
+} from '../core/pagination.js';
+import { buildHeaders } from '../internal/headers.js';
+import { RequestOptions } from '../internal/request-options.js';
+import { path } from '../internal/utils/path.js';
 
 export class OnlineEvaluators extends APIResource {
   /**
@@ -218,8 +219,9 @@ export interface OnlineEvaluatorRunRule {
   spend_limit?: OnlineSpendLimit;
 
   /**
-   * Per-rule spend for the current ISO week (omitted when feature is disabled).
-   * LLM-evaluator rules are initialized to 0; code-evaluator rules remain nil.
+   * Per-rule usage for the current ISO week (omitted when feature is disabled).
+   * LLM-evaluator rules are initialized to 0; code-evaluator rules include trace
+   * counts only.
    */
   spend_usd?: number;
 

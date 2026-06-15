@@ -212,6 +212,12 @@ export interface RunOptions {
    */
   wait?: boolean;
   /**
+   * Client-assigned command ID. Executing with an existing command ID
+   * re-attaches to that command (get-or-create) instead of starting a
+   * new one. Only used by the WebSocket path.
+   */
+  commandId?: string;
+  /**
    * Callback invoked with each stdout chunk during streaming execution.
    * When provided, WebSocket streaming is used.
    */

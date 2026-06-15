@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { LangsmithError } from '../../core/error';
+import { LangsmithError } from '../../core/error.js';
 
 // https://url.spec.whatwg.org/#url-scheme-string
 const startsWithSchemeRegexp = /^[a-z][a-z0-9+.-]*:/i;

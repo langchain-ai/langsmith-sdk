@@ -1,10 +1,11 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import { APIPromise } from '../../core/api-promise';
-import { buildHeaders } from '../../internal/headers';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+import { APIResource } from '../../core/resource.js';
+import { APIPromise } from '../../core/api-promise.js';
+import { buildHeaders } from '../../internal/headers.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Boxes extends APIResource {
   /**
@@ -118,7 +119,9 @@ export interface BoxCreateResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxCreateResponse.Mount>;
+  mounts?: Array<
+    BoxCreateResponse.SandboxapiS3BucketMountSpec | BoxCreateResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -142,21 +145,23 @@ export interface BoxCreateResponse {
 }
 
 export namespace BoxCreateResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -173,6 +178,54 @@ export namespace BoxCreateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -224,6 +277,8 @@ export namespace BoxCreateResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -250,6 +305,22 @@ export namespace BoxCreateResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -288,7 +359,9 @@ export interface BoxRetrieveResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxRetrieveResponse.Mount>;
+  mounts?: Array<
+    BoxRetrieveResponse.SandboxapiS3BucketMountSpec | BoxRetrieveResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -312,21 +385,23 @@ export interface BoxRetrieveResponse {
 }
 
 export namespace BoxRetrieveResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -343,6 +418,54 @@ export namespace BoxRetrieveResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -394,6 +517,8 @@ export namespace BoxRetrieveResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -420,6 +545,22 @@ export namespace BoxRetrieveResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -458,7 +599,9 @@ export interface BoxUpdateResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxUpdateResponse.Mount>;
+  mounts?: Array<
+    BoxUpdateResponse.SandboxapiS3BucketMountSpec | BoxUpdateResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -482,21 +625,23 @@ export interface BoxUpdateResponse {
 }
 
 export namespace BoxUpdateResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -513,6 +658,54 @@ export namespace BoxUpdateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -564,6 +757,8 @@ export namespace BoxUpdateResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -590,6 +785,22 @@ export namespace BoxUpdateResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -635,7 +846,7 @@ export namespace BoxListResponse {
 
     mem_bytes?: number;
 
-    mounts?: Array<Sandbox.Mount>;
+    mounts?: Array<Sandbox.SandboxapiS3BucketMountSpec | Sandbox.SandboxapiGcsBucketMountSpec>;
 
     name?: string;
 
@@ -659,21 +870,23 @@ export namespace BoxListResponse {
   }
 
   export namespace Sandbox {
-    export interface Mount {
+    export interface SandboxapiS3BucketMountSpec {
       id: string;
 
       mount_path: string;
 
-      s3: Mount.S3;
+      s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3';
+      type: 's3' | 'gcs';
 
-      cache?: Mount.Cache;
+      cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
       read_only?: boolean;
     }
 
-    export namespace Mount {
+    export namespace SandboxapiS3BucketMountSpec {
       export interface S3 {
         bucket: string;
 
@@ -690,6 +903,54 @@ export namespace BoxListResponse {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
+
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
+    }
+
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
       }
     }
 
@@ -741,6 +1002,8 @@ export namespace BoxListResponse {
 
         enabled?: boolean;
 
+        gcp?: Rule.Gcp;
+
         headers?: Array<Rule.Header>;
 
         match_hosts?: Array<string>;
@@ -767,6 +1030,22 @@ export namespace BoxListResponse {
           }
 
           export interface SecretAccessKey {
+            type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+            is_set?: boolean;
+
+            value?: string;
+          }
+        }
+
+        export interface Gcp {
+          scopes: Array<string>;
+
+          service_account_json: Gcp.ServiceAccountJson;
+        }
+
+        export namespace Gcp {
+          export interface ServiceAccountJson {
             type: 'plaintext' | 'opaque' | 'workspace_secret';
 
             is_set?: boolean;
@@ -857,7 +1136,9 @@ export interface BoxStartResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxStartResponse.Mount>;
+  mounts?: Array<
+    BoxStartResponse.SandboxapiS3BucketMountSpec | BoxStartResponse.SandboxapiGcsBucketMountSpec
+  >;
 
   name?: string;
 
@@ -881,21 +1162,23 @@ export interface BoxStartResponse {
 }
 
 export namespace BoxStartResponse {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -912,6 +1195,54 @@ export namespace BoxStartResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -963,6 +1294,8 @@ export namespace BoxStartResponse {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -989,6 +1322,22 @@ export namespace BoxStartResponse {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -1021,7 +1370,7 @@ export interface BoxCreateParams {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxCreateParams.Mount>;
+  mounts?: Array<BoxCreateParams.SandboxapiS3BucketMountSpec | BoxCreateParams.SandboxapiGcsBucketMountSpec>;
 
   name?: string;
 
@@ -1048,21 +1397,23 @@ export interface BoxCreateParams {
 }
 
 export namespace BoxCreateParams {
-  export interface Mount {
+  export interface SandboxapiS3BucketMountSpec {
     id: string;
 
     mount_path: string;
 
-    s3: Mount.S3;
+    s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3';
+    type: 's3' | 'gcs';
 
-    cache?: Mount.Cache;
+    cache?: SandboxapiS3BucketMountSpec.Cache;
+
+    gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
     read_only?: boolean;
   }
 
-  export namespace Mount {
+  export namespace SandboxapiS3BucketMountSpec {
     export interface S3 {
       bucket: string;
 
@@ -1079,6 +1430,54 @@ export namespace BoxCreateParams {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGcsBucketMountSpec {
+    id: string;
+
+    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs';
+
+    cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGcsBucketMountSpec.S3;
+  }
+
+  export namespace SandboxapiGcsBucketMountSpec {
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
     }
   }
 
@@ -1130,6 +1529,8 @@ export namespace BoxCreateParams {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -1156,6 +1557,22 @@ export namespace BoxCreateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -1244,6 +1661,8 @@ export namespace BoxUpdateParams {
 
       enabled?: boolean;
 
+      gcp?: Rule.Gcp;
+
       headers?: Array<Rule.Header>;
 
       match_hosts?: Array<string>;
@@ -1270,6 +1689,22 @@ export namespace BoxUpdateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;

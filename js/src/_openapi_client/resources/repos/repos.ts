@@ -1,8 +1,9 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as CommitsAPI from '../commits';
-import * as DirectoriesAPI from './directories';
+import { APIResource } from '../../core/resource.js';
+import * as CommitsAPI from '../commits.js';
+import * as DirectoriesAPI from './directories.js';
 import {
   Directories,
   DirectoryCommitParams,
@@ -10,11 +11,11 @@ import {
   DirectoryDeleteParams,
   DirectoryListParams,
   DirectoryListResponse,
-} from './directories';
-import { APIPromise } from '../../core/api-promise';
-import { OffsetPaginationRepos, type OffsetPaginationReposParams, PagePromise } from '../../core/pagination';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from './directories.js';
+import { APIPromise } from '../../core/api-promise.js';
+import { OffsetPaginationRepos, type OffsetPaginationReposParams, PagePromise } from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Repos extends APIResource {
   directories: DirectoriesAPI.Directories = new DirectoriesAPI.Directories(this._client);

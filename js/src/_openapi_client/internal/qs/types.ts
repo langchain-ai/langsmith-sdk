@@ -1,3 +1,4 @@
+// @ts-nocheck
 export type Format = 'RFC1738' | 'RFC3986';
 
 export type DefaultEncoder = (str: any, defaultEncoder?: any, charset?: string) => string;

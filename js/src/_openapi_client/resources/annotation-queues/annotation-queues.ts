@@ -1,7 +1,8 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as RunsAPI from './runs';
+import { APIResource } from '../../core/resource.js';
+import * as RunsAPI from './runs.js';
 import {
   RunCreateParams,
   RunCreateResponse,
@@ -14,17 +15,17 @@ import {
   RunUpdateParams,
   RunUpdateResponse,
   Runs,
-} from './runs';
-import * as DatasetsAPI from '../datasets/datasets';
-import { APIPromise } from '../../core/api-promise';
+} from './runs.js';
+import * as DatasetsAPI from '../datasets/datasets.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
-import * as RunsAPI_ from '../runs/runs';
+} from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
+import * as RunsAPI_ from '../runs/runs.js';
 
 export class AnnotationQueues extends APIResource {
   runs: RunsAPI.Runs = new RunsAPI.Runs(this._client);

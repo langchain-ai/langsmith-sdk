@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-export { Rules } from './rules';
+export { Rules } from './rules.js';
 export {
   Runs,
   type BodyParamsForRunSchema,
@@ -23,4 +24,4 @@ export {
   type RunIngestBatchParams,
   type RunQueryParams,
   type RunStatsParams,
-} from './runs';
+} from './runs.js';

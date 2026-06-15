@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-export { Configs, type ConfigDeleteParams } from './configs';
+export { Configs, type ConfigDeleteParams } from './configs.js';
 export {
   Feedback,
   type APIFeedbackSource,
@@ -17,7 +18,7 @@ export {
   type FeedbackUpdateParams,
   type FeedbackListParams,
   type FeedbackSchemasOffsetPaginationTopLevelArray,
-} from './feedback';
+} from './feedback.js';
 export {
   Tokens,
   type FeedbackIngestTokenCreateSchema,
@@ -30,4 +31,4 @@ export {
   type TokenRetrieveParams,
   type TokenUpdateParams,
   type TokenListParams,
-} from './tokens';
+} from './tokens.js';

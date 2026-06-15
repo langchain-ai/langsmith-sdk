@@ -1,12 +1,13 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as RulesAPI from './rules';
-import { Rules } from './rules';
-import * as SessionsAPI from '../sessions/sessions';
-import { APIPromise } from '../../core/api-promise';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+import { APIResource } from '../../core/resource.js';
+import * as RulesAPI from './rules.js';
+import { Rules } from './rules.js';
+import * as SessionsAPI from '../sessions/sessions.js';
+import { APIPromise } from '../../core/api-promise.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Runs extends APIResource {
   rules: RulesAPI.Rules = new RulesAPI.Rules(this._client);

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -6,7 +7,7 @@ export {
   type BulkPatchAllResponse,
   type BulkCreateParams,
   type BulkPatchAllParams,
-} from './bulk';
+} from './bulk.js';
 export {
   Examples,
   type AttachmentsOperations,
@@ -25,5 +26,5 @@ export {
   type ExampleRetrieveCountParams,
   type ExampleUploadFromCsvParams,
   type ExamplesOffsetPaginationTopLevelArray,
-} from './examples';
-export { Validate, type ExampleValidationResult, type ValidateBulkResponse } from './validate';
+} from './examples.js';
+export { Validate, type ExampleValidationResult, type ValidateBulkResponse } from './validate.js';
