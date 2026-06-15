@@ -121,6 +121,53 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
+def test_online_evaluators_generated_client_crud(langchain_client: Client) -> None:
+    """Exercise the generated OpenAPI online evaluators resource end to end."""
+    evaluator = None
+    name = "__sdk_online_evaluator_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+
+    try:
+        created = langchain_client.online_evaluators.create(
+            name=name,
+            type="code",
+            code_evaluator={
+                "code": "def perform_eval(run, example):\n    return {'score': 1}",
+                "language": "python",
+            },
+        )
+        evaluator = created.evaluator
+        assert evaluator is not None
+        assert evaluator.id is not None
+        assert evaluator.name == name
+        assert evaluator.type == "code"
+
+        retrieved = langchain_client.online_evaluators.retrieve(evaluator.id)
+        assert retrieved.id == evaluator.id
+        assert retrieved.name == name
+
+        updated_name = f"{name}_updated"
+        updated = langchain_client.online_evaluators.update(
+            evaluator.id,
+            name=updated_name,
+        )
+        assert updated.evaluator is not None
+        assert updated.evaluator.name == updated_name
+
+        evaluators = list(
+            langchain_client.online_evaluators.list(
+                name_contains=updated_name, limit=10
+            )
+        )
+        assert evaluator.id in {item.id for item in evaluators}
+    finally:
+        if evaluator is not None and evaluator.id is not None:
+            langchain_client.online_evaluators.delete(
+                evaluator.id, delete_run_rules=True
+            )
+
+
 def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
