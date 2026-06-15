@@ -1392,7 +1392,6 @@ class Client:
 
         self._langsmith_api = LangsmithOpenAPIClient(
             api_key=self._api_key,
-            bearer_token=self._oauth_access_token,
             tenant_id=str(self._workspace_id) if self._workspace_id else None,
             base_url=self.api_url,
             timeout=_httpx.Timeout(
