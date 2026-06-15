@@ -65,7 +65,6 @@ from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-unt
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 import httpx as _httpx
-import langsmith_api as _langsmith_api_module
 
 import langsmith
 from langsmith import env as ls_env
@@ -87,6 +86,7 @@ from langsmith._internal._constants import (
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
+from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
 from langsmith._internal._hub import (
     HUB,
     PLATFORM_HUB,
@@ -264,9 +264,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
-    from langsmith_api.resources.runs import RunsResource
-    from langsmith_api.resources.threads import ThreadsResource
-    from langsmith_api.resources.traces import TracesResource
+    from _openapi_client.resources.runs import RunsResource
+    from _openapi_client.resources.threads import ThreadsResource
+    from _openapi_client.resources.traces import TracesResource
 
     # OTEL imports for type hints
     try:
@@ -1390,7 +1390,7 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        self._langsmith_api = _langsmith_api_module.Langsmith(
+        self._langsmith_api = LangsmithOpenAPIClient(
             api_key=self._api_key,
             bearer_token=self._oauth_access_token,
             tenant_id=str(self._workspace_id) if self._workspace_id else None,

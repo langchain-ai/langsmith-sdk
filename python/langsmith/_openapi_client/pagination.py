@@ -16,11 +16,17 @@ __all__ = [
     "AsyncOffsetPaginationRepos",
     "SyncOffsetPaginationCommits",
     "AsyncOffsetPaginationCommits",
+    "SyncOffsetPaginationOnlineEvaluators",
+    "AsyncOffsetPaginationOnlineEvaluators",
     "SyncOffsetPaginationInsightsClusteringJobs",
     "AsyncOffsetPaginationInsightsClusteringJobs",
     "CursorPaginationCursors",
     "SyncCursorPagination",
     "AsyncCursorPagination",
+    "SyncItemsCursorPostPagination",
+    "AsyncItemsCursorPostPagination",
+    "SyncItemsCursorGetPagination",
+    "AsyncItemsCursorGetPagination",
 ]
 
 _BaseModelT = TypeVar("_BaseModelT", bound=BaseModel)
@@ -182,6 +188,52 @@ class AsyncOffsetPaginationCommits(BaseAsyncPage[_T], BasePage[_T], Generic[_T])
         return PageInfo(params={"offset": current_count})
 
 
+class SyncOffsetPaginationOnlineEvaluators(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
+    evaluators: List[_T]
+    total: Optional[int] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        evaluators = self.evaluators
+        if not evaluators:
+            return []
+        return evaluators
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        offset = self._options.params.get("offset") or 0
+        if not isinstance(offset, int):
+            raise ValueError(f'Expected "offset" param to be an integer but got {offset}')
+
+        length = len(self._get_page_items())
+        current_count = offset + length
+
+        return PageInfo(params={"offset": current_count})
+
+
+class AsyncOffsetPaginationOnlineEvaluators(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
+    evaluators: List[_T]
+    total: Optional[int] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        evaluators = self.evaluators
+        if not evaluators:
+            return []
+        return evaluators
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        offset = self._options.params.get("offset") or 0
+        if not isinstance(offset, int):
+            raise ValueError(f'Expected "offset" param to be an integer but got {offset}')
+
+        length = len(self._get_page_items())
+        current_count = offset + length
+
+        return PageInfo(params={"offset": current_count})
+
+
 class SyncOffsetPaginationInsightsClusteringJobs(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
     clustering_jobs: List[_T]
 
@@ -250,7 +302,7 @@ class SyncCursorPagination(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
         if not next:
             return None
 
-        return PageInfo(params={"cursor": next})
+        return PageInfo(json={"cursor": next})
 
 
 class AsyncCursorPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
@@ -273,4 +325,84 @@ class AsyncCursorPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
         if not next:
             return None
 
-        return PageInfo(params={"cursor": next})
+        return PageInfo(json={"cursor": next})
+
+
+class SyncItemsCursorPostPagination(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
+    items: List[_T]
+    next_cursor: Optional[str] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        items = self.items
+        if not items:
+            return []
+        return items
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        next_cursor = self.next_cursor
+        if not next_cursor:
+            return None
+
+        return PageInfo(json={"cursor": next_cursor})
+
+
+class AsyncItemsCursorPostPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
+    items: List[_T]
+    next_cursor: Optional[str] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        items = self.items
+        if not items:
+            return []
+        return items
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        next_cursor = self.next_cursor
+        if not next_cursor:
+            return None
+
+        return PageInfo(json={"cursor": next_cursor})
+
+
+class SyncItemsCursorGetPagination(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
+    items: List[_T]
+    next_cursor: Optional[str] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        items = self.items
+        if not items:
+            return []
+        return items
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        next_cursor = self.next_cursor
+        if not next_cursor:
+            return None
+
+        return PageInfo(params={"cursor": next_cursor})
+
+
+class AsyncItemsCursorGetPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
+    items: List[_T]
+    next_cursor: Optional[str] = None
+
+    @override
+    def _get_page_items(self) -> List[_T]:
+        items = self.items
+        if not items:
+            return []
+        return items
+
+    @override
+    def next_page_info(self) -> Optional[PageInfo]:
+        next_cursor = self.next_cursor
+        if not next_cursor:
+            return None
+
+        return PageInfo(params={"cursor": next_cursor})
