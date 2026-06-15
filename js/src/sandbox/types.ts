@@ -314,7 +314,7 @@ export interface SandboxProxyConfig {
   access_control?: SandboxAccessControl;
 }
 
-/** Optional cache configuration shared by all sandbox mounts. */
+/** Optional per-mount cache configuration supported by all mount providers. */
 export interface MountCacheConfig {
   /** Maximum VFS cache size in bytes. */
   max_size_bytes?: number;
@@ -329,7 +329,7 @@ interface SandboxMountBase {
   mount_path: string;
   /** Whether the mount should be read-only. */
   read_only?: boolean;
-  /** Optional VFS cache configuration. */
+  /** Optional per-mount VFS cache configuration. */
   cache?: MountCacheConfig;
 }
 
