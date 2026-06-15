@@ -1,7 +1,8 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as InsightsAPI from './insights';
+import { APIResource } from '../../core/resource.js';
+import * as InsightsAPI from './insights.js';
 import {
   CreateRunClusteringJobRequest,
   InsightCreateParams,
@@ -18,16 +19,16 @@ import {
   InsightUpdateParams,
   InsightUpdateResponse,
   Insights,
-} from './insights';
-import { APIPromise } from '../../core/api-promise';
+} from './insights.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { buildHeaders } from '../../internal/headers';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { buildHeaders } from '../../internal/headers.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Sessions extends APIResource {
   insights: InsightsAPI.Insights = new InsightsAPI.Insights(this._client);

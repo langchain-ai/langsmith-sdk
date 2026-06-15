@@ -1,21 +1,22 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as ComparativeAPI from '../datasets/comparative';
-import * as DatasetsAPI from '../datasets/datasets';
-import * as FeedbackAPI from '../feedback/feedback';
-import { FeedbackSchemasOffsetPaginationTopLevelArray } from '../feedback/feedback';
-import * as SessionsAPI from '../sessions/sessions';
-import { TracerSessionsOffsetPaginationTopLevelArray } from '../sessions/sessions';
-import { APIPromise } from '../../core/api-promise';
+import { APIResource } from '../../core/resource.js';
+import * as ComparativeAPI from '../datasets/comparative.js';
+import * as DatasetsAPI from '../datasets/datasets.js';
+import * as FeedbackAPI from '../feedback/feedback.js';
+import { FeedbackSchemasOffsetPaginationTopLevelArray } from '../feedback/feedback.js';
+import * as SessionsAPI from '../sessions/sessions.js';
+import { TracerSessionsOffsetPaginationTopLevelArray } from '../sessions/sessions.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { buildHeaders } from '../../internal/headers';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { buildHeaders } from '../../internal/headers.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Datasets extends APIResource {
   /**

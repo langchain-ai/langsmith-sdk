@@ -1,7 +1,8 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as BoxesAPI from './boxes';
+import { APIResource } from '../../core/resource.js';
+import * as BoxesAPI from './boxes.js';
 import {
   BoxCreateParams,
   BoxCreateResponse,
@@ -17,8 +18,8 @@ import {
   BoxUpdateParams,
   BoxUpdateResponse,
   Boxes,
-} from './boxes';
-import * as SnapshotsAPI from './snapshots';
+} from './boxes.js';
+import * as SnapshotsAPI from './snapshots.js';
 import {
   SnapshotCreateParams,
   SnapshotCreateResponse,
@@ -26,7 +27,7 @@ import {
   SnapshotListResponse,
   SnapshotRetrieveResponse,
   Snapshots,
-} from './snapshots';
+} from './snapshots.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);

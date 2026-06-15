@@ -1,9 +1,10 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as FeedbackAPI from '../feedback/feedback';
-import { FeedbackSchemasOffsetPaginationTopLevelArray } from '../feedback/feedback';
-import * as DatasetsAPI from './datasets';
+import { APIResource } from '../../core/resource.js';
+import * as FeedbackAPI from '../feedback/feedback.js';
+import { FeedbackSchemasOffsetPaginationTopLevelArray } from '../feedback/feedback.js';
+import * as DatasetsAPI from './datasets.js';
 import {
   DatasetListComparativeParams,
   DatasetListComparativeResponse,
@@ -15,14 +16,14 @@ import {
   DatasetRetrieveSessionsBulkParams,
   DatasetRetrieveSessionsBulkResponse,
   Datasets,
-} from './datasets';
+} from './datasets.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { RequestOptions } from '../../internal/request-options';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Public extends APIResource {
   datasets: DatasetsAPI.Datasets = new DatasetsAPI.Datasets(this._client);

@@ -1,1 +1,2 @@
-export * from './resources/index';
+// @ts-nocheck
+export * from './resources/index.js';

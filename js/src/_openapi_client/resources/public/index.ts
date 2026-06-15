@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -11,5 +12,5 @@ export {
   type DatasetListSessionsParams,
   type DatasetRetrieveSessionsBulkParams,
   type DatasetListComparativeResponsesOffsetPaginationTopLevelArray,
-} from './datasets';
-export { Public, type PublicRetrieveFeedbacksParams } from './public';
+} from './datasets.js';
+export { Public, type PublicRetrieveFeedbacksParams } from './public.js';

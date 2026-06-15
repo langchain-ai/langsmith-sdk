@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -7,7 +8,7 @@ export {
   type ComparativeCreateResponse,
   type ComparativeDeleteResponse,
   type ComparativeCreateParams,
-} from './comparative';
+} from './comparative.js';
 export {
   Datasets,
   type DataType,
@@ -37,9 +38,9 @@ export {
   type DatasetUploadParams,
   type DatasetVersionsOffsetPaginationTopLevelArray,
   type DatasetsOffsetPaginationTopLevelArray,
-} from './datasets';
-export { Experiments, type ExperimentGroupedResponse, type ExperimentGroupedParams } from './experiments';
-export { Group, type GroupRunsResponse, type GroupRunsParams } from './group';
+} from './datasets.js';
+export { Experiments, type ExperimentGroupedResponse, type ExperimentGroupedParams } from './experiments.js';
+export { Group, type GroupRunsResponse, type GroupRunsParams } from './group.js';
 export {
   Runs,
   type ExampleWithRunsCh,
@@ -50,18 +51,18 @@ export {
   type RunCreateResponse,
   type RunCreateParams,
   type RunDeltaParams,
-} from './runs';
-export { Share, type DatasetShareSchema, type ShareDeleteAllResponse, type ShareCreateParams } from './share';
+} from './runs.js';
+export { Share, type DatasetShareSchema, type ShareDeleteAllResponse, type ShareCreateParams } from './share.js';
 export {
   Splits,
   type SplitCreateResponse,
   type SplitRetrieveResponse,
   type SplitCreateParams,
   type SplitRetrieveParams,
-} from './splits';
+} from './splits.js';
 export {
   Versions,
   type VersionRetrieveDiffResponse,
   type VersionListParams,
   type VersionRetrieveDiffParams,
-} from './versions';
+} from './versions.js';

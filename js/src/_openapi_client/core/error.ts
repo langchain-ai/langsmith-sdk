@@ -1,6 +1,7 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { castToError } from '../internal/errors';
+import { castToError } from '../internal/errors.js';
 
 export class LangsmithError extends Error {}
 

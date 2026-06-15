@@ -1,7 +1,8 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import { APIResource } from '../../core/resource';
-import * as ComparativeAPI from './comparative';
+import { APIResource } from '../../core/resource.js';
+import * as ComparativeAPI from './comparative.js';
 import {
   Comparative,
   ComparativeCreateParams,
@@ -9,12 +10,12 @@ import {
   ComparativeDeleteResponse,
   SimpleExperimentInfo,
   SortByComparativeExperimentColumn,
-} from './comparative';
-import * as ExperimentsAPI from './experiments';
-import { ExperimentGroupedParams, ExperimentGroupedResponse, Experiments } from './experiments';
-import * as GroupAPI from './group';
-import { Group, GroupRunsParams, GroupRunsResponse } from './group';
-import * as RunsAPI from './runs';
+} from './comparative.js';
+import * as ExperimentsAPI from './experiments.js';
+import { ExperimentGroupedParams, ExperimentGroupedResponse, Experiments } from './experiments.js';
+import * as GroupAPI from './group.js';
+import { Group, GroupRunsParams, GroupRunsResponse } from './group.js';
+import * as RunsAPI from './runs.js';
 import {
   ExampleWithRunsCh,
   QueryExampleSchemaWithRuns,
@@ -25,36 +26,36 @@ import {
   Runs,
   SessionFeedbackDelta,
   SortParamsForRunsComparisonView,
-} from './runs';
-import * as ShareAPI from './share';
-import { DatasetShareSchema, Share, ShareCreateParams, ShareDeleteAllResponse } from './share';
-import * as SplitsAPI from './splits';
+} from './runs.js';
+import * as ShareAPI from './share.js';
+import { DatasetShareSchema, Share, ShareCreateParams, ShareDeleteAllResponse } from './share.js';
+import * as SplitsAPI from './splits.js';
 import {
   SplitCreateParams,
   SplitCreateResponse,
   SplitRetrieveParams,
   SplitRetrieveResponse,
   Splits,
-} from './splits';
-import * as VersionsAPI from './versions';
+} from './splits.js';
+import * as VersionsAPI from './versions.js';
 import {
   VersionListParams,
   VersionRetrieveDiffParams,
   VersionRetrieveDiffResponse,
   Versions,
-} from './versions';
-import * as ExamplesAPI from '../examples/examples';
-import * as FeedbackAPI from '../feedback/feedback';
-import { APIPromise } from '../../core/api-promise';
+} from './versions.js';
+import * as ExamplesAPI from '../examples/examples.js';
+import * as FeedbackAPI from '../feedback/feedback.js';
+import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
   type OffsetPaginationTopLevelArrayParams,
   PagePromise,
-} from '../../core/pagination';
-import { type Uploadable } from '../../core/uploads';
-import { RequestOptions } from '../../internal/request-options';
-import { multipartFormRequestOptions } from '../../internal/uploads';
-import { path } from '../../internal/utils/path';
+} from '../../core/pagination.js';
+import { type Uploadable } from '../../core/uploads.js';
+import { RequestOptions } from '../../internal/request-options.js';
+import { multipartFormRequestOptions } from '../../internal/uploads.js';
+import { path } from '../../internal/utils/path.js';
 
 export class Datasets extends APIResource {
   versions: VersionsAPI.Versions = new VersionsAPI.Versions(this._client);

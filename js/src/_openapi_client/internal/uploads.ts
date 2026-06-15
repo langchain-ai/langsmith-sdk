@@ -1,7 +1,8 @@
-import { type RequestOptions } from './request-options';
-import type { FilePropertyBag, Fetch } from './builtin-types';
-import type { Langsmith } from '../client';
-import { ReadableStreamFrom } from './shims';
+// @ts-nocheck
+import { type RequestOptions } from './request-options.js';
+import type { FilePropertyBag, Fetch } from './builtin-types.js';
+import type { Langsmith } from '../client.js';
+import { ReadableStreamFrom } from './shims.js';
 
 export type BlobPart = string | ArrayBuffer | ArrayBufferView | Blob | DataView;
 type FsReadStream = AsyncIterable<Uint8Array> & { path: string | { toString(): string } };

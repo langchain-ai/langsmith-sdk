@@ -1,3 +1,4 @@
+// @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 export {
@@ -7,7 +8,7 @@ export {
   type DirectoryListParams,
   type DirectoryDeleteParams,
   type DirectoryCommitParams,
-} from './directories';
+} from './directories.js';
 export {
   Repos,
   type CreateRepoResponse,
@@ -23,4 +24,4 @@ export {
   type RepoListParams,
   type RepoDeleteParams,
   type RepoWithLookupsOffsetPaginationRepos,
-} from './repos';
+} from './repos.js';
