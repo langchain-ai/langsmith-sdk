@@ -156,7 +156,9 @@ def test_online_evaluators_generated_client_crud(langchain_client: Client) -> No
         assert updated.evaluator.name == updated_name
 
         evaluators = list(
-            langchain_client.online_evaluators.list(name_contains=updated_name, limit=10)
+            langchain_client.online_evaluators.list(
+                name_contains=updated_name, limit=10
+            )
         )
         assert evaluator.id in {item.id for item in evaluators}
     finally:
