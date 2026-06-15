@@ -300,6 +300,12 @@ export interface SandboxGcpAuthRule {
   };
 }
 
+/** Proxy rule accepted by the sandbox proxy config. */
+export type SandboxProxyRule =
+  | SandboxAwsAuthRule
+  | SandboxGcpAuthRule
+  | Record<string, unknown>;
+
 /**
  * Full proxy configuration forwarded to the sandbox server as-is (snake_case
  * so it's wire-compatible with the backend). Mirrors the server's
@@ -307,7 +313,7 @@ export interface SandboxGcpAuthRule {
  */
 export interface SandboxProxyConfig {
   /** Header-injection rules keyed by host pattern. */
-  rules?: unknown[];
+  rules?: SandboxProxyRule[];
   /** Hosts that bypass the proxy entirely. */
   no_proxy?: string[];
   /** Allow/deny list enforced at the proxy sidecar. */
@@ -429,8 +435,9 @@ export interface CreateSandboxOptions {
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
-   * server as-is on the wire. Use `awsAuthProxyConfig` for AWS SigV4 auth or
-   * `gcpAuthProxyConfig` for GCP OAuth bearer auth.
+   * server as-is on the wire. Use `proxyConfig` with provider rule helpers
+   * such as `awsAuthProxyRule` for AWS SigV4 auth or `gcpAuthProxyRule` for
+   * GCP OAuth bearer auth.
    */
   proxyConfig?: SandboxProxyConfig;
 }

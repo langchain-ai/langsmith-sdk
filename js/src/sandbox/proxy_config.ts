@@ -1,7 +1,9 @@
 import type {
+  SandboxAccessControl,
   SandboxAwsAuthRule,
   SandboxGcpAuthRule,
   SandboxProxyConfig,
+  SandboxProxyRule,
   SandboxProxySecret,
 } from "./types.js";
 
@@ -17,6 +19,23 @@ function requireNonEmptyStringArray(values: string[], field: string): string[] {
     throw new Error(`${field} must be a non-empty array of strings`);
   }
   return values.map((value) => requireNonEmptyString(value, field));
+}
+
+function requireProxyRules(
+  rules: SandboxProxyRule[] | undefined,
+): SandboxProxyRule[] {
+  if (rules === undefined) {
+    return [];
+  }
+  if (!Array.isArray(rules)) {
+    throw new Error("rules must be an array of proxy rule objects");
+  }
+  return rules.map((rule) => {
+    if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
+      throw new Error("rules must be an array of proxy rule objects");
+    }
+    return rule;
+  });
 }
 
 /** Reference a LangSmith workspace secret in a sandbox proxy configuration. */
@@ -44,8 +63,30 @@ export function opaqueSecret(value: string): SandboxProxySecret {
   };
 }
 
-/** Build a sandbox proxy config that signs AWS HTTPS requests with SigV4. */
-export function awsAuthProxyConfig({
+/** Build a sandbox proxy config from one or more proxy rules. */
+export function proxyConfig({
+  rules,
+  noProxy,
+  accessControl,
+}: {
+  rules?: SandboxProxyRule[];
+  noProxy?: string[];
+  accessControl?: SandboxAccessControl;
+} = {}): SandboxProxyConfig {
+  const config: SandboxProxyConfig = {
+    rules: requireProxyRules(rules),
+  };
+  if (noProxy !== undefined) {
+    config.no_proxy = requireNonEmptyStringArray(noProxy, "noProxy");
+  }
+  if (accessControl !== undefined) {
+    config.access_control = { ...accessControl };
+  }
+  return config;
+}
+
+/** Build a sandbox proxy rule that signs AWS HTTPS requests with SigV4. */
+export function awsAuthProxyRule({
   accessKeyId,
   secretAccessKey,
   name = "aws",
@@ -55,8 +96,8 @@ export function awsAuthProxyConfig({
   secretAccessKey: SandboxProxySecret;
   name?: string;
   enabled?: boolean;
-}): SandboxProxyConfig {
-  const rule: SandboxAwsAuthRule = {
+}): SandboxAwsAuthRule {
+  return {
     name: requireNonEmptyString(name, "name"),
     type: "aws",
     enabled,
@@ -65,11 +106,10 @@ export function awsAuthProxyConfig({
       secret_access_key: secretAccessKey,
     },
   };
-  return { rules: [rule] };
 }
 
-/** Build a sandbox proxy config that injects GCP OAuth bearer auth. */
-export function gcpAuthProxyConfig({
+/** Build a sandbox proxy rule that injects GCP OAuth bearer auth. */
+export function gcpAuthProxyRule({
   serviceAccountJson,
   scopes,
   matchHosts,
@@ -81,8 +121,8 @@ export function gcpAuthProxyConfig({
   matchHosts: string[];
   name?: string;
   enabled?: boolean;
-}): SandboxProxyConfig {
-  const rule: SandboxGcpAuthRule = {
+}): SandboxGcpAuthRule {
+  return {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
     enabled,
@@ -92,5 +132,4 @@ export function gcpAuthProxyConfig({
       scopes: requireNonEmptyStringArray(scopes, "scopes"),
     },
   };
-  return { rules: [rule] };
 }

@@ -7,10 +7,12 @@ import { inspect } from "node:util";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
+import * as sandboxExports from "../sandbox/index.js";
 import {
-  awsAuthProxyConfig,
-  gcpAuthProxyConfig,
+  awsAuthProxyRule,
+  gcpAuthProxyRule,
   opaqueSecret,
+  proxyConfig,
   workspaceSecret,
 } from "../sandbox/index.js";
 import {
@@ -77,56 +79,77 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
-  it("awsAuthProxyConfig builds an AWS auth rule", () => {
+  it("does not export legacy single-provider config helpers", () => {
+    expect("awsAuthProxyConfig" in sandboxExports).toBe(false);
+    expect("gcpAuthProxyConfig" in sandboxExports).toBe(false);
+  });
+
+  it("awsAuthProxyRule builds an AWS auth rule", () => {
     expect(
-      awsAuthProxyConfig({
+      awsAuthProxyRule({
         accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
         secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
       }),
     ).toEqual({
-      rules: [
-        {
-          name: "aws",
-          type: "aws",
-          enabled: true,
-          aws: {
-            access_key_id: {
-              type: "workspace_secret",
-              value: "{AWS_KEY_ID_REF}",
-            },
-            secret_access_key: {
-              type: "workspace_secret",
-              value: "{AWS_KEY_VALUE_REF}",
-            },
-          },
+      name: "aws",
+      type: "aws",
+      enabled: true,
+      aws: {
+        access_key_id: {
+          type: "workspace_secret",
+          value: "{AWS_KEY_ID_REF}",
         },
-      ],
+        secret_access_key: {
+          type: "workspace_secret",
+          value: "{AWS_KEY_VALUE_REF}",
+        },
+      },
     });
   });
 
-  it("gcpAuthProxyConfig builds a GCP auth rule", () => {
+  it("gcpAuthProxyRule builds a GCP auth rule", () => {
     expect(
-      gcpAuthProxyConfig({
+      gcpAuthProxyRule({
         serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
         scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
         matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
       }),
     ).toEqual({
-      rules: [
-        {
-          name: "gcp",
-          type: "gcp",
-          enabled: true,
-          match_hosts: ["storage.googleapis.com", "www.googleapis.com"],
-          gcp: {
-            service_account_json: {
-              type: "workspace_secret",
-              value: "{GCP_SERVICE_ACCOUNT_JSON}",
-            },
-            scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-          },
+      name: "gcp",
+      type: "gcp",
+      enabled: true,
+      match_hosts: ["storage.googleapis.com", "www.googleapis.com"],
+      gcp: {
+        service_account_json: {
+          type: "workspace_secret",
+          value: "{GCP_SERVICE_ACCOUNT_JSON}",
         },
-      ],
+        scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      },
+    });
+  });
+
+  it("proxyConfig composes multiple provider rules", () => {
+    const awsRule = awsAuthProxyRule({
+      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    });
+    const gcpRule = gcpAuthProxyRule({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      matchHosts: ["storage.googleapis.com"],
+    });
+
+    expect(
+      proxyConfig({
+        rules: [awsRule, gcpRule],
+        noProxy: ["metadata.google.internal"],
+        accessControl: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
+      }),
+    ).toEqual({
+      rules: [awsRule, gcpRule],
+      no_proxy: ["metadata.google.internal"],
+      access_control: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
     });
   });
 
@@ -142,10 +165,10 @@ describe("sandbox proxy config helpers", () => {
       matchHosts: [""],
     },
   ])(
-    "gcpAuthProxyConfig rejects empty scopes and match hosts",
+    "gcpAuthProxyRule rejects empty scopes and match hosts",
     ({ scopes, matchHosts }) => {
       expect(() =>
-        gcpAuthProxyConfig({
+        gcpAuthProxyRule({
           serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
           scopes,
           matchHosts,
@@ -637,7 +660,7 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.mounts).toEqual(mounts);
   });
 
-  it("should forward AWS auth proxy config in the request body", async () => {
+  it("should forward composed proxy config in the request body", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -647,15 +670,19 @@ describe("SandboxClient - createSandbox", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const proxyConfig = awsAuthProxyConfig({
-      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
-      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    const config = proxyConfig({
+      rules: [
+        awsAuthProxyRule({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        }),
+      ],
     });
-    await client.createSandbox("snap-123", { proxyConfig });
+    await client.createSandbox("snap-123", { proxyConfig: config });
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.proxy_config).toEqual(proxyConfig);
+    expect(body.proxy_config).toEqual(config);
   });
 
   it("should omit proxy_config from the request body when not provided", async () => {

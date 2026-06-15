@@ -62,18 +62,24 @@ for your workspace. Then reference those secret names in the proxy config:
 ```typescript
 import {
   SandboxClient,
-  awsAuthProxyConfig,
+  awsAuthProxyRule,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
 const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    awsAuthProxyRule({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+});
 
 const sandbox = await client.createSandbox({
   name: "aws-sandbox",
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-  }),
+  proxyConfig: authConfig,
 });
 
 try {
@@ -99,11 +105,15 @@ If your application mints short-lived AWS credentials, pass them as write-only
 opaque values instead:
 
 ```typescript
-import { awsAuthProxyConfig, opaqueSecret } from "langsmith/sandbox";
+import { awsAuthProxyRule, opaqueSecret, proxyConfig } from "langsmith/sandbox";
 
-const proxyConfig = awsAuthProxyConfig({
-  accessKeyId: opaqueSecret(accessKeyId),
-  secretAccessKey: opaqueSecret(secretAccessKey),
+const authConfig = proxyConfig({
+  rules: [
+    awsAuthProxyRule({
+      accessKeyId: opaqueSecret(accessKeyId),
+      secretAccessKey: opaqueSecret(secretAccessKey),
+    }),
+  ],
 });
 ```
 
@@ -124,19 +134,25 @@ that secret name in the proxy config:
 ```typescript
 import {
   SandboxClient,
-  gcpAuthProxyConfig,
+  gcpAuthProxyRule,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
 const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    gcpAuthProxyRule({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+    }),
+  ],
+});
 
 const sandbox = await client.createSandbox({
   name: "gcp-sandbox",
-  proxyConfig: gcpAuthProxyConfig({
-    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
-  }),
+  proxyConfig: authConfig,
 });
 
 try {
@@ -176,9 +192,13 @@ const sandbox = await client.createSandbox({
       },
     },
   ],
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+  proxyConfig: proxyConfig({
+    rules: [
+      awsAuthProxyRule({
+        accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+        secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+      }),
+    ],
   }),
 });
 
@@ -209,10 +229,14 @@ const sandbox = await client.createSandbox({
       },
     },
   ],
-  proxyConfig: gcpAuthProxyConfig({
-    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+  proxyConfig: proxyConfig({
+    rules: [
+      gcpAuthProxyRule({
+        serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+        scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+        matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+      }),
+    ],
   }),
 });
 
@@ -222,6 +246,33 @@ try {
 } finally {
   await sandbox.delete();
 }
+```
+
+If one sandbox needs both S3 and GCS mounts, build one sandbox-level proxy
+config with both provider rules, then pass it as `proxyConfig` when creating
+the sandbox:
+
+```typescript
+import {
+  awsAuthProxyRule,
+  gcpAuthProxyRule,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountProxyConfig = proxyConfig({
+  rules: [
+    awsAuthProxyRule({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+    gcpAuthProxyRule({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+      matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+    }),
+  ],
+});
 ```
 
 ## Running Commands
