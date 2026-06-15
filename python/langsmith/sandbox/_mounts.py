@@ -6,14 +6,14 @@ from typing import Literal, TypedDict, Union
 
 
 class MountCacheConfig(TypedDict, total=False):
-    """Optional cache configuration shared by all sandbox mounts."""
+    """Optional per-mount cache configuration supported by all mount providers."""
 
     max_size_bytes: int
     writeback_seconds: int
 
 
 class MountSpecBase(TypedDict, total=False):
-    """Optional fields shared by all sandbox mount specifications."""
+    """Optional fields applied per sandbox mount specification."""
 
     read_only: bool
     cache: MountCacheConfig
