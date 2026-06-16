@@ -1412,7 +1412,19 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        _check_backend_version(self.info.version)
+        try:
+            _info_resp = self.session.request(
+                "GET",
+                _construct_url(self.api_url, "/info"),
+                headers={**self._headers, "Accept": "application/json"},
+                timeout=self._timeout,
+                stream=False,
+            )
+            ls_utils.raise_for_status_with_text(_info_resp)
+            self._info = ls_schemas.LangSmithInfo(**_info_resp.json())
+        except BaseException:
+            pass
+        _check_backend_version(self._info.version if self._info else "")
 
     def _dump_failed_trace(
         self,

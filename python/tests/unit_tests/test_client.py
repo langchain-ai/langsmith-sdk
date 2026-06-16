@@ -345,9 +345,9 @@ def test_profile_config_refreshes_expired_oauth_token(
         }
         return response
 
-    client = Client(auto_batch_tracing=False)
-
     monkeypatch.setattr(requests, "post", mock_post)
+
+    client = Client(auto_batch_tracing=False)
 
     assert client._headers["Authorization"] == "Bearer old-access-token"
     assert calls == []
