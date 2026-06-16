@@ -383,6 +383,14 @@ export interface GCSMountSpec extends SandboxMountBase {
 /** Sandbox mount specification. */
 export type SandboxMount = S3MountSpec | GCSMountSpec;
 
+/** SDK-level mount config expanded into backend mounts and proxyConfig. */
+export interface SandboxMountConfig {
+  /** Mounts attached to the sandbox. */
+  mounts: SandboxMount[];
+  /** Proxy auth config required by the mounts. */
+  proxyConfig: SandboxProxyConfig;
+}
+
 /**
  * Options for creating a sandbox.
  */
@@ -432,12 +440,18 @@ export interface CreateSandboxOptions {
   /** Mounts attached to the sandbox. */
   mounts?: SandboxMount[];
   /**
+   * High-level mount configuration. Mutually exclusive with `mounts` and
+   * `proxyConfig`; the SDK expands it into backend `mounts` and `proxy_config`
+   * fields.
+   */
+  mountConfig?: SandboxMountConfig;
+  /**
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
    * server as-is on the wire. Use `proxyConfig` with provider rule helpers
-   * such as `awsAuthProxyRule` for AWS SigV4 auth or `gcpAuthProxyRule` for
-   * GCP OAuth bearer auth.
+   * such as `awsAuth` for AWS SigV4 auth or `gcpAuth` for GCP OAuth bearer
+   * auth.
    */
   proxyConfig?: SandboxProxyConfig;
 }

@@ -62,7 +62,7 @@ for your workspace. Then reference those secret names in the proxy config:
 ```typescript
 import {
   SandboxClient,
-  awsAuthProxyRule,
+  awsAuth,
   proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
@@ -70,7 +70,7 @@ import {
 const client = new SandboxClient();
 const authConfig = proxyConfig({
   rules: [
-    awsAuthProxyRule({
+    awsAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
@@ -105,11 +105,11 @@ If your application mints short-lived AWS credentials, pass them as write-only
 opaque values instead:
 
 ```typescript
-import { awsAuthProxyRule, opaqueSecret, proxyConfig } from "langsmith/sandbox";
+import { awsAuth, opaqueSecret, proxyConfig } from "langsmith/sandbox";
 
 const authConfig = proxyConfig({
   rules: [
-    awsAuthProxyRule({
+    awsAuth({
       accessKeyId: opaqueSecret(accessKeyId),
       secretAccessKey: opaqueSecret(secretAccessKey),
     }),
@@ -134,7 +134,7 @@ that secret name in the proxy config:
 ```typescript
 import {
   SandboxClient,
-  gcpAuthProxyRule,
+  gcpAuth,
   proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
@@ -142,10 +142,9 @@ import {
 const client = new SandboxClient();
 const authConfig = proxyConfig({
   rules: [
-    gcpAuthProxyRule({
+    gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
       scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-      matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
     }),
   ],
 });
@@ -170,36 +169,43 @@ Plaintext service account JSON is not accepted directly.
 
 Use bucket mounts when sandbox code needs filesystem access to a bucket or
 prefix. Mount specs contain only the bucket target. Provider credentials stay in
-explicit proxy auth config.
+explicit auth config, and the SDK expands `mountConfig` into the backend
+`mounts` and `proxy_config` fields.
 
 S3 mounts require an enabled AWS auth proxy rule:
 
 ```typescript
+import {
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      endpointUrl: "https://s3.amazonaws.com",
+      pathStyle: false,
+      readOnly: false,
+    }),
+  ],
+});
+
 const sandbox = await client.createSandbox({
   name: "s3-mount-sandbox",
-  mounts: [
-    {
-      id: "customer_data",
-      type: "s3",
-      mount_path: "/mnt/mounts/customer-data",
-      read_only: false,
-      s3: {
-        endpoint_url: "https://s3.amazonaws.com",
-        region: "us-east-1",
-        bucket: "example-bucket",
-        prefix: "datasets/customer-data",
-        path_style: false,
-      },
-    },
-  ],
-  proxyConfig: proxyConfig({
-    rules: [
-      awsAuthProxyRule({
-        accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
-        secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-      }),
-    ],
-  }),
+  mountConfig: mountCfg,
 });
 
 try {
@@ -216,28 +222,33 @@ GCS mounts require an enabled GCP auth proxy rule covering
 `devstorage.read_only`.
 
 ```typescript
+import {
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+    }),
+  ],
+});
+
 const sandbox = await client.createSandbox({
   name: "gcs-mount-sandbox",
-  mounts: [
-    {
-      id: "customer_data",
-      type: "gcs",
-      mount_path: "/mnt/mounts/customer-data",
-      gcs: {
-        bucket: "example-bucket",
-        prefix: "datasets/customer-data",
-      },
-    },
-  ],
-  proxyConfig: proxyConfig({
-    rules: [
-      gcpAuthProxyRule({
-        serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-        scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-        matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
-      }),
-    ],
-  }),
+  mountConfig: mountCfg,
 });
 
 try {
@@ -248,28 +259,40 @@ try {
 }
 ```
 
-If one sandbox needs both S3 and GCS mounts, build one sandbox-level proxy
-config with both provider rules, then pass it as `proxyConfig` when creating
-the sandbox:
+If one sandbox needs both S3 and GCS mounts, build one `mountConfig` with both
+provider rules and mount specs:
 
 ```typescript
 import {
-  awsAuthProxyRule,
-  gcpAuthProxyRule,
-  proxyConfig,
+  awsAuth,
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  s3Mount,
   workspaceSecret,
 } from "langsmith/sandbox";
 
-const mountProxyConfig = proxyConfig({
-  rules: [
-    awsAuthProxyRule({
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
-    gcpAuthProxyRule({
+    gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
       scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-      matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "s3_data",
+      mountPath: "/mnt/mounts/s3-data",
+      bucket: "example-s3-bucket",
+    }),
+    gcsMount({
+      id: "gcs_data",
+      mountPath: "/mnt/mounts/gcs-data",
+      bucket: "example-gcs-bucket",
     }),
   ],
 });

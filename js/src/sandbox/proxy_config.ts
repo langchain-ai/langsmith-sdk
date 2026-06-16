@@ -7,6 +7,11 @@ import type {
   SandboxProxySecret,
 } from "./types.js";
 
+const DEFAULT_GCP_AUTH_MATCH_HOSTS = [
+  "storage.googleapis.com",
+  "www.googleapis.com",
+];
+
 function requireNonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${field} must be a non-empty string`);
@@ -86,7 +91,7 @@ export function proxyConfig({
 }
 
 /** Build a sandbox proxy rule that signs AWS HTTPS requests with SigV4. */
-export function awsAuthProxyRule({
+export function awsAuth({
   accessKeyId,
   secretAccessKey,
   name = "aws",
@@ -109,16 +114,16 @@ export function awsAuthProxyRule({
 }
 
 /** Build a sandbox proxy rule that injects GCP OAuth bearer auth. */
-export function gcpAuthProxyRule({
+export function gcpAuth({
   serviceAccountJson,
   scopes,
-  matchHosts,
+  matchHosts = DEFAULT_GCP_AUTH_MATCH_HOSTS,
   name = "gcp",
   enabled = true,
 }: {
   serviceAccountJson: SandboxProxySecret;
   scopes: string[];
-  matchHosts: string[];
+  matchHosts?: string[];
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {

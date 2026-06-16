@@ -33,12 +33,13 @@ export { SandboxClient } from "./client.js";
 export { Sandbox } from "./sandbox.js";
 export { CommandHandle } from "./command_handle.js";
 export {
-  awsAuthProxyRule,
-  gcpAuthProxyRule,
+  awsAuth,
+  gcpAuth,
   opaqueSecret,
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
+export { gcsMount, mountConfig, s3Mount } from "./mounts.js";
 
 // Types
 export type {
@@ -55,6 +56,7 @@ export type {
   SandboxAccessControl,
   SandboxAwsAuthRule,
   SandboxGcpAuthRule,
+  SandboxMountConfig,
   SandboxProxyConfig,
   SandboxProxyRule,
   SandboxProxySecret,

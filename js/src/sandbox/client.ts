@@ -503,6 +503,7 @@ export class SandboxClient {
       vCpus,
       memBytes,
       fsCapacityBytes,
+      mountConfig,
       mounts,
       proxyConfig,
     } = resolvedOptions;
@@ -511,6 +512,15 @@ export class SandboxClient {
       throw new LangSmithValidationError(
         "At most one of snapshotId or options.snapshotName may be set",
         "snapshotId",
+      );
+    }
+    if (
+      mountConfig !== undefined &&
+      (mounts !== undefined || proxyConfig !== undefined)
+    ) {
+      throw new LangSmithValidationError(
+        "mountConfig is mutually exclusive with mounts and proxyConfig",
+        "mountConfig",
       );
     }
 
@@ -549,11 +559,13 @@ export class SandboxClient {
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
     }
-    if (mounts !== undefined) {
-      payload.mounts = mounts;
+    const effectiveMounts = mountConfig?.mounts ?? mounts;
+    const effectiveProxyConfig = mountConfig?.proxyConfig ?? proxyConfig;
+    if (effectiveMounts !== undefined) {
+      payload.mounts = effectiveMounts;
     }
-    if (proxyConfig !== undefined) {
-      payload.proxy_config = proxyConfig;
+    if (effectiveProxyConfig !== undefined) {
+      payload.proxy_config = effectiveProxyConfig;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
