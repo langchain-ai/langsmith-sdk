@@ -1412,21 +1412,6 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        try:
-            with requests.Session() as _tmp_session:
-                _info_resp = _tmp_session.request(
-                    "GET",
-                    _construct_url(self.api_url, "/info"),
-                    headers={**self._headers, "Accept": "application/json"},
-                    timeout=self._timeout,
-                )
-                ls_utils.raise_for_status_with_text(_info_resp)
-                _check_backend_version(
-                    ls_schemas.LangSmithInfo(**_info_resp.json()).version
-                )
-        except Exception:
-            pass
-
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1659,6 +1644,7 @@ class Client:
         """Access generated online evaluator CRUD methods."""
         from langsmith._openapi_client import Langsmith as OpenAPILangsmith
 
+        _check_backend_version(self.info.version)
         self._ensure_profile_auth()
         headers = self._headers
         if self._profile_auth is not None:
