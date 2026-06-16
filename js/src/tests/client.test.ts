@@ -12,6 +12,35 @@ import {
 import { parseHubIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
+  describe("createFeedback", () => {
+    it("can opt out of extending trace retention", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
+        score: 1,
+        doNotExtendTraceRetention: true,
+      });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual(
+        expect.objectContaining({
+          do_not_extend_trace_retention: true,
+        }),
+      );
+    });
+  });
+
   describe("onlineEvaluators", () => {
     it("creates an online evaluator through the platform endpoint", async () => {
       const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(

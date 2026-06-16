@@ -1662,6 +1662,30 @@ def test_create_feedback_string_source_type(source_type: str) -> None:
     )
 
 
+def test_create_feedback_can_opt_out_of_extending_trace_retention() -> None:
+    session = mock.Mock()
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    request_object = mock.Mock()
+    run_id = uuid.uuid4()
+    request_object.json.return_value = {
+        "id": uuid.uuid4(),
+        "key": "Foo",
+        "created_at": _CREATED_AT,
+        "modified_at": _CREATED_AT,
+        "run_id": run_id,
+    }
+    session.request.return_value = request_object
+
+    client.create_feedback(
+        run_id,
+        key="Foo",
+        do_not_extend_trace_retention=True,
+    )
+
+    payload = json.loads(session.request.call_args.kwargs["data"])
+    assert payload["do_not_extend_trace_retention"] is True
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()
