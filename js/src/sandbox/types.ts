@@ -289,6 +289,29 @@ export interface SandboxAwsAuthRule {
   };
 }
 
+/** GCP auth rule for sandbox proxy OAuth bearer injection. */
+export interface SandboxGcpAuthRule {
+  /** Rule name. */
+  name: string;
+  /** GCP auth rules match explicit Google API host patterns. */
+  type: "gcp";
+  /** Whether the rule is enabled. */
+  enabled?: boolean;
+  /** Google API hosts covered by this rule, such as storage.googleapis.com. */
+  match_hosts: string[];
+  /** GCP service-account credential and OAuth scopes. */
+  gcp: {
+    service_account_json: SandboxProxySecret;
+    scopes: string[];
+  };
+}
+
+/** Proxy rule accepted by the sandbox proxy config. */
+export type SandboxProxyRule =
+  | SandboxAwsAuthRule
+  | SandboxGcpAuthRule
+  | Record<string, unknown>;
+
 /**
  * Full proxy configuration forwarded to the sandbox server as-is (snake_case
  * so it's wire-compatible with the backend). Mirrors the server's
@@ -296,11 +319,82 @@ export interface SandboxAwsAuthRule {
  */
 export interface SandboxProxyConfig {
   /** Header-injection rules keyed by host pattern. */
-  rules?: unknown[];
+  rules?: SandboxProxyRule[];
   /** Hosts that bypass the proxy entirely. */
   no_proxy?: string[];
   /** Allow/deny list enforced at the proxy sidecar. */
   access_control?: SandboxAccessControl;
+}
+
+/** Optional per-mount cache configuration supported by all mount providers. */
+export interface MountCacheConfig {
+  /** Maximum VFS cache size in bytes. */
+  max_size_bytes?: number;
+  /** Seconds rclone waits before writing cached changes back. */
+  writeback_seconds?: number;
+}
+
+interface SandboxMountBase {
+  /** Stable mount identifier. */
+  id: string;
+  /** Absolute path inside the sandbox where the mount appears. */
+  mount_path: string;
+  /** Whether the mount should be read-only. */
+  read_only?: boolean;
+  /** Optional per-mount VFS cache configuration. */
+  cache?: MountCacheConfig;
+}
+
+/**
+ * S3 configuration for a sandbox mount. Field names are snake_case so the
+ * object is wire-compatible with the backend `MountSpec` type.
+ */
+export interface S3MountConfig {
+  /** S3 or S3-compatible endpoint URL. */
+  endpoint_url: string;
+  /** AWS region for signing and bucket access. */
+  region: string;
+  /** Bucket name. */
+  bucket: string;
+  /** Optional key prefix inside the bucket. */
+  prefix?: string;
+  /** Whether to use path-style addressing for S3-compatible endpoints. */
+  path_style?: boolean;
+}
+
+/** S3-backed sandbox mount specification. */
+export interface S3MountSpec extends SandboxMountBase {
+  /** Mount type. */
+  type: "s3";
+  /** S3 mount configuration. */
+  s3: S3MountConfig;
+}
+
+/** GCS configuration for a sandbox mount. */
+export interface GCSMountConfig {
+  /** GCS bucket name. */
+  bucket: string;
+  /** Optional object prefix inside the bucket. */
+  prefix?: string;
+}
+
+/** GCS-backed sandbox mount specification. */
+export interface GCSMountSpec extends SandboxMountBase {
+  /** Mount type. */
+  type: "gcs";
+  /** GCS mount configuration. */
+  gcs: GCSMountConfig;
+}
+
+/** Sandbox mount specification. */
+export type SandboxMount = S3MountSpec | GCSMountSpec;
+
+/** SDK-level mount config expanded into backend mounts and proxyConfig. */
+export interface SandboxMountConfig {
+  /** Mounts attached to the sandbox. */
+  mounts: SandboxMount[];
+  /** Proxy auth config required by the mounts. */
+  proxyConfig: SandboxProxyConfig;
 }
 
 /**
@@ -350,11 +444,18 @@ export interface CreateSandboxOptions {
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
   /**
+   * High-level mount configuration. The SDK expands it into backend `mounts`
+   * and `proxy_config` fields. If `proxyConfig` is also provided, its rules are
+   * merged with the mount-generated proxy auth rules.
+   */
+  mountConfig?: SandboxMountConfig;
+  /**
    * Per-sandbox proxy configuration. Use
    * `{ access_control: { allow_list: ["github.com", "*.example.com"] } }`
    * to restrict outbound HTTPS to a set of host patterns. Forwarded to the
-   * server as-is on the wire. Use `awsAuthProxyConfig` to let the proxy sign
-   * supported AWS HTTPS requests on the sandbox's behalf.
+   * server as-is on the wire. Use `proxyConfig` with provider rule helpers
+   * such as `awsAuth` for AWS SigV4 auth or `gcpAuth` for GCP OAuth bearer
+   * auth.
    */
   proxyConfig?: SandboxProxyConfig;
 }
