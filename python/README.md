@@ -138,6 +138,7 @@ bucket target. Provider credentials stay in explicit auth config, and the SDK
 expands `mount_config` into the backend `mounts` and `proxy_config` fields.
 If you also pass `proxy_config`, its rules are merged with the mount-generated
 proxy auth rules.
+Provider auth for the same provider must appear in only one place.
 
 S3 mounts require an enabled AWS auth proxy rule:
 

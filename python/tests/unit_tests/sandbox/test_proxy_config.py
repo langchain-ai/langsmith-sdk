@@ -325,6 +325,71 @@ def test_create_sandbox_merges_mount_config_with_proxy_config(
     client.close()
 
 
+@pytest.mark.parametrize(
+    ("provider", "mount_auth", "mounts", "explicit_auth", "message"),
+    [
+        (
+            "aws",
+            lambda: aws_auth(
+                access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+            ),
+            lambda: [
+                s3_mount(
+                    id="s3_data",
+                    mount_path="/mnt/s3-data",
+                    bucket="s3-bucket",
+                )
+            ],
+            lambda: aws_auth(
+                access_key_id=workspace_secret("AWS_ACCESS_KEY_ID_2"),
+                secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY_2"),
+                name="aws-extra",
+            ),
+            "aws auth cannot be provided in both mount_config and proxy_config",
+        ),
+        (
+            "gcp",
+            lambda: gcp_auth(
+                service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+            ),
+            lambda: [
+                gcs_mount(
+                    id="gcs_data",
+                    mount_path="/mnt/gcs-data",
+                    bucket="gcs-bucket",
+                )
+            ],
+            lambda: gcp_auth(
+                service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON_2"),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+                name="gcp-extra",
+            ),
+            "gcp auth cannot be provided in both mount_config and proxy_config",
+        ),
+    ],
+)
+def test_create_sandbox_rejects_duplicate_provider_auth_in_proxy_config(
+    provider: str,
+    mount_auth,
+    mounts,
+    explicit_auth,
+    message: str,
+) -> None:
+    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    config = mount_config(auth=[mount_auth()], mounts=mounts())
+    extra_proxy_config = proxy_config(rules=[explicit_auth()])
+
+    with pytest.raises(ValueError, match=message):
+        client.create_sandbox(
+            snapshot_id=f"{provider}-snap",
+            mount_config=config,
+            proxy_config=extra_proxy_config,
+        )
+    client.close()
+
+
 def test_create_sandbox_does_not_accept_raw_mounts() -> None:
     client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
 
