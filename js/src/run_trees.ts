@@ -1,5 +1,5 @@
 import { Client } from "./client.js";
-import { isTracingEnabled } from "./env.js";
+import { isEnvTracingEnabled } from "./env.js";
 import {
   Attachments,
   BaseRun,
@@ -965,7 +965,7 @@ export class RunTree implements BaseRun {
     let projectName: string | undefined;
     let client: Client | undefined;
 
-    let tracingEnabled = isTracingEnabled();
+    let tracingEnabled = isEnvTracingEnabled();
 
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
