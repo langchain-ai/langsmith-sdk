@@ -832,6 +832,82 @@ describe("SandboxClient - createSandbox", () => {
     });
   });
 
+  it.each([
+    {
+      provider: "aws",
+      mountAuth: () =>
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        }),
+      mounts: () => [
+        s3Mount({
+          id: "s3_data",
+          mountPath: "/mnt/s3-data",
+          bucket: "s3-bucket",
+        }),
+      ],
+      explicitAuth: () =>
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF_2"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF_2"),
+          name: "aws-extra",
+        }),
+      message:
+        "aws auth cannot be provided in both mountConfig and proxyConfig",
+    },
+    {
+      provider: "gcp",
+      mountAuth: () =>
+        gcpAuth({
+          serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+          scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+        }),
+      mounts: () => [
+        gcsMount({
+          id: "gcs_data",
+          mountPath: "/mnt/gcs-data",
+          bucket: "gcs-bucket",
+        }),
+      ],
+      explicitAuth: () =>
+        gcpAuth({
+          serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON_2"),
+          scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+          name: "gcp-extra",
+        }),
+      message:
+        "gcp auth cannot be provided in both mountConfig and proxyConfig",
+    },
+  ])(
+    "should reject duplicate $provider auth across mountConfig and proxyConfig",
+    async ({ mountAuth, mounts, explicitAuth, message }) => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          name: "test-sb",
+          status: "ready",
+        }),
+      } as Response);
+      const client = createClientWithMock(mockFetch);
+      const config = mountConfig({
+        auth: [mountAuth()],
+        mounts: mounts(),
+      });
+      const extraProxyConfig = proxyConfig({
+        rules: [explicitAuth()],
+      });
+
+      await expect(
+        client.createSandbox("snap-123", {
+          mountConfig: config,
+          proxyConfig: extraProxyConfig,
+        }),
+      ).rejects.toThrow(message);
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("should omit proxy_config from the request body when not provided", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,

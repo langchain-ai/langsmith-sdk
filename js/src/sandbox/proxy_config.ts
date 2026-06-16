@@ -11,6 +11,7 @@ const DEFAULT_GCP_AUTH_MATCH_HOSTS = [
   "storage.googleapis.com",
   "www.googleapis.com",
 ];
+const PROVIDER_RULE_TYPES = new Set(["aws", "gcp"]);
 
 function requireNonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
@@ -90,6 +91,20 @@ export function proxyConfig({
   return config;
 }
 
+function providerRuleTypes(config: SandboxProxyConfig): Set<string> {
+  const providers = new Set<string>();
+  for (const rule of config.rules ?? []) {
+    if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
+      continue;
+    }
+    const ruleType = (rule as Record<string, unknown>).type;
+    if (typeof ruleType === "string" && PROVIDER_RULE_TYPES.has(ruleType)) {
+      providers.add(ruleType);
+    }
+  }
+  return providers;
+}
+
 export function mergeProxyConfigs(
   generatedConfig: SandboxProxyConfig | undefined,
   explicitConfig: SandboxProxyConfig | undefined,
@@ -99,6 +114,14 @@ export function mergeProxyConfigs(
   }
   if (explicitConfig === undefined) {
     return generatedConfig;
+  }
+  const generatedProviders = providerRuleTypes(generatedConfig);
+  for (const provider of providerRuleTypes(explicitConfig)) {
+    if (generatedProviders.has(provider)) {
+      throw new Error(
+        `${provider} auth cannot be provided in both mountConfig and proxyConfig`,
+      );
+    }
   }
   return {
     ...generatedConfig,
