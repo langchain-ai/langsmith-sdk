@@ -15,6 +15,12 @@ from langsmith.sandbox import (
     SandboxConnectionError,
     ServiceURL,
     Snapshot,
+    aws_auth,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    s3_mount,
+    workspace_secret,
 )
 from langsmith.sandbox._models import ExecutionResult
 
@@ -226,10 +232,10 @@ class TestSandboxOperations:
         body = json.loads(request.content)
         assert body["proxy_config"] == proxy_config
 
-    def test_create_sandbox_forwards_mounts(
+    def test_create_sandbox_expands_mount_config(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
-        """mounts should appear verbatim in the POST body."""
+        """mount_config should expand to mounts and proxy_config in the POST body."""
         import json
 
         httpx_mock.add_response(
@@ -241,38 +247,41 @@ class TestSandboxOperations:
             status_code=201,
         )
 
-        mounts = [
-            {
-                "id": "customer_data",
-                "type": "s3",
-                "mount_path": "/mnt/mounts/customer-data",
-                "read_only": True,
-                "cache": {
-                    "max_size_bytes": 12345,
-                    "writeback_seconds": 7,
-                },
-                "s3": {
-                    "endpoint_url": "https://s3.amazonaws.com",
-                    "region": "us-east-1",
-                    "bucket": "example-bucket",
-                    "prefix": "datasets/customer-data",
-                    "path_style": False,
-                },
-            }
-        ]
+        config = mount_config(
+            auth=[
+                aws_auth(
+                    access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                    secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+                )
+            ],
+            mounts=[
+                s3_mount(
+                    id="customer_data",
+                    mount_path="/mnt/mounts/customer-data",
+                    bucket="example-bucket",
+                    prefix="datasets/customer-data",
+                    read_only=True,
+                    cache={
+                        "max_size_bytes": 12345,
+                        "writeback_seconds": 7,
+                    },
+                )
+            ],
+        )
         client.create_sandbox(
             snapshot_id="snap-1",
-            mounts=mounts,
+            mount_config=config,
         )
 
         request = httpx_mock.get_request()
         body = json.loads(request.content)
-        assert body["mounts"] == mounts
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == config["proxy_config"]
 
-    def test_create_sandbox_forwards_gcs_mounts(
+    def test_create_sandbox_expands_gcs_mount_config(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
-        """GCS mounts should appear verbatim in the POST body."""
+        """GCS mount_config should expand to mounts and proxy_config."""
         import json
 
         httpx_mock.add_response(
@@ -284,30 +293,36 @@ class TestSandboxOperations:
             status_code=201,
         )
 
-        mounts = [
-            {
-                "id": "customer_data",
-                "type": "gcs",
-                "mount_path": "/mnt/mounts/customer-data",
-                "read_only": False,
-                "cache": {
-                    "max_size_bytes": 12345,
-                    "writeback_seconds": 7,
-                },
-                "gcs": {
-                    "bucket": "example-bucket",
-                    "prefix": "datasets/customer-data",
-                },
-            }
-        ]
+        config = mount_config(
+            auth=[
+                gcp_auth(
+                    service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                    scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+                )
+            ],
+            mounts=[
+                gcs_mount(
+                    id="customer_data",
+                    mount_path="/mnt/mounts/customer-data",
+                    bucket="example-bucket",
+                    prefix="datasets/customer-data",
+                    read_only=False,
+                    cache={
+                        "max_size_bytes": 12345,
+                        "writeback_seconds": 7,
+                    },
+                )
+            ],
+        )
         client.create_sandbox(
             snapshot_id="snap-1",
-            mounts=mounts,
+            mount_config=config,
         )
 
         request = httpx_mock.get_request()
         body = json.loads(request.content)
-        assert body["mounts"] == mounts
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == config["proxy_config"]
 
     def test_create_sandbox_omits_proxy_config_when_none(
         self, client: SandboxClient, httpx_mock: HTTPXMock
