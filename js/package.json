@@ -114,7 +114,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "pnpm clean && pnpm build:esm && pnpm build:cjs && node scripts/create-entrypoints.js",
+    "build": "pnpm clean && pnpm build:esm && pnpm build:cjs && node scripts/create-entrypoints.js && node scripts/fix-openapi-client-declarations.js",
     "build:typedoc": "pnpm build && rm -rf ./_build/api_refs && npx typedoc",
     "bump-version": "node scripts/bump-version.js",
     "check-version": "node scripts/check-version.js",
