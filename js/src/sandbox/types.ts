@@ -438,8 +438,9 @@ export interface CreateSandboxOptions {
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
   /**
-   * High-level mount configuration. Mutually exclusive with `proxyConfig`; the
-   * SDK expands it into backend `mounts` and `proxy_config` fields.
+   * High-level mount configuration. The SDK expands it into backend `mounts`
+   * and `proxy_config` fields. If `proxyConfig` is also provided, its rules are
+   * merged with the mount-generated proxy auth rules.
    */
   mountConfig?: SandboxMountConfig;
   /**

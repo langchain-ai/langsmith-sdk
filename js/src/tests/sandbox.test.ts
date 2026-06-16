@@ -780,6 +780,58 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.proxy_config).toEqual(config.proxyConfig);
   });
 
+  it("should merge mountConfig provider auth with proxyConfig", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "test-sb",
+        status: "ready",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const awsRule = awsAuth({
+      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    });
+    const extraRule = {
+      name: "github",
+      type: "headers",
+      enabled: true,
+      match_hosts: ["github.com"],
+      headers: { authorization: "Bearer {GITHUB_TOKEN}" },
+    };
+    const config = mountConfig({
+      auth: [awsRule],
+      mounts: [
+        s3Mount({
+          id: "s3_data",
+          mountPath: "/mnt/s3-data",
+          bucket: "s3-bucket",
+        }),
+      ],
+    });
+    const extraProxyConfig = proxyConfig({
+      rules: [extraRule],
+      noProxy: ["metadata.google.internal"],
+      accessControl: { allow_list: ["github.com", "*.amazonaws.com"] },
+    });
+
+    await client.createSandbox("snap-123", {
+      mountConfig: config,
+      proxyConfig: extraProxyConfig,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.mounts).toEqual(config.mounts);
+    expect(body.proxy_config).toEqual({
+      rules: [awsRule, extraRule],
+      no_proxy: ["metadata.google.internal"],
+      access_control: { allow_list: ["github.com", "*.amazonaws.com"] },
+    });
+  });
+
   it("should omit proxy_config from the request body when not provided", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,

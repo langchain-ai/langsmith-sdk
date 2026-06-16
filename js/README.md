@@ -39,18 +39,24 @@ for your workspace. Then create the sandbox with an AWS auth proxy config:
 ```ts
 import {
   SandboxClient,
-  awsAuthProxyConfig,
+  awsAuth,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
 const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+});
 
 const sandbox = await client.createSandbox({
   name: "aws-sandbox",
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-  }),
+  proxyConfig: authConfig,
 });
 
 try {
@@ -78,19 +84,24 @@ sandbox with a GCP auth proxy config:
 ```ts
 import {
   SandboxClient,
-  gcpAuthProxyConfig,
+  gcpAuth,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
 const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+});
 
 const sandbox = await client.createSandbox({
   name: "gcp-sandbox",
-  proxyConfig: gcpAuthProxyConfig({
-    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
-  }),
+  proxyConfig: authConfig,
 });
 
 try {
@@ -107,33 +118,46 @@ Plaintext service account JSON is not accepted directly.
 ## Sandbox Bucket Mounts
 
 When you create a LangSmith sandbox that needs filesystem access to a bucket or
-prefix, pass a `mounts` array on sandbox creation. Mount specs contain only the
-bucket target. Provider credentials stay in explicit proxy auth config.
+prefix, pass a `mountConfig` on sandbox creation. Mount specs contain only the
+bucket target. Provider credentials stay in explicit auth config, and the SDK
+expands `mountConfig` into the backend `mounts` and `proxy_config` fields.
+If you also pass `proxyConfig`, its rules are merged with the mount-generated
+proxy auth rules.
 
 S3 mounts require an enabled AWS auth proxy rule:
 
 ```ts
+import {
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      endpointUrl: "https://s3.amazonaws.com",
+      pathStyle: false,
+      readOnly: false,
+    }),
+  ],
+});
+
 const sandbox = await client.createSandbox({
   name: "s3-mount-sandbox",
-  mounts: [
-    {
-      id: "customer_data",
-      type: "s3",
-      mount_path: "/mnt/mounts/customer-data",
-      read_only: false,
-      s3: {
-        endpoint_url: "https://s3.amazonaws.com",
-        region: "us-east-1",
-        bucket: "example-bucket",
-        prefix: "datasets/customer-data",
-        path_style: false,
-      },
-    },
-  ],
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-  }),
+  mountConfig: mountCfg,
 });
 
 try {
@@ -150,24 +174,33 @@ GCS mounts require an enabled GCP auth proxy rule that covers
 `devstorage.read_only`.
 
 ```ts
+import {
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+    }),
+  ],
+});
+
 const sandbox = await client.createSandbox({
   name: "gcs-mount-sandbox",
-  mounts: [
-    {
-      id: "customer_data",
-      type: "gcs",
-      mount_path: "/mnt/mounts/customer-data",
-      gcs: {
-        bucket: "example-bucket",
-        prefix: "datasets/customer-data",
-      },
-    },
-  ],
-  proxyConfig: gcpAuthProxyConfig({
-    serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-    scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-    matchHosts: ["storage.googleapis.com", "www.googleapis.com"],
-  }),
+  mountConfig: mountCfg,
 });
 
 try {

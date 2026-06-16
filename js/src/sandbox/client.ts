@@ -34,6 +34,7 @@ import {
   handleSandboxCreationError,
   validateTtl,
 } from "./helpers.js";
+import { mergeProxyConfigs } from "./proxy_config.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 
 /**
@@ -519,13 +520,6 @@ export class SandboxClient {
         "mounts",
       );
     }
-    if (mountConfig !== undefined && proxyConfig !== undefined) {
-      throw new LangSmithValidationError(
-        "mountConfig is mutually exclusive with proxyConfig",
-        "mountConfig",
-      );
-    }
-
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
@@ -561,7 +555,10 @@ export class SandboxClient {
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
     }
-    const effectiveProxyConfig = mountConfig?.proxyConfig ?? proxyConfig;
+    const effectiveProxyConfig = mergeProxyConfigs(
+      mountConfig?.proxyConfig,
+      proxyConfig,
+    );
     if (mountConfig !== undefined) {
       payload.mounts = mountConfig.mounts;
     }

@@ -171,6 +171,8 @@ Use bucket mounts when sandbox code needs filesystem access to a bucket or
 prefix. Mount specs contain only the bucket target. Provider credentials stay in
 explicit auth config, and the SDK expands `mountConfig` into the backend
 `mounts` and `proxy_config` fields.
+If you also pass `proxyConfig`, its rules are merged with the mount-generated
+proxy auth rules.
 
 S3 mounts require an enabled AWS auth proxy rule:
 

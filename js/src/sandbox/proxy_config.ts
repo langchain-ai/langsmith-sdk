@@ -90,6 +90,23 @@ export function proxyConfig({
   return config;
 }
 
+export function mergeProxyConfigs(
+  generatedConfig: SandboxProxyConfig | undefined,
+  explicitConfig: SandboxProxyConfig | undefined,
+): SandboxProxyConfig | undefined {
+  if (generatedConfig === undefined) {
+    return explicitConfig;
+  }
+  if (explicitConfig === undefined) {
+    return generatedConfig;
+  }
+  return {
+    ...generatedConfig,
+    ...explicitConfig,
+    rules: [...(generatedConfig.rules ?? []), ...(explicitConfig.rules ?? [])],
+  };
+}
+
 /** Build a sandbox proxy rule that signs AWS HTTPS requests with SigV4. */
 export function awsAuth({
   accessKeyId,
