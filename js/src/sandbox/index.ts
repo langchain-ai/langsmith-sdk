@@ -39,7 +39,7 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
-export { gcsMount, mountConfig, s3Mount } from "./mounts.js";
+export { gcsMount, gitMount, mountConfig, s3Mount } from "./mounts.js";
 
 // Types
 export type {
@@ -64,6 +64,9 @@ export type {
   MountCacheConfig,
   GCSMountConfig,
   GCSMountSpec,
+  GitMountConfig,
+  GitMountRefSpec,
+  GitMountSpec,
   S3MountConfig,
   S3MountSpec,
   CreateSnapshotOptions,

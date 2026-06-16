@@ -166,12 +166,12 @@ with client.sandbox(
 Use `opaque_secret("...")` for short-lived write-only service account JSON.
 Plaintext service account JSON is not accepted directly.
 
-## Bucket Mounts
+## Sandbox Mounts
 
-Use bucket mounts when sandbox code needs filesystem access to a bucket or
-prefix. Mount specs contain only the bucket target. Provider credentials stay in
-explicit auth config, and the SDK expands `mount_config` into the backend
-`mounts` and `proxy_config` fields.
+Use mounts when sandbox code needs filesystem access to external data such as
+object storage buckets or public Git repositories. Mount specs contain only the
+mount target. Provider credentials stay in explicit auth config, and the SDK
+expands `mount_config` into the backend `mounts` and `proxy_config` fields.
 If you also pass `proxy_config`, its rules are merged with the mount-generated
 proxy auth rules.
 Provider auth for the same provider must appear in only one place.
@@ -255,12 +255,42 @@ with client.sandbox(
     print(result.stdout)
 ```
 
-If one sandbox needs both S3 and GCS mounts, build one `mount_config` with both
-provider rules and mount specs:
+Public Git mounts do not require AWS or GCP auth:
+
+```python
+from langsmith.sandbox import git_mount, mount_config
+
+mount_cfg = mount_config(
+    mounts=[
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref={"type": "branch", "name": "main"},
+            refresh_interval_seconds=60,
+        )
+    ],
+)
+
+with client.sandbox(
+    name="git-mount-sandbox",
+    mount_config=mount_cfg,
+) as sb:
+    result = sb.run("ls /mnt/repo")
+    print(result.stdout)
+```
+
+Private Git repositories can use low-level `proxy_config` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
+
+If one sandbox needs S3, GCS, and Git mounts, build one `mount_config` with the
+bucket provider rules and all mount specs:
 
 ```python
 from langsmith.sandbox import (
     aws_auth,
+    git_mount,
     gcp_auth,
     gcs_mount,
     mount_config,
@@ -291,6 +321,11 @@ mount_cfg = mount_config(
             id="gcs_data",
             mount_path="/mnt/mounts/gcs-data",
             bucket="example-gcs-bucket",
+        ),
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
         ),
     ],
 )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Literal, TypedDict, Union
+from urllib.parse import urlsplit
 
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
@@ -13,14 +14,14 @@ from langsmith.sandbox._proxy_config import (
 
 
 class MountCacheConfig(TypedDict, total=False):
-    """Optional per-mount cache configuration supported by all mount providers."""
+    """Optional per-mount cache configuration supported by bucket mounts."""
 
     max_size_bytes: int
     writeback_seconds: int
 
 
-class MountSpecBase(TypedDict, total=False):
-    """Optional fields applied per sandbox mount specification."""
+class BucketMountSpecBase(TypedDict, total=False):
+    """Optional fields applied per bucket-backed sandbox mount."""
 
     read_only: bool
     cache: MountCacheConfig
@@ -41,7 +42,7 @@ class S3MountConfig(S3MountConfigRequired, total=False):
     path_style: bool
 
 
-class S3MountSpec(MountSpecBase):
+class S3MountSpec(BucketMountSpecBase):
     """S3-backed sandbox mount specification."""
 
     id: str
@@ -62,7 +63,7 @@ class GCSMountConfig(GCSMountConfigRequired, total=False):
     prefix: str
 
 
-class GCSMountSpec(MountSpecBase):
+class GCSMountSpec(BucketMountSpecBase):
     """GCS-backed sandbox mount specification."""
 
     id: str
@@ -71,7 +72,36 @@ class GCSMountSpec(MountSpecBase):
     gcs: GCSMountConfig
 
 
-SandboxMount = Union[S3MountSpec, GCSMountSpec]
+class GitMountRefSpec(TypedDict):
+    """Git ref selected for a sandbox mount."""
+
+    type: Literal["branch", "tag"]
+    name: str
+
+
+class GitMountConfigRequired(TypedDict):
+    """Required Git configuration for a sandbox mount."""
+
+    remote_url: str
+
+
+class GitMountConfig(GitMountConfigRequired, total=False):
+    """Git configuration for a sandbox mount."""
+
+    ref: GitMountRefSpec
+    refresh_interval_seconds: int
+
+
+class GitMountSpec(TypedDict):
+    """Git-backed sandbox mount specification."""
+
+    id: str
+    type: Literal["git"]
+    mount_path: str
+    git: GitMountConfig
+
+
+SandboxMount = Union[S3MountSpec, GCSMountSpec, GitMountSpec]
 
 
 class SandboxMountConfig(TypedDict):
@@ -94,6 +124,38 @@ def _copy_cache_config(cache: MountCacheConfig) -> MountCacheConfig:
     if "writeback_seconds" in cache:
         copied["writeback_seconds"] = cache["writeback_seconds"]
     return copied
+
+
+def _require_git_remote_url(remote_url: str) -> str:
+    if not isinstance(remote_url, str) or remote_url == "":
+        raise ValueError("remote_url must be a non-empty string")
+    if remote_url != remote_url.strip() or any(
+        char.isspace() or char == "\x00" for char in remote_url
+    ):
+        raise ValueError("remote_url must not contain whitespace or NUL bytes")
+
+    parsed = urlsplit(remote_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("remote_url must be an absolute HTTPS URL")
+    if parsed.username or parsed.password:
+        raise ValueError("remote_url must not include embedded credentials")
+    if not parsed.path or parsed.path == "/":
+        raise ValueError("remote_url must include a repository path")
+    if parsed.query or parsed.fragment:
+        raise ValueError("remote_url must not include query or fragment")
+    return remote_url
+
+
+def _copy_git_ref(ref: GitMountRefSpec) -> GitMountRefSpec:
+    if not isinstance(ref, dict):
+        raise ValueError("ref must be a dictionary")
+    ref_type = ref.get("type")
+    if ref_type not in {"branch", "tag"}:
+        raise ValueError("ref.type must be branch or tag")
+    return {
+        "type": ref_type,
+        "name": _require_non_empty_string(ref.get("name", ""), "ref.name"),
+    }
 
 
 def s3_mount(
@@ -129,6 +191,33 @@ def s3_mount(
     if cache is not None:
         mount["cache"] = _copy_cache_config(cache)
     return mount
+
+
+def git_mount(
+    *,
+    id: str,
+    mount_path: str,
+    remote_url: str,
+    ref: GitMountRefSpec | None = None,
+    refresh_interval_seconds: int | None = None,
+) -> GitMountSpec:
+    """Build a public Git-backed sandbox mount specification."""
+    git: GitMountConfig = {
+        "remote_url": _require_git_remote_url(remote_url),
+    }
+    if ref is not None:
+        git["ref"] = _copy_git_ref(ref)
+    if refresh_interval_seconds is not None:
+        if refresh_interval_seconds < 1:
+            raise ValueError("refresh_interval_seconds must be at least 1")
+        git["refresh_interval_seconds"] = refresh_interval_seconds
+
+    return {
+        "id": _require_non_empty_string(id, "id"),
+        "type": "git",
+        "mount_path": _require_non_empty_string(mount_path, "mount_path"),
+        "git": git,
+    }
 
 
 def gcs_mount(
@@ -168,8 +257,8 @@ def _normalize_mounts(mounts: Sequence[SandboxMount]) -> list[SandboxMount]:
         if not isinstance(mount, dict) or not mount:
             raise ValueError("mounts must be a non-empty list of mount dictionaries")
         mount_type = mount.get("type")
-        if mount_type not in {"s3", "gcs"}:
-            raise ValueError("mount_config only supports s3 and gcs mounts")
+        if mount_type not in {"s3", "gcs", "git"}:
+            raise ValueError("mount_config only supports s3, gcs, and git mounts")
         normalized.append(mount)
     return normalized
 
@@ -194,8 +283,8 @@ def _normalize_auth_rules(
 
 def mount_config(
     *,
-    auth: Sequence[SandboxProxyRule],
     mounts: Sequence[SandboxMount],
+    auth: Sequence[SandboxProxyRule] = (),
 ) -> SandboxMountConfig:
     """Build a high-level mount config from provider auth and mount specs.
 
@@ -222,5 +311,5 @@ def mount_config(
     ]
     return {
         "mounts": normalized_mounts,
-        "proxy_config": proxy_config(rules=rules),
+        "proxy_config": proxy_config(rules=rules) if rules else {},
     }

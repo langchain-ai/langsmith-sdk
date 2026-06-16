@@ -326,7 +326,7 @@ export interface SandboxProxyConfig {
   access_control?: SandboxAccessControl;
 }
 
-/** Optional per-mount cache configuration supported by all mount providers. */
+/** Optional per-mount cache configuration supported by bucket mounts. */
 export interface MountCacheConfig {
   /** Maximum VFS cache size in bytes. */
   max_size_bytes?: number;
@@ -334,7 +334,7 @@ export interface MountCacheConfig {
   writeback_seconds?: number;
 }
 
-interface SandboxMountBase {
+interface SandboxBucketMountBase {
   /** Stable mount identifier. */
   id: string;
   /** Absolute path inside the sandbox where the mount appears. */
@@ -363,7 +363,7 @@ export interface S3MountConfig {
 }
 
 /** S3-backed sandbox mount specification. */
-export interface S3MountSpec extends SandboxMountBase {
+export interface S3MountSpec extends SandboxBucketMountBase {
   /** Mount type. */
   type: "s3";
   /** S3 mount configuration. */
@@ -379,15 +379,45 @@ export interface GCSMountConfig {
 }
 
 /** GCS-backed sandbox mount specification. */
-export interface GCSMountSpec extends SandboxMountBase {
+export interface GCSMountSpec extends SandboxBucketMountBase {
   /** Mount type. */
   type: "gcs";
   /** GCS mount configuration. */
   gcs: GCSMountConfig;
 }
 
+/** Git ref selected for a sandbox mount. */
+export interface GitMountRefSpec {
+  /** Git ref type. */
+  type: "branch" | "tag";
+  /** Branch or tag name. */
+  name: string;
+}
+
+/** Git configuration for a sandbox mount. */
+export interface GitMountConfig {
+  /** Public HTTPS Git remote URL. */
+  remote_url: string;
+  /** Optional branch or tag to mount. */
+  ref?: GitMountRefSpec;
+  /** Optional refresh interval for polling the remote. */
+  refresh_interval_seconds?: number;
+}
+
+/** Git-backed sandbox mount specification. */
+export interface GitMountSpec {
+  /** Stable mount identifier. */
+  id: string;
+  /** Mount type. */
+  type: "git";
+  /** Absolute path inside the sandbox where the mount appears. */
+  mount_path: string;
+  /** Git mount configuration. */
+  git: GitMountConfig;
+}
+
 /** Sandbox mount specification. */
-export type SandboxMount = S3MountSpec | GCSMountSpec;
+export type SandboxMount = S3MountSpec | GCSMountSpec | GitMountSpec;
 
 /** SDK-level mount config expanded into backend mounts and proxyConfig. */
 export interface SandboxMountConfig {

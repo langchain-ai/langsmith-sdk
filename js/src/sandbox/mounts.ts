@@ -1,6 +1,8 @@
 import { proxyConfig } from "./proxy_config.js";
 import type {
   GCSMountSpec,
+  GitMountRefSpec,
+  GitMountSpec,
   MountCacheConfig,
   S3MountSpec,
   SandboxMount,
@@ -13,6 +15,53 @@ function requireNonEmptyString(value: string, field: string): string {
     throw new Error(`${field} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function requireGitRemoteUrl(remoteUrl: string): string {
+  if (typeof remoteUrl !== "string" || remoteUrl === "") {
+    throw new Error("remoteUrl must be a non-empty string");
+  }
+  if (
+    remoteUrl.trim() !== remoteUrl ||
+    /\s/u.test(remoteUrl) ||
+    remoteUrl.includes(String.fromCharCode(0))
+  ) {
+    throw new Error("remoteUrl must not contain whitespace or NUL bytes");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(remoteUrl);
+  } catch {
+    throw new Error("remoteUrl must be an absolute HTTPS URL");
+  }
+
+  if (parsed.protocol !== "https:" || parsed.host === "") {
+    throw new Error("remoteUrl must be an absolute HTTPS URL");
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new Error("remoteUrl must not include embedded credentials");
+  }
+  if (parsed.pathname === "" || parsed.pathname === "/") {
+    throw new Error("remoteUrl must include a repository path");
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new Error("remoteUrl must not include query or fragment");
+  }
+  return remoteUrl;
+}
+
+function copyGitRef(ref: GitMountRefSpec): GitMountRefSpec {
+  if (ref === null || typeof ref !== "object" || Array.isArray(ref)) {
+    throw new Error("ref must be an object");
+  }
+  if (ref.type !== "branch" && ref.type !== "tag") {
+    throw new Error("ref.type must be branch or tag");
+  }
+  return {
+    type: ref.type,
+    name: requireNonEmptyString(ref.name, "ref.name"),
+  };
 }
 
 export function s3Mount({
@@ -55,6 +104,39 @@ export function s3Mount({
   }
   if (cache !== undefined) {
     mount.cache = { ...cache };
+  }
+  return mount;
+}
+
+export function gitMount({
+  id,
+  mountPath,
+  remoteUrl,
+  ref,
+  refreshIntervalSeconds,
+}: {
+  id: string;
+  mountPath: string;
+  remoteUrl: string;
+  ref?: GitMountRefSpec;
+  refreshIntervalSeconds?: number;
+}): GitMountSpec {
+  const mount: GitMountSpec = {
+    id: requireNonEmptyString(id, "id"),
+    type: "git",
+    mount_path: requireNonEmptyString(mountPath, "mountPath"),
+    git: {
+      remote_url: requireGitRemoteUrl(remoteUrl),
+    },
+  };
+  if (ref !== undefined) {
+    mount.git.ref = copyGitRef(ref);
+  }
+  if (refreshIntervalSeconds !== undefined) {
+    if (refreshIntervalSeconds < 1) {
+      throw new Error("refreshIntervalSeconds must be at least 1");
+    }
+    mount.git.refresh_interval_seconds = refreshIntervalSeconds;
   }
   return mount;
 }
@@ -102,8 +184,8 @@ function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
     if (mount === null || typeof mount !== "object" || Array.isArray(mount)) {
       throw new Error("mounts must be a non-empty array of mount objects");
     }
-    if (mount.type !== "s3" && mount.type !== "gcs") {
-      throw new Error("mountConfig only supports s3 and gcs mounts");
+    if (mount.type !== "s3" && mount.type !== "gcs" && mount.type !== "git") {
+      throw new Error("mountConfig only supports s3, gcs, and git mounts");
     }
     return mount;
   });
@@ -133,10 +215,10 @@ function normalizeAuthRules(
 }
 
 export function mountConfig({
-  auth,
+  auth = [],
   mounts,
 }: {
-  auth: SandboxProxyRule[];
+  auth?: SandboxProxyRule[];
   mounts: SandboxMount[];
 }): SandboxMountConfig {
   const normalizedMounts = normalizeMounts(mounts);
@@ -156,12 +238,12 @@ export function mountConfig({
     throw new Error("gcp auth requires at least one gcs mount in mountConfig");
   }
 
+  const rules = ["aws", "gcp"]
+    .map((provider) => authByProvider[provider])
+    .filter((rule): rule is SandboxProxyRule => rule !== undefined);
+
   return {
     mounts: normalizedMounts,
-    proxyConfig: proxyConfig({
-      rules: ["aws", "gcp"]
-        .map((provider) => authByProvider[provider])
-        .filter((rule): rule is SandboxProxyRule => rule !== undefined),
-    }),
+    proxyConfig: rules.length > 0 ? proxyConfig({ rules }) : {},
   };
 }
