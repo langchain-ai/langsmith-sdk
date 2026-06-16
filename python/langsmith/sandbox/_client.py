@@ -35,7 +35,7 @@ from langsmith.sandbox._models import (
     Snapshot,
 )
 from langsmith.sandbox._mounts import SandboxMountConfig
-from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._proxy_config import SandboxProxyConfig, merge_proxy_configs
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
@@ -319,9 +319,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
-            mount_config: High-level mount configuration. Mutually exclusive
-                with ``proxy_config``; the SDK expands it into backend
-                ``mounts`` and ``proxy_config`` fields.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -407,9 +408,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
-            mount_config: High-level mount configuration. Mutually exclusive
-                with ``proxy_config``; the SDK expands it into backend
-                ``mounts`` and ``proxy_config`` fields.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -434,9 +436,6 @@ class SandboxClient:
         """
         if snapshot_id and snapshot_name:
             raise ValueError("At most one of snapshot_id or snapshot_name may be set")
-        if mount_config is not None and proxy_config is not None:
-            raise ValueError("mount_config is mutually exclusive with proxy_config")
-
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
@@ -465,7 +464,9 @@ class SandboxClient:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
         if mount_config is not None:
             payload["mounts"] = mount_config["mounts"]
-            proxy_config = mount_config["proxy_config"]
+            proxy_config = merge_proxy_configs(
+                mount_config["proxy_config"], proxy_config
+            )
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 

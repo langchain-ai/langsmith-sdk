@@ -136,6 +136,8 @@ When you create a LangSmith sandbox that needs filesystem access to a bucket or
 prefix, pass a `mount_config` on sandbox creation. Mount specs contain only the
 bucket target. Provider credentials stay in explicit auth config, and the SDK
 expands `mount_config` into the backend `mounts` and `proxy_config` fields.
+If you also pass `proxy_config`, its rules are merged with the mount-generated
+proxy auth rules.
 
 S3 mounts require an enabled AWS auth proxy rule:
 

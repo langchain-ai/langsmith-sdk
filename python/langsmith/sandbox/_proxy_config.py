@@ -97,6 +97,27 @@ def proxy_config(
     return config
 
 
+def merge_proxy_configs(
+    generated_config: SandboxProxyConfig | None,
+    explicit_config: SandboxProxyConfig | None,
+) -> SandboxProxyConfig | None:
+    """Merge SDK-generated proxy config with explicit caller proxy config."""
+    if generated_config is None:
+        return explicit_config
+    if explicit_config is None:
+        return generated_config
+
+    generated_rules = generated_config.get("rules", [])
+    explicit_rules = explicit_config.get("rules", [])
+    if not isinstance(generated_rules, list) or not isinstance(explicit_rules, list):
+        raise ValueError("proxy_config rules must be lists when merged")
+
+    merged = dict(generated_config)
+    merged.update(explicit_config)
+    merged["rules"] = [*generated_rules, *explicit_rules]
+    return merged
+
+
 def aws_auth(
     *,
     access_key_id: SandboxProxySecret,

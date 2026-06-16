@@ -278,6 +278,53 @@ def test_create_sandbox_expands_mount_config(
     client.close()
 
 
+def test_create_sandbox_merges_mount_config_with_proxy_config(
+    httpx_mock: HTTPXMock,
+) -> None:
+    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    httpx_mock.add_response(
+        method="POST",
+        url="http://test-server:8080/boxes",
+        json={"name": "test-sandbox"},
+        status_code=201,
+    )
+    aws_rule = aws_auth(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    )
+    extra_rule = {
+        "name": "github",
+        "type": "headers",
+        "enabled": True,
+        "match_hosts": ["github.com"],
+        "headers": {"authorization": "Bearer {GITHUB_TOKEN}"},
+    }
+    config = mount_config(
+        auth=[aws_rule],
+        mounts=[s3_mount(id="s3_data", mount_path="/mnt/s3-data", bucket="s3-bucket")],
+    )
+    extra_proxy_config = proxy_config(
+        rules=[extra_rule],
+        no_proxy=["metadata.google.internal"],
+        access_control={"allow_list": ["github.com", "*.amazonaws.com"]},
+    )
+
+    client.create_sandbox(
+        snapshot_id="snap-1",
+        mount_config=config,
+        proxy_config=extra_proxy_config,
+    )
+
+    body = json.loads(httpx_mock.get_request().content)
+    assert body["mounts"] == config["mounts"]
+    assert body["proxy_config"] == {
+        "rules": [aws_rule, extra_rule],
+        "no_proxy": ["metadata.google.internal"],
+        "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
+    }
+    client.close()
+
+
 def test_create_sandbox_does_not_accept_raw_mounts() -> None:
     client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
 
