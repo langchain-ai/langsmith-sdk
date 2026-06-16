@@ -62,7 +62,7 @@ for your workspace. Then create the sandbox with an AWS auth proxy config:
 ```python
 from langsmith.sandbox import (
     SandboxClient,
-    aws_auth_proxy_rule,
+    aws_auth,
     proxy_config,
     workspace_secret,
 )
@@ -70,7 +70,7 @@ from langsmith.sandbox import (
 client = SandboxClient()
 auth_config = proxy_config(
     rules=[
-        aws_auth_proxy_rule(
+        aws_auth(
             access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
             secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
         )
@@ -102,7 +102,7 @@ sandbox with a GCP auth proxy config:
 ```python
 from langsmith.sandbox import (
     SandboxClient,
-    gcp_auth_proxy_rule,
+    gcp_auth,
     proxy_config,
     workspace_secret,
 )
@@ -110,12 +110,11 @@ from langsmith.sandbox import (
 client = SandboxClient()
 auth_config = proxy_config(
     rules=[
-        gcp_auth_proxy_rule(
+        gcp_auth(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
             ),
             scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-            match_hosts=["storage.googleapis.com", "www.googleapis.com"],
         )
     ],
 )
@@ -134,37 +133,44 @@ Plaintext service account JSON is not accepted directly.
 ## Sandbox Bucket Mounts
 
 When you create a LangSmith sandbox that needs filesystem access to a bucket or
-prefix, pass a `mounts` list on sandbox creation. Mount specs contain only the
-bucket target. Provider credentials stay in explicit proxy auth config.
+prefix, pass a `mount_config` on sandbox creation. Mount specs contain only the
+bucket target. Provider credentials stay in explicit auth config, and the SDK
+expands `mount_config` into the backend `mounts` and `proxy_config` fields.
 
 S3 mounts require an enabled AWS auth proxy rule:
 
 ```python
+from langsmith.sandbox import (
+    aws_auth,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            endpoint_url="https://s3.amazonaws.com",
+            path_style=False,
+            read_only=False,
+        )
+    ],
+)
+
 with client.sandbox(
     name="s3-mount-sandbox",
-    mounts=[
-        {
-            "id": "customer_data",
-            "type": "s3",
-            "mount_path": "/mnt/mounts/customer-data",
-            "read_only": False,
-            "s3": {
-                "endpoint_url": "https://s3.amazonaws.com",
-                "region": "us-east-1",
-                "bucket": "example-bucket",
-                "prefix": "datasets/customer-data",
-                "path_style": False,
-            },
-        }
-    ],
-    proxy_config=proxy_config(
-        rules=[
-            aws_auth_proxy_rule(
-                access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
-                secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
-            )
-        ],
-    ),
+    mount_config=mount_cfg,
 ) as sandbox:
     result = sandbox.run("ls /mnt/mounts/customer-data")
     print(result.stdout)
@@ -176,30 +182,35 @@ GCS mounts require an enabled GCP auth proxy rule that covers
 `devstorage.read_only`.
 
 ```python
+from langsmith.sandbox import (
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+    ],
+    mounts=[
+        gcs_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+        )
+    ],
+)
+
 with client.sandbox(
     name="gcs-mount-sandbox",
-    mounts=[
-        {
-            "id": "customer_data",
-            "type": "gcs",
-            "mount_path": "/mnt/mounts/customer-data",
-            "gcs": {
-                "bucket": "example-bucket",
-                "prefix": "datasets/customer-data",
-            },
-        }
-    ],
-    proxy_config=proxy_config(
-        rules=[
-            gcp_auth_proxy_rule(
-                service_account_json=workspace_secret(
-                    "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
-                ),
-                scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-                match_hosts=["storage.googleapis.com", "www.googleapis.com"],
-            )
-        ],
-    ),
+    mount_config=mount_cfg,
 ) as sandbox:
     result = sandbox.run("ls /mnt/mounts/customer-data")
     print(result.stdout)

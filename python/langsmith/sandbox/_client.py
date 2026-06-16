@@ -34,7 +34,7 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
-from langsmith.sandbox._mounts import SandboxMount
+from langsmith.sandbox._mounts import SandboxMount, SandboxMountConfig
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
@@ -279,6 +279,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
@@ -319,6 +320,9 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. Mutually exclusive
+                with ``mounts`` and ``proxy_config``; the SDK expands it into
+                backend ``mounts`` and ``proxy_config`` fields.
             mounts: Optional mount specifications attached to the sandbox.
                 Bucket mounts use provider-specific backend shapes such as
                 ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
@@ -335,7 +339,7 @@ class SandboxClient:
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
-                such as ``aws_auth_proxy_rule`` to let the proxy sign supported
+                such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
@@ -358,6 +362,7 @@ class SandboxClient:
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
+            mount_config=mount_config,
             mounts=mounts,
             proxy_config=proxy_config,
             headers=headers,
@@ -378,6 +383,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
@@ -412,6 +418,9 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. Mutually exclusive
+                with ``mounts`` and ``proxy_config``; the SDK expands it into
+                backend ``mounts`` and ``proxy_config`` fields.
             mounts: Optional mount specifications attached to the sandbox.
                 Bucket mounts use provider-specific backend shapes such as
                 ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
@@ -428,7 +437,7 @@ class SandboxClient:
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
-                such as ``aws_auth_proxy_rule`` to let the proxy sign supported
+                such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
@@ -444,6 +453,12 @@ class SandboxClient:
         """
         if snapshot_id and snapshot_name:
             raise ValueError("At most one of snapshot_id or snapshot_name may be set")
+        if mount_config is not None and (
+            mounts is not None or proxy_config is not None
+        ):
+            raise ValueError(
+                "mount_config is mutually exclusive with mounts and proxy_config"
+            )
 
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
@@ -471,6 +486,9 @@ class SandboxClient:
             payload["mem_bytes"] = mem_bytes
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if mount_config is not None:
+            mounts = mount_config["mounts"]
+            proxy_config = mount_config["proxy_config"]
         if mounts is not None:
             payload["mounts"] = mounts
         if proxy_config is not None:

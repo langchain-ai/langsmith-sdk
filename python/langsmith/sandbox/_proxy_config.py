@@ -15,6 +15,7 @@ class SandboxProxySecret(TypedDict):
 
 SandboxProxyRule = dict[str, Any]
 SandboxProxyConfig = dict[str, Any]
+DEFAULT_GCP_AUTH_MATCH_HOSTS = ["storage.googleapis.com", "www.googleapis.com"]
 
 
 def _require_non_empty_string(value: str, field: str) -> str:
@@ -83,8 +84,8 @@ def proxy_config(
 ) -> SandboxProxyConfig:
     """Build a sandbox proxy config from one or more proxy rules.
 
-    Use provider-specific rule helpers such as ``aws_auth_proxy_rule`` and
-    ``gcp_auth_proxy_rule`` when a sandbox needs multiple auth flows.
+    Use provider-specific rule helpers such as ``aws_auth`` and ``gcp_auth``
+    when a sandbox needs multiple auth flows.
     """
     config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if no_proxy is not None:
@@ -96,7 +97,7 @@ def proxy_config(
     return config
 
 
-def aws_auth_proxy_rule(
+def aws_auth(
     *,
     access_key_id: SandboxProxySecret,
     secret_access_key: SandboxProxySecret,
@@ -122,11 +123,11 @@ def aws_auth_proxy_rule(
     }
 
 
-def gcp_auth_proxy_rule(
+def gcp_auth(
     *,
     service_account_json: SandboxProxySecret,
     scopes: Sequence[str],
-    match_hosts: Sequence[str],
+    match_hosts: Sequence[str] | None = None,
     name: str = "gcp",
     enabled: bool = True,
 ) -> SandboxProxyRule:
@@ -143,7 +144,10 @@ def gcp_auth_proxy_rule(
         "name": rule_name,
         "type": "gcp",
         "enabled": enabled,
-        "match_hosts": _require_non_empty_string_list(match_hosts, "match_hosts"),
+        "match_hosts": _require_non_empty_string_list(
+            DEFAULT_GCP_AUTH_MATCH_HOSTS if match_hosts is None else match_hosts,
+            "match_hosts",
+        ),
         "gcp": {
             "service_account_json": service_account_json,
             "scopes": _require_non_empty_string_list(scopes, "scopes"),
