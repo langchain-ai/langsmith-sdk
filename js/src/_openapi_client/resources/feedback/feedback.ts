@@ -126,6 +126,8 @@ export interface FeedbackCreateSchema {
 
   created_at?: string;
 
+  do_not_extend_trace_retention?: boolean;
+
   error?: boolean | null;
 
   feedback_config?: FeedbackCreateSchema.FeedbackConfig | null;
@@ -277,6 +279,8 @@ export interface FeedbackCreateParams {
   correction?: { [key: string]: unknown } | string | null;
 
   created_at?: string;
+
+  do_not_extend_trace_retention?: boolean;
 
   error?: boolean | null;
 
