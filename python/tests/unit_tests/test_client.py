@@ -47,6 +47,7 @@ from langsmith.client import (
     _dataset_examples_path,
     _default_retry_config,
     _dumps_json,
+    _get_openapi_base_url,
     _is_langchain_hosted,
     _parse_token_or_url,
     _resolve_tracing_mode,
@@ -847,6 +848,18 @@ def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
         openapi_client.call_args.kwargs["default_headers"]["x-tenant-id"]
         == "test-workspace-id"
     )
+
+
+@pytest.mark.parametrize(
+    ("api_url", "expected"),
+    [
+        ("http://localhost:8080", "http://localhost:8080"),
+        ("http://localhost:8080/v1", "http://localhost:8080"),
+        ("http://localhost:8080/api/v1", "http://localhost:8080"),
+    ],
+)
+def test_get_openapi_base_url(api_url: str, expected: str) -> None:
+    assert _get_openapi_base_url(api_url) == expected
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))
