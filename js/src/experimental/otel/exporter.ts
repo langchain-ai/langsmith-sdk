@@ -1,7 +1,7 @@
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as constants from "./constants.js";
-import { isTracingEnabled } from "../../env.js";
+import { isEnvTracingEnabled } from "../../env.js";
 import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
@@ -130,7 +130,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     spans: ReadableSpan[],
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1],
   ): void {
-    if (!isTracingEnabled()) {
+    if (!isEnvTracingEnabled()) {
       return resultCallback({ code: 0 });
     }
     const runExport = async () => {

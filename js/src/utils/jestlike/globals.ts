@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Dataset, TracerSession, Example } from "../../schemas.js";
 import { Client, CreateProjectParams } from "../../client.js";
 import { getEnvironmentVariable } from "../env.js";
-import { isTracingEnabled } from "../../env.js";
+import { isEnvTracingEnabled } from "../../env.js";
 import { RunTree } from "../../run_trees.js";
 import { SimpleEvaluationResult } from "./types.js";
 
@@ -34,7 +34,7 @@ export function trackingEnabled(context: TestWrapperAsyncLocalStorageData) {
   if (getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "false") {
     return false;
   }
-  return isTracingEnabled();
+  return isEnvTracingEnabled();
 }
 
 export const evaluatorLogFeedbackPromises = new Set();
