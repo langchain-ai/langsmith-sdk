@@ -120,7 +120,9 @@ export interface BoxCreateResponse {
   mem_bytes?: number;
 
   mounts?: Array<
-    BoxCreateResponse.SandboxapiS3BucketMountSpec | BoxCreateResponse.SandboxapiGcsBucketMountSpec
+    | BoxCreateResponse.SandboxapiS3BucketMountSpec
+    | BoxCreateResponse.SandboxapiGcsBucketMountSpec
+    | BoxCreateResponse.SandboxapiGitRepoMountSpec
   >;
 
   name?: string;
@@ -152,11 +154,13 @@ export namespace BoxCreateResponse {
 
     s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiS3BucketMountSpec.Cache;
 
     gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+    git?: SandboxapiS3BucketMountSpec.Git;
 
     read_only?: boolean;
   }
@@ -185,6 +189,22 @@ export namespace BoxCreateResponse {
 
       prefix?: string;
     }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
   }
 
   export interface SandboxapiGcsBucketMountSpec {
@@ -194,9 +214,11 @@ export namespace BoxCreateResponse {
 
     mount_path: string;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    git?: SandboxapiGcsBucketMountSpec.Git;
 
     read_only?: boolean;
 
@@ -214,6 +236,82 @@ export namespace BoxCreateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGitRepoMountSpec {
+    id: string;
+
+    git: SandboxapiGitRepoMountSpec.Git;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs' | 'git';
+
+    cache?: SandboxapiGitRepoMountSpec.Cache;
+
+    gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGitRepoMountSpec.S3;
+  }
+
+  export namespace SandboxapiGitRepoMountSpec {
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
     }
 
     export interface S3 {
@@ -360,7 +458,9 @@ export interface BoxRetrieveResponse {
   mem_bytes?: number;
 
   mounts?: Array<
-    BoxRetrieveResponse.SandboxapiS3BucketMountSpec | BoxRetrieveResponse.SandboxapiGcsBucketMountSpec
+    | BoxRetrieveResponse.SandboxapiS3BucketMountSpec
+    | BoxRetrieveResponse.SandboxapiGcsBucketMountSpec
+    | BoxRetrieveResponse.SandboxapiGitRepoMountSpec
   >;
 
   name?: string;
@@ -392,11 +492,13 @@ export namespace BoxRetrieveResponse {
 
     s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiS3BucketMountSpec.Cache;
 
     gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+    git?: SandboxapiS3BucketMountSpec.Git;
 
     read_only?: boolean;
   }
@@ -425,6 +527,22 @@ export namespace BoxRetrieveResponse {
 
       prefix?: string;
     }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
   }
 
   export interface SandboxapiGcsBucketMountSpec {
@@ -434,9 +552,11 @@ export namespace BoxRetrieveResponse {
 
     mount_path: string;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    git?: SandboxapiGcsBucketMountSpec.Git;
 
     read_only?: boolean;
 
@@ -454,6 +574,82 @@ export namespace BoxRetrieveResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGitRepoMountSpec {
+    id: string;
+
+    git: SandboxapiGitRepoMountSpec.Git;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs' | 'git';
+
+    cache?: SandboxapiGitRepoMountSpec.Cache;
+
+    gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGitRepoMountSpec.S3;
+  }
+
+  export namespace SandboxapiGitRepoMountSpec {
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
     }
 
     export interface S3 {
@@ -600,7 +796,9 @@ export interface BoxUpdateResponse {
   mem_bytes?: number;
 
   mounts?: Array<
-    BoxUpdateResponse.SandboxapiS3BucketMountSpec | BoxUpdateResponse.SandboxapiGcsBucketMountSpec
+    | BoxUpdateResponse.SandboxapiS3BucketMountSpec
+    | BoxUpdateResponse.SandboxapiGcsBucketMountSpec
+    | BoxUpdateResponse.SandboxapiGitRepoMountSpec
   >;
 
   name?: string;
@@ -632,11 +830,13 @@ export namespace BoxUpdateResponse {
 
     s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiS3BucketMountSpec.Cache;
 
     gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+    git?: SandboxapiS3BucketMountSpec.Git;
 
     read_only?: boolean;
   }
@@ -665,6 +865,22 @@ export namespace BoxUpdateResponse {
 
       prefix?: string;
     }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
   }
 
   export interface SandboxapiGcsBucketMountSpec {
@@ -674,9 +890,11 @@ export namespace BoxUpdateResponse {
 
     mount_path: string;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    git?: SandboxapiGcsBucketMountSpec.Git;
 
     read_only?: boolean;
 
@@ -694,6 +912,82 @@ export namespace BoxUpdateResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGitRepoMountSpec {
+    id: string;
+
+    git: SandboxapiGitRepoMountSpec.Git;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs' | 'git';
+
+    cache?: SandboxapiGitRepoMountSpec.Cache;
+
+    gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGitRepoMountSpec.S3;
+  }
+
+  export namespace SandboxapiGitRepoMountSpec {
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
     }
 
     export interface S3 {
@@ -846,7 +1140,11 @@ export namespace BoxListResponse {
 
     mem_bytes?: number;
 
-    mounts?: Array<Sandbox.SandboxapiS3BucketMountSpec | Sandbox.SandboxapiGcsBucketMountSpec>;
+    mounts?: Array<
+      | Sandbox.SandboxapiS3BucketMountSpec
+      | Sandbox.SandboxapiGcsBucketMountSpec
+      | Sandbox.SandboxapiGitRepoMountSpec
+    >;
 
     name?: string;
 
@@ -877,11 +1175,13 @@ export namespace BoxListResponse {
 
       s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3' | 'gcs';
+      type: 's3' | 'gcs' | 'git';
 
       cache?: SandboxapiS3BucketMountSpec.Cache;
 
       gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+      git?: SandboxapiS3BucketMountSpec.Git;
 
       read_only?: boolean;
     }
@@ -910,6 +1210,22 @@ export namespace BoxListResponse {
 
         prefix?: string;
       }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
     }
 
     export interface SandboxapiGcsBucketMountSpec {
@@ -919,9 +1235,11 @@ export namespace BoxListResponse {
 
       mount_path: string;
 
-      type: 's3' | 'gcs';
+      type: 's3' | 'gcs' | 'git';
 
       cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      git?: SandboxapiGcsBucketMountSpec.Git;
 
       read_only?: boolean;
 
@@ -939,6 +1257,82 @@ export namespace BoxListResponse {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiGitRepoMountSpec {
+      id: string;
+
+      git: SandboxapiGitRepoMountSpec.Git;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGitRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiGitRepoMountSpec {
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
       }
 
       export interface S3 {
@@ -1137,7 +1531,9 @@ export interface BoxStartResponse {
   mem_bytes?: number;
 
   mounts?: Array<
-    BoxStartResponse.SandboxapiS3BucketMountSpec | BoxStartResponse.SandboxapiGcsBucketMountSpec
+    | BoxStartResponse.SandboxapiS3BucketMountSpec
+    | BoxStartResponse.SandboxapiGcsBucketMountSpec
+    | BoxStartResponse.SandboxapiGitRepoMountSpec
   >;
 
   name?: string;
@@ -1169,11 +1565,13 @@ export namespace BoxStartResponse {
 
     s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiS3BucketMountSpec.Cache;
 
     gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+    git?: SandboxapiS3BucketMountSpec.Git;
 
     read_only?: boolean;
   }
@@ -1202,6 +1600,22 @@ export namespace BoxStartResponse {
 
       prefix?: string;
     }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
   }
 
   export interface SandboxapiGcsBucketMountSpec {
@@ -1211,9 +1625,11 @@ export namespace BoxStartResponse {
 
     mount_path: string;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    git?: SandboxapiGcsBucketMountSpec.Git;
 
     read_only?: boolean;
 
@@ -1231,6 +1647,82 @@ export namespace BoxStartResponse {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGitRepoMountSpec {
+    id: string;
+
+    git: SandboxapiGitRepoMountSpec.Git;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs' | 'git';
+
+    cache?: SandboxapiGitRepoMountSpec.Cache;
+
+    gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGitRepoMountSpec.S3;
+  }
+
+  export namespace SandboxapiGitRepoMountSpec {
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
     }
 
     export interface S3 {
@@ -1370,7 +1862,11 @@ export interface BoxCreateParams {
 
   mem_bytes?: number;
 
-  mounts?: Array<BoxCreateParams.SandboxapiS3BucketMountSpec | BoxCreateParams.SandboxapiGcsBucketMountSpec>;
+  mounts?: Array<
+    | BoxCreateParams.SandboxapiS3BucketMountSpec
+    | BoxCreateParams.SandboxapiGcsBucketMountSpec
+    | BoxCreateParams.SandboxapiGitRepoMountSpec
+  >;
 
   name?: string;
 
@@ -1404,11 +1900,13 @@ export namespace BoxCreateParams {
 
     s3: SandboxapiS3BucketMountSpec.S3;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiS3BucketMountSpec.Cache;
 
     gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+    git?: SandboxapiS3BucketMountSpec.Git;
 
     read_only?: boolean;
   }
@@ -1437,6 +1935,22 @@ export namespace BoxCreateParams {
 
       prefix?: string;
     }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
   }
 
   export interface SandboxapiGcsBucketMountSpec {
@@ -1446,9 +1960,11 @@ export namespace BoxCreateParams {
 
     mount_path: string;
 
-    type: 's3' | 'gcs';
+    type: 's3' | 'gcs' | 'git';
 
     cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+    git?: SandboxapiGcsBucketMountSpec.Git;
 
     read_only?: boolean;
 
@@ -1466,6 +1982,82 @@ export namespace BoxCreateParams {
       max_size_bytes?: number;
 
       writeback_seconds?: number;
+    }
+
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface S3 {
+      bucket: string;
+
+      endpoint_url: string;
+
+      region: string;
+
+      path_style?: boolean;
+
+      prefix?: string;
+    }
+  }
+
+  export interface SandboxapiGitRepoMountSpec {
+    id: string;
+
+    git: SandboxapiGitRepoMountSpec.Git;
+
+    mount_path: string;
+
+    type: 's3' | 'gcs' | 'git';
+
+    cache?: SandboxapiGitRepoMountSpec.Cache;
+
+    gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+    read_only?: boolean;
+
+    s3?: SandboxapiGitRepoMountSpec.S3;
+  }
+
+  export namespace SandboxapiGitRepoMountSpec {
+    export interface Git {
+      remote_url: string;
+
+      ref?: Git.Ref;
+
+      refresh_interval_seconds?: number;
+    }
+
+    export namespace Git {
+      export interface Ref {
+        name: string;
+
+        type: 'branch' | 'tag';
+      }
+    }
+
+    export interface Cache {
+      max_size_bytes?: number;
+
+      writeback_seconds?: number;
+    }
+
+    export interface Gcs {
+      bucket: string;
+
+      prefix?: string;
     }
 
     export interface S3 {
