@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import logging
 import random
 import uuid
 import warnings
@@ -33,6 +34,8 @@ from langsmith._internal._hub import (
 )
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
+logger = logging.getLogger(__name__)
+
 ID_TYPE = Union[uuid.UUID, str]
 
 
@@ -50,6 +53,7 @@ class AsyncClient:
         "_oauth_access_token",
         "_profile_auth",
         "_profile_auth_headers",
+        "_info",
     )
 
     _custom_headers: dict[str, str]
@@ -227,10 +231,27 @@ class AsyncClient:
         else:
             self._cache = None
 
+        self._info: Optional[ls_schemas.LangSmithInfo] = None
+
+    async def _fetch_info(self) -> ls_schemas.LangSmithInfo:
+        if self._info is not None:
+            return self._info
+        try:
+            response = await self._client.request(
+                "GET", "/info", headers={"Accept": "application/json"}
+            )
+            ls_utils.raise_for_status_with_text(response)
+            self._info = ls_schemas.LangSmithInfo(**response.json())
+        except BaseException as e:
+            logger.warning("Failed to get info from %s: %r", self._api_url, e)
+            self._info = ls_schemas.LangSmithInfo()
+        return self._info
+
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
             await self._cache.start()
+        ls_client._check_backend_version((await self._fetch_info()).version)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

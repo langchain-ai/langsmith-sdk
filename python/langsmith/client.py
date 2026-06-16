@@ -304,10 +304,30 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
+SUPPORTED_BACKEND_VERSION = "0.16.0"
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
 _fallback_dirs_created: set[str] = set()
+
+
+def _check_backend_version(version: str) -> None:
+    try:
+        _parsed = packaging.version.parse(version)
+        _supported = packaging.version.parse(SUPPORTED_BACKEND_VERSION)
+        if (_parsed.major, _parsed.minor) != (_supported.major, _supported.minor):
+            logger.warning(
+                "Backend version %r does not match the version supported by this "
+                "SDK (%r). Some features may not work as expected.",
+                version,
+                SUPPORTED_BACKEND_VERSION,
+            )
+    except packaging.version.InvalidVersion:
+        logger.warning(
+            "Could not parse backend version %r for compatibility check.",
+            version,
+        )
+
 
 
 @lru_cache(maxsize=1)
@@ -1392,6 +1412,9 @@ class Client:
                 _max_mb_str,
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
+
+
+        _check_backend_version(self.info.version)
 
     def _dump_failed_trace(
         self,
