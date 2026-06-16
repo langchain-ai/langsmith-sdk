@@ -329,7 +329,6 @@ def _check_backend_version(version: str) -> None:
         )
 
 
-
 @lru_cache(maxsize=1)
 def _lc_load_allowed_objects_arg_supported() -> bool:
     """Check if the installed `langchain_core.load.load` supports the `allowed_objects` parameter.
@@ -1412,7 +1411,6 @@ class Client:
                 _max_mb_str,
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
-
 
         _check_backend_version(self.info.version)
 

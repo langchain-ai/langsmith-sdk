@@ -345,9 +345,9 @@ def test_profile_config_refreshes_expired_oauth_token(
         }
         return response
 
-    monkeypatch.setattr(requests, "post", mock_post)
-
     client = Client(auto_batch_tracing=False)
+
+    monkeypatch.setattr(requests, "post", mock_post)
 
     assert client._headers["Authorization"] == "Bearer old-access-token"
     assert calls == []
@@ -1894,6 +1894,7 @@ def test_host_url(_: MagicMock) -> None:
 def test_retry_on_connection_error(mock_sleep: MagicMock):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
+    mock_session.reset_mock()
     mock_session.request.side_effect = requests.ConnectionError()
 
     with pytest.raises(ls_utils.LangSmithConnectionError):
@@ -1905,6 +1906,7 @@ def test_retry_on_connection_error(mock_sleep: MagicMock):
 def test_http_status_500_handling(mock_sleep):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
+    mock_session.reset_mock()
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.raise_for_status.side_effect = HTTPError()
@@ -1919,6 +1921,7 @@ def test_http_status_500_handling(mock_sleep):
 def test_pass_on_409_handling(mock_sleep):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
+    mock_session.reset_mock()
     mock_response = MagicMock()
     mock_response.status_code = 409
     mock_response.raise_for_status.side_effect = HTTPError()
