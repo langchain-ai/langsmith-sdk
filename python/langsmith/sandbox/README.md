@@ -1124,8 +1124,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, mounts=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, mounts=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |

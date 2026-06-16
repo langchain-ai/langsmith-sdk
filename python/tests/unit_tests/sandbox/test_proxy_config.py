@@ -276,3 +276,26 @@ def test_create_sandbox_expands_mount_config(
     assert body["mounts"] == config["mounts"]
     assert body["proxy_config"] == config["proxy_config"]
     client.close()
+
+
+def test_create_sandbox_does_not_accept_raw_mounts() -> None:
+    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+
+    with pytest.raises(TypeError):
+        getattr(client, "create_sandbox")(
+            snapshot_id="snap-1",
+            mounts=[
+                {
+                    "id": "customer_data",
+                    "type": "s3",
+                    "mount_path": "/mnt/mounts/customer-data",
+                    "s3": {
+                        "endpoint_url": "https://s3.amazonaws.com",
+                        "region": "us-east-1",
+                        "bucket": "example-bucket",
+                    },
+                }
+            ],
+        )
+
+    client.close()

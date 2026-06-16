@@ -37,7 +37,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     Snapshot,
 )
-from langsmith.sandbox._mounts import SandboxMount, SandboxMountConfig
+from langsmith.sandbox._mounts import SandboxMountConfig
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._transport import AsyncRetryTransport
 
@@ -188,7 +188,6 @@ class AsyncSandboxClient:
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
-        mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -229,16 +228,8 @@ class AsyncSandboxClient:
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
             mount_config: High-level mount configuration. Mutually exclusive
-                with ``mounts`` and ``proxy_config``; the SDK expands it into
-                backend ``mounts`` and ``proxy_config`` fields.
-            mounts: Optional mount specifications attached to the sandbox.
-                Bucket mounts use provider-specific backend shapes such as
-                ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
-                "s3": {"endpoint_url": "...", "region": "...",
-                "bucket": "...", "prefix": "...", "path_style": False}}``
-                or ``{"id": "...", "type": "gcs", "mount_path": "/mnt/...",
-                "gcs": {"bucket": "...", "prefix": "..."}}``. Mounts also
-                support ``read_only`` and ``cache`` options.
+                with ``proxy_config``; the SDK expands it into backend
+                ``mounts`` and ``proxy_config`` fields.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -271,7 +262,6 @@ class AsyncSandboxClient:
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
             mount_config=mount_config,
-            mounts=mounts,
             proxy_config=proxy_config,
             headers=headers,
         )
@@ -292,7 +282,6 @@ class AsyncSandboxClient:
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
-        mounts: Optional[list[SandboxMount]] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -327,16 +316,8 @@ class AsyncSandboxClient:
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
             mount_config: High-level mount configuration. Mutually exclusive
-                with ``mounts`` and ``proxy_config``; the SDK expands it into
-                backend ``mounts`` and ``proxy_config`` fields.
-            mounts: Optional mount specifications attached to the sandbox.
-                Bucket mounts use provider-specific backend shapes such as
-                ``{"id": "...", "type": "s3", "mount_path": "/mnt/...",
-                "s3": {"endpoint_url": "...", "region": "...",
-                "bucket": "...", "prefix": "...", "path_style": False}}``
-                or ``{"id": "...", "type": "gcs", "mount_path": "/mnt/...",
-                "gcs": {"bucket": "...", "prefix": "..."}}``. Mounts also
-                support ``read_only`` and ``cache`` options.
+                with ``proxy_config``; the SDK expands it into backend
+                ``mounts`` and ``proxy_config`` fields.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -361,12 +342,8 @@ class AsyncSandboxClient:
         """
         if snapshot_id and snapshot_name:
             raise ValueError("At most one of snapshot_id or snapshot_name may be set")
-        if mount_config is not None and (
-            mounts is not None or proxy_config is not None
-        ):
-            raise ValueError(
-                "mount_config is mutually exclusive with mounts and proxy_config"
-            )
+        if mount_config is not None and proxy_config is not None:
+            raise ValueError("mount_config is mutually exclusive with proxy_config")
 
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
@@ -395,10 +372,8 @@ class AsyncSandboxClient:
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
         if mount_config is not None:
-            mounts = mount_config["mounts"]
+            payload["mounts"] = mount_config["mounts"]
             proxy_config = mount_config["proxy_config"]
-        if mounts is not None:
-            payload["mounts"] = mounts
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 
