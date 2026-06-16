@@ -1412,6 +1412,21 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
+        try:
+            with requests.Session() as _tmp_session:
+                _info_resp = _tmp_session.request(
+                    "GET",
+                    _construct_url(self.api_url, "/info"),
+                    headers={**self._headers, "Accept": "application/json"},
+                    timeout=self._timeout,
+                )
+                ls_utils.raise_for_status_with_text(_info_resp)
+                _check_backend_version(
+                    ls_schemas.LangSmithInfo(**_info_resp.json()).version
+                )
+        except Exception:
+            pass
+
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1631,8 +1646,6 @@ class Client:
             )
             ls_utils.raise_for_status_with_text(response)
             self._info = ls_schemas.LangSmithInfo(**response.json())
-            if self._info.version:
-                _check_backend_version(self._info.version)
         except BaseException as e:
             logger.warning(
                 f"Failed to get info from {self.api_url}: {repr(e)}",
