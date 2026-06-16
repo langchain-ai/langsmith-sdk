@@ -822,6 +822,33 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.read == 5.678
 
 
+def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
+    client = AsyncClient(
+        api_url="http://localhost:8080",
+        api_key="test-api-key",
+        workspace_id="test-workspace-id",
+        timeout_ms=(1234, 5678),
+    )
+    resource = object()
+
+    with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
+        openapi_client.return_value.online_evaluators = resource
+
+        assert client.online_evaluators is resource
+
+    openapi_client.assert_called_once()
+    assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
+    assert openapi_client.call_args.kwargs["tenant_id"] == "test-workspace-id"
+    assert openapi_client.call_args.kwargs["base_url"] == "http://localhost:8080"
+    timeout = openapi_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 1.234
+    assert timeout.read == 5.678
+    assert (
+        openapi_client.call_args.kwargs["default_headers"]["x-tenant-id"]
+        == "test-workspace-id"
+    )
+
+
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))
 def test_create_run_mutate(
     use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
