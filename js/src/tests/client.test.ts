@@ -27,10 +27,14 @@ describe("Client", () => {
         fetchImplementation: mockFetch,
       });
 
-      await client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
-        score: 1,
-        doNotExtendTraceRetention: true,
-      });
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+          doNotExtendTraceRetention: true,
+        },
+      );
 
       const [, init] = mockFetch.mock.calls[0];
       expect(JSON.parse(init?.body as string)).toEqual(
