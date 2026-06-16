@@ -34,7 +34,8 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
-from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._mounts import SandboxMountConfig
+from langsmith.sandbox._proxy_config import SandboxProxyConfig, merge_proxy_configs
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
@@ -303,6 +304,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
@@ -342,6 +344,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -349,8 +355,9 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Sandbox instance.
@@ -372,6 +379,7 @@ class SandboxClient:
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
+            mount_config=mount_config,
             proxy_config=proxy_config,
             headers=headers,
         )
@@ -391,6 +399,7 @@ class SandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
@@ -424,6 +433,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -431,8 +444,9 @@ class SandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -447,7 +461,6 @@ class SandboxClient:
         """
         if snapshot_id and snapshot_name:
             raise ValueError("At most one of snapshot_id or snapshot_name may be set")
-
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
@@ -474,6 +487,11 @@ class SandboxClient:
             payload["mem_bytes"] = mem_bytes
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if mount_config is not None:
+            payload["mounts"] = mount_config["mounts"]
+            proxy_config = merge_proxy_configs(
+                mount_config["proxy_config"], proxy_config
+            )
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 
