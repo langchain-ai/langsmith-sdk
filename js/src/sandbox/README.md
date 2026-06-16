@@ -793,7 +793,7 @@ try {
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
-| `mounts?` | Sandbox mount specs, such as S3 mounts using `{ id, type: "s3", mount_path, s3 }` |
+| `mountConfig?` | High-level bucket mount config from `mountConfig({ auth, mounts })`; expanded into backend mounts and proxy auth |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
 
 ### ListSnapshotsOptions

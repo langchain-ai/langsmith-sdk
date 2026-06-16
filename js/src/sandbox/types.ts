@@ -437,12 +437,9 @@ export interface CreateSandboxOptions {
   memBytes?: number;
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
-  /** Mounts attached to the sandbox. */
-  mounts?: SandboxMount[];
   /**
-   * High-level mount configuration. Mutually exclusive with `mounts` and
-   * `proxyConfig`; the SDK expands it into backend `mounts` and `proxy_config`
-   * fields.
+   * High-level mount configuration. Mutually exclusive with `proxyConfig`; the
+   * SDK expands it into backend `mounts` and `proxy_config` fields.
    */
   mountConfig?: SandboxMountConfig;
   /**

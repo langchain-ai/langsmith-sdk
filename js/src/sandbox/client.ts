@@ -504,7 +504,6 @@ export class SandboxClient {
       memBytes,
       fsCapacityBytes,
       mountConfig,
-      mounts,
       proxyConfig,
     } = resolvedOptions;
 
@@ -514,12 +513,15 @@ export class SandboxClient {
         "snapshotId",
       );
     }
-    if (
-      mountConfig !== undefined &&
-      (mounts !== undefined || proxyConfig !== undefined)
-    ) {
+    if ("mounts" in resolvedOptions) {
       throw new LangSmithValidationError(
-        "mountConfig is mutually exclusive with mounts and proxyConfig",
+        "mounts is not a public createSandbox option; use mountConfig",
+        "mounts",
+      );
+    }
+    if (mountConfig !== undefined && proxyConfig !== undefined) {
+      throw new LangSmithValidationError(
+        "mountConfig is mutually exclusive with proxyConfig",
         "mountConfig",
       );
     }
@@ -559,10 +561,9 @@ export class SandboxClient {
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
     }
-    const effectiveMounts = mountConfig?.mounts ?? mounts;
     const effectiveProxyConfig = mountConfig?.proxyConfig ?? proxyConfig;
-    if (effectiveMounts !== undefined) {
-      payload.mounts = effectiveMounts;
+    if (mountConfig !== undefined) {
+      payload.mounts = mountConfig.mounts;
     }
     if (effectiveProxyConfig !== undefined) {
       payload.proxy_config = effectiveProxyConfig;

@@ -37,8 +37,22 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
 } from "../sandbox/errors.js";
-import type { WsMessage, OutputChunk, SandboxMount } from "../sandbox/types.js";
+import type {
+  WsMessage,
+  OutputChunk,
+  CreateSandboxOptions,
+} from "../sandbox/types.js";
 import { validateTtl } from "../sandbox/helpers.js";
+
+const assertRawMountsAreNotCreateOptions = (
+  options: CreateSandboxOptions,
+): void => {
+  void options;
+  // @ts-expect-error raw mounts are only accepted inside mountConfig
+  const invalidOptions: CreateSandboxOptions = { mounts: [] };
+  void invalidOptions;
+};
+void assertRawMountsAreNotCreateOptions;
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
@@ -689,7 +703,7 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.proxy_config).toEqual(proxyConfig);
   });
 
-  it("should forward mounts in the request body", async () => {
+  it("should reject raw mounts in the runtime create options", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -699,63 +713,13 @@ describe("SandboxClient - createSandbox", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const mounts: SandboxMount[] = [
-      {
-        id: "customer_data",
-        type: "s3",
-        mount_path: "/mnt/mounts/customer-data",
-        read_only: true,
-        cache: {
-          max_size_bytes: 12345,
-          writeback_seconds: 7,
-        },
-        s3: {
-          endpoint_url: "https://s3.amazonaws.com",
-          region: "us-east-1",
-          bucket: "example-bucket",
-          prefix: "datasets/customer-data",
-          path_style: false,
-        },
-      },
-    ];
-    await client.createSandbox("snap-123", { mounts });
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
-    expect(body.mounts).toEqual(mounts);
-  });
-
-  it("should forward GCS mounts in the request body", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        name: "test-sb",
-        status: "ready",
-      }),
-    } as Response);
-
-    const client = createClientWithMock(mockFetch);
-    const mounts: SandboxMount[] = [
-      {
-        id: "customer_data",
-        type: "gcs",
-        mount_path: "/mnt/mounts/customer-data",
-        read_only: false,
-        cache: {
-          max_size_bytes: 12345,
-          writeback_seconds: 7,
-        },
-        gcs: {
-          bucket: "example-bucket",
-          prefix: "datasets/customer-data",
-        },
-      },
-    ];
-    await client.createSandbox("snap-123", { mounts });
-
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
-    expect(body.mounts).toEqual(mounts);
+    await expect(
+      client.createSandbox("snap-123", {
+        mounts: [],
+      } as unknown as CreateSandboxOptions),
+    ).rejects.toThrow(/mountConfig/);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("should forward composed proxy config in the request body", async () => {
