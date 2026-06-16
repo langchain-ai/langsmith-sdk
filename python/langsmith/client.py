@@ -304,7 +304,7 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
-SUPPORTED_BACKEND_VERSION = "0.16.0"
+SUPPORTED_BACKEND_VERSION = "0.17.0"
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
