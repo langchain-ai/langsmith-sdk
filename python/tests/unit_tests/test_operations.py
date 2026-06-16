@@ -6,6 +6,7 @@ from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
+    serialize_feedback_dict,
     serialized_run_operation_to_multipart_parts_and_context,
 )
 
@@ -113,6 +114,26 @@ def test_combine_serialized_queue_operations():
         serialized_run_operations[2],
         serialized_run_operations[4],
     ]
+
+
+def test_serialize_feedback_dict_maps_retention_opt_out_for_queue() -> None:
+    feedback_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+
+    serialized = serialize_feedback_dict(
+        {
+            "id": feedback_id,
+            "trace_id": trace_id,
+            "run_id": trace_id,
+            "key": "correctness",
+            "score": 1,
+            "do_not_extend_trace_retention": True,
+        }
+    )
+    payload = _orjson.loads(serialized.feedback)
+
+    assert payload["_skip_trace_upgrade"] is True
+    assert "do_not_extend_trace_retention" not in payload
 
 
 def test_serialized_run_operation_missing_file(tmp_path, caplog) -> None:

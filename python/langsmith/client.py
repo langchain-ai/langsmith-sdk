@@ -7736,6 +7736,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
+                and not do_not_extend_trace_retention
                 and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
