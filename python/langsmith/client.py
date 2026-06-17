@@ -151,6 +151,8 @@ def _reset_tracing_drop_log() -> None:
 def _get_openapi_base_url(api_url: str) -> str:
     """Convert a handwritten client API URL to a generated OpenAPI base URL."""
     api_url = api_url.rstrip("/")
+    if api_url.endswith("/api/v1"):
+        return api_url[: -len("/api/v1")]
     return api_url[:-3] if api_url.endswith("/v1") else api_url
 
 
