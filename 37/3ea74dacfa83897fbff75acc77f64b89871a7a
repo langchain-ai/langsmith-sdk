@@ -1,0 +1,25 @@
+js/src/client.ts
+  s_8db11acfdc761b::t_cd5c1ced648ad6 704-707,710,730
+python/tests/unit_tests/test_client.py
+  s_8db11acfdc761b::t_943f2da73925f1 73-76,78-79,83
+js/src/tests/client.test.ts
+  s_8db11acfdc761b::t_95be3c4f25750c 1646-1649,1651-1652,1655
+python/tests/unit_tests/test_async_client.py
+  s_8db11acfdc761b::t_b6d049e999493e 831,835
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "373ea74dacfa83897fbff75acc77f64b89871a7a",
+  "prompts": {},
+  "sessions": {
+    "s_8db11acfdc761b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43df3742-c1f2-4d11-8822-871ffd73decf",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
