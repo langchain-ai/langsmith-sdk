@@ -702,7 +702,7 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
 }
 
 export function _checkBackendVersion(version: string): void {
-  const parse = (v: string) => v.split(".").map(Number);
+  const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
   const [maj, min, pat] = parse(version);
   const [rMaj, rMin, rPat] = parse(_MIN_BACKEND_VERSION);
   if (

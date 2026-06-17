@@ -1648,6 +1648,8 @@ describe("_checkBackendVersion", () => {
     ["0.16.0", false],
     ["0.16.1", false],
     ["1.0.0", false],
+    ["0.16.4rc1", false],
+    ["0.15.4rc1", true],
     ["not-a-version", true],
   ])("version %s -> warns: %s", (version, expectWarn) => {
     _checkBackendVersion(version as string);

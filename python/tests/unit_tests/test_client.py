@@ -74,6 +74,8 @@ def test_is_localhost() -> None:
         ("0.16.0", False),
         ("0.16.1", False),
         ("1.0.0", False),
+        ("0.16.4rc1", False),
+        ("0.15.4rc1", True),
         ("not-a-version", True),
     ],
 )
