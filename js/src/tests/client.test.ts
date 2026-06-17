@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { inspect } from "node:util";
-import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
+import { Client, mergeRuntimeEnvIntoRun, _checkBackendVersion } from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
@@ -1628,5 +1628,33 @@ describe("Client", () => {
         '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
+  });
+});
+
+describe("_checkBackendVersion", () => {
+  let warnSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it.each([
+    ["0.15.9", true],
+    ["0.15.99", true],
+    ["0.16.0", false],
+    ["0.16.1", false],
+    ["1.0.0", false],
+    ["not-a-version", true],
+  ])("version %s -> warns: %s", (version, expectWarn) => {
+    _checkBackendVersion(version as string);
+    if (expectWarn) {
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } else {
+      expect(warnSpy).not.toHaveBeenCalled();
+    }
   });
 });

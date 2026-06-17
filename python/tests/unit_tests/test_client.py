@@ -42,6 +42,7 @@ from langsmith.client import (
     Client,
     _apply_auth_overrides,
     _apply_optional_api_key,
+    _check_backend_version,
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
@@ -63,6 +64,28 @@ def test_is_localhost() -> None:
     assert ls_utils._is_localhost("http://localhost:1984")
     assert ls_utils._is_localhost("http://0.0.0.0:1984")
     assert not ls_utils._is_localhost("http://example.com:1984")
+
+
+@pytest.mark.parametrize(
+    "version,expect_warning",
+    [
+        ("0.15.9", True),
+        ("0.15.99", True),
+        ("0.16.0", False),
+        ("0.16.1", False),
+        ("1.0.0", False),
+        ("not-a-version", True),
+    ],
+)
+def test_check_backend_version(
+    version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        _check_backend_version(version)
+    if expect_warning:
+        assert caplog.records, f"expected a warning for version {version!r}"
+    else:
+        assert not caplog.records, f"unexpected warning for version {version!r}"
 
 
 def test__is_langchain_hosted() -> None:
