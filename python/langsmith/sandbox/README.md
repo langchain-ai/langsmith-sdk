@@ -66,26 +66,30 @@ Bedrock, or another supported AWS HTTPS endpoint. You configure the AWS
 credentials on the sandbox proxy, and the proxy signs outbound AWS requests with
 SigV4. The real credentials stay outside the sandbox.
 
-This lets code inside the sandbox use normal AWS tooling without exposing
-long-lived AWS credentials in sandbox files, environment variables, shell
-history, or logs. Store the AWS credentials as LangSmith workspace secrets, then
-reference those secret names in the proxy config:
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then reference those secret names in the proxy config:
 
 ```python
 from langsmith.sandbox import (
     SandboxClient,
-    aws_auth_proxy_config,
+    aws_auth,
+    proxy_config,
     workspace_secret,
 )
 
 client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+)
 
 with client.sandbox(
     name="aws-sandbox",
-    proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
-    ),
+    proxy_config=auth_config,
 ) as sb:
     result = sb.run("python your_aws_script.py")
     print(result.stdout)
@@ -105,16 +109,227 @@ If your application mints short-lived AWS credentials, pass them as write-only
 opaque values instead:
 
 ```python
-from langsmith.sandbox import aws_auth_proxy_config, opaque_secret
+from langsmith.sandbox import aws_auth, opaque_secret, proxy_config
 
-proxy_config = aws_auth_proxy_config(
-    access_key_id=opaque_secret(access_key_id),
-    secret_access_key=opaque_secret(secret_access_key),
+auth_config = proxy_config(
+    rules=[
+        aws_auth(
+            access_key_id=opaque_secret(access_key_id),
+            secret_access_key=opaque_secret(secret_access_key),
+        )
+    ],
 )
 ```
 
 Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
-credential values are not supported by the AWS auth proxy.
+credential values are not accepted directly by the AWS auth proxy; wrap
+short-lived write-only values with `opaque_secret(...)`.
+
+## GCP Auth Proxy
+
+Use the GCP auth proxy when sandbox code needs to call Google APIs. You
+configure service account JSON on the sandbox proxy, and the proxy injects OAuth
+bearer tokens for the Google API hosts you explicitly match. The real service
+account JSON stays outside the sandbox.
+
+Store the service account JSON as a LangSmith workspace secret, then reference
+that secret name in the proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+    ],
+)
+
+with client.sandbox(
+    name="gcp-sandbox",
+    proxy_config=auth_config,
+) as sb:
+    result = sb.run("python your_gcp_script.py")
+    print(result.stdout)
+```
+
+Use `opaque_secret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Sandbox Mounts
+
+Use mounts when sandbox code needs filesystem access to external data such as
+object storage buckets or public Git repositories. Mount specs contain only the
+mount target. Provider credentials stay in explicit auth config, and the SDK
+expands `mount_config` into the backend `mounts` and `proxy_config` fields.
+If you also pass `proxy_config`, its rules are merged with the mount-generated
+proxy auth rules.
+Provider auth for the same provider must appear in only one place.
+
+S3 mounts require an enabled AWS auth proxy rule:
+
+```python
+from langsmith.sandbox import (
+    aws_auth,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            endpoint_url="https://s3.amazonaws.com",
+            path_style=False,
+            read_only=False,
+        )
+    ],
+)
+
+with client.sandbox(
+    name="s3-mount-sandbox",
+    mount_config=mount_cfg,
+) as sb:
+    result = sb.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+GCS mounts require an enabled GCP auth proxy rule covering
+`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
+`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
+`devstorage.read_only`.
+
+```python
+from langsmith.sandbox import (
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+    ],
+    mounts=[
+        gcs_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+        )
+    ],
+)
+
+with client.sandbox(
+    name="gcs-mount-sandbox",
+    mount_config=mount_cfg,
+) as sb:
+    result = sb.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+Public Git mounts do not require AWS or GCP auth:
+
+```python
+from langsmith.sandbox import git_mount, mount_config
+
+mount_cfg = mount_config(
+    mounts=[
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref={"type": "branch", "name": "main"},
+            refresh_interval_seconds=60,
+        )
+    ],
+)
+
+with client.sandbox(
+    name="git-mount-sandbox",
+    mount_config=mount_cfg,
+) as sb:
+    result = sb.run("ls /mnt/repo")
+    print(result.stdout)
+```
+
+Private Git repositories can use low-level `proxy_config` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
+
+If one sandbox needs S3, GCS, and Git mounts, build one `mount_config` with the
+bucket provider rules and all mount specs:
+
+```python
+from langsmith.sandbox import (
+    aws_auth,
+    git_mount,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        ),
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        ),
+    ],
+    mounts=[
+        s3_mount(
+            id="s3_data",
+            mount_path="/mnt/mounts/s3-data",
+            bucket="example-s3-bucket",
+        ),
+        gcs_mount(
+            id="gcs_data",
+            mount_path="/mnt/mounts/gcs-data",
+            bucket="example-gcs-bucket",
+        ),
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ),
+    ],
+)
+```
 
 ## Running Commands
 
@@ -947,8 +1162,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, idle_ttl_seconds=None, delete_after_stop_seconds=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |

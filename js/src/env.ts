@@ -1,6 +1,6 @@
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 
-export const isTracingEnabled = (tracingEnabled?: boolean): boolean => {
+export const isEnvTracingEnabled = (tracingEnabled?: boolean): boolean => {
   if (tracingEnabled !== undefined) {
     return tracingEnabled;
   }
