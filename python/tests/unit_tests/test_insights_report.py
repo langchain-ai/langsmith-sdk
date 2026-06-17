@@ -108,6 +108,25 @@ def test_get_insights_report_basic_metadata() -> None:
     assert cluster.num_runs == 2
 
 
+def test_insights_report_link_uses_insights_tab() -> None:
+    report = ls_schemas.InsightsReport(
+        id="11111111-1111-1111-1111-111111111111",
+        name="test-report",
+        status="success",
+        project_id="22222222-2222-2222-2222-222222222222",
+        host_url="https://smith.langchain.com",
+        tenant_id="33333333-3333-3333-3333-333333333333",
+    )
+
+    expected_link = (
+        "https://smith.langchain.com/o/"
+        "33333333-3333-3333-3333-333333333333/projects/p/"
+        "22222222-2222-2222-2222-222222222222?"
+        "tab=3&clusterJobId=11111111-1111-1111-1111-111111111111"
+    )
+    assert report.link == expected_link
+
+
 def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     report_payload = _make_report_payload()
     runs_page_1 = _make_runs_page_payload(offset=0, has_next=True)
