@@ -70,6 +70,7 @@ class AsyncClient:
     _workspace_id: Optional[str]
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
+    _info: Optional[ls_schemas.LangSmithInfo]
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {**self._custom_headers}
