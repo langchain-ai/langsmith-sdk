@@ -115,12 +115,13 @@ try {
 Use `opaqueSecret("...")` for short-lived write-only service account JSON.
 Plaintext service account JSON is not accepted directly.
 
-## Sandbox Bucket Mounts
+## Sandbox Mounts
 
-When you create a LangSmith sandbox that needs filesystem access to a bucket or
-prefix, pass a `mountConfig` on sandbox creation. Mount specs contain only the
-bucket target. Provider credentials stay in explicit auth config, and the SDK
-expands `mountConfig` into the backend `mounts` and `proxy_config` fields.
+When you create a LangSmith sandbox that needs filesystem access to external
+data such as object storage buckets or public Git repositories, pass a
+`mountConfig` on sandbox creation. Mount specs contain only the mount target.
+Provider credentials stay in explicit auth config, and the SDK expands
+`mountConfig` into the backend `mounts` and `proxy_config` fields.
 If you also pass `proxyConfig`, its rules are merged with the mount-generated
 proxy auth rules.
 Provider auth for the same provider must appear in only one place.
@@ -211,6 +212,40 @@ try {
   await sandbox.delete();
 }
 ```
+
+Public Git mounts do not require AWS or GCP auth:
+
+```ts
+import { gitMount, mountConfig } from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Private Git repositories can use low-level `proxyConfig` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
 
 ## 1. Connect to LangSmith
 

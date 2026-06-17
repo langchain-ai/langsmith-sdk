@@ -11,6 +11,7 @@ from langsmith.sandbox import (
     aws_auth,
     gcp_auth,
     gcs_mount,
+    git_mount,
     mount_config,
     opaque_secret,
     proxy_config,
@@ -170,6 +171,122 @@ def test_mount_config_expands_mounts_and_provider_auth() -> None:
                 },
             },
         ],
+        "proxy_config": {"rules": [aws_rule, gcp_rule]},
+    }
+
+
+def test_git_mount_serializes_backend_shape() -> None:
+    assert git_mount(
+        id="repo",
+        mount_path="/mnt/repo",
+        remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ref={"type": "branch", "name": "main"},
+        refresh_interval_seconds=60,
+    ) == {
+        "id": "repo",
+        "type": "git",
+        "mount_path": "/mnt/repo",
+        "git": {
+            "remote_url": "https://github.com/langchain-ai/langsmith-sdk.git",
+            "ref": {"type": "branch", "name": "main"},
+            "refresh_interval_seconds": 60,
+        },
+    }
+
+
+def test_git_mount_allows_tag_ref_and_omitted_optional_fields() -> None:
+    assert git_mount(
+        id="repo",
+        mount_path="/mnt/repo",
+        remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ref={"type": "tag", "name": "v1.0.0"},
+    )["git"] == {
+        "remote_url": "https://github.com/langchain-ai/langsmith-sdk.git",
+        "ref": {"type": "tag", "name": "v1.0.0"},
+    }
+    assert git_mount(
+        id="repo",
+        mount_path="/mnt/repo",
+        remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+    )["git"] == {
+        "remote_url": "https://github.com/langchain-ai/langsmith-sdk.git",
+    }
+
+
+@pytest.mark.parametrize(
+    "remote_url",
+    [
+        "",
+        "http://github.com/langchain-ai/langsmith-sdk.git",
+        "https://github.com",
+        "https://user:pass@github.com/langchain-ai/langsmith-sdk.git",
+        "https://github.com/langchain-ai/langsmith-sdk.git?token=secret",
+        "https://github.com/langchain-ai/langsmith-sdk.git#main",
+        "https://github.com/langchain-ai/langsmith-sdk.git\n",
+        "https://github.com/langchain-ai/langsmith-sdk.git\x00",
+    ],
+)
+def test_git_mount_rejects_invalid_remote_urls(remote_url: str) -> None:
+    with pytest.raises(ValueError):
+        git_mount(id="repo", mount_path="/mnt/repo", remote_url=remote_url)
+
+
+@pytest.mark.parametrize(
+    ("ref", "refresh_interval_seconds"),
+    [
+        ({"type": "commit", "name": "abc123"}, None),
+        ({"type": "branch"}, None),
+        ({"type": "branch", "name": ""}, None),
+        (None, 0),
+    ],
+)
+def test_git_mount_rejects_invalid_ref_and_refresh_interval(
+    ref, refresh_interval_seconds
+) -> None:
+    with pytest.raises(ValueError):
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref=ref,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )
+
+
+def test_mount_config_accepts_git_mount_without_provider_auth() -> None:
+    mount = git_mount(
+        id="repo",
+        mount_path="/mnt/repo",
+        remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+    )
+
+    assert mount_config(mounts=[mount]) == {
+        "mounts": [mount],
+        "proxy_config": {},
+    }
+
+
+def test_mount_config_expands_mixed_bucket_and_git_mounts() -> None:
+    aws_rule = aws_auth(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    )
+    gcp_rule = gcp_auth(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+    )
+    mounts = [
+        s3_mount(id="s3_data", mount_path="/mnt/s3-data", bucket="s3-bucket"),
+        gcs_mount(id="gcs_data", mount_path="/mnt/gcs-data", bucket="gcs-bucket"),
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ),
+    ]
+
+    assert mount_config(auth=[aws_rule, gcp_rule], mounts=mounts) == {
+        "mounts": mounts,
         "proxy_config": {"rules": [aws_rule, gcp_rule]},
     }
 

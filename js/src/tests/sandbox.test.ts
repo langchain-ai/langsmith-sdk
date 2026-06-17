@@ -10,6 +10,7 @@ import { CommandHandle } from "../sandbox/command_handle.js";
 import * as sandboxExports from "../sandbox/index.js";
 import {
   awsAuth,
+  gitMount,
   gcpAuth,
   gcsMount,
   mountConfig,
@@ -226,6 +227,132 @@ describe("sandbox proxy config helpers", () => {
           },
         },
       ],
+      proxyConfig: { rules: [awsRule, gcpRule] },
+    });
+  });
+
+  it("gitMount serializes the backend shape", () => {
+    expect(
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+        ref: { type: "branch", name: "main" },
+        refreshIntervalSeconds: 60,
+      }),
+    ).toEqual({
+      id: "repo",
+      type: "git",
+      mount_path: "/mnt/repo",
+      git: {
+        remote_url: "https://github.com/langchain-ai/langsmith-sdk.git",
+        ref: { type: "branch", name: "main" },
+        refresh_interval_seconds: 60,
+      },
+    });
+  });
+
+  it("gitMount allows tag refs and omitted optional fields", () => {
+    expect(
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+        ref: { type: "tag", name: "v1.0.0" },
+      }).git,
+    ).toEqual({
+      remote_url: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "tag", name: "v1.0.0" },
+    });
+
+    expect(
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      }).git,
+    ).toEqual({
+      remote_url: "https://github.com/langchain-ai/langsmith-sdk.git",
+    });
+  });
+
+  it.each([
+    "",
+    "http://github.com/langchain-ai/langsmith-sdk.git",
+    "https://github.com",
+    "https://user:pass@github.com/langchain-ai/langsmith-sdk.git",
+    "https://github.com/langchain-ai/langsmith-sdk.git?token=secret",
+    "https://github.com/langchain-ai/langsmith-sdk.git#main",
+    "https://github.com/langchain-ai/langsmith-sdk.git\n",
+    "https://github.com/langchain-ai/langsmith-sdk.git\0",
+  ])("gitMount rejects invalid remote URL %p", (remoteUrl) => {
+    expect(() =>
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl,
+      }),
+    ).toThrow();
+  });
+
+  it.each([
+    { ref: { type: "commit", name: "abc123" } },
+    { ref: { type: "branch" } },
+    { ref: { type: "branch", name: "" } },
+    { refreshIntervalSeconds: 0 },
+  ])("gitMount rejects invalid ref or refresh interval", (options) => {
+    expect(() =>
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+        ...(options as any),
+      }),
+    ).toThrow();
+  });
+
+  it("mountConfig accepts Git mounts without provider auth", () => {
+    const mount = gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+    });
+
+    expect(mountConfig({ mounts: [mount] })).toEqual({
+      mounts: [mount],
+      proxyConfig: {},
+    });
+  });
+
+  it("mountConfig expands mixed bucket and Git mounts", () => {
+    const awsRule = awsAuth({
+      accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+      secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+    });
+    const gcpRule = gcpAuth({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    });
+    const mounts = [
+      s3Mount({
+        id: "s3_data",
+        mountPath: "/mnt/s3-data",
+        bucket: "s3-bucket",
+      }),
+      gcsMount({
+        id: "gcs_data",
+        mountPath: "/mnt/gcs-data",
+        bucket: "gcs-bucket",
+      }),
+      gitMount({
+        id: "repo",
+        mountPath: "/mnt/repo",
+        remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      }),
+    ];
+
+    expect(mountConfig({ auth: [awsRule, gcpRule], mounts })).toEqual({
+      mounts,
       proxyConfig: { rules: [awsRule, gcpRule] },
     });
   });

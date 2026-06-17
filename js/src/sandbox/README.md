@@ -165,12 +165,12 @@ try {
 Use `opaqueSecret("...")` for short-lived write-only service account JSON.
 Plaintext service account JSON is not accepted directly.
 
-## Bucket Mounts
+## Sandbox Mounts
 
-Use bucket mounts when sandbox code needs filesystem access to a bucket or
-prefix. Mount specs contain only the bucket target. Provider credentials stay in
-explicit auth config, and the SDK expands `mountConfig` into the backend
-`mounts` and `proxy_config` fields.
+Use mounts when sandbox code needs filesystem access to external data such as
+object storage buckets or public Git repositories. Mount specs contain only the
+mount target. Provider credentials stay in explicit auth config, and the SDK
+expands `mountConfig` into the backend `mounts` and `proxy_config` fields.
 If you also pass `proxyConfig`, its rules are merged with the mount-generated
 proxy auth rules.
 Provider auth for the same provider must appear in only one place.
@@ -262,12 +262,47 @@ try {
 }
 ```
 
-If one sandbox needs both S3 and GCS mounts, build one `mountConfig` with both
-provider rules and mount specs:
+Public Git mounts do not require AWS or GCP auth:
+
+```typescript
+import { gitMount, mountConfig } from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Private Git repositories can use low-level `proxyConfig` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
+
+If one sandbox needs S3, GCS, and Git mounts, build one `mountConfig` with the
+bucket provider rules and all mount specs:
 
 ```typescript
 import {
   awsAuth,
+  gitMount,
   gcpAuth,
   gcsMount,
   mountConfig,
@@ -296,6 +331,11 @@ const mountCfg = mountConfig({
       id: "gcs_data",
       mountPath: "/mnt/mounts/gcs-data",
       bucket: "example-gcs-bucket",
+    }),
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
     }),
   ],
 });
@@ -796,7 +836,7 @@ try {
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
-| `mountConfig?` | High-level bucket mount config from `mountConfig({ auth, mounts })`; expanded into backend mounts and proxy auth |
+| `mountConfig?` | High-level mount config from `mountConfig({ mounts, auth })`; expanded into backend mounts and proxy auth |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
 
 ### ListSnapshotsOptions
