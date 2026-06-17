@@ -79,6 +79,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
+    _MIN_BACKEND_VERSION,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
@@ -304,7 +305,6 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
-MIN_BACKEND_VERSION = "0.17.0"
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
@@ -314,13 +314,13 @@ _fallback_dirs_created: set[str] = set()
 def _check_backend_version(version: str) -> None:
     try:
         _parsed = packaging.version.parse(version)
-        _supported = packaging.version.parse(MIN_BACKEND_VERSION)
+        _supported = packaging.version.parse(_MIN_BACKEND_VERSION)
         if _parsed < _supported:
             logger.warning(
                 "Backend version %r is older than the minimum version required by "
                 "this SDK (%r). Some features may not work as expected.",
                 version,
-                MIN_BACKEND_VERSION,
+                _MIN_BACKEND_VERSION,
             )
     except packaging.version.InvalidVersion:
         logger.warning(
