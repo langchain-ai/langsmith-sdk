@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, TypedDict, Union
+from typing import Any, Literal, TypedDict, Union
 from urllib.parse import urlsplit
 
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
-    SandboxProxyRule,
-    proxy_config,
+    SandboxProxySecret,
 )
 
 
@@ -104,11 +103,48 @@ class GitMountSpec(TypedDict):
 SandboxMount = Union[S3MountSpec, GCSMountSpec, GitMountSpec]
 
 
-class SandboxMountConfig(TypedDict):
-    """SDK-level mount config expanded into backend mounts and proxy_config."""
+class AWSMountAuthConfig(TypedDict):
+    """AWS credentials used by the backend to authenticate S3 mounts."""
 
+    access_key_id: SandboxProxySecret
+    secret_access_key: SandboxProxySecret
+
+
+class GCPMountAuthConfig(TypedDict):
+    """GCP credentials used by the backend to authenticate GCS mounts."""
+
+    service_account_json: SandboxProxySecret
+
+
+class SandboxMountAuthConfig(TypedDict, total=False):
+    """Provider auth blocks for sandbox mounts."""
+
+    aws: AWSMountAuthConfig
+    gcp: GCPMountAuthConfig
+
+
+class AWSMountAuth(TypedDict):
+    """SDK helper output for AWS mount auth."""
+
+    type: Literal["aws"]
+    aws: AWSMountAuthConfig
+
+
+class GCPMountAuth(TypedDict):
+    """SDK helper output for GCP mount auth."""
+
+    type: Literal["gcp"]
+    gcp: GCPMountAuthConfig
+
+
+SandboxMountAuth = Union[AWSMountAuth, GCPMountAuth]
+
+
+class SandboxMountConfig(TypedDict):
+    """Public mount config sent to the sandbox API."""
+
+    auth: SandboxMountAuthConfig
     mounts: list[SandboxMount]
-    proxy_config: SandboxProxyConfig
 
 
 def _require_non_empty_string(value: str, field: str) -> str:
@@ -124,6 +160,50 @@ def _copy_cache_config(cache: MountCacheConfig) -> MountCacheConfig:
     if "writeback_seconds" in cache:
         copied["writeback_seconds"] = cache["writeback_seconds"]
     return copied
+
+
+def _copy_mount_secret(secret: Any, field: str) -> SandboxProxySecret:
+    if not isinstance(secret, dict):
+        raise ValueError(f"{field} must be a sandbox secret")
+    secret_type = secret.get("type")
+    if secret_type not in {"workspace_secret", "opaque"}:
+        raise ValueError(f"{field} must use workspace_secret or opaque")
+    value = secret.get("value")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field}.value must be a non-empty string")
+    return {"type": secret_type, "value": value}
+
+
+def aws_mount_auth(
+    *,
+    access_key_id: SandboxProxySecret,
+    secret_access_key: SandboxProxySecret,
+) -> AWSMountAuth:
+    """Build AWS auth for S3 mounts inside ``mount_config.auth.aws``."""
+    return {
+        "type": "aws",
+        "aws": {
+            "access_key_id": _copy_mount_secret(access_key_id, "access_key_id"),
+            "secret_access_key": _copy_mount_secret(
+                secret_access_key, "secret_access_key"
+            ),
+        },
+    }
+
+
+def gcp_mount_auth(
+    *,
+    service_account_json: SandboxProxySecret,
+) -> GCPMountAuth:
+    """Build GCP auth for GCS mounts inside ``mount_config.auth.gcp``."""
+    return {
+        "type": "gcp",
+        "gcp": {
+            "service_account_json": _copy_mount_secret(
+                service_account_json, "service_account_json"
+            ),
+        },
+    }
 
 
 def _require_git_remote_url(remote_url: str) -> str:
@@ -259,40 +339,87 @@ def _normalize_mounts(mounts: Sequence[SandboxMount]) -> list[SandboxMount]:
         mount_type = mount.get("type")
         if mount_type not in {"s3", "gcs", "git"}:
             raise ValueError("mount_config only supports s3, gcs, and git mounts")
+        _reject_provider_credentials_in_mount(mount)
         normalized.append(mount)
     return normalized
 
 
-def _normalize_auth_rules(
-    auth: Sequence[SandboxProxyRule],
-) -> dict[str, SandboxProxyRule]:
+_FORBIDDEN_MOUNT_CREDENTIAL_FIELDS = {
+    "access_key_id",
+    "secret_access_key",
+    "session_token",
+    "service_account_json",
+    "access_token",
+    "refresh_token",
+    "credentials",
+    "credential",
+}
+
+
+def _reject_provider_credentials_in_mount(value: Any) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in _FORBIDDEN_MOUNT_CREDENTIAL_FIELDS:
+                raise ValueError(
+                    "provider credentials must be supplied in mount_config.auth, "
+                    "not individual mount specs"
+                )
+            _reject_provider_credentials_in_mount(child)
+    elif isinstance(value, list):
+        for child in value:
+            _reject_provider_credentials_in_mount(child)
+
+
+def _normalize_mount_auth(
+    auth: Sequence[SandboxMountAuth],
+) -> SandboxMountAuthConfig:
     if isinstance(auth, dict) or isinstance(auth, str):
-        raise ValueError("auth must be a list of provider auth rules")
-    by_provider: dict[str, SandboxProxyRule] = {}
-    for rule in auth:
-        if not isinstance(rule, dict) or not rule:
-            raise ValueError("auth must be a non-empty list of provider auth rules")
-        provider = rule.get("type")
+        raise ValueError("auth must be a list of provider auth blocks")
+    by_provider: SandboxMountAuthConfig = {}
+    for block in auth:
+        if not isinstance(block, dict) or not block:
+            raise ValueError("auth must be a list of provider auth blocks")
+        provider = block.get("type")
         if provider not in {"aws", "gcp"}:
-            raise ValueError("mount_config auth only supports aws and gcp rules")
+            raise ValueError("mount_config auth only supports aws and gcp blocks")
         if provider in by_provider:
             raise ValueError(f"duplicate {provider} auth rule in mount_config")
-        by_provider[provider] = rule
+        if provider == "aws":
+            aws = block.get("aws")
+            if not isinstance(aws, dict):
+                raise ValueError("aws mount auth must include an aws block")
+            by_provider["aws"] = {
+                "access_key_id": _copy_mount_secret(
+                    aws.get("access_key_id"), "access_key_id"
+                ),
+                "secret_access_key": _copy_mount_secret(
+                    aws.get("secret_access_key"), "secret_access_key"
+                ),
+            }
+        else:
+            gcp = block.get("gcp")
+            if not isinstance(gcp, dict):
+                raise ValueError("gcp mount auth must include a gcp block")
+            by_provider["gcp"] = {
+                "service_account_json": _copy_mount_secret(
+                    gcp.get("service_account_json"), "service_account_json"
+                )
+            }
     return by_provider
 
 
 def mount_config(
     *,
     mounts: Sequence[SandboxMount],
-    auth: Sequence[SandboxProxyRule] = (),
+    auth: Sequence[SandboxMountAuth] = (),
 ) -> SandboxMountConfig:
     """Build a high-level mount config from provider auth and mount specs.
 
-    The returned value is split by the SDK client into backend ``mounts`` and
-    ``proxy_config`` fields.
+    The returned value is sent as the public ``mount_config`` field. The
+    backend expands provider auth into runtime proxy rules.
     """
     normalized_mounts = _normalize_mounts(mounts)
-    auth_by_provider = _normalize_auth_rules(auth)
+    auth_by_provider = _normalize_mount_auth(auth)
     mount_providers = {mount["type"] for mount in normalized_mounts}
 
     if "s3" in mount_providers and "aws" not in auth_by_provider:
@@ -304,12 +431,29 @@ def mount_config(
     if "gcp" in auth_by_provider and "gcs" not in mount_providers:
         raise ValueError("gcp auth requires at least one gcs mount in mount_config")
 
-    rules = [
-        auth_by_provider[provider]
-        for provider in ("aws", "gcp")
-        if provider in auth_by_provider
-    ]
     return {
+        "auth": auth_by_provider,
         "mounts": normalized_mounts,
-        "proxy_config": proxy_config(rules=rules) if rules else {},
     }
+
+
+def validate_mount_config_proxy_config(
+    mount_config: SandboxMountConfig,
+    proxy_config: SandboxProxyConfig | None,
+) -> None:
+    """Reject explicit provider proxy rules owned by mount_config auth."""
+    if proxy_config is None:
+        return
+    auth = mount_config.get("auth", {})
+    rules = proxy_config.get("rules", [])
+    if not isinstance(rules, list):
+        raise ValueError("proxy_config rules must be a list")
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        rule_type = rule.get("type")
+        if rule_type in {"aws", "gcp"} and rule_type in auth:
+            raise ValueError(
+                f"{rule_type} auth cannot be provided in both "
+                "mount_config and proxy_config"
+            )

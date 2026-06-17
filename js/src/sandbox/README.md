@@ -169,17 +169,17 @@ Plaintext service account JSON is not accepted directly.
 
 Use mounts when sandbox code needs filesystem access to external data such as
 object storage buckets or public Git repositories. Mount specs contain only the
-mount target. Provider credentials stay in explicit auth config, and the SDK
-expands `mountConfig` into the backend `mounts` and `proxy_config` fields.
-If you also pass `proxyConfig`, its rules are merged with the mount-generated
-proxy auth rules.
-Provider auth for the same provider must appear in only one place.
+mount target. Provider credentials stay in `mountConfig.auth`; the backend
+expands them into runtime proxy auth rules. You can also pass `proxyConfig` for
+non-mount proxy behavior such as custom headers, callbacks, or access control.
+Explicit AWS/GCP proxy auth rules conflict with `mountConfig` auth for the same
+provider.
 
-S3 mounts require an enabled AWS auth proxy rule:
+S3 mounts require AWS mount auth:
 
 ```typescript
 import {
-  awsAuth,
+  awsMountAuth,
   mountConfig,
   s3Mount,
   workspaceSecret,
@@ -187,7 +187,7 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    awsAuth({
+    awsMountAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
@@ -219,14 +219,11 @@ try {
 }
 ```
 
-GCS mounts require an enabled GCP auth proxy rule covering
-`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
-`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
-`devstorage.read_only`.
+GCS mounts require GCP mount auth:
 
 ```typescript
 import {
-  gcpAuth,
+  gcpMountAuth,
   gcsMount,
   mountConfig,
   workspaceSecret,
@@ -234,9 +231,8 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    gcpAuth({
+    gcpMountAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     }),
   ],
   mounts: [
@@ -297,13 +293,13 @@ requires proxy-managed auth. There is not yet a high-level private Git auth
 helper.
 
 If one sandbox needs S3, GCS, and Git mounts, build one `mountConfig` with the
-bucket provider rules and all mount specs:
+bucket provider auth blocks and all mount specs:
 
 ```typescript
 import {
-  awsAuth,
+  awsMountAuth,
   gitMount,
-  gcpAuth,
+  gcpMountAuth,
   gcsMount,
   mountConfig,
   s3Mount,
@@ -312,13 +308,12 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    awsAuth({
+    awsMountAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
-    gcpAuth({
+    gcpMountAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     }),
   ],
   mounts: [
@@ -836,7 +831,7 @@ try {
 | `vCpus?` | Number of vCPUs |
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
-| `mountConfig?` | High-level mount config from `mountConfig({ mounts, auth })`; expanded into backend mounts and proxy auth |
+| `mountConfig?` | High-level mount config from `mountConfig({ mounts, auth })`; sent as `mount_config` and expanded by the backend at runtime |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
 
 ### ListSnapshotsOptions

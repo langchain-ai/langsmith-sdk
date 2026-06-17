@@ -16,7 +16,6 @@ class SandboxProxySecret(TypedDict):
 SandboxProxyRule = dict[str, Any]
 SandboxProxyConfig = dict[str, Any]
 DEFAULT_GCP_AUTH_MATCH_HOSTS = ["storage.googleapis.com", "www.googleapis.com"]
-_PROVIDER_RULE_TYPES = {"aws", "gcp"}
 
 
 def _require_non_empty_string(value: str, field: str) -> str:
@@ -96,50 +95,6 @@ def proxy_config(
             raise ValueError("access_control must be a dictionary")
         config["access_control"] = dict(access_control)
     return config
-
-
-def _provider_rule_types(config: SandboxProxyConfig) -> set[str]:
-    providers: set[str] = set()
-    rules = config.get("rules", [])
-    if not isinstance(rules, list):
-        raise ValueError("proxy_config rules must be lists when merged")
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
-        rule_type = rule.get("type")
-        if isinstance(rule_type, str) and rule_type in _PROVIDER_RULE_TYPES:
-            providers.add(rule_type)
-    return providers
-
-
-def merge_proxy_configs(
-    generated_config: SandboxProxyConfig | None,
-    explicit_config: SandboxProxyConfig | None,
-) -> SandboxProxyConfig | None:
-    """Merge SDK-generated proxy config with explicit caller proxy config."""
-    if generated_config is None:
-        return explicit_config
-    if explicit_config is None:
-        return generated_config
-
-    generated_rules = generated_config.get("rules", [])
-    explicit_rules = explicit_config.get("rules", [])
-    if not isinstance(generated_rules, list) or not isinstance(explicit_rules, list):
-        raise ValueError("proxy_config rules must be lists when merged")
-
-    conflicts = _provider_rule_types(generated_config) & _provider_rule_types(
-        explicit_config
-    )
-    if conflicts:
-        provider = sorted(conflicts)[0]
-        raise ValueError(
-            f"{provider} auth cannot be provided in both mount_config and proxy_config"
-        )
-
-    merged = dict(generated_config)
-    merged.update(explicit_config)
-    merged["rules"] = [*generated_rules, *explicit_rules]
-    return merged
 
 
 def aws_auth(

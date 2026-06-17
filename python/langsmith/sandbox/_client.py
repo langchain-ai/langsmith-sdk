@@ -34,8 +34,11 @@ from langsmith.sandbox._models import (
     ServiceURL,
     Snapshot,
 )
-from langsmith.sandbox._mounts import SandboxMountConfig
-from langsmith.sandbox._proxy_config import SandboxProxyConfig, merge_proxy_configs
+from langsmith.sandbox._mounts import (
+    SandboxMountConfig,
+    validate_mount_config_proxy_config,
+)
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
@@ -344,10 +347,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
-            mount_config: High-level mount configuration. The SDK expands it
-                into backend ``mounts`` and ``proxy_config`` fields. If
-                ``proxy_config`` is also provided, its rules are merged with the
-                mount-generated proxy auth rules.
+            mount_config: Mount configuration forwarded to the server as
+                ``mount_config``. The backend expands mount auth into runtime
+                proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
+                conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -433,10 +436,10 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
-            mount_config: High-level mount configuration. The SDK expands it
-                into backend ``mounts`` and ``proxy_config`` fields. If
-                ``proxy_config`` is also provided, its rules are merged with the
-                mount-generated proxy auth rules.
+            mount_config: Mount configuration forwarded to the server as
+                ``mount_config``. The backend expands mount auth into runtime
+                proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
+                conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -488,10 +491,8 @@ class SandboxClient:
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
         if mount_config is not None:
-            payload["mounts"] = mount_config["mounts"]
-            proxy_config = merge_proxy_configs(
-                mount_config["proxy_config"], proxy_config
-            )
+            validate_mount_config_proxy_config(mount_config, proxy_config)
+            payload["mount_config"] = mount_config
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 

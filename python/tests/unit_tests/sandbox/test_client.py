@@ -15,8 +15,8 @@ from langsmith.sandbox import (
     SandboxConnectionError,
     ServiceURL,
     Snapshot,
-    aws_auth,
-    gcp_auth,
+    aws_mount_auth,
+    gcp_mount_auth,
     gcs_mount,
     mount_config,
     s3_mount,
@@ -232,10 +232,10 @@ class TestSandboxOperations:
         body = json.loads(request.content)
         assert body["proxy_config"] == proxy_config
 
-    def test_create_sandbox_expands_mount_config(
+    def test_create_sandbox_forwards_mount_config(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
-        """mount_config should expand to mounts and proxy_config in the POST body."""
+        """mount_config should appear as a nested public field in the POST body."""
         import json
 
         httpx_mock.add_response(
@@ -249,7 +249,7 @@ class TestSandboxOperations:
 
         config = mount_config(
             auth=[
-                aws_auth(
+                aws_mount_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
                 )
@@ -275,13 +275,14 @@ class TestSandboxOperations:
 
         request = httpx_mock.get_request()
         body = json.loads(request.content)
-        assert body["mounts"] == config["mounts"]
-        assert body["proxy_config"] == config["proxy_config"]
+        assert body["mount_config"] == config
+        assert "mounts" not in body
+        assert "proxy_config" not in body
 
-    def test_create_sandbox_expands_gcs_mount_config(
+    def test_create_sandbox_forwards_gcs_mount_config(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
-        """GCS mount_config should expand to mounts and proxy_config."""
+        """GCS mount_config should appear as a nested public field."""
         import json
 
         httpx_mock.add_response(
@@ -295,9 +296,8 @@ class TestSandboxOperations:
 
         config = mount_config(
             auth=[
-                gcp_auth(
+                gcp_mount_auth(
                     service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
-                    scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
                 )
             ],
             mounts=[
@@ -321,8 +321,9 @@ class TestSandboxOperations:
 
         request = httpx_mock.get_request()
         body = json.loads(request.content)
-        assert body["mounts"] == config["mounts"]
-        assert body["proxy_config"] == config["proxy_config"]
+        assert body["mount_config"] == config
+        assert "mounts" not in body
+        assert "proxy_config" not in body
 
     def test_create_sandbox_omits_proxy_config_when_none(
         self, client: SandboxClient, httpx_mock: HTTPXMock

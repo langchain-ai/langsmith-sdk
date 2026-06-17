@@ -10,8 +10,10 @@ import { CommandHandle } from "../sandbox/command_handle.js";
 import * as sandboxExports from "../sandbox/index.js";
 import {
   awsAuth,
+  awsMountAuth,
   gitMount,
   gcpAuth,
+  gcpMountAuth,
   gcsMount,
   mountConfig,
   opaqueSecret,
@@ -172,19 +174,55 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
-  it("mountConfig expands mounts and provider auth", () => {
-    const awsRule = awsAuth({
+  it("awsMountAuth builds an AWS provider auth block", () => {
+    expect(
+      awsMountAuth({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+      }),
+    ).toEqual({
+      type: "aws",
+      aws: {
+        access_key_id: {
+          type: "workspace_secret",
+          value: "{AWS_KEY_ID_REF}",
+        },
+        secret_access_key: {
+          type: "workspace_secret",
+          value: "{AWS_KEY_VALUE_REF}",
+        },
+      },
+    });
+  });
+
+  it("gcpMountAuth builds a GCP provider auth block", () => {
+    expect(
+      gcpMountAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      }),
+    ).toEqual({
+      type: "gcp",
+      gcp: {
+        service_account_json: {
+          type: "workspace_secret",
+          value: "{GCP_SERVICE_ACCOUNT_JSON}",
+        },
+      },
+    });
+  });
+
+  it("mountConfig nests mounts and provider auth", () => {
+    const awsAuthBlock = awsMountAuth({
       accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
       secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
     });
-    const gcpRule = gcpAuth({
+    const gcpAuthBlock = gcpMountAuth({
       serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     });
 
     expect(
       mountConfig({
-        auth: [awsRule, gcpRule],
+        auth: [awsAuthBlock, gcpAuthBlock],
         mounts: [
           s3Mount({
             id: "s3_data",
@@ -203,6 +241,10 @@ describe("sandbox proxy config helpers", () => {
         ],
       }),
     ).toEqual({
+      auth: {
+        aws: awsAuthBlock.aws,
+        gcp: gcpAuthBlock.gcp,
+      },
       mounts: [
         {
           id: "s3_data",
@@ -227,7 +269,6 @@ describe("sandbox proxy config helpers", () => {
           },
         },
       ],
-      proxyConfig: { rules: [awsRule, gcpRule] },
     });
   });
 
@@ -319,19 +360,18 @@ describe("sandbox proxy config helpers", () => {
     });
 
     expect(mountConfig({ mounts: [mount] })).toEqual({
+      auth: {},
       mounts: [mount],
-      proxyConfig: {},
     });
   });
 
-  it("mountConfig expands mixed bucket and Git mounts", () => {
-    const awsRule = awsAuth({
+  it("mountConfig nests mixed bucket and Git mounts", () => {
+    const awsAuthBlock = awsMountAuth({
       accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
       secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
     });
-    const gcpRule = gcpAuth({
+    const gcpAuthBlock = gcpMountAuth({
       serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     });
     const mounts = [
       s3Mount({
@@ -351,10 +391,15 @@ describe("sandbox proxy config helpers", () => {
       }),
     ];
 
-    expect(mountConfig({ auth: [awsRule, gcpRule], mounts })).toEqual({
-      mounts,
-      proxyConfig: { rules: [awsRule, gcpRule] },
-    });
+    expect(mountConfig({ auth: [awsAuthBlock, gcpAuthBlock], mounts })).toEqual(
+      {
+        auth: {
+          aws: awsAuthBlock.aws,
+          gcp: gcpAuthBlock.gcp,
+        },
+        mounts,
+      },
+    );
   });
 
   it.each([
@@ -374,11 +419,11 @@ describe("sandbox proxy config helpers", () => {
     },
     {
       auth: [
-        awsAuth({
+        awsMountAuth({
           accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
           secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
         }),
-        awsAuth({
+        awsMountAuth({
           accessKeyId: workspaceSecret("AWS_KEY_ID_REF_2"),
           secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF_2"),
         }),
@@ -390,6 +435,27 @@ describe("sandbox proxy config helpers", () => {
     },
   ])("mountConfig validates provider auth", ({ auth, mounts, message }) => {
     expect(() => mountConfig({ auth, mounts })).toThrow(message);
+  });
+
+  it("mountConfig rejects provider credentials inside mount specs", () => {
+    const mount = s3Mount({
+      id: "s3_data",
+      mountPath: "/mnt/s3-data",
+      bucket: "s3-bucket",
+    }) as any;
+    mount.s3.access_key_id = workspaceSecret("AWS_KEY_ID_REF");
+
+    expect(() =>
+      mountConfig({
+        auth: [
+          awsMountAuth({
+            accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+            secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+          }),
+        ],
+        mounts: [mount],
+      }),
+    ).toThrow(/credentials/i);
   });
 
   it.each([
@@ -874,7 +940,7 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.proxy_config).toEqual(config);
   });
 
-  it("should expand mountConfig into mounts and proxy_config", async () => {
+  it("should forward mountConfig in the request body under mount_config", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -886,7 +952,7 @@ describe("SandboxClient - createSandbox", () => {
     const client = createClientWithMock(mockFetch);
     const config = mountConfig({
       auth: [
-        awsAuth({
+        awsMountAuth({
           accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
           secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
         }),
@@ -903,11 +969,12 @@ describe("SandboxClient - createSandbox", () => {
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.mounts).toEqual(config.mounts);
-    expect(body.proxy_config).toEqual(config.proxyConfig);
+    expect(body.mount_config).toEqual(config);
+    expect(body.mounts).toBeUndefined();
+    expect(body.proxy_config).toBeUndefined();
   });
 
-  it("should merge mountConfig provider auth with proxyConfig", async () => {
+  it("should preserve mountConfig and proxyConfig separately", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -917,7 +984,7 @@ describe("SandboxClient - createSandbox", () => {
     } as Response);
 
     const client = createClientWithMock(mockFetch);
-    const awsRule = awsAuth({
+    const awsAuthBlock = awsMountAuth({
       accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
       secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
     });
@@ -929,7 +996,7 @@ describe("SandboxClient - createSandbox", () => {
       headers: { authorization: "Bearer {GITHUB_TOKEN}" },
     };
     const config = mountConfig({
-      auth: [awsRule],
+      auth: [awsAuthBlock],
       mounts: [
         s3Mount({
           id: "s3_data",
@@ -951,9 +1018,10 @@ describe("SandboxClient - createSandbox", () => {
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.mounts).toEqual(config.mounts);
+    expect(body.mount_config).toEqual(config);
+    expect(body.mounts).toBeUndefined();
     expect(body.proxy_config).toEqual({
-      rules: [awsRule, extraRule],
+      rules: [extraRule],
       no_proxy: ["metadata.google.internal"],
       access_control: { allow_list: ["github.com", "*.amazonaws.com"] },
     });
@@ -963,7 +1031,7 @@ describe("SandboxClient - createSandbox", () => {
     {
       provider: "aws",
       mountAuth: () =>
-        awsAuth({
+        awsMountAuth({
           accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
           secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
         }),
@@ -986,9 +1054,8 @@ describe("SandboxClient - createSandbox", () => {
     {
       provider: "gcp",
       mountAuth: () =>
-        gcpAuth({
+        gcpMountAuth({
           serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
-          scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
         }),
       mounts: () => [
         gcsMount({
