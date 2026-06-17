@@ -830,7 +830,7 @@ async def test_async_client_info_falls_back_on_error(
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
-@mock.patch("langsmith.client._MIN_BACKEND_VERSION", "0.5.0")
+@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "version,expect_warning",
@@ -853,7 +853,9 @@ async def test_async_client_aenter_version_check(
     response.json.return_value = {"version": version}
     mock_httpx_client.request.return_value = response
 
-    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+    with caplog.at_level(
+        logging.WARNING, logger="langsmith._internal._backend_version"
+    ):
         async with AsyncClient(api_url="http://localhost:1984", api_key="test"):
             pass
 
