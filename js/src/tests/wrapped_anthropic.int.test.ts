@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
+import { describe, expect, it, test } from "vitest";
+
 import Anthropic from "@anthropic-ai/sdk";
 import { wrapAnthropic } from "../wrappers/anthropic.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { UsageMetadata } from "../schemas.js";
 import { generateLongContext } from "./utils.js";

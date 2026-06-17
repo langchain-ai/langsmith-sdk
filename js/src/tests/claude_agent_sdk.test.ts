@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, expect, test, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, test, expect, jest } from "@jest/globals";
 import {
   convertFromAnthropicMessage,
   mergeMessagesById,
 } from "../experimental/anthropic/messages.js";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 // Mock Claude Agent SDK types and functions
@@ -43,7 +43,7 @@ type MockQueryParams = {
 
 // Mock Claude Agent SDK
 const createMockSDK = () => {
-  const inputSpy = jest.fn();
+  const inputSpy = vi.fn();
 
   const mockQuery = async function* (
     params: MockQueryParams,

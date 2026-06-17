@@ -1,4 +1,6 @@
 /* eslint-disable no-process-env */
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
 import { SerializeWorker } from "../utils/serialize_worker.js";
 import { serialize } from "../utils/fast-safe-stringify/index.js";
 

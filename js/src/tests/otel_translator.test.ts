@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { beforeEach, describe, expect, it } from "vitest";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { LangSmithToOTELTranslator } from "../experimental/otel/translator.js";
 import * as otelSingleton from "../singletons/otel.js";

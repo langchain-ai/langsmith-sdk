@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 /* eslint-disable import/no-extraneous-dependencies */
-import { describe, beforeAll, afterAll, test, expect } from "@jest/globals";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   Agent,
   run,

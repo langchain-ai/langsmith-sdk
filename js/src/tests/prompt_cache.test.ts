@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -261,15 +261,15 @@ describe("Cache", () => {
 
   describe("background refresh", () => {
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
     });
 
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     test("should not start refresh when ttlSeconds is null", () => {
-      const fetchFunc = jest.fn();
+      const fetchFunc = vi.fn();
       const cache = new PromptCache({
         ttlSeconds: null, // Infinite TTL
       });
@@ -281,7 +281,7 @@ describe("Cache", () => {
       );
 
       // Advance time significantly
-      jest.advanceTimersByTime(120_000);
+      vi.advanceTimersByTime(120_000);
 
       expect(fetchFunc).not.toHaveBeenCalled();
       cache.stop();
@@ -289,7 +289,7 @@ describe("Cache", () => {
 
     test("should refresh stale entries", async () => {
       const refreshedPrompt = createMockPromptCommit("refreshed");
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockResolvedValue(refreshedPrompt);
 
@@ -301,7 +301,7 @@ describe("Cache", () => {
       cache.set("key1", createMockPromptCommit("original"), fetchFunc);
 
       // Advance past TTL and refresh interval
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
 
       // Allow the async refresh to complete
       await Promise.resolve();
@@ -311,7 +311,7 @@ describe("Cache", () => {
     });
 
     test("should track refresh errors", async () => {
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockRejectedValue(new Error("Network error"));
 
@@ -323,7 +323,7 @@ describe("Cache", () => {
       cache.set("key1", createMockPromptCommit("test1"), fetchFunc);
 
       // Advance past TTL and refresh interval
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
 
       // Allow the async refresh to complete
       await Promise.resolve();
@@ -335,7 +335,7 @@ describe("Cache", () => {
     test("should keep serving stale data on 500 errors", async () => {
       const originalPrompt = createMockPromptCommit("original");
       const error = new Error("500 Internal Server Error");
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockRejectedValue(error);
 
@@ -352,7 +352,7 @@ describe("Cache", () => {
       expect(beforeStale).toEqual(originalPrompt);
 
       // Advance past TTL to make it stale
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
       await Promise.resolve();
 
       // Fetch should have been attempted and failed
@@ -372,7 +372,7 @@ describe("Cache", () => {
       const updatedPrompt = createMockPromptCommit("updated");
 
       // First call fails with 500, second call succeeds
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockRejectedValueOnce(new Error("500 Internal Server Error"))
         .mockResolvedValueOnce(updatedPrompt);
@@ -385,7 +385,7 @@ describe("Cache", () => {
       cache.set("key1", originalPrompt, fetchFunc);
 
       // First refresh attempt (will fail)
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
       await Promise.resolve();
 
       expect(fetchFunc).toHaveBeenCalledTimes(1);
@@ -395,7 +395,7 @@ describe("Cache", () => {
       expect(cache.get("key1", fetchFunc)).toEqual(originalPrompt);
 
       // Second refresh attempt (will succeed)
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       await Promise.resolve();
 
       expect(fetchFunc).toHaveBeenCalledTimes(2);
@@ -408,7 +408,7 @@ describe("Cache", () => {
     });
 
     test("should stop refresh on stop()", () => {
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockResolvedValue(createMockPromptCommit("test"));
 
@@ -421,7 +421,7 @@ describe("Cache", () => {
       cache.stop();
 
       // Advance time after stopping
-      jest.advanceTimersByTime(10000);
+      vi.advanceTimersByTime(10000);
 
       // Fetch should not be called since we stopped the cache
       expect(fetchFunc).not.toHaveBeenCalled();
@@ -631,7 +631,7 @@ describe("cache disabled with maxSize: 0", () => {
   });
 
   test("should not start refresh timer when maxSize is 0", () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
     try {
       const cache = new PromptCache({
@@ -640,7 +640,7 @@ describe("cache disabled with maxSize: 0", () => {
         refreshIntervalSeconds: 1,
       });
 
-      const fetchFunc = jest
+      const fetchFunc = vi
         .fn<() => Promise<PromptCommit>>()
         .mockResolvedValue(createMockPromptCommit("test"));
 
@@ -648,7 +648,7 @@ describe("cache disabled with maxSize: 0", () => {
       cache.set("key1", createMockPromptCommit("test"), fetchFunc);
 
       // Advance time
-      jest.advanceTimersByTime(10000);
+      vi.advanceTimersByTime(10000);
 
       // Refresh should never be called since cache is disabled
       expect(fetchFunc).not.toHaveBeenCalled();
@@ -656,7 +656,7 @@ describe("cache disabled with maxSize: 0", () => {
 
       cache.stop();
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });
@@ -724,7 +724,7 @@ describe("additional singleton tests", () => {
     promptCacheSingleton.resetMetrics();
     promptCacheSingleton.stop();
 
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<(key: string) => Promise<PromptCommit>>()
       .mockResolvedValue(createMockPromptCommit("refreshed"));
 
@@ -798,7 +798,7 @@ describe("additional singleton tests", () => {
     promptCacheSingleton.resetMetrics();
     promptCacheSingleton.stop();
 
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<(key: string) => Promise<PromptCommit>>()
       .mockResolvedValue(createMockPromptCommit("refreshed"));
 

@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, expect, test } from "vitest";
 import {
   EvaluationResult,
   EvaluationResults,
@@ -6,7 +7,6 @@ import { evaluate } from "../evaluation/_runner.js";
 import { waitUntilRunFound } from "./utils.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
-import { afterAll, beforeAll } from "@jest/globals";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 
 import * as ai from "ai";

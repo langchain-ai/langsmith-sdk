@@ -1,3 +1,4 @@
+import { expect, test } from "vitest";
 import { evaluate, TargetConfigT } from "../evaluation/_runner.js";
 import { ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";

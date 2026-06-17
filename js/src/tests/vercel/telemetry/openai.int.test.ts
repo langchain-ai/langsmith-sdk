@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { expect, test, vi } from "vitest";
 import { openai } from "@ai-sdk/openai";
-import { jest } from "@jest/globals";
 import * as ai from "ai";
 import z from "zod";
 
@@ -22,7 +22,7 @@ class GreaterThanMatcher {
 }
 
 test("telemetry generateText basic", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -92,7 +92,7 @@ test("telemetry generateText basic", async () => {
 }, 30_000);
 
 test("telemetry generateText with tools", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -217,7 +217,7 @@ test("telemetry generateText with tools", async () => {
 }, 30_000);
 
 test("telemetry streamText", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -329,7 +329,7 @@ test("telemetry streamText", async () => {
 }, 30_000);
 
 test("telemetry generateText with flex service tier", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -396,7 +396,7 @@ test("telemetry generateText with flex service tier", async () => {
 }, 30_000);
 
 test("telemetry generateObject", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -456,7 +456,7 @@ test("telemetry generateObject", async () => {
 }, 30_000);
 
 test("telemetry streamObject via streamText with output", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -520,7 +520,7 @@ test("telemetry streamObject via streamText with output", async () => {
 }, 30_000);
 
 test("telemetry stream cancellation should finish spans cleanly", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -583,7 +583,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
 }, 30_000);
 
 test("telemetry processInputs and processOutputs", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -648,7 +648,7 @@ test("telemetry processInputs and processOutputs", async () => {
 }, 30_000);
 
 test("telemetry nested under traceable parent", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -703,7 +703,7 @@ test("telemetry nested under traceable parent", async () => {
 }, 30_000);
 
 test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -839,7 +839,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
 }, 30_000);
 
 test("telemetry tool error handling", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -897,7 +897,7 @@ test("telemetry tool error handling", async () => {
 }, 30_000);
 
 test("telemetry reuse across sequential generateText calls", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,

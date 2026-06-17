@@ -1,3 +1,4 @@
+import { describe, expect, test } from "vitest";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client } from "../client.js";
 import { AgentContext, FileEntry, SkillContext } from "../schemas.js";

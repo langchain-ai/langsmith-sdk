@@ -3,12 +3,12 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable prefer-const */
 /* eslint-disable no-instanceof/no-instanceof */
-import { jest, describe } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 
 // Helper function to parse mock request body
 const parseMockRequestBody = async (
@@ -99,7 +99,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("Environment Variable Reading", () => {
@@ -188,7 +188,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const client = new Client({ autoBatchTracing: false });
 
       // Mock the main caller for createRun
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -217,7 +217,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: false });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -247,7 +247,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const client = new Client({ autoBatchTracing: false });
 
       // Mock HTTP calls
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -267,7 +267,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
     it("should handle replica-specific project names", async () => {
       const client = new Client({ autoBatchTracing: false });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -316,7 +316,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: false });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -344,7 +344,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: false });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -373,7 +373,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: false });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -406,7 +406,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
 
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         status: 200,
         text: () => Promise.resolve(""),
@@ -420,7 +420,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const batchCallSpy = mockFetch;
 
-      jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_getServerInfo").mockResolvedValue({
         version: "test",
         batch_ingest_config: { use_multipart_endpoint: false },
       });
@@ -483,7 +483,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
 
-      const multipartCallSpy = jest.fn<typeof fetch>().mockResolvedValue({
+      const multipartCallSpy = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         text: () => Promise.resolve(""),
       } as Response);
@@ -493,7 +493,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
         fetchImplementation: multipartCallSpy,
       });
 
-      jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_getServerInfo").mockResolvedValue({
         version: "test",
         batch_ingest_config: { use_multipart_endpoint: true },
       });
@@ -560,7 +560,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const client = new Client({ autoBatchTracing: false });
 
       // Mock primary to succeed, replica to fail
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).caller, "call")
         .mockImplementation((...args: unknown[]) => {
           const url = args[0] as string;
@@ -570,7 +570,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           return Promise.resolve({ ok: true, text: () => "" });
         });
 
-      const consoleSpy = jest
+      const consoleSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
 
@@ -624,12 +624,12 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       );
 
       // Spy on console.warn to check warning messages
-      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const client = new Client({ autoBatchTracing: false });
 
       // Mock HTTP calls to prevent actual requests
-      jest
+      vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -668,11 +668,11 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       );
 
       // Spy on console.warn to check warning messages
-      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const client = new Client({ autoBatchTracing: false });
 
-      jest
+      vi
         .spyOn((client as any).caller, "call")
         .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -720,11 +720,11 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: true });
 
-      const callSpy = jest
+      const callSpy = vi
         .spyOn((client as any).batchIngestCaller, "callWithOptions")
         .mockResolvedValue({ ok: true, text: () => "" });
 
-      jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_getServerInfo").mockResolvedValue({
         version: "test",
         batch_ingest_config: { use_multipart_endpoint: false },
       });

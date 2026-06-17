@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 /* eslint-disable import/no-extraneous-dependencies */
+import { beforeEach, describe, expect, it } from "vitest";
+
 import * as ai from "ai";
 import { simulateReadableStream, APICallError } from "ai";
 import { z } from "zod";

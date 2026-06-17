@@ -1,4 +1,6 @@
 // @ts-expect-error Bun types are not imported due to conflicts with Node types
+import { expect, test } from "vitest";
+
 import { test, expect } from "bun:test";
 import { traceable } from "../../traceable.js";
 import { Client } from "../../client.js";

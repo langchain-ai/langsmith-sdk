@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jest } from "@jest/globals";
+import { describe, expect, it, Mock, vi } from "vitest";
 import { Client } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
 
@@ -8,16 +8,16 @@ const ORGANIZATION_QUERY = `?organizationId=${WORKSPACE_ID}`;
 
 function _mockClient() {
   const client = new Client({ apiKey: "test-api-key" });
-  jest.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(true);
-  jest.spyOn(client as any, "_getSettings").mockResolvedValue({
+  vi.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(true);
+  vi.spyOn(client as any, "_getSettings").mockResolvedValue({
     id: WORKSPACE_ID,
     display_name: "Test Workspace",
     created_at: "2026-05-27T00:00:00Z",
     tenant_handle: "workspace-handle",
   });
-  jest
-    .spyOn(client as any, "_ownerConflictError")
-    .mockImplementation(async () => new Error("owner mismatch"));
+  vi.spyOn(client as any, "_ownerConflictError").mockImplementation(
+    async () => new Error("owner mismatch"),
+  );
   return client;
 }
 
@@ -31,12 +31,12 @@ function _response(body: unknown, status = 200): any {
   };
 }
 
-function _setFetchSequence(client: Client, responses: any[]): jest.Mock {
-  const spy = jest.spyOn(client as any, "_fetch");
+function _setFetchSequence(client: Client, responses: any[]): Mock {
+  const spy = vi.spyOn(client as any, "_fetch");
   for (const res of responses) {
     spy.mockResolvedValueOnce(res);
   }
-  return spy as unknown as jest.Mock;
+  return spy as Mock;
 }
 
 describe("Context (agent/skill) on Client", () => {
@@ -316,7 +316,7 @@ describe("Context (agent/skill) on Client", () => {
 
     it("returns context URL with organizationId when tenant_handle is missing", async () => {
       const client = _mockClient();
-      const settingsSpy = jest.spyOn(client as any, "_getSettings");
+      const settingsSpy = vi.spyOn(client as any, "_getSettings");
       settingsSpy.mockResolvedValue({
         id: WORKSPACE_ID,
         display_name: "Test Workspace",
@@ -404,10 +404,8 @@ describe("Context (agent/skill) on Client", () => {
 
     it("throws owner conflict before calling DELETE", async () => {
       const client = _mockClient();
-      jest
-        .spyOn(client as any, "_currentTenantIsOwner")
-        .mockResolvedValue(false);
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
+      vi.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(false);
+      const fetchSpy = vi.spyOn(client as any, "_fetch");
       await expect(client.deleteAgent("other/repo")).rejects.toThrow(
         /owner mismatch/,
       );
@@ -421,10 +419,8 @@ describe("Context (agent/skill) on Client", () => {
         apiKey: "test-api-key",
         apiUrl: "https://example.com/api/v1",
       });
-      jest
-        .spyOn(client as any, "_currentTenantIsOwner")
-        .mockResolvedValue(true);
-      jest.spyOn(client as any, "_getSettings").mockResolvedValue({
+      vi.spyOn(client as any, "_currentTenantIsOwner").mockResolvedValue(true);
+      vi.spyOn(client as any, "_getSettings").mockResolvedValue({
         id: WORKSPACE_ID,
         display_name: "Test Workspace",
         created_at: "2026-05-27T00:00:00Z",
