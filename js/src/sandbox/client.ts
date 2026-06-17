@@ -34,6 +34,7 @@ import {
   handleSandboxCreationError,
   validateTtl,
 } from "./helpers.js";
+import { mergeProxyConfigs } from "./proxy_config.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 
 /**
@@ -503,6 +504,7 @@ export class SandboxClient {
       vCpus,
       memBytes,
       fsCapacityBytes,
+      mountConfig,
       proxyConfig,
     } = resolvedOptions;
 
@@ -512,7 +514,12 @@ export class SandboxClient {
         "snapshotId",
       );
     }
-
+    if ("mounts" in resolvedOptions) {
+      throw new LangSmithValidationError(
+        "mounts is not a public createSandbox option; use mountConfig",
+        "mounts",
+      );
+    }
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
@@ -548,8 +555,15 @@ export class SandboxClient {
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
     }
-    if (proxyConfig !== undefined) {
-      payload.proxy_config = proxyConfig;
+    const effectiveProxyConfig = mergeProxyConfigs(
+      mountConfig?.proxyConfig,
+      proxyConfig,
+    );
+    if (mountConfig !== undefined) {
+      payload.mounts = mountConfig.mounts;
+    }
+    if (effectiveProxyConfig !== undefined) {
+      payload.proxy_config = effectiveProxyConfig;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;

@@ -15,6 +15,12 @@ from langsmith.sandbox import (
     SandboxConnectionError,
     ServiceURL,
     Snapshot,
+    aws_auth,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    s3_mount,
+    workspace_secret,
 )
 from langsmith.sandbox._models import ExecutionResult
 
@@ -225,6 +231,98 @@ class TestSandboxOperations:
         request = httpx_mock.get_request()
         body = json.loads(request.content)
         assert body["proxy_config"] == proxy_config
+
+    def test_create_sandbox_expands_mount_config(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """mount_config should expand to mounts and proxy_config in the POST body."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+            },
+            status_code=201,
+        )
+
+        config = mount_config(
+            auth=[
+                aws_auth(
+                    access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                    secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+                )
+            ],
+            mounts=[
+                s3_mount(
+                    id="customer_data",
+                    mount_path="/mnt/mounts/customer-data",
+                    bucket="example-bucket",
+                    prefix="datasets/customer-data",
+                    read_only=True,
+                    cache={
+                        "max_size_bytes": 12345,
+                        "writeback_seconds": 7,
+                    },
+                )
+            ],
+        )
+        client.create_sandbox(
+            snapshot_id="snap-1",
+            mount_config=config,
+        )
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == config["proxy_config"]
+
+    def test_create_sandbox_expands_gcs_mount_config(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """GCS mount_config should expand to mounts and proxy_config."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+            },
+            status_code=201,
+        )
+
+        config = mount_config(
+            auth=[
+                gcp_auth(
+                    service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                    scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+                )
+            ],
+            mounts=[
+                gcs_mount(
+                    id="customer_data",
+                    mount_path="/mnt/mounts/customer-data",
+                    bucket="example-bucket",
+                    prefix="datasets/customer-data",
+                    read_only=False,
+                    cache={
+                        "max_size_bytes": 12345,
+                        "writeback_seconds": 7,
+                    },
+                )
+            ],
+        )
+        client.create_sandbox(
+            snapshot_id="snap-1",
+            mount_config=config,
+        )
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == config["proxy_config"]
 
     def test_create_sandbox_omits_proxy_config_when_none(
         self, client: SandboxClient, httpx_mock: HTTPXMock

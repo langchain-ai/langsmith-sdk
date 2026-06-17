@@ -4,6 +4,12 @@ This repo contains the Python and JS clients for the LangSmith platform.
 
 See [`python/AGENTS.md`](python/AGENTS.md) for Python-specific lint/test instructions.
 
+## Auto-generated OpenAPI client
+
+The directories `python/langsmith/_openapi_client/` and `js/src/_openapi_client/` are **auto-generated** from the LangSmith OpenAPI spec via [Stainless](https://www.stainlessapi.com/). Do not edit files in these directories manually — your changes will be overwritten on the next sync.
+
+Updates are applied automatically by the [`stlc_sync_python_and_js_sdks`](https://github.com/langchain-ai/langchainplus/actions/workflows/stlc_sync_python_and_js_sdks.yml) workflow in `langchain-ai/langchainplus`, which opens PRs from the `sync/langsmith-api` branch. A CI check ([`protect-openapi-client.yml`](.github/workflows/protect-openapi-client.yml)) blocks any PR that touches these directories from a source other than that workflow.
+
 ## Cutting a release
 
 Releases are published by GitHub Actions workflows that fire on `main` when specific files change:

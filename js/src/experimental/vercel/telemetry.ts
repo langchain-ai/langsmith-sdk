@@ -1,7 +1,7 @@
 import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
 import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
-import { isTracingEnabled } from "../../env.js";
+import { isEnvTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./utils.js";
 import type { KVMap } from "../../schemas.js";
@@ -230,7 +230,7 @@ export function LangSmithTelemetry(
   const invocationsByCallId = new Map<string, InvocationState>();
 
   const onStart: Telemetry["onStart"] = async (event) => {
-    if (!isTracingEnabled(tracingEnabled)) return;
+    if (!isEnvTracingEnabled(tracingEnabled)) return;
     if (!("callId" in event) || typeof event.callId !== "string") return;
 
     // If called within an existing traceable context, nest under it
