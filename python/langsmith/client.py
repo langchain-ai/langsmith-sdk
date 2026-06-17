@@ -70,6 +70,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson, _profiles
+from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -1627,6 +1628,7 @@ class Client:
         """Access generated online evaluator CRUD methods."""
         from langsmith._openapi_client import Langsmith as OpenAPILangsmith
 
+        _check_backend_version(self.info.version)
         self._ensure_profile_auth()
         headers = self._headers
         if self._profile_auth is not None:

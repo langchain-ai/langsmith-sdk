@@ -78,6 +78,7 @@ import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
 import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
+import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -698,6 +699,37 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
     return Number(score.toFixed(4));
   }
   return score;
+}
+
+export function _checkBackendVersion(
+  version: string,
+  minVersion: string = _MIN_BACKEND_VERSION,
+): void {
+  const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
+  const [maj, min, pat] = parse(version);
+  const [rMaj, rMin, rPat] = parse(minVersion);
+  if (
+    isNaN(maj) ||
+    isNaN(min) ||
+    isNaN(pat) ||
+    isNaN(rMaj) ||
+    isNaN(rMin) ||
+    isNaN(rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(version)} for compatibility check.`,
+    );
+    return;
+  }
+  if (
+    maj < rMaj ||
+    (maj === rMaj && min < rMin) ||
+    (maj === rMaj && min === rMin && pat < rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
+    );
+  }
 }
 
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
@@ -1985,6 +2017,9 @@ export class Client implements LangSmithTracingClientInterface {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
+            if (this._serverInfo?.version) {
+              _checkBackendVersion(this._serverInfo.version);
+            }
           } catch (e: any) {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
