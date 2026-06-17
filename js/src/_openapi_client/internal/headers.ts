@@ -15,6 +15,7 @@ export type HeadersLike =
 const brand_privateNullableHeaders = /* @__PURE__ */ Symbol('brand.privateNullableHeaders');
 
 /**
+ * @internal
  * Users can pass explicit nulls to unset default headers. When we parse them
  * into a standard headers type we need to preserve that information.
  */
