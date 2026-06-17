@@ -1643,16 +1643,16 @@ describe("_checkBackendVersion", () => {
   });
 
   it.each([
-    ["0.15.9", true],
-    ["0.15.99", true],
-    ["0.16.0", false],
-    ["0.16.1", false],
+    ["0.4.9", true],
+    ["0.4.99", true],
+    ["0.5.0", false],
+    ["0.5.1", false],
     ["1.0.0", false],
-    ["0.16.4rc1", false],
-    ["0.15.4rc1", true],
+    ["0.5.4rc1", false],
+    ["0.4.4rc1", true],
     ["not-a-version", true],
   ])("version %s -> warns: %s", (version, expectWarn) => {
-    _checkBackendVersion(version as string);
+    _checkBackendVersion(version as string, "0.5.0");
     if (expectWarn) {
       expect(warnSpy).toHaveBeenCalledTimes(1);
     } else {

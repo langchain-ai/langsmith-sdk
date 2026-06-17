@@ -70,16 +70,17 @@ def test_is_localhost() -> None:
 @pytest.mark.parametrize(
     "version,expect_warning",
     [
-        ("0.15.9", True),
-        ("0.15.99", True),
-        ("0.16.0", False),
-        ("0.16.1", False),
+        ("0.4.9", True),
+        ("0.4.99", True),
+        ("0.5.0", False),
+        ("0.5.1", False),
         ("1.0.0", False),
-        ("0.16.4rc1", False),
-        ("0.15.4rc1", True),
+        ("0.5.4rc1", False),
+        ("0.4.4rc1", True),
         ("not-a-version", True),
     ],
 )
+@mock.patch("langsmith.client._MIN_BACKEND_VERSION", "0.5.0")
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:

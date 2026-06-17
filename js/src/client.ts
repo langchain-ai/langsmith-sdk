@@ -701,10 +701,13 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
-export function _checkBackendVersion(version: string): void {
+export function _checkBackendVersion(
+  version: string,
+  minVersion: string = _MIN_BACKEND_VERSION,
+): void {
   const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
   const [maj, min, pat] = parse(version);
-  const [rMaj, rMin, rPat] = parse(_MIN_BACKEND_VERSION);
+  const [rMaj, rMin, rPat] = parse(minVersion);
   if (
     isNaN(maj) ||
     isNaN(min) ||
@@ -724,7 +727,7 @@ export function _checkBackendVersion(version: string): void {
     (maj === rMaj && min === rMin && pat < rPat)
   ) {
     console.warn(
-      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(_MIN_BACKEND_VERSION)}). Some features may not work as expected.`,
+      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
     );
   }
 }

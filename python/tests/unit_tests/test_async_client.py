@@ -828,10 +828,11 @@ async def test_async_client_info_falls_back_on_error(mock_client_cls: mock.Mock)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
+@mock.patch("langsmith.client._MIN_BACKEND_VERSION", "0.5.0")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "version,expect_warning",
-    [("0.15.9", True), ("0.16.0", False), ("0.16.4rc1", False)],
+    [("0.4.9", True), ("0.5.0", False), ("0.5.4rc1", False)],
 )
 async def test_async_client_aenter_version_check(
     mock_client_cls: mock.Mock,
