@@ -1,6 +1,7 @@
 """Test the AsyncClient."""
 
 import json
+import logging
 import pathlib
 import uuid
 import warnings
@@ -784,3 +785,76 @@ def test_async_client_repr_hides_sensitive_info(mock_client_cls: mock.Mock) -> N
     assert "https://api.smith.langchain.com" in repr_str
     # Ensure it's properly formatted
     assert repr_str == "AsyncClient (API URL: https://api.smith.langchain.com)"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_info_caches_result(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"version": "0.16.0"}
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    info1 = await client.info()
+    info2 = await client.info()
+
+    assert info1 is info2
+    assert mock_httpx_client.request.call_count == 1
+    assert info1.version == "0.16.0"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_info_falls_back_on_error(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    mock_httpx_client.request.side_effect = Exception("connection refused")
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    info = await client.info()
+
+    assert info.version == ""
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "version,expect_warning",
+    [("0.15.9", True), ("0.16.0", False), ("0.16.4rc1", False)],
+)
+async def test_async_client_aenter_version_check(
+    mock_client_cls: mock.Mock,
+    version: str,
+    expect_warning: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"version": version}
+    mock_httpx_client.request.return_value = response
+
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        async with AsyncClient(api_url="http://localhost:1984", api_key="test"):
+            pass
+
+    if expect_warning:
+        assert caplog.records
+    else:
+        assert not caplog.records

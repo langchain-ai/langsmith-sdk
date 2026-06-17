@@ -25,6 +25,7 @@ import httpx
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith.client import _check_backend_version
 from langsmith._internal import _profiles
 from langsmith._internal._hub import (
     HUB,
@@ -60,6 +61,7 @@ class AsyncClient:
         "_workspace_id",
         "_profile_auth",
         "_profile_auth_headers",
+        "_info",
     )
 
     _custom_headers: dict[str, str]
@@ -117,6 +119,23 @@ class AsyncClient:
     def workspace_id(self, value: Optional[str]) -> None:
         self._workspace_id = ls_utils.get_workspace_id(value)
         self._client.headers = httpx.Headers(self._compute_headers())
+
+    async def info(self) -> ls_schemas.LangSmithInfo:
+        """Get information about the LangSmith server."""
+        if self._info is not None:
+            return self._info
+        try:
+            response = await self._arequest_with_retries(
+                "GET",
+                "/info",
+                headers={"Accept": "application/json"},
+            )
+            ls_utils.raise_for_status_with_text(response)
+            self._info = ls_schemas.LangSmithInfo(**response.json())
+        except BaseException as e:
+            logger.warning(f"Failed to get info from {self._api_url}: {repr(e)}")
+            self._info = ls_schemas.LangSmithInfo()
+        return self._info
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
@@ -234,6 +253,7 @@ class AsyncClient:
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
+        self._info: Optional[ls_schemas.LangSmithInfo] = None
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -276,6 +296,8 @@ class AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
             await self._cache.start()
+        info = await self.info()
+        _check_backend_version(info.version)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
