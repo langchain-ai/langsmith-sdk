@@ -26,6 +26,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _profiles
+from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
     HUB,
     REPO_HANDLE_PATTERN,
@@ -33,7 +34,6 @@ from langsmith._internal._hub import (
     platform_hub_path,
     validate_parent_commit,
 )
-from langsmith.client import _check_backend_version
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)

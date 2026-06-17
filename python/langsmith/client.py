@@ -70,6 +70,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson, _profiles
+from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -82,7 +83,6 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
-    _MIN_BACKEND_VERSION,
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
@@ -311,24 +311,6 @@ URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
 _fallback_dirs_created: set[str] = set()
-
-
-def _check_backend_version(version: str) -> None:
-    try:
-        _parsed = packaging.version.parse(version)
-        _supported = packaging.version.parse(_MIN_BACKEND_VERSION)
-        if _parsed < _supported:
-            logger.warning(
-                "Backend version %r is older than the minimum version required by "
-                "this SDK (%r). Some features may not work as expected.",
-                version,
-                _MIN_BACKEND_VERSION,
-            )
-    except packaging.version.InvalidVersion:
-        logger.warning(
-            "Could not parse backend version %r for compatibility check.",
-            version,
-        )
 
 
 @lru_cache(maxsize=1)

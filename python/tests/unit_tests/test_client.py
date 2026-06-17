@@ -80,11 +80,11 @@ def test_is_localhost() -> None:
         ("not-a-version", True),
     ],
 )
-@mock.patch("langsmith.client._MIN_BACKEND_VERSION", "0.5.0")
+@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+    with caplog.at_level(logging.WARNING, logger="langsmith._internal._backend_version"):
         _check_backend_version(version)
     if expect_warning:
         assert caplog.records, f"expected a warning for version {version!r}"
