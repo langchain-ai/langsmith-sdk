@@ -84,7 +84,9 @@ def test_is_localhost() -> None:
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(logging.WARNING, logger="langsmith._internal._backend_version"):
+    with caplog.at_level(
+        logging.WARNING, logger="langsmith._internal._backend_version"
+    ):
         _check_backend_version(version)
     if expect_warning:
         assert caplog.records, f"expected a warning for version {version!r}"
