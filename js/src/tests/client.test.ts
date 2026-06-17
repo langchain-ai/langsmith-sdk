@@ -4,7 +4,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { inspect } from "node:util";
-import { Client, mergeRuntimeEnvIntoRun, _checkBackendVersion } from "../client.js";
+import {
+  Client,
+  mergeRuntimeEnvIntoRun,
+  _checkBackendVersion,
+} from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,

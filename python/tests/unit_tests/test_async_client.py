@@ -812,7 +812,9 @@ async def test_async_client_info_caches_result(mock_client_cls: mock.Mock) -> No
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
-async def test_async_client_info_falls_back_on_error(mock_client_cls: mock.Mock) -> None:
+async def test_async_client_info_falls_back_on_error(
+    mock_client_cls: mock.Mock,
+) -> None:
     mock_httpx_client = AsyncMock()
     mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
     mock_httpx_client.headers = httpx.Headers()
