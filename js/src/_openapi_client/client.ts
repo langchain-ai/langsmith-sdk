@@ -209,6 +209,9 @@ import {
 } from './resources/repos/repos.js';
 import {
   BodyParamsForRunSchema,
+  QueryRunResponse,
+  QueryRunResponsesItemsCursorPostPagination,
+  QueryRunsRequestBody,
   RequestBodyForRunsGenerateQuery,
   ResponseBodyForRunsGenerateQuery,
   Run,
@@ -217,9 +220,11 @@ import {
   RunIngestBatchParams,
   RunIngestBatchResponse,
   RunQueryParams,
-  RunQueryResponse,
+  RunQueryV2Params,
   RunRetrieveParams,
+  RunRetrieveV2Params,
   RunSchema,
+  RunSchemasCursorPagination,
   RunStatsParams,
   RunStatsQueryParams,
   RunStatsResponse,
@@ -248,6 +253,16 @@ import {
   TracerSessionWithoutVirtualFields,
   TracerSessionsOffsetPaginationTopLevelArray,
 } from './resources/sessions/sessions.js';
+import {
+  QueryThreadsRequestBody,
+  ThreadListItem,
+  ThreadListItemsItemsCursorPostPagination,
+  ThreadQueryParams,
+  ThreadTraceListItem,
+  ThreadTraceSelectField,
+  Threads,
+} from './resources/threads/threads.js';
+import { QueryTraceResponseBody, Traces } from './resources/traces/traces.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -1020,6 +1035,8 @@ export class Langsmith {
   examples: API.Examples = new API.Examples(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
+  threads: API.Threads = new API.Threads(this);
+  traces: API.Traces = new API.Traces(this);
   evaluators: API.Evaluators = new API.Evaluators(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   feedback: API.Feedback = new API.Feedback(this);
@@ -1037,6 +1054,8 @@ Langsmith.Sessions = Sessions;
 Langsmith.Examples = Examples;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
+Langsmith.Threads = Threads;
+Langsmith.Traces = Traces;
 Langsmith.Evaluators = Evaluators;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Feedback = Feedback;
@@ -1171,6 +1190,8 @@ export declare namespace Langsmith {
   export {
     Runs as Runs,
     type BodyParamsForRunSchema as BodyParamsForRunSchema,
+    type QueryRunResponse as QueryRunResponse,
+    type QueryRunsRequestBody as QueryRunsRequestBody,
     type RequestBodyForRunsGenerateQuery as RequestBodyForRunsGenerateQuery,
     type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
     type Run as Run,
@@ -1181,16 +1202,31 @@ export declare namespace Langsmith {
     type RunCreateResponse as RunCreateResponse,
     type RunUpdateResponse as RunUpdateResponse,
     type RunIngestBatchResponse as RunIngestBatchResponse,
-    type RunQueryResponse as RunQueryResponse,
     type RunStatsResponse as RunStatsResponse,
     type RunUpdate2Response as RunUpdate2Response,
+    type RunSchemasCursorPagination as RunSchemasCursorPagination,
+    type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
     type RunCreateParams as RunCreateParams,
     type RunRetrieveParams as RunRetrieveParams,
     type RunUpdateParams as RunUpdateParams,
     type RunIngestBatchParams as RunIngestBatchParams,
     type RunQueryParams as RunQueryParams,
+    type RunQueryV2Params as RunQueryV2Params,
+    type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunStatsParams as RunStatsParams,
   };
+
+  export {
+    Threads as Threads,
+    type QueryThreadsRequestBody as QueryThreadsRequestBody,
+    type ThreadListItem as ThreadListItem,
+    type ThreadTraceListItem as ThreadTraceListItem,
+    type ThreadTraceSelectField as ThreadTraceSelectField,
+    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type ThreadQueryParams as ThreadQueryParams,
+  };
+
+  export { Traces as Traces, type QueryTraceResponseBody as QueryTraceResponseBody };
 
   export {
     Evaluators as Evaluators,

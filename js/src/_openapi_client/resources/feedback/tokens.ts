@@ -166,6 +166,8 @@ export interface TokenRetrieveParams {
 
   correction?: string | null;
 
+  do_not_extend_trace_retention?: boolean;
+
   score?: number | boolean | null;
 
   value?: number | boolean | string | null;
@@ -175,6 +177,8 @@ export interface TokenUpdateParams {
   comment?: string | null;
 
   correction?: { [key: string]: unknown } | string | null;
+
+  do_not_extend_trace_retention?: boolean;
 
   metadata?: { [key: string]: unknown } | null;
 

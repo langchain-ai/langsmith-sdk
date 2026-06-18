@@ -5,6 +5,8 @@ export { Rules } from './rules.js';
 export {
   Runs,
   type BodyParamsForRunSchema,
+  type QueryRunResponse,
+  type QueryRunsRequestBody,
   type RequestBodyForRunsGenerateQuery,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
@@ -15,7 +17,6 @@ export {
   type RunCreateResponse,
   type RunUpdateResponse,
   type RunIngestBatchResponse,
-  type RunQueryResponse,
   type RunStatsResponse,
   type RunUpdate2Response,
   type RunCreateParams,
@@ -23,5 +24,9 @@ export {
   type RunUpdateParams,
   type RunIngestBatchParams,
   type RunQueryParams,
+  type RunQueryV2Params,
+  type RunRetrieveV2Params,
   type RunStatsParams,
+  type RunSchemasCursorPagination,
+  type QueryRunResponsesItemsCursorPostPagination,
 } from './runs.js';

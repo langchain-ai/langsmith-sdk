@@ -163,6 +163,8 @@ export {
 export {
   Runs,
   type BodyParamsForRunSchema,
+  type QueryRunResponse,
+  type QueryRunsRequestBody,
   type RequestBodyForRunsGenerateQuery,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
@@ -173,7 +175,6 @@ export {
   type RunCreateResponse,
   type RunUpdateResponse,
   type RunIngestBatchResponse,
-  type RunQueryResponse,
   type RunStatsResponse,
   type RunUpdate2Response,
   type RunCreateParams,
@@ -181,7 +182,11 @@ export {
   type RunUpdateParams,
   type RunIngestBatchParams,
   type RunQueryParams,
+  type RunQueryV2Params,
+  type RunRetrieveV2Params,
   type RunStatsParams,
+  type RunSchemasCursorPagination,
+  type QueryRunResponsesItemsCursorPostPagination,
 } from './runs/runs.js';
 export { Sandboxes } from './sandboxes/sandboxes.js';
 export {
@@ -202,6 +207,17 @@ export {
   type TracerSessionsOffsetPaginationTopLevelArray,
 } from './sessions/sessions.js';
 export { Settings, type AppHubCrudTenantsTenant } from './settings.js';
+export {
+  Threads,
+  type QueryThreadsRequestBody,
+  type ThreadListItem,
+  type ThreadTraceListItem,
+  type ThreadTraceSelectField,
+  type ThreadQueryParams,
+  type ThreadTraceListItemsItemsCursorGetPagination,
+  type ThreadListItemsItemsCursorPostPagination,
+} from './threads/threads.js';
+export { Traces, type QueryTraceResponseBody } from './traces/traces.js';
 export {
   Workspaces,
   type WorkspaceCreateResponse,

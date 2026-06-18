@@ -81,9 +81,15 @@ export interface Evaluator {
 
   evaluators?: Array<EvaluatorTopLevel> | null;
 
+  extend_annotation_queue_trace_retention?: boolean | null;
+
+  extend_dataset_trace_retention?: boolean | null;
+
   extend_evaluator_trace_retention?: boolean | null;
 
   extend_only?: boolean;
+
+  extend_webhook_trace_retention?: boolean | null;
 
   filter?: string | null;
 

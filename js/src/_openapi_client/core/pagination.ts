@@ -395,8 +395,8 @@ export class CursorPagination<Item> extends AbstractPage<Item> implements Cursor
 
     return {
       ...this.options,
-      query: {
-        ...maybeObj(this.options.query),
+      body: {
+        ...maybeObj(this.options.body),
         cursor,
       },
     };
