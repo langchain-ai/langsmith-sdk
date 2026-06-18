@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
+    SandboxProxyRule,
     SandboxProxySecret,
 )
 
@@ -123,21 +124,7 @@ class SandboxMountAuthConfig(TypedDict, total=False):
     gcp: GCPMountAuthConfig
 
 
-class AWSMountAuth(TypedDict):
-    """SDK helper output for AWS mount auth."""
-
-    type: Literal["aws"]
-    aws: AWSMountAuthConfig
-
-
-class GCPMountAuth(TypedDict):
-    """SDK helper output for GCP mount auth."""
-
-    type: Literal["gcp"]
-    gcp: GCPMountAuthConfig
-
-
-SandboxMountAuth = Union[AWSMountAuth, GCPMountAuth]
+SandboxMountAuth = SandboxProxyRule
 
 
 class SandboxMountConfig(TypedDict):
@@ -172,38 +159,6 @@ def _copy_mount_secret(secret: Any, field: str) -> SandboxProxySecret:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field}.value must be a non-empty string")
     return {"type": secret_type, "value": value}
-
-
-def aws_mount_auth(
-    *,
-    access_key_id: SandboxProxySecret,
-    secret_access_key: SandboxProxySecret,
-) -> AWSMountAuth:
-    """Build AWS auth for S3 mounts inside ``mount_config.auth.aws``."""
-    return {
-        "type": "aws",
-        "aws": {
-            "access_key_id": _copy_mount_secret(access_key_id, "access_key_id"),
-            "secret_access_key": _copy_mount_secret(
-                secret_access_key, "secret_access_key"
-            ),
-        },
-    }
-
-
-def gcp_mount_auth(
-    *,
-    service_account_json: SandboxProxySecret,
-) -> GCPMountAuth:
-    """Build GCP auth for GCS mounts inside ``mount_config.auth.gcp``."""
-    return {
-        "type": "gcp",
-        "gcp": {
-            "service_account_json": _copy_mount_secret(
-                service_account_json, "service_account_json"
-            ),
-        },
-    }
 
 
 def _require_git_remote_url(remote_url: str) -> str:

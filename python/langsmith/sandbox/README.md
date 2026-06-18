@@ -176,11 +176,11 @@ non-mount proxy behavior such as custom headers, callbacks, access control, and
 generic egress rules. Explicit AWS/GCP proxy auth rules conflict with
 `mount_config` auth for the same provider.
 
-S3 mounts require AWS mount auth:
+S3 mounts require AWS auth:
 
 ```python
 from langsmith.sandbox import (
-    aws_mount_auth,
+    aws_auth,
     mount_config,
     s3_mount,
     workspace_secret,
@@ -188,7 +188,7 @@ from langsmith.sandbox import (
 
 mount_cfg = mount_config(
     auth=[
-        aws_mount_auth(
+        aws_auth(
             access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
             secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
         )
@@ -215,11 +215,11 @@ with client.sandbox(
     print(result.stdout)
 ```
 
-GCS mounts require GCP mount auth:
+GCS mounts require GCP auth:
 
 ```python
 from langsmith.sandbox import (
-    gcp_mount_auth,
+    gcp_auth,
     gcs_mount,
     mount_config,
     workspace_secret,
@@ -227,7 +227,7 @@ from langsmith.sandbox import (
 
 mount_cfg = mount_config(
     auth=[
-        gcp_mount_auth(
+        gcp_auth(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
             )
@@ -285,9 +285,9 @@ bucket provider auth blocks and all mount specs:
 
 ```python
 from langsmith.sandbox import (
-    aws_mount_auth,
+    aws_auth,
     git_mount,
-    gcp_mount_auth,
+    gcp_auth,
     gcs_mount,
     mount_config,
     s3_mount,
@@ -296,11 +296,11 @@ from langsmith.sandbox import (
 
 mount_cfg = mount_config(
     auth=[
-        aws_mount_auth(
+        aws_auth(
             access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
             secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
         ),
-        gcp_mount_auth(
+        gcp_auth(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
             )

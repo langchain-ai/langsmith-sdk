@@ -72,8 +72,18 @@ def _normalize_proxy_rules(
     for rule in rules:
         if not isinstance(rule, dict) or not rule:
             raise ValueError("rules must be a list of proxy rule dictionaries")
+        _validate_proxy_provider_rule(rule)
         normalized.append(rule)
     return normalized
+
+
+def _validate_proxy_provider_rule(rule: SandboxProxyRule) -> None:
+    if rule.get("type") != "gcp":
+        return
+    gcp = rule.get("gcp")
+    if not isinstance(gcp, dict) or "scopes" not in gcp:
+        raise ValueError("gcp proxy auth rules require scopes")
+    _require_non_empty_string_list(gcp["scopes"], "scopes")
 
 
 def proxy_config(
@@ -126,7 +136,7 @@ def aws_auth(
 def gcp_auth(
     *,
     service_account_json: SandboxProxySecret,
-    scopes: Sequence[str],
+    scopes: Sequence[str] | None = None,
     match_hosts: Sequence[str] | None = None,
     name: str = "gcp",
     enabled: bool = True,
@@ -140,6 +150,11 @@ def gcp_auth(
     supported.
     """
     rule_name = _require_non_empty_string(name, "name")
+    gcp_config: dict[str, Any] = {
+        "service_account_json": service_account_json,
+    }
+    if scopes is not None:
+        gcp_config["scopes"] = _require_non_empty_string_list(scopes, "scopes")
     return {
         "name": rule_name,
         "type": "gcp",
@@ -148,8 +163,5 @@ def gcp_auth(
             DEFAULT_GCP_AUTH_MATCH_HOSTS if match_hosts is None else match_hosts,
             "match_hosts",
         ),
-        "gcp": {
-            "service_account_json": service_account_json,
-            "scopes": _require_non_empty_string_list(scopes, "scopes"),
-        },
+        "gcp": gcp_config,
     }

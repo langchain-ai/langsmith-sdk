@@ -15,8 +15,8 @@ from langsmith.sandbox import (
     SandboxConnectionError,
     ServiceURL,
     Snapshot,
-    aws_mount_auth,
-    gcp_mount_auth,
+    aws_auth,
+    gcp_auth,
     gcs_mount,
     mount_config,
     s3_mount,
@@ -249,7 +249,7 @@ class TestSandboxOperations:
 
         config = mount_config(
             auth=[
-                aws_mount_auth(
+                aws_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
                 )
@@ -296,7 +296,7 @@ class TestSandboxOperations:
 
         config = mount_config(
             auth=[
-                gcp_mount_auth(
+                gcp_auth(
                     service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
                 )
             ],

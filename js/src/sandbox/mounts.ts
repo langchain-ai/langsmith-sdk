@@ -3,8 +3,8 @@ import type {
   GitMountRefSpec,
   GitMountSpec,
   MountCacheConfig,
-  SandboxAwsMountAuth,
-  SandboxGcpMountAuth,
+  SandboxAwsAuthRule,
+  SandboxGcpAuthRule,
   S3MountSpec,
   SandboxMount,
   SandboxMountAuth,
@@ -36,38 +36,6 @@ function copyMountSecret(secret: unknown, field: string): SandboxProxySecret {
   return {
     type: candidate.type,
     value: candidate.value,
-  };
-}
-
-export function awsMountAuth({
-  accessKeyId,
-  secretAccessKey,
-}: {
-  accessKeyId: SandboxProxySecret;
-  secretAccessKey: SandboxProxySecret;
-}): SandboxAwsMountAuth {
-  return {
-    type: "aws",
-    aws: {
-      access_key_id: copyMountSecret(accessKeyId, "accessKeyId"),
-      secret_access_key: copyMountSecret(secretAccessKey, "secretAccessKey"),
-    },
-  };
-}
-
-export function gcpMountAuth({
-  serviceAccountJson,
-}: {
-  serviceAccountJson: SandboxProxySecret;
-}): SandboxGcpMountAuth {
-  return {
-    type: "gcp",
-    gcp: {
-      service_account_json: copyMountSecret(
-        serviceAccountJson,
-        "serviceAccountJson",
-      ),
-    },
   };
 }
 
@@ -293,7 +261,7 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
       throw new Error(`duplicate ${provider} auth rule in mountConfig`);
     }
     if (provider === "aws") {
-      const aws = (block as Partial<SandboxAwsMountAuth>).aws;
+      const aws = (block as Partial<SandboxAwsAuthRule>).aws;
       if (aws === undefined) {
         throw new Error("aws mount auth must include an aws block");
       }
@@ -305,7 +273,7 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
         ),
       };
     } else {
-      const gcp = (block as Partial<SandboxGcpMountAuth>).gcp;
+      const gcp = (block as Partial<SandboxGcpAuthRule>).gcp;
       if (gcp === undefined) {
         throw new Error("gcp mount auth must include a gcp block");
       }

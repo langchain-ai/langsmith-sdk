@@ -9,9 +9,7 @@ import langsmith.sandbox as sandbox_module
 from langsmith.sandbox import (
     SandboxClient,
     aws_auth,
-    aws_mount_auth,
     gcp_auth,
-    gcp_mount_auth,
     gcs_mount,
     git_mount,
     mount_config,
@@ -51,6 +49,8 @@ def test_legacy_single_provider_config_helpers_are_not_exported() -> None:
     assert not hasattr(sandbox_module, "aws_auth_proxy_rule")
     assert not hasattr(sandbox_module, "gcp_auth_proxy_config")
     assert not hasattr(sandbox_module, "gcp_auth_proxy_rule")
+    assert not hasattr(sandbox_module, "aws_mount_auth")
+    assert not hasattr(sandbox_module, "gcp_mount_auth")
 
 
 def test_aws_auth_builds_aws_rule() -> None:
@@ -119,49 +119,16 @@ def test_proxy_config_composes_multiple_provider_rules() -> None:
     }
 
 
-def test_aws_mount_auth_builds_aws_provider_block() -> None:
-    assert aws_mount_auth(
-        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
-    ) == {
-        "type": "aws",
-        "aws": {
-            "access_key_id": {
-                "type": "workspace_secret",
-                "value": "{AWS_ACCESS_KEY_ID}",
-            },
-            "secret_access_key": {
-                "type": "workspace_secret",
-                "value": "{AWS_SECRET_ACCESS_KEY}",
-            },
-        },
-    }
-
-
-def test_gcp_mount_auth_builds_gcp_provider_block() -> None:
-    assert gcp_mount_auth(
-        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
-    ) == {
-        "type": "gcp",
-        "gcp": {
-            "service_account_json": {
-                "type": "workspace_secret",
-                "value": "{GCP_SERVICE_ACCOUNT_JSON}",
-            },
-        },
-    }
-
-
 def test_mount_config_nests_mounts_and_provider_auth() -> None:
-    aws_auth_block = aws_mount_auth(
+    aws_auth_rule = aws_auth(
         access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
         secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
     )
-    gcp_auth_block = gcp_mount_auth(
+    gcp_auth_rule = gcp_auth(
         service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
     )
     config = mount_config(
-        auth=[aws_auth_block, gcp_auth_block],
+        auth=[aws_auth_rule, gcp_auth_rule],
         mounts=[
             s3_mount(
                 id="s3_data",
@@ -182,8 +149,13 @@ def test_mount_config_nests_mounts_and_provider_auth() -> None:
 
     assert config == {
         "auth": {
-            "aws": aws_auth_block["aws"],
-            "gcp": gcp_auth_block["gcp"],
+            "aws": aws_auth_rule["aws"],
+            "gcp": {
+                "service_account_json": {
+                    "type": "workspace_secret",
+                    "value": "{GCP_SERVICE_ACCOUNT_JSON}",
+                },
+            },
         },
         "mounts": [
             {
@@ -304,11 +276,11 @@ def test_mount_config_accepts_git_mount_without_provider_auth() -> None:
 
 
 def test_mount_config_nests_mixed_bucket_and_git_mounts() -> None:
-    aws_auth_block = aws_mount_auth(
+    aws_auth_rule = aws_auth(
         access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
         secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
     )
-    gcp_auth_block = gcp_mount_auth(
+    gcp_auth_rule = gcp_auth(
         service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
     )
     mounts = [
@@ -321,10 +293,15 @@ def test_mount_config_nests_mixed_bucket_and_git_mounts() -> None:
         ),
     ]
 
-    assert mount_config(auth=[aws_auth_block, gcp_auth_block], mounts=mounts) == {
+    assert mount_config(auth=[aws_auth_rule, gcp_auth_rule], mounts=mounts) == {
         "auth": {
-            "aws": aws_auth_block["aws"],
-            "gcp": gcp_auth_block["gcp"],
+            "aws": aws_auth_rule["aws"],
+            "gcp": {
+                "service_account_json": {
+                    "type": "workspace_secret",
+                    "value": "{GCP_SERVICE_ACCOUNT_JSON}",
+                },
+            },
         },
         "mounts": mounts,
     }
@@ -341,11 +318,11 @@ def test_mount_config_nests_mixed_bucket_and_git_mounts() -> None:
         ),
         (
             [
-                aws_mount_auth(
+                aws_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
                 ),
-                aws_mount_auth(
+                aws_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID_2"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY_2"),
                 ),
@@ -377,6 +354,17 @@ def test_gcp_auth_rejects_empty_scopes_and_hosts(
             service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
             scopes=scopes,
             match_hosts=match_hosts,
+        )
+
+
+def test_proxy_config_rejects_gcp_auth_without_scopes() -> None:
+    with pytest.raises(ValueError, match="scopes"):
+        proxy_config(
+            rules=[
+                gcp_auth(
+                    service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON")
+                )
+            ]
         )
 
 
@@ -418,7 +406,7 @@ def test_create_sandbox_expands_mount_config(
     )
     config = mount_config(
         auth=[
-            aws_mount_auth(
+            aws_auth(
                 access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                 secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
             )
@@ -445,7 +433,7 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
         json={"name": "test-sandbox"},
         status_code=201,
     )
-    aws_auth_block = aws_mount_auth(
+    aws_auth_rule = aws_auth(
         access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
         secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
     )
@@ -457,7 +445,7 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
         "headers": {"authorization": "Bearer {GITHUB_TOKEN}"},
     }
     config = mount_config(
-        auth=[aws_auth_block],
+        auth=[aws_auth_rule],
         mounts=[s3_mount(id="s3_data", mount_path="/mnt/s3-data", bucket="s3-bucket")],
     )
     extra_proxy_config = proxy_config(
@@ -488,7 +476,7 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     [
         (
             "aws",
-            lambda: aws_mount_auth(
+            lambda: aws_auth(
                 access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                 secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
             ),
@@ -508,7 +496,7 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
         ),
         (
             "gcp",
-            lambda: gcp_mount_auth(
+            lambda: gcp_auth(
                 service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
             ),
             lambda: [
@@ -577,7 +565,7 @@ def test_mount_config_rejects_provider_credentials_in_mount_specs() -> None:
     with pytest.raises(ValueError, match="credentials"):
         mount_config(
             auth=[
-                aws_mount_auth(
+                aws_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
                 )

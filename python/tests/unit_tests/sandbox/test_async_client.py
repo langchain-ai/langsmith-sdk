@@ -16,7 +16,7 @@ from langsmith.sandbox import (
     ResourceTimeoutError,
     SandboxConnectionError,
     Snapshot,
-    aws_mount_auth,
+    aws_auth,
     mount_config,
     proxy_config,
     s3_mount,
@@ -240,7 +240,7 @@ class TestAsyncSandboxOperations:
 
         config = mount_config(
             auth=[
-                aws_mount_auth(
+                aws_auth(
                     access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
                     secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
                 )
@@ -277,7 +277,7 @@ class TestAsyncSandboxOperations:
             },
             status_code=201,
         )
-        aws_auth_block = aws_mount_auth(
+        aws_auth_block = aws_auth(
             access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
             secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
         )

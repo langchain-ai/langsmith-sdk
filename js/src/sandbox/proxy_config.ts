@@ -39,8 +39,20 @@ function requireProxyRules(
     if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
       throw new Error("rules must be an array of proxy rule objects");
     }
+    validateProxyProviderRule(rule);
     return rule;
   });
+}
+
+function validateProxyProviderRule(rule: SandboxProxyRule): void {
+  if ((rule as Record<string, unknown>).type !== "gcp") {
+    return;
+  }
+  const gcp = (rule as Partial<SandboxGcpAuthRule>).gcp;
+  if (gcp === undefined || gcp.scopes === undefined) {
+    throw new Error("gcp proxy auth rules require scopes");
+  }
+  requireNonEmptyStringArray(gcp.scopes, "scopes");
 }
 
 /** Reference a LangSmith workspace secret in a sandbox proxy configuration. */
@@ -122,19 +134,22 @@ export function gcpAuth({
   enabled = true,
 }: {
   serviceAccountJson: SandboxProxySecret;
-  scopes: string[];
+  scopes?: string[];
   matchHosts?: string[];
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {
+  const gcp: SandboxGcpAuthRule["gcp"] = {
+    service_account_json: serviceAccountJson,
+  };
+  if (scopes !== undefined) {
+    gcp.scopes = requireNonEmptyStringArray(scopes, "scopes");
+  }
   return {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
     enabled,
     match_hosts: requireNonEmptyStringArray(matchHosts, "matchHosts"),
-    gcp: {
-      service_account_json: serviceAccountJson,
-      scopes: requireNonEmptyStringArray(scopes, "scopes"),
-    },
+    gcp,
   };
 }

@@ -39,14 +39,7 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
-export {
-  awsMountAuth,
-  gcpMountAuth,
-  gcsMount,
-  gitMount,
-  mountConfig,
-  s3Mount,
-} from "./mounts.js";
+export { gcsMount, gitMount, mountConfig, s3Mount } from "./mounts.js";
 
 // Types
 export type {
@@ -62,10 +55,8 @@ export type {
   CreateSandboxOptions,
   SandboxAccessControl,
   SandboxAwsAuthRule,
-  SandboxAwsMountAuth,
   SandboxAwsMountAuthConfig,
   SandboxGcpAuthRule,
-  SandboxGcpMountAuth,
   SandboxGcpMountAuthConfig,
   SandboxMountAuth,
   SandboxMountAuthConfig,

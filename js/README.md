@@ -126,11 +126,11 @@ behavior such as custom headers, callbacks, access control, and generic egress
 rules. Explicit AWS/GCP proxy auth rules conflict with `mountConfig` auth for
 the same provider.
 
-S3 mounts require AWS mount auth:
+S3 mounts require AWS auth:
 
 ```ts
 import {
-  awsMountAuth,
+  awsAuth,
   mountConfig,
   s3Mount,
   workspaceSecret,
@@ -138,7 +138,7 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    awsMountAuth({
+    awsAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
@@ -170,11 +170,11 @@ try {
 }
 ```
 
-GCS mounts require GCP mount auth:
+GCS mounts require GCP auth:
 
 ```ts
 import {
-  gcpMountAuth,
+  gcpAuth,
   gcsMount,
   mountConfig,
   workspaceSecret,
@@ -182,7 +182,7 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    gcpMountAuth({
+    gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
     }),
   ],

@@ -302,7 +302,7 @@ export interface SandboxGcpAuthRule {
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;
-    scopes: string[];
+    scopes?: string[];
   };
 }
 
@@ -436,20 +436,8 @@ export interface SandboxMountAuthConfig {
   gcp?: SandboxGcpMountAuthConfig;
 }
 
-/** SDK helper output for AWS mount auth. */
-export interface SandboxAwsMountAuth {
-  type: "aws";
-  aws: SandboxAwsMountAuthConfig;
-}
-
-/** SDK helper output for GCP mount auth. */
-export interface SandboxGcpMountAuth {
-  type: "gcp";
-  gcp: SandboxGcpMountAuthConfig;
-}
-
 /** Provider auth helper output accepted by mountConfig. */
-export type SandboxMountAuth = SandboxAwsMountAuth | SandboxGcpMountAuth;
+export type SandboxMountAuth = SandboxAwsAuthRule | SandboxGcpAuthRule;
 
 /** Public mount config sent to the sandbox API. */
 export interface SandboxMountConfig {

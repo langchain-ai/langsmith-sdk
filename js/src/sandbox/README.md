@@ -175,11 +175,11 @@ non-mount proxy behavior such as custom headers, callbacks, or access control.
 Explicit AWS/GCP proxy auth rules conflict with `mountConfig` auth for the same
 provider.
 
-S3 mounts require AWS mount auth:
+S3 mounts require AWS auth:
 
 ```typescript
 import {
-  awsMountAuth,
+  awsAuth,
   mountConfig,
   s3Mount,
   workspaceSecret,
@@ -187,7 +187,7 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    awsMountAuth({
+    awsAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
@@ -219,11 +219,11 @@ try {
 }
 ```
 
-GCS mounts require GCP mount auth:
+GCS mounts require GCP auth:
 
 ```typescript
 import {
-  gcpMountAuth,
+  gcpAuth,
   gcsMount,
   mountConfig,
   workspaceSecret,
@@ -231,7 +231,7 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    gcpMountAuth({
+    gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
     }),
   ],
@@ -297,9 +297,9 @@ bucket provider auth blocks and all mount specs:
 
 ```typescript
 import {
-  awsMountAuth,
+  awsAuth,
   gitMount,
-  gcpMountAuth,
+  gcpAuth,
   gcsMount,
   mountConfig,
   s3Mount,
@@ -308,11 +308,11 @@ import {
 
 const mountCfg = mountConfig({
   auth: [
-    awsMountAuth({
+    awsAuth({
       accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
       secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
     }),
-    gcpMountAuth({
+    gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
     }),
   ],
