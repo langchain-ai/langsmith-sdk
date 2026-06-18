@@ -379,6 +379,10 @@ export namespace BoxCreateResponse {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -717,6 +721,10 @@ export namespace BoxRetrieveResponse {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -1055,6 +1063,10 @@ export namespace BoxUpdateResponse {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -1400,6 +1412,10 @@ export namespace BoxListResponse {
 
         headers?: Array<Rule.Header>;
 
+        /**
+         * MatchHosts is only accepted for header injection rules. Provider auth rules use
+         * built-in host matching.
+         */
         match_hosts?: Array<string>;
 
         match_paths?: Array<string>;
@@ -1790,6 +1806,10 @@ export namespace BoxStartResponse {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -2125,6 +2145,10 @@ export namespace BoxCreateParams {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -2257,6 +2281,10 @@ export namespace BoxUpdateParams {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
