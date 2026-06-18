@@ -13,7 +13,7 @@ import {
   KVMap,
   ExtractedUsageMetadata,
 } from "./schemas.js";
-import { isTracingEnabled } from "./env.js";
+import { isEnvTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
@@ -348,7 +348,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined,
 ): RunTree | ContextPlaceholder => {
-  if (!isTracingEnabled(runTree.tracingEnabled)) {
+  if (!isEnvTracingEnabled(runTree.tracingEnabled)) {
     return { tracingEnabled: runTree.tracingEnabled };
   }
 

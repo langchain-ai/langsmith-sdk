@@ -22,6 +22,8 @@ export { getDefaultProjectName } from "./utils/project.js";
 
 export { uuid7, uuid7FromTime } from "./uuid.js";
 
+export { isTracingEnabled } from "./utils/guard.js";
+
 export {
   Cache,
   PromptCache,
@@ -32,7 +34,7 @@ export {
 } from "./utils/prompt_cache/index.js";
 
 // Update using pnpm bump-version
-export const __version__ = "0.7.5";
+export const __version__ = "0.7.10";
 
 // Metadata key to hide a traced run from LangSmith's Messages View.
 export const LS_MESSAGE_VIEW_EXCLUDE = "ls_message_view_exclude" as const;

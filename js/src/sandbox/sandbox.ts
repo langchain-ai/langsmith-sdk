@@ -242,6 +242,7 @@ export class Sandbox {
       shell = "/bin/bash",
       onStdout,
       onStderr,
+      commandId,
       idleTimeout,
       killOnDisconnect,
       ttlSeconds,
@@ -259,8 +260,7 @@ export class Sandbox {
         env,
         cwd,
         shell,
-        onStdout,
-        onStderr,
+        commandId,
         idleTimeout,
         killOnDisconnect,
         ttlSeconds,
@@ -271,7 +271,10 @@ export class Sandbox {
       },
     );
 
-    const handle = new CommandHandle(stream, control, this);
+    const handle = new CommandHandle(stream, control, this, {
+      onStdout,
+      onStderr,
+    });
     await handle._ensureStarted();
     return handle;
   }

@@ -4,7 +4,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { inspect } from "node:util";
-import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
+import {
+  Client,
+  mergeRuntimeEnvIntoRun,
+  _checkBackendVersion,
+} from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
@@ -12,6 +16,63 @@ import {
 import { parseHubIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
+  describe("onlineEvaluators", () => {
+    it("creates an online evaluator through the platform endpoint", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            evaluator: {
+              id: "eval-1",
+              name: "SDK smoke test code evaluator",
+              type: "code",
+            },
+          }),
+          {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.onlineEvaluators.create({
+        name: "SDK smoke test code evaluator",
+        type: "code",
+        code_evaluator: {
+          code: "def perform_eval(run, example):\n    return {'score': 1}",
+          language: "python",
+        },
+      });
+
+      expect(response.evaluator?.id).toBe("eval-1");
+      const [url, init] = mockFetch.mock.calls[0];
+      const headers = new Headers(init?.headers);
+      expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
+      expect(init).toEqual(
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            name: "SDK smoke test code evaluator",
+            type: "code",
+            code_evaluator: {
+              code: "def perform_eval(run, example):\n    return {'score': 1}",
+              language: "python",
+            },
+          }),
+        }),
+      );
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
@@ -1571,5 +1632,35 @@ describe("Client", () => {
         '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
       );
     });
+  });
+});
+
+describe("_checkBackendVersion", () => {
+  let warnSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it.each([
+    ["0.4.9", true],
+    ["0.4.99", true],
+    ["0.5.0", false],
+    ["0.5.1", false],
+    ["1.0.0", false],
+    ["0.5.4rc1", false],
+    ["0.4.4rc1", true],
+    ["not-a-version", true],
+  ])("version %s -> warns: %s", (version, expectWarn) => {
+    _checkBackendVersion(version as string, "0.5.0");
+    if (expectWarn) {
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } else {
+      expect(warnSpy).not.toHaveBeenCalled();
+    }
   });
 });

@@ -1429,7 +1429,7 @@ class InsightsReport(BaseModel):
     @property
     def link(self) -> str:
         """URL to view this Insights Report in LangSmith UI."""
-        return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.project_id)}?tab=4&clusterJobId={str(self.id)}"
+        return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.project_id)}?tab=3&clusterJobId={str(self.id)}"
 
     def _repr_html_(self) -> str:
         return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'

@@ -5,13 +5,14 @@
   "type": "module",
   "description": "Tests that langsmith exports work correctly in ESM environments",
   "scripts": {
-    "test": "npx tsx src/index.ts"
+    "test": "tsc --noEmit && tsx src/index.ts"
   },
   "dependencies": {
     "langsmith": "file:../../.."
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "tsx": "^4.7.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^6.0.3"
   }
 }

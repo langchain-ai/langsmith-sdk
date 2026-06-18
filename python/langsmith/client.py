@@ -53,6 +53,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -71,6 +72,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson, _profiles
+from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -89,9 +91,9 @@ from langsmith._internal._constants import (
 from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
 from langsmith._internal._hub import (
     HUB,
-    PLATFORM_HUB,
     REPO_HANDLE_PATTERN,
     build_commit_url,
+    platform_hub_path,
     validate_parent_commit,
 )
 from langsmith._internal._multipart import (
@@ -148,6 +150,14 @@ def _reset_tracing_drop_log() -> None:
     with _tracing_drops_lock:
         _tracing_drops_count = 0
         _tracing_drops_last_log_time = 0.0
+
+
+def _get_openapi_base_url(api_url: str) -> str:
+    """Convert a handwritten client API URL to a generated OpenAPI base URL."""
+    api_url = api_url.rstrip("/")
+    if api_url.endswith("/api/v1"):
+        return api_url[: -len("/api/v1")]
+    return api_url[:-3] if api_url.endswith("/v1") else api_url
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -264,9 +274,12 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
-    from _openapi_client.resources.runs import RunsResource
-    from _openapi_client.resources.threads import ThreadsResource
-    from _openapi_client.resources.traces import TracesResource
+    from langsmith._openapi_client.resources.online_evaluators import (
+        OnlineEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.runs import RunsResource
+    from langsmith._openapi_client.resources.threads import ThreadsResource
+    from langsmith._openapi_client.resources.traces import TracesResource
 
     # OTEL imports for type hints
     try:
@@ -1648,6 +1661,25 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
+
+    @property
+    def online_evaluators(self) -> OnlineEvaluatorsResource:
+        """Access generated online evaluator CRUD methods."""
+        from langsmith._openapi_client import Langsmith as OpenAPILangsmith
+
+        _check_backend_version(self.info.version)
+        self._ensure_profile_auth()
+        headers = self._headers
+        if self._profile_auth is not None:
+            headers = self._profile_auth.prepare_request_headers(headers)
+
+        return OpenAPILangsmith(
+            api_key=self.api_key,
+            tenant_id=self.workspace_id,
+            base_url=_get_openapi_base_url(self.api_url),
+            timeout=httpx.Timeout(self._timeout[1], connect=self._timeout[0]),
+            default_headers=headers,
+        ).online_evaluators
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
@@ -9725,7 +9757,7 @@ class Client:
             params["commit"] = target
         response = self.request_with_retries(
             "GET",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories",
             params=params,
         )
         return response.json()
@@ -9787,7 +9819,7 @@ class Client:
 
         response = self.request_with_retries(
             "POST",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories/commits",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories/commits",
             json=body,
         )
         commit_hash = response.json()["commit"]["commit_hash"]
@@ -9801,7 +9833,7 @@ class Client:
             raise self._owner_conflict_error("delete", owner)
         self.request_with_retries(
             "DELETE",
-            f"{PLATFORM_HUB}/{owner}/{name}/directories",
+            f"{platform_hub_path(self.api_url)}/{owner}/{name}/directories",
         )
 
     def _list_hub_repos(

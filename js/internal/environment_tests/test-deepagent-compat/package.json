@@ -1,0 +1,23 @@
+{
+  "name": "test-deepagent-compat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smoke test: deepagent installs and imports correctly with the local langsmith SDK",
+  "scripts": {
+    "test": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "deepagents": "*",
+    "langsmith": "file:../../.."
+  },
+  "pnpm": {
+    "overrides": {
+      "langsmith": "file:../../.."
+    }
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  }
+}

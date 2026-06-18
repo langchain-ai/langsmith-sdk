@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.7.5",
+  "version": "0.7.10",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "pnpm@10.33.0",
   "files": [
@@ -114,7 +114,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "pnpm clean && pnpm build:esm && pnpm build:cjs && node scripts/create-entrypoints.js",
+    "build": "pnpm clean && pnpm build:esm && pnpm build:cjs && node scripts/create-entrypoints.js && node scripts/fix-openapi-client-declarations.js",
     "build:typedoc": "pnpm build && rm -rf ./_build/api_refs && npx typedoc",
     "bump-version": "node scripts/bump-version.js",
     "check-version": "node scripts/check-version.js",
@@ -128,8 +128,8 @@
     "watch:single": "NODE_OPTIONS=--experimental-vm-modules pnpm jest --watch --config jest.config.cjs --testTimeout 100000",
     "test:vitest": "vitest run --config vitest.config.ts",
     "test:eval:vitest": "vitest run --config ls.vitest.config.ts",
-    "lint": "oxlint src/",
-    "lint:fix": "oxlint --fix src/",
+    "lint": "oxlint src/ --ignore-pattern 'src/_openapi_client/**'",
+    "lint:fix": "oxlint --fix src/ --ignore-pattern 'src/_openapi_client/**'",
     "format": "oxfmt --write 'src/**/*.{ts,tsx,mts}'",
     "format:check": "oxfmt --check 'src/**/*.{ts,tsx,mts}'",
     "check:types": "tsc --noEmit",

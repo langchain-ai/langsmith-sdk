@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
+    SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
 )
@@ -170,6 +171,10 @@ def _raise_for_invalid_status(exc: Exception, ws_url: str) -> None:
             f"(endpoint {ws_url} returned 404). Ensure the server is updated "
             f"to a version that supports the /execute/ws endpoint, or use "
             f"run() without wait=False or callbacks."
+        ) from exc
+    if status == 503:
+        raise SandboxNotReadyError(
+            f"Sandbox is not ready for WebSocket command execution: {exc}"
         ) from exc
     # For other HTTP status codes, include the status in the message
     raise SandboxConnectionError(

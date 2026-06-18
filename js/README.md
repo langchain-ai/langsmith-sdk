@@ -25,36 +25,41 @@ A typical workflow looks like:
 
 We'll walk through these steps in more detail below.
 
-## Sandbox AWS auth proxy
+## Sandbox AWS Auth Proxy
 
-When you create a LangSmith sandbox that needs to call AWS services, use the
-sandbox AWS auth proxy helpers. The proxy keeps the real AWS credentials outside
-the sandbox and signs supported AWS HTTPS requests with SigV4, so code in the
-sandbox can use AWS SDKs normally without storing long-lived AWS keys in files,
-environment variables, shell history, or logs.
+When sandbox code needs to call AWS services, use the sandbox AWS auth proxy.
+The proxy keeps the real AWS credentials outside the sandbox and signs supported
+AWS HTTPS requests with SigV4, so code in the sandbox can use AWS SDKs normally
+without storing long-lived AWS keys in files, environment variables, shell
+history, or logs.
 
-First, store `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as LangSmith
-workspace secrets. Then create the sandbox with an AWS auth proxy config:
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with an AWS auth proxy config:
 
 ```ts
 import {
   SandboxClient,
-  awsAuthProxyConfig,
+  awsAuth,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
 const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+});
 
 const sandbox = await client.createSandbox({
   name: "aws-sandbox",
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
-  }),
+  proxyConfig: authConfig,
 });
 
 try {
-  // Your sandbox code can use the AWS SDK, the AWS CLI, or other AWS tooling normally.
   const result = await sandbox.run("node your-aws-script.js");
   console.log(result.stdout);
 } finally {
@@ -64,7 +69,183 @@ try {
 
 Use `opaqueSecret("...")` instead of `workspaceSecret(...)` when your application
 needs to pass short-lived write-only AWS credentials at sandbox creation time.
-Plaintext AWS credential values are not supported.
+Plaintext AWS credential values are not accepted directly; wrap them as
+`opaqueSecret(...)` values.
+
+## Sandbox GCP Auth Proxy
+
+When sandbox code needs to call Google APIs, use the sandbox GCP auth proxy.
+The proxy keeps the service account JSON outside the sandbox and injects OAuth
+bearer tokens for the Google API hosts you explicitly match.
+
+Store the service account JSON as a LangSmith workspace secret. Then create the
+sandbox with a GCP auth proxy config:
+
+```ts
+import {
+  SandboxClient,
+  gcpAuth,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcp-sandbox",
+  proxyConfig: authConfig,
+});
+
+try {
+  const result = await sandbox.run("node your-gcp-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Use `opaqueSecret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Sandbox Mounts
+
+When you create a LangSmith sandbox that needs filesystem access to external
+data such as object storage buckets or public Git repositories, pass a
+`mountConfig` on sandbox creation. Mount specs contain only the mount target.
+Provider credentials stay in explicit auth config, and the SDK expands
+`mountConfig` into the backend `mounts` and `proxy_config` fields.
+If you also pass `proxyConfig`, its rules are merged with the mount-generated
+proxy auth rules.
+Provider auth for the same provider must appear in only one place.
+
+S3 mounts require an enabled AWS auth proxy rule:
+
+```ts
+import {
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      endpointUrl: "https://s3.amazonaws.com",
+      pathStyle: false,
+      readOnly: false,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "s3-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+GCS mounts require an enabled GCP auth proxy rule that covers
+`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
+`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
+`devstorage.read_only`.
+
+```ts
+import {
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcs-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Public Git mounts do not require AWS or GCP auth:
+
+```ts
+import { gitMount, mountConfig } from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Private Git repositories can use low-level `proxyConfig` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
 
 ## 1. Connect to LangSmith
 

@@ -74,8 +74,11 @@ import {
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
+import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
+import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -698,6 +701,37 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
+export function _checkBackendVersion(
+  version: string,
+  minVersion: string = _MIN_BACKEND_VERSION,
+): void {
+  const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
+  const [maj, min, pat] = parse(version);
+  const [rMaj, rMin, rPat] = parse(minVersion);
+  if (
+    isNaN(maj) ||
+    isNaN(min) ||
+    isNaN(pat) ||
+    isNaN(rMaj) ||
+    isNaN(rMin) ||
+    isNaN(rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(version)} for compatibility check.`,
+    );
+    return;
+  }
+  if (
+    maj < rMaj ||
+    (maj === rMaj && min < rMin) ||
+    (maj === rMaj && min === rMin && pat < rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
+    );
+  }
+}
+
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 
 /** Default maximum memory (1GB) for queue size limits. */
@@ -863,6 +897,8 @@ export class Client implements LangSmithTracingClientInterface {
   private batchSizeLimit?: number;
 
   private fetchOptions: RequestInit;
+
+  private openAPIClient: OpenAPILangsmith;
 
   private settings: Promise<LangSmithSettings> | null;
 
@@ -1237,6 +1273,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.openAPIClient = this._newOpenAPIClient();
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     this._tracingMode = resolveTracingMode(config.tracingMode);
     if (this._tracingMode === "otel") {
@@ -1381,11 +1418,43 @@ export class Client implements LangSmithTracingClientInterface {
     this._customHeaders = value ?? {};
   }
 
+  private _getOpenAPIBaseUrl(): string {
+    return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+  }
+
+  private _newOpenAPIClient(): OpenAPILangsmith {
+    const defaultHeaders =
+      this.apiKey === undefined && this.workspaceId === undefined
+        ? { "X-API-Key": null }
+        : undefined;
+    const {
+      method: _method,
+      headers: _headers,
+      body: _body,
+      signal: _signal,
+      ...openAPIFetchOptions
+    } = this.fetchOptions;
+
+    return new OpenAPILangsmith({
+      apiKey: this.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: openAPIFetchOptions,
+      defaultHeaders,
+    });
+  }
+
   private _getPlatformEndpointPath(path: string): string {
     // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
     const needsV1Prefix =
       this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
+  public get onlineEvaluators(): OnlineEvaluators {
+    return this.openAPIClient.onlineEvaluators;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
@@ -1948,6 +2017,9 @@ export class Client implements LangSmithTracingClientInterface {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
+            if (this._serverInfo?.version) {
+              _checkBackendVersion(this._serverInfo.version);
+            }
           } catch (e: any) {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
@@ -6884,7 +6956,9 @@ export class Client implements LangSmithTracingClientInterface {
       version ?? (parsedVersion !== "latest" ? parsedVersion : undefined);
 
     const url = new URL(
-      `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
+      `${this.apiUrl}${this._getPlatformEndpointPath(
+        `hub/repos/${owner}/${name}/directories`,
+      )}`,
     );
     url.searchParams.set("repo_type", repoType);
     if (resolvedVersion) {
@@ -6956,7 +7030,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
-        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories/commits`,
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories/commits`,
+        )}`,
         {
           method: "POST",
           headers: {
@@ -6988,7 +7064,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     await this.caller.call(async () => {
       const res = await this._fetch(
-        `${this.apiUrl}/v1/platform/hub/repos/${owner}/${name}/directories`,
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories`,
+        )}`,
         {
           method: "DELETE",
           headers: this._mergedHeaders,

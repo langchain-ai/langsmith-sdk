@@ -78,6 +78,7 @@ class RunStatsParams(TypedDict, total=False):
                 "session_feedback_stats",
                 "all_run_stats",
                 "all_token_stats",
+                "group_count",
                 "prompt_token_details",
                 "completion_token_details",
                 "prompt_cost_details",

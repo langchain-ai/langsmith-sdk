@@ -570,16 +570,23 @@ class RunTree(ls_schemas.RunBase):
             child_meta = {}
         parent_meta = (self.extra or {}).get("metadata") or {}
         child_extra["metadata"] = {**parent_meta, **child_meta}
+        # upfront resolution of start_time so run_id can be derived from it.
+        child_start_time = start_time or datetime.now(timezone.utc)
+        # accept_null=True allows us to explicitly pass None
+        # UUID will be based on start_time (instead of a random UUID)
+        run_id_ = _ensure_uuid(run_id, accept_null=True)
+        if run_id_ is None:
+            run_id_ = uuid7_from_datetime(child_start_time)
         run = RunTree(
             name=name,
-            id=_ensure_uuid(run_id),
+            id=run_id_,
             serialized=serialized_,
             inputs=inputs or {},
             outputs=outputs or {},
             error=error,
             run_type=run_type,
             reference_example_id=reference_example_id,
-            start_time=start_time or datetime.now(timezone.utc),
+            start_time=child_start_time,
             end_time=end_time,
             extra=child_extra,
             parent_run=self,

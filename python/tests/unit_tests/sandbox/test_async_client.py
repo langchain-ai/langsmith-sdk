@@ -16,6 +16,11 @@ from langsmith.sandbox import (
     ResourceTimeoutError,
     SandboxConnectionError,
     Snapshot,
+    aws_auth,
+    mount_config,
+    proxy_config,
+    s3_mount,
+    workspace_secret,
 )
 
 
@@ -196,6 +201,121 @@ class TestAsyncSandboxOperations:
 
         body = json.loads(httpx_mock.get_request().content)
         assert body["proxy_config"] == proxy_config
+
+    async def test_create_sandbox_does_not_accept_raw_mounts(
+        self, client: AsyncSandboxClient
+    ):
+        """Raw mounts are intentionally only accepted inside mount_config."""
+        with pytest.raises(TypeError):
+            await getattr(client, "create_sandbox")(
+                snapshot_id="snap-1",
+                mounts=[
+                    {
+                        "id": "customer_data",
+                        "type": "s3",
+                        "mount_path": "/mnt/mounts/customer-data",
+                        "s3": {
+                            "endpoint_url": "https://s3.amazonaws.com",
+                            "region": "us-east-1",
+                            "bucket": "example-bucket",
+                        },
+                    }
+                ],
+            )
+
+    async def test_create_sandbox_expands_mount_config(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """mount_config should expand to mounts and proxy_config in the POST body."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+            },
+            status_code=201,
+        )
+
+        config = mount_config(
+            auth=[
+                aws_auth(
+                    access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                    secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+                )
+            ],
+            mounts=[
+                s3_mount(
+                    id="s3_data",
+                    mount_path="/mnt/s3-data",
+                    bucket="s3-bucket",
+                )
+            ],
+        )
+        await client.create_sandbox(
+            snapshot_id="snap-1",
+            mount_config=config,
+        )
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == config["proxy_config"]
+
+    async def test_create_sandbox_merges_mount_config_with_proxy_config(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """mount_config provider auth should compose with explicit proxy_config."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "test-sandbox",
+            },
+            status_code=201,
+        )
+        aws_rule = aws_auth(
+            access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+        )
+        extra_rule = {
+            "name": "github",
+            "type": "headers",
+            "enabled": True,
+            "match_hosts": ["github.com"],
+            "headers": {"authorization": "Bearer {GITHUB_TOKEN}"},
+        }
+        config = mount_config(
+            auth=[aws_rule],
+            mounts=[
+                s3_mount(
+                    id="s3_data",
+                    mount_path="/mnt/s3-data",
+                    bucket="s3-bucket",
+                )
+            ],
+        )
+        extra_proxy_config = proxy_config(
+            rules=[extra_rule],
+            no_proxy=["metadata.google.internal"],
+            access_control={"allow_list": ["github.com", "*.amazonaws.com"]},
+        )
+
+        await client.create_sandbox(
+            snapshot_id="snap-1",
+            mount_config=config,
+            proxy_config=extra_proxy_config,
+        )
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["mounts"] == config["mounts"]
+        assert body["proxy_config"] == {
+            "rules": [aws_rule, extra_rule],
+            "no_proxy": ["metadata.google.internal"],
+            "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
+        }
 
     async def test_create_sandbox_omits_proxy_config_when_none(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock

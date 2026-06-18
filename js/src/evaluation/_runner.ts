@@ -1222,14 +1222,41 @@ Try setting "LANGSMITH_TRACING=true" in your environment.`);
   };
 }
 
-function _collectEvaluatorKeys(
+// best effort feedback key extraction using regex parsing.
+// may be fragile but seems okay as a best effort option and doesn't break anything significant.
+// TODO: find a better way to resolve this.
+export function _extractEvaluatorFeedbackKeys(
+  evaluator: EvaluatorT | RunEvaluator,
+): string[] {
+  const name = (evaluator as { name?: string }).name;
+  const fallback = name && name.length > 0 ? [name] : [];
+  try {
+    const source = typeof evaluator === "function" ? evaluator.toString() : "";
+    if (!source) return fallback;
+    // Match `key: "literal"`, `"key": "literal"`, or backtick literals without
+    // interpolation. Word boundaries avoid matching `keys`, and the required
+    // colon + quoted value avoids matching destructuring/`for (const key of)`.
+    const regex = /["']?\bkey\b["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|`([^`$]+)`)/g;
+    const keys: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(source)) !== null) {
+      const value = match[1] ?? match[2] ?? match[3];
+      if (value) keys.push(value);
+    }
+    const unique = [...new Set(keys)];
+    return unique.length > 0 ? unique : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function _collectEvaluatorKeys(
   evaluators: Array<EvaluatorT | RunEvaluator> | undefined,
 ): string[] {
   if (!evaluators) return [];
   const keys: string[] = [];
   for (const ev of evaluators) {
-    const name = (ev as { name?: string }).name;
-    if (name && name.length > 0) keys.push(name);
+    keys.push(..._extractEvaluatorFeedbackKeys(ev));
   }
   return keys;
 }

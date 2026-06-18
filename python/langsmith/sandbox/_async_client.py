@@ -14,6 +14,7 @@ import httpx
 from langsmith import utils as ls_utils
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
+    SandboxClient,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
     _resolve_dockerfile_context,
@@ -37,7 +38,8 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     Snapshot,
 )
-from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._mounts import SandboxMountConfig
+from langsmith.sandbox._proxy_config import SandboxProxyConfig, merge_proxy_configs
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 
@@ -100,6 +102,8 @@ class AsyncSandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._timeout = timeout
+        self._max_retries = max_retries
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
@@ -126,6 +130,24 @@ class AsyncSandboxClient:
         if not self._default_headers and headers is None:
             return None
         return merge_headers(self._default_headers, headers)
+
+    def to_sync(self) -> SandboxClient:
+        """Create a SandboxClient with the same configuration.
+
+        The returned client has its own HTTP connection pool; close it
+        independently (``client.close()`` or ``with``).
+
+        Returns:
+            SandboxClient with the same endpoint, credentials, timeout,
+            retry, and header configuration.
+        """
+        return SandboxClient(
+            api_endpoint=self._base_url,
+            timeout=self._timeout,
+            api_key=self._api_key,
+            max_retries=self._max_retries,
+            headers=self._default_headers or None,
+        )
 
     async def aclose(self) -> None:
         """Close the async HTTP client."""
@@ -186,6 +208,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -225,6 +248,10 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -232,8 +259,9 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             AsyncSandbox instance.
@@ -255,6 +283,7 @@ class AsyncSandboxClient:
             vcpus=vcpus,
             mem_bytes=mem_bytes,
             fs_capacity_bytes=fs_capacity_bytes,
+            mount_config=mount_config,
             proxy_config=proxy_config,
             headers=headers,
         )
@@ -274,6 +303,7 @@ class AsyncSandboxClient:
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
         fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
@@ -307,6 +337,10 @@ class AsyncSandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: High-level mount configuration. The SDK expands it
+                into backend ``mounts`` and ``proxy_config`` fields. If
+                ``proxy_config`` is also provided, its rules are merged with the
+                mount-generated proxy auth rules.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
                 ``{"rules": [...], "no_proxy": [...], "access_control":
@@ -314,8 +348,9 @@ class AsyncSandboxClient:
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
                 domains, globs like ``*.example.com``, IPs, CIDRs, or
-                ``~regex``). Use ``aws_auth_proxy_config`` to let the proxy
-                sign supported AWS HTTPS requests on the sandbox's behalf.
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -330,7 +365,6 @@ class AsyncSandboxClient:
         """
         if snapshot_id and snapshot_name:
             raise ValueError("At most one of snapshot_id or snapshot_name may be set")
-
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
@@ -357,6 +391,11 @@ class AsyncSandboxClient:
             payload["mem_bytes"] = mem_bytes
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if mount_config is not None:
+            payload["mounts"] = mount_config["mounts"]
+            proxy_config = merge_proxy_configs(
+                mount_config["proxy_config"], proxy_config
+            )
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
 

@@ -1,4 +1,6 @@
 import {
+  _collectEvaluatorKeys,
+  _extractEvaluatorFeedbackKeys,
   _mapWithConcurrency,
   _reorderResultRowsByExampleIndex,
   evaluate,
@@ -565,5 +567,135 @@ describe("evaluation runner internals", () => {
     expect(createProjectCalls).toHaveLength(1);
     expect(createProjectCalls[0].numExamples).toBeNull();
     expect(createProjectCalls[0].numRepetitions).toBe(1);
+  });
+});
+
+describe("evaluator feedback-key extraction", () => {
+  test("prefers the returned key over the function name", () => {
+    // The bug: function name (binding) != returned feedback key.
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({
+      key: "field_completeness",
+      score: Object.keys(outputs ?? {}).length,
+    });
+    expect(_extractEvaluatorFeedbackKeys(completenessEvaluator as any)).toEqual(
+      ["field_completeness"],
+    );
+  });
+
+  test("named function literal key", () => {
+    function relevance({ outputs }: { outputs?: Record<string, any> }) {
+      return { key: "answer_relevance", score: outputs ? 1 : 0 };
+    }
+    expect(_extractEvaluatorFeedbackKeys(relevance as any)).toEqual([
+      "answer_relevance",
+    ]);
+  });
+
+  test("multi-result evaluator returns all keys", () => {
+    const multi = ({ outputs }: { outputs?: Record<string, any> }) => ({
+      results: [
+        { key: "k1", score: outputs ? 1 : 0 },
+        { key: "k2", score: 0 },
+      ],
+    });
+    expect(_extractEvaluatorFeedbackKeys(multi as any)).toEqual(["k1", "k2"]);
+  });
+
+  test("falls back to the function name when the key is dynamic", () => {
+    const dynamicKey = "computed_at_runtime";
+    function dynamicEval({ outputs }: { outputs?: Record<string, any> }) {
+      return { key: dynamicKey, score: outputs ? 1 : 0 };
+    }
+    expect(_extractEvaluatorFeedbackKeys(dynamicEval as any)).toEqual([
+      "dynamicEval",
+    ]);
+  });
+
+  test("returns empty when neither a literal key nor a name is available", () => {
+    const runtimeKey = "x";
+    expect(
+      _extractEvaluatorFeedbackKeys(((_args: any) => ({
+        key: runtimeKey,
+        score: 1,
+      })) as any),
+    ).toEqual([]);
+  });
+
+  test("_collectEvaluatorKeys aggregates across evaluators", () => {
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "field_completeness", score: outputs ? 1 : 0 });
+    const qualityEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "analysis_quality", score: outputs ? 1 : 0 });
+    expect(
+      _collectEvaluatorKeys([
+        completenessEvaluator as any,
+        qualityEvaluator as any,
+      ]),
+    ).toEqual(["field_completeness", "analysis_quality"]);
+  });
+
+  test("createProject receives the returned feedback keys, not function names", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "field_completeness", score: outputs ? 1 : 0 });
+    const qualityEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "analysis_quality", score: outputs ? 1 : 0 });
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [completenessEvaluator, qualityEvaluator],
+        client: mockClient,
+      },
+    );
+    for await (const _ of results) {
+      // drain
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].evaluatorKeys).toEqual([
+      "field_completeness",
+      "analysis_quality",
+    ]);
   });
 });
