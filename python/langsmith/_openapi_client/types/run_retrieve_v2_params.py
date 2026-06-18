@@ -8,10 +8,10 @@ from typing_extensions import Literal, Required, Annotated, TypedDict
 
 from .._utils import PropertyInfo
 
-__all__ = ["RunRetrieveParams"]
+__all__ = ["RunRetrieveV2Params"]
 
 
-class RunRetrieveParams(TypedDict, total=False):
+class RunRetrieveV2Params(TypedDict, total=False):
     project_id: Required[str]
     """`project_id` is the UUID of the tracing project that owns the run."""
 

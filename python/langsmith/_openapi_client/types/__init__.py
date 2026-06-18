@@ -5,7 +5,6 @@ from __future__ import annotations
 from .run_param import RunParam as RunParam
 from .run_type_enum import RunTypeEnum as RunTypeEnum
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
-from .run_query_params import RunQueryParams as RunQueryParams
 from .run_stats_params import RunStatsParams as RunStatsParams
 from .thread_list_item import ThreadListItem as ThreadListItem
 from .run_create_params import RunCreateParams as RunCreateParams
@@ -15,12 +14,13 @@ from .online_spend_limit import OnlineSpendLimit as OnlineSpendLimit
 from .query_run_response import QueryRunResponse as QueryRunResponse
 from .run_stats_response import RunStatsResponse as RunStatsResponse
 from .run_create_response import RunCreateResponse as RunCreateResponse
-from .run_retrieve_params import RunRetrieveParams as RunRetrieveParams
+from .run_query_v2_params import RunQueryV2Params as RunQueryV2Params
 from .run_update_response import RunUpdateResponse as RunUpdateResponse
 from .thread_query_params import ThreadQueryParams as ThreadQueryParams
 from .online_llm_evaluator import OnlineLlmEvaluator as OnlineLlmEvaluator
 from .online_code_evaluator import OnlineCodeEvaluator as OnlineCodeEvaluator
 from .online_evaluator_type import OnlineEvaluatorType as OnlineEvaluatorType
+from .run_retrieve_v2_params import RunRetrieveV2Params as RunRetrieveV2Params
 from .thread_trace_list_item import ThreadTraceListItem as ThreadTraceListItem
 from .run_ingest_batch_params import RunIngestBatchParams as RunIngestBatchParams
 from .online_evaluator_run_rule import OnlineEvaluatorRunRule as OnlineEvaluatorRunRule

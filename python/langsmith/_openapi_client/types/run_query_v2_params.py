@@ -9,10 +9,10 @@ from typing_extensions import Literal, Annotated, TypedDict
 from .._types import SequenceNotStr
 from .._utils import PropertyInfo
 
-__all__ = ["RunQueryParams"]
+__all__ = ["RunQueryV2Params"]
 
 
-class RunQueryParams(TypedDict, total=False):
+class RunQueryV2Params(TypedDict, total=False):
     ai_query: str
     """`ai_query` is a natural-language query to filter runs using AI."""
 

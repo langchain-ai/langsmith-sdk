@@ -11,11 +11,11 @@ import httpx
 from ..types import (
     RunTypeEnum,
     RunsFilterDataSourceTypeEnum,
-    run_query_params,
     run_stats_params,
     run_create_params,
     run_update_params,
-    run_retrieve_params,
+    run_query_v2_params,
+    run_retrieve_v2_params,
     run_ingest_batch_params,
 )
 from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
@@ -139,114 +139,6 @@ class RunsResource(SyncAPIResource):
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=RunCreateResponse,
-        )
-
-    def retrieve(
-        self,
-        run_id: str,
-        *,
-        project_id: str,
-        start_time: Union[str, datetime],
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
-        accept: str | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> QueryRunResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session and start_time. Use the `selects` query parameter
-        (repeatable) to select fields to return.
-
-        Args:
-          project_id: `project_id` is the UUID of the tracing project that owns the run.
-
-          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
-              `project_id` to locate the run.
-
-          selects: `selects` lists which properties to include on the returned run (repeatable
-              query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
-              only `id` is returned.
-
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not run_id:
-            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
-        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
-        return self._get(
-            path_template("/v2/runs/{run_id}", run_id=run_id),
-            options=make_request_options(
-                extra_headers=extra_headers,
-                extra_query=extra_query,
-                extra_body=extra_body,
-                timeout=timeout,
-                query=maybe_transform(
-                    {
-                        "project_id": project_id,
-                        "start_time": start_time,
-                        "selects": selects,
-                    },
-                    run_retrieve_params.RunRetrieveParams,
-                ),
-            ),
-            cast_to=QueryRunResponse,
         )
 
     def update(
@@ -374,7 +266,7 @@ class RunsResource(SyncAPIResource):
             cast_to=RunIngestBatchResponse,
         )
 
-    def query(
+    def query_v2(
         self,
         *,
         ai_query: str | Omit = omit,
@@ -555,13 +447,121 @@ class RunsResource(SyncAPIResource):
                     "trace_id": trace_id,
                     "tree_filter": tree_filter,
                 },
-                run_query_params.RunQueryParams,
+                run_query_v2_params.RunQueryV2Params,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             model=QueryRunResponse,
             method="post",
+        )
+
+    def retrieve_v2(
+        self,
+        run_id: str,
+        *,
+        project_id: str,
+        start_time: Union[str, datetime],
+        selects: List[
+            Literal[
+                "ID",
+                "NAME",
+                "RUN_TYPE",
+                "STATUS",
+                "START_TIME",
+                "END_TIME",
+                "LATENCY_SECONDS",
+                "FIRST_TOKEN_TIME",
+                "ERROR",
+                "ERROR_PREVIEW",
+                "EXTRA",
+                "METADATA",
+                "EVENTS",
+                "INPUTS",
+                "INPUTS_PREVIEW",
+                "OUTPUTS",
+                "OUTPUTS_PREVIEW",
+                "MANIFEST",
+                "PARENT_RUN_IDS",
+                "PROJECT_ID",
+                "TRACE_ID",
+                "THREAD_ID",
+                "DOTTED_ORDER",
+                "IS_ROOT",
+                "REFERENCE_EXAMPLE_ID",
+                "REFERENCE_DATASET_ID",
+                "TOTAL_TOKENS",
+                "PROMPT_TOKENS",
+                "COMPLETION_TOKENS",
+                "TOTAL_COST",
+                "PROMPT_COST",
+                "COMPLETION_COST",
+                "PROMPT_TOKEN_DETAILS",
+                "COMPLETION_TOKEN_DETAILS",
+                "PROMPT_COST_DETAILS",
+                "COMPLETION_COST_DETAILS",
+                "PRICE_MODEL_ID",
+                "TAGS",
+                "APP_PATH",
+                "ATTACHMENTS",
+                "THREAD_EVALUATION_TIME",
+                "IS_IN_DATASET",
+                "SHARE_URL",
+                "FEEDBACK_STATS",
+            ]
+        ]
+        | Omit = omit,
+        accept: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> QueryRunResponse:
+        """
+        **Alpha:** The request and response contract may change; Returns one run by ID
+        for the given session and start_time. Use the `selects` query parameter
+        (repeatable) to select fields to return.
+
+        Args:
+          project_id: `project_id` is the UUID of the tracing project that owns the run.
+
+          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
+              `project_id` to locate the run.
+
+          selects: `selects` lists which properties to include on the returned run (repeatable
+              query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
+              only `id` is returned.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not run_id:
+            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
+        return self._get(
+            path_template("/v2/runs/{run_id}", run_id=run_id),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "project_id": project_id,
+                        "start_time": start_time,
+                        "selects": selects,
+                    },
+                    run_retrieve_v2_params.RunRetrieveV2Params,
+                ),
+            ),
+            cast_to=QueryRunResponse,
         )
 
     def stats(
@@ -824,114 +824,6 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunCreateResponse,
         )
 
-    async def retrieve(
-        self,
-        run_id: str,
-        *,
-        project_id: str,
-        start_time: Union[str, datetime],
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
-        accept: str | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> QueryRunResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session and start_time. Use the `selects` query parameter
-        (repeatable) to select fields to return.
-
-        Args:
-          project_id: `project_id` is the UUID of the tracing project that owns the run.
-
-          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
-              `project_id` to locate the run.
-
-          selects: `selects` lists which properties to include on the returned run (repeatable
-              query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
-              only `id` is returned.
-
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not run_id:
-            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
-        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
-        return await self._get(
-            path_template("/v2/runs/{run_id}", run_id=run_id),
-            options=make_request_options(
-                extra_headers=extra_headers,
-                extra_query=extra_query,
-                extra_body=extra_body,
-                timeout=timeout,
-                query=await async_maybe_transform(
-                    {
-                        "project_id": project_id,
-                        "start_time": start_time,
-                        "selects": selects,
-                    },
-                    run_retrieve_params.RunRetrieveParams,
-                ),
-            ),
-            cast_to=QueryRunResponse,
-        )
-
     async def update(
         self,
         run_id: str,
@@ -1057,7 +949,7 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunIngestBatchResponse,
         )
 
-    def query(
+    def query_v2(
         self,
         *,
         ai_query: str | Omit = omit,
@@ -1238,13 +1130,121 @@ class AsyncRunsResource(AsyncAPIResource):
                     "trace_id": trace_id,
                     "tree_filter": tree_filter,
                 },
-                run_query_params.RunQueryParams,
+                run_query_v2_params.RunQueryV2Params,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             model=QueryRunResponse,
             method="post",
+        )
+
+    async def retrieve_v2(
+        self,
+        run_id: str,
+        *,
+        project_id: str,
+        start_time: Union[str, datetime],
+        selects: List[
+            Literal[
+                "ID",
+                "NAME",
+                "RUN_TYPE",
+                "STATUS",
+                "START_TIME",
+                "END_TIME",
+                "LATENCY_SECONDS",
+                "FIRST_TOKEN_TIME",
+                "ERROR",
+                "ERROR_PREVIEW",
+                "EXTRA",
+                "METADATA",
+                "EVENTS",
+                "INPUTS",
+                "INPUTS_PREVIEW",
+                "OUTPUTS",
+                "OUTPUTS_PREVIEW",
+                "MANIFEST",
+                "PARENT_RUN_IDS",
+                "PROJECT_ID",
+                "TRACE_ID",
+                "THREAD_ID",
+                "DOTTED_ORDER",
+                "IS_ROOT",
+                "REFERENCE_EXAMPLE_ID",
+                "REFERENCE_DATASET_ID",
+                "TOTAL_TOKENS",
+                "PROMPT_TOKENS",
+                "COMPLETION_TOKENS",
+                "TOTAL_COST",
+                "PROMPT_COST",
+                "COMPLETION_COST",
+                "PROMPT_TOKEN_DETAILS",
+                "COMPLETION_TOKEN_DETAILS",
+                "PROMPT_COST_DETAILS",
+                "COMPLETION_COST_DETAILS",
+                "PRICE_MODEL_ID",
+                "TAGS",
+                "APP_PATH",
+                "ATTACHMENTS",
+                "THREAD_EVALUATION_TIME",
+                "IS_IN_DATASET",
+                "SHARE_URL",
+                "FEEDBACK_STATS",
+            ]
+        ]
+        | Omit = omit,
+        accept: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> QueryRunResponse:
+        """
+        **Alpha:** The request and response contract may change; Returns one run by ID
+        for the given session and start_time. Use the `selects` query parameter
+        (repeatable) to select fields to return.
+
+        Args:
+          project_id: `project_id` is the UUID of the tracing project that owns the run.
+
+          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
+              `project_id` to locate the run.
+
+          selects: `selects` lists which properties to include on the returned run (repeatable
+              query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
+              only `id` is returned.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not run_id:
+            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
+        return await self._get(
+            path_template("/v2/runs/{run_id}", run_id=run_id),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=await async_maybe_transform(
+                    {
+                        "project_id": project_id,
+                        "start_time": start_time,
+                        "selects": selects,
+                    },
+                    run_retrieve_v2_params.RunRetrieveV2Params,
+                ),
+            ),
+            cast_to=QueryRunResponse,
         )
 
     async def stats(
@@ -1415,17 +1415,17 @@ class RunsResourceWithRawResponse:
         self.create = to_raw_response_wrapper(
             runs.create,
         )
-        self.retrieve = to_raw_response_wrapper(
-            runs.retrieve,
-        )
         self.update = to_raw_response_wrapper(
             runs.update,
         )
         self.ingest_batch = to_raw_response_wrapper(
             runs.ingest_batch,
         )
-        self.query = to_raw_response_wrapper(
-            runs.query,
+        self.query_v2 = to_raw_response_wrapper(
+            runs.query_v2,
+        )
+        self.retrieve_v2 = to_raw_response_wrapper(
+            runs.retrieve_v2,
         )
         self.stats = to_raw_response_wrapper(
             runs.stats,
@@ -1442,17 +1442,17 @@ class AsyncRunsResourceWithRawResponse:
         self.create = async_to_raw_response_wrapper(
             runs.create,
         )
-        self.retrieve = async_to_raw_response_wrapper(
-            runs.retrieve,
-        )
         self.update = async_to_raw_response_wrapper(
             runs.update,
         )
         self.ingest_batch = async_to_raw_response_wrapper(
             runs.ingest_batch,
         )
-        self.query = async_to_raw_response_wrapper(
-            runs.query,
+        self.query_v2 = async_to_raw_response_wrapper(
+            runs.query_v2,
+        )
+        self.retrieve_v2 = async_to_raw_response_wrapper(
+            runs.retrieve_v2,
         )
         self.stats = async_to_raw_response_wrapper(
             runs.stats,
@@ -1469,17 +1469,17 @@ class RunsResourceWithStreamingResponse:
         self.create = to_streamed_response_wrapper(
             runs.create,
         )
-        self.retrieve = to_streamed_response_wrapper(
-            runs.retrieve,
-        )
         self.update = to_streamed_response_wrapper(
             runs.update,
         )
         self.ingest_batch = to_streamed_response_wrapper(
             runs.ingest_batch,
         )
-        self.query = to_streamed_response_wrapper(
-            runs.query,
+        self.query_v2 = to_streamed_response_wrapper(
+            runs.query_v2,
+        )
+        self.retrieve_v2 = to_streamed_response_wrapper(
+            runs.retrieve_v2,
         )
         self.stats = to_streamed_response_wrapper(
             runs.stats,
@@ -1496,17 +1496,17 @@ class AsyncRunsResourceWithStreamingResponse:
         self.create = async_to_streamed_response_wrapper(
             runs.create,
         )
-        self.retrieve = async_to_streamed_response_wrapper(
-            runs.retrieve,
-        )
         self.update = async_to_streamed_response_wrapper(
             runs.update,
         )
         self.ingest_batch = async_to_streamed_response_wrapper(
             runs.ingest_batch,
         )
-        self.query = async_to_streamed_response_wrapper(
-            runs.query,
+        self.query_v2 = async_to_streamed_response_wrapper(
+            runs.query_v2,
+        )
+        self.retrieve_v2 = async_to_streamed_response_wrapper(
+            runs.retrieve_v2,
         )
         self.stats = async_to_streamed_response_wrapper(
             runs.stats,
