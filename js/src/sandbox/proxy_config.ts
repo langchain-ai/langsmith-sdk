@@ -150,24 +150,21 @@ export function awsAuth({
 }
 
 /** Build a sandbox proxy rule that injects GCP OAuth bearer auth. */
-export function gcpAuth({
-  serviceAccountJson,
-  scopes,
-  name = "gcp",
-  enabled = true,
-  ...unsupported
-}: {
+export function gcpAuth(options: {
   serviceAccountJson: SandboxProxySecret;
   scopes: string[];
-  matchHosts?: never;
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {
-  if ("matchHosts" in unsupported) {
+  const unsupportedOptions = Object.keys(options).filter(
+    (key) => !["serviceAccountJson", "scopes", "name", "enabled"].includes(key),
+  );
+  if (unsupportedOptions.length > 0) {
     throw new Error(
-      "matchHosts is not supported for GCP auth; Google API host matching is handled by the sandbox proxy",
+      `Unsupported GCP auth option(s): ${unsupportedOptions.join(", ")}`,
     );
   }
+  const { serviceAccountJson, scopes, name = "gcp", enabled = true } = options;
   return {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",

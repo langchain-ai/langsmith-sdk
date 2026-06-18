@@ -402,14 +402,14 @@ describe("sandbox proxy config helpers", () => {
     },
   );
 
-  it("gcpAuth rejects matchHosts overrides", () => {
+  it("gcpAuth rejects unsupported options", () => {
     expect(() =>
       gcpAuth({
         serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
         scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
         matchHosts: ["storage.googleapis.com"],
       } as any),
-    ).toThrow(/matchHosts/);
+    ).toThrow(/Unsupported GCP auth option\(s\): matchHosts/);
   });
 });
 
