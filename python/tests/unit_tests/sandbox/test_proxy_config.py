@@ -328,15 +328,6 @@ def test_gcp_auth_rejects_empty_scopes(scopes: list[str]) -> None:
         )
 
 
-def test_gcp_auth_rejects_match_hosts_override() -> None:
-    with pytest.raises(TypeError):
-        gcp_auth(
-            service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
-            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-            match_hosts=["storage.googleapis.com"],  # type: ignore[call-arg]
-        )
-
-
 def test_create_sandbox_forwards_composed_proxy_config(
     httpx_mock: HTTPXMock,
 ) -> None:

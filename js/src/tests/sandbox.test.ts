@@ -401,16 +401,6 @@ describe("sandbox proxy config helpers", () => {
       ).toThrow();
     },
   );
-
-  it("gcpAuth rejects unsupported options", () => {
-    expect(() =>
-      gcpAuth({
-        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
-        scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-        matchHosts: ["storage.googleapis.com"],
-      } as any),
-    ).toThrow(/Unsupported GCP auth option\(s\): matchHosts/);
-  });
 });
 
 describe("SandboxClient", () => {

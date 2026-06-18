@@ -150,21 +150,17 @@ export function awsAuth({
 }
 
 /** Build a sandbox proxy rule that injects GCP OAuth bearer auth. */
-export function gcpAuth(options: {
+export function gcpAuth({
+  serviceAccountJson,
+  scopes,
+  name = "gcp",
+  enabled = true,
+}: {
   serviceAccountJson: SandboxProxySecret;
   scopes: string[];
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {
-  const unsupportedOptions = Object.keys(options).filter(
-    (key) => !["serviceAccountJson", "scopes", "name", "enabled"].includes(key),
-  );
-  if (unsupportedOptions.length > 0) {
-    throw new Error(
-      `Unsupported GCP auth option(s): ${unsupportedOptions.join(", ")}`,
-    );
-  }
-  const { serviceAccountJson, scopes, name = "gcp", enabled = true } = options;
   return {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
