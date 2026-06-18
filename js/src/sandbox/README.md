@@ -125,8 +125,8 @@ short-lived write-only values with `opaqueSecret(...)`.
 
 Use the GCP auth proxy when sandbox code needs to call Google APIs. You
 configure service account JSON on the sandbox proxy, and the proxy injects OAuth
-bearer tokens for the Google API hosts you explicitly match. The real service
-account JSON stays outside the sandbox.
+bearer tokens for Google API hosts matched automatically by the sandbox proxy.
+The real service account JSON stays outside the sandbox.
 
 Store the service account JSON as a LangSmith workspace secret, then reference
 that secret name in the proxy config:
@@ -219,10 +219,9 @@ try {
 }
 ```
 
-GCS mounts require an enabled GCP auth proxy rule covering
-`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
-`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
-`devstorage.read_only`.
+GCS mounts require an enabled GCP auth proxy rule with a compatible storage
+OAuth scope. Read/write mounts require `devstorage.read_write` or
+`cloud-platform`; read-only mounts can also use `devstorage.read_only`.
 
 ```typescript
 import {

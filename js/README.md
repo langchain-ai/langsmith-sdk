@@ -76,7 +76,7 @@ Plaintext AWS credential values are not accepted directly; wrap them as
 
 When sandbox code needs to call Google APIs, use the sandbox GCP auth proxy.
 The proxy keeps the service account JSON outside the sandbox and injects OAuth
-bearer tokens for the Google API hosts you explicitly match.
+bearer tokens for Google API hosts matched automatically by the sandbox proxy.
 
 Store the service account JSON as a LangSmith workspace secret. Then create the
 sandbox with a GCP auth proxy config:
@@ -170,10 +170,9 @@ try {
 }
 ```
 
-GCS mounts require an enabled GCP auth proxy rule that covers
-`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
-`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
-`devstorage.read_only`.
+GCS mounts require an enabled GCP auth proxy rule with a compatible storage
+OAuth scope. Read/write mounts require `devstorage.read_write` or
+`cloud-platform`; read-only mounts can also use `devstorage.read_only`.
 
 ```ts
 import {

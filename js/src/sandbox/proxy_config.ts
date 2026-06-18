@@ -7,10 +7,6 @@ import type {
   SandboxProxySecret,
 } from "./types.js";
 
-const DEFAULT_GCP_AUTH_MATCH_HOSTS = [
-  "storage.googleapis.com",
-  "www.googleapis.com",
-];
 const PROVIDER_RULE_TYPES = new Set(["aws", "gcp"]);
 
 function requireNonEmptyString(value: string, field: string): string {
@@ -157,13 +153,11 @@ export function awsAuth({
 export function gcpAuth({
   serviceAccountJson,
   scopes,
-  matchHosts = DEFAULT_GCP_AUTH_MATCH_HOSTS,
   name = "gcp",
   enabled = true,
 }: {
   serviceAccountJson: SandboxProxySecret;
   scopes: string[];
-  matchHosts?: string[];
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {
@@ -171,7 +165,6 @@ export function gcpAuth({
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
     enabled,
-    match_hosts: requireNonEmptyStringArray(matchHosts, "matchHosts"),
     gcp: {
       service_account_json: serviceAccountJson,
       scopes: requireNonEmptyStringArray(scopes, "scopes"),

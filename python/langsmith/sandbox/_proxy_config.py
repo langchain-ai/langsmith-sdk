@@ -15,7 +15,6 @@ class SandboxProxySecret(TypedDict):
 
 SandboxProxyRule = dict[str, Any]
 SandboxProxyConfig = dict[str, Any]
-DEFAULT_GCP_AUTH_MATCH_HOSTS = ["storage.googleapis.com", "www.googleapis.com"]
 _PROVIDER_RULE_TYPES = {"aws", "gcp"}
 
 
@@ -172,14 +171,13 @@ def gcp_auth(
     *,
     service_account_json: SandboxProxySecret,
     scopes: Sequence[str],
-    match_hosts: Sequence[str] | None = None,
     name: str = "gcp",
     enabled: bool = True,
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that injects GCP OAuth bearer auth.
 
     The sandbox proxy keeps the service account JSON outside the sandbox and
-    injects OAuth bearer tokens for the configured Google API hosts.
+    injects OAuth bearer tokens for built-in Google API host matching.
     ``service_account_json`` must be supplied as a ``workspace_secret`` or
     ``opaque`` value; plaintext service account JSON is intentionally not
     supported.
@@ -189,10 +187,6 @@ def gcp_auth(
         "name": rule_name,
         "type": "gcp",
         "enabled": enabled,
-        "match_hosts": _require_non_empty_string_list(
-            DEFAULT_GCP_AUTH_MATCH_HOSTS if match_hosts is None else match_hosts,
-            "match_hosts",
-        ),
         "gcp": {
             "service_account_json": service_account_json,
             "scopes": _require_non_empty_string_list(scopes, "scopes"),
