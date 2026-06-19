@@ -42,6 +42,7 @@ from langsmith.client import (
     Client,
     _apply_auth_overrides,
     _apply_optional_api_key,
+    _attachment_references_filesystem,
     _check_backend_version,
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
@@ -51,6 +52,7 @@ from langsmith.client import (
     _get_openapi_base_url,
     _is_langchain_hosted,
     _parse_token_or_url,
+    _reject_filesystem_attachments,
     _resolve_tracing_mode,
 )
 from langsmith.run_trees import RunTree
@@ -6436,3 +6438,84 @@ def test_client_close_idempotent_no_error() -> None:
     )
     client.close()
     client.close()
+
+
+@pytest.mark.parametrize(
+    "attachment, expected",
+    [
+        (("text/plain", b"inline"), False),  # tuple, inline bytes
+        (["text/plain", b"inline"], False),  # list, inline bytes
+        (("text/plain", "/etc/passwd"), True),  # tuple, str path
+        (["text/plain", "/etc/passwd"], True),  # list, str path (exploit shape)
+        (("text/plain", pathlib.Path("/etc/passwd")), True),  # tuple, Path
+        (["text/plain", pathlib.Path("/etc/passwd")], True),  # list, Path
+        (b"inline", False),  # bare bytes
+        ("/etc/passwd", True),  # bare str path
+        (pathlib.Path("/etc/passwd"), True),  # bare Path
+    ],
+)
+def test_attachment_references_filesystem(attachment, expected):
+    """The guard must key off the DATA type, not the container type."""
+    assert _attachment_references_filesystem(attachment) is expected
+
+
+def test_reject_filesystem_attachments_raises_for_list_path():
+    with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
+        _reject_filesystem_attachments(
+            {"exfil": ["text/plain", "/etc/passwd"]},
+            dangerously_allow_filesystem=False,
+        )
+
+
+def test_reject_filesystem_attachments_allows_inline_bytes():
+    # Should not raise.
+    _reject_filesystem_attachments(
+        {"ok": ("text/plain", b"data")}, dangerously_allow_filesystem=False
+    )
+
+
+def test_reject_filesystem_attachments_allows_paths_when_opted_in():
+    # Flag set -> no raise even for a path.
+    _reject_filesystem_attachments(
+        {"f": ["text/plain", "/etc/passwd"]}, dangerously_allow_filesystem=True
+    )
+
+
+def test_reject_filesystem_attachments_noop_for_empty():
+    _reject_filesystem_attachments(None, dangerously_allow_filesystem=False)
+    _reject_filesystem_attachments({}, dangerously_allow_filesystem=False)
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_create_run_blocks_list_form_filesystem_attachment(mock_session_cls):
+    """JSON-shaped (list/str) attachments must be rejected without the flag.
+
+    Regression for GHSA-f4xh-w4cj-qxq8 -- the guard used to only catch tuple/Path.
+    """
+    mock_session = MagicMock()
+    mock_session_cls.return_value = mock_session
+    client = Client(api_url="http://localhost:1984", api_key="123")
+
+    with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
+        client.create_run(
+            name="x",
+            inputs={},
+            run_type="chain",
+            attachments={"exfil": ["text/plain", "/etc/passwd"]},
+        )
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
+    """Inline-bytes attachments remain allowed without the flag."""
+    mock_session = MagicMock()
+    mock_session_cls.return_value = mock_session
+    client = Client(api_url="http://localhost:1984", api_key="123")
+
+    # Should not raise.
+    client.create_run(
+        name="x",
+        inputs={},
+        run_type="chain",
+        attachments={"ok": ("text/plain", b"data")},
+    )

@@ -794,6 +794,42 @@ class ListThreadsItem(TypedDict):
     max_start_time: Optional[str]
 
 
+def _attachment_references_filesystem(attachment: Any) -> bool:
+    """Return True if an attachment is a filesystem path rather than inline bytes.
+
+    Serialization opens any attachment data that isn't ``bytes`` as a file path
+    (see ``serialized_run_operation_to_multipart_parts_and_context``). Inline data
+    is ``bytes`` or a 2-element ``(content_type, bytes)``; anything else is treated
+    as a filesystem reference (fail closed). Unlike the old ``(tuple, Path)`` guard,
+    this also catches JSON/dict-shaped input (``list``/``str``).
+    """
+    if isinstance(attachment, bytes):
+        return False
+    if isinstance(attachment, (tuple, list)) and len(attachment) == 2:
+        return not isinstance(attachment[1], bytes)
+    return True
+
+
+def _reject_filesystem_attachments(
+    attachments: Optional[dict],
+    dangerously_allow_filesystem: bool,
+) -> None:
+    """Raise unless every attachment is inline data, or filesystem access is opted in.
+
+    Centralizes the guard that previously lived (incorrectly) in three places.
+    See GHSA-f4xh-w4cj-qxq8.
+    """
+    if dangerously_allow_filesystem or not attachments:
+        return
+    for attachment in attachments.values():
+        if _attachment_references_filesystem(attachment):
+            raise ValueError(
+                "Attachments must be inline bytes or a (content_type, bytes) pair. "
+                "To load an attachment from a filesystem path, set "
+                "dangerously_allow_filesystem=True."
+            )
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -2360,16 +2396,9 @@ class Client:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         run_create = self._run_transform(run_create, copy=False)
         self._insert_runtime_env([run_create])
-        if run_create.get("attachments") is not None:
-            for attachment in run_create["attachments"].values():
-                if (
-                    isinstance(attachment, tuple)
-                    and isinstance(attachment[1], Path)
-                    and not dangerously_allow_filesystem
-                ):
-                    raise ValueError(
-                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
-                    )
+        _reject_filesystem_attachments(
+            run_create.get("attachments"), dangerously_allow_filesystem
+        )
         # If process_buffered_run_ops is enabled, collect run ops in batches
         # before batching
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
@@ -3206,16 +3235,10 @@ class Client:
         )
 
         for op in serialized_ops:
-            if isinstance(op, SerializedRunOperation) and op.attachments:
-                for attachment in op.attachments.values():
-                    if (
-                        isinstance(attachment, tuple)
-                        and isinstance(attachment[1], Path)
-                        and not dangerously_allow_filesystem
-                    ):
-                        raise ValueError(
-                            "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
-                        )
+            if isinstance(op, SerializedRunOperation):
+                _reject_filesystem_attachments(
+                    op.attachments, dangerously_allow_filesystem
+                )
 
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
@@ -3517,15 +3540,7 @@ class Client:
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
-            for _, attachment in attachments.items():
-                if (
-                    isinstance(attachment, tuple)
-                    and isinstance(attachment[1], Path)
-                    and not dangerously_allow_filesystem
-                ):
-                    raise ValueError(
-                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
-                    )
+            _reject_filesystem_attachments(attachments, dangerously_allow_filesystem)
             data["attachments"] = attachments
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
