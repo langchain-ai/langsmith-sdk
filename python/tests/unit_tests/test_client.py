@@ -725,6 +725,39 @@ def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         assert kwargs["headers"]["x-api-key"] == "abc"
 
 
+@pytest.mark.parametrize(
+    ("api_url", "expected_url"),
+    [
+        ("http://localhost:1984", "http://localhost:1984/v1/platform/issues"),
+        (
+            "http://localhost:1984/api/v1",
+            "http://localhost:1984/api/v1/platform/issues",
+        ),
+    ],
+)
+def test_list_project_issues_uses_platform_issues_endpoint(
+    api_url: str, expected_url: str
+) -> None:
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [{"id": "issue-1"}]
+    mock_session.request.return_value = mock_response
+
+    client = Client(api_url=api_url, api_key="test", session=mock_session)
+    issues = client.list_project_issues("my-project", status="open", priority="high")
+
+    assert issues == [{"id": "issue-1"}]
+    args, kwargs = mock_session.request.call_args
+    assert args[0] == "GET"
+    assert args[1] == expected_url
+    assert kwargs["params"] == {
+        "session_name": "my-project",
+        "status": "open",
+        "priority": "high",
+    }
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     _clear_env_cache()
