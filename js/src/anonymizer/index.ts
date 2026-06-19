@@ -255,11 +255,16 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
 
   // ── Structural / contextual (sensitive NAME + assignment) ─────────────────
   // KEY=value or "key": "value" where the name looks sensitive. Keep the name
-  // and separator ($1), redact the value. Requires a 6+ char value so short
-  // non-secret values are not touched.
+  // and separator ($1), redact the value. Notes:
+  //  - (?![A-Za-z0-9]) after the keyword requires a component boundary, so
+  //    `token` matches `api_token`/`mytoken` but NOT `tokenizer`/`tokens`.
+  //  - the value may start with an auth scheme word (Bearer/Token/Basic) so a
+  //    `X-Api-Key: Bearer <tok>` shape redacts the credential, not just "Bearer".
+  //  - value excludes & and ; so query-string params past the secret survive.
+  //  - requires a 6+ char value so short non-secret values are not touched.
   {
     pattern:
-      /\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)[A-Za-z0-9_.-]*["']?\s*[:=]\s*["']?)[^\s"']{6,}/gi,
+      /\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}/gi,
     replace: `$1${SECRET_PLACEHOLDER}`,
   },
   // Authorization / API-key headers. Keep the header name + separator ($1$2)
@@ -269,14 +274,15 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
       /\b(authorization|x-api-key|x-auth-token)(["']?\s*[:=]\s*["']?)(bearer\s+|token\s+|basic\s+)?[A-Za-z0-9._~+/-]{8,}=*/gi,
     replace: `$1$2$3${SECRET_PLACEHOLDER}`,
   },
-  // Bare "Bearer <token>"
+  // Bare "Bearer <token>" (any case; the scheme word is preserved via $1).
   {
-    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{10,}=*/g,
-    replace: `Bearer ${SECRET_PLACEHOLDER}`,
+    pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{10,}=*/gi,
+    replace: `$1${SECRET_PLACEHOLDER}`,
   },
   // Credentials embedded in URLs: proto://user:PASS@host -> redact PASS only.
+  // Username is optional so proto://:PASS@host (empty user) is still covered.
   {
-    pattern: /\b([a-z][a-z0-9+.-]*:\/\/[^:@/\s]+:)[^@/\s]+(@)/gi,
+    pattern: /\b([a-z][a-z0-9+.-]*:\/\/[^:@/\s]*:)[^@/\s]+(@)/gi,
     replace: `$1${SECRET_PLACEHOLDER}$2`,
   },
 ];

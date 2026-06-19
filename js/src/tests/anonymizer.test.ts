@@ -290,6 +290,8 @@ describe("createSecretAnonymizer", () => {
       "The deployment finished successfully in 12 seconds.", // prose
       "count=5", // short, non-sensitive assignment
       'description="a reasonably long human description"', // non-sensitive name
+      'tokenizer: "cl100k_base"', // "token" must not match mid-word
+      "tokens_used: 123456", // keyword as a prefix of a longer word
     ];
     test.each(SAFE)("leaves %s untouched", (value) => {
       expect(redact(value)).toBe(value);
@@ -315,6 +317,31 @@ describe("createSecretAnonymizer", () => {
   test("preserves the Bearer scheme in Authorization headers (parity)", () => {
     expect(redact("Authorization: Bearer aB3xY7zQ1234567890")).toBe(
       `Authorization: Bearer ${SECRET_PLACEHOLDER}`,
+    );
+  });
+
+  test("redacts the credential after a scheme word in X-Api-Key", () => {
+    // The structural api-key rule must not stop at "Bearer" and leave the token.
+    const out = redact("X-Api-Key: Bearer tok_abcdefghij") as string;
+    expect(out).not.toContain("tok_abcdefghij");
+    expect(out).toBe(`X-Api-Key: ${SECRET_PLACEHOLDER}`);
+  });
+
+  test("stops the redacted value at query-string separators", () => {
+    expect(redact("/api?api_key=ABCDEF123456&user=bob")).toBe(
+      `/api?api_key=${SECRET_PLACEHOLDER}&user=bob`,
+    );
+  });
+
+  test("redacts the password in a connection string with empty username", () => {
+    expect(redact("redis://:sup3rs3cretpw@host:6379")).toBe(
+      `redis://:${SECRET_PLACEHOLDER}@host:6379`,
+    );
+  });
+
+  test("redacts a lowercase bare bearer token, preserving the scheme word", () => {
+    expect(redact("sent bearer aB3xY7zQ1234567890 here")).toBe(
+      `sent bearer ${SECRET_PLACEHOLDER} here`,
     );
   });
 

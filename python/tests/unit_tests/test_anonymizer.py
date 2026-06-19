@@ -289,11 +289,45 @@ def test_secret_anonymizer_structural_rules():
         "The deployment finished successfully in 12 seconds.",  # prose
         "count=5",  # short, non-sensitive assignment
         'description="a reasonably long human description"',  # non-sensitive name
+        'tokenizer: "cl100k_base"',  # "token" must not match mid-word
+        "tokens_used: 123456",  # keyword as a prefix of a longer word
     ],
 )
 def test_secret_anonymizer_precision_guards(value):
     redact = create_secret_anonymizer()
     assert redact(value) == value
+
+
+def test_secret_anonymizer_redacts_credential_after_scheme_word():
+    # The structural api-key rule must not stop at "Bearer" and leave the token.
+    redact = create_secret_anonymizer()
+    out = redact("X-Api-Key: Bearer tok_abcdefghij")
+    assert "tok_abcdefghij" not in out
+    assert out == f"X-Api-Key: {SECRET_PLACEHOLDER}"
+
+
+def test_secret_anonymizer_stops_at_query_separators():
+    redact = create_secret_anonymizer()
+    assert (
+        redact("/api?api_key=ABCDEF123456&user=bob")
+        == f"/api?api_key={SECRET_PLACEHOLDER}&user=bob"
+    )
+
+
+def test_secret_anonymizer_redacts_empty_username_connection_string():
+    redact = create_secret_anonymizer()
+    assert (
+        redact("redis://:sup3rs3cretpw@host:6379")
+        == f"redis://:{SECRET_PLACEHOLDER}@host:6379"
+    )
+
+
+def test_secret_anonymizer_redacts_lowercase_bare_bearer():
+    redact = create_secret_anonymizer()
+    assert (
+        redact("sent bearer aB3xY7zQ1234567890 here")
+        == f"sent bearer {SECRET_PLACEHOLDER} here"
+    )
 
 
 def test_secret_anonymizer_nested_payload():
