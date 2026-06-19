@@ -216,9 +216,10 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "replace": SECRET_PLACEHOLDER,
     },
     {"pattern": re.compile(r"sk-[A-Za-z0-9]{32,}"), "replace": SECRET_PLACEHOLDER},
-    # LangSmith
+    # LangSmith (keys are multi-segment: lsv2_pt_<key>_<tail> — match the full
+    # underscore-delimited tail so none of it leaks past the placeholder)
     {
-        "pattern": re.compile(r"lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}"),
+        "pattern": re.compile(r"lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*"),
         "replace": SECRET_PLACEHOLDER,
     },
     {"pattern": re.compile(r"ls__[A-Za-z0-9]{16,}"), "replace": SECRET_PLACEHOLDER},
@@ -262,11 +263,11 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         ),
         "replace": SECRET_PLACEHOLDER,
     },
-    # PEM private key blocks (RSA/EC/OPENSSH/DSA/PGP/plain)
+    # PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
     {
         "pattern": re.compile(
-            r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
-            r"[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
+            r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----"
+            r"[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----"
         ),
         "replace": SECRET_PLACEHOLDER,
     },
@@ -282,13 +283,14 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "replace": rf"\g<1>{SECRET_PLACEHOLDER}",
     },
     # Authorization / API-key headers. Keep the header name + separator
-    # (groups 1-2); redact an optional scheme together with the credential.
+    # (groups 1-2) and an optional scheme (group 3); redact the credential.
+    # Group 3 preserves "Bearer "/"Token "/"Basic " to match the JS preset.
     {
         "pattern": re.compile(
-            r"""\b(authorization|x-api-key|x-auth-token)(["']?\s*[:=]\s*["']?)(?:bearer\s+|token\s+|basic\s+)?[A-Za-z0-9._~+/-]{8,}=*""",
+            r"""\b(authorization|x-api-key|x-auth-token)(["']?\s*[:=]\s*["']?)(bearer\s+|token\s+|basic\s+)?[A-Za-z0-9._~+/-]{8,}=*""",
             re.IGNORECASE,
         ),
-        "replace": rf"\g<1>\g<2>{SECRET_PLACEHOLDER}",
+        "replace": rf"\g<1>\g<2>\g<3>{SECRET_PLACEHOLDER}",
     },
     # Bare "Bearer <token>"
     {

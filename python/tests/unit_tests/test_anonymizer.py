@@ -204,7 +204,7 @@ SECRET_SAMPLES = {
     "anthropic": "sk-ant-api03-" + "A" * 30,
     "openai_project": "sk-proj-" + "a" * 30,
     "openai_legacy": "sk-" + "a" * 48,
-    "langsmith_lsv2": "lsv2_pt_" + "a" * 40,
+    "langsmith_lsv2": "lsv2_pt_" + "a" * 36 + "_" + "b" * 10,
     "langsmith_legacy": "ls__" + "a" * 24,
     "github_pat": "ghp_" + "A" * 36,
     "github_fine_grained": "github_pat_" + "A" * 82,
@@ -234,6 +234,30 @@ def test_secret_anonymizer_redacts_pem_block():
     end = " ".join(["-----END", "RSA", "PRIVATE", "KEY-----"])
     pem = "\n".join([begin, "a" * 64, end])
     assert redact({"file": pem}) == {"file": SECRET_PLACEHOLDER}
+
+
+def test_secret_anonymizer_redacts_multi_segment_langsmith_key():
+    redact = create_secret_anonymizer()
+    key = "lsv2_pt_" + "a" * 36 + "_" + "b" * 10
+    # Bare context (no assignment); exact equality catches a leaked tail.
+    assert redact(f"using {key} now") == f"using {SECRET_PLACEHOLDER} now"
+
+
+def test_secret_anonymizer_redacts_pgp_block():
+    redact = create_secret_anonymizer()
+    begin = " ".join(["-----BEGIN", "PGP", "PRIVATE", "KEY", "BLOCK-----"])
+    end = " ".join(["-----END", "PGP", "PRIVATE", "KEY", "BLOCK-----"])
+    block = "\n".join([begin, "a" * 64, end])
+    assert redact({"file": block}) == {"file": SECRET_PLACEHOLDER}
+
+
+def test_secret_anonymizer_preserves_bearer_scheme():
+    # Parity with the JS preset: keep the "Bearer " scheme, redact the token.
+    redact = create_secret_anonymizer()
+    assert (
+        redact("Authorization: Bearer aB3xY7zQ1234567890")
+        == f"Authorization: Bearer {SECRET_PLACEHOLDER}"
+    )
 
 
 def test_secret_anonymizer_structural_rules():

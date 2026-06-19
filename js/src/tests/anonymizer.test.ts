@@ -219,7 +219,7 @@ describe("createSecretAnonymizer", () => {
     anthropic: "sk-ant-api03-AbCdEf0123456789AbCdEf0123456789xyz",
     "openai-project": "sk-proj-abcdefghij1234567890ABCDEFGHIJ",
     "openai-legacy": `sk-${"a".repeat(48)}`,
-    "langsmith-lsv2": `lsv2_pt_${"a".repeat(40)}`,
+    "langsmith-lsv2": `lsv2_pt_${"a".repeat(36)}_${"b".repeat(10)}`,
     "langsmith-legacy": `ls__${"a".repeat(24)}`,
     "github-pat": `ghp_${"A".repeat(36)}`,
     "github-fine-grained": `github_pat_${"A".repeat(82)}`,
@@ -294,6 +294,28 @@ describe("createSecretAnonymizer", () => {
     test.each(SAFE)("leaves %s untouched", (value) => {
       expect(redact(value)).toBe(value);
     });
+  });
+
+  test("redacts a multi-segment LangSmith v2 key including the tail", () => {
+    const key = `lsv2_pt_${"a".repeat(36)}_${"b".repeat(10)}`;
+    // Bare context (no assignment) so only the provider rule applies; exact
+    // equality catches any tail left visible past the placeholder.
+    expect(redact(`using ${key} now`)).toBe(`using ${SECRET_PLACEHOLDER} now`);
+  });
+
+  test("redacts a PGP private key block (KEY BLOCK armor)", () => {
+    const begin = ["-----BEGIN", "PGP", "PRIVATE", "KEY", "BLOCK-----"].join(" ");
+    const end = ["-----END", "PGP", "PRIVATE", "KEY", "BLOCK-----"].join(" ");
+    const block = [begin, "a".repeat(64), end].join("\n");
+    expect((redact({ file: block }) as { file: string }).file).toBe(
+      SECRET_PLACEHOLDER,
+    );
+  });
+
+  test("preserves the Bearer scheme in Authorization headers (parity)", () => {
+    expect(redact("Authorization: Bearer aB3xY7zQ1234567890")).toBe(
+      `Authorization: Bearer ${SECRET_PLACEHOLDER}`,
+    );
   });
 
   test("redacts secrets nested deep in a payload", () => {

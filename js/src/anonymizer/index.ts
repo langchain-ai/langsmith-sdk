@@ -206,8 +206,12 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
     replace: SECRET_PLACEHOLDER,
   },
   { pattern: /sk-[A-Za-z0-9]{32,}/g, replace: SECRET_PLACEHOLDER },
-  // LangSmith
-  { pattern: /lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}/g, replace: SECRET_PLACEHOLDER },
+  // LangSmith (keys are multi-segment: lsv2_pt_<key>_<tail> — match the
+  // full underscore-delimited tail so none of it leaks past the placeholder)
+  {
+    pattern: /lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*/g,
+    replace: SECRET_PLACEHOLDER,
+  },
   { pattern: /ls__[A-Za-z0-9]{16,}/g, replace: SECRET_PLACEHOLDER },
   // GitHub personal access / app tokens
   { pattern: /gh[pousr]_[A-Za-z0-9]{36,}/g, replace: SECRET_PLACEHOLDER },
@@ -242,10 +246,10 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
     pattern: /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
     replace: SECRET_PLACEHOLDER,
   },
-  // PEM private key blocks (RSA/EC/OPENSSH/DSA/PGP/plain)
+  // PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
   {
     pattern:
-      /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g,
+      /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----/g,
     replace: SECRET_PLACEHOLDER,
   },
 
