@@ -223,16 +223,20 @@ describe("createSecretAnonymizer", () => {
     "langsmith-legacy": `ls__${"a".repeat(24)}`,
     "github-pat": `ghp_${"A".repeat(36)}`,
     "github-fine-grained": `github_pat_${"A".repeat(82)}`,
+    gitlab: `glpat-${"a".repeat(20)}`,
     aws: "AKIAIOSFODNN7EXAMPLE",
+    "aws-a3t": `A3TX${"A".repeat(16)}`,
     "google-api": `AIza${"A".repeat(35)}`,
     "google-oauth": "ya29.A0ARrdaM-abcdefABCDEF1234567890_-",
     // Assembled at runtime so no literal secret-shaped string sits in source
     // (a repo secret-scanner would otherwise rewrite the fixture).
     "slack-token": ["xoxb", "ABCDEFGHIJ0123456789xy"].join("-"),
+    "slack-app": `xapp-1-${"A".repeat(16)}`,
     "slack-webhook":
       "https://hooks.slack.com/services/T00000000/B00000000/abcdefABCDEF1234",
     stripe: `sk_live_${"a".repeat(24)}`,
     npm: `npm_${"a".repeat(36)}`,
+    pypi: `pypi-AgEIcHlwaS${"A".repeat(50)}`,
     sendgrid: `SG.${"a".repeat(22)}.${"b".repeat(43)}`,
     jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36",
   };

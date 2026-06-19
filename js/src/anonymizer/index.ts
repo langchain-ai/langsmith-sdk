@@ -216,13 +216,19 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
   // GitHub personal access / app tokens
   { pattern: /gh[pousr]_[A-Za-z0-9]{36,}/g, replace: SECRET_PLACEHOLDER },
   { pattern: /github_pat_[A-Za-z0-9_]{82}/g, replace: SECRET_PLACEHOLDER },
-  // AWS access key id (long-term + temporary)
-  { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replace: SECRET_PLACEHOLDER },
+  // GitLab personal access token
+  { pattern: /glpat-[A-Za-z0-9_-]{20,}/g, replace: SECRET_PLACEHOLDER },
+  // AWS access key id (covers AKIA/ASIA/ABIA/ACCA/A3T* prefixes)
+  {
+    pattern: /\b(?:AKIA|ASIA|ABIA|ACCA|A3T[A-Z0-9])[0-9A-Z]{16}\b/g,
+    replace: SECRET_PLACEHOLDER,
+  },
   // Google API key + OAuth access token
   { pattern: /AIza[0-9A-Za-z_-]{35}/g, replace: SECRET_PLACEHOLDER },
   { pattern: /ya29\.[0-9A-Za-z_-]+/g, replace: SECRET_PLACEHOLDER },
-  // Slack tokens + incoming webhooks
+  // Slack tokens (bot/user + app-level) + incoming webhooks
   { pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /xapp-\d-[A-Za-z0-9-]{10,}/g, replace: SECRET_PLACEHOLDER },
   {
     pattern: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g,
     replace: SECRET_PLACEHOLDER,
@@ -234,6 +240,11 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
   },
   // npm
   { pattern: /npm_[A-Za-z0-9]{36}/g, replace: SECRET_PLACEHOLDER },
+  // PyPI upload token
+  {
+    pattern: /pypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}/g,
+    replace: SECRET_PLACEHOLDER,
+  },
   // SendGrid
   {
     pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g,

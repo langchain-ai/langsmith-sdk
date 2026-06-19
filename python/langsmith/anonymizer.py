@@ -235,17 +235,23 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "pattern": re.compile(r"github_pat_[A-Za-z0-9_]{82}"),
         "replace": SECRET_PLACEHOLDER,
     },
-    # AWS access key id (long-term + temporary)
+    # GitLab personal access token
+    {"pattern": re.compile(r"glpat-[A-Za-z0-9_-]{20,}"), "replace": SECRET_PLACEHOLDER},
+    # AWS access key id (covers AKIA/ASIA/ABIA/ACCA/A3T* prefixes)
     {
-        "pattern": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+        "pattern": re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA|A3T[A-Z0-9])[0-9A-Z]{16}\b"),
         "replace": SECRET_PLACEHOLDER,
     },
     # Google API key + OAuth access token
     {"pattern": re.compile(r"AIza[0-9A-Za-z_-]{35}"), "replace": SECRET_PLACEHOLDER},
     {"pattern": re.compile(r"ya29\.[0-9A-Za-z_-]+"), "replace": SECRET_PLACEHOLDER},
-    # Slack tokens + incoming webhooks
+    # Slack tokens (bot/user + app-level) + incoming webhooks
     {
         "pattern": re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+        "replace": SECRET_PLACEHOLDER,
+    },
+    {
+        "pattern": re.compile(r"xapp-\d-[A-Za-z0-9-]{10,}"),
         "replace": SECRET_PLACEHOLDER,
     },
     {
@@ -259,6 +265,11 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     },
     # npm
     {"pattern": re.compile(r"npm_[A-Za-z0-9]{36}"), "replace": SECRET_PLACEHOLDER},
+    # PyPI upload token
+    {
+        "pattern": re.compile(r"pypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}"),
+        "replace": SECRET_PLACEHOLDER,
+    },
     # SendGrid
     {
         "pattern": re.compile(r"SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}"),
