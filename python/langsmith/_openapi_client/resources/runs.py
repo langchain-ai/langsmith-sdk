@@ -725,6 +725,10 @@ class RunsResource(SyncAPIResource):
             cast_to=object,
         )
 
+    retrieve = retrieve_v2
+
+    query = query_v2
+
 
 class AsyncRunsResource(AsyncAPIResource):
     @cached_property
@@ -1409,6 +1413,10 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=object,
         )
 
+    retrieve = retrieve_v2
+
+    query = query_v2
+
 
 class RunsResourceWithRawResponse:
     def __init__(self, runs: RunsResource) -> None:
@@ -1434,6 +1442,12 @@ class RunsResourceWithRawResponse:
         )
         self.update_2 = to_raw_response_wrapper(
             runs.update_2,
+        )
+        self.retrieve = to_raw_response_wrapper(
+            runs.retrieve,
+        )
+        self.query = to_raw_response_wrapper(
+            runs.query,
         )
 
 
@@ -1462,6 +1476,12 @@ class AsyncRunsResourceWithRawResponse:
         self.update_2 = async_to_raw_response_wrapper(
             runs.update_2,
         )
+        self.retrieve = async_to_raw_response_wrapper(
+            runs.retrieve,
+        )
+        self.query = async_to_raw_response_wrapper(
+            runs.query,
+        )
 
 
 class RunsResourceWithStreamingResponse:
@@ -1489,6 +1509,12 @@ class RunsResourceWithStreamingResponse:
         self.update_2 = to_streamed_response_wrapper(
             runs.update_2,
         )
+        self.retrieve = to_streamed_response_wrapper(
+            runs.retrieve,
+        )
+        self.query = to_streamed_response_wrapper(
+            runs.query,
+        )
 
 
 class AsyncRunsResourceWithStreamingResponse:
@@ -1515,4 +1541,10 @@ class AsyncRunsResourceWithStreamingResponse:
         )
         self.update_2 = async_to_streamed_response_wrapper(
             runs.update_2,
+        )
+        self.retrieve = async_to_streamed_response_wrapper(
+            runs.retrieve,
+        )
+        self.query = async_to_streamed_response_wrapper(
+            runs.query,
         )
