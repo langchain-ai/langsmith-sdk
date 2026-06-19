@@ -1,6 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-namespace */
 
+import { afterAll, beforeAll, describe, test } from "vitest";
+
 import crypto from "crypto";
 import { v4, v5 } from "../uuid/src/index.js";
 import * as os from "node:os";

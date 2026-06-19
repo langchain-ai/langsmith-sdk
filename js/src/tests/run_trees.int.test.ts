@@ -1,3 +1,4 @@
+import { expect, test } from "vitest";
 import { Client } from "../client.js";
 import * as uuid from "../utils/uuid/src/index.js";
 import {

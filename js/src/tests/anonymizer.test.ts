@@ -1,8 +1,9 @@
+import { describe, expect, test } from "vitest";
 import { StringNodeRule, createAnonymizer } from "../anonymizer/index.js";
 import { v4 as uuid } from "../utils/uuid/src/index.js";
 import { traceable } from "../traceable.js";
 import { BaseMessage, SystemMessage } from "@langchain/core/messages";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}/g;

@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";
+import { expect, test, vi } from "vitest";
 import { v4 as uuidv4, v7 as uuidv7 } from "../utils/uuid/src/index.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
@@ -6,7 +6,7 @@ import {
   getUuidVersion,
   nonCryptographicUuid7Deterministic,
 } from "../utils/_uuid.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 
 function uuidV7Ms(uuidStr: string): number {
   // Remove dashes to parse
@@ -19,8 +19,8 @@ function uuidV7Ms(uuidStr: string): number {
 test("traceable produces UUIDv7 and start_time matches run id", async () => {
   const fixedMs = 1_700_000_123_456; // deterministic timestamp in ms
   const { client } = mockClient();
-  const createSpy = jest.spyOn(client, "createRun");
-  const updateSpy = jest.spyOn(client, "updateRun");
+  const createSpy = vi.spyOn(client, "createRun");
+  const updateSpy = vi.spyOn(client, "updateRun");
 
   const fn = traceable((x: number) => x + 1, {
     name: "traceable-v7",
@@ -57,8 +57,8 @@ test("traceable produces UUIDv7 and start_time matches run id", async () => {
 test("RunTree default/regular behavior uses UUIDv7 and start_time matches id; post/patch include fields", async () => {
   const fixedMs = 1_700_111_222_333;
   const { client } = mockClient();
-  const createSpy2 = jest.spyOn(client, "createRun");
-  const updateSpy2 = jest.spyOn(client, "updateRun");
+  const createSpy2 = vi.spyOn(client, "createRun");
+  const updateSpy2 = vi.spyOn(client, "updateRun");
 
   const rt = new RunTree({
     name: "regular-v7",

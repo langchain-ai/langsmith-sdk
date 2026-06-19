@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
 import { v4 } from "../utils/uuid/src/index.js";
 import { createServer, Server } from "http";
 import { Client } from "../client.js";

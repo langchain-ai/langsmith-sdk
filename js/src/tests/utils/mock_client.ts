@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable import/no-extraneous-dependencies */
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { Client } from "../../index.js";
 
 type ClientParams = Exclude<ConstructorParameters<typeof Client>[0], undefined>;
 export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
-  const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+  const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
     ok: true,
     status: 200,
     statusText: "OK",

@@ -1,21 +1,21 @@
 /* eslint-disable no-process-env, @typescript-eslint/no-explicit-any */
 
-import { jest } from "@jest/globals";
+import { expect, test, vi } from "vitest";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
 import { traceable } from "../traceable.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 const _DATE = 1620000000000;
-Date.now = jest.fn(() => _DATE);
+Date.now = vi.fn(() => _DATE);
 
 test("Should work with manually set API key", async () => {
   const key = process.env.LANGCHAIN_API_KEY;
   delete process.env.LANGCHAIN_API_KEY;
   try {
-    const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+    const callSpy = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(""),
     } as Response);
@@ -425,7 +425,7 @@ test("_sliceParentId handles empty dotted order segments", () => {
 });
 
 test("integration: reroot with replicas makes correct API calls", async () => {
-  const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+  const callSpy = vi.fn<typeof fetch>().mockResolvedValue({
     ok: true,
     text: () => Promise.resolve(""),
   } as Response);

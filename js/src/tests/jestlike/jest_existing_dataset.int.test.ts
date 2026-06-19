@@ -1,4 +1,4 @@
-import { describe } from "@jest/globals";
+import { afterAll, beforeAll, describe, expect } from "vitest";
 import { v4 as uuidv4 } from "../../utils/uuid/src/index.js";
 
 import { Client } from "../../client.js";

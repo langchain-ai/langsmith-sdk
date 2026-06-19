@@ -1,18 +1,27 @@
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jest } from "@jest/globals";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  test,
+  vi,
+} from "vitest";
 import { Client } from "../client.js";
 import { overrideFetchImplementation } from "../singletons/fetch.js";
 import { traceable } from "../traceable.js";
 
 describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
-  let globalFetchMock: jest.Mock;
-  let overriddenFetch: jest.Mock;
-  let expectedFetchMock: jest.Mock;
-  let unexpectedFetchMock: jest.Mock;
+  let globalFetchMock: Mock;
+  let overriddenFetch: Mock;
+  let expectedFetchMock: Mock;
+  let unexpectedFetchMock: Mock;
 
   beforeEach(() => {
-    globalFetchMock = jest.fn(() =>
+    globalFetchMock = vi.fn(() =>
       Promise.resolve({
         ok: true,
         json: () =>
@@ -24,7 +33,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
         text: () => Promise.resolve(""),
       }),
     );
-    overriddenFetch = jest.fn(() =>
+    overriddenFetch = vi.fn(() =>
       Promise.resolve({
         ok: true,
         json: () =>
@@ -51,13 +60,13 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+      vi.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
           instance_flags: { dataset_examples_multipart_enabled: true },
@@ -76,7 +85,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
   describe("createChatExample", () => {
     it("should convert LangChainBaseMessage objects to examples", async () => {
       const client = new Client({ apiKey: "test-api-key" });
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+      vi.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
           instance_flags: { dataset_examples_multipart_enabled: true },

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-process-env */
-import { jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -18,7 +18,7 @@ import { parseHubIdentifier } from "../utils/prompts.js";
 describe("Client", () => {
   describe("onlineEvaluators", () => {
     it("creates an online evaluator through the platform endpoint", async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+      const mockFetch = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(
           JSON.stringify({
             evaluator: {
@@ -76,7 +76,7 @@ describe("Client", () => {
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
-      const createExampleSpy = jest
+      const createExampleSpy = vi
         .spyOn(client, "createExample")
         .mockResolvedValue({
           id: "test-example-id",
@@ -104,7 +104,7 @@ describe("Client", () => {
   describe("createChatExample", () => {
     it("should convert LangChainBaseMessage objects to examples", async () => {
       const client = new Client({ apiKey: "test-api-key" });
-      const createExampleSpy = jest
+      const createExampleSpy = vi
         .spyOn(client, "createExample")
         .mockResolvedValue({
           id: "test-example-id",
@@ -261,7 +261,7 @@ describe("Client", () => {
           },
         },
       });
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async () => new Response("{}", { status: 200 }),
       );
       const client = new Client({
@@ -298,7 +298,7 @@ describe("Client", () => {
           },
         },
       });
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
@@ -354,7 +354,7 @@ describe("Client", () => {
           },
         },
       });
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async () => new Response("{}", { status: 200 }),
       );
       const client = new Client({ fetchImplementation: mockFetch as any });
@@ -388,7 +388,7 @@ describe("Client", () => {
           },
         },
       });
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
@@ -587,7 +587,7 @@ describe("Client", () => {
   describe("pullPromptCommit", () => {
     it("requires dangerouslyPullPublicPrompt for public prompt identifiers", async () => {
       const client = new Client({ apiKey: "test-api-key" });
-      const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+      const fetchSpy = vi.spyOn(client as any, "_fetchPromptFromApi");
 
       await expect(
         client.pullPromptCommit("someuser/someprompt"),
@@ -604,7 +604,7 @@ describe("Client", () => {
         manifest: {},
         examples: [],
       };
-      jest
+      vi
         .spyOn(client as any, "_fetchPromptFromApi")
         .mockResolvedValue(promptCommit);
 
@@ -622,7 +622,7 @@ describe("Client", () => {
 
       // Mock the _getPaginated method to capture the URL being called
       let capturedUrl: string | undefined;
-      jest
+      vi
         .spyOn(client as any, "_getPaginated")
         .mockImplementation(async function* (...args: any[]) {
           capturedUrl = args[0];
@@ -643,7 +643,7 @@ describe("Client", () => {
       const client = new Client({ apiKey: "test-api-key" });
 
       let capturedUrl: string | undefined;
-      jest
+      vi
         .spyOn(client as any, "_getPaginated")
         .mockImplementation(async function* (...args: any[]) {
           capturedUrl = args[0];
@@ -664,7 +664,7 @@ describe("Client", () => {
       const client = new Client({ apiKey: "test-api-key" });
 
       let capturedUrl: string | undefined;
-      jest
+      vi
         .spyOn(client as any, "_getPaginated")
         .mockImplementation(async function* (...args: any[]) {
           capturedUrl = args[0];
@@ -686,23 +686,23 @@ describe("Client", () => {
     it("should include description in request body when provided", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 
-      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
-      jest
+      vi.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      vi
         .spyOn(client as any, "_getLatestCommitHash")
         .mockResolvedValue("parent123");
-      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      vi.spyOn(client as any, "_fetch").mockResolvedValue({
         ok: true,
         status: 200,
         json: async () => ({ commit_hash: "new123", id: "1" }),
         text: async () => "",
         headers: new Headers(),
       });
-      jest
+      vi
         .spyOn(client as any, "_getPromptUrl")
         .mockReturnValue("https://smith.langchain.com/prompts/test");
 
       // Capture the fetch call body
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
+      const fetchSpy = vi.spyOn(client as any, "_fetch");
 
       await client.createCommit(
         "owner/my-prompt",
@@ -722,22 +722,22 @@ describe("Client", () => {
     it("should omit description from request body when not provided", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 
-      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
-      jest
+      vi.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      vi
         .spyOn(client as any, "_getLatestCommitHash")
         .mockResolvedValue("parent123");
-      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      vi.spyOn(client as any, "_fetch").mockResolvedValue({
         ok: true,
         status: 200,
         json: async () => ({ commit_hash: "new123", id: "1" }),
         text: async () => "",
         headers: new Headers(),
       });
-      jest
+      vi
         .spyOn(client as any, "_getPromptUrl")
         .mockReturnValue("https://smith.langchain.com/prompts/test");
 
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
+      const fetchSpy = vi.spyOn(client as any, "_fetch");
 
       await client.createCommit("owner/my-prompt", { id: "test" });
 
@@ -751,11 +751,11 @@ describe("Client", () => {
     it("should create commit tags when provided", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 
-      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
-      jest
+      vi.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      vi
         .spyOn(client as any, "_getLatestCommitHash")
         .mockResolvedValue("parent123");
-      jest.spyOn(client as any, "_fetch").mockImplementation(async (url) => ({
+      vi.spyOn(client as any, "_fetch").mockImplementation(async (url) => ({
         ok: true,
         status: 200,
         json: async () =>
@@ -765,11 +765,11 @@ describe("Client", () => {
         text: async () => "",
         headers: new Headers(),
       }));
-      jest
+      vi
         .spyOn(client as any, "_getPromptUrl")
         .mockReturnValue("https://smith.langchain.com/prompts/test");
 
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
+      const fetchSpy = vi.spyOn(client as any, "_fetch");
 
       await client.createCommit(
         "owner/my-prompt",
@@ -800,9 +800,9 @@ describe("Client", () => {
     it("should forward commit tags without updating prompt metadata", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 
-      jest.spyOn(client, "promptExists").mockResolvedValue(true);
-      const updatePromptSpy = jest.spyOn(client, "updatePrompt");
-      const createCommitSpy = jest
+      vi.spyOn(client, "promptExists").mockResolvedValue(true);
+      const updatePromptSpy = vi.spyOn(client, "updatePrompt");
+      const createCommitSpy = vi
         .spyOn(client, "createCommit")
         .mockResolvedValue("https://smith.langchain.com/prompts/test");
 
@@ -833,7 +833,7 @@ describe("Client", () => {
 
       // Mock the _shouldSample method to control sampling decisions
       let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
+      vi.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
         return counter % 2 === 0; // Accept even-numbered calls (2nd, 4th, etc.)
       });
@@ -911,7 +911,7 @@ describe("Client", () => {
 
       // Mock the _shouldSample method to reject first trace, accept second
       let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
+      vi.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
         return counter % 2 === 0;
       });
@@ -986,7 +986,7 @@ describe("Client", () => {
 
       // Mock sampling to accept every other trace
       let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
+      vi.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
         return counter % 2 === 1; // Accept odd-numbered calls (1st, 3rd, etc.)
       });
@@ -1043,7 +1043,7 @@ describe("Client", () => {
     const originalEnv = process.env;
 
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
       // eslint-disable-next-line no-process-env
       process.env = { ...originalEnv };
     });
@@ -1076,7 +1076,7 @@ describe("Client", () => {
         process.env.LANGSMITH_WORKSPACE_ID = "test-workspace-id";
 
         // Create mock fetch function
-        const mockFetch = jest.fn().mockImplementation(async () => ({
+        const mockFetch = vi.fn().mockImplementation(async () => ({
           ok: true,
           status: 200,
           statusText: "OK",
@@ -1115,7 +1115,7 @@ describe("Client", () => {
 
       it("should handle org-scoped key error and throw workspace validation error", async () => {
         // Create mock fetch function that returns 403 with org-scoped error
-        const mockFetch = jest.fn().mockImplementation(async () => ({
+        const mockFetch = vi.fn().mockImplementation(async () => ({
           ok: false,
           status: 403,
           statusText: "Forbidden",
@@ -1142,7 +1142,7 @@ describe("Client", () => {
 
       it("should handle other 403 errors without throwing workspace validation error", async () => {
         // Create mock fetch function that returns 403 with different error
-        const mockFetch = jest.fn().mockImplementation(async () => ({
+        const mockFetch = vi.fn().mockImplementation(async () => ({
           ok: false,
           status: 403,
           statusText: "Forbidden",
@@ -1169,7 +1169,7 @@ describe("Client", () => {
 
       it("should work correctly when workspace is provided in options", async () => {
         // Create mock fetch function
-        const mockFetch = jest.fn().mockImplementation(async () => ({
+        const mockFetch = vi.fn().mockImplementation(async () => ({
           ok: true,
           status: 200,
           statusText: "OK",
@@ -1206,7 +1206,7 @@ describe("Client", () => {
 
       it("should handle multiple API calls with different workspace configurations", async () => {
         // Create mock fetch function
-        const mockFetch = jest.fn().mockImplementation(async () => ({
+        const mockFetch = vi.fn().mockImplementation(async () => ({
           ok: true,
           status: 200,
           statusText: "OK",
@@ -1253,12 +1253,12 @@ describe("Client", () => {
 
   describe("listRuns", () => {
     it("should warn when child_run_ids is in select parameter", async () => {
-      const consoleWarnSpy = jest
+      const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
       // Create mock fetch function
-      const mockFetch = jest.fn().mockImplementation(async () => ({
+      const mockFetch = vi.fn().mockImplementation(async () => ({
         ok: true,
         status: 200,
         statusText: "OK",
@@ -1350,7 +1350,7 @@ describe("Client", () => {
         cursors: {},
       };
 
-      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      vi.spyOn(client as any, "_fetch").mockResolvedValue({
         ok: true,
         status: 200,
         json: async () => mockResponse,
@@ -1387,7 +1387,7 @@ describe("Client", () => {
         cursors: {},
       };
 
-      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      vi.spyOn(client as any, "_fetch").mockResolvedValue({
         ok: true,
         status: 200,
         json: async () => mockResponse,

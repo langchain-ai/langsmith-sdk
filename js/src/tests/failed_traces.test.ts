@@ -1,13 +1,14 @@
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  jest,
-  describe,
-  it,
-  expect,
-  beforeEach,
   afterEach,
-} from "@jest/globals";
+  beforeEach,
+  describe,
+  expect,
+  it,
+  MockedFunction,
+  vi,
+} from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -115,22 +116,22 @@ describe("Client multipart failure → fallback dir", () => {
 
   beforeEach(async () => {
     tmpDir = await makeTmpDir();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it("writes a multipart envelope when the multipart upload fails", async () => {
-    const mockFetch = jest.fn((..._args: any[]) =>
+    const mockFetch = vi.fn((..._args: any[]) =>
       Promise.resolve({
         ok: false,
         status: 500,
         text: () => Promise.resolve("Server error"),
       } as Response),
-    ) as jest.MockedFunction<typeof fetch>;
+    ) as MockedFunction<typeof fetch>;
 
     const client = new Client({
       apiKey: "test",
@@ -140,7 +141,7 @@ describe("Client multipart failure → fallback dir", () => {
     });
     (client as any).failedTracesDir = tmpDir;
 
-    jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+    vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
       version: "foo",
       batch_ingest_config: { use_multipart_endpoint: true },
       instance_flags: { gzip_body_enabled: false },
@@ -170,13 +171,13 @@ describe("Client multipart failure → fallback dir", () => {
   });
 
   it("does not write a file when the multipart upload succeeds", async () => {
-    const mockFetch = jest.fn((..._args: any[]) =>
+    const mockFetch = vi.fn((..._args: any[]) =>
       Promise.resolve({
         ok: true,
         status: 200,
         text: () => Promise.resolve(""),
       } as Response),
-    ) as jest.MockedFunction<typeof fetch>;
+    ) as MockedFunction<typeof fetch>;
 
     const client = new Client({
       apiKey: "test",
@@ -185,7 +186,7 @@ describe("Client multipart failure → fallback dir", () => {
     });
     (client as any).failedTracesDir = tmpDir;
 
-    jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+    vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
       version: "foo",
       batch_ingest_config: { use_multipart_endpoint: true },
       instance_flags: { gzip_body_enabled: false },

@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
+import { describe, expect, it, test } from "vitest";
+
 import { AzureOpenAI, OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat, zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";

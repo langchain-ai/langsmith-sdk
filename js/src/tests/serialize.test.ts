@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import mongoose from "mongoose";
 import {
   serialize,

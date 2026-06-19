@@ -1,5 +1,5 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, Server } from "http";
-import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import { SandboxClient } from "../sandbox/client.js";
 import {
   LangSmithValidationError,
@@ -10,22 +10,23 @@ let server: Server;
 let port: number;
 let nextResponse: { status: number; body: unknown };
 
-beforeAll((done) => {
-  server = createServer((_req, res) => {
-    res.writeHead(nextResponse.status, {
-      "Content-Type": "application/json",
-    });
-    res.end(JSON.stringify(nextResponse.body));
-  });
-  server.listen(0, () => {
-    port = (server.address() as any).port;
-    done();
-  });
-});
+beforeAll(
+  () =>
+    new Promise<void>((done) => {
+      server = createServer((_req, res) => {
+        res.writeHead(nextResponse.status, {
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify(nextResponse.body));
+      });
+      server.listen(0, () => {
+        port = (server.address() as any).port;
+        done();
+      });
+    }),
+);
 
-afterAll((done) => {
-  server.close(done);
-});
+afterAll(() => new Promise((done) => server.close(done)));
 
 function makeClient(): SandboxClient {
   return new SandboxClient({

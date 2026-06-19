@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";
+import { expect, test, vi } from "vitest";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as ai from "ai";
 import z from "zod";
@@ -11,7 +11,7 @@ import { Client } from "../../../index.js";
 const { tool, stepCountIs } = ai;
 
 test("telemetry generateText", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -153,7 +153,7 @@ test("telemetry generateText", async () => {
 });
 
 test("telemetry streamText", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -294,7 +294,7 @@ test("telemetry streamText", async () => {
 }, 30_000);
 
 test("telemetry generateObject", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -366,7 +366,7 @@ test("telemetry generateObject", async () => {
 });
 
 test("telemetry streamObject via streamText with output", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -444,7 +444,7 @@ test("telemetry streamObject via streamText with output", async () => {
 }, 30_000);
 
 test("telemetry stream cancellation should finish spans cleanly", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,
@@ -517,7 +517,7 @@ test("telemetry stream cancellation should finish spans cleanly", async () => {
 
 // Skipped due to high token usage
 test.skip("anthropic cache read and write tokens", async () => {
-  const callSpy = jest.fn(fetch);
+  const callSpy = vi.fn(fetch);
   const client = new Client({
     autoBatchTracing: false,
     fetchImplementation: callSpy,

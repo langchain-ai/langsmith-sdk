@@ -1,7 +1,9 @@
 /* eslint-disable no-process-env */
+import { describe, expect, it, test } from "vitest";
+
 import { traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { FakeChatModel } from "@langchain/core/utils/testing";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
@@ -84,7 +86,7 @@ describe("to langchain", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true },
+      { client, name: "main", tracingEnabled: true },
     );
 
     const result = [];

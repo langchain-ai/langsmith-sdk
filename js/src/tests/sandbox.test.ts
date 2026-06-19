@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jest, describe, it, expect } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +57,7 @@ void assertRawMountsAreNotCreateOptions;
 
 // Helper to create typed mock functions
 const createMockFetch = (response: any) =>
-  jest
+  vi
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(response);
 
@@ -67,7 +67,7 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     _fetch: createMockFetch({}),
     getApiKey: () => "test-key",
     getDefaultHeaders: () => ({}),
-    deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    deleteSandbox: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
 
@@ -660,7 +660,7 @@ describe("Sandbox", () => {
 
   describe("delete", () => {
     it("should call deleteSandbox on the client", async () => {
-      const mockDeleteSandbox = jest
+      const mockDeleteSandbox = vi
         .fn<(name: string) => Promise<void>>()
         .mockResolvedValue(undefined);
 
@@ -697,7 +697,7 @@ describe("SandboxClient - createSandbox", () => {
   };
 
   it("should send wait_for_ready: true and include timeout by default", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -716,7 +716,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should send wait_for_ready: false and omit timeout when waitForReady is false", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -737,7 +737,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should use 30s HTTP timeout when waitForReady is false", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -754,7 +754,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should include idle_ttl_seconds and delete_after_stop_seconds in the request body when set", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -782,7 +782,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should reject invalid retention values before calling the API", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
+    const mockFetch = vi.fn<typeof fetch>();
     const client = createClientWithMock(mockFetch);
 
     await expect(
@@ -795,7 +795,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should forward proxyConfig in the request body under proxy_config", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -817,7 +817,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should reject raw mounts in the runtime create options", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -836,7 +836,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should forward composed proxy config in the request body", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -861,7 +861,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should expand mountConfig into mounts and proxy_config", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -894,7 +894,7 @@ describe("SandboxClient - createSandbox", () => {
   });
 
   it("should merge mountConfig provider auth with proxyConfig", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -995,7 +995,7 @@ describe("SandboxClient - createSandbox", () => {
   ])(
     "should reject duplicate $provider auth across mountConfig and proxyConfig",
     async ({ mountAuth, mounts, explicitAuth, message }) => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({
           name: "test-sb",
@@ -1022,7 +1022,7 @@ describe("SandboxClient - createSandbox", () => {
   );
 
   it("should omit proxy_config from the request body when not provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -1072,7 +1072,7 @@ describe("SandboxClient - updateSandbox", () => {
   };
 
   it("should PATCH retention fields when provided in options", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "sb-1",
@@ -1097,7 +1097,7 @@ describe("SandboxClient - updateSandbox", () => {
   });
 
   it("should still support rename via string second argument", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "sb-renamed",
@@ -1114,7 +1114,7 @@ describe("SandboxClient - updateSandbox", () => {
   });
 
   it("should GET sandbox when update options object is empty", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "sb-1",
@@ -1145,7 +1145,7 @@ describe("SandboxClient - getSandboxStatus", () => {
   };
 
   it("should return ResourceStatus", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         status: "ready",
@@ -1161,7 +1161,7 @@ describe("SandboxClient - getSandboxStatus", () => {
   });
 
   it("should throw LangSmithResourceNotFoundError on 404", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: false,
       status: 404,
     } as Response);
@@ -1186,7 +1186,7 @@ describe("SandboxClient - waitForSandbox", () => {
 
   it("should poll until ready and return sandbox", async () => {
     let callCount = 0;
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<typeof fetch>()
       .mockImplementation(async (url: any) => {
         const urlStr = typeof url === "string" ? url : url.toString();
@@ -1221,7 +1221,7 @@ describe("SandboxClient - waitForSandbox", () => {
   });
 
   it("should throw LangSmithResourceCreationError on failed status", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         status: "failed",
@@ -1236,7 +1236,7 @@ describe("SandboxClient - waitForSandbox", () => {
   });
 
   it("should throw LangSmithResourceTimeoutError on timeout", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         status: "provisioning",
@@ -1527,7 +1527,7 @@ describe("CommandHandle", () => {
       _client: { getApiKey: () => "test-key" },
       dataplane_url: "https://dp.example.com",
       name: "test-sandbox",
-      reconnect: jest.fn<any>(),
+      reconnect: vi.fn<any>(),
     } as unknown as Sandbox;
   }
 
@@ -1790,7 +1790,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
   };
 
   it("should send snapshot_id in the request body", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -1811,7 +1811,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
   });
 
   it("should include vcpus, mem_bytes, fs_capacity_bytes when provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -1840,7 +1840,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
   });
 
   it("should send snapshot_name (and no snapshot_id) when resolved by name", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -1864,7 +1864,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
   });
 
   it("should omit snapshot_id when no snapshot is provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         name: "test-sb",
@@ -1883,7 +1883,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
   });
 
   it("should throw when both snapshotId and snapshotName are provided", async () => {
-    const mockFetch = jest.fn<typeof fetch>();
+    const mockFetch = vi.fn<typeof fetch>();
     const client = createClientWithMock(mockFetch);
 
     await expect(
@@ -1910,7 +1910,7 @@ describe("SandboxClient - snapshot operations", () => {
   };
 
   it("createSnapshot should POST and poll until ready", async () => {
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<typeof fetch>()
       // POST /snapshots -> building
       .mockResolvedValueOnce({
@@ -1947,17 +1947,17 @@ describe("SandboxClient - snapshot operations", () => {
 
   it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
-    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const client = createClientWithMock(vi.fn<typeof fetch>());
     const writes: [string, string | Uint8Array][] = [];
     const commands: string[] = [];
     const fakeSandbox = {
       name: "builder",
-      write: jest
+      write: vi
         .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
         .mockImplementation(async (path, content) => {
           writes.push([path, content]);
         }),
-      run: jest
+      run: vi
         .fn<
           (
             command: string,
@@ -1967,7 +1967,7 @@ describe("SandboxClient - snapshot operations", () => {
           commands.push(command);
           return { stdout: "", stderr: "", exit_code: 0 };
         }),
-      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      delete: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     };
     const mockSnapshot = {
       id: "snap-1",
@@ -1975,10 +1975,10 @@ describe("SandboxClient - snapshot operations", () => {
       status: "ready",
       fs_capacity_bytes: 4294967296,
     };
-    const createSandboxSpy = jest
+    const createSandboxSpy = vi
       .spyOn(client, "createSandbox")
       .mockResolvedValue(fakeSandbox as any);
-    const captureSnapshotSpy = jest
+    const captureSnapshotSpy = vi
       .spyOn(client, "captureSnapshot")
       .mockResolvedValue(mockSnapshot);
 
@@ -2030,25 +2030,25 @@ describe("SandboxClient - snapshot operations", () => {
 
   it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
-    const client = createClientWithMock(jest.fn<typeof fetch>());
+    const client = createClientWithMock(vi.fn<typeof fetch>());
     const fakeSandbox = {
       name: "builder",
-      write: jest
+      write: vi
         .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
         .mockResolvedValue(undefined),
-      run: jest
+      run: vi
         .fn<
           (
             command: string,
           ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
         >()
         .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 }),
-      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      delete: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     };
-    const createSandboxSpy = jest
+    const createSandboxSpy = vi
       .spyOn(client, "createSandbox")
       .mockResolvedValue(fakeSandbox as any);
-    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
+    vi.spyOn(client, "captureSnapshot").mockResolvedValue({
       id: "snap-1",
       name: "snap",
       status: "ready",
@@ -2078,7 +2078,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("captureSnapshot should POST to /boxes/{name}/snapshot", async () => {
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce({
         ok: true,
@@ -2110,7 +2110,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("getSnapshot should return snapshot data", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         id: "snap-1",
@@ -2128,7 +2128,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("getSnapshot should throw ResourceNotFoundError on 404", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({ detail: "not found" }),
@@ -2142,7 +2142,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("listSnapshots should return array", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         snapshots: [
@@ -2175,7 +2175,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("listSnapshots should forward nameContains, limit, and offset as query params", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         snapshots: [
@@ -2208,7 +2208,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("deleteSnapshot should send DELETE request", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
     } as Response);
 
@@ -2221,7 +2221,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("waitForSnapshot should return immediately if already ready", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         id: "snap-1",
@@ -2238,7 +2238,7 @@ describe("SandboxClient - snapshot operations", () => {
   });
 
   it("waitForSnapshot should throw on failed status", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       json: async () => ({
         id: "snap-1",
@@ -2268,7 +2268,7 @@ describe("SandboxClient - start/stop", () => {
   };
 
   it("startSandbox should POST to /start and poll until ready", async () => {
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<typeof fetch>()
       // POST /boxes/my-vm/start -> 202
       .mockResolvedValueOnce({ ok: true } as Response)
@@ -2297,7 +2297,7 @@ describe("SandboxClient - start/stop", () => {
   });
 
   it("startSandbox should throw ResourceNotFoundError on 404", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({ detail: "not found" }),
@@ -2311,7 +2311,7 @@ describe("SandboxClient - start/stop", () => {
   });
 
   it("stopSandbox should POST to /stop", async () => {
-    const mockFetch = jest
+    const mockFetch = vi
       .fn<typeof fetch>()
       .mockResolvedValue({ ok: true } as Response);
 
@@ -2323,7 +2323,7 @@ describe("SandboxClient - start/stop", () => {
   });
 
   it("stopSandbox should throw ResourceNotFoundError on 404", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({ detail: "not found" }),
@@ -2340,7 +2340,7 @@ describe("SandboxClient - start/stop", () => {
 describe("Sandbox - start/stop/captureSnapshot", () => {
   it("start should update status and dataplane_url", async () => {
     const mockClient = createMockClient({
-      startSandbox: jest
+      startSandbox: vi
         .fn<(name: string, opts?: any) => Promise<any>>()
         .mockResolvedValue({
           name: "my-vm",
@@ -2362,7 +2362,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
 
   it("stop should set status to stopped and clear dataplane_url", async () => {
     const mockClient = createMockClient({
-      stopSandbox: jest
+      stopSandbox: vi
         .fn<(name: string) => Promise<void>>()
         .mockResolvedValue(undefined),
     });
@@ -2390,7 +2390,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
       fs_capacity_bytes: 4294967296,
     };
     const mockClient = createMockClient({
-      captureSnapshot: jest
+      captureSnapshot: vi
         .fn<(sandboxName: string, name: string, opts?: any) => Promise<any>>()
         .mockResolvedValue(mockSnapshot),
     });

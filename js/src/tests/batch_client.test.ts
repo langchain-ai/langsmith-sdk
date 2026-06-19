@@ -2,7 +2,7 @@
 /* eslint-disable prefer-const */
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { jest, describe, expect, afterEach, it } from "@jest/globals";
+import { afterEach, describe, expect, it, MockedFunction, vi } from "vitest";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
@@ -107,7 +107,7 @@ describe.each(ENDPOINT_TYPES)(
 
     const createClient = (
       config: any,
-      mockFetch?: jest.MockedFunction<typeof fetch>,
+      mockFetch?: MockedFunction<typeof fetch>,
     ) => {
       const client = new Client({
         ...config,
@@ -118,7 +118,7 @@ describe.each(ENDPOINT_TYPES)(
     };
 
     const createMockFetch = (callsArray: any[]) => {
-      return jest.fn((...args: any[]) => {
+      return vi.fn((...args: any[]) => {
         // Only count calls to batch/multipart endpoints, not info calls
         if (args[0]?.includes("/runs/")) {
           callsArray.push(args);
@@ -143,9 +143,9 @@ describe.each(ENDPOINT_TYPES)(
 
       // Wait for any pending async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 100));
-      jest.clearAllMocks();
-      jest.clearAllTimers();
-      jest.useRealTimers();
+      vi.clearAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
     });
 
     it("should create a batched run with the given input", async () => {
@@ -159,7 +159,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -214,7 +214,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -273,7 +273,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -343,7 +343,7 @@ describe.each(ENDPOINT_TYPES)(
         { apiKey: "test-api-key", autoBatchTracing: true, hideMetadata },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -391,7 +391,7 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should not throw an error if fetch fails for batch requests", async () => {
       const calls: any[] = [];
-      const mockFetch = jest.fn((...args: any[]) => {
+      const mockFetch = vi.fn((...args: any[]) => {
         calls.push(args);
         throw new Error("Totally expected mock error");
       });
@@ -403,7 +403,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -440,7 +440,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -507,13 +507,13 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch,
       );
       let serverInfoFailedOnce = false;
-      jest
-        .spyOn(client as any, "_ensureServerInfo")
-        .mockImplementationOnce(async () => {
+      vi.spyOn(client as any, "_ensureServerInfo").mockImplementationOnce(
+        async () => {
           serverInfoFailedOnce = true;
           throw new Error("[MOCK] Connection error.");
-        });
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        },
+      );
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -582,7 +582,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -702,7 +702,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -822,7 +822,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -917,7 +917,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1010,11 +1010,11 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch,
       );
       let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
+      vi.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
         return counter % 2 !== 0;
       });
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1147,7 +1147,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1247,7 +1247,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: {
           ...extraBatchIngestConfig,
@@ -1359,9 +1359,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest
-        .spyOn(client as any, "_ensureServerInfo")
-        .mockResolvedValue(undefined);
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue(undefined);
       const projectName = "__test_batch";
 
       const runId = uuidv4();
@@ -1420,7 +1418,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1499,7 +1497,7 @@ describe.each(ENDPOINT_TYPES)(
       const calls: any[] = [];
       let callCount = 0;
 
-      const mockFetch = jest.fn((...args: any[]) => {
+      const mockFetch = vi.fn((...args: any[]) => {
         callCount++;
         // Only count calls to multipart endpoints, not info calls
         if (args[0]?.includes("/runs/")) {
@@ -1531,7 +1529,7 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch,
       );
 
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1566,7 +1564,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should not retry multipart requests on 422 errors", async () => {
       const calls: any[] = [];
 
-      const mockFetch = jest.fn((...args: any[]) => {
+      const mockFetch = vi.fn((...args: any[]) => {
         // Only count calls to multipart endpoints, not info calls
         if (args[0]?.includes("/runs/")) {
           calls.push(args);
@@ -1595,7 +1593,7 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch,
       );
 
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1630,7 +1628,7 @@ describe.each(ENDPOINT_TYPES)(
       const calls: any[] = [];
       let callCount = 0;
 
-      const mockFetch = jest.fn((...args: any[]) => {
+      const mockFetch = vi.fn((...args: any[]) => {
         callCount++;
         // Only count calls to multipart endpoints, not info calls
         if (args[0]?.includes("/runs/")) {
@@ -1658,14 +1656,11 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       const client = createClient(
-        {
-          apiKey: "test-api-key",
-          autoBatchTracing: true,
-        },
+        { apiKey: "test-api-key", autoBatchTracing: true },
         mockFetch,
       );
 
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1700,9 +1695,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should drop runs when maxIngestMemoryBytes is exceeded in AutoBatchQueue", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
-      const consoleSpy = jest
-        .spyOn(console, "warn")
-        .mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       // Set a very low queue size limit (1000 bytes)
       const client = createClient(
@@ -1714,7 +1707,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1762,9 +1755,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should allow a single large run that exceeds the queue size limit", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
-      const consoleSpy = jest
-        .spyOn(console, "warn")
-        .mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       // Set a low queue size limit (1000 bytes)
       const client = createClient(
@@ -1776,7 +1767,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1816,7 +1807,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should drop batches when maxIngestMemoryBytes is exceeded", async () => {
       const calls: any[] = [];
       let callCount = 0;
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async (url: string | URL | Request, init?: RequestInit) => {
           calls.push([url, init]);
           callCount++;
@@ -1833,10 +1824,10 @@ describe.each(ENDPOINT_TYPES)(
         },
       );
 
-      const consoleErrorSpy = jest
+      const consoleErrorSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      const consoleWarnSpy = jest
+      const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
@@ -1853,7 +1844,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1905,7 +1896,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should decrement queue size after batches complete", async () => {
       const calls: any[] = [];
       let completedCalls = 0;
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async (url: string | URL | Request, init?: RequestInit) => {
           calls.push([url, init]);
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1930,7 +1921,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },
@@ -1975,7 +1966,7 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should decrement queue size even when requests timeout", async () => {
       const calls: any[] = [];
-      const mockFetch = jest.fn(
+      const mockFetch = vi.fn(
         async (
           url: string | URL | Request,
           init?: RequestInit,
@@ -2009,10 +2000,10 @@ describe.each(ENDPOINT_TYPES)(
         },
       );
 
-      const consoleErrorSpy = jest
+      const consoleErrorSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      const consoleWarnSpy = jest
+      const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
@@ -2028,7 +2019,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+      vi.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
         instance_flags: { ...extraInstanceFlags },

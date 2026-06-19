@@ -1,4 +1,6 @@
 /* eslint-disable no-process-env */
+import { afterEach, describe, expect, it } from "vitest";
+
 import { resolveTracingMode } from "../utils/env.js";
 import { Client } from "../client.js";
 

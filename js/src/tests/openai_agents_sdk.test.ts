@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, test, expect, jest, beforeEach } from "@jest/globals";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { OpenAIAgentsTracingProcessor } from "../wrappers/openai_agents.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { traceable } from "../traceable.js";
 
@@ -889,7 +889,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
   describe("shutdown and flush", () => {
     test("forceFlush calls client flush", async () => {
-      const flushSpy = jest.spyOn(client, "flush").mockResolvedValue();
+      const flushSpy = vi.spyOn(client, "flush").mockResolvedValue();
 
       await processor.forceFlush();
 
@@ -898,7 +898,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
     });
 
     test("shutdown calls client flush", async () => {
-      const flushSpy = jest.spyOn(client, "flush").mockResolvedValue();
+      const flushSpy = vi.spyOn(client, "flush").mockResolvedValue();
 
       await processor.shutdown();
 

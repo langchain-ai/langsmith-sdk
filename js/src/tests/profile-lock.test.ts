@@ -1,5 +1,5 @@
 /* eslint-disable no-process-env */
-import { jest } from "@jest/globals";
+import { expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -82,7 +82,7 @@ test("two ProfileAuth instances refresh the token endpoint only once", async () 
   process.env.LANGSMITH_CONFIG_FILE = configPath;
   try {
     let calls = 0;
-    const fakeFetch = jest.fn(async () => {
+    const fakeFetch = vi.fn(async () => {
       calls += 1;
       return {
         ok: true,

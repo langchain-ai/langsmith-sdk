@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 
+import { expect, test } from "vitest";
+
 import { GoogleGenAI } from "@google/genai";
 import { wrapGemini } from "../wrappers/gemini.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
 
 function parseRequestBody(body: any) {
   // eslint-disable-next-line no-instanceof/no-instanceof

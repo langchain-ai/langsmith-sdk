@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { expect, it, test } from "vitest";
+
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
