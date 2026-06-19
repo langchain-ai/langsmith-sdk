@@ -1,13 +1,18 @@
-import { proxyConfig } from "./proxy_config.js";
 import type {
   GCSMountSpec,
   GitMountRefSpec,
   GitMountSpec,
   MountCacheConfig,
+  SandboxAwsAuthRule,
+  SandboxGcpAuthRule,
   S3MountSpec,
   SandboxMount,
+  SandboxMountAuth,
+  SandboxMountAuthConfig,
   SandboxMountConfig,
+  SandboxProxyConfig,
   SandboxProxyRule,
+  SandboxProxySecret,
 } from "./types.js";
 
 function requireNonEmptyString(value: string, field: string): string {
@@ -15,6 +20,23 @@ function requireNonEmptyString(value: string, field: string): string {
     throw new Error(`${field} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function copyMountSecret(secret: unknown, field: string): SandboxProxySecret {
+  if (secret === null || typeof secret !== "object" || Array.isArray(secret)) {
+    throw new Error(`${field} must be a sandbox secret`);
+  }
+  const candidate = secret as Partial<SandboxProxySecret>;
+  if (candidate.type !== "workspace_secret" && candidate.type !== "opaque") {
+    throw new Error(`${field} must use workspace_secret or opaque`);
+  }
+  if (typeof candidate.value !== "string" || candidate.value.trim() === "") {
+    throw new Error(`${field}.value must be a non-empty string`);
+  }
+  return {
+    type: candidate.type,
+    value: candidate.value,
+  };
 }
 
 function requireGitRemoteUrl(remoteUrl: string): string {
@@ -187,29 +209,81 @@ function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
     if (mount.type !== "s3" && mount.type !== "gcs" && mount.type !== "git") {
       throw new Error("mountConfig only supports s3, gcs, and git mounts");
     }
+    rejectProviderCredentialsInMount(mount);
     return mount;
   });
 }
 
-function normalizeAuthRules(
-  auth: SandboxProxyRule[],
-): Record<string, SandboxProxyRule> {
-  if (!Array.isArray(auth)) {
-    throw new Error("auth must be an array of provider auth rules");
-  }
-  const byProvider: Record<string, SandboxProxyRule> = {};
-  for (const rule of auth) {
-    if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
-      throw new Error("auth must be an array of provider auth rules");
+const FORBIDDEN_MOUNT_CREDENTIAL_FIELDS = new Set([
+  "access_key_id",
+  "secret_access_key",
+  "session_token",
+  "service_account_json",
+  "access_token",
+  "refresh_token",
+  "credentials",
+  "credential",
+]);
+
+function rejectProviderCredentialsInMount(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      rejectProviderCredentialsInMount(child);
     }
-    const provider = (rule as Record<string, unknown>).type;
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (FORBIDDEN_MOUNT_CREDENTIAL_FIELDS.has(key)) {
+        throw new Error(
+          "provider credentials must be supplied in mountConfig.auth, not individual mount specs",
+        );
+      }
+      rejectProviderCredentialsInMount(child);
+    }
+  }
+}
+
+function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
+  if (!Array.isArray(auth)) {
+    throw new Error("auth must be an array of provider auth blocks");
+  }
+  const byProvider: SandboxMountAuthConfig = {};
+  for (const block of auth) {
+    if (block === null || typeof block !== "object" || Array.isArray(block)) {
+      throw new Error("auth must be an array of provider auth blocks");
+    }
+    const provider = (block as unknown as Record<string, unknown>).type;
     if (provider !== "aws" && provider !== "gcp") {
-      throw new Error("mountConfig auth only supports aws and gcp rules");
+      throw new Error("mountConfig auth only supports aws and gcp blocks");
     }
     if (byProvider[provider] !== undefined) {
       throw new Error(`duplicate ${provider} auth rule in mountConfig`);
     }
-    byProvider[provider] = rule;
+    if (provider === "aws") {
+      const aws = (block as Partial<SandboxAwsAuthRule>).aws;
+      if (aws === undefined) {
+        throw new Error("aws mount auth must include an aws block");
+      }
+      byProvider.aws = {
+        access_key_id: copyMountSecret(aws.access_key_id, "accessKeyId"),
+        secret_access_key: copyMountSecret(
+          aws.secret_access_key,
+          "secretAccessKey",
+        ),
+      };
+    } else {
+      const gcp = (block as Partial<SandboxGcpAuthRule>).gcp;
+      if (gcp === undefined) {
+        throw new Error("gcp mount auth must include a gcp block");
+      }
+      byProvider.gcp = {
+        service_account_json: copyMountSecret(
+          gcp.service_account_json,
+          "serviceAccountJson",
+        ),
+      };
+    }
   }
   return byProvider;
 }
@@ -218,11 +292,11 @@ export function mountConfig({
   auth = [],
   mounts,
 }: {
-  auth?: SandboxProxyRule[];
+  auth?: SandboxMountAuth[];
   mounts: SandboxMount[];
 }): SandboxMountConfig {
   const normalizedMounts = normalizeMounts(mounts);
-  const authByProvider = normalizeAuthRules(auth);
+  const authByProvider = normalizeMountAuth(auth);
   const mountProviders = new Set(normalizedMounts.map((mount) => mount.type));
 
   if (mountProviders.has("s3") && authByProvider.aws === undefined) {
@@ -238,12 +312,35 @@ export function mountConfig({
     throw new Error("gcp auth requires at least one gcs mount in mountConfig");
   }
 
-  const rules = ["aws", "gcp"]
-    .map((provider) => authByProvider[provider])
-    .filter((rule): rule is SandboxProxyRule => rule !== undefined);
-
   return {
+    auth: authByProvider,
     mounts: normalizedMounts,
-    proxyConfig: rules.length > 0 ? proxyConfig({ rules }) : {},
   };
+}
+
+export function validateMountConfigProxyConfig(
+  mountConfig: SandboxMountConfig,
+  proxyConfig: SandboxProxyConfig | undefined,
+): void {
+  if (proxyConfig === undefined) {
+    return;
+  }
+  const rules = proxyConfig.rules ?? [];
+  if (!Array.isArray(rules)) {
+    throw new Error("proxyConfig rules must be an array");
+  }
+  for (const rule of rules) {
+    if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
+      continue;
+    }
+    const ruleType = (rule as SandboxProxyRule).type;
+    if (
+      (ruleType === "aws" || ruleType === "gcp") &&
+      mountConfig.auth[ruleType] !== undefined
+    ) {
+      throw new Error(
+        `${ruleType} auth cannot be provided in both mountConfig and proxyConfig`,
+      );
+    }
+  }
 }

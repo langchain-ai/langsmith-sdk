@@ -7,8 +7,6 @@ import type {
   SandboxProxySecret,
 } from "./types.js";
 
-const PROVIDER_RULE_TYPES = new Set(["aws", "gcp"]);
-
 function requireNonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${field} must be a non-empty string`);
@@ -36,8 +34,20 @@ function requireProxyRules(
     if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
       throw new Error("rules must be an array of proxy rule objects");
     }
+    validateProxyProviderRule(rule);
     return rule;
   });
+}
+
+function validateProxyProviderRule(rule: SandboxProxyRule): void {
+  if ((rule as Record<string, unknown>).type !== "gcp") {
+    return;
+  }
+  const gcp = (rule as Partial<SandboxGcpAuthRule>).gcp;
+  if (gcp === undefined || gcp.scopes === undefined) {
+    throw new Error("gcp proxy auth rules require scopes");
+  }
+  requireNonEmptyStringArray(gcp.scopes, "scopes");
 }
 
 /** Reference a LangSmith workspace secret in a sandbox proxy configuration. */
@@ -87,45 +97,6 @@ export function proxyConfig({
   return config;
 }
 
-function providerRuleTypes(config: SandboxProxyConfig): Set<string> {
-  const providers = new Set<string>();
-  for (const rule of config.rules ?? []) {
-    if (rule === null || typeof rule !== "object" || Array.isArray(rule)) {
-      continue;
-    }
-    const ruleType = (rule as Record<string, unknown>).type;
-    if (typeof ruleType === "string" && PROVIDER_RULE_TYPES.has(ruleType)) {
-      providers.add(ruleType);
-    }
-  }
-  return providers;
-}
-
-export function mergeProxyConfigs(
-  generatedConfig: SandboxProxyConfig | undefined,
-  explicitConfig: SandboxProxyConfig | undefined,
-): SandboxProxyConfig | undefined {
-  if (generatedConfig === undefined) {
-    return explicitConfig;
-  }
-  if (explicitConfig === undefined) {
-    return generatedConfig;
-  }
-  const generatedProviders = providerRuleTypes(generatedConfig);
-  for (const provider of providerRuleTypes(explicitConfig)) {
-    if (generatedProviders.has(provider)) {
-      throw new Error(
-        `${provider} auth cannot be provided in both mountConfig and proxyConfig`,
-      );
-    }
-  }
-  return {
-    ...generatedConfig,
-    ...explicitConfig,
-    rules: [...(generatedConfig.rules ?? []), ...(explicitConfig.rules ?? [])],
-  };
-}
-
 /** Build a sandbox proxy rule that signs AWS HTTPS requests with SigV4. */
 export function awsAuth({
   accessKeyId,
@@ -157,17 +128,20 @@ export function gcpAuth({
   enabled = true,
 }: {
   serviceAccountJson: SandboxProxySecret;
-  scopes: string[];
+  scopes?: string[];
   name?: string;
   enabled?: boolean;
 }): SandboxGcpAuthRule {
+  const gcp: SandboxGcpAuthRule["gcp"] = {
+    service_account_json: serviceAccountJson,
+  };
+  if (scopes !== undefined) {
+    gcp.scopes = requireNonEmptyStringArray(scopes, "scopes");
+  }
   return {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
     enabled,
-    gcp: {
-      service_account_json: serviceAccountJson,
-      scopes: requireNonEmptyStringArray(scopes, "scopes"),
-    },
+    gcp,
   };
 }

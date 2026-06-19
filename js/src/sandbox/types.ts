@@ -300,7 +300,7 @@ export interface SandboxGcpAuthRule {
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;
-    scopes: string[];
+    scopes?: string[];
   };
 }
 
@@ -417,12 +417,32 @@ export interface GitMountSpec {
 /** Sandbox mount specification. */
 export type SandboxMount = S3MountSpec | GCSMountSpec | GitMountSpec;
 
-/** SDK-level mount config expanded into backend mounts and proxyConfig. */
+/** AWS credentials used by the backend to authenticate S3 mounts. */
+export interface SandboxAwsMountAuthConfig {
+  access_key_id: SandboxProxySecret;
+  secret_access_key: SandboxProxySecret;
+}
+
+/** GCP credentials used by the backend to authenticate GCS mounts. */
+export interface SandboxGcpMountAuthConfig {
+  service_account_json: SandboxProxySecret;
+}
+
+/** Provider auth blocks for sandbox mounts. */
+export interface SandboxMountAuthConfig {
+  aws?: SandboxAwsMountAuthConfig;
+  gcp?: SandboxGcpMountAuthConfig;
+}
+
+/** Provider auth helper output accepted by mountConfig. */
+export type SandboxMountAuth = SandboxAwsAuthRule | SandboxGcpAuthRule;
+
+/** Public mount config sent to the sandbox API. */
 export interface SandboxMountConfig {
+  /** Provider auth blocks for bucket-backed mounts. */
+  auth: SandboxMountAuthConfig;
   /** Mounts attached to the sandbox. */
   mounts: SandboxMount[];
-  /** Proxy auth config required by the mounts. */
-  proxyConfig: SandboxProxyConfig;
 }
 
 /**
@@ -472,9 +492,9 @@ export interface CreateSandboxOptions {
   /** Root filesystem capacity in bytes. */
   fsCapacityBytes?: number;
   /**
-   * High-level mount configuration. The SDK expands it into backend `mounts`
-   * and `proxy_config` fields. If `proxyConfig` is also provided, its rules are
-   * merged with the mount-generated proxy auth rules.
+   * Mount configuration forwarded to the server as `mount_config`. The backend
+   * expands mount auth into runtime proxy rules. Explicit AWS/GCP proxy rules
+   * in `proxyConfig` conflict with mount auth for the same provider.
    */
   mountConfig?: SandboxMountConfig;
   /**
