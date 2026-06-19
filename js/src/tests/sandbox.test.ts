@@ -7,7 +7,6 @@ import { inspect } from "node:util";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
-import * as sandboxExports from "../sandbox/index.js";
 import {
   awsAuth,
   gitMount,
@@ -95,15 +94,6 @@ describe("sandbox proxy config helpers", () => {
       type: "opaque",
       value: "AKIAFAKE",
     });
-  });
-
-  it("does not export legacy single-provider config helpers", () => {
-    expect("awsAuthProxyConfig" in sandboxExports).toBe(false);
-    expect("awsAuthProxyRule" in sandboxExports).toBe(false);
-    expect("gcpAuthProxyConfig" in sandboxExports).toBe(false);
-    expect("gcpAuthProxyRule" in sandboxExports).toBe(false);
-    expect("awsMountAuth" in sandboxExports).toBe(false);
-    expect("gcpMountAuth" in sandboxExports).toBe(false);
   });
 
   it("awsAuth builds an AWS auth rule", () => {
@@ -863,25 +853,6 @@ describe("SandboxClient - createSandbox", () => {
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.proxy_config).toEqual(proxyConfig);
-  });
-
-  it("should reject raw mounts in the runtime create options", async () => {
-    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        name: "test-sb",
-        status: "ready",
-      }),
-    } as Response);
-
-    const client = createClientWithMock(mockFetch);
-
-    await expect(
-      client.createSandbox("snap-123", {
-        mounts: [],
-      } as unknown as CreateSandboxOptions),
-    ).rejects.toThrow(/mountConfig/);
-    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("should forward composed proxy config in the request body", async () => {

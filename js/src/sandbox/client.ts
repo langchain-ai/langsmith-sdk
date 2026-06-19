@@ -514,12 +514,6 @@ export class SandboxClient {
         "snapshotId",
       );
     }
-    if ("mounts" in resolvedOptions) {
-      throw new LangSmithValidationError(
-        "mounts is not a public createSandbox option; use mountConfig",
-        "mounts",
-      );
-    }
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 

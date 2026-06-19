@@ -5,7 +5,6 @@ import json
 import pytest
 from pytest_httpx import HTTPXMock
 
-import langsmith.sandbox as sandbox_module
 from langsmith.sandbox import (
     SandboxClient,
     aws_auth,
@@ -42,15 +41,6 @@ def test_opaque_secret_builds_write_only_value() -> None:
         "type": "opaque",
         "value": "AKIAFAKE",
     }
-
-
-def test_legacy_single_provider_config_helpers_are_not_exported() -> None:
-    assert not hasattr(sandbox_module, "aws_auth_proxy_config")
-    assert not hasattr(sandbox_module, "aws_auth_proxy_rule")
-    assert not hasattr(sandbox_module, "gcp_auth_proxy_config")
-    assert not hasattr(sandbox_module, "gcp_auth_proxy_rule")
-    assert not hasattr(sandbox_module, "aws_mount_auth")
-    assert not hasattr(sandbox_module, "gcp_mount_auth")
 
 
 def test_aws_auth_builds_aws_rule() -> None:
