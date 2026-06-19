@@ -129,7 +129,7 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
-  it("gcpAuth builds a GCP auth rule with default GCS hosts", () => {
+  it("gcpAuth builds a GCP auth rule with built-in Google API host matching", () => {
     expect(
       gcpAuth({
         serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
@@ -139,7 +139,6 @@ describe("sandbox proxy config helpers", () => {
       name: "gcp",
       type: "gcp",
       enabled: true,
-      match_hosts: ["storage.googleapis.com", "www.googleapis.com"],
       gcp: {
         service_account_json: {
           type: "workspace_secret",
@@ -158,7 +157,6 @@ describe("sandbox proxy config helpers", () => {
     const gcpRule = gcpAuth({
       serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
       scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-      matchHosts: ["storage.googleapis.com"],
     });
 
     expect(
@@ -429,25 +427,13 @@ describe("sandbox proxy config helpers", () => {
     ).toThrow(/credentials/i);
   });
 
-  it.each([
-    { scopes: [], matchHosts: ["storage.googleapis.com"] },
-    {
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-      matchHosts: [],
-    },
-    { scopes: [""], matchHosts: ["storage.googleapis.com"] },
-    {
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
-      matchHosts: [""],
-    },
-  ])(
-    "gcpAuth rejects empty scopes and match hosts",
-    ({ scopes, matchHosts }) => {
+  it.each([{ scopes: [] }, { scopes: [""] }])(
+    "gcpAuth rejects empty scopes",
+    ({ scopes }) => {
       expect(() =>
         gcpAuth({
           serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
           scopes,
-          matchHosts,
         }),
       ).toThrow();
     },

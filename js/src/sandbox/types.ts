@@ -293,12 +293,10 @@ export interface SandboxAwsAuthRule {
 export interface SandboxGcpAuthRule {
   /** Rule name. */
   name: string;
-  /** GCP auth rules match explicit Google API host patterns. */
+  /** GCP auth rules use the sandbox proxy's built-in Google API host matcher. */
   type: "gcp";
   /** Whether the rule is enabled. */
   enabled?: boolean;
-  /** Google API hosts covered by this rule, such as storage.googleapis.com. */
-  match_hosts: string[];
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;

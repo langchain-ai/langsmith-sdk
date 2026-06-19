@@ -1,1 +1,1 @@
-export const _MIN_BACKEND_VERSION = "0.16.0";
+export const _MIN_BACKEND_VERSION = "0.16.5rc1";

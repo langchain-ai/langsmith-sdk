@@ -76,7 +76,7 @@ def test_aws_auth_builds_aws_rule() -> None:
     }
 
 
-def test_gcp_auth_builds_gcp_rule_with_default_gcs_hosts() -> None:
+def test_gcp_auth_builds_gcp_rule_with_builtin_google_api_host_matching() -> None:
     rule = gcp_auth(
         service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
         scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
@@ -86,7 +86,6 @@ def test_gcp_auth_builds_gcp_rule_with_default_gcs_hosts() -> None:
         "name": "gcp",
         "type": "gcp",
         "enabled": True,
-        "match_hosts": ["storage.googleapis.com", "www.googleapis.com"],
         "gcp": {
             "service_account_json": {
                 "type": "workspace_secret",
@@ -105,7 +104,6 @@ def test_proxy_config_composes_multiple_provider_rules() -> None:
     gcp_rule = gcp_auth(
         service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
         scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
-        match_hosts=["storage.googleapis.com"],
     )
 
     assert proxy_config(
@@ -337,23 +335,12 @@ def test_mount_config_validates_provider_auth(auth, mounts, message: str) -> Non
         mount_config(auth=auth, mounts=mounts)
 
 
-@pytest.mark.parametrize(
-    ("scopes", "match_hosts"),
-    [
-        ([], ["storage.googleapis.com"]),
-        (["https://www.googleapis.com/auth/devstorage.read_write"], []),
-        ([""], ["storage.googleapis.com"]),
-        (["https://www.googleapis.com/auth/devstorage.read_write"], [""]),
-    ],
-)
-def test_gcp_auth_rejects_empty_scopes_and_hosts(
-    scopes: list[str], match_hosts: list[str]
-) -> None:
+@pytest.mark.parametrize("scopes", [[], [""]])
+def test_gcp_auth_rejects_empty_scopes(scopes: list[str]) -> None:
     with pytest.raises(ValueError):
         gcp_auth(
             service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
             scopes=scopes,
-            match_hosts=match_hosts,
         )
 
 
