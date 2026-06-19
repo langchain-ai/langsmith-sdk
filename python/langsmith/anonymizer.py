@@ -209,7 +209,10 @@ SECRET_PLACEHOLDER = "[SECRET_DETECTED]"
 DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     # ── Provider API keys (prefix-anchored, case-sensitive) ──────────────────
     # Anthropic
-    {"pattern": re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"), "replace": SECRET_PLACEHOLDER},
+    {
+        "pattern": re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+        "replace": SECRET_PLACEHOLDER,
+    },
     # OpenAI: project / service-account / admin keys, then legacy `sk-...`
     {
         "pattern": re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"),
@@ -224,7 +227,10 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     },
     {"pattern": re.compile(r"ls__[A-Za-z0-9]{16,}"), "replace": SECRET_PLACEHOLDER},
     # GitHub personal access / app tokens
-    {"pattern": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "replace": SECRET_PLACEHOLDER},
+    {
+        "pattern": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
+        "replace": SECRET_PLACEHOLDER,
+    },
     {
         "pattern": re.compile(r"github_pat_[A-Za-z0-9_]{82}"),
         "replace": SECRET_PLACEHOLDER,
@@ -238,7 +244,10 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     {"pattern": re.compile(r"AIza[0-9A-Za-z_-]{35}"), "replace": SECRET_PLACEHOLDER},
     {"pattern": re.compile(r"ya29\.[0-9A-Za-z_-]+"), "replace": SECRET_PLACEHOLDER},
     # Slack tokens + incoming webhooks
-    {"pattern": re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"), "replace": SECRET_PLACEHOLDER},
+    {
+        "pattern": re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+        "replace": SECRET_PLACEHOLDER,
+    },
     {
         "pattern": re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/]+"),
         "replace": SECRET_PLACEHOLDER,
@@ -258,9 +267,7 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     # ── Structured tokens ────────────────────────────────────────────────────
     # JWT (header.payload.signature)
     {
-        "pattern": re.compile(
-            r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
-        ),
+        "pattern": re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
         "replace": SECRET_PLACEHOLDER,
     },
     # PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
@@ -299,9 +306,7 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     },
     # Bare "Bearer <token>" (any case; the scheme word is preserved via group 1).
     {
-        "pattern": re.compile(
-            r"\b(Bearer\s+)[A-Za-z0-9._~+/-]{10,}=*", re.IGNORECASE
-        ),
+        "pattern": re.compile(r"\b(Bearer\s+)[A-Za-z0-9._~+/-]{10,}=*", re.IGNORECASE),
         "replace": rf"\g<1>{SECRET_PLACEHOLDER}",
     },
     # Credentials embedded in URLs: proto://user:PASS@host -> redact PASS only.

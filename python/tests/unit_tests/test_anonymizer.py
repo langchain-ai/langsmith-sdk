@@ -6,8 +6,8 @@ from typing import List, Union, cast
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 
 from langsmith import Client, traceable, tracing_context
 from langsmith.anonymizer import (

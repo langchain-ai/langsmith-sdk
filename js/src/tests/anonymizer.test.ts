@@ -237,14 +237,11 @@ describe("createSecretAnonymizer", () => {
     jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36",
   };
 
-  test.each(Object.entries(SAMPLES))(
-    "redacts %s",
-    (_name, secret) => {
-      const out = redact(`value is ${secret} end`) as string;
-      expect(out).not.toContain(secret);
-      expect(out).toContain(SECRET_PLACEHOLDER);
-    },
-  );
+  test.each(Object.entries(SAMPLES))("redacts %s", (_name, secret) => {
+    const out = redact(`value is ${secret} end`) as string;
+    expect(out).not.toContain(secret);
+    expect(out).toContain(SECRET_PLACEHOLDER);
+  });
 
   test("redacts PEM private key blocks", () => {
     // Assembled from fragments so no literal key block sits in source
@@ -306,7 +303,9 @@ describe("createSecretAnonymizer", () => {
   });
 
   test("redacts a PGP private key block (KEY BLOCK armor)", () => {
-    const begin = ["-----BEGIN", "PGP", "PRIVATE", "KEY", "BLOCK-----"].join(" ");
+    const begin = ["-----BEGIN", "PGP", "PRIVATE", "KEY", "BLOCK-----"].join(
+      " ",
+    );
     const end = ["-----END", "PGP", "PRIVATE", "KEY", "BLOCK-----"].join(" ");
     const block = [begin, "a".repeat(64), end].join("\n");
     expect((redact({ file: block }) as { file: string }).file).toBe(
@@ -360,15 +359,18 @@ describe("createSecretAnonymizer", () => {
       ],
     };
     const out = redact(input) as typeof input;
-    const command = (out.messages[0].content[0] as { args: { command: string } })
-      .args.command;
+    const command = (
+      out.messages[0].content[0] as { args: { command: string } }
+    ).args.command;
     expect(command).toContain(SECRET_PLACEHOLDER);
     expect(command).not.toContain("aaaa");
   });
 
   test("extraRules are applied in addition to the defaults", () => {
     const redactExtra = createSecretAnonymizer({
-      extraRules: [{ pattern: /INTERNAL-[0-9]{6}/g, replace: SECRET_PLACEHOLDER }],
+      extraRules: [
+        { pattern: /INTERNAL-[0-9]{6}/g, replace: SECRET_PLACEHOLDER },
+      ],
     });
     expect(redactExtra("ticket INTERNAL-123456")).toBe(
       `ticket ${SECRET_PLACEHOLDER}`,
