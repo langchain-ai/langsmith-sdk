@@ -7,8 +7,6 @@ import { Rules } from './rules.js';
 import * as SessionsAPI from '../sessions/sessions.js';
 import { APIPromise } from '../../core/api-promise.js';
 import {
-  CursorPagination,
-  type CursorPaginationParams,
   ItemsCursorPostPagination,
   type ItemsCursorPostPaginationParams,
   PagePromise,
@@ -31,19 +29,6 @@ export class Runs extends APIResource {
    */
   create(body: RunCreateParams, options?: RequestOptions): APIPromise<RunCreateResponse> {
     return this._client.post('/runs', { body, ...options });
-  }
-
-  /**
-   * Get a specific run.
-   *
-   * @deprecated Use retrieveV2 instead (GET /v2/runs/{run_id}).
-   */
-  retrieve(
-    runID: string,
-    query: RunRetrieveParams | null | undefined = {},
-    options?: RequestOptions,
-  ): APIPromise<RunSchema> {
-    return this._client.get(path`/api/v1/runs/${runID}`, { query, ...options });
   }
 
   /**
@@ -74,19 +59,6 @@ export class Runs extends APIResource {
    */
   ingestBatch(body: RunIngestBatchParams, options?: RequestOptions): APIPromise<RunIngestBatchResponse> {
     return this._client.post('/runs/batch', { body, ...options });
-  }
-
-  /**
-   * Query Runs
-   *
-   * @deprecated Use queryV2 instead (POST /v2/runs/query).
-   */
-  query(body: RunQueryParams, options?: RequestOptions): PagePromise<RunSchemasCursorPagination, RunSchema> {
-    return this._client.getAPIList('/api/v1/runs/query', CursorPagination<RunSchema>, {
-      body,
-      method: 'post',
-      ...options,
-    });
   }
 
   /**
@@ -169,9 +141,11 @@ export class Runs extends APIResource {
   update2(runID: string, options?: RequestOptions): APIPromise<unknown> {
     return this._client.patch(path`/api/v1/runs/${runID}`, options);
   }
-}
 
-export type RunSchemasCursorPagination = CursorPagination<RunSchema>;
+  retrieve = this.retrieveV2;
+
+  query = this.queryV2;
+}
 
 export type QueryRunResponsesItemsCursorPostPagination = ItemsCursorPostPagination<QueryRunResponse>;
 
@@ -1332,18 +1306,6 @@ export interface RunCreateParams {
   trace_id?: string;
 }
 
-export interface RunRetrieveParams {
-  exclude_s3_stored_attributes?: boolean;
-
-  exclude_serialized?: boolean;
-
-  include_messages?: boolean;
-
-  session_id?: string | null;
-
-  start_time?: string | null;
-}
-
 export interface RunUpdateParams {
   id?: string;
 
@@ -1392,122 +1354,6 @@ export interface RunIngestBatchParams {
   patch?: Array<Run>;
 
   post?: Array<Run>;
-}
-
-export interface RunQueryParams extends CursorPaginationParams {
-  id?: Array<string> | null;
-
-  /**
-   * Enum for run data source types.
-   */
-  data_source_type?: RunsFilterDataSourceTypeEnum | null;
-
-  end_time?: string | null;
-
-  error?: boolean | null;
-
-  execution_order?: number | null;
-
-  filter?: string | null;
-
-  is_root?: boolean | null;
-
-  /**
-   * Enum for run start date order.
-   */
-  order?: 'asc' | 'desc';
-
-  parent_run?: string | null;
-
-  query?: string | null;
-
-  reference_example?: Array<string> | null;
-
-  /**
-   * Enum for run types.
-   */
-  run_type?: RunTypeEnum | null;
-
-  search_filter?: string | null;
-
-  select?: Array<
-    | 'id'
-    | 'name'
-    | 'run_type'
-    | 'start_time'
-    | 'end_time'
-    | 'status'
-    | 'error'
-    | 'extra'
-    | 'events'
-    | 'inputs'
-    | 'inputs_preview'
-    | 'inputs_s3_urls'
-    | 'inputs_or_signed_url'
-    | 'outputs'
-    | 'outputs_preview'
-    | 'outputs_s3_urls'
-    | 'outputs_or_signed_url'
-    | 's3_urls'
-    | 'error_or_signed_url'
-    | 'events_or_signed_url'
-    | 'extra_or_signed_url'
-    | 'serialized_or_signed_url'
-    | 'parent_run_id'
-    | 'manifest_id'
-    | 'manifest_s3_id'
-    | 'manifest'
-    | 'session_id'
-    | 'serialized'
-    | 'reference_example_id'
-    | 'reference_dataset_id'
-    | 'total_tokens'
-    | 'prompt_tokens'
-    | 'prompt_token_details'
-    | 'completion_tokens'
-    | 'completion_token_details'
-    | 'total_cost'
-    | 'prompt_cost'
-    | 'prompt_cost_details'
-    | 'completion_cost'
-    | 'completion_cost_details'
-    | 'price_model_id'
-    | 'first_token_time'
-    | 'trace_id'
-    | 'dotted_order'
-    | 'last_queued_at'
-    | 'feedback_stats'
-    | 'child_run_ids'
-    | 'parent_run_ids'
-    | 'tags'
-    | 'in_dataset'
-    | 'app_path'
-    | 'share_token'
-    | 'trace_tier'
-    | 'trace_first_received_at'
-    | 'ttl_seconds'
-    | 'trace_upgrade'
-    | 'thread_id'
-    | 'trace_min_max_start_time'
-    | 'messages'
-    | 'inserted_at'
-  >;
-
-  session?: Array<string> | null;
-
-  skip_pagination?: boolean | null;
-
-  skip_prev_cursor?: boolean;
-
-  start_time?: string | null;
-
-  trace?: string | null;
-
-  trace_filter?: string | null;
-
-  tree_filter?: string | null;
-
-  use_experimental_search?: boolean;
 }
 
 export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
@@ -1833,6 +1679,239 @@ export interface RunStatsParams {
   use_experimental_search?: boolean;
 }
 
+export interface RunRetrieveParams {
+  /**
+   * Query param: `project_id` is the UUID of the tracing project that owns the run.
+   */
+  project_id: string;
+
+  /**
+   * Query param: `start_time` is the run's `start_time` (RFC3339 date-time), used
+   * together with `project_id` to locate the run.
+   */
+  start_time: string;
+
+  /**
+   * Query param: `selects` lists which properties to include on the returned run
+   * (repeatable query parameter). Accepts any value of the `RunSelectField` enum. If
+   * omitted, only `id` is returned.
+   */
+  selects?: Array<
+    | 'ID'
+    | 'NAME'
+    | 'RUN_TYPE'
+    | 'STATUS'
+    | 'START_TIME'
+    | 'END_TIME'
+    | 'LATENCY_SECONDS'
+    | 'FIRST_TOKEN_TIME'
+    | 'ERROR'
+    | 'ERROR_PREVIEW'
+    | 'EXTRA'
+    | 'METADATA'
+    | 'EVENTS'
+    | 'INPUTS'
+    | 'INPUTS_PREVIEW'
+    | 'OUTPUTS'
+    | 'OUTPUTS_PREVIEW'
+    | 'MANIFEST'
+    | 'PARENT_RUN_IDS'
+    | 'PROJECT_ID'
+    | 'TRACE_ID'
+    | 'THREAD_ID'
+    | 'DOTTED_ORDER'
+    | 'IS_ROOT'
+    | 'REFERENCE_EXAMPLE_ID'
+    | 'REFERENCE_DATASET_ID'
+    | 'TOTAL_TOKENS'
+    | 'PROMPT_TOKENS'
+    | 'COMPLETION_TOKENS'
+    | 'TOTAL_COST'
+    | 'PROMPT_COST'
+    | 'COMPLETION_COST'
+    | 'PROMPT_TOKEN_DETAILS'
+    | 'COMPLETION_TOKEN_DETAILS'
+    | 'PROMPT_COST_DETAILS'
+    | 'COMPLETION_COST_DETAILS'
+    | 'PRICE_MODEL_ID'
+    | 'TAGS'
+    | 'APP_PATH'
+    | 'ATTACHMENTS'
+    | 'THREAD_EVALUATION_TIME'
+    | 'IS_IN_DATASET'
+    | 'SHARE_URL'
+    | 'FEEDBACK_STATS'
+  >;
+
+  /**
+   * Header param: application/json
+   */
+  Accept?: string;
+}
+
+export interface RunQueryParams extends ItemsCursorPostPaginationParams {
+  /**
+   * Body param: `ai_query` is a natural-language query to filter runs using AI.
+   */
+  ai_query?: string;
+
+  /**
+   * Body param: `filter` narrows results to runs matching this LangSmith filter
+   * expression, evaluated against each individual run. For example: and(eq(run_type,
+   * "llm"), gt(latency, 5)) or eq(status, "error"). See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  filter?: string;
+
+  /**
+   * Body param: `has_error` filters to runs that errored (true) or completed without
+   * error (false).
+   */
+  has_error?: boolean;
+
+  /**
+   * Body param: `ids` optionally limits the request to these run UUIDs.
+   */
+  ids?: Array<string>;
+
+  /**
+   * Body param: `is_root` returns only root runs (true) or only non-root runs
+   * (false).
+   */
+  is_root?: boolean;
+
+  /**
+   * Body param: `max_start_time` is the upper bound for run `start_time` (RFC3339).
+   * Defaults to now.
+   */
+  max_start_time?: string;
+
+  /**
+   * Body param: `min_start_time` is the lower bound for run `start_time` (RFC3339).
+   * Defaults to 1 day ago.
+   */
+  min_start_time?: string;
+
+  /**
+   * Body param: `project_ids` lists tracing project UUIDs to query. Required unless
+   * `reference_dataset_id` is set. Mutually exclusive with `reference_dataset_id` —
+   * set exactly one of them.
+   */
+  project_ids?: Array<string>;
+
+  /**
+   * Body param: `reference_dataset_id` resolves session IDs server-side from the
+   * dataset. Required unless `project_ids` is set. Mutually exclusive with
+   * `project_ids` — set exactly one of them. When provided and `min_start_time` is
+   * omitted, the server derives it from the earliest session creation date.
+   */
+  reference_dataset_id?: string;
+
+  /**
+   * Body param: `reference_examples` optionally limits to runs linked to these
+   * dataset example UUIDs.
+   */
+  reference_examples?: Array<string>;
+
+  /**
+   * Body param: `run_type`, when set, restricts results to runs whose `run_type`
+   * equals this value.
+   */
+  run_type?: 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
+
+  /**
+   * Body param: `selects` lists which properties to include on each returned run. If
+   * omitted, only `id` is returned. Properties not listed are omitted from each run
+   * object.
+   */
+  selects?: Array<
+    | 'ID'
+    | 'NAME'
+    | 'RUN_TYPE'
+    | 'STATUS'
+    | 'START_TIME'
+    | 'END_TIME'
+    | 'LATENCY_SECONDS'
+    | 'FIRST_TOKEN_TIME'
+    | 'ERROR'
+    | 'ERROR_PREVIEW'
+    | 'EXTRA'
+    | 'METADATA'
+    | 'EVENTS'
+    | 'INPUTS'
+    | 'INPUTS_PREVIEW'
+    | 'OUTPUTS'
+    | 'OUTPUTS_PREVIEW'
+    | 'MANIFEST'
+    | 'PARENT_RUN_IDS'
+    | 'PROJECT_ID'
+    | 'TRACE_ID'
+    | 'THREAD_ID'
+    | 'DOTTED_ORDER'
+    | 'IS_ROOT'
+    | 'REFERENCE_EXAMPLE_ID'
+    | 'REFERENCE_DATASET_ID'
+    | 'TOTAL_TOKENS'
+    | 'PROMPT_TOKENS'
+    | 'COMPLETION_TOKENS'
+    | 'TOTAL_COST'
+    | 'PROMPT_COST'
+    | 'COMPLETION_COST'
+    | 'PROMPT_TOKEN_DETAILS'
+    | 'COMPLETION_TOKEN_DETAILS'
+    | 'PROMPT_COST_DETAILS'
+    | 'COMPLETION_COST_DETAILS'
+    | 'PRICE_MODEL_ID'
+    | 'TAGS'
+    | 'APP_PATH'
+    | 'ATTACHMENTS'
+    | 'THREAD_EVALUATION_TIME'
+    | 'IS_IN_DATASET'
+    | 'SHARE_URL'
+    | 'FEEDBACK_STATS'
+  >;
+
+  /**
+   * Body param: `sort_order` is the sort direction for `start_time` (`ASC` or
+   * `DESC`). Defaults to `DESC` when omitted. Maps to the SmithDB proto `Order`
+   * field.
+   */
+  sort_order?: 'ASC' | 'DESC';
+
+  /**
+   * Body param: `trace_filter` narrows results to runs whose root trace matches this
+   * LangSmith filter expression. Use this to filter by properties of the trace's
+   * root run — for example eq(status, "success") to include only traces that
+   * completed without error. See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  trace_filter?: string;
+
+  /**
+   * Body param: `trace_id` optionally limits results to runs belonging to this trace
+   * UUID.
+   */
+  trace_id?: string;
+
+  /**
+   * Body param: `tree_filter` narrows results to runs that belong to a trace
+   * containing at least one run matching this LangSmith filter expression anywhere
+   * in the run tree (not just the root). Use this to find runs inside traces that
+   * involved a specific tool, tag, or model — for example has(tags, "production") or
+   * eq(name, "my_tool"). See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  tree_filter?: string;
+
+  /**
+   * Header param: application/json
+   */
+  Accept?: string;
+}
+
 Runs.Rules = Rules;
 
 export declare namespace Runs {
@@ -1852,16 +1931,15 @@ export declare namespace Runs {
     type RunIngestBatchResponse as RunIngestBatchResponse,
     type RunStatsResponse as RunStatsResponse,
     type RunUpdate2Response as RunUpdate2Response,
-    type RunSchemasCursorPagination as RunSchemasCursorPagination,
     type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
     type RunCreateParams as RunCreateParams,
-    type RunRetrieveParams as RunRetrieveParams,
     type RunUpdateParams as RunUpdateParams,
     type RunIngestBatchParams as RunIngestBatchParams,
-    type RunQueryParams as RunQueryParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunStatsParams as RunStatsParams,
+    type RunRetrieveParams as RunRetrieveParams,
+    type RunQueryParams as RunQueryParams,
   };
 
   export { Rules as Rules };

@@ -178,14 +178,13 @@ export {
   type RunStatsResponse,
   type RunUpdate2Response,
   type RunCreateParams,
-  type RunRetrieveParams,
   type RunUpdateParams,
   type RunIngestBatchParams,
-  type RunQueryParams,
   type RunQueryV2Params,
   type RunRetrieveV2Params,
   type RunStatsParams,
-  type RunSchemasCursorPagination,
+  type RunRetrieveParams,
+  type RunQueryParams,
   type QueryRunResponsesItemsCursorPostPagination,
 } from './runs/runs.js';
 export { Sandboxes } from './sandboxes/sandboxes.js';

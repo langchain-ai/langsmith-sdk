@@ -119,11 +119,7 @@ export interface BoxCreateResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<
-    | BoxCreateResponse.SandboxapiS3BucketMountSpec
-    | BoxCreateResponse.SandboxapiGcsBucketMountSpec
-    | BoxCreateResponse.SandboxapiGitRepoMountSpec
-  >;
+  mount_config?: BoxCreateResponse.MountConfig;
 
   name?: string;
 
@@ -147,1027 +143,63 @@ export interface BoxCreateResponse {
 }
 
 export namespace BoxCreateResponse {
-  export interface SandboxapiS3BucketMountSpec {
-    id: string;
-
-    mount_path: string;
-
-    s3: SandboxapiS3BucketMountSpec.S3;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiS3BucketMountSpec.Cache;
-
-    gcs?: SandboxapiS3BucketMountSpec.Gcs;
-
-    git?: SandboxapiS3BucketMountSpec.Git;
-
-    read_only?: boolean;
-  }
-
-  export namespace SandboxapiS3BucketMountSpec {
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-  }
-
-  export interface SandboxapiGcsBucketMountSpec {
-    id: string;
-
-    gcs: SandboxapiGcsBucketMountSpec.Gcs;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGcsBucketMountSpec.Cache;
-
-    git?: SandboxapiGcsBucketMountSpec.Git;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGcsBucketMountSpec.S3;
-  }
-
-  export namespace SandboxapiGcsBucketMountSpec {
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface SandboxapiGitRepoMountSpec {
-    id: string;
-
-    git: SandboxapiGitRepoMountSpec.Git;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGitRepoMountSpec.Cache;
-
-    gcs?: SandboxapiGitRepoMountSpec.Gcs;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGitRepoMountSpec.S3;
-  }
-
-  export namespace SandboxapiGitRepoMountSpec {
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface ProxyConfig {
-    access_control?: ProxyConfig.AccessControl;
-
-    callbacks?: Array<ProxyConfig.Callback>;
-
-    no_proxy?: Array<string>;
-
-    rules?: Array<ProxyConfig.Rule>;
-  }
-
-  export namespace ProxyConfig {
-    export interface AccessControl {
-      allow_list?: Array<string>;
-
-      deny_list?: Array<string>;
-    }
-
-    export interface Callback {
-      match_hosts: Array<string>;
-
-      ttl_seconds: number;
-
-      url: string;
-
-      full_request?: boolean;
-
-      request_headers?: Array<Callback.RequestHeader>;
-    }
-
-    export namespace Callback {
-      export interface RequestHeader {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-
-    export interface Rule {
-      name: string;
-
-      aws?: Rule.Aws;
-
-      enabled?: boolean;
-
-      gcp?: Rule.Gcp;
-
-      headers?: Array<Rule.Header>;
-
-      match_hosts?: Array<string>;
-
-      match_paths?: Array<string>;
-
-      type?: string;
-    }
-
-    export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
-      }
-
-      export namespace Aws {
-        export interface AccessKeyID {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-
-        export interface SecretAccessKey {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Gcp {
-        scopes: Array<string>;
-
-        service_account_json: Gcp.ServiceAccountJson;
-      }
-
-      export namespace Gcp {
-        export interface ServiceAccountJson {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Header {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-  }
-}
-
-export interface BoxRetrieveResponse {
-  id?: string;
-
-  created_at?: string;
-
-  created_by?: string;
-
-  dataplane_url?: string;
-
-  delete_after_stop_seconds?: number;
-
-  fs_capacity_bytes?: number;
-
-  idle_ttl_seconds?: number;
-
-  mem_bytes?: number;
-
-  mounts?: Array<
-    | BoxRetrieveResponse.SandboxapiS3BucketMountSpec
-    | BoxRetrieveResponse.SandboxapiGcsBucketMountSpec
-    | BoxRetrieveResponse.SandboxapiGitRepoMountSpec
-  >;
-
-  name?: string;
-
-  proxy_config?: BoxRetrieveResponse.ProxyConfig;
-
-  size_class?: string;
-
-  snapshot_id?: string;
-
-  status?: string;
-
-  status_message?: string;
-
-  stopped_at?: string;
-
-  updated_at?: string;
-
-  updated_by?: string;
-
-  vcpus?: number;
-}
-
-export namespace BoxRetrieveResponse {
-  export interface SandboxapiS3BucketMountSpec {
-    id: string;
-
-    mount_path: string;
-
-    s3: SandboxapiS3BucketMountSpec.S3;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiS3BucketMountSpec.Cache;
-
-    gcs?: SandboxapiS3BucketMountSpec.Gcs;
-
-    git?: SandboxapiS3BucketMountSpec.Git;
-
-    read_only?: boolean;
-  }
-
-  export namespace SandboxapiS3BucketMountSpec {
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-  }
-
-  export interface SandboxapiGcsBucketMountSpec {
-    id: string;
-
-    gcs: SandboxapiGcsBucketMountSpec.Gcs;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGcsBucketMountSpec.Cache;
-
-    git?: SandboxapiGcsBucketMountSpec.Git;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGcsBucketMountSpec.S3;
-  }
-
-  export namespace SandboxapiGcsBucketMountSpec {
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface SandboxapiGitRepoMountSpec {
-    id: string;
-
-    git: SandboxapiGitRepoMountSpec.Git;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGitRepoMountSpec.Cache;
-
-    gcs?: SandboxapiGitRepoMountSpec.Gcs;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGitRepoMountSpec.S3;
-  }
-
-  export namespace SandboxapiGitRepoMountSpec {
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface ProxyConfig {
-    access_control?: ProxyConfig.AccessControl;
-
-    callbacks?: Array<ProxyConfig.Callback>;
-
-    no_proxy?: Array<string>;
-
-    rules?: Array<ProxyConfig.Rule>;
-  }
-
-  export namespace ProxyConfig {
-    export interface AccessControl {
-      allow_list?: Array<string>;
-
-      deny_list?: Array<string>;
-    }
-
-    export interface Callback {
-      match_hosts: Array<string>;
-
-      ttl_seconds: number;
-
-      url: string;
-
-      full_request?: boolean;
-
-      request_headers?: Array<Callback.RequestHeader>;
-    }
-
-    export namespace Callback {
-      export interface RequestHeader {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-
-    export interface Rule {
-      name: string;
-
-      aws?: Rule.Aws;
-
-      enabled?: boolean;
-
-      gcp?: Rule.Gcp;
-
-      headers?: Array<Rule.Header>;
-
-      match_hosts?: Array<string>;
-
-      match_paths?: Array<string>;
-
-      type?: string;
-    }
-
-    export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
-      }
-
-      export namespace Aws {
-        export interface AccessKeyID {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-
-        export interface SecretAccessKey {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Gcp {
-        scopes: Array<string>;
-
-        service_account_json: Gcp.ServiceAccountJson;
-      }
-
-      export namespace Gcp {
-        export interface ServiceAccountJson {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Header {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-  }
-}
-
-export interface BoxUpdateResponse {
-  id?: string;
-
-  created_at?: string;
-
-  created_by?: string;
-
-  dataplane_url?: string;
-
-  delete_after_stop_seconds?: number;
-
-  fs_capacity_bytes?: number;
-
-  idle_ttl_seconds?: number;
-
-  mem_bytes?: number;
-
-  mounts?: Array<
-    | BoxUpdateResponse.SandboxapiS3BucketMountSpec
-    | BoxUpdateResponse.SandboxapiGcsBucketMountSpec
-    | BoxUpdateResponse.SandboxapiGitRepoMountSpec
-  >;
-
-  name?: string;
-
-  proxy_config?: BoxUpdateResponse.ProxyConfig;
-
-  size_class?: string;
-
-  snapshot_id?: string;
-
-  status?: string;
-
-  status_message?: string;
-
-  stopped_at?: string;
-
-  updated_at?: string;
-
-  updated_by?: string;
-
-  vcpus?: number;
-}
-
-export namespace BoxUpdateResponse {
-  export interface SandboxapiS3BucketMountSpec {
-    id: string;
-
-    mount_path: string;
-
-    s3: SandboxapiS3BucketMountSpec.S3;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiS3BucketMountSpec.Cache;
-
-    gcs?: SandboxapiS3BucketMountSpec.Gcs;
-
-    git?: SandboxapiS3BucketMountSpec.Git;
-
-    read_only?: boolean;
-  }
-
-  export namespace SandboxapiS3BucketMountSpec {
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-  }
-
-  export interface SandboxapiGcsBucketMountSpec {
-    id: string;
-
-    gcs: SandboxapiGcsBucketMountSpec.Gcs;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGcsBucketMountSpec.Cache;
-
-    git?: SandboxapiGcsBucketMountSpec.Git;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGcsBucketMountSpec.S3;
-  }
-
-  export namespace SandboxapiGcsBucketMountSpec {
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface SandboxapiGitRepoMountSpec {
-    id: string;
-
-    git: SandboxapiGitRepoMountSpec.Git;
-
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGitRepoMountSpec.Cache;
-
-    gcs?: SandboxapiGitRepoMountSpec.Gcs;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGitRepoMountSpec.S3;
-  }
-
-  export namespace SandboxapiGitRepoMountSpec {
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
-      }
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface S3 {
-      bucket: string;
-
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
-    }
-  }
-
-  export interface ProxyConfig {
-    access_control?: ProxyConfig.AccessControl;
-
-    callbacks?: Array<ProxyConfig.Callback>;
-
-    no_proxy?: Array<string>;
-
-    rules?: Array<ProxyConfig.Rule>;
-  }
-
-  export namespace ProxyConfig {
-    export interface AccessControl {
-      allow_list?: Array<string>;
-
-      deny_list?: Array<string>;
-    }
-
-    export interface Callback {
-      match_hosts: Array<string>;
-
-      ttl_seconds: number;
-
-      url: string;
-
-      full_request?: boolean;
-
-      request_headers?: Array<Callback.RequestHeader>;
-    }
-
-    export namespace Callback {
-      export interface RequestHeader {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-
-    export interface Rule {
-      name: string;
-
-      aws?: Rule.Aws;
-
-      enabled?: boolean;
-
-      gcp?: Rule.Gcp;
-
-      headers?: Array<Rule.Header>;
-
-      match_hosts?: Array<string>;
-
-      match_paths?: Array<string>;
-
-      type?: string;
-    }
-
-    export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
-      }
-
-      export namespace Aws {
-        export interface AccessKeyID {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-
-        export interface SecretAccessKey {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Gcp {
-        scopes: Array<string>;
-
-        service_account_json: Gcp.ServiceAccountJson;
-      }
-
-      export namespace Gcp {
-        export interface ServiceAccountJson {
-          type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-          is_set?: boolean;
-
-          value?: string;
-        }
-      }
-
-      export interface Header {
-        name: string;
-
-        type: 'plaintext' | 'opaque' | 'workspace_secret';
-
-        is_set?: boolean;
-
-        value?: string;
-      }
-    }
-  }
-}
-
-export interface BoxListResponse {
-  offset?: number;
-
-  sandboxes?: Array<BoxListResponse.Sandbox>;
-}
-
-export namespace BoxListResponse {
-  export interface Sandbox {
-    id?: string;
-
-    created_at?: string;
-
-    created_by?: string;
-
-    dataplane_url?: string;
-
-    delete_after_stop_seconds?: number;
-
-    fs_capacity_bytes?: number;
-
-    idle_ttl_seconds?: number;
-
-    mem_bytes?: number;
+  export interface MountConfig {
+    auth?: MountConfig.Auth;
 
     mounts?: Array<
-      | Sandbox.SandboxapiS3BucketMountSpec
-      | Sandbox.SandboxapiGcsBucketMountSpec
-      | Sandbox.SandboxapiGitRepoMountSpec
+      | MountConfig.SandboxapiS3BucketMountSpec
+      | MountConfig.SandboxapiGcsBucketMountSpec
+      | MountConfig.SandboxapiGitRepoMountSpec
     >;
-
-    name?: string;
-
-    proxy_config?: Sandbox.ProxyConfig;
-
-    size_class?: string;
-
-    snapshot_id?: string;
-
-    status?: string;
-
-    status_message?: string;
-
-    stopped_at?: string;
-
-    updated_at?: string;
-
-    updated_by?: string;
-
-    vcpus?: number;
   }
 
-  export namespace Sandbox {
+  export namespace MountConfig {
+    export interface Auth {
+      aws?: Auth.Aws;
+
+      gcp?: Auth.Gcp;
+    }
+
+    export namespace Auth {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+    }
+
     export interface SandboxapiS3BucketMountSpec {
       id: string;
 
@@ -1347,6 +379,1202 @@ export namespace BoxListResponse {
         prefix?: string;
       }
     }
+  }
+
+  export interface ProxyConfig {
+    access_control?: ProxyConfig.AccessControl;
+
+    callbacks?: Array<ProxyConfig.Callback>;
+
+    no_proxy?: Array<string>;
+
+    rules?: Array<ProxyConfig.Rule>;
+  }
+
+  export namespace ProxyConfig {
+    export interface AccessControl {
+      allow_list?: Array<string>;
+
+      deny_list?: Array<string>;
+    }
+
+    export interface Callback {
+      match_hosts: Array<string>;
+
+      ttl_seconds: number;
+
+      url: string;
+
+      full_request?: boolean;
+
+      request_headers?: Array<Callback.RequestHeader>;
+    }
+
+    export namespace Callback {
+      export interface RequestHeader {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+
+    export interface Rule {
+      name: string;
+
+      aws?: Rule.Aws;
+
+      enabled?: boolean;
+
+      gcp?: Rule.Gcp;
+
+      headers?: Array<Rule.Header>;
+
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
+      match_hosts?: Array<string>;
+
+      match_paths?: Array<string>;
+
+      type?: string;
+    }
+
+    export namespace Rule {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Header {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+  }
+}
+
+export interface BoxRetrieveResponse {
+  id?: string;
+
+  created_at?: string;
+
+  created_by?: string;
+
+  dataplane_url?: string;
+
+  delete_after_stop_seconds?: number;
+
+  fs_capacity_bytes?: number;
+
+  idle_ttl_seconds?: number;
+
+  mem_bytes?: number;
+
+  mount_config?: BoxRetrieveResponse.MountConfig;
+
+  name?: string;
+
+  proxy_config?: BoxRetrieveResponse.ProxyConfig;
+
+  size_class?: string;
+
+  snapshot_id?: string;
+
+  status?: string;
+
+  status_message?: string;
+
+  stopped_at?: string;
+
+  updated_at?: string;
+
+  updated_by?: string;
+
+  vcpus?: number;
+}
+
+export namespace BoxRetrieveResponse {
+  export interface MountConfig {
+    auth?: MountConfig.Auth;
+
+    mounts?: Array<
+      | MountConfig.SandboxapiS3BucketMountSpec
+      | MountConfig.SandboxapiGcsBucketMountSpec
+      | MountConfig.SandboxapiGitRepoMountSpec
+    >;
+  }
+
+  export namespace MountConfig {
+    export interface Auth {
+      aws?: Auth.Aws;
+
+      gcp?: Auth.Gcp;
+    }
+
+    export namespace Auth {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+    }
+
+    export interface SandboxapiS3BucketMountSpec {
+      id: string;
+
+      mount_path: string;
+
+      s3: SandboxapiS3BucketMountSpec.S3;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+      git?: SandboxapiS3BucketMountSpec.Git;
+
+      read_only?: boolean;
+    }
+
+    export namespace SandboxapiS3BucketMountSpec {
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+    }
+
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
+
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      git?: SandboxapiGcsBucketMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
+    }
+
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiGitRepoMountSpec {
+      id: string;
+
+      git: SandboxapiGitRepoMountSpec.Git;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGitRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiGitRepoMountSpec {
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+  }
+
+  export interface ProxyConfig {
+    access_control?: ProxyConfig.AccessControl;
+
+    callbacks?: Array<ProxyConfig.Callback>;
+
+    no_proxy?: Array<string>;
+
+    rules?: Array<ProxyConfig.Rule>;
+  }
+
+  export namespace ProxyConfig {
+    export interface AccessControl {
+      allow_list?: Array<string>;
+
+      deny_list?: Array<string>;
+    }
+
+    export interface Callback {
+      match_hosts: Array<string>;
+
+      ttl_seconds: number;
+
+      url: string;
+
+      full_request?: boolean;
+
+      request_headers?: Array<Callback.RequestHeader>;
+    }
+
+    export namespace Callback {
+      export interface RequestHeader {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+
+    export interface Rule {
+      name: string;
+
+      aws?: Rule.Aws;
+
+      enabled?: boolean;
+
+      gcp?: Rule.Gcp;
+
+      headers?: Array<Rule.Header>;
+
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
+      match_hosts?: Array<string>;
+
+      match_paths?: Array<string>;
+
+      type?: string;
+    }
+
+    export namespace Rule {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Header {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+  }
+}
+
+export interface BoxUpdateResponse {
+  id?: string;
+
+  created_at?: string;
+
+  created_by?: string;
+
+  dataplane_url?: string;
+
+  delete_after_stop_seconds?: number;
+
+  fs_capacity_bytes?: number;
+
+  idle_ttl_seconds?: number;
+
+  mem_bytes?: number;
+
+  mount_config?: BoxUpdateResponse.MountConfig;
+
+  name?: string;
+
+  proxy_config?: BoxUpdateResponse.ProxyConfig;
+
+  size_class?: string;
+
+  snapshot_id?: string;
+
+  status?: string;
+
+  status_message?: string;
+
+  stopped_at?: string;
+
+  updated_at?: string;
+
+  updated_by?: string;
+
+  vcpus?: number;
+}
+
+export namespace BoxUpdateResponse {
+  export interface MountConfig {
+    auth?: MountConfig.Auth;
+
+    mounts?: Array<
+      | MountConfig.SandboxapiS3BucketMountSpec
+      | MountConfig.SandboxapiGcsBucketMountSpec
+      | MountConfig.SandboxapiGitRepoMountSpec
+    >;
+  }
+
+  export namespace MountConfig {
+    export interface Auth {
+      aws?: Auth.Aws;
+
+      gcp?: Auth.Gcp;
+    }
+
+    export namespace Auth {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+    }
+
+    export interface SandboxapiS3BucketMountSpec {
+      id: string;
+
+      mount_path: string;
+
+      s3: SandboxapiS3BucketMountSpec.S3;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+      git?: SandboxapiS3BucketMountSpec.Git;
+
+      read_only?: boolean;
+    }
+
+    export namespace SandboxapiS3BucketMountSpec {
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+    }
+
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
+
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      git?: SandboxapiGcsBucketMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
+    }
+
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiGitRepoMountSpec {
+      id: string;
+
+      git: SandboxapiGitRepoMountSpec.Git;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGitRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiGitRepoMountSpec {
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+  }
+
+  export interface ProxyConfig {
+    access_control?: ProxyConfig.AccessControl;
+
+    callbacks?: Array<ProxyConfig.Callback>;
+
+    no_proxy?: Array<string>;
+
+    rules?: Array<ProxyConfig.Rule>;
+  }
+
+  export namespace ProxyConfig {
+    export interface AccessControl {
+      allow_list?: Array<string>;
+
+      deny_list?: Array<string>;
+    }
+
+    export interface Callback {
+      match_hosts: Array<string>;
+
+      ttl_seconds: number;
+
+      url: string;
+
+      full_request?: boolean;
+
+      request_headers?: Array<Callback.RequestHeader>;
+    }
+
+    export namespace Callback {
+      export interface RequestHeader {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+
+    export interface Rule {
+      name: string;
+
+      aws?: Rule.Aws;
+
+      enabled?: boolean;
+
+      gcp?: Rule.Gcp;
+
+      headers?: Array<Rule.Header>;
+
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
+      match_hosts?: Array<string>;
+
+      match_paths?: Array<string>;
+
+      type?: string;
+    }
+
+    export namespace Rule {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
+
+        secret_access_key: Aws.SecretAccessKey;
+      }
+
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Gcp {
+        scopes: Array<string>;
+
+        service_account_json: Gcp.ServiceAccountJson;
+      }
+
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface Header {
+        name: string;
+
+        type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+        is_set?: boolean;
+
+        value?: string;
+      }
+    }
+  }
+}
+
+export interface BoxListResponse {
+  offset?: number;
+
+  sandboxes?: Array<BoxListResponse.Sandbox>;
+}
+
+export namespace BoxListResponse {
+  export interface Sandbox {
+    id?: string;
+
+    created_at?: string;
+
+    created_by?: string;
+
+    dataplane_url?: string;
+
+    delete_after_stop_seconds?: number;
+
+    fs_capacity_bytes?: number;
+
+    idle_ttl_seconds?: number;
+
+    mem_bytes?: number;
+
+    mount_config?: Sandbox.MountConfig;
+
+    name?: string;
+
+    proxy_config?: Sandbox.ProxyConfig;
+
+    size_class?: string;
+
+    snapshot_id?: string;
+
+    status?: string;
+
+    status_message?: string;
+
+    stopped_at?: string;
+
+    updated_at?: string;
+
+    updated_by?: string;
+
+    vcpus?: number;
+  }
+
+  export namespace Sandbox {
+    export interface MountConfig {
+      auth?: MountConfig.Auth;
+
+      mounts?: Array<
+        | MountConfig.SandboxapiS3BucketMountSpec
+        | MountConfig.SandboxapiGcsBucketMountSpec
+        | MountConfig.SandboxapiGitRepoMountSpec
+      >;
+    }
+
+    export namespace MountConfig {
+      export interface Auth {
+        aws?: Auth.Aws;
+
+        gcp?: Auth.Gcp;
+      }
+
+      export namespace Auth {
+        export interface Aws {
+          access_key_id: Aws.AccessKeyID;
+
+          secret_access_key: Aws.SecretAccessKey;
+        }
+
+        export namespace Aws {
+          export interface AccessKeyID {
+            type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+            is_set?: boolean;
+
+            value?: string;
+          }
+
+          export interface SecretAccessKey {
+            type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+            is_set?: boolean;
+
+            value?: string;
+          }
+        }
+
+        export interface Gcp {
+          service_account_json: Gcp.ServiceAccountJson;
+        }
+
+        export namespace Gcp {
+          export interface ServiceAccountJson {
+            type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+            is_set?: boolean;
+
+            value?: string;
+          }
+        }
+      }
+
+      export interface SandboxapiS3BucketMountSpec {
+        id: string;
+
+        mount_path: string;
+
+        s3: SandboxapiS3BucketMountSpec.S3;
+
+        type: 's3' | 'gcs' | 'git';
+
+        cache?: SandboxapiS3BucketMountSpec.Cache;
+
+        gcs?: SandboxapiS3BucketMountSpec.Gcs;
+
+        git?: SandboxapiS3BucketMountSpec.Git;
+
+        read_only?: boolean;
+      }
+
+      export namespace SandboxapiS3BucketMountSpec {
+        export interface S3 {
+          bucket: string;
+
+          endpoint_url: string;
+
+          region: string;
+
+          path_style?: boolean;
+
+          prefix?: string;
+        }
+
+        export interface Cache {
+          max_size_bytes?: number;
+
+          writeback_seconds?: number;
+        }
+
+        export interface Gcs {
+          bucket: string;
+
+          prefix?: string;
+        }
+
+        export interface Git {
+          remote_url: string;
+
+          ref?: Git.Ref;
+
+          refresh_interval_seconds?: number;
+        }
+
+        export namespace Git {
+          export interface Ref {
+            name: string;
+
+            type: 'branch' | 'tag';
+          }
+        }
+      }
+
+      export interface SandboxapiGcsBucketMountSpec {
+        id: string;
+
+        gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+        mount_path: string;
+
+        type: 's3' | 'gcs' | 'git';
+
+        cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+        git?: SandboxapiGcsBucketMountSpec.Git;
+
+        read_only?: boolean;
+
+        s3?: SandboxapiGcsBucketMountSpec.S3;
+      }
+
+      export namespace SandboxapiGcsBucketMountSpec {
+        export interface Gcs {
+          bucket: string;
+
+          prefix?: string;
+        }
+
+        export interface Cache {
+          max_size_bytes?: number;
+
+          writeback_seconds?: number;
+        }
+
+        export interface Git {
+          remote_url: string;
+
+          ref?: Git.Ref;
+
+          refresh_interval_seconds?: number;
+        }
+
+        export namespace Git {
+          export interface Ref {
+            name: string;
+
+            type: 'branch' | 'tag';
+          }
+        }
+
+        export interface S3 {
+          bucket: string;
+
+          endpoint_url: string;
+
+          region: string;
+
+          path_style?: boolean;
+
+          prefix?: string;
+        }
+      }
+
+      export interface SandboxapiGitRepoMountSpec {
+        id: string;
+
+        git: SandboxapiGitRepoMountSpec.Git;
+
+        mount_path: string;
+
+        type: 's3' | 'gcs' | 'git';
+
+        cache?: SandboxapiGitRepoMountSpec.Cache;
+
+        gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+        read_only?: boolean;
+
+        s3?: SandboxapiGitRepoMountSpec.S3;
+      }
+
+      export namespace SandboxapiGitRepoMountSpec {
+        export interface Git {
+          remote_url: string;
+
+          ref?: Git.Ref;
+
+          refresh_interval_seconds?: number;
+        }
+
+        export namespace Git {
+          export interface Ref {
+            name: string;
+
+            type: 'branch' | 'tag';
+          }
+        }
+
+        export interface Cache {
+          max_size_bytes?: number;
+
+          writeback_seconds?: number;
+        }
+
+        export interface Gcs {
+          bucket: string;
+
+          prefix?: string;
+        }
+
+        export interface S3 {
+          bucket: string;
+
+          endpoint_url: string;
+
+          region: string;
+
+          path_style?: boolean;
+
+          prefix?: string;
+        }
+      }
+    }
 
     export interface ProxyConfig {
       access_control?: ProxyConfig.AccessControl;
@@ -1400,6 +1628,10 @@ export namespace BoxListResponse {
 
         headers?: Array<Rule.Header>;
 
+        /**
+         * MatchHosts is only accepted for header injection rules. Provider auth rules use
+         * built-in host matching.
+         */
         match_hosts?: Array<string>;
 
         match_paths?: Array<string>;
@@ -1530,11 +1762,7 @@ export interface BoxStartResponse {
 
   mem_bytes?: number;
 
-  mounts?: Array<
-    | BoxStartResponse.SandboxapiS3BucketMountSpec
-    | BoxStartResponse.SandboxapiGcsBucketMountSpec
-    | BoxStartResponse.SandboxapiGitRepoMountSpec
-  >;
+  mount_config?: BoxStartResponse.MountConfig;
 
   name?: string;
 
@@ -1558,183 +1786,241 @@ export interface BoxStartResponse {
 }
 
 export namespace BoxStartResponse {
-  export interface SandboxapiS3BucketMountSpec {
-    id: string;
+  export interface MountConfig {
+    auth?: MountConfig.Auth;
 
-    mount_path: string;
-
-    s3: SandboxapiS3BucketMountSpec.S3;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiS3BucketMountSpec.Cache;
-
-    gcs?: SandboxapiS3BucketMountSpec.Gcs;
-
-    git?: SandboxapiS3BucketMountSpec.Git;
-
-    read_only?: boolean;
+    mounts?: Array<
+      | MountConfig.SandboxapiS3BucketMountSpec
+      | MountConfig.SandboxapiGcsBucketMountSpec
+      | MountConfig.SandboxapiGitRepoMountSpec
+    >;
   }
 
-  export namespace SandboxapiS3BucketMountSpec {
-    export interface S3 {
-      bucket: string;
+  export namespace MountConfig {
+    export interface Auth {
+      aws?: Auth.Aws;
 
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
+      gcp?: Auth.Gcp;
     }
 
-    export interface Cache {
-      max_size_bytes?: number;
+    export namespace Auth {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
 
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
+        secret_access_key: Aws.SecretAccessKey;
       }
-    }
-  }
 
-  export interface SandboxapiGcsBucketMountSpec {
-    id: string;
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+          is_set?: boolean;
 
-    mount_path: string;
+          value?: string;
+        }
 
-    type: 's3' | 'gcs' | 'git';
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-    cache?: SandboxapiGcsBucketMountSpec.Cache;
+          is_set?: boolean;
 
-    git?: SandboxapiGcsBucketMountSpec.Git;
+          value?: string;
+        }
+      }
 
-    read_only?: boolean;
+      export interface Gcp {
+        service_account_json: Gcp.ServiceAccountJson;
+      }
 
-    s3?: SandboxapiGcsBucketMountSpec.S3;
-  }
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-  export namespace SandboxapiGcsBucketMountSpec {
-    export interface Gcs {
-      bucket: string;
+          is_set?: boolean;
 
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
+          value?: string;
+        }
       }
     }
 
-    export interface S3 {
-      bucket: string;
+    export interface SandboxapiS3BucketMountSpec {
+      id: string;
 
-      endpoint_url: string;
+      mount_path: string;
 
-      region: string;
+      s3: SandboxapiS3BucketMountSpec.S3;
 
-      path_style?: boolean;
+      type: 's3' | 'gcs' | 'git';
 
-      prefix?: string;
-    }
-  }
+      cache?: SandboxapiS3BucketMountSpec.Cache;
 
-  export interface SandboxapiGitRepoMountSpec {
-    id: string;
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
-    git: SandboxapiGitRepoMountSpec.Git;
+      git?: SandboxapiS3BucketMountSpec.Git;
 
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGitRepoMountSpec.Cache;
-
-    gcs?: SandboxapiGitRepoMountSpec.Gcs;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGitRepoMountSpec.S3;
-  }
-
-  export namespace SandboxapiGitRepoMountSpec {
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
+      read_only?: boolean;
     }
 
-    export namespace Git {
-      export interface Ref {
-        name: string;
+    export namespace SandboxapiS3BucketMountSpec {
+      export interface S3 {
+        bucket: string;
 
-        type: 'branch' | 'tag';
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
       }
     }
 
-    export interface Cache {
-      max_size_bytes?: number;
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
 
-      writeback_seconds?: number;
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      git?: SandboxapiGcsBucketMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
     }
 
-    export interface Gcs {
-      bucket: string;
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
 
-      prefix?: string;
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
     }
 
-    export interface S3 {
-      bucket: string;
+    export interface SandboxapiGitRepoMountSpec {
+      id: string;
 
-      endpoint_url: string;
+      git: SandboxapiGitRepoMountSpec.Git;
 
-      region: string;
+      mount_path: string;
 
-      path_style?: boolean;
+      type: 's3' | 'gcs' | 'git';
 
-      prefix?: string;
+      cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGitRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiGitRepoMountSpec {
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
     }
   }
 
@@ -1790,6 +2076,10 @@ export namespace BoxStartResponse {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -1862,11 +2152,7 @@ export interface BoxCreateParams {
 
   mem_bytes?: number;
 
-  mounts?: Array<
-    | BoxCreateParams.SandboxapiS3BucketMountSpec
-    | BoxCreateParams.SandboxapiGcsBucketMountSpec
-    | BoxCreateParams.SandboxapiGitRepoMountSpec
-  >;
+  mount_config?: BoxCreateParams.MountConfig;
 
   name?: string;
 
@@ -1893,183 +2179,241 @@ export interface BoxCreateParams {
 }
 
 export namespace BoxCreateParams {
-  export interface SandboxapiS3BucketMountSpec {
-    id: string;
+  export interface MountConfig {
+    auth?: MountConfig.Auth;
 
-    mount_path: string;
-
-    s3: SandboxapiS3BucketMountSpec.S3;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiS3BucketMountSpec.Cache;
-
-    gcs?: SandboxapiS3BucketMountSpec.Gcs;
-
-    git?: SandboxapiS3BucketMountSpec.Git;
-
-    read_only?: boolean;
+    mounts?: Array<
+      | MountConfig.SandboxapiS3BucketMountSpec
+      | MountConfig.SandboxapiGcsBucketMountSpec
+      | MountConfig.SandboxapiGitRepoMountSpec
+    >;
   }
 
-  export namespace SandboxapiS3BucketMountSpec {
-    export interface S3 {
-      bucket: string;
+  export namespace MountConfig {
+    export interface Auth {
+      aws?: Auth.Aws;
 
-      endpoint_url: string;
-
-      region: string;
-
-      path_style?: boolean;
-
-      prefix?: string;
+      gcp?: Auth.Gcp;
     }
 
-    export interface Cache {
-      max_size_bytes?: number;
+    export namespace Auth {
+      export interface Aws {
+        access_key_id: Aws.AccessKeyID;
 
-      writeback_seconds?: number;
-    }
-
-    export interface Gcs {
-      bucket: string;
-
-      prefix?: string;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
+        secret_access_key: Aws.SecretAccessKey;
       }
-    }
-  }
 
-  export interface SandboxapiGcsBucketMountSpec {
-    id: string;
+      export namespace Aws {
+        export interface AccessKeyID {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-    gcs: SandboxapiGcsBucketMountSpec.Gcs;
+          is_set?: boolean;
 
-    mount_path: string;
+          value?: string;
+        }
 
-    type: 's3' | 'gcs' | 'git';
+        export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-    cache?: SandboxapiGcsBucketMountSpec.Cache;
+          is_set?: boolean;
 
-    git?: SandboxapiGcsBucketMountSpec.Git;
+          value?: string;
+        }
+      }
 
-    read_only?: boolean;
+      export interface Gcp {
+        service_account_json: Gcp.ServiceAccountJson;
+      }
 
-    s3?: SandboxapiGcsBucketMountSpec.S3;
-  }
+      export namespace Gcp {
+        export interface ServiceAccountJson {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
 
-  export namespace SandboxapiGcsBucketMountSpec {
-    export interface Gcs {
-      bucket: string;
+          is_set?: boolean;
 
-      prefix?: string;
-    }
-
-    export interface Cache {
-      max_size_bytes?: number;
-
-      writeback_seconds?: number;
-    }
-
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
-    }
-
-    export namespace Git {
-      export interface Ref {
-        name: string;
-
-        type: 'branch' | 'tag';
+          value?: string;
+        }
       }
     }
 
-    export interface S3 {
-      bucket: string;
+    export interface SandboxapiS3BucketMountSpec {
+      id: string;
 
-      endpoint_url: string;
+      mount_path: string;
 
-      region: string;
+      s3: SandboxapiS3BucketMountSpec.S3;
 
-      path_style?: boolean;
+      type: 's3' | 'gcs' | 'git';
 
-      prefix?: string;
-    }
-  }
+      cache?: SandboxapiS3BucketMountSpec.Cache;
 
-  export interface SandboxapiGitRepoMountSpec {
-    id: string;
+      gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
-    git: SandboxapiGitRepoMountSpec.Git;
+      git?: SandboxapiS3BucketMountSpec.Git;
 
-    mount_path: string;
-
-    type: 's3' | 'gcs' | 'git';
-
-    cache?: SandboxapiGitRepoMountSpec.Cache;
-
-    gcs?: SandboxapiGitRepoMountSpec.Gcs;
-
-    read_only?: boolean;
-
-    s3?: SandboxapiGitRepoMountSpec.S3;
-  }
-
-  export namespace SandboxapiGitRepoMountSpec {
-    export interface Git {
-      remote_url: string;
-
-      ref?: Git.Ref;
-
-      refresh_interval_seconds?: number;
+      read_only?: boolean;
     }
 
-    export namespace Git {
-      export interface Ref {
-        name: string;
+    export namespace SandboxapiS3BucketMountSpec {
+      export interface S3 {
+        bucket: string;
 
-        type: 'branch' | 'tag';
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
       }
     }
 
-    export interface Cache {
-      max_size_bytes?: number;
+    export interface SandboxapiGcsBucketMountSpec {
+      id: string;
 
-      writeback_seconds?: number;
+      gcs: SandboxapiGcsBucketMountSpec.Gcs;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git';
+
+      cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      git?: SandboxapiGcsBucketMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGcsBucketMountSpec.S3;
     }
 
-    export interface Gcs {
-      bucket: string;
+    export namespace SandboxapiGcsBucketMountSpec {
+      export interface Gcs {
+        bucket: string;
 
-      prefix?: string;
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
     }
 
-    export interface S3 {
-      bucket: string;
+    export interface SandboxapiGitRepoMountSpec {
+      id: string;
 
-      endpoint_url: string;
+      git: SandboxapiGitRepoMountSpec.Git;
 
-      region: string;
+      mount_path: string;
 
-      path_style?: boolean;
+      type: 's3' | 'gcs' | 'git';
 
-      prefix?: string;
+      cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      gcs?: SandboxapiGitRepoMountSpec.Gcs;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiGitRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiGitRepoMountSpec {
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        endpoint_url: string;
+
+        region: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
     }
   }
 
@@ -2125,6 +2469,10 @@ export namespace BoxCreateParams {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;
@@ -2257,6 +2605,10 @@ export namespace BoxUpdateParams {
 
       headers?: Array<Rule.Header>;
 
+      /**
+       * MatchHosts is only accepted for header injection rules. Provider auth rules use
+       * built-in host matching.
+       */
       match_hosts?: Array<string>;
 
       match_paths?: Array<string>;

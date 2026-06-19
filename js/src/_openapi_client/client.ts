@@ -224,7 +224,6 @@ import {
   RunRetrieveParams,
   RunRetrieveV2Params,
   RunSchema,
-  RunSchemasCursorPagination,
   RunStatsParams,
   RunStatsQueryParams,
   RunStatsResponse,
@@ -1204,16 +1203,15 @@ export declare namespace Langsmith {
     type RunIngestBatchResponse as RunIngestBatchResponse,
     type RunStatsResponse as RunStatsResponse,
     type RunUpdate2Response as RunUpdate2Response,
-    type RunSchemasCursorPagination as RunSchemasCursorPagination,
     type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
     type RunCreateParams as RunCreateParams,
-    type RunRetrieveParams as RunRetrieveParams,
     type RunUpdateParams as RunUpdateParams,
     type RunIngestBatchParams as RunIngestBatchParams,
-    type RunQueryParams as RunQueryParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunStatsParams as RunStatsParams,
+    type RunRetrieveParams as RunRetrieveParams,
+    type RunQueryParams as RunQueryParams,
   };
 
   export {
