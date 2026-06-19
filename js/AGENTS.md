@@ -17,6 +17,15 @@ To run a single test file, pass it to Jest, e.g.:
 NODE_OPTIONS=--experimental-vm-modules npx jest src/tests/context.test.ts
 ```
 
+## Releasing
+
+Releasing the SDK is governed **exclusively** by the "Cutting a release" section of
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md). When asked to cut or publish a release,
+you **must** follow that process: use the documented `pnpm run bump-version` flow and
+open a version-bump PR against `main`. Do **not** hand-edit `package.json` or
+`src/index.ts`, bump the version by any other means, push tags, or invent an
+alternative release path.
+
 ## Conventions
 
 ### Constructing request URLs
