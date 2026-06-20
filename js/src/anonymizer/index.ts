@@ -1,3 +1,5 @@
+import { serialize as serializePayloadForTracing } from "../utils/fast-safe-stringify/index.js";
+
 export interface StringNode {
   value: string;
   path: string;
@@ -14,6 +16,7 @@ interface StringNodeInternal extends StringNode {
 
 function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
   const parsedOptions = { ...options, maxDepth: options.maxDepth ?? 10 };
+  const seen = new WeakSet<object>();
 
   const queue: [
     value: unknown,
@@ -39,6 +42,8 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
       });
     } else if (Array.isArray(value)) {
       if (depth >= parsedOptions.maxDepth) continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
       for (let i = 0; i < value.length; i++) {
         queue.push([
           value[i],
@@ -50,6 +55,8 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
       }
     } else if (typeof value === "object" && value != null) {
       if (depth >= parsedOptions.maxDepth) continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
       for (const [k, nestedValue] of Object.entries(value)) {
         queue.push([
           nestedValue,
@@ -66,7 +73,7 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
 }
 
 function deepClone<T>(data: T): T {
-  return JSON.parse(JSON.stringify(data));
+  return JSON.parse(new TextDecoder().decode(serializePayloadForTracing(data)));
 }
 
 export interface StringNodeProcessor {
@@ -89,6 +96,13 @@ export function createAnonymizer(
   options?: { maxDepth?: number },
 ) {
   return <T>(data: T): T => {
+    const originalNodes = extractStringNodes(data, {
+      maxDepth: options?.maxDepth,
+    });
+    if (originalNodes.length === 0) {
+      return data;
+    }
+
     let mutateValue = deepClone(data);
     const nodes = extractStringNodes(mutateValue, {
       maxDepth: options?.maxDepth,
