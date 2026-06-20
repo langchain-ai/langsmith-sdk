@@ -1,7 +1,7 @@
 import re  # noqa
 import inspect
 from abc import abstractmethod
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any, Callable, Optional, TypedDict, Union
 
 
@@ -25,11 +25,12 @@ class StringNode(TypedDict):
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNode]:
     max_depth = options.get("max_depth") or 10
 
-    queue: list[tuple[Any, int, list[Union[str, int]]]] = [(data, 0, [])]
+    queue: deque[tuple[Any, int, list[Union[str, int]]]] = deque([(data, 0, [])])
     result: list[StringNode] = []
+    seen: set[int] = set()
 
     while queue:
-        task = queue.pop(0)
+        task = queue.popleft()
         if task is None:
             continue
         value, depth, path = task
@@ -37,11 +38,19 @@ def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNod
         if isinstance(value, (dict, defaultdict)):
             if depth >= max_depth:
                 continue
+            obj_id = id(value)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
             for key, nested_value in value.items():
                 queue.append((nested_value, depth + 1, path + [key]))
         elif isinstance(value, list):
             if depth >= max_depth:
                 continue
+            obj_id = id(value)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
             for i, item in enumerate(value):
                 queue.append((item, depth + 1, path + [i]))
         elif isinstance(value, str):
@@ -88,7 +97,12 @@ class RuleNodeProcessor(StringNodeProcessor):
     and an optional replacement string.
     """
 
-    def __init__(self, rules: list[StringNodeRule]):
+    def __init__(
+        self,
+        rules: list[StringNodeRule],
+        *,
+        prefilter: Optional[Callable[[str], bool]] = None,
+    ):
         """Initialize the processor with a list of rules."""
         self.rules = [
             {
@@ -105,11 +119,14 @@ class RuleNodeProcessor(StringNodeProcessor):
             }
             for rule in rules
         ]
+        self.prefilter = prefilter
 
     def mask_nodes(self, nodes: list[StringNode]) -> list[StringNode]:
         """Mask nodes using the rules."""
         result = []
         for item in nodes:
+            if self.prefilter is not None and not self.prefilter(item["value"]):
+                continue
             new_value = item["value"]
             for rule in self.rules:
                 new_value = rule["pattern"].sub(rule["replace"], new_value)
@@ -339,6 +356,65 @@ JS SDK's ``DEFAULT_SECRET_RULES``; it is NOT a port of gitleaks/secretlint
 (pattern shapes are drawn from those projects as a reference only)."""
 
 
+_SECRET_INDICATORS = (
+    "sk-",
+    "lsv2_",
+    "ls__",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "glpat-",
+    "akia",
+    "asia",
+    "abia",
+    "acca",
+    "a3t",
+    "aiza",
+    "ya29.",
+    "xox",
+    "xapp-",
+    "hooks.slack.com/services",
+    "sk_live_",
+    "sk_test_",
+    "rk_live_",
+    "rk_test_",
+    "npm_",
+    "pypi-ageichlwas",
+    "sg.",
+    "eyj",
+    "-----begin",
+    "api_key",
+    "api-key",
+    "apikey",
+    "secret",
+    "token",
+    "password",
+    "passwd",
+    "private_key",
+    "private-key",
+    "access_key",
+    "access-key",
+    "auth_token",
+    "auth-token",
+    "client_secret",
+    "client-secret",
+    "authorization",
+    "x-api-key",
+    "x-auth-token",
+    "bearer",
+    "basic",
+    "://",
+)
+
+
+def _may_contain_secret(value: str) -> bool:
+    value_lower = value.lower()
+    return any(indicator in value_lower for indicator in _SECRET_INDICATORS)
+
+
 def create_secret_anonymizer(
     *,
     extra_rules: Optional[list[StringNodeRule]] = None,
@@ -363,4 +439,8 @@ def create_secret_anonymizer(
     rules = list(DEFAULT_SECRET_RULES)
     if extra_rules:
         rules = rules + list(extra_rules)
-    return create_anonymizer(rules, max_depth=max_depth)
+    processor = RuleNodeProcessor(
+        rules,
+        prefilter=None if extra_rules else _may_contain_secret,
+    )
+    return create_anonymizer(processor, max_depth=max_depth)

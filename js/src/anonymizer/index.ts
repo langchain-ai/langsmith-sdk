@@ -1,17 +1,18 @@
 import { serialize as serializePayloadForTracing } from "../utils/fast-safe-stringify/index.js";
 
+const textDecoder = new TextDecoder();
+
 export interface StringNode {
   value: string;
   path: string;
 }
 
 interface StringNodeInternal extends StringNode {
-  // Direct reference to the parent object and key, so we can write back
-  // without path parsing/traversal (avoids prototype pollution entirely).
-  parent: Record<string, unknown>;
-  key: string;
   // Unique identity for matching after maskNodes processing.
   _id: number;
+  // Internal path segments from the original traversal. This lets us apply
+  // updates to a clone without parsing the public dotted path string.
+  pathParts: string[];
 }
 
 function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
@@ -22,23 +23,22 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
     value: unknown,
     depth: number,
     path: string,
-    parent: Record<string, unknown> | null,
-    key: string,
-  ][] = [[data, 0, "", null, ""]];
+    pathParts: string[],
+  ][] = [[data, 0, "", []]];
 
   let nextId = 0;
   const result: StringNodeInternal[] = [];
-  while (queue.length > 0) {
-    const task = queue.shift();
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const task = queue[queueIndex++];
     if (task == null) continue;
-    const [value, depth, path, parent, key] = task;
+    const [value, depth, path, pathParts] = task;
     if (typeof value === "string") {
       result.push({
         value,
         path,
-        parent: parent as Record<string, unknown>,
-        key,
         _id: nextId++,
+        pathParts,
       });
     } else if (Array.isArray(value)) {
       if (depth >= parsedOptions.maxDepth) continue;
@@ -49,8 +49,7 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
           value[i],
           depth + 1,
           `${path}[${i}]`,
-          value as unknown as Record<string, unknown>,
-          String(i),
+          [...pathParts, String(i)],
         ]);
       }
     } else if (typeof value === "object" && value != null) {
@@ -62,8 +61,7 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
           nestedValue,
           depth + 1,
           path ? `${path}.${k}` : k,
-          value as Record<string, unknown>,
-          k,
+          [...pathParts, k],
         ]);
       }
     }
@@ -73,7 +71,7 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
 }
 
 function deepClone<T>(data: T): T {
-  return JSON.parse(new TextDecoder().decode(serializePayloadForTracing(data)));
+  return JSON.parse(textDecoder.decode(serializePayloadForTracing(data)));
 }
 
 export interface StringNodeProcessor {
@@ -91,99 +89,132 @@ export type ReplacerType =
   | StringNodeRule[]
   | StringNodeProcessor;
 
+function createRuleNodeProcessor(
+  rules: StringNodeRule[],
+  options?: { prefilter?: (value: string) => boolean },
+): StringNodeProcessor {
+  const replacers: [regex: RegExp, replace: string][] = rules.map(
+    ({ pattern, type, replace }) => {
+      if (type != null && type !== "pattern")
+        throw new Error("Invalid anonymizer type");
+      return [
+        typeof pattern === "string" ? new RegExp(pattern, "g") : pattern,
+        replace ?? "[redacted]",
+      ];
+    },
+  );
+
+  if (replacers.length === 0) throw new Error("No replacers provided");
+  return {
+    maskNodes: (nodes: StringNode[]) => {
+      return nodes.reduce<StringNode[]>((memo, item) => {
+        if (options?.prefilter != null && !options.prefilter(item.value)) {
+          return memo;
+        }
+
+        const newValue = replacers.reduce((value, [regex, replace]) => {
+          const result = value.replace(regex, replace);
+
+          // make sure we reset the state of regex
+          regex.lastIndex = 0;
+
+          return result;
+        }, item.value);
+
+        if (newValue !== item.value) {
+          memo.push({ ...item, value: newValue });
+        }
+
+        return memo;
+      }, []);
+    },
+  };
+}
+
+function getNodeProcessor(replacer: ReplacerType): StringNodeProcessor {
+  return Array.isArray(replacer)
+    ? createRuleNodeProcessor(replacer)
+    : typeof replacer === "function"
+      ? {
+          maskNodes: (nodes: StringNode[]) =>
+            nodes.reduce<StringNode[]>((memo, item) => {
+              const newValue = replacer(item.value, item.path);
+              if (newValue !== item.value) {
+                memo.push({ ...item, value: newValue });
+              }
+
+              return memo;
+            }, []),
+        }
+      : replacer;
+}
+
+function applyUpdateAtPath<T>(
+  root: T,
+  pathParts: string[],
+  value: string,
+): void {
+  let target = root as Record<string, unknown>;
+  for (const part of pathParts.slice(0, -1)) {
+    const next = target[part];
+    if (typeof next !== "object" || next == null) {
+      return;
+    }
+    target = next as Record<string, unknown>;
+  }
+  target[pathParts[pathParts.length - 1]] = value;
+}
+
+function applyProcessor<T>(
+  mutateValue: T,
+  processor: StringNodeProcessor,
+  options?: { maxDepth?: number },
+): T {
+  const nodes = extractStringNodes(mutateValue, {
+    maxDepth: options?.maxDepth,
+  });
+  if (nodes.length === 0) {
+    return mutateValue;
+  }
+
+  const toUpdate = processor.maskNodes(nodes);
+  if (toUpdate.length === 0) {
+    return mutateValue;
+  }
+
+  const nodesById = new Map<number, StringNodeInternal>();
+  const nodesByPath = new Map<string, StringNodeInternal>();
+  for (const node of nodes) {
+    nodesById.set(node._id, node);
+    nodesByPath.set(node.path, node);
+  }
+
+  for (const node of toUpdate) {
+    if (node.path === "") {
+      mutateValue = node.value as unknown as T;
+    } else {
+      const asInternal = node as Partial<StringNodeInternal>;
+      const internal =
+        asInternal._id !== undefined
+          ? nodesById.get(asInternal._id)
+          : nodesByPath.get(node.path);
+      if (internal) {
+        applyUpdateAtPath(mutateValue, internal.pathParts, node.value);
+      }
+    }
+  }
+
+  return mutateValue;
+}
+
 export function createAnonymizer(
   replacer: ReplacerType,
   options?: { maxDepth?: number },
 ) {
+  const processor = getNodeProcessor(replacer);
+
   return <T>(data: T): T => {
-    const originalNodes = extractStringNodes(data, {
-      maxDepth: options?.maxDepth,
-    });
-    if (originalNodes.length === 0) {
-      return data;
-    }
-
-    let mutateValue = deepClone(data);
-    const nodes = extractStringNodes(mutateValue, {
-      maxDepth: options?.maxDepth,
-    });
-
-    const processor: StringNodeProcessor = Array.isArray(replacer)
-      ? (() => {
-          const replacers: [regex: RegExp, replace: string][] = replacer.map(
-            ({ pattern, type, replace }) => {
-              if (type != null && type !== "pattern")
-                throw new Error("Invalid anonymizer type");
-              return [
-                typeof pattern === "string"
-                  ? new RegExp(pattern, "g")
-                  : pattern,
-                replace ?? "[redacted]",
-              ];
-            },
-          );
-
-          if (replacers.length === 0) throw new Error("No replacers provided");
-          return {
-            maskNodes: (nodes: StringNode[]) => {
-              return nodes.reduce<StringNode[]>((memo, item) => {
-                const newValue = replacers.reduce((value, [regex, replace]) => {
-                  const result = value.replace(regex, replace);
-
-                  // make sure we reset the state of regex
-                  regex.lastIndex = 0;
-
-                  return result;
-                }, item.value);
-
-                if (newValue !== item.value) {
-                  memo.push({ ...item, value: newValue });
-                }
-
-                return memo;
-              }, []);
-            },
-          };
-        })()
-      : typeof replacer === "function"
-        ? {
-            maskNodes: (nodes: StringNode[]) =>
-              nodes.reduce<StringNode[]>((memo, item) => {
-                const newValue = replacer(item.value, item.path);
-                if (newValue !== item.value) {
-                  memo.push({ ...item, value: newValue });
-                }
-
-                return memo;
-              }, []),
-          }
-        : replacer;
-
-    // Build a lookup from _id to internal node for direct write-back.
-    const nodesById = new Map<number, StringNodeInternal>();
-    for (const node of nodes) {
-      nodesById.set(node._id, node);
-    }
-
-    const toUpdate = processor.maskNodes(nodes);
-    for (const node of toUpdate) {
-      if (node.path === "") {
-        mutateValue = node.value as unknown as T;
-      } else {
-        // Match by _id if available (built-in replacers propagate it from
-        // the input nodes), otherwise fall back to path matching.
-        const asInternal = node as Partial<StringNodeInternal>;
-        const internal =
-          asInternal._id !== undefined
-            ? nodesById.get(asInternal._id)
-            : nodes.find((n) => n.path === node.path);
-        if (internal) {
-          internal.parent[internal.key] = node.value;
-        }
-      }
-    }
-
-    return mutateValue;
+    return applyProcessor(deepClone(data), processor, options);
   };
 }
 
@@ -312,6 +343,53 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
   },
 ];
 
+const SECRET_RULE_PREFILTER = new RegExp(
+  [
+    "sk-",
+    "lsv2_",
+    "ls__",
+    "gh[pousr]_",
+    "github_pat_",
+    "glpat-",
+    "AKIA",
+    "ASIA",
+    "ABIA",
+    "ACCA",
+    "A3T[A-Z0-9]",
+    "AIza",
+    "ya29\\.",
+    "xox[baprs]-",
+    "xapp-\\d-",
+    "hooks\\.slack\\.com/services",
+    "(?:sk|rk)_(?:live|test)_",
+    "npm_",
+    "pypi-AgEIcHlwaS",
+    "SG\\.",
+    "eyJ",
+    "-----BEGIN",
+    "api[_-]?key",
+    "secret",
+    "token",
+    "password",
+    "passwd",
+    "private[_-]?key",
+    "access[_-]?key",
+    "auth[_-]?token",
+    "client[_-]?secret",
+    "authorization",
+    "x-api-key",
+    "x-auth-token",
+    "bearer",
+    "basic",
+    "[a-z][a-z0-9+.-]*://[^:@/\\s]*:",
+  ].join("|"),
+  "i",
+);
+
+function mayContainSecret(value: string): boolean {
+  return SECRET_RULE_PREFILTER.test(value);
+}
+
 /**
  * Build an anonymizer pre-loaded with {@link DEFAULT_SECRET_RULES} suitable for
  * passing to `new Client({ anonymizer })`. It redacts detected secrets from run
@@ -334,6 +412,19 @@ export function createSecretAnonymizer(options?: {
   extraRules?: StringNodeRule[];
   maxDepth?: number;
 }) {
-  const rules = [...DEFAULT_SECRET_RULES, ...(options?.extraRules ?? [])];
-  return createAnonymizer(rules, { maxDepth: options?.maxDepth ?? 24 });
+  const extraRules = options?.extraRules ?? [];
+  const processor =
+    extraRules.length > 0
+      ? createRuleNodeProcessor([...DEFAULT_SECRET_RULES, ...extraRules])
+      : createRuleNodeProcessor(DEFAULT_SECRET_RULES, {
+          prefilter: mayContainSecret,
+        });
+  const maxDepth = options?.maxDepth ?? 24;
+  return <T>(data: T): T => {
+    const serialized = textDecoder.decode(serializePayloadForTracing(data));
+    if (extraRules.length === 0 && !mayContainSecret(serialized)) {
+      return data;
+    }
+    return applyProcessor(JSON.parse(serialized), processor, { maxDepth });
+  };
 }
