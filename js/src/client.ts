@@ -1294,16 +1294,25 @@ export class Client implements LangSmithTracingClientInterface {
       config.anonymizer ??
       (redactSecrets && noExplicitHide ? createSecretAnonymizer() : undefined);
 
+    // Env-var hide flags (defaultConfig.*) take priority over the default
+    // secret anonymizer: if HIDE_INPUTS=true, inputs are fully hidden rather
+    // than redacted. The anonymizer still applies to fields whose env flag
+    // is not set, matching the Python SDK behavior.
     this.hideInputs =
-      config.hideInputs ?? defaultSecretAnonymizer ?? defaultConfig.hideInputs;
+      config.hideInputs ??
+      (defaultConfig.hideInputs === true
+        ? true
+        : (defaultSecretAnonymizer ?? defaultConfig.hideInputs));
     this.hideOutputs =
       config.hideOutputs ??
-      defaultSecretAnonymizer ??
-      defaultConfig.hideOutputs;
+      (defaultConfig.hideOutputs === true
+        ? true
+        : (defaultSecretAnonymizer ?? defaultConfig.hideOutputs));
     this.hideMetadata =
       config.hideMetadata ??
-      defaultSecretAnonymizer ??
-      defaultConfig.hideMetadata;
+      (defaultConfig.hideMetadata === true
+        ? true
+        : (defaultSecretAnonymizer ?? defaultConfig.hideMetadata));
 
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
@@ -1574,7 +1583,11 @@ export class Client implements LangSmithTracingClientInterface {
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
     }
-    if (runParams.extra != null && "metadata" in runParams.extra) {
+    if (
+      runParams.extra != null &&
+      "metadata" in runParams.extra &&
+      runParams.extra.metadata != null
+    ) {
       runParams.extra = {
         ...runParams.extra,
         metadata: await this.processMetadata(runParams.extra.metadata),
@@ -2700,7 +2713,11 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
     }
-    if (run.extra != null && "metadata" in run.extra) {
+    if (
+      run.extra != null &&
+      "metadata" in run.extra &&
+      run.extra.metadata != null
+    ) {
       run.extra = {
         ...run.extra,
         metadata: await this.processMetadata(run.extra.metadata),

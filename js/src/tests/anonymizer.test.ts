@@ -549,4 +549,54 @@ describe("default secret redaction", () => {
       }
     }
   });
+
+  test("LANGSMITH_HIDE_INPUTS=true fully hides inputs instead of redacting", async () => {
+    const original = process.env.LANGSMITH_HIDE_INPUTS;
+    process.env.LANGSMITH_HIDE_INPUTS = "true";
+    try {
+      const { client, callSpy } = mockClient({});
+
+      const fn = traceable(
+        async (_params: Record<string, unknown>) => ({ note: "ok" }),
+        {
+          client,
+          name: "fn",
+          tracingEnabled: true,
+        },
+      );
+
+      await fn({ password: "supersecret123", other: "visible" });
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const data = tree.data["fn:0"] as {
+        inputs: Record<string, unknown>;
+      };
+      // With HIDE_INPUTS=true, inputs should be {} (fully hidden), not redacted.
+      expect(data.inputs).toEqual({});
+      // The raw value must not appear anywhere.
+      expect(JSON.stringify(tree)).not.toContain("supersecret123");
+    } finally {
+      if (original === undefined) {
+        delete process.env.LANGSMITH_HIDE_INPUTS;
+      } else {
+        process.env.LANGSMITH_HIDE_INPUTS = original;
+      }
+    }
+  });
+
+  test("does not throw when extra.metadata is undefined", async () => {
+    const { client } = mockClient({});
+
+    // Directly call createRun with extra.metadata present but undefined.
+    // Before the fix, the default anonymizer would throw on
+    // JSON.parse(JSON.stringify(undefined)).
+    await expect(
+      client.createRun({
+        name: "test-undefined-metadata",
+        inputs: { value: "ok" },
+        run_type: "chain",
+        extra: { metadata: undefined },
+      }),
+    ).resolves.not.toThrow();
+  });
 });
