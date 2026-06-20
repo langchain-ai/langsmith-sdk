@@ -426,7 +426,7 @@ describe("default secret redaction", () => {
     const { client, callSpy } = mockClient({});
 
     const fn = traceable(
-      async (apiKey: string) => ({
+      async (_apiKey: string) => ({
         note: `leaked ${ANTHROPIC_KEY} here`,
       }),
       { client, name: "fn", tracingEnabled: true },
@@ -445,7 +445,7 @@ describe("default secret redaction", () => {
     const { client, callSpy } = mockClient({ redactSecrets: false });
 
     const fn = traceable(
-      async (apiKey: string) => ({ note: "no secrets here" }),
+      async (_apiKey: string) => ({ note: "no secrets here" }),
       { client, name: "fn", tracingEnabled: true },
     );
 
@@ -505,7 +505,7 @@ describe("default secret redaction", () => {
       const { client, callSpy } = mockClient({});
 
       const fn = traceable(
-        async (apiKey: string) => ({ note: "no secrets here" }),
+        async (_apiKey: string) => ({ note: "no secrets here" }),
         { client, name: "fn", tracingEnabled: true },
       );
 
