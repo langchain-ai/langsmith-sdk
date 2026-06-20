@@ -403,3 +403,176 @@ def test_secret_anonymizer_in_traceable():
     assert aws_key not in blob
     assert anthropic_key not in blob
     assert SECRET_PLACEHOLDER in blob
+
+
+# ── default-on secret redaction (no explicit anonymizer) ─────────────────────
+
+
+def _make_mock_client(**kwargs) -> Client:
+    return Client(
+        session=MagicMock(),
+        auto_batch_tracing=False,
+        api_url="http://localhost:1984",
+        api_key="123",
+        **kwargs,
+    )
+
+
+def test_default_redact_secrets_on():
+    """Secrets are redacted by default with no explicit anonymizer."""
+    client = _make_mock_client()
+    aws_key = "AKIA" + "IOSFODNN7EXAMPLE"
+    anthropic_key = "sk-ant-api03-" + "A" * 30
+
+    @traceable(client=client)
+    def my_func(api_key: str) -> dict:
+        return {"note": f"leaked {anthropic_key} here"}
+
+    with tracing_context(enabled=True):
+        my_func(aws_key)
+
+    posts = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    assert len(posts) == 1
+    blob = json.dumps(posts[0])
+    assert aws_key not in blob
+    assert anthropic_key not in blob
+    assert SECRET_PLACEHOLDER in blob
+
+
+def test_redact_secrets_disabled_by_constructor():
+    """redact_secrets=False opts out of default redaction."""
+    client = _make_mock_client(redact_secrets=False)
+    aws_key = "AKIA" + "IOSFODNN7EXAMPLE"
+
+    @traceable(client=client)
+    def my_func(api_key: str) -> dict:
+        return {"note": "no secrets here"}
+
+    with tracing_context(enabled=True):
+        my_func(aws_key)
+
+    posts = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    assert len(posts) == 1
+    # Without redaction, the key passes through untouched.
+    assert aws_key in json.dumps(posts[0])
+    assert SECRET_PLACEHOLDER not in json.dumps(posts[0])
+
+
+def test_custom_anonymizer_takes_precedence_over_redact_secrets():
+    """A custom anonymizer overrides the default secret redaction."""
+    custom = create_anonymizer(
+        [StringNodeRule(pattern=re.compile(r"REPLACE_ME"), replace="[done]")]
+    )
+    client = _make_mock_client(anonymizer=custom)
+
+    @traceable(client=client)
+    def my_func() -> dict:
+        return {"note": "leaked REPLACE_ME and sk-ant-api03-" + "A" * 30}
+
+    with tracing_context(enabled=True):
+        my_func()
+
+    posts = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    patches = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args
+        and cast(str, call.args[0]).lower() == "patch"
+        and "/runs" in call.args[1]
+    ]
+    blob = json.dumps(posts + patches)
+    # Custom anonymizer ran, but the secret was NOT redacted (it's not the
+    # secret preset).
+    assert "[done]" in blob
+    assert "sk-ant-api03-" + "A" * 30 in blob
+
+
+def test_default_redact_secrets_applies_to_metadata():
+    """The default anonymizer also redacts secrets in run metadata."""
+    client = _make_mock_client()
+    api_key = "sk-ant-api03-" + "A" * 30
+
+    @traceable(client=client, metadata={"config": f"key={api_key}"})
+    def my_func() -> dict:
+        return {"ok": True}
+
+    with tracing_context(enabled=True):
+        my_func()
+
+    posts = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    assert len(posts) == 1
+    blob = json.dumps(posts[0])
+    assert api_key not in blob
+    assert SECRET_PLACEHOLDER in blob
+
+
+def test_redact_secrets_env_var_opt_out(monkeypatch):
+    """LANGSMITH_REDACT_SECRETS=false disables default redaction."""
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
+    monkeypatch.setenv("LANGSMITH_REDACT_SECRETS", "false")
+    client = _make_mock_client()
+    aws_key = "AKIA" + "IOSFODNN7EXAMPLE"
+
+    @traceable(client=client)
+    def my_func(api_key: str) -> dict:
+        return {"note": "no secrets here"}
+
+    with tracing_context(enabled=True):
+        my_func(aws_key)
+
+    posts = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    assert len(posts) == 1
+    assert aws_key in json.dumps(posts[0])
+    assert SECRET_PLACEHOLDER not in json.dumps(posts[0])
+    ls_utils.get_env_var.cache_clear()
+
+
+def test_redact_secrets_env_var_overridden_by_constructor(monkeypatch):
+    """Constructor redact_secrets=True overrides LANGSMITH_REDACT_SECRETS=false."""
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
+    monkeypatch.setenv("LANGSMITH_REDACT_SECRETS", "false")
+    client = _make_mock_client(redact_secrets=True)
+    anthropic_key = "sk-ant-api03-" + "A" * 30
+
+    @traceable(client=client)
+    def my_func() -> dict:
+        return {"note": f"leaked {anthropic_key} here"}
+
+    with tracing_context(enabled=True):
+        my_func()
+
+    patches = [
+        json.loads(call[2]["data"])
+        for call in client.session.request.mock_calls
+        if call.args
+        and cast(str, call.args[0]).lower() == "patch"
+        and "/runs" in call.args[1]
+    ]
+    blob = json.dumps(patches)
+    assert anthropic_key not in blob
+    assert SECRET_PLACEHOLDER in blob
+    ls_utils.get_env_var.cache_clear()

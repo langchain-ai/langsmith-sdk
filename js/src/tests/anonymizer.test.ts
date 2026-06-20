@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 import {
   StringNodeRule,
   createAnonymizer,
@@ -412,5 +413,140 @@ describe("createSecretAnonymizer", () => {
     expect(JSON.stringify(data.inputs)).toContain(SECRET_PLACEHOLDER);
     expect(JSON.stringify(data.inputs)).not.toContain("AKIAIOSFODNN7EXAMPLE");
     expect(JSON.stringify(data.outputs)).toContain(SECRET_PLACEHOLDER);
+  });
+});
+
+// ── default-on secret redaction (no explicit anonymizer) ─────────────────────
+
+describe("default secret redaction", () => {
+  const AWS_KEY = "AKIAIOSFODNN7EXAMPLE";
+  const ANTHROPIC_KEY = `sk-ant-api03-${"A".repeat(30)}`;
+
+  test("redacts secrets by default with no explicit anonymizer", async () => {
+    const { client, callSpy } = mockClient({});
+
+    const fn = traceable(
+      async (apiKey: string) => ({
+        note: `leaked ${ANTHROPIC_KEY} here`,
+      }),
+      { client, name: "fn", tracingEnabled: true },
+    );
+
+    await fn(AWS_KEY);
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const blob = JSON.stringify(tree);
+    expect(blob).not.toContain(AWS_KEY);
+    expect(blob).not.toContain(ANTHROPIC_KEY);
+    expect(blob).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("redactSecrets: false opts out of default redaction", async () => {
+    const { client, callSpy } = mockClient({ redactSecrets: false });
+
+    const fn = traceable(
+      async (apiKey: string) => ({ note: "no secrets here" }),
+      { client, name: "fn", tracingEnabled: true },
+    );
+
+    await fn(AWS_KEY);
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const blob = JSON.stringify(tree);
+    // Without redaction, the key passes through untouched.
+    expect(blob).toContain(AWS_KEY);
+    expect(blob).not.toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("custom anonymizer takes precedence over redactSecrets", async () => {
+    const custom = createAnonymizer([
+      { pattern: /REPLACE_ME/g, replace: "[done]" },
+    ]);
+    const { client, callSpy } = mockClient({ anonymizer: custom });
+
+    const fn = traceable(
+      async () => ({
+        note: `leaked REPLACE_ME and ${ANTHROPIC_KEY}`,
+      }),
+      { client, name: "fn", tracingEnabled: true },
+    );
+
+    await fn();
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const blob = JSON.stringify(tree);
+    // Custom anonymizer ran, but the secret was NOT redacted.
+    expect(blob).toContain("[done]");
+    expect(blob).toContain(ANTHROPIC_KEY);
+  });
+
+  test("default redaction also applies to metadata", async () => {
+    const { client, callSpy } = mockClient({});
+
+    const fn = traceable(async () => ({ ok: true }), {
+      client,
+      name: "fn",
+      tracingEnabled: true,
+      metadata: { config: `key=${ANTHROPIC_KEY}` },
+    });
+
+    await fn();
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const blob = JSON.stringify(tree);
+    expect(blob).not.toContain(ANTHROPIC_KEY);
+    expect(blob).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("LANGSMITH_REDACT_SECRETS=false disables default redaction", async () => {
+    const original = process.env.LANGSMITH_REDACT_SECRETS;
+    process.env.LANGSMITH_REDACT_SECRETS = "false";
+    try {
+      const { client, callSpy } = mockClient({});
+
+      const fn = traceable(
+        async (apiKey: string) => ({ note: "no secrets here" }),
+        { client, name: "fn", tracingEnabled: true },
+      );
+
+      await fn(AWS_KEY);
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const blob = JSON.stringify(tree);
+      expect(blob).toContain(AWS_KEY);
+      expect(blob).not.toContain(SECRET_PLACEHOLDER);
+    } finally {
+      if (original === undefined) {
+        delete process.env.LANGSMITH_REDACT_SECRETS;
+      } else {
+        process.env.LANGSMITH_REDACT_SECRETS = original;
+      }
+    }
+  });
+
+  test("constructor redactSecrets: true overrides env var false", async () => {
+    const original = process.env.LANGSMITH_REDACT_SECRETS;
+    process.env.LANGSMITH_REDACT_SECRETS = "false";
+    try {
+      const { client, callSpy } = mockClient({ redactSecrets: true });
+
+      const fn = traceable(
+        async () => ({ note: `leaked ${ANTHROPIC_KEY} here` }),
+        { client, name: "fn", tracingEnabled: true },
+      );
+
+      await fn();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const blob = JSON.stringify(tree);
+      expect(blob).not.toContain(ANTHROPIC_KEY);
+      expect(blob).toContain(SECRET_PLACEHOLDER);
+    } finally {
+      if (original === undefined) {
+        delete process.env.LANGSMITH_REDACT_SECRETS;
+      } else {
+        process.env.LANGSMITH_REDACT_SECRETS = original;
+      }
+    }
   });
 });

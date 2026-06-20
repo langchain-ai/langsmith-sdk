@@ -906,6 +906,7 @@ class Client:
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
         anonymizer: Optional[Callable[[dict], dict]] = None,
+        redact_secrets: Optional[bool] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
@@ -950,8 +951,24 @@ class Client:
 
                 If `None`, a new session will be created.
             auto_batch_tracing: Whether to automatically batch tracing.
-            anonymizer: A function applied for masking serialized run inputs and
-                outputs, before sending to the API.
+            anonymizer: A function applied for masking serialized run inputs,
+                outputs, and metadata, before sending to the API.
+            redact_secrets: Whether to redact detected secrets from traced data
+                before sending to the API.
+
+                If ``True`` (the default), the client automatically applies
+                :func:`langsmith.anonymizer.create_secret_anonymizer` to run
+                inputs, outputs, and metadata, replacing detected API keys,
+                tokens, and private keys with ``[SECRET_DETECTED]``.
+
+                Set to ``False`` to disable automatic secret redaction (i.e.,
+                opt in to sending raw values).
+
+                Can also be configured via the ``LANGSMITH_REDACT_SECRETS``
+                environment variable (set to ``"false"`` to disable).
+
+                If a custom ``anonymizer`` is provided, it takes precedence and
+                ``redact_secrets`` has no effect.
             hide_inputs: Whether to hide run inputs when tracing with this client.
 
                 If `True`, hides the entire inputs.
@@ -1309,6 +1326,20 @@ class Client:
             self._get_data_type
         )
         self._anonymizer = anonymizer
+        if self._anonymizer is None:
+            # Secret redaction is on by default. Users can opt out by setting
+            # redact_secrets=False or LANGSMITH_REDACT_SECRETS=false.
+            _redact_secrets = (
+                redact_secrets
+                if redact_secrets is not None
+                else ls_utils.get_env_var("REDACT_SECRETS") != "false"
+            )
+            if _redact_secrets and (
+                hide_inputs is None and hide_outputs is None and hide_metadata is None
+            ):
+                from langsmith.anonymizer import create_secret_anonymizer
+
+                self._anonymizer = create_secret_anonymizer()
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
@@ -2640,6 +2671,9 @@ class Client:
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
             return {}
+        if self._anonymizer:
+            json_metadata = _orjson.loads(_dumps_json(metadata))
+            return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
