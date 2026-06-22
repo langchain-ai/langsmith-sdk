@@ -347,7 +347,11 @@ def create_secret_anonymizer(
     """Build an anonymizer pre-loaded with :data:`DEFAULT_SECRET_RULES`.
 
     Pass the result to ``Client(anonymizer=...)`` to redact detected secrets
-    from run inputs, outputs, and metadata client-side, before upload.
+    from run inputs and outputs client-side, before upload.
+
+    Note: the ``anonymizer`` argument only covers inputs and outputs — it is
+    NOT applied to metadata. To redact metadata too, pass the same function as
+    ``hide_metadata``: ``Client(anonymizer=a, hide_metadata=a)``.
 
     Args:
         extra_rules: Additional rules appended after the defaults.
@@ -358,7 +362,8 @@ def create_secret_anonymizer(
     Example:
         >>> from langsmith import Client
         >>> from langsmith.anonymizer import create_secret_anonymizer
-        >>> client = Client(anonymizer=create_secret_anonymizer())
+        >>> anonymizer = create_secret_anonymizer()
+        >>> client = Client(anonymizer=anonymizer, hide_metadata=anonymizer)
     """
     rules = list(DEFAULT_SECRET_RULES)
     if extra_rules:

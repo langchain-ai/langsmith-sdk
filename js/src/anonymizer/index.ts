@@ -301,7 +301,11 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
 /**
  * Build an anonymizer pre-loaded with {@link DEFAULT_SECRET_RULES} suitable for
  * passing to `new Client({ anonymizer })`. It redacts detected secrets from run
- * inputs, outputs, and metadata client-side, before they are uploaded.
+ * inputs and outputs client-side, before upload.
+ *
+ * Note: the `anonymizer` Client option only covers inputs and outputs — it is
+ * NOT applied to metadata. To redact metadata too, pass the same function as
+ * `hideMetadata`: `new Client({ anonymizer: a, hideMetadata: a })`.
  *
  * @param options.extraRules - Additional rules appended after the defaults.
  * @param options.maxDepth - Max recursion depth (default 24; higher than
@@ -313,7 +317,8 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
  * import { Client } from "langsmith";
  * import { createSecretAnonymizer } from "langsmith/anonymizer";
  *
- * const client = new Client({ anonymizer: createSecretAnonymizer() });
+ * const anonymizer = createSecretAnonymizer();
+ * const client = new Client({ anonymizer, hideMetadata: anonymizer });
  * ```
  */
 export function createSecretAnonymizer(options?: {
