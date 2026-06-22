@@ -2,6 +2,7 @@
 
 import json
 import os
+import urllib.parse
 import uuid
 from unittest.mock import Mock, patch
 
@@ -15,6 +16,7 @@ from langsmith.run_trees import (
     RunTree,
     ServiceAuth,
     WriteReplica,
+    _Baggage,
     _ensure_write_replicas,
     _extract_replica_auth,
     _get_write_replicas_from_env,
@@ -1140,10 +1142,6 @@ def test_baggage_parsing_uses_default_allowlist(monkeypatch):
     The default allow-list is ``{reroot, metadata, tags}``; data/side-effecting
     fields (`attachments`, `inputs`) and arbitrary keys (`environment`) are dropped.
     """
-    import urllib.parse
-
-    from langsmith.run_trees import _Baggage
-
     monkeypatch.delenv("LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS", raising=False)
     monkeypatch.delenv("LANGCHAIN_BAGGAGE_ALLOWED_UPDATE_FIELDS", raising=False)
     ls_utils.get_env_var.cache_clear()
