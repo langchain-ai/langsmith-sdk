@@ -1,4 +1,4 @@
-"""Integration tests for v2 OpenAPI client resources exposed on Client and AsyncClient."""
+"""Integration tests for v2 resources exposed on Client and AsyncClient."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pytest
 
 from langsmith import AsyncClient, Client
 from langsmith.run_trees import RunTree, _create_current_dotted_order
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,13 +57,18 @@ def _get_project_id_or_skip(
         except Exception as e:
             msg = str(e)
             if "projects:read" in msg or "403" in msg:
-                pytest.skip("requires projects:read permission (service key limitation)")
+                pytest.skip(
+                    "requires projects:read permission (service key limitation)"
+                )
         time.sleep(sleep_time)
     pytest.fail(f"Project {project_name!r} not found after {max_retries} retries")
 
 
 def _post_trace(project_name: str) -> tuple[str, str, datetime]:
-    """Create a trace (root run + child) and return (trace_id, project_id, start_time)."""
+    """Create a trace (root run + child).
+
+    Returns (trace_id, project_id, start_time).
+    """
     client = Client()
     start = datetime.now(timezone.utc)
     root = RunTree(
@@ -89,7 +93,10 @@ def _post_trace(project_name: str) -> tuple[str, str, datetime]:
 
 
 def _post_thread_trace(project_name: str, thread_id: str) -> tuple[str, str, datetime]:
-    """Create a run tagged with a thread_id and return (trace_id, project_id, start_time)."""
+    """Create a run tagged with a thread_id.
+
+    Returns (trace_id, project_id, start_time).
+    """
     client = Client()
     start = datetime.now(timezone.utc)
     root = RunTree(

@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import AsyncGenerator, Generator, Optional, Sequence
 
-import requests
 import pytest  # type: ignore
+import requests
 
 from langsmith import utils as ls_utils
 from langsmith import uuid7
@@ -292,13 +292,25 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         name_to_ids_map[run.name].append(run.id)
     for run in runs:
         if run.name == "async_llm":
-            assert run.parent_run_ids and run.parent_run_ids[-1] in name_to_ids_map["my_tool_run"]
+            assert (
+                run.parent_run_ids
+                and run.parent_run_ids[-1] in name_to_ids_map["my_tool_run"]
+            )
         if run.name == "my_tool_run":
-            assert run.parent_run_ids and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
+            assert (
+                run.parent_run_ids
+                and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
+            )
         if run.name == "my_llm_run":
-            assert run.parent_run_ids and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
+            assert (
+                run.parent_run_ids
+                and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
+            )
         if run.name == "my_run":
-            assert run.parent_run_ids and run.parent_run_ids[-1] in name_to_ids_map["my_chain_run"]
+            assert (
+                run.parent_run_ids
+                and run.parent_run_ids[-1] in name_to_ids_map["my_chain_run"]
+            )
         if run.name == "my_chain_run":
             assert not run.parent_run_ids
 
@@ -587,7 +599,9 @@ def test_trace_file_path(langchain_client: Client) -> None:
     _tfp_project = langchain_client.read_project(project_name=project_name)
     run_ids_list = list(
         langchain_client.runs.query(
-            project_ids=[str(_tfp_project.id)], filter=_filter, selects=["ID", "START_TIME"]
+            project_ids=[str(_tfp_project.id)],
+            filter=_filter,
+            selects=["ID", "START_TIME"],
         )
     )
     assert len(run_ids_list) == 1
@@ -757,8 +771,12 @@ def test_usage_metadata(langchain_client: Client):
         assert run.total_cost == pytest.approx(3e-6)
         assert run.prompt_token_details.raw == {"audio": 1, "foo": 2}
         assert run.completion_token_details.raw == {"reasoning": 3, "foo": 4}
-        assert run.prompt_cost_details.raw == pytest.approx({"audio": 1e-7, "foo": 2e-7})
-        assert run.completion_cost_details.raw == pytest.approx({"reasoning": 3e-7, "foo": 4e-7})
+        assert run.prompt_cost_details.raw == pytest.approx(
+            {"audio": 1e-7, "foo": 2e-7}
+        )
+        assert run.completion_cost_details.raw == pytest.approx(
+            {"reasoning": 3e-7, "foo": 4e-7}
+        )
 
     @configured_traceable
     def my_func4(inputs: str):
@@ -853,8 +871,12 @@ async def test_usage_metadata_async(langchain_client: Client):
         assert run.total_cost == pytest.approx(3e-6)
         assert run.prompt_token_details.raw == {"audio": 1, "foo": 2}
         assert run.completion_token_details.raw == {"reasoning": 3, "foo": 4}
-        assert run.prompt_cost_details.raw == pytest.approx({"audio": 1e-7, "foo": 2e-7})
-        assert run.completion_cost_details.raw == pytest.approx({"reasoning": 3e-7, "foo": 4e-7})
+        assert run.prompt_cost_details.raw == pytest.approx(
+            {"audio": 1e-7, "foo": 2e-7}
+        )
+        assert run.completion_cost_details.raw == pytest.approx(
+            {"reasoning": 3e-7, "foo": 4e-7}
+        )
 
     @configured_traceable
     async def my_func4(inputs: str):

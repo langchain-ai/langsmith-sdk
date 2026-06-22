@@ -55,13 +55,23 @@ async def test_create_run(async_client: AsyncClient):
         try:
             project = await async_client.read_project(project_name=project_name)
             project_id = project.id
-            await async_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_time, selects=["ID"])
+            await async_client.runs.retrieve(
+                str(run_id),
+                project_id=str(project.id),
+                start_time=start_time,
+                selects=["ID"],
+            )
             return True
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
-    run = await async_client.runs.retrieve(str(run_id), project_id=str(project_id), start_time=start_time, selects=["ID", "NAME", "INPUTS"])
+    run = await async_client.runs.retrieve(
+        str(run_id),
+        project_id=str(project_id),
+        start_time=start_time,
+        selects=["ID", "NAME", "INPUTS"],
+    )
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 
@@ -241,13 +251,16 @@ async def test_create_feedback(async_client: AsyncClient):
     async def check_run_is_shared():
         nonlocal run_is_shared
         try:
-            run_is_shared = (await async_client.runs.share.retrieve(str(run_id))) is not None
+            run_is_shared = (
+                await async_client.runs.share.retrieve(str(run_id))
+            ) is not None
             return run_is_shared
         except ls_utils.LangSmithNotFoundError:
             return False
 
     await wait_for(check_run_is_shared, timeout=20)
-    assert run_is_shared, f"Run isn't shared; share token: {share_result.share_token if share_result else None}"
+    share_token = share_result.share_token if share_result else None
+    assert run_is_shared, f"Run isn't shared; share token: {share_token}"
 
 
 @pytest.mark.asyncio
@@ -479,7 +492,12 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     async def _get_run(run_id: uuid.UUID) -> bool:
         try:
             project = await async_client.read_project(project_name=project_name)
-            await async_client.runs.retrieve(str(run_id), project_id=str(project.id), start_time=start_times[run_id], selects=["ID"])
+            await async_client.runs.retrieve(
+                str(run_id),
+                project_id=str(project.id),
+                start_time=start_times[run_id],
+                selects=["ID"],
+            )
             return True
         except ls_utils.LangSmithError:
             return False

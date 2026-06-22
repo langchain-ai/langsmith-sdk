@@ -174,16 +174,31 @@ async def test_openai_agents_with_evaluate():
         root_run_id = str(examples[0].runs[0].id)
         project_id = str(examples[0].runs[0].session_id)
         root_start_time = examples[0].runs[0].start_time
-        client.runs.retrieve(root_run_id, project_id=project_id, start_time=root_start_time, selects=["ID"])
-        trace_runs = list(client.runs.query(
-            project_ids=[project_id],
-            trace_id=root_run_id,
-            selects=["ID", "NAME", "PARENT_RUN_IDS"],
-        ))
-        children = [r for r in trace_runs if r.parent_run_ids and r.parent_run_ids[-1] == root_run_id]
+        client.runs.retrieve(
+            root_run_id,
+            project_id=project_id,
+            start_time=root_start_time,
+            selects=["ID"],
+        )
+        trace_runs = list(
+            client.runs.query(
+                project_ids=[project_id],
+                trace_id=root_run_id,
+                selects=["ID", "NAME", "PARENT_RUN_IDS"],
+            )
+        )
+        children = [
+            r
+            for r in trace_runs
+            if r.parent_run_ids and r.parent_run_ids[-1] == root_run_id
+        ]
         assert len(children) == 1
         assert children[0].name == "Agent workflow"
-        grandchildren = [r for r in trace_runs if r.parent_run_ids and r.parent_run_ids[-1] == str(children[0].id)]
+        grandchildren = [
+            r
+            for r in trace_runs
+            if r.parent_run_ids and r.parent_run_ids[-1] == str(children[0].id)
+        ]
         assert len(grandchildren) == 1
         assert grandchildren[0].name == "Captain Obvious"
     finally:

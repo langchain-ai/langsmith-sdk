@@ -21,6 +21,7 @@ from typing import (
 )
 
 import httpx
+
 import langsmith._openapi_client as _langsmith_api_module
 
 if TYPE_CHECKING:
@@ -309,15 +310,18 @@ class AsyncClient:
     # ------------------------------------------------------------------
 
     @property
-    def runs(self) -> "AsyncRunsResource":
+    def runs(self) -> AsyncRunsResource:
+        """Access the v2 runs resource."""
         return self._langsmith_api.runs
 
     @property
-    def threads(self) -> "AsyncThreadsResource":
+    def threads(self) -> AsyncThreadsResource:
+        """Access the v2 threads resource."""
         return self._langsmith_api.threads
 
     @property
-    def traces(self) -> "AsyncTracesResource":
+    def traces(self) -> AsyncTracesResource:
+        """Access the v2 traces resource."""
         return self._langsmith_api.traces
 
     async def __aenter__(self) -> AsyncClient:
@@ -759,13 +763,17 @@ class AsyncClient:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
-    @deprecated("run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead.")
+    @deprecated(
+        "run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead."
+    )
     async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
         """Get share state for a run asynchronously."""
         link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
         return link is not None
 
-    @deprecated("read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead.")
+    @deprecated(
+        "read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead."
+    )
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run asynchronously.
 

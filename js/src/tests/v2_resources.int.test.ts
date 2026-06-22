@@ -192,7 +192,9 @@ describe("client.runs v2 resource", () => {
     const proj = projectName("runs_query");
     const { traceId, projectId } = await postTrace(client, proj);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }
@@ -224,7 +226,9 @@ describe("client.runs v2 resource", () => {
     });
     const projectId = await getProjectId(client, proj);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }
@@ -249,7 +253,9 @@ describe("client.runs v2 resource", () => {
     const proj = projectName("runs_stats");
     const { projectId } = await postTrace(client, proj);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }
@@ -292,12 +298,16 @@ describe("client.threads v2 resource", () => {
     const proj = projectName("threads_query");
     const { projectId } = await postTrace(client, proj);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }
     const threads: unknown[] = [];
-    for await (const thread of client.threads.query({ project_id: projectId })) {
+    for await (const thread of client.threads.query({
+      project_id: projectId,
+    })) {
       threads.push(thread);
     }
     expect(Array.isArray(threads)).toBe(true);
@@ -309,7 +319,9 @@ describe("client.threads v2 resource", () => {
     const threadId = uuidv4();
     const { projectId } = await postThreadTrace(client, proj, threadId);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }
@@ -339,7 +351,9 @@ describe("client.traces v2 resource", () => {
     const proj = projectName("traces_runs");
     const { traceId, projectId, startTime } = await postTrace(client, proj);
     if (!projectId) {
-      console.warn("SKIPPED: requires projects:read permission (service key limitation)");
+      console.warn(
+        "SKIPPED: requires projects:read permission (service key limitation)",
+      );
       await deleteProject(client, proj);
       return;
     }

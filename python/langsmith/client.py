@@ -53,6 +53,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -63,8 +64,6 @@ from requests_toolbelt import (  # type: ignore[import-untyped]
 from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
-
-import httpx as _httpx
 
 import langsmith
 from langsmith import env as ls_env
@@ -86,7 +85,6 @@ from langsmith._internal._constants import (
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
-from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
 from langsmith._internal._hub import (
     HUB,
     REPO_HANDLE_PATTERN,
@@ -111,6 +109,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -148,7 +147,6 @@ def _reset_tracing_drop_log() -> None:
     with _tracing_drops_lock:
         _tracing_drops_count = 0
         _tracing_drops_last_log_time = 0.0
-
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -1415,15 +1413,18 @@ class Client:
     # ------------------------------------------------------------------
 
     @property
-    def runs(self) -> "RunsResource":
+    def runs(self) -> RunsResource:
+        """Access the v2 runs resource."""
         return self._langsmith_api.runs
 
     @property
-    def threads(self) -> "ThreadsResource":
+    def threads(self) -> ThreadsResource:
+        """Access the v2 threads resource."""
         return self._langsmith_api.threads
 
     @property
-    def traces(self) -> "TracesResource":
+    def traces(self) -> TracesResource:
+        """Access the v2 traces resource."""
         return self._langsmith_api.traces
 
     def _dump_failed_trace(
@@ -4462,7 +4463,9 @@ class Client:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
-    @deprecated("unshare_run() is deprecated. Use client.runs.share.delete(...) instead.")
+    @deprecated(
+        "unshare_run() is deprecated. Use client.runs.share.delete(...) instead."
+    )
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run.
 
@@ -4479,7 +4482,9 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    @deprecated("read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead.")
+    @deprecated(
+        "read_run_shared_link() is deprecated. Use client.runs.share.retrieve(...) instead."
+    )
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run.
 
@@ -4501,7 +4506,9 @@ class Client:
             return None
         return f"{self._host_url}/public/{result['share_token']}/r"
 
-    @deprecated("run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead.")
+    @deprecated(
+        "run_is_shared() is deprecated. Use client.runs.share.retrieve(...) to check share state instead."
+    )
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run.
 

@@ -23,7 +23,7 @@ def warn_beta(func: Callable) -> Callable:
 
 
 def deprecated(message: str) -> Callable:
-    """Decorator that emits DeprecationWarning when the decorated callable is called.
+    """Emit DeprecationWarning when the decorated callable is called.
 
     Works for regular functions, generator functions, async coroutines, and async
     generator functions. The warning always fires at call time, not at iteration time.
