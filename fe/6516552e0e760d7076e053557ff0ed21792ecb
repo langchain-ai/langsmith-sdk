@@ -1,0 +1,31 @@
+python/tests/integration_tests/test_v2_resources.py
+  s_5b0612c161456f::t_a95319c31e766c 47,49,53,56-61,63,87,105
+  s_5b0612c161456f::t_83c213a2268c4a 136-141
+  s_5b0612c161456f::t_d00edd0094d705 330
+  s_5b0612c161456f::t_54f1cb6e62cbe8 50,52,88,106
+  s_5b0612c161456f::t_03fa142cbc50b8 331-336
+  s_5b0612c161456f::t_191c5962825f63 135
+js/src/tests/v2_resources.int.test.ts
+  s_5b0612c161456f::t_f9246cec641ca9 194-198,225-230,232-243,251-255
+  s_5b0612c161456f::t_d16d8c866a9515 294-298,311-315
+  s_5b0612c161456f::t_c3e3779d281a4d 8,36-61,63,68,81-82,87,93,107-108
+  s_5b0612c161456f::t_3dc17cc8ec5144 341-345
+python/langsmith/async_client.py
+  s_5b0612c161456f::t_3b66247f62e44e 299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "fe6516552e0e760d7076e053557ff0ed21792ecb",
+  "prompts": {},
+  "sessions": {
+    "s_5b0612c161456f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e487c6d4-190d-4034-8404-3d518ec93774",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
