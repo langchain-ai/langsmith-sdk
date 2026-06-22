@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.8.18"
+__version__ = "0.9.0"
 version = __version__  # for backwards compatibility
 
 # Metadata key to hide a traced run from LangSmith's Messages View.
