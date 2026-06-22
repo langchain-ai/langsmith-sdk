@@ -2,6 +2,7 @@
 
 import json
 import os
+import urllib.parse
 import uuid
 from unittest.mock import Mock, patch
 
@@ -15,6 +16,7 @@ from langsmith.run_trees import (
     RunTree,
     ServiceAuth,
     WriteReplica,
+    _Baggage,
     _ensure_write_replicas,
     _extract_replica_auth,
     _get_write_replicas_from_env,
@@ -817,6 +819,18 @@ class TestRunTreeReplicas:
 class TestBaggageReplicaParsing:
     """Test baggage header parsing for replicas."""
 
+    @pytest.fixture(autouse=True)
+    def _allow_placeholder_update_fields(self, monkeypatch):
+        # These tests verify that replica `updates` is parsed/propagated, using
+        # placeholder keys. Allow those keys so the tests stay focused on parsing;
+        # the default allow-list and its enforcement are covered in test_run_trees.py.
+        monkeypatch.setenv(
+            "LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS", "environment,tuple,env"
+        )
+        ls_utils.get_env_var.cache_clear()
+        yield
+        ls_utils.get_env_var.cache_clear()
+
     def test_baggage_parsing_tuple_format(self):
         """Test that baggage headers with tuple replica format are parsed correctly."""
         import json
@@ -1120,3 +1134,38 @@ class TestTracingContextReplicas:
         # This should not raise a type error
         with tracing_context(replicas=replicas):
             pass  # Just testing that the context manager works
+
+
+def test_baggage_parsing_uses_default_allowlist(monkeypatch):
+    """With no env override, header `updates` is filtered to the default allow-list.
+
+    The default allow-list is ``{reroot, metadata, tags}``; data/side-effecting
+    fields (`attachments`, `inputs`) and arbitrary keys (`environment`) are dropped.
+    """
+    monkeypatch.delenv("LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS", raising=False)
+    monkeypatch.delenv("LANGCHAIN_BAGGAGE_ALLOWED_UPDATE_FIELDS", raising=False)
+    ls_utils.get_env_var.cache_clear()
+    try:
+        replicas = [
+            {
+                "project_name": "replica-project",
+                "updates": {
+                    "reroot": True,
+                    "metadata": {"k": "v"},
+                    "tags": ["a"],
+                    "attachments": {"doc": ["text/plain", "notes.txt"]},
+                    "inputs": {"x": 1},
+                    "environment": "prod",
+                },
+            }
+        ]
+        baggage_value = f"langsmith-replicas={urllib.parse.quote(json.dumps(replicas))}"
+        baggage = _Baggage.from_header(baggage_value)
+
+        assert baggage.replicas[0]["updates"] == {
+            "reroot": True,
+            "metadata": {"k": "v"},
+            "tags": ["a"],
+        }
+    finally:
+        ls_utils.get_env_var.cache_clear()

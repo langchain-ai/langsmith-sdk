@@ -74,12 +74,61 @@ class WriteReplica(TypedDict, total=False):
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
 
+# Untrusted header-supplied replica `updates` is merged into the run, so restrict it
+# to a fail-closed allow-list. `reroot` (re-parenting control) is always kept;
+# `metadata`/`tags` are the default annotation fields, and everything else is dropped.
+_HEADER_REQUIRED_UPDATE_FIELDS: frozenset[str] = frozenset({"reroot"})
+_HEADER_SAFE_UPDATE_FIELDS_DEFAULT: frozenset[str] = frozenset(
+    {"reroot", "metadata", "tags"}
+)
+
+
+def _get_header_safe_update_fields() -> frozenset[str]:
+    """Allow-list of replica ``updates`` keys accepted from a ``baggage`` header.
+
+    Overridable via ``LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS`` (comma-separated);
+    replaces the default ``{reroot, metadata, tags}`` but always keeps ``reroot``.
+    """
+    raw = utils.get_env_var("BAGGAGE_ALLOWED_UPDATE_FIELDS")
+    if raw is None:
+        return _HEADER_SAFE_UPDATE_FIELDS_DEFAULT
+    configured = {field.strip() for field in raw.split(",") if field.strip()}
+    return frozenset(_HEADER_REQUIRED_UPDATE_FIELDS | configured)
+
+
+def _sanitize_header_updates(updates: Any) -> Any:
+    """Filter untrusted header-supplied ``updates`` to the allow-list (fail closed).
+
+    Non-dict input passes through unchanged; dropped fields are logged, never raised.
+    """
+    if not isinstance(updates, dict):
+        return updates
+    allowed = _get_header_safe_update_fields()
+    sanitized = {key: value for key, value in updates.items() if key in allowed}
+    dropped = [key for key in updates if key not in allowed]
+    if dropped:
+        logger.warning(
+            "Ignored non-allow-listed field(s) %s in a distributed-tracing "
+            "`baggage` replica `updates` payload; they are dropped for security "
+            "reasons. If these come from a trusted upstream and are legitimate, "
+            "add them to the allow-list via the "
+            "LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS environment variable "
+            "(comma-separated). Currently allowed: %s.",
+            sorted(dropped),
+            sorted(allowed),
+        )
+    return sanitized
+
 
 def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
-    return cast(
-        WriteReplica,
-        {k: v for k, v in replica.items() if k in _HEADER_SAFE_REPLICA_FIELDS},
-    )
+    filtered = {
+        key: value
+        for key, value in replica.items()
+        if key in _HEADER_SAFE_REPLICA_FIELDS
+    }
+    if "updates" in filtered:
+        filtered["updates"] = _sanitize_header_updates(filtered.get("updates"))
+    return cast(WriteReplica, filtered)
 
 
 LANGSMITH_PREFIX = "langsmith-"
@@ -1062,7 +1111,7 @@ class _Baggage:
                                 WriteReplica(
                                     api_url=None,
                                     project_name=str(replica_item[0]),
-                                    updates=replica_item[1],
+                                    updates=_sanitize_header_updates(replica_item[1]),
                                 )
                             )
                         elif isinstance(replica_item, dict):

@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -550,6 +551,108 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_from_headers_allowlists_update_fields():
+    """Only allow-listed fields survive in an untrusted baggage replica's `updates`."""
+    replicas_json = json.dumps(
+        [
+            {
+                "project_name": "legit-project",
+                "updates": {
+                    "reroot": True,
+                    "metadata": {"k": "v"},
+                    "tags": ["a"],
+                    "attachments": {"doc": ["text/plain", "notes.txt"]},
+                    "inputs": {"x": 1},
+                    "environment": "prod",
+                },
+            }
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    assert parsed.replicas[0].get("updates") == {
+        "reroot": True,
+        "metadata": {"k": "v"},
+        "tags": ["a"],
+    }
+
+
+def test_from_headers_allowlists_update_fields_legacy_format():
+    """The legacy [project_name, updates] baggage form is also allow-listed."""
+    replicas_json = json.dumps(
+        [
+            [
+                "legit-project",
+                {
+                    "reroot": True,
+                    "metadata": {"k": "v"},
+                    "attachments": {"doc": ["text/plain", "notes.txt"]},
+                    "environment": "prod",
+                },
+            ]
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    updates = parsed.replicas[0].get("updates")
+    assert "attachments" not in updates
+    assert updates == {"reroot": True, "metadata": {"k": "v"}}
+
+
+def test_sanitize_header_updates_env_override_keeps_reroot(monkeypatch):
+    """The allow-list can be overridden via env var; `reroot` is always kept."""
+    monkeypatch.setenv("LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS", "environment")
+    run_trees.utils.get_env_var.cache_clear()
+    try:
+        result = run_trees._sanitize_header_updates(
+            {"reroot": True, "environment": "prod", "metadata": {"k": "v"}}
+        )
+        # `environment` now allowed, `reroot` always kept, default `metadata` dropped.
+        assert result == {"reroot": True, "environment": "prod"}
+    finally:
+        run_trees.utils.get_env_var.cache_clear()
+
+
+def test_sanitize_header_updates_warns_on_dropped_fields(caplog):
+    """Dropping a non-allow-listed field logs one actionable warning."""
+    run_trees.utils.get_env_var.cache_clear()
+    with caplog.at_level(logging.WARNING, logger="langsmith.run_trees"):
+        run_trees._sanitize_header_updates(
+            {"reroot": True, "attachments": {"doc": ["text/plain", "notes.txt"]}}
+        )
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "attachments" in message
+    assert "LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS" in message
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="langsmith.run_trees"):
+        run_trees._sanitize_header_updates({"reroot": True, "metadata": {"k": "v"}})
+    assert caplog.records == []
+
+
+def test_sanitize_header_updates_passes_through_non_dict():
+    """Non-dict `updates` is returned unchanged (defensive)."""
+    assert run_trees._sanitize_header_updates(None) is None
+    assert run_trees._sanitize_header_updates("nope") == "nope"
 
 
 # Tests for regression: RunTree should accept Pydantic BaseModel for inputs/outputs
