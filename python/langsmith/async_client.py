@@ -21,12 +21,12 @@ from typing import (
 )
 
 import httpx
-import langsmith_api as _langsmith_api_module
+import langsmith._openapi_client as _langsmith_api_module
 
 if TYPE_CHECKING:
-    from langsmith_api.resources.runs import AsyncRunsResource
-    from langsmith_api.resources.threads import AsyncThreadsResource
-    from langsmith_api.resources.traces import AsyncTracesResource
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
+    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
+    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -149,15 +149,7 @@ class AsyncClient:
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         """Access generated async online evaluator CRUD methods."""
-        from langsmith._openapi_client import AsyncLangsmith as AsyncOpenAPILangsmith
-
-        return AsyncOpenAPILangsmith(
-            api_key=self.api_key,
-            tenant_id=self.workspace_id,
-            base_url=ls_client._get_openapi_base_url(self._api_url),
-            timeout=self._client.timeout,
-            default_headers=self._headers,
-        ).online_evaluators
+        return self._langsmith_api.online_evaluators
 
     def __init__(
         self,
@@ -303,10 +295,10 @@ class AsyncClient:
 
         self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
             api_key=self._api_key,
-            bearer_token=self._oauth_access_token,
-            base_url=str(self._client.base_url),
+            tenant_id=self._workspace_id,
+            base_url=ls_client._get_openapi_base_url(str(self._client.base_url)),
             timeout=self._client.timeout,
-            default_headers=self._custom_headers or None,
+            default_headers=self._headers or None,
         )
 
     # ------------------------------------------------------------------
