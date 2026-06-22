@@ -1,0 +1,24 @@
+python/langsmith/client.py
+  s_5b0612c161456f::t_e30da8c6ba3679 1407
+  s_5b0612c161456f::t_4366c8536bcc9d 1659
+python/langsmith/async_client.py
+  s_5b0612c161456f::t_c5e615cfa45b39 298-299,301
+  s_5b0612c161456f::t_927d4b4e271573 152
+  s_5b0612c161456f::t_4a92c509671d94 24,27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "8cc2939eefb0a4c805ddd04f206fa434e1eb0374",
+  "prompts": {},
+  "sessions": {
+    "s_5b0612c161456f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e487c6d4-190d-4034-8404-3d518ec93774",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
