@@ -5,6 +5,7 @@ import {
   createSecretAnonymizer,
   DEFAULT_SECRET_RULES,
   SECRET_PLACEHOLDER,
+  isLikelyBase64,
 } from "../anonymizer/index.js";
 import { v4 as uuid } from "../utils/uuid/src/index.js";
 import { traceable } from "../traceable.js";
@@ -543,5 +544,41 @@ describe("default secret redaction", () => {
         extra: { metadata: undefined },
       }),
     ).resolves.not.toThrow();
+  });
+});
+
+// ── base64 skip optimization ────────────────────────────────────────────────
+
+describe("base64 skip optimization", () => {
+  test("skips large base64 blobs but still redacts secrets in adjacent text", () => {
+    const redact = createSecretAnonymizer();
+    const blob = "A".repeat(5000); // long, pure base64 alphabet
+    const anthropicKey = `sk-ant-api03-${"A".repeat(30)}`;
+    const payload = {
+      image_data: blob,
+      text: `Here is a secret: ${anthropicKey}`,
+    };
+    const result = redact(payload) as Record<string, string>;
+    // Base64 blob is untouched
+    expect(result.image_data).toBe(blob);
+    // Secret in text field is still redacted
+    expect(result.text).toContain(SECRET_PLACEHOLDER);
+    expect(result.text).not.toContain(anthropicKey);
+  });
+
+  test("short strings are never classified as base64", () => {
+    expect(isLikelyBase64("short")).toBe(false);
+    expect(isLikelyBase64("A".repeat(99))).toBe(false);
+    expect(isLikelyBase64("A".repeat(100))).toBe(true);
+  });
+
+  test("base64 blobs with newlines are still skipped", () => {
+    const blob = ("A".repeat(76) + "\n").repeat(10); // 760 chars + newlines
+    expect(isLikelyBase64(blob)).toBe(true);
+  });
+
+  test("prose with spaces and punctuation is not flagged as base64", () => {
+    const text = "The quick brown fox jumps over the lazy dog. ".repeat(20);
+    expect(isLikelyBase64(text)).toBe(false);
   });
 });

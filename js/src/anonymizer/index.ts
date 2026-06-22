@@ -96,12 +96,9 @@ export type ReplacerType =
 // pass over the string instead of N, reducing per-string overhead from N
 // replace() calls to 1.
 //
-// For the secret anonymizer, we go further: instead of parsing the serialized
-// JSON, walking the object tree to extract string nodes, running regex per
-// node, and walking the tree again to apply updates, we run the combined
-// regex directly on the serialized JSON string and parse once at the end.
-// This eliminates extractStringNodes, applyUpdateAtPath, and the intermediate
-// JSON.parse entirely.
+// The secret anonymizer applies this optimization inside the node-based
+// pipeline: each string node is prefiltered (skipping large base64 blobs and
+// strings with no secret indicators), then matched against the combined regex.
 
 type SimpleRule = { source: string; flags: string; replace: string };
 type StructuralRule = { regex: RegExp; replace: string };
@@ -400,7 +397,20 @@ const SECRET_RULE_PREFILTER = new RegExp(
   "i",
 );
 
-function mayContainSecret(value: string): boolean {
+// Threshold for base64 detection: strings longer than this that are almost
+// entirely base64 characters (with optional whitespace) are treated as binary
+// blobs and skipped. 100 chars is conservative — real secrets are short and
+// contain distinctive prefixes that never look like base64.
+const BASE64_MIN_LENGTH = 100;
+const BASE64_RE = /^[A-Za-z0-9+/\s]+={0,2}$/;
+
+export function isLikelyBase64(value: string): boolean {
+  if (value.length < BASE64_MIN_LENGTH) return false;
+  return BASE64_RE.test(value);
+}
+
+function secretPrefilter(value: string): boolean {
+  if (isLikelyBase64(value)) return false;
   return SECRET_RULE_PREFILTER.test(value);
 }
 
@@ -430,35 +440,27 @@ export function createSecretAnonymizer(options?: {
   const maxDepth = options?.maxDepth ?? 24;
 
   if (extraRules.length > 0) {
-    // When extra rules are provided, fall back to the node-based pipeline
-    // because extra rules may have capture groups or different replacements.
+    // When extra rules are provided, use the node-based pipeline without the
+    // prefilter — custom rules may match patterns that don't contain standard
+    // secret indicators.
     const processor = createRuleNodeProcessor([
       ...DEFAULT_SECRET_RULES,
       ...extraRules,
     ]);
     return <T>(data: T): T => {
-      const serialized = textDecoder.decode(serializePayloadForTracing(data));
-      return applyProcessor(JSON.parse(serialized), processor, { maxDepth });
+      return applyProcessor(deepClone(data), processor, { maxDepth });
     };
   }
 
-  // Default path: all rules are "simple" (no capture groups, same replacement).
-  // Build one combined regex and run it directly on the serialized JSON string.
-  const { simple, structural } = partitionRules(DEFAULT_SECRET_RULES);
-  // All default rules are simple (no structural rules remain).
-  const combined = combineSimpleRules(simple);
-  // One regex, one replacement — run on the whole serialized string.
-  const replacers = [...combined, ...structural];
+  // Default path: use the node-based pipeline with the pre-skip prefilter.
+  // The prefilter skips large base64 blobs (the dominant performance cost)
+  // and short-circuits strings with no secret indicators, so regex only
+  // runs on text fields that might actually contain a secret.
+  const processor = createRuleNodeProcessor(DEFAULT_SECRET_RULES, {
+    prefilter: secretPrefilter,
+  });
 
   return <T>(data: T): T => {
-    const serialized = textDecoder.decode(serializePayloadForTracing(data));
-    if (!mayContainSecret(serialized)) {
-      return data;
-    }
-    const redacted = replacers.reduce(
-      (s, { regex, replace }) => s.replace(regex, replace),
-      serialized,
-    );
-    return JSON.parse(redacted) as T;
+    return applyProcessor(deepClone(data), processor, { maxDepth });
   };
 }

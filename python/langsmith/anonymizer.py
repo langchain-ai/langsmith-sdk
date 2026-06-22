@@ -1,4 +1,3 @@
-import json
 import re  # noqa
 import inspect
 from abc import abstractmethod
@@ -121,6 +120,46 @@ class RuleNodeProcessor(StringNodeProcessor):
             for rule in rules
         ]
         self.prefilter = prefilter
+        # Combined-regex optimization: when all rules share the same replacement
+        # string and no rule uses capture groups, merge them into a single
+        # alternation regex so each node is matched with one .sub() call instead
+        # of N.
+        self._combined_regex: Optional[re.Pattern] = None
+        self._combined_replace: Optional[str] = None
+        replacements = {r["replace"] for r in self.rules}
+        if (
+            len(replacements) == 1
+            and not any(
+                r"\g<" in r["replace"] or r"\1" in r["replace"]
+                for r in self.rules
+            )
+            and not any(
+                "(" in r["pattern"].pattern
+                and not r["pattern"].pattern.startswith("(?:")
+                for r in self.rules
+            )
+        ):
+            repl = self.rules[0]["replace"]
+            # Check none of the patterns have capture groups (non-capturing
+            # groups (?:...) are fine).
+            has_capture = False
+            for r in self.rules:
+                pat = r["pattern"].pattern
+                i = 0
+                while i < len(pat):
+                    if pat[i] == "(" and (
+                        i + 2 >= len(pat) or pat[i : i + 3] != "(?:"
+                    ):
+                        has_capture = True
+                        break
+                    i += 1
+            if not has_capture:
+                self._combined_regex = re.compile(
+                    "|".join(
+                        f"(?:{r['pattern'].pattern})" for r in self.rules
+                    )
+                )
+                self._combined_replace = repl
 
     def mask_nodes(self, nodes: list[StringNode]) -> list[StringNode]:
         """Mask nodes using the rules."""
@@ -129,8 +168,13 @@ class RuleNodeProcessor(StringNodeProcessor):
             if self.prefilter is not None and not self.prefilter(item["value"]):
                 continue
             new_value = item["value"]
-            for rule in self.rules:
-                new_value = rule["pattern"].sub(rule["replace"], new_value)
+            if self._combined_regex is not None:
+                new_value = self._combined_regex.sub(
+                    self._combined_replace, new_value
+                )
+            else:
+                for rule in self.rules:
+                    new_value = rule["pattern"].sub(rule["replace"], new_value)
             if new_value != item["value"]:
                 result.append(StringNode(value=new_value, path=item["path"]))
         return result
@@ -350,8 +394,39 @@ _SECRET_INDICATORS = (
     "-----begin",
 )
 
+# Threshold for base64 detection: strings longer than this that are almost
+# entirely base64 characters (with optional whitespace) are treated as binary
+# blobs and skipped. 100 chars is conservative — real secrets are short and
+# contain distinctive prefixes that never look like base64.
+_BASE64_MIN_LENGTH = 100
+_BASE64_RE = re.compile(r"^[A-Za-z0-9+/\s]+={0,2}$")
 
-def _may_contain_secret(value: str) -> bool:
+
+def _is_likely_base64(value: str) -> bool:
+    """Return True if *value* looks like a base64-encoded blob.
+
+    We only flag long strings that are almost entirely base64 alphabet
+    characters with optional whitespace. Short strings and strings containing
+    characters outside the base64 alphabet (spaces in the middle, punctuation,
+    etc.) are not flagged.
+    """
+    if len(value) < _BASE64_MIN_LENGTH:
+        return False
+    return bool(_BASE64_RE.match(value))
+
+
+def _secret_prefilter(value: str) -> bool:
+    """Fast pre-filter for the secret rules processor.
+
+    Returns True if the value *might* contain a secret (and should proceed to
+    regex matching), False if it can be safely skipped. Two criteria:
+
+    1. The value must contain at least one known secret indicator substring.
+    2. The value must NOT look like a base64 blob (large binary payloads are
+       the dominant performance cost and never contain format-prefixed secrets).
+    """
+    if _is_likely_base64(value):
+        return False
     value_lower = value.lower()
     return any(indicator in value_lower for indicator in _SECRET_INDICATORS)
 
@@ -378,27 +453,17 @@ def create_secret_anonymizer(
         >>> client = Client(anonymizer=create_secret_anonymizer())
     """
     if extra_rules:
-        # When extra rules are provided, fall back to the node-based pipeline
-        # because extra rules may have capture groups or different replacements.
+        # When extra rules are provided, use the node-based pipeline without
+        # the prefilter — custom rules may match patterns that don't contain
+        # standard secret indicators.
         rules = list(DEFAULT_SECRET_RULES) + list(extra_rules)
         processor = RuleNodeProcessor(rules)
-        return create_anonymizer(processor, max_depth=max_depth)
-
-    # Default path: all rules are "simple" (no capture groups, same replacement).
-    # Build one combined regex and run it directly on the serialized JSON string,
-    # skipping extractStringNodes and applyUpdateAtPath entirely.
-    combined_regex = re.compile(
-        "|".join(
-            f"(?:{rule['pattern'].pattern})" for rule in DEFAULT_SECRET_RULES
+    else:
+        # Default path: use the node-based pipeline with the pre-skip prefilter.
+        # The prefilter skips large base64 blobs (the dominant performance cost)
+        # and short-circuits strings with no secret indicators, so regex only
+        # runs on text fields that might actually contain a secret.
+        processor = RuleNodeProcessor(
+            DEFAULT_SECRET_RULES, prefilter=_secret_prefilter
         )
-    )
-    placeholder = SECRET_PLACEHOLDER
-
-    def anonymizer(data: Any) -> Any:
-        serialized = json.dumps(data, default=str)
-        if not _may_contain_secret(serialized):
-            return data
-        redacted = combined_regex.sub(placeholder, serialized)
-        return json.loads(redacted)
-
-    return anonymizer
+    return create_anonymizer(processor, max_depth=max_depth)

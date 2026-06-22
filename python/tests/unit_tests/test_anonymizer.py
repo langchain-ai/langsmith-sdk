@@ -517,3 +517,52 @@ def test_redact_secrets_env_var_overridden_by_constructor(monkeypatch):
     assert anthropic_key not in blob
     assert SECRET_PLACEHOLDER in blob
     ls_utils.get_env_var.cache_clear()
+
+
+# ── base64 skip optimization ────────────────────────────────────────────────
+
+
+def test_secret_anonymizer_skips_large_base64_blob():
+    """Large base64 blobs are skipped for performance, but secrets in
+    adjacent text fields are still redacted."""
+    from langsmith.anonymizer import _is_likely_base64
+
+    # A large base64 blob (simulated image data)
+    blob = "A" * 5000  # long, pure base64 alphabet
+    assert _is_likely_base64(blob) is True
+
+    redact = create_secret_anonymizer()
+    payload = {
+        "image_data": blob,
+        "text": f"Here is a secret: sk-ant-api03-{'A' * 30}",
+    }
+    result = redact(payload)
+    # Base64 blob is untouched
+    assert result["image_data"] == blob
+    # Secret in text field is still redacted
+    assert SECRET_PLACEHOLDER in result["text"]
+
+
+def test_secret_anonymizer_does_not_skip_short_strings():
+    """Short strings are never classified as base64, even if they look base64."""
+    from langsmith.anonymizer import _is_likely_base64
+
+    assert _is_likely_base64("short") is False
+    assert _is_likely_base64("A" * 99) is False
+    assert _is_likely_base64("A" * 100) is True
+
+
+def test_secret_anonymizer_skips_base64_with_whitespace():
+    """Base64 blobs with newlines (common in PEM-like data) are still skipped."""
+    from langsmith.anonymizer import _is_likely_base64
+
+    blob = ("A" * 76 + "\n") * 10  # 760 chars + newlines
+    assert _is_likely_base64(blob) is True
+
+
+def test_secret_anonymizer_does_not_flag_prose_as_base64():
+    """Normal text with spaces and punctuation is not flagged as base64."""
+    from langsmith.anonymizer import _is_likely_base64
+
+    text = "The quick brown fox jumps over the lazy dog. " * 20
+    assert _is_likely_base64(text) is False
