@@ -32,14 +32,14 @@ describe("Client", () => {
         "Foo",
         {
           score: 1,
-          doNotExtendTraceRetention: true,
+          extendTraceRetention: false,
         },
       );
 
       const [, init] = mockFetch.mock.calls[0];
       expect(JSON.parse(init?.body as string)).toEqual(
         expect.objectContaining({
-          do_not_extend_trace_retention: true,
+          extend_trace_retention: false,
         }),
       );
     });

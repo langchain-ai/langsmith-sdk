@@ -127,13 +127,13 @@ def test_serialize_feedback_dict_maps_retention_opt_out_for_queue() -> None:
             "run_id": trace_id,
             "key": "correctness",
             "score": 1,
-            "do_not_extend_trace_retention": True,
+            "extend_trace_retention": False,
         }
     )
     payload = _orjson.loads(serialized.feedback)
 
     assert payload["_skip_trace_upgrade"] is True
-    assert "do_not_extend_trace_retention" not in payload
+    assert "extend_trace_retention" not in payload
 
 
 def test_serialized_run_operation_missing_file(tmp_path, caplog) -> None:

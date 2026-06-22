@@ -1679,11 +1679,11 @@ def test_create_feedback_can_opt_out_of_extending_trace_retention() -> None:
     client.create_feedback(
         run_id,
         key="Foo",
-        do_not_extend_trace_retention=True,
+        extend_trace_retention=False,
     )
 
     payload = json.loads(session.request.call_args.kwargs["data"])
-    assert payload["do_not_extend_trace_retention"] is True
+    assert payload["extend_trace_retention"] is False
 
 
 def test_pydantic_serialize() -> None:

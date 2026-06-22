@@ -170,10 +170,9 @@ def serialize_feedback_dict(
         feedback_create: dict = feedback.model_dump()  # type: ignore
     else:
         feedback_create = cast(dict, feedback)
-    if "do_not_extend_trace_retention" in feedback_create:
-        feedback_create["_skip_trace_upgrade"] = feedback_create.pop(
-            "do_not_extend_trace_retention"
-        )
+    extend_trace_retention = feedback_create.pop("extend_trace_retention", True)
+    if not extend_trace_retention:
+        feedback_create["_skip_trace_upgrade"] = True
     if "id" not in feedback_create:
         feedback_create["id"] = uuid.uuid4()
     elif isinstance(feedback_create["id"], str):
