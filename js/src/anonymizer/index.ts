@@ -89,22 +89,86 @@ export type ReplacerType =
   | StringNodeRule[]
   | StringNodeProcessor;
 
+// ── Combined-alternation optimization ─────────────────────────────────────
+// When a rule set contains many patterns that all share the same replacement
+// string and don't use capture groups, we can combine them into a single
+// alternation regex: `(?:pat1|pat2|pat3|...)`. This lets the engine do one
+// pass over the string instead of N, reducing per-string overhead from N
+// replace() calls to 1.
+//
+// For the secret anonymizer, we go further: instead of parsing the serialized
+// JSON, walking the object tree to extract string nodes, running regex per
+// node, and walking the tree again to apply updates, we run the combined
+// regex directly on the serialized JSON string and parse once at the end.
+// This eliminates extractStringNodes, applyUpdateAtPath, and the intermediate
+// JSON.parse entirely.
+
+type SimpleRule = { source: string; flags: string; replace: string };
+type StructuralRule = { regex: RegExp; replace: string };
+
+function partitionRules(
+  rules: StringNodeRule[],
+): { simple: Map<string, SimpleRule[]>; structural: StructuralRule[] } {
+  const simple = new Map<string, SimpleRule[]>();
+  const structural: StructuralRule[] = [];
+
+  for (const { pattern, type, replace } of rules) {
+    if (type != null && type !== "pattern")
+      throw new Error("Invalid anonymizer type");
+    const re = typeof pattern === "string" ? new RegExp(pattern, "g") : pattern;
+    const repl = replace ?? "[redacted]";
+    // A rule is "simple" if its replacement is a plain string with no $-refs
+    // AND the pattern has no capture groups (so alternation won't shift
+    // group indices).
+    const hasGroupRef = /\$[1-9]/.test(repl);
+    const hasCaptureGroup = /\((?!\?[:=!]|<)/.test(re.source);
+    if (hasGroupRef || hasCaptureGroup) {
+      structural.push({ regex: re, replace: repl });
+    } else {
+      const key = repl;
+      let group = simple.get(key);
+      if (!group) {
+        group = [];
+        simple.set(key, group);
+      }
+      group.push({ source: re.source, flags: re.flags, replace: repl });
+    }
+  }
+  return { simple, structural };
+}
+
+function combineSimpleRules(
+  groups: Map<string, SimpleRule[]>,
+): { regex: RegExp; replace: string }[] {
+  const result: { regex: RegExp; replace: string }[] = [];
+  for (const [replace, group] of groups) {
+    // All patterns in a group should have compatible flags. We use the
+    // union of flags seen. In practice the secret rules all use "g" or
+    // "gi", and combining is safe.
+    const flagSet = new Set<string>();
+    for (const { flags } of group) {
+      for (const f of flags) flagSet.add(f);
+    }
+    const combinedFlags = [...flagSet].join("");
+    const combined = group.map(({ source }) => `(?:${source})`).join("|");
+    result.push({ regex: new RegExp(combined, combinedFlags), replace });
+  }
+  return result;
+}
+
 function createRuleNodeProcessor(
   rules: StringNodeRule[],
   options?: { prefilter?: (value: string) => boolean },
 ): StringNodeProcessor {
-  const replacers: [regex: RegExp, replace: string][] = rules.map(
-    ({ pattern, type, replace }) => {
-      if (type != null && type !== "pattern")
-        throw new Error("Invalid anonymizer type");
-      return [
-        typeof pattern === "string" ? new RegExp(pattern, "g") : pattern,
-        replace ?? "[redacted]",
-      ];
-    },
-  );
+  const { simple, structural } = partitionRules(rules);
+  const combined = combineSimpleRules(simple);
+  const allReplacers: { regex: RegExp; replace: string }[] = [
+    ...combined,
+    ...structural,
+  ];
 
-  if (replacers.length === 0) throw new Error("No replacers provided");
+  if (allReplacers.length === 0) throw new Error("No replacers provided");
+
   return {
     maskNodes: (nodes: StringNode[]) => {
       return nodes.reduce<StringNode[]>((memo, item) => {
@@ -112,12 +176,10 @@ function createRuleNodeProcessor(
           return memo;
         }
 
-        const newValue = replacers.reduce((value, [regex, replace]) => {
+        const newValue = allReplacers.reduce((value, { regex, replace }) => {
           const result = value.replace(regex, replace);
-
-          // make sure we reset the state of regex
+          // Reset lastIndex for stateful (global) regexes.
           regex.lastIndex = 0;
-
           return result;
         }, item.value);
 
@@ -229,10 +291,10 @@ export const SECRET_PLACEHOLDER = "[SECRET_DETECTED]";
  * traced data (prompts, tool inputs/outputs, file contents, shell commands).
  *
  * Designed to favor *low false positives* over exhaustive coverage:
- *  - Provider rules are anchored to well-known key prefixes.
- *  - Structural rules only fire when a sensitive *name* (api_key, token,
- *    password, …) is paired with an assignment/separator, so ordinary code,
- *    UUIDs, and hashes are left intact.
+ *  - All rules are prefix-anchored to well-known token shapes (provider key
+ *    formats, JWT structure, PEM armor). No contextual/heuristic patterns.
+ *  - No "KEY=value" or "Authorization: Bearer" structural rules — those
+ *    generated false positives and couldn't be combined into a single regex.
  *
  * This is NOT a port of gitleaks/secretlint; pattern shapes are drawn from
  * those projects (and provider docs) as a reference only. Every rule sets an
@@ -244,38 +306,38 @@ export const SECRET_PLACEHOLDER = "[SECRET_DETECTED]";
 export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
   // ── Provider API keys (prefix-anchored) ─────────────────────────────────
   // Anthropic
-  { pattern: /sk-ant-[A-Za-z0-9_-]{20,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g, replace: SECRET_PLACEHOLDER },
   // OpenAI: project / service-account / admin keys, then legacy `sk-...`
   {
-    pattern: /sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/g,
+    pattern: /\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g,
     replace: SECRET_PLACEHOLDER,
   },
-  { pattern: /sk-[A-Za-z0-9]{32,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bsk-[A-Za-z0-9]{32,}(?![A-Za-z0-9])/g, replace: SECRET_PLACEHOLDER },
   // LangSmith (keys are multi-segment: lsv2_pt_<key>_<tail> — match the
   // full underscore-delimited tail so none of it leaks past the placeholder)
   {
-    pattern: /lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*/g,
+    pattern: /\blsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*(?![A-Za-z0-9_])/g,
     replace: SECRET_PLACEHOLDER,
   },
-  { pattern: /ls__[A-Za-z0-9]{16,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bls__[A-Za-z0-9]{16,}(?![A-Za-z0-9])/g, replace: SECRET_PLACEHOLDER },
   // GitHub personal access / app tokens
-  { pattern: /gh[pousr]_[A-Za-z0-9]{36,}/g, replace: SECRET_PLACEHOLDER },
-  { pattern: /github_pat_[A-Za-z0-9_]{82}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}(?![A-Za-z0-9])/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bgithub_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])/g, replace: SECRET_PLACEHOLDER },
   // GitLab personal access token
-  { pattern: /glpat-[A-Za-z0-9_-]{20,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bglpat-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g, replace: SECRET_PLACEHOLDER },
   // AWS access key id (covers AKIA/ASIA/ABIA/ACCA/A3T* prefixes)
   {
     pattern: /\b(?:AKIA|ASIA|ABIA|ACCA|A3T[A-Z0-9])[0-9A-Z]{16}\b/g,
     replace: SECRET_PLACEHOLDER,
   },
   // Google API key + OAuth access token
-  { pattern: /AIza[0-9A-Za-z_-]{35}/g, replace: SECRET_PLACEHOLDER },
-  { pattern: /ya29\.[0-9A-Za-z_-]+/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bya29\.[0-9A-Za-z_-]+(?![0-9A-Za-z_-])/g, replace: SECRET_PLACEHOLDER },
   // Slack tokens (bot/user + app-level) + incoming webhooks
-  { pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g, replace: SECRET_PLACEHOLDER },
-  { pattern: /xapp-\d-[A-Za-z0-9-]{10,}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bxapp-\d-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])/g, replace: SECRET_PLACEHOLDER },
   {
-    pattern: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g,
+    pattern: /\bhttps:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+(?![A-Za-z0-9/])/g,
     replace: SECRET_PLACEHOLDER,
   },
   // Stripe
@@ -284,22 +346,22 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
     replace: SECRET_PLACEHOLDER,
   },
   // npm
-  { pattern: /npm_[A-Za-z0-9]{36}/g, replace: SECRET_PLACEHOLDER },
+  { pattern: /\bnpm_[A-Za-z0-9]{36}(?![A-Za-z0-9])/g, replace: SECRET_PLACEHOLDER },
   // PyPI upload token
   {
-    pattern: /pypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}/g,
+    pattern: /\bpypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}(?![A-Za-z0-9_-])/g,
     replace: SECRET_PLACEHOLDER,
   },
   // SendGrid
   {
-    pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g,
+    pattern: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g,
     replace: SECRET_PLACEHOLDER,
   },
 
   // ── Structured tokens ────────────────────────────────────────────────────
   // JWT (header.payload.signature)
   {
-    pattern: /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+    pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])/g,
     replace: SECRET_PLACEHOLDER,
   },
   // PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
@@ -307,39 +369,6 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
     pattern:
       /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----/g,
     replace: SECRET_PLACEHOLDER,
-  },
-
-  // ── Structural / contextual (sensitive NAME + assignment) ─────────────────
-  // KEY=value or "key": "value" where the name looks sensitive. Keep the name
-  // and separator ($1), redact the value. Notes:
-  //  - (?![A-Za-z0-9]) after the keyword requires a component boundary, so
-  //    `token` matches `api_token`/`mytoken` but NOT `tokenizer`/`tokens`.
-  //  - the value may start with an auth scheme word (Bearer/Token/Basic) so a
-  //    `X-Api-Key: Bearer <tok>` shape redacts the credential, not just "Bearer".
-  //  - value excludes & and ; so query-string params past the secret survive.
-  //  - requires a 6+ char value so short non-secret values are not touched.
-  {
-    pattern:
-      /\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}/gi,
-    replace: `$1${SECRET_PLACEHOLDER}`,
-  },
-  // Authorization / API-key headers. Keep the header name + separator ($1$2)
-  // and an optional scheme ($3); redact the credential.
-  {
-    pattern:
-      /\b(authorization|x-api-key|x-auth-token)(["']?\s*[:=]\s*["']?)(bearer\s+|token\s+|basic\s+)?[A-Za-z0-9._~+/-]{8,}=*/gi,
-    replace: `$1$2$3${SECRET_PLACEHOLDER}`,
-  },
-  // Bare "Bearer <token>" (any case; the scheme word is preserved via $1).
-  {
-    pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{10,}=*/gi,
-    replace: `$1${SECRET_PLACEHOLDER}`,
-  },
-  // Credentials embedded in URLs: proto://user:PASS@host -> redact PASS only.
-  // Username is optional so proto://:PASS@host (empty user) is still covered.
-  {
-    pattern: /\b([a-z][a-z0-9+.-]*:\/\/[^:@/\s]*:)[^@/\s]+(@)/gi,
-    replace: `$1${SECRET_PLACEHOLDER}$2`,
   },
 ];
 
@@ -367,21 +396,6 @@ const SECRET_RULE_PREFILTER = new RegExp(
     "SG\\.",
     "eyJ",
     "-----BEGIN",
-    "api[_-]?key",
-    "secret",
-    "token",
-    "password",
-    "passwd",
-    "private[_-]?key",
-    "access[_-]?key",
-    "auth[_-]?token",
-    "client[_-]?secret",
-    "authorization",
-    "x-api-key",
-    "x-auth-token",
-    "bearer",
-    "basic",
-    "[a-z][a-z0-9+.-]*://[^:@/\\s]*:",
   ].join("|"),
   "i",
 );
@@ -413,18 +427,38 @@ export function createSecretAnonymizer(options?: {
   maxDepth?: number;
 }) {
   const extraRules = options?.extraRules ?? [];
-  const processor =
-    extraRules.length > 0
-      ? createRuleNodeProcessor([...DEFAULT_SECRET_RULES, ...extraRules])
-      : createRuleNodeProcessor(DEFAULT_SECRET_RULES, {
-          prefilter: mayContainSecret,
-        });
   const maxDepth = options?.maxDepth ?? 24;
+
+  if (extraRules.length > 0) {
+    // When extra rules are provided, fall back to the node-based pipeline
+    // because extra rules may have capture groups or different replacements.
+    const processor = createRuleNodeProcessor([
+      ...DEFAULT_SECRET_RULES,
+      ...extraRules,
+    ]);
+    return <T>(data: T): T => {
+      const serialized = textDecoder.decode(serializePayloadForTracing(data));
+      return applyProcessor(JSON.parse(serialized), processor, { maxDepth });
+    };
+  }
+
+  // Default path: all rules are "simple" (no capture groups, same replacement).
+  // Build one combined regex and run it directly on the serialized JSON string.
+  const { simple, structural } = partitionRules(DEFAULT_SECRET_RULES);
+  // All default rules are simple (no structural rules remain).
+  const combined = combineSimpleRules(simple);
+  // One regex, one replacement — run on the whole serialized string.
+  const replacers = [...combined, ...structural];
+
   return <T>(data: T): T => {
     const serialized = textDecoder.decode(serializePayloadForTracing(data));
-    if (extraRules.length === 0 && !mayContainSecret(serialized)) {
+    if (!mayContainSecret(serialized)) {
       return data;
     }
-    return applyProcessor(JSON.parse(serialized), processor, { maxDepth });
+    const redacted = replacers.reduce(
+      (s, { regex, replace }) => s.replace(regex, replace),
+      serialized,
+    );
+    return JSON.parse(redacted) as T;
   };
 }

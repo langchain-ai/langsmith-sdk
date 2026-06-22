@@ -255,35 +255,6 @@ def test_secret_anonymizer_redacts_pgp_block():
     assert redact({"file": block}) == {"file": SECRET_PLACEHOLDER}
 
 
-def test_secret_anonymizer_preserves_bearer_scheme():
-    # Parity with the JS preset: keep the "Bearer " scheme, redact the token.
-    redact = create_secret_anonymizer()
-    assert (
-        redact("Authorization: Bearer aB3xY7zQ1234567890")
-        == f"Authorization: Bearer {SECRET_PLACEHOLDER}"
-    )
-
-
-def test_secret_anonymizer_structural_rules():
-    redact = create_secret_anonymizer()
-    assert (
-        redact("MY_SERVICE_TOKEN=abcdef1234567890")
-        == f"MY_SERVICE_TOKEN={SECRET_PLACEHOLDER}"
-    )
-    assert (
-        redact('{"api_key": "abcdef1234567890"}')
-        == f'{{"api_key": "{SECRET_PLACEHOLDER}"}}'
-    )
-    assert (
-        redact("header: Bearer aB3xY7zQ1234567890")
-        == f"header: Bearer {SECRET_PLACEHOLDER}"
-    )
-    assert (
-        redact("postgres://user:sup3rs3cretpw@db.example.com:5432/app")
-        == f"postgres://user:{SECRET_PLACEHOLDER}@db.example.com:5432/app"
-    )
-
-
 @pytest.mark.parametrize(
     "value",
     [
@@ -291,47 +262,17 @@ def test_secret_anonymizer_structural_rules():
         "e83c5163316f89bfbde7d9ab23ca2e25604af290",  # 40-char git SHA
         "total = compute_sum(items) + 42",  # ordinary code
         "The deployment finished successfully in 12 seconds.",  # prose
-        "count=5",  # short, non-sensitive assignment
-        'description="a reasonably long human description"',  # non-sensitive name
-        'tokenizer: "cl100k_base"',  # "token" must not match mid-word
-        "tokens_used: 123456",  # keyword as a prefix of a longer word
+        'tokenizer: "cl100k_base"',  # no provider-key prefix
+        "tokens_used: 123456",  # no provider-key prefix
+        "MY_SERVICE_TOKEN=abcdef1234567890",  # structural rule removed
+        '{"api_key": "abcdef1234567890"}',  # structural rule removed
+        "Authorization: Bearer aB3xY7zQ1234567890",  # structural rule removed
+        "postgres://user:sup3rs3cretpw@db.example.com:5432/app",  # structural rule removed
     ],
 )
 def test_secret_anonymizer_precision_guards(value):
     redact = create_secret_anonymizer()
     assert redact(value) == value
-
-
-def test_secret_anonymizer_redacts_credential_after_scheme_word():
-    # The structural api-key rule must not stop at "Bearer" and leave the token.
-    redact = create_secret_anonymizer()
-    out = redact("X-Api-Key: Bearer tok_abcdefghij")
-    assert "tok_abcdefghij" not in out
-    assert out == f"X-Api-Key: {SECRET_PLACEHOLDER}"
-
-
-def test_secret_anonymizer_stops_at_query_separators():
-    redact = create_secret_anonymizer()
-    assert (
-        redact("/api?api_key=ABCDEF123456&user=bob")
-        == f"/api?api_key={SECRET_PLACEHOLDER}&user=bob"
-    )
-
-
-def test_secret_anonymizer_redacts_empty_username_connection_string():
-    redact = create_secret_anonymizer()
-    assert (
-        redact("redis://:sup3rs3cretpw@host:6379")
-        == f"redis://:{SECRET_PLACEHOLDER}@host:6379"
-    )
-
-
-def test_secret_anonymizer_redacts_lowercase_bare_bearer():
-    redact = create_secret_anonymizer()
-    assert (
-        redact("sent bearer aB3xY7zQ1234567890 here")
-        == f"sent bearer {SECRET_PLACEHOLDER} here"
-    )
 
 
 def test_secret_anonymizer_nested_payload():

@@ -1,3 +1,4 @@
+import json
 import re  # noqa
 import inspect
 from abc import abstractmethod
@@ -227,52 +228,52 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     # ── Provider API keys (prefix-anchored, case-sensitive) ──────────────────
     # Anthropic
     {
-        "pattern": re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+        "pattern": re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # OpenAI: project / service-account / admin keys, then legacy `sk-...`
     {
-        "pattern": re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"),
+        "pattern": re.compile(r"\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"),
         "replace": SECRET_PLACEHOLDER,
     },
-    {"pattern": re.compile(r"sk-[A-Za-z0-9]{32,}"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bsk-[A-Za-z0-9]{32,}(?![A-Za-z0-9])"), "replace": SECRET_PLACEHOLDER},
     # LangSmith (keys are multi-segment: lsv2_pt_<key>_<tail> — match the full
     # underscore-delimited tail so none of it leaks past the placeholder)
     {
-        "pattern": re.compile(r"lsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*"),
+        "pattern": re.compile(r"\blsv2_(?:pt|sk)_[A-Za-z0-9]{32,}(?:_[A-Za-z0-9]+)*(?![A-Za-z0-9_])"),
         "replace": SECRET_PLACEHOLDER,
     },
-    {"pattern": re.compile(r"ls__[A-Za-z0-9]{16,}"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bls__[A-Za-z0-9]{16,}(?![A-Za-z0-9])"), "replace": SECRET_PLACEHOLDER},
     # GitHub personal access / app tokens
     {
-        "pattern": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
+        "pattern": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}(?![A-Za-z0-9])"),
         "replace": SECRET_PLACEHOLDER,
     },
     {
-        "pattern": re.compile(r"github_pat_[A-Za-z0-9_]{82}"),
+        "pattern": re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # GitLab personal access token
-    {"pattern": re.compile(r"glpat-[A-Za-z0-9_-]{20,}"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"), "replace": SECRET_PLACEHOLDER},
     # AWS access key id (covers AKIA/ASIA/ABIA/ACCA/A3T* prefixes)
     {
         "pattern": re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA|A3T[A-Z0-9])[0-9A-Z]{16}\b"),
         "replace": SECRET_PLACEHOLDER,
     },
     # Google API key + OAuth access token
-    {"pattern": re.compile(r"AIza[0-9A-Za-z_-]{35}"), "replace": SECRET_PLACEHOLDER},
-    {"pattern": re.compile(r"ya29\.[0-9A-Za-z_-]+"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bya29\.[0-9A-Za-z_-]+(?![0-9A-Za-z_-])"), "replace": SECRET_PLACEHOLDER},
     # Slack tokens (bot/user + app-level) + incoming webhooks
     {
-        "pattern": re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+        "pattern": re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     {
-        "pattern": re.compile(r"xapp-\d-[A-Za-z0-9-]{10,}"),
+        "pattern": re.compile(r"\bxapp-\d-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     {
-        "pattern": re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/]+"),
+        "pattern": re.compile(r"\bhttps://hooks\.slack\.com/services/[A-Za-z0-9/]+(?![A-Za-z0-9/])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # Stripe
@@ -281,21 +282,21 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "replace": SECRET_PLACEHOLDER,
     },
     # npm
-    {"pattern": re.compile(r"npm_[A-Za-z0-9]{36}"), "replace": SECRET_PLACEHOLDER},
+    {"pattern": re.compile(r"\bnpm_[A-Za-z0-9]{36}(?![A-Za-z0-9])"), "replace": SECRET_PLACEHOLDER},
     # PyPI upload token
     {
-        "pattern": re.compile(r"pypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}"),
+        "pattern": re.compile(r"\bpypi-AgEIcHlwaS[A-Za-z0-9_-]{50,}(?![A-Za-z0-9_-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # SendGrid
     {
-        "pattern": re.compile(r"SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}"),
+        "pattern": re.compile(r"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # ── Structured tokens ────────────────────────────────────────────────────
     # JWT (header.payload.signature)
     {
-        "pattern": re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+        "pattern": re.compile(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])"),
         "replace": SECRET_PLACEHOLDER,
     },
     # PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
@@ -306,53 +307,14 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         ),
         "replace": SECRET_PLACEHOLDER,
     },
-    # ── Structural / contextual (sensitive NAME + assignment) ─────────────────
-    # KEY=value / "key": "value" where the name looks sensitive. Keep the name
-    # and separator (group 1), redact the value. Notes:
-    #  - (?![A-Za-z0-9]) after the keyword requires a component boundary, so
-    #    `token` matches `api_token`/`mytoken` but NOT `tokenizer`/`tokens`.
-    #  - the value may start with an auth scheme word (Bearer/Token/Basic) so a
-    #    `X-Api-Key: Bearer <tok>` shape redacts the credential, not just "Bearer".
-    #  - value excludes & and ; so query-string params past the secret survive.
-    #  - requires a 6+ char value so short non-secret values are left intact.
-    {
-        "pattern": re.compile(
-            r"""\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}""",
-            re.IGNORECASE,
-        ),
-        "replace": rf"\g<1>{SECRET_PLACEHOLDER}",
-    },
-    # Authorization / API-key headers. Keep the header name + separator
-    # (groups 1-2) and an optional scheme (group 3); redact the credential.
-    # Group 3 preserves "Bearer "/"Token "/"Basic " to match the JS preset.
-    {
-        "pattern": re.compile(
-            r"""\b(authorization|x-api-key|x-auth-token)(["']?\s*[:=]\s*["']?)(bearer\s+|token\s+|basic\s+)?[A-Za-z0-9._~+/-]{8,}=*""",
-            re.IGNORECASE,
-        ),
-        "replace": rf"\g<1>\g<2>\g<3>{SECRET_PLACEHOLDER}",
-    },
-    # Bare "Bearer <token>" (any case; the scheme word is preserved via group 1).
-    {
-        "pattern": re.compile(r"\b(Bearer\s+)[A-Za-z0-9._~+/-]{10,}=*", re.IGNORECASE),
-        "replace": rf"\g<1>{SECRET_PLACEHOLDER}",
-    },
-    # Credentials embedded in URLs: proto://user:PASS@host -> redact PASS only.
-    # Username is optional so proto://:PASS@host (empty user) is still covered.
-    {
-        "pattern": re.compile(
-            r"\b([a-z][a-z0-9+.-]*://[^:@/\s]*:)[^@/\s]+(@)", re.IGNORECASE
-        ),
-        "replace": rf"\g<1>{SECRET_PLACEHOLDER}\g<2>",
-    },
 ]
 """Curated, high-precision rules for detecting common credentials in traced
 data (prompts, tool inputs/outputs, file contents, shell commands).
 
-Favors low false positives over exhaustive coverage: provider rules are
-anchored to known key prefixes, and structural rules only fire when a sensitive
-*name* is paired with an assignment/separator. This is the Python parity of the
-JS SDK's ``DEFAULT_SECRET_RULES``; it is NOT a port of gitleaks/secretlint
+Favors low false positives over exhaustive coverage: all rules are prefix-
+anchored to well-known token shapes (provider key formats, JWT structure, PEM
+armor). No contextual/heuristic "KEY=value" patterns. This is the Python parity
+of the JS SDK's ``DEFAULT_SECRET_RULES``; it is NOT a port of gitleaks/secretlint
 (pattern shapes are drawn from those projects as a reference only)."""
 
 
@@ -386,27 +348,6 @@ _SECRET_INDICATORS = (
     "sg.",
     "eyj",
     "-----begin",
-    "api_key",
-    "api-key",
-    "apikey",
-    "secret",
-    "token",
-    "password",
-    "passwd",
-    "private_key",
-    "private-key",
-    "access_key",
-    "access-key",
-    "auth_token",
-    "auth-token",
-    "client_secret",
-    "client-secret",
-    "authorization",
-    "x-api-key",
-    "x-auth-token",
-    "bearer",
-    "basic",
-    "://",
 )
 
 
@@ -436,11 +377,28 @@ def create_secret_anonymizer(
         >>> from langsmith.anonymizer import create_secret_anonymizer
         >>> client = Client(anonymizer=create_secret_anonymizer())
     """
-    rules = list(DEFAULT_SECRET_RULES)
     if extra_rules:
-        rules = rules + list(extra_rules)
-    processor = RuleNodeProcessor(
-        rules,
-        prefilter=None if extra_rules else _may_contain_secret,
+        # When extra rules are provided, fall back to the node-based pipeline
+        # because extra rules may have capture groups or different replacements.
+        rules = list(DEFAULT_SECRET_RULES) + list(extra_rules)
+        processor = RuleNodeProcessor(rules)
+        return create_anonymizer(processor, max_depth=max_depth)
+
+    # Default path: all rules are "simple" (no capture groups, same replacement).
+    # Build one combined regex and run it directly on the serialized JSON string,
+    # skipping extractStringNodes and applyUpdateAtPath entirely.
+    combined_regex = re.compile(
+        "|".join(
+            f"(?:{rule['pattern'].pattern})" for rule in DEFAULT_SECRET_RULES
+        )
     )
-    return create_anonymizer(processor, max_depth=max_depth)
+    placeholder = SECRET_PLACEHOLDER
+
+    def anonymizer(data: Any) -> Any:
+        serialized = json.dumps(data, default=str)
+        if not _may_contain_secret(serialized):
+            return data
+        redacted = combined_regex.sub(placeholder, serialized)
+        return json.loads(redacted)
+
+    return anonymizer

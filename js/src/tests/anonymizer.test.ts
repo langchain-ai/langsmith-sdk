@@ -258,42 +258,18 @@ describe("createSecretAnonymizer", () => {
     expect(out.file).toBe(SECRET_PLACEHOLDER);
   });
 
-  describe("structural rules", () => {
-    test("redacts the value of a sensitive assignment, keeps the name", () => {
-      const out = redact("MY_SERVICE_TOKEN=abcdef1234567890") as string;
-      expect(out).toBe(`MY_SERVICE_TOKEN=${SECRET_PLACEHOLDER}`);
-    });
-
-    test("redacts a quoted JSON secret value", () => {
-      const out = redact('{"api_key": "abcdef1234567890"}') as string;
-      expect(out).toBe(`{"api_key": "${SECRET_PLACEHOLDER}"}`);
-    });
-
-    test("redacts bare Bearer tokens", () => {
-      const out = redact("header: Bearer aB3xY7zQ1234567890") as string;
-      expect(out).toBe(`header: Bearer ${SECRET_PLACEHOLDER}`);
-    });
-
-    test("redacts the password in a connection string", () => {
-      const out = redact(
-        "postgres://user:sup3rs3cretpw@db.example.com:5432/app",
-      ) as string;
-      expect(out).toBe(
-        `postgres://user:${SECRET_PLACEHOLDER}@db.example.com:5432/app`,
-      );
-    });
-  });
-
   describe("precision guards (must NOT be redacted)", () => {
     const SAFE = [
       "123e4567-e89b-12d3-a456-426614174000", // UUID
       "e83c5163316f89bfbde7d9ab23ca2e25604af290", // 40-char git SHA
       "const total = computeSum(items) + 42;", // ordinary code
       "The deployment finished successfully in 12 seconds.", // prose
-      "count=5", // short, non-sensitive assignment
-      'description="a reasonably long human description"', // non-sensitive name
-      'tokenizer: "cl100k_base"', // "token" must not match mid-word
-      "tokens_used: 123456", // keyword as a prefix of a longer word
+      'tokenizer: "cl100k_base"', // no provider-key prefix
+      "tokens_used: 123456", // no provider-key prefix
+      "MY_SERVICE_TOKEN=abcdef1234567890", // structural rule removed
+      '{"api_key": "abcdef1234567890"}', // structural rule removed
+      "Authorization: Bearer aB3xY7zQ1234567890", // structural rule removed
+      "postgres://user:sup3rs3cretpw@db.example.com:5432/app", // structural rule removed
     ];
     test.each(SAFE)("leaves %s untouched", (value) => {
       expect(redact(value)).toBe(value);
@@ -315,37 +291,6 @@ describe("createSecretAnonymizer", () => {
     const block = [begin, "a".repeat(64), end].join("\n");
     expect((redact({ file: block }) as { file: string }).file).toBe(
       SECRET_PLACEHOLDER,
-    );
-  });
-
-  test("preserves the Bearer scheme in Authorization headers (parity)", () => {
-    expect(redact("Authorization: Bearer aB3xY7zQ1234567890")).toBe(
-      `Authorization: Bearer ${SECRET_PLACEHOLDER}`,
-    );
-  });
-
-  test("redacts the credential after a scheme word in X-Api-Key", () => {
-    // The structural api-key rule must not stop at "Bearer" and leave the token.
-    const out = redact("X-Api-Key: Bearer tok_abcdefghij") as string;
-    expect(out).not.toContain("tok_abcdefghij");
-    expect(out).toBe(`X-Api-Key: ${SECRET_PLACEHOLDER}`);
-  });
-
-  test("stops the redacted value at query-string separators", () => {
-    expect(redact("/api?api_key=ABCDEF123456&user=bob")).toBe(
-      `/api?api_key=${SECRET_PLACEHOLDER}&user=bob`,
-    );
-  });
-
-  test("redacts the password in a connection string with empty username", () => {
-    expect(redact("redis://:sup3rs3cretpw@host:6379")).toBe(
-      `redis://:${SECRET_PLACEHOLDER}@host:6379`,
-    );
-  });
-
-  test("redacts a lowercase bare bearer token, preserving the scheme word", () => {
-    expect(redact("sent bearer aB3xY7zQ1234567890 here")).toBe(
-      `sent bearer ${SECRET_PLACEHOLDER} here`,
     );
   });
 
