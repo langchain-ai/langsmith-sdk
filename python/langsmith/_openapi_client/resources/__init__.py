@@ -8,6 +8,22 @@ from .info import (
     InfoResourceWithStreamingResponse,
     AsyncInfoResourceWithStreamingResponse,
 )
+from .datasets import (
+    DatasetsResource,
+    AsyncDatasetsResource,
+    DatasetsResourceWithRawResponse,
+    AsyncDatasetsResourceWithRawResponse,
+    DatasetsResourceWithStreamingResponse,
+    AsyncDatasetsResourceWithStreamingResponse,
+)
+from .sessions import (
+    SessionsResource,
+    AsyncSessionsResource,
+    SessionsResourceWithRawResponse,
+    AsyncSessionsResourceWithRawResponse,
+    SessionsResourceWithStreamingResponse,
+    AsyncSessionsResourceWithStreamingResponse,
+)
 from .online_evaluators import (
     OnlineEvaluatorsResource,
     AsyncOnlineEvaluatorsResource,
@@ -18,6 +34,18 @@ from .online_evaluators import (
 )
 
 __all__ = [
+    "SessionsResource",
+    "AsyncSessionsResource",
+    "SessionsResourceWithRawResponse",
+    "AsyncSessionsResourceWithRawResponse",
+    "SessionsResourceWithStreamingResponse",
+    "AsyncSessionsResourceWithStreamingResponse",
+    "DatasetsResource",
+    "AsyncDatasetsResource",
+    "DatasetsResourceWithRawResponse",
+    "AsyncDatasetsResourceWithRawResponse",
+    "DatasetsResourceWithStreamingResponse",
+    "AsyncDatasetsResourceWithStreamingResponse",
     "OnlineEvaluatorsResource",
     "AsyncOnlineEvaluatorsResource",
     "OnlineEvaluatorsResourceWithRawResponse",

@@ -1,0 +1,47 @@
+# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+from typing import Dict, List, Optional
+from datetime import datetime
+
+from .._models import BaseModel
+from .data_type import DataType
+from .dataset_transformation import DatasetTransformation
+
+__all__ = ["Dataset"]
+
+
+class Dataset(BaseModel):
+    """Dataset schema."""
+
+    id: str
+
+    modified_at: datetime
+
+    name: str
+
+    session_count: int
+
+    tenant_id: str
+
+    baseline_experiment_id: Optional[str] = None
+
+    created_at: Optional[datetime] = None
+
+    data_type: Optional[DataType] = None
+    """Enum for dataset data types."""
+
+    description: Optional[str] = None
+
+    example_count: Optional[int] = None
+
+    externally_managed: Optional[bool] = None
+
+    inputs_schema_definition: Optional[Dict[str, object]] = None
+
+    last_session_start_time: Optional[datetime] = None
+
+    metadata: Optional[Dict[str, object]] = None
+
+    outputs_schema_definition: Optional[Dict[str, object]] = None
+
+    transformations: Optional[List[DatasetTransformation]] = None

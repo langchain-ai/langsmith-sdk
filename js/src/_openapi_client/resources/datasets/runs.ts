@@ -2,7 +2,6 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
-import * as RunsAPI_ from '../runs/runs.js';
 import { APIPromise } from '../../core/api-promise.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
@@ -78,7 +77,7 @@ export namespace ExampleWithRunsCh {
     /**
      * Enum for run types.
      */
-    run_type: RunsAPI_.RunTypeEnum;
+    run_type: 'tool' | 'chain' | 'llm' | 'retriever' | 'embedding' | 'prompt' | 'parser';
 
     session_id: string;
 
