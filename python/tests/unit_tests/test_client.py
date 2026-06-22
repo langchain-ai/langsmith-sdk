@@ -1686,6 +1686,45 @@ def test_create_feedback_can_opt_out_of_extending_trace_retention() -> None:
     assert payload["extend_trace_retention"] is False
 
 
+def test_create_feedback_opt_out_uses_tracing_queue_when_available() -> None:
+    """Opt-out should not force POST /feedback when batching is available."""
+    session = mock.Mock()
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    info = ls_schemas.LangSmithInfo(
+        version="0.8.11",
+        batch_ingest_config=ls_schemas.BatchIngestConfig(
+            use_multipart_endpoint=True,
+            size_limit=100,
+            scale_up_nthreads_limit=4,
+            scale_up_qsize_trigger=3,
+            scale_down_nempty_trigger=1,
+        ),
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        auto_batch_tracing=True,
+        info=info,
+    )
+    assert client.tracing_queue is not None
+
+    client.create_feedback(
+        run_id,
+        key="Foo",
+        trace_id=trace_id,
+        extend_trace_retention=False,
+    )
+
+    session.request.assert_not_called()
+    assert client.tracing_queue.qsize() == 1
+    queue_item = client.tracing_queue.get_nowait()
+    feedback_payload = _orjson.loads(queue_item.item.feedback)
+    assert feedback_payload["_skip_trace_upgrade"] is True
+    assert "extend_trace_retention" not in feedback_payload
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()
