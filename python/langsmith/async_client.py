@@ -296,7 +296,7 @@ class AsyncClient:
         self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
             api_key=self._api_key,
             tenant_id=self._workspace_id,
-            base_url=ls_client._get_openapi_base_url(str(self._client.base_url)),
+            base_url=str(self._client.base_url),
             timeout=self._client.timeout,
             default_headers=self._headers or None,
         )
