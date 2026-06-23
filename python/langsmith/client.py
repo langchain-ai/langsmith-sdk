@@ -267,8 +267,6 @@ if TYPE_CHECKING:
         OnlineEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import RunsResource
-    from langsmith._openapi_client.resources.threads import ThreadsResource
-    from langsmith._openapi_client.resources.traces import TracesResource
 
     # OTEL imports for type hints
     try:
@@ -1416,16 +1414,6 @@ class Client:
     def runs(self) -> RunsResource:
         """Access the v2 runs resource."""
         return self._langsmith_api.runs
-
-    @property
-    def threads(self) -> ThreadsResource:
-        """Access the v2 threads resource."""
-        return self._langsmith_api.threads
-
-    @property
-    def traces(self) -> TracesResource:
-        """Access the v2 traces resource."""
-        return self._langsmith_api.traces
 
     def _dump_failed_trace(
         self,

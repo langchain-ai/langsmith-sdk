@@ -26,8 +26,6 @@ import langsmith._openapi_client as _langsmith_api_module
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
-    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
-    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
@@ -313,16 +311,6 @@ class AsyncClient:
     def runs(self) -> AsyncRunsResource:
         """Access the v2 runs resource."""
         return self._langsmith_api.runs
-
-    @property
-    def threads(self) -> AsyncThreadsResource:
-        """Access the v2 threads resource."""
-        return self._langsmith_api.threads
-
-    @property
-    def traces(self) -> AsyncTracesResource:
-        """Access the v2 traces resource."""
-        return self._langsmith_api.traces
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

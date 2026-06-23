@@ -38,27 +38,6 @@ import {
 import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
-import {
-  CommitCreateParams,
-  CommitCreateResponse,
-  CommitListParams,
-  CommitManifestResponse,
-  CommitRetrieveParams,
-  CommitRetrieveResponse,
-  CommitWithLookups,
-  CommitWithLookupsOffsetPaginationCommits,
-  Commits,
-} from './resources/commits.js';
-import {
-  CodeEvaluatorTopLevel,
-  Evaluator,
-  EvaluatorListParams,
-  EvaluatorListResponse,
-  EvaluatorPagerdutyAlert,
-  EvaluatorTopLevel,
-  EvaluatorWebhook,
-  Evaluators,
-} from './resources/evaluators.js';
 import { Info, InfoListResponse } from './resources/info.js';
 import {
   BulkDeleteEvaluatorFailedItem,
@@ -89,42 +68,24 @@ import {
   UpdateOnlineEvaluatorResponse,
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
-import { AppHubCrudTenantsTenant, Settings } from './resources/settings.js';
 import {
-  WorkspaceCreateParams,
-  WorkspaceCreateResponse,
-  WorkspaceDeleteResponse,
-  WorkspaceListParams,
-  WorkspaceListResponse,
-  WorkspaceUpdateParams,
-  WorkspaceUpdateResponse,
-  Workspaces,
-} from './resources/workspaces.js';
-import {
-  AnnotationQueueAnnotationQueuesParams,
-  AnnotationQueueCreateRunStatusParams,
-  AnnotationQueueCreateRunStatusResponse,
-  AnnotationQueueDeleteResponse,
-  AnnotationQueueExportParams,
-  AnnotationQueueExportResponse,
-  AnnotationQueuePopulateParams,
-  AnnotationQueuePopulateResponse,
-  AnnotationQueueRetrieveAnnotationQueuesParams,
-  AnnotationQueueRetrieveAnnotationQueuesResponse,
-  AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray,
-  AnnotationQueueRetrieveQueuesResponse,
-  AnnotationQueueRetrieveResponse,
-  AnnotationQueueRetrieveRunParams,
-  AnnotationQueueRetrieveSizeParams,
-  AnnotationQueueRetrieveTotalArchivedParams,
-  AnnotationQueueRubricItemSchema,
-  AnnotationQueueSchema,
-  AnnotationQueueSizeSchema,
-  AnnotationQueueUpdateParams,
-  AnnotationQueueUpdateResponse,
-  AnnotationQueues,
-  RunSchemaWithAnnotationQueueInfo,
-} from './resources/annotation-queues/annotation-queues.js';
+  BodyParamsForRunSchema,
+  QueryRunResponse,
+  QueryRunResponsesItemsCursorPostPagination,
+  QueryRunsRequestBody,
+  RequestBodyForRunsGenerateQuery,
+  ResponseBodyForRunsGenerateQuery,
+  Run,
+  RunQueryParams,
+  RunQueryV2Params,
+  RunRetrieveParams,
+  RunRetrieveV2Params,
+  RunSchema,
+  RunStatsQueryParams,
+  RunTypeEnum,
+  Runs,
+  RunsFilterDataSourceTypeEnum,
+} from './resources/runs.js';
 import {
   DataType,
   Dataset,
@@ -155,87 +116,6 @@ import {
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
 import {
-  AttachmentsOperations,
-  Example,
-  ExampleCreateParams,
-  ExampleDeleteAllParams,
-  ExampleDeleteAllResponse,
-  ExampleDeleteResponse,
-  ExampleListParams,
-  ExampleRetrieveCountParams,
-  ExampleRetrieveCountResponse,
-  ExampleRetrieveParams,
-  ExampleSelect,
-  ExampleUpdateParams,
-  ExampleUpdateResponse,
-  ExampleUploadFromCsvParams,
-  ExampleUploadFromCsvResponse,
-  Examples,
-  ExamplesOffsetPaginationTopLevelArray,
-} from './resources/examples/examples.js';
-import {
-  APIFeedbackSource,
-  AppFeedbackSource,
-  AutoEvalFeedbackSource,
-  Feedback,
-  FeedbackCreateParams,
-  FeedbackCreateSchema,
-  FeedbackDeleteResponse,
-  FeedbackLevel,
-  FeedbackListParams,
-  FeedbackRetrieveParams,
-  FeedbackSchema,
-  FeedbackSchemasOffsetPaginationTopLevelArray,
-  FeedbackUpdateParams,
-  ModelFeedbackSource,
-  SourceType,
-} from './resources/feedback/feedback.js';
-import { Public, PublicRetrieveFeedbacksParams } from './resources/public/public.js';
-import {
-  CreateRepoResponse,
-  DemoConfig,
-  EPromptOptimizationAlgorithm,
-  GetRepoResponse,
-  PromptimConfig,
-  RepoCreateParams,
-  RepoDeleteParams,
-  RepoDeleteResponse,
-  RepoListParams,
-  RepoRetrieveParams,
-  RepoUpdateParams,
-  RepoWithLookups,
-  RepoWithLookupsOffsetPaginationRepos,
-  Repos,
-} from './resources/repos/repos.js';
-import {
-  BodyParamsForRunSchema,
-  QueryRunResponse,
-  QueryRunResponsesItemsCursorPostPagination,
-  QueryRunsRequestBody,
-  RequestBodyForRunsGenerateQuery,
-  ResponseBodyForRunsGenerateQuery,
-  Run,
-  RunCreateParams,
-  RunCreateResponse,
-  RunIngestBatchParams,
-  RunIngestBatchResponse,
-  RunQueryParams,
-  RunQueryV2Params,
-  RunRetrieveParams,
-  RunRetrieveV2Params,
-  RunSchema,
-  RunStatsParams,
-  RunStatsQueryParams,
-  RunStatsResponse,
-  RunTypeEnum,
-  RunUpdate2Response,
-  RunUpdateParams,
-  RunUpdateResponse,
-  Runs,
-  RunsFilterDataSourceTypeEnum,
-} from './resources/runs/runs.js';
-import { Sandboxes } from './resources/sandboxes/sandboxes.js';
-import {
   CustomChartsSection,
   CustomChartsSectionRequest,
   RunStatsGroupBy,
@@ -252,16 +132,6 @@ import {
   TracerSessionWithoutVirtualFields,
   TracerSessionsOffsetPaginationTopLevelArray,
 } from './resources/sessions/sessions.js';
-import {
-  QueryThreadsRequestBody,
-  ThreadListItem,
-  ThreadListItemsItemsCursorPostPagination,
-  ThreadQueryParams,
-  ThreadTraceListItem,
-  ThreadTraceSelectField,
-  Threads,
-} from './resources/threads/threads.js';
-import { QueryTraceResponseBody, Traces } from './resources/traces/traces.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -1031,41 +901,17 @@ export class Langsmith {
   static toFile = Uploads.toFile;
 
   sessions: API.Sessions = new API.Sessions(this);
-  examples: API.Examples = new API.Examples(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
-  threads: API.Threads = new API.Threads(this);
-  traces: API.Traces = new API.Traces(this);
-  evaluators: API.Evaluators = new API.Evaluators(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
-  feedback: API.Feedback = new API.Feedback(this);
-  public: API.Public = new API.Public(this);
-  annotationQueues: API.AnnotationQueues = new API.AnnotationQueues(this);
   info: API.Info = new API.Info(this);
-  workspaces: API.Workspaces = new API.Workspaces(this);
-  repos: API.Repos = new API.Repos(this);
-  commits: API.Commits = new API.Commits(this);
-  settings: API.Settings = new API.Settings(this);
-  sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
 Langsmith.Sessions = Sessions;
-Langsmith.Examples = Examples;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
-Langsmith.Threads = Threads;
-Langsmith.Traces = Traces;
-Langsmith.Evaluators = Evaluators;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
-Langsmith.Feedback = Feedback;
-Langsmith.Public = Public;
-Langsmith.AnnotationQueues = AnnotationQueues;
 Langsmith.Info = Info;
-Langsmith.Workspaces = Workspaces;
-Langsmith.Repos = Repos;
-Langsmith.Commits = Commits;
-Langsmith.Settings = Settings;
-Langsmith.Sandboxes = Sandboxes;
 
 export declare namespace Langsmith {
   export type RequestOptions = Opts.RequestOptions;
@@ -1137,26 +983,6 @@ export declare namespace Langsmith {
   };
 
   export {
-    Examples as Examples,
-    type AttachmentsOperations as AttachmentsOperations,
-    type Example as Example,
-    type ExampleSelect as ExampleSelect,
-    type ExampleUpdateResponse as ExampleUpdateResponse,
-    type ExampleDeleteResponse as ExampleDeleteResponse,
-    type ExampleDeleteAllResponse as ExampleDeleteAllResponse,
-    type ExampleRetrieveCountResponse as ExampleRetrieveCountResponse,
-    type ExampleUploadFromCsvResponse as ExampleUploadFromCsvResponse,
-    type ExamplesOffsetPaginationTopLevelArray as ExamplesOffsetPaginationTopLevelArray,
-    type ExampleCreateParams as ExampleCreateParams,
-    type ExampleRetrieveParams as ExampleRetrieveParams,
-    type ExampleUpdateParams as ExampleUpdateParams,
-    type ExampleListParams as ExampleListParams,
-    type ExampleDeleteAllParams as ExampleDeleteAllParams,
-    type ExampleRetrieveCountParams as ExampleRetrieveCountParams,
-    type ExampleUploadFromCsvParams as ExampleUploadFromCsvParams,
-  };
-
-  export {
     Datasets as Datasets,
     type DataType as DataType,
     type Dataset as Dataset,
@@ -1198,43 +1024,11 @@ export declare namespace Langsmith {
     type RunStatsQueryParams as RunStatsQueryParams,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
-    type RunCreateResponse as RunCreateResponse,
-    type RunUpdateResponse as RunUpdateResponse,
-    type RunIngestBatchResponse as RunIngestBatchResponse,
-    type RunStatsResponse as RunStatsResponse,
-    type RunUpdate2Response as RunUpdate2Response,
     type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
-    type RunCreateParams as RunCreateParams,
-    type RunUpdateParams as RunUpdateParams,
-    type RunIngestBatchParams as RunIngestBatchParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
-    type RunStatsParams as RunStatsParams,
     type RunRetrieveParams as RunRetrieveParams,
     type RunQueryParams as RunQueryParams,
-  };
-
-  export {
-    Threads as Threads,
-    type QueryThreadsRequestBody as QueryThreadsRequestBody,
-    type ThreadListItem as ThreadListItem,
-    type ThreadTraceListItem as ThreadTraceListItem,
-    type ThreadTraceSelectField as ThreadTraceSelectField,
-    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
-    type ThreadQueryParams as ThreadQueryParams,
-  };
-
-  export { Traces as Traces, type QueryTraceResponseBody as QueryTraceResponseBody };
-
-  export {
-    Evaluators as Evaluators,
-    type CodeEvaluatorTopLevel as CodeEvaluatorTopLevel,
-    type Evaluator as Evaluator,
-    type EvaluatorPagerdutyAlert as EvaluatorPagerdutyAlert,
-    type EvaluatorTopLevel as EvaluatorTopLevel,
-    type EvaluatorWebhook as EvaluatorWebhook,
-    type EvaluatorListResponse as EvaluatorListResponse,
-    type EvaluatorListParams as EvaluatorListParams,
   };
 
   export {
@@ -1267,95 +1061,5 @@ export declare namespace Langsmith {
     type OnlineEvaluatorSpendParams as OnlineEvaluatorSpendParams,
   };
 
-  export {
-    Feedback as Feedback,
-    type APIFeedbackSource as APIFeedbackSource,
-    type AppFeedbackSource as AppFeedbackSource,
-    type AutoEvalFeedbackSource as AutoEvalFeedbackSource,
-    type FeedbackCreateSchema as FeedbackCreateSchema,
-    type FeedbackLevel as FeedbackLevel,
-    type FeedbackSchema as FeedbackSchema,
-    type ModelFeedbackSource as ModelFeedbackSource,
-    type SourceType as SourceType,
-    type FeedbackDeleteResponse as FeedbackDeleteResponse,
-    type FeedbackSchemasOffsetPaginationTopLevelArray as FeedbackSchemasOffsetPaginationTopLevelArray,
-    type FeedbackCreateParams as FeedbackCreateParams,
-    type FeedbackRetrieveParams as FeedbackRetrieveParams,
-    type FeedbackUpdateParams as FeedbackUpdateParams,
-    type FeedbackListParams as FeedbackListParams,
-  };
-
-  export { Public as Public, type PublicRetrieveFeedbacksParams as PublicRetrieveFeedbacksParams };
-
-  export {
-    AnnotationQueues as AnnotationQueues,
-    type AnnotationQueueRubricItemSchema as AnnotationQueueRubricItemSchema,
-    type AnnotationQueueSchema as AnnotationQueueSchema,
-    type AnnotationQueueSizeSchema as AnnotationQueueSizeSchema,
-    type RunSchemaWithAnnotationQueueInfo as RunSchemaWithAnnotationQueueInfo,
-    type AnnotationQueueRetrieveResponse as AnnotationQueueRetrieveResponse,
-    type AnnotationQueueUpdateResponse as AnnotationQueueUpdateResponse,
-    type AnnotationQueueDeleteResponse as AnnotationQueueDeleteResponse,
-    type AnnotationQueueCreateRunStatusResponse as AnnotationQueueCreateRunStatusResponse,
-    type AnnotationQueueExportResponse as AnnotationQueueExportResponse,
-    type AnnotationQueuePopulateResponse as AnnotationQueuePopulateResponse,
-    type AnnotationQueueRetrieveAnnotationQueuesResponse as AnnotationQueueRetrieveAnnotationQueuesResponse,
-    type AnnotationQueueRetrieveQueuesResponse as AnnotationQueueRetrieveQueuesResponse,
-    type AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray as AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray,
-    type AnnotationQueueUpdateParams as AnnotationQueueUpdateParams,
-    type AnnotationQueueAnnotationQueuesParams as AnnotationQueueAnnotationQueuesParams,
-    type AnnotationQueueCreateRunStatusParams as AnnotationQueueCreateRunStatusParams,
-    type AnnotationQueueExportParams as AnnotationQueueExportParams,
-    type AnnotationQueuePopulateParams as AnnotationQueuePopulateParams,
-    type AnnotationQueueRetrieveAnnotationQueuesParams as AnnotationQueueRetrieveAnnotationQueuesParams,
-    type AnnotationQueueRetrieveRunParams as AnnotationQueueRetrieveRunParams,
-    type AnnotationQueueRetrieveSizeParams as AnnotationQueueRetrieveSizeParams,
-    type AnnotationQueueRetrieveTotalArchivedParams as AnnotationQueueRetrieveTotalArchivedParams,
-  };
-
   export { Info as Info, type InfoListResponse as InfoListResponse };
-
-  export {
-    Workspaces as Workspaces,
-    type WorkspaceCreateResponse as WorkspaceCreateResponse,
-    type WorkspaceUpdateResponse as WorkspaceUpdateResponse,
-    type WorkspaceListResponse as WorkspaceListResponse,
-    type WorkspaceDeleteResponse as WorkspaceDeleteResponse,
-    type WorkspaceCreateParams as WorkspaceCreateParams,
-    type WorkspaceUpdateParams as WorkspaceUpdateParams,
-    type WorkspaceListParams as WorkspaceListParams,
-  };
-
-  export {
-    Repos as Repos,
-    type CreateRepoResponse as CreateRepoResponse,
-    type DemoConfig as DemoConfig,
-    type EPromptOptimizationAlgorithm as EPromptOptimizationAlgorithm,
-    type GetRepoResponse as GetRepoResponse,
-    type PromptimConfig as PromptimConfig,
-    type RepoWithLookups as RepoWithLookups,
-    type RepoDeleteResponse as RepoDeleteResponse,
-    type RepoWithLookupsOffsetPaginationRepos as RepoWithLookupsOffsetPaginationRepos,
-    type RepoCreateParams as RepoCreateParams,
-    type RepoRetrieveParams as RepoRetrieveParams,
-    type RepoUpdateParams as RepoUpdateParams,
-    type RepoListParams as RepoListParams,
-    type RepoDeleteParams as RepoDeleteParams,
-  };
-
-  export {
-    Commits as Commits,
-    type CommitManifestResponse as CommitManifestResponse,
-    type CommitWithLookups as CommitWithLookups,
-    type CommitCreateResponse as CommitCreateResponse,
-    type CommitRetrieveResponse as CommitRetrieveResponse,
-    type CommitWithLookupsOffsetPaginationCommits as CommitWithLookupsOffsetPaginationCommits,
-    type CommitCreateParams as CommitCreateParams,
-    type CommitRetrieveParams as CommitRetrieveParams,
-    type CommitListParams as CommitListParams,
-  };
-
-  export { Settings as Settings, type AppHubCrudTenantsTenant as AppHubCrudTenantsTenant };
-
-  export { Sandboxes as Sandboxes };
 }

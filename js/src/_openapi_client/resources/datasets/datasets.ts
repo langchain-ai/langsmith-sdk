@@ -44,8 +44,6 @@ import {
   VersionRetrieveDiffResponse,
   Versions,
 } from './versions.js';
-import * as ExamplesAPI from '../examples/examples.js';
-import * as FeedbackAPI from '../feedback/feedback.js';
 import { APIPromise } from '../../core/api-promise.js';
 import {
   OffsetPaginationTopLevelArray,
@@ -296,10 +294,10 @@ export interface FeedbackCreateCoreSchema {
    * Feedback from the LangChainPlus App.
    */
   feedback_source?:
-    | FeedbackAPI.AppFeedbackSource
-    | FeedbackAPI.APIFeedbackSource
-    | FeedbackAPI.ModelFeedbackSource
-    | FeedbackAPI.AutoEvalFeedbackSource
+    | FeedbackCreateCoreSchema.AppFeedbackSource
+    | FeedbackCreateCoreSchema.APIFeedbackSource
+    | FeedbackCreateCoreSchema.ModelFeedbackSource
+    | FeedbackCreateCoreSchema.AutoEvalFeedbackSource
     | null;
 
   modified_at?: string;
@@ -332,6 +330,42 @@ export namespace FeedbackCreateCoreSchema {
 
       label?: string | null;
     }
+  }
+
+  /**
+   * Feedback from the LangChainPlus App.
+   */
+  export interface AppFeedbackSource {
+    metadata?: { [key: string]: unknown } | null;
+
+    type?: 'app';
+  }
+
+  /**
+   * API feedback source.
+   */
+  export interface APIFeedbackSource {
+    metadata?: { [key: string]: unknown } | null;
+
+    type?: 'api';
+  }
+
+  /**
+   * Model feedback source.
+   */
+  export interface ModelFeedbackSource {
+    metadata?: { [key: string]: unknown } | null;
+
+    type?: 'model';
+  }
+
+  /**
+   * Auto eval feedback source.
+   */
+  export interface AutoEvalFeedbackSource {
+    metadata?: { [key: string]: unknown } | null;
+
+    type?: 'auto_eval';
   }
 }
 
@@ -437,7 +471,7 @@ export namespace DatasetUpdateParams {
    * Update class for Example.
    */
   export interface PatchExamples {
-    attachments_operations?: ExamplesAPI.AttachmentsOperations | null;
+    attachments_operations?: PatchExamples.AttachmentsOperations | null;
 
     dataset_id?: string | null;
 
@@ -450,6 +484,20 @@ export namespace DatasetUpdateParams {
     overwrite?: boolean;
 
     split?: Array<string> | string | null;
+  }
+
+  export namespace PatchExamples {
+    export interface AttachmentsOperations {
+      /**
+       * Mapping of old attachment names to new names
+       */
+      rename?: { [key: string]: string };
+
+      /**
+       * List of attachment names to keep
+       */
+      retain?: Array<string>;
+    }
   }
 }
 
