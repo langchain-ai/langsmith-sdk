@@ -133,6 +133,26 @@ def test_serialize_feedback_dict_maps_retention_opt_out_for_queue() -> None:
     payload = _orjson.loads(serialized.feedback)
 
     assert payload["_skip_trace_upgrade"] is True
+    assert payload["extend_trace_retention"] is False
+
+
+def test_serialize_feedback_dict_omits_retention_fields_when_extending() -> None:
+    feedback_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+
+    serialized = serialize_feedback_dict(
+        {
+            "id": feedback_id,
+            "trace_id": trace_id,
+            "run_id": trace_id,
+            "key": "correctness",
+            "score": 1,
+            "extend_trace_retention": True,
+        }
+    )
+    payload = _orjson.loads(serialized.feedback)
+
+    assert "_skip_trace_upgrade" not in payload
     assert "extend_trace_retention" not in payload
 
 

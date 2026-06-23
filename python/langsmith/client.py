@@ -7730,6 +7730,7 @@ class Client:
 
             if (
                 use_multipart
+                and extend_trace_retention
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
                 and (
