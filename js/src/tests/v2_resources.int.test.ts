@@ -125,6 +125,4 @@ describe("client.runs v2 resource", () => {
     expect(run?.id).toBe(traceId);
     await deleteProject(client, proj);
   });
-
 });
-
