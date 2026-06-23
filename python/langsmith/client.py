@@ -109,7 +109,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
+from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -264,9 +264,9 @@ if TYPE_CHECKING:
 
     from langsmith import schemas
     from langsmith._openapi_client.resources.online_evaluators import (
-        OnlineEvaluatorsResource,
+        AsyncOnlineEvaluatorsResource,
     )
-    from langsmith._openapi_client.resources.runs import RunsResource
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
 
     # OTEL imports for type hints
     try:
@@ -1411,7 +1411,7 @@ class Client:
     # ------------------------------------------------------------------
 
     @property
-    def runs(self) -> RunsResource:
+    def runs(self) -> AsyncRunsResource:
         """Access the v2 runs resource."""
         return self._langsmith_api.runs
 
@@ -1643,7 +1643,7 @@ class Client:
         return self._info
 
     @property
-    def online_evaluators(self) -> OnlineEvaluatorsResource:
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         """Access generated online evaluator CRUD methods."""
         return self._langsmith_api.online_evaluators
 

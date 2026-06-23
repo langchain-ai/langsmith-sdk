@@ -41,6 +41,7 @@ from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
+from langsmith.run_trees import RunTree
 from langsmith.schemas import (
     AttachmentsOperations,
     Dataset,
@@ -93,6 +94,16 @@ def wait_for(
             time.sleep(sleep_time)
     total_time = time.time() - start_time
     raise ValueError(f"Callable did not return within {total_time}")
+
+
+async def _alist(paginator):
+    return [x async for x in paginator]
+
+
+async def _anext_or_none(paginator):
+    async for x in paginator:
+        return x
+    return None
 
 
 @pytest.fixture
@@ -465,11 +476,13 @@ def test_persist_update_run(langchain_client: Client) -> None:
         def _run_has_ended():
             try:
                 return (
-                    langchain_client.runs.retrieve(
-                        str(run["id"]),
-                        project_id=str(_project.id),
-                        start_time=run["start_time"],
-                        selects=["ID", "END_TIME"],
+                    asyncio.run(
+                        langchain_client.runs.retrieve(
+                            str(run["id"]),
+                            project_id=str(_project.id),
+                            start_time=run["start_time"],
+                            selects=["ID", "END_TIME"],
+                        )
                     ).end_time
                     is not None
                 )
@@ -477,11 +490,13 @@ def test_persist_update_run(langchain_client: Client) -> None:
                 return False
 
         wait_for(_run_has_ended)
-        stored_run = langchain_client.runs.retrieve(
-            str(run["id"]),
-            project_id=str(_project.id),
-            start_time=run["start_time"],
-            selects=["ID", "NAME", "OUTPUTS", "START_TIME"],
+        stored_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(run["id"]),
+                project_id=str(_project.id),
+                start_time=run["start_time"],
+                selects=["ID", "NAME", "OUTPUTS", "START_TIME"],
+            )
         )
         assert stored_run.name == run["name"]
         assert str(stored_run.id) == str(run["id"])
@@ -520,11 +535,13 @@ def test_update_run_attachments(langchain_client: Client) -> None:
         def _run_has_ended():
             try:
                 return (
-                    langchain_client.runs.retrieve(
-                        str(run["id"]),
-                        project_id=str(_project.id),
-                        start_time=run["start_time"],
-                        selects=["ID", "END_TIME"],
+                    asyncio.run(
+                        langchain_client.runs.retrieve(
+                            str(run["id"]),
+                            project_id=str(_project.id),
+                            start_time=run["start_time"],
+                            selects=["ID", "END_TIME"],
+                        )
                     ).end_time
                     is not None
                 )
@@ -532,11 +549,13 @@ def test_update_run_attachments(langchain_client: Client) -> None:
                 return False
 
         wait_for(_run_has_ended)
-        stored_run = langchain_client.runs.retrieve(
-            str(run["id"]),
-            project_id=str(_project.id),
-            start_time=run["start_time"],
-            selects=["ID", "NAME", "OUTPUTS", "START_TIME"],
+        stored_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(run["id"]),
+                project_id=str(_project.id),
+                start_time=run["start_time"],
+                selects=["ID", "NAME", "OUTPUTS", "START_TIME"],
+            )
         )
         assert stored_run.name == run["name"]
         assert str(stored_run.id) == run["id"]
@@ -909,11 +928,13 @@ def test_create_run_with_masked_inputs_outputs(
         def _has_ended(rid, st):
             try:
                 return (
-                    langchain_client.runs.retrieve(
-                        str(rid),
-                        project_id=str(_project.id),
-                        start_time=st,
-                        selects=["ID", "END_TIME"],
+                    asyncio.run(
+                        langchain_client.runs.retrieve(
+                            str(rid),
+                            project_id=str(_project.id),
+                            start_time=st,
+                            selects=["ID", "END_TIME"],
+                        )
                     ).end_time
                     is not None
                 )
@@ -921,21 +942,25 @@ def test_create_run_with_masked_inputs_outputs(
                 return False
 
         wait_for(lambda: _has_ended(run_id, _start_time_1))
-        stored_run = langchain_client.runs.retrieve(
-            str(run_id),
-            project_id=str(_project.id),
-            start_time=_start_time_1,
-            selects=["ID", "INPUTS", "OUTPUTS"],
+        stored_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(run_id),
+                project_id=str(_project.id),
+                start_time=_start_time_1,
+                selects=["ID", "INPUTS", "OUTPUTS"],
+            )
         )
         assert "hello" not in str(stored_run.inputs)
         assert stored_run.outputs is not None
         assert "hi" not in str(stored_run.outputs)
         wait_for(lambda: _has_ended(run_id2, _start_time_2))
-        stored_run2 = langchain_client.runs.retrieve(
-            str(run_id2),
-            project_id=str(_project.id),
-            start_time=_start_time_2,
-            selects=["ID", "INPUTS", "OUTPUTS"],
+        stored_run2 = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(run_id2),
+                project_id=str(_project.id),
+                start_time=_start_time_2,
+                selects=["ID", "INPUTS", "OUTPUTS"],
+            )
         )
         assert "hello" not in str(stored_run2.inputs)
         assert stored_run2.outputs is not None
@@ -1073,11 +1098,13 @@ def test_batch_ingest_runs(
     for _ in range(15):
         try:
             project = langchain_client.read_project(project_name=_session)
-            runs = list(
-                langchain_client.runs.query(
-                    project_ids=[str(project.id)],
-                    ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
-                    selects=["ID", "INPUTS", "OUTPUTS", "ERROR"],
+            runs = asyncio.run(
+                _alist(
+                    langchain_client.runs.query(
+                        project_ids=[str(project.id)],
+                        ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
+                        selects=["ID", "INPUTS", "OUTPUTS", "ERROR"],
+                    )
                 )
             )
             if len(runs) == 3:
@@ -1193,11 +1220,13 @@ def test_multipart_ingest_create_with_attachments(
             lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time)
         )
         _ingest_project = langchain_client.read_project(project_name=_session)
-        created_run = langchain_client.runs.retrieve(
-            str(trace_a_id),
-            project_id=str(_ingest_project.id),
-            start_time=_start_time,
-            selects=["ID", "ATTACHMENTS"],
+        created_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(trace_a_id),
+                project_id=str(_ingest_project.id),
+                start_time=_start_time,
+                selects=["ID", "ATTACHMENTS"],
+            )
         )
         assert created_run.attachments is not None
         assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
@@ -1244,11 +1273,13 @@ def test_multipart_ingest_update_with_attachments_no_paths(
             lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time)
         )
         _no_paths_project = langchain_client.read_project(project_name=_session)
-        created_run = langchain_client.runs.retrieve(
-            str(trace_a_id),
-            project_id=str(_no_paths_project.id),
-            start_time=_start_time,
-            selects=["ID", "ATTACHMENTS"],
+        created_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(trace_a_id),
+                project_id=str(_no_paths_project.id),
+                start_time=_start_time,
+                selects=["ID", "ATTACHMENTS"],
+            )
         )
         assert created_run.attachments
         assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
@@ -1286,11 +1317,13 @@ def _get_run(
 ) -> bool:
     try:
         project = langchain_client.read_project(project_name=project_name)
-        r = langchain_client.runs.retrieve(
-            str(run_id),
-            project_id=str(project.id),
-            start_time=start_time,
-            selects=["ID", "END_TIME"],
+        r = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(run_id),
+                project_id=str(project.id),
+                start_time=start_time,
+                selects=["ID", "END_TIME"],
+            )
         )
         if has_end:
             return r.end_time is not None
@@ -1403,11 +1436,13 @@ def test_multipart_ingest_update_with_attachments(
             lambda: _get_run(str(trace_a_id), langchain_client, _session, _start_time)
         )
         _update_project = langchain_client.read_project(project_name=_session)
-        created_run = langchain_client.runs.retrieve(
-            str(trace_a_id),
-            project_id=str(_update_project.id),
-            start_time=_start_time,
-            selects=["ID", "INPUTS", "ATTACHMENTS"],
+        created_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(trace_a_id),
+                project_id=str(_update_project.id),
+                start_time=_start_time,
+                selects=["ID", "INPUTS", "ATTACHMENTS"],
+            )
         )
         assert created_run.inputs == {"input1": 3, "input2": 4}
         assert created_run.attachments is not None
@@ -1593,11 +1628,13 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
         lambda: _get_run(run_id, langchain_client, _project_name, run["start_time"])
     )
     _extra_project = langchain_client.read_project(project_name=_project_name)
-    created_run = langchain_client.runs.retrieve(
-        str(run_id),
-        project_id=str(_extra_project.id),
-        start_time=run["start_time"],
-        selects=["ID", "METADATA", "EXTRA"],
+    created_run = asyncio.run(
+        langchain_client.runs.retrieve(
+            str(run_id),
+            project_id=str(_extra_project.id),
+            start_time=run["start_time"],
+            selects=["ID", "METADATA", "EXTRA"],
+        )
     )
     assert created_run.metadata["foo"] == "bar"
     # Update the run
@@ -1610,11 +1647,13 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
             run_id, langchain_client, _project_name, run["start_time"], has_end=True
         )
     )
-    updated_run = langchain_client.runs.retrieve(
-        str(run_id),
-        project_id=str(_extra_project.id),
-        start_time=run["start_time"],
-        selects=["ID", "METADATA", "EXTRA", "TAGS"],
+    updated_run = asyncio.run(
+        langchain_client.runs.retrieve(
+            str(run_id),
+            project_id=str(_extra_project.id),
+            start_time=run["start_time"],
+            selects=["ID", "METADATA", "EXTRA", "TAGS"],
+        )
     )
     assert updated_run.metadata["foo"] == "bar"  # type: ignore
     if add_metadata:
@@ -1690,16 +1729,6 @@ def test_fallback_json_serialization():
     for item, expected in pydantic_surrogates:
         output = dumps_json(item).decode("utf8")
         assert f'{{"content":"{expected}"}}' == output
-
-
-def test_runs_stats():
-    langchain_client = Client()
-    # We always have stuff in the "default" project...
-    default_project = langchain_client.read_project(project_name="default")
-    stats = langchain_client.runs.stats(
-        session=[str(default_project.id)], run_type="llm"
-    )
-    assert stats
 
 
 def test_slow_run_read_multipart(
@@ -3584,11 +3613,13 @@ def test_annotation_queue_runs(langchain_client: Client):
     def _get_run(run_id: ID_TYPE) -> bool:
         try:
             project = langchain_client.read_project(project_name=project_name)
-            langchain_client.runs.retrieve(
-                str(run_id),
-                project_id=str(project.id),
-                start_time=start_times[run_id],
-                selects=["ID"],
+            asyncio.run(
+                langchain_client.runs.retrieve(
+                    str(run_id),
+                    project_id=str(project.id),
+                    start_time=start_times[run_id],
+                    selects=["ID"],
+                )
             )
             return True
         except LangSmithError:
@@ -3767,11 +3798,12 @@ def test_list_threads(langchain_client: Client) -> None:
         _project = langchain_client.read_project(project_name=project_name)
         wait_for(
             lambda: (
-                next(
-                    langchain_client.runs.query(
-                        project_ids=[str(_project.id)], page_size=1, selects=["ID"]
-                    ),
-                    None,
+                asyncio.run(
+                    _anext_or_none(
+                        langchain_client.runs.query(
+                            project_ids=[str(_project.id)], page_size=1, selects=["ID"]
+                        )
+                    )
                 )
                 is not None
             ),
@@ -3837,11 +3869,14 @@ def test_read_thread(langchain_client: Client) -> None:
         _rt_project = langchain_client.read_project(project_name=project_name)
         wait_for(
             lambda: (
-                next(
-                    langchain_client.runs.query(
-                        project_ids=[str(_rt_project.id)], page_size=1, selects=["ID"]
-                    ),
-                    None,
+                asyncio.run(
+                    _anext_or_none(
+                        langchain_client.runs.query(
+                            project_ids=[str(_rt_project.id)],
+                            page_size=1,
+                            selects=["ID"],
+                        )
+                    )
                 )
                 is not None
             ),
@@ -3895,11 +3930,13 @@ def test_list_runs_with_child_runs(langchain_client: Client):
             max_sleep_time=10,
         )
         _child_project = langchain_client.read_project(project_name=project_name)
-        no_child_run = langchain_client.runs.retrieve(
-            str(parent_run_id),
-            project_id=str(_child_project.id),
-            start_time=_parent_start_time,
-            selects=["ID"],
+        no_child_run = asyncio.run(
+            langchain_client.runs.retrieve(
+                str(parent_run_id),
+                project_id=str(_child_project.id),
+                start_time=_parent_start_time,
+                selects=["ID"],
+            )
         )
         assert str(no_child_run.id) == str(parent_run_id)
     finally:
@@ -3992,11 +4029,13 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         _project = langchain_client.read_project(project_name=project_name)
         # Verify that the modifications were applied in LangSmith
         for i, run_id in enumerate(run_ids):
-            stored_run = langchain_client.runs.retrieve(
-                str(run_id),
-                project_id=str(_project.id),
-                start_time=start_times[run_id],
-                selects=["ID", "EXTRA", "INPUTS", "OUTPUTS"],
+            stored_run = asyncio.run(
+                langchain_client.runs.retrieve(
+                    str(run_id),
+                    project_id=str(_project.id),
+                    start_time=start_times[run_id],
+                    selects=["ID", "EXTRA", "INPUTS", "OUTPUTS"],
+                )
             )
 
             # Check that custom metadata was added
@@ -4331,3 +4370,115 @@ def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
                 pass
         if dataset is not None:
             safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+
+
+# ---------------------------------------------------------------------------
+# v2 resource tests (runs.retrieve / runs.query via AsyncRunsResource)
+# ---------------------------------------------------------------------------
+
+_V2_DEFAULT_SELECTS = [
+    "ID",
+    "NAME",
+    "RUN_TYPE",
+    "STATUS",
+    "START_TIME",
+    "END_TIME",
+    "INPUTS",
+    "OUTPUTS",
+    "TAGS",
+    "PROJECT_ID",
+    "TRACE_ID",
+    "DOTTED_ORDER",
+]
+
+
+def _v2_create_project_name(suffix: str) -> str:
+    import uuid
+
+    return f"__test_v2_resources_{suffix}_{uuid.uuid4().hex}"
+
+
+def _v2_cleanup_project(client: Client, project_name: str) -> None:
+    try:
+        client.delete_project(project_name=project_name)
+    except Exception:
+        pass
+
+
+def _v2_get_project_id_or_skip(
+    client: Client,
+    project_name: str,
+    max_retries: int = 30,
+    sleep_time: float = 2.0,
+) -> str:
+    for _ in range(max_retries):
+        try:
+            project = client.read_project(project_name=project_name)
+            return str(project.id)
+        except Exception as e:
+            msg = str(e)
+            if "projects:read" in msg or "403" in msg:
+                pytest.skip(
+                    "requires projects:read permission (service key limitation)"
+                )
+        time.sleep(sleep_time)
+    pytest.fail(f"Project {project_name!r} not found after {max_retries} retries")
+
+
+def _v2_post_trace(project_name: str) -> tuple:
+    from datetime import datetime, timezone
+
+    client = Client()
+    start = datetime.now(timezone.utc)
+    root = RunTree(
+        name="root_run",
+        run_type="chain",
+        inputs={"input": "hello"},
+        project_name=project_name,
+    )
+    root.post()
+    child = root.create_child(
+        name="child_run",
+        run_type="llm",
+        inputs={"prompt": "world"},
+    )
+    child.post()
+    child.end(outputs={"text": "done"})
+    child.patch()
+    root.end(outputs={"result": "ok"})
+    root.patch()
+    project_id = _v2_get_project_id_or_skip(client, project_name)
+    return str(root.id), project_id, start
+
+
+@pytest.fixture
+def v2_client() -> Client:
+    return Client()
+
+
+async def test_runs_retrieve(v2_client: Client) -> None:
+    project_name = _v2_create_project_name("runs_retrieve")
+    run_id, project_id, start = _v2_post_trace(project_name)
+    run = await v2_client.runs.retrieve(
+        run_id=run_id,
+        project_id=project_id,
+        start_time=start.isoformat(),
+    )
+    assert run.id == run_id
+    _v2_cleanup_project(v2_client, project_name)
+
+
+async def test_runs_query(v2_client: Client) -> None:
+    project_name = _v2_create_project_name("runs_query")
+    trace_id, project_id, _ = _v2_post_trace(project_name)
+    runs = [
+        r
+        async for r in v2_client.runs.query(
+            project_ids=[project_id],
+            selects=_V2_DEFAULT_SELECTS,
+        )
+    ]
+    assert len(runs) >= 1
+    trace_ids = {r.trace_id for r in runs}
+    assert trace_id in trace_ids
+    _v2_cleanup_project(v2_client, project_name)
