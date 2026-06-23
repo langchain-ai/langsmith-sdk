@@ -861,6 +861,26 @@ class AnnotationQueueWithDetails(AnnotationQueue):
     """The rubric instructions for the annotation queue."""
 
 
+class RunToAddByKey(TypedDict):
+    """A run to add to an annotation queue, keyed for SmithDB lookup.
+
+    Unlike the run-IDs-only ``add_runs_to_annotation_queue``, this carries the
+    full SmithDB partition key (``session_id`` and ``start_time``) so the run can
+    be located without a scan.
+    """
+
+    run_id: Union[UUID, str]
+    """The ID of the run to add to the queue."""
+    session_id: Union[UUID, str]
+    """The ID of the project/session the run belongs to (SmithDB partition key)."""
+    start_time: Union[datetime, str]
+    """The start time of the run (SmithDB partition key). A ``datetime`` or an
+    ISO 8601 string."""
+    source_proposed_example_id: NotRequired[Union[UUID, str]]
+    """Optional back-pointer to the issues-agent proposed example that seeded
+    this queue item. The curation UI uses it to pre-fill suggested assertions."""
+
+
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 

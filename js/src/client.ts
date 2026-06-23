@@ -5682,6 +5682,70 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Add runs to an annotation queue by their SmithDB lookup key.
+   *
+   * Unlike {@link addRunsToAnnotationQueue}, which only takes run IDs, this
+   * passes the full partition key (`sessionId` and `startTime`) for each run so
+   * it can be located in SmithDB without a scan.
+   *
+   * @param queueId - The ID of the annotation queue
+   * @param runs - The runs to add. Each entry must include `runId`, `sessionId`,
+   * and `startTime`, and may include an optional `sourceProposedExampleId`.
+   */
+  public async addRunsToAnnotationQueueByKey(
+    queueId: string,
+    runs: Array<{
+      runId: string;
+      sessionId: string;
+      startTime: string | number | Date;
+      sourceProposedExampleId?: string;
+    }>,
+  ): Promise<void> {
+    const body = JSON.stringify(
+      runs.map((run, i) => {
+        const serialized: Record<string, string> = {
+          run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
+          session_id: assertUuid(
+            run.sessionId,
+            `runs[${i}].sessionId`,
+          ).toString(),
+          start_time:
+            typeof run.startTime === "string"
+              ? run.startTime
+              : new Date(run.startTime).toISOString(),
+        };
+        if (run.sourceProposedExampleId != null) {
+          serialized.source_proposed_example_id = assertUuid(
+            run.sourceProposedExampleId,
+            `runs[${i}].sourceProposedExampleId`,
+          ).toString();
+        }
+        return serialized;
+      }),
+    );
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(
+          queueId,
+          "queueId",
+        )}/runs/by-key`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        },
+      );
+      await raiseForStatus(res, "add runs to annotation queue by key", true);
+      return res;
+    });
+  }
+
+  /**
    * Get a run from an annotation queue at the specified index.
    * @param queueId - The ID of the annotation queue
    * @param index - The index of the run to retrieve

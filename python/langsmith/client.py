@@ -719,6 +719,33 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         ) from e
 
 
+def _serialize_run_to_add_by_key(
+    run: ls_schemas.RunToAddByKey, index: int
+) -> dict[str, str]:
+    """Build the JSON body for one entry of `add_runs_to_annotation_queue_by_key`.
+
+    Serializes UUIDs and `start_time` to strings, since the `requests` `json=`
+    encoder does not handle `UUID`/`datetime` natively.
+    """
+    start_time = run["start_time"]
+    if isinstance(start_time, datetime.datetime):
+        start_time = start_time.isoformat()
+    body: dict[str, str] = {
+        "run_id": str(_as_uuid(run["run_id"], f"runs[{index}].run_id")),
+        "session_id": str(_as_uuid(run["session_id"], f"runs[{index}].session_id")),
+        "start_time": start_time,
+    }
+    source_proposed_example_id = run.get("source_proposed_example_id")
+    if source_proposed_example_id is not None:
+        body["source_proposed_example_id"] = str(
+            _as_uuid(
+                source_proposed_example_id,
+                f"runs[{index}].source_proposed_example_id",
+            )
+        )
+    return body
+
+
 @typing.overload
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
 
@@ -8696,6 +8723,31 @@ class Client:
             "POST",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
             json=[str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)],
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def add_runs_to_annotation_queue_by_key(
+        self, queue_id: ID_TYPE, *, runs: Sequence[ls_schemas.RunToAddByKey]
+    ) -> None:
+        """Add runs to an annotation queue by their SmithDB lookup key.
+
+        Unlike `add_runs_to_annotation_queue`, which only takes run IDs, this
+        passes the full partition key (`session_id` and `start_time`) for each
+        run so it can be located in SmithDB without a scan.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            runs (Sequence[RunToAddByKey]): The runs to add. Each entry must
+                include `run_id`, `session_id`, and `start_time`, and may include
+                an optional `source_proposed_example_id`.
+
+        Returns:
+            None
+        """
+        response = self.request_with_retries(
+            "POST",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key",
+            json=[_serialize_run_to_add_by_key(run, i) for i, run in enumerate(runs)],
         )
         ls_utils.raise_for_status_with_text(response)
 

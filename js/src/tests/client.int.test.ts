@@ -1291,6 +1291,68 @@ test("annotationqueue crud", async () => {
   }
 });
 
+test("annotationqueue add runs by key", async () => {
+  const client = new Client({ callerOptions: { maxRetries: 6 } });
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
+
+  try {
+    const queue = await client.createAnnotationQueue({
+      name: queueName,
+      description: "by-key queue",
+      queueId,
+    });
+
+    await client.createProject({ projectName });
+    const runId = uuidv4();
+    await client.createRun({
+      id: runId,
+      name: "Test Run",
+      run_type: "chain",
+      inputs: { foo: "bar" },
+      project_name: projectName,
+    });
+
+    // Wait for the run to be found in the db.
+    const maxWaitTime = 30000;
+    const startWait = Date.now();
+    let foundRun = null;
+    while (Date.now() - startWait < maxWaitTime) {
+      try {
+        foundRun = await client.readRun(runId);
+        if (foundRun) break;
+      } catch (_error) {
+        // keep retrying until the run shows up
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    if (!foundRun) {
+      throw new Error(
+        `Run with ID ${runId} not found after ${maxWaitTime / 1000} seconds`,
+      );
+    }
+
+    // Add the run using its SmithDB partition key.
+    await client.addRunsToAnnotationQueueByKey(queue.id, [
+      {
+        runId: foundRun.id,
+        sessionId: foundRun.session_id as string,
+        startTime: foundRun.start_time as string | number,
+      },
+    ]);
+
+    const listed = await toArray(client.listRunsFromAnnotationQueue(queueId));
+    expect(listed.length).toBe(1);
+    expect(listed[0].id).toBe(runId);
+  } finally {
+    await client.deleteAnnotationQueue(queueId);
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});
+
 // Consolidated: exercises rubric_instructions behavior across both creation
 // paths (unset vs set at creation time) plus the update path, using a single
 // pair of queues. Previously split across

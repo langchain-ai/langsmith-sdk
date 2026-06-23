@@ -1395,6 +1395,31 @@ class AsyncClient:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    async def add_runs_to_annotation_queue_by_key(
+        self, queue_id: ID_TYPE, *, runs: Sequence[ls_schemas.RunToAddByKey]
+    ) -> None:
+        """Add runs to an annotation queue by their SmithDB lookup key.
+
+        Unlike `add_runs_to_annotation_queue`, which only takes run IDs, this
+        passes the full partition key (`session_id` and `start_time`) for each
+        run so it can be located in SmithDB without a scan.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            runs (Sequence[RunToAddByKey]): The runs to add. Each entry must
+                include `run_id`, `session_id`, and `start_time`, and may include
+                an optional `source_proposed_example_id`.
+        """
+        response = await self._arequest_with_retries(
+            "POST",
+            f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs/by-key",
+            json=[
+                ls_client._serialize_run_to_add_by_key(run, i)
+                for i, run in enumerate(runs)
+            ],
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     async def delete_run_from_annotation_queue(
         self, queue_id: ID_TYPE, *, run_id: ID_TYPE
     ) -> None:
