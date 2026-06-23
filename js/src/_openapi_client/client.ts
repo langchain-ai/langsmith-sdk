@@ -69,24 +69,6 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
-  BodyParamsForRunSchema,
-  QueryRunResponse,
-  QueryRunResponsesItemsCursorPostPagination,
-  QueryRunsRequestBody,
-  RequestBodyForRunsGenerateQuery,
-  ResponseBodyForRunsGenerateQuery,
-  Run,
-  RunQueryParams,
-  RunQueryV2Params,
-  RunRetrieveParams,
-  RunRetrieveV2Params,
-  RunSchema,
-  RunStatsQueryParams,
-  RunTypeEnum,
-  Runs,
-  RunsFilterDataSourceTypeEnum,
-} from './resources/runs.js';
-import {
   DataType,
   Dataset,
   DatasetCloneParams,
@@ -115,6 +97,21 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import {
+  QueryRunResponse,
+  QueryRunResponsesItemsCursorPostPagination,
+  ResponseBodyForRunsGenerateQuery,
+  Run,
+  RunQueryParams,
+  RunQueryV2Params,
+  RunRetrieveParams,
+  RunRetrieveV2Params,
+  RunSchema,
+  RunStatsQueryParams,
+  RunTypeEnum,
+  Runs,
+  RunsFilterDataSourceTypeEnum,
+} from './resources/runs/runs.js';
 import {
   CustomChartsSection,
   CustomChartsSectionRequest,
@@ -1014,10 +1011,7 @@ export declare namespace Langsmith {
 
   export {
     Runs as Runs,
-    type BodyParamsForRunSchema as BodyParamsForRunSchema,
     type QueryRunResponse as QueryRunResponse,
-    type QueryRunsRequestBody as QueryRunsRequestBody,
-    type RequestBodyForRunsGenerateQuery as RequestBodyForRunsGenerateQuery,
     type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
     type Run as Run,
     type RunSchema as RunSchema,

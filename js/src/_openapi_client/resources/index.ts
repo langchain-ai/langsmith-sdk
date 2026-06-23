@@ -63,10 +63,7 @@ export {
 } from './online-evaluators.js';
 export {
   Runs,
-  type BodyParamsForRunSchema,
   type QueryRunResponse,
-  type QueryRunsRequestBody,
-  type RequestBodyForRunsGenerateQuery,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
   type RunSchema,
@@ -78,7 +75,7 @@ export {
   type RunRetrieveParams,
   type RunQueryParams,
   type QueryRunResponsesItemsCursorPostPagination,
-} from './runs.js';
+} from './runs/runs.js';
 export {
   Sessions,
   type CustomChartsSection,
