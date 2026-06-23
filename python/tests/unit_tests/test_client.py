@@ -1732,6 +1732,71 @@ def test_create_feedback_string_source_type(source_type: str) -> None:
     )
 
 
+def test_create_feedback_can_opt_out_of_extending_trace_retention() -> None:
+    session = mock.Mock()
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    request_object = mock.Mock()
+    run_id = uuid.uuid4()
+    request_object.json.return_value = {
+        "id": uuid.uuid4(),
+        "key": "Foo",
+        "created_at": _CREATED_AT,
+        "modified_at": _CREATED_AT,
+        "run_id": run_id,
+    }
+    session.request.return_value = request_object
+
+    client.create_feedback(
+        run_id,
+        key="Foo",
+        extend_trace_retention=False,
+    )
+
+    payload = json.loads(session.request.call_args.kwargs["data"])
+    assert payload["extend_trace_retention"] is False
+
+
+def test_create_feedback_opt_out_uses_direct_post_when_batching_available() -> None:
+    """Opt-out must POST /feedback so extend_trace_retention reaches the API.
+
+    The tracing-queue multipart path is not safe for opt-out on all backends
+    (e.g. Go multipart ingest ignores retention flags).
+    """
+    session = mock.Mock()
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    info = ls_schemas.LangSmithInfo(
+        version="0.8.11",
+        batch_ingest_config=ls_schemas.BatchIngestConfig(
+            use_multipart_endpoint=True,
+            size_limit=100,
+            scale_up_nthreads_limit=4,
+            scale_up_qsize_trigger=3,
+            scale_down_nempty_trigger=1,
+        ),
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        auto_batch_tracing=True,
+        info=info,
+    )
+    assert client.tracing_queue is not None
+
+    client.create_feedback(
+        run_id,
+        key="Foo",
+        trace_id=trace_id,
+        extend_trace_retention=False,
+    )
+
+    session.request.assert_called_once()
+    payload = json.loads(session.request.call_args.kwargs["data"])
+    assert payload["extend_trace_retention"] is False
+    assert client.tracing_queue.qsize() == 0
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()

@@ -7549,6 +7549,7 @@ class Client:
         error: Optional[bool] = None,
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
+        extend_trace_retention: bool = True,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -7612,6 +7613,9 @@ class Client:
             start_time (Optional[datetime]):
                 The start time of the run this feedback is for. Used to optimize
                 feedback ingestion by avoiding server-side lookups.
+            extend_trace_retention (bool, default=True):
+                If false, create the feedback without extending the trace's retention
+                tier.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -7736,6 +7740,7 @@ class Client:
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
                 extra=extra,
                 error=error,
+                extend_trace_retention=extend_trace_retention,
             )
 
             use_multipart = not self._multipart_disabled and (
@@ -7744,6 +7749,7 @@ class Client:
 
             if (
                 use_multipart
+                and extend_trace_retention
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
                 and (
