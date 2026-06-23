@@ -1,0 +1,45 @@
+python/langsmith/client.py
+  s_dace25ea46ab28::t_bd5a2fd77da1a0 267,269
+  s_dace25ea46ab28::t_e3c0ad29cb783a 1646
+  s_dace25ea46ab28::t_c35a75a91ed58d 112
+  s_dace25ea46ab28::t_91e7a6f53a1295 1414
+python/tests/integration_tests/test_client.py
+  s_dace25ea46ab28::t_2f4a2b9b6a9c11 1276-1282
+  s_dace25ea46ab28::t_acb31b07dda9ba 931-937,945-951,957-963
+  s_dace25ea46ab28::t_ca679b91f61d10 3872-3876,3878-3879
+  s_dace25ea46ab28::t_42d5358322cb66 479-485,493-499
+  s_dace25ea46ab28::t_88ea350d8970c1 1223-1229
+  s_dace25ea46ab28::t_eb8f78854b5183 1439-1445
+  s_dace25ea46ab28::t_d609e91a26a893 1631-1637,1651
+  s_dace25ea46ab28::t_af21af819331f9 99-108
+  s_dace25ea46ab28::t_4e72550ba1ac65 4455-4456
+  s_dace25ea46ab28::t_b8890c9140e8ea 1101-1107
+  s_dace25ea46ab28::t_6be8313972da57 538-544,552-558
+  s_dace25ea46ab28::t_9b59b360647864 1656,4373-4454,4457-4484
+  s_dace25ea46ab28::t_5eaaeff6fbc724 3616-3622
+  s_dace25ea46ab28::t_f0f9f34886cc15 3801-3806
+  s_dace25ea46ab28::t_ce28d81498f4f5 3933-3939
+  s_dace25ea46ab28::t_270eae0d6e86f5 1320-1326
+  s_dace25ea46ab28::t_dd2a7b91dcb656 4032-4038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "35c82a3f6b7119d9066db9f258bc08c6775443b6",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_dace25ea46ab28": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80990a94-a726-45e4-9582-37e34fd84959",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
