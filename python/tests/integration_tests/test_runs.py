@@ -3,11 +3,11 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from pathlib import Path
 from typing import AsyncGenerator, Generator, Optional, Sequence
 
 import pytest  # type: ignore
-import requests
 
 from langsmith import utils as ls_utils
 from langsmith import uuid7
@@ -35,42 +35,6 @@ def langchain_client() -> Generator[Client, None, None]:
     )
 
 
-async def _alist(paginator):
-    return [x async for x in paginator]
-
-
-DEFAULT_SELECTS = [
-    "ID",
-    "NAME",
-    "RUN_TYPE",
-    "STATUS",
-    "START_TIME",
-    "END_TIME",
-    "ERROR",
-    "INPUTS",
-    "OUTPUTS",
-    "TAGS",
-    "PARENT_RUN_IDS",
-    "PROJECT_ID",
-    "TRACE_ID",
-    "DOTTED_ORDER",
-    "EXTRA",
-    "METADATA",
-    "REFERENCE_EXAMPLE_ID",
-    "ATTACHMENTS",
-    "TOTAL_TOKENS",
-    "PROMPT_TOKENS",
-    "COMPLETION_TOKENS",
-    "TOTAL_COST",
-    "PROMPT_COST",
-    "COMPLETION_COST",
-    "PROMPT_TOKEN_DETAILS",
-    "COMPLETION_TOKEN_DETAILS",
-    "PROMPT_COST_DETAILS",
-    "COMPLETION_COST_DETAILS",
-]
-
-
 def poll_runs_until_count(
     langchain_client: Client,
     project_name: str,
@@ -83,16 +47,12 @@ def poll_runs_until_count(
     retries = 0
     while retries < max_retries:
         try:
-            project = langchain_client.read_project(project_name=project_name)
             runs = list(
-                langchain_client.list_runs(
-                    project_id=str(project.id),
-                    filter=filter_,
-                )
+                langchain_client.list_runs(project_name=project_name, filter=filter_)
             )
             if len(runs) == count:
                 if not require_success or all(
-                    [run.status == "SUCCESS" for run in runs]
+                    [run.status == "success" for run in runs]
                 ):
                     return runs
         except ls_utils.LangSmithError:
@@ -129,14 +89,10 @@ def test_nested_runs(
     )
     for _ in range(30):
         try:
-            project = langchain_client.read_project(project_name=project_name)
-            runs = asyncio.run(
-                _alist(
-                    langchain_client.runs.query(
-                        project_ids=[str(project.id)],
-                        filter=f"and(eq(metadata_key,'test_run'),eq(metadata_value,'{run_meta}'))",
-                        selects=DEFAULT_SELECTS,
-                    )
+            runs = list(
+                langchain_client.list_runs(
+                    project_name=project_name,
+                    filter=f"and(eq(metadata_key,'test_run'),eq(metadata_value,'{run_meta}'))",
                 )
             )
             assert len(runs) == 3
@@ -147,21 +103,13 @@ def test_nested_runs(
         raise AssertionError("Failed to get runs after 30 attempts.")
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
-    assert not runs_dict["my_chain_run"].parent_run_ids
-    assert runs_dict["my_chain_run"].run_type == "CHAIN"
+    assert runs_dict["my_chain_run"].parent_run_id is None
+    assert runs_dict["my_chain_run"].run_type == "chain"
     assert runs_dict["my_chain_run"].tags == ["foo", "bar"]
-    assert (
-        runs_dict["my_run"].parent_run_ids[-1] == runs_dict["my_chain_run"].id
-        if runs_dict["my_run"].parent_run_ids
-        else False
-    )
-    assert runs_dict["my_run"].run_type == "CHAIN"
-    assert (
-        runs_dict["my_llm_run"].parent_run_ids[-1] == runs_dict["my_run"].id
-        if runs_dict["my_llm_run"].parent_run_ids
-        else False
-    )
-    assert runs_dict["my_llm_run"].run_type == "LLM"
+    assert runs_dict["my_run"].parent_run_id == runs_dict["my_chain_run"].id
+    assert runs_dict["my_run"].run_type == "chain"
+    assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
+    assert runs_dict["my_llm_run"].run_type == "llm"
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
 
 
@@ -190,20 +138,15 @@ async def test_list_runs_multi_project(langchain_client: Client):
         langchain_client, project_names[0], 1, filter_=filter_, max_retries=30
     )
     poll_runs_until_count(langchain_client, project_names[1], 1, filter_=filter_)
-    project_ids = [
-        str(langchain_client.read_project(project_name=pn).id) for pn in project_names
-    ]
-    runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=project_ids,
+    runs = list(
+        langchain_client.list_runs(
+            project_name=project_names,
             filter=filter_,
-            selects=DEFAULT_SELECTS,
         )
-    ]
+    )
     assert len(runs) == 2
     assert all([run.outputs["output"] == "Completed: foo" for run in runs])  # type: ignore
-    assert runs[0].project_id != runs[1].project_id
+    assert runs[0].session_id != runs[1].session_id
 
 
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
@@ -266,29 +209,19 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, 17, filter_=filter_, max_retries=30
     )
-    _nar_project = langchain_client.read_project(project_name=project_name)
-    runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_nar_project.id)], filter=filter_, selects=DEFAULT_SELECTS
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
+    trace_runs = list(
+        langchain_client.list_runs(
+            trace_id=runs[0].trace_id, project_name=project_name, filter=filter_
         )
-    ]
-    trace_runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_nar_project.id)],
-            trace_id=runs[0].trace_id,
-            filter=filter_,
-            selects=DEFAULT_SELECTS,
-        )
-    ]
+    )
     assert len(trace_runs) == 17
     assert len(runs) == 17
-    assert sum([run.run_type == "LLM" for run in runs]) == 8
+    assert sum([run.run_type == "llm" for run in runs]) == 8
     assert sum([run.name == "async_llm" for run in runs]) == 6
     assert sum([run.name == "my_llm_run" for run in runs]) == 2
-    assert sum([run.run_type == "TOOL" for run in runs]) == 6
-    assert sum([run.run_type == "CHAIN" for run in runs]) == 3
+    assert sum([run.run_type == "tool" for run in runs]) == 6
+    assert sum([run.run_type == "chain" for run in runs]) == 3
     # sort by dotted_order
     runs = sorted(runs, key=lambda run: run.dotted_order)
     trace_runs = sorted(trace_runs, key=lambda run: run.dotted_order)
@@ -300,27 +233,15 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         name_to_ids_map[run.name].append(run.id)
     for run in runs:
         if run.name == "async_llm":
-            assert (
-                run.parent_run_ids
-                and run.parent_run_ids[-1] in name_to_ids_map["my_tool_run"]
-            )
+            assert run.parent_run_id in name_to_ids_map["my_tool_run"]
         if run.name == "my_tool_run":
-            assert (
-                run.parent_run_ids
-                and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
-            )
+            assert run.parent_run_id in name_to_ids_map["my_run"]
         if run.name == "my_llm_run":
-            assert (
-                run.parent_run_ids
-                and run.parent_run_ids[-1] in name_to_ids_map["my_run"]
-            )
+            assert run.parent_run_id in name_to_ids_map["my_run"]
         if run.name == "my_run":
-            assert (
-                run.parent_run_ids
-                and run.parent_run_ids[-1] in name_to_ids_map["my_chain_run"]
-            )
+            assert run.parent_run_id in name_to_ids_map["my_chain_run"]
         if run.name == "my_chain_run":
-            assert not run.parent_run_ids
+            assert run.parent_run_id is None
 
 
 @skip_if_rate_limited
@@ -345,13 +266,7 @@ async def test_context_manager(langchain_client: Client) -> None:
         run_tree.end(outputs={"End val": "my_context2"})
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
     poll_runs_until_count(langchain_client, project_name, 8, filter_=_filter)
-    _ctx_project = langchain_client.read_project(project_name=project_name)
-    runs_ = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_ctx_project.id)], filter=_filter, selects=DEFAULT_SELECTS
-        )
-    ]
+    runs_ = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs_) == 8
 
 
@@ -378,18 +293,9 @@ def test_sync_generator(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
-    _sg_project = langchain_client.read_project(project_name=project_name)
-    runs = asyncio.run(
-        _alist(
-            langchain_client.runs.query(
-                project_ids=[str(_sg_project.id)],
-                filter=_filter,
-                selects=DEFAULT_SELECTS,
-            )
-        )
-    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     run = runs[0]
-    assert run.run_type == "CHAIN"
+    assert run.run_type == "chain"
     assert run.name == "my_generator"
     assert run.outputs == {
         "output": ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
@@ -422,18 +328,9 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=filter_
     )
-    _sgrf_project = langchain_client.read_project(project_name=project_name)
-    runs = asyncio.run(
-        _alist(
-            langchain_client.runs.query(
-                project_ids=[str(_sgrf_project.id)],
-                filter=filter_,
-                selects=DEFAULT_SELECTS,
-            )
-        )
-    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
-    assert run.run_type == "CHAIN"
+    assert run.run_type == "chain"
     assert run.name == "my_generator"
     assert run.outputs == {
         "my_output": " ".join(
@@ -472,15 +369,9 @@ async def test_async_generator(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
-    _ag_project = langchain_client.read_project(project_name=project_name)
-    runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_ag_project.id)], filter=_filter, selects=DEFAULT_SELECTS
-        )
-    ]
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     run = runs[0]
-    assert run.run_type == "CHAIN"
+    assert run.run_type == "chain"
     assert run.name == "my_async_generator"
     assert run.outputs == {
         "output": [
@@ -529,15 +420,9 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=30, sleep_time=5, filter_=filter_
     )
-    _agrf_project = langchain_client.read_project(project_name=project_name)
-    runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_agrf_project.id)], filter=filter_, selects=DEFAULT_SELECTS
-        )
-    ]
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
-    assert run.run_type == "CHAIN"
+    assert run.run_type == "chain"
     assert run.name == "my_async_generator"
     assert run.outputs == {
         "my_output": " ".join(
@@ -572,15 +457,9 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     filter_ = f'eq(id, "{run_id}")'
     poll_runs_until_count(langchain_client, project_name, 1, filter_=filter_)
 
-    _emrt_project = langchain_client.read_project(project_name=project_name)
-    runs_ = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_emrt_project.id)], filter=filter_, selects=DEFAULT_SELECTS
-        )
-    ]
+    runs_ = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs_[0]
-    assert run.run_type == "CHAIN"
+    assert run.run_type == "chain"
     assert run.metadata["final_metadata"] == run_id.hex
     assert run.outputs == {"result": "success"}
 
@@ -616,32 +495,16 @@ def test_trace_file_path(langchain_client: Client) -> None:
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=30, filter_=_filter
     )
-    _tfp_project = langchain_client.read_project(project_name=project_name)
-    run_ids_list = asyncio.run(
-        _alist(
-            langchain_client.runs.query(
-                project_ids=[str(_tfp_project.id)],
-                filter=_filter,
-                selects=["ID", "START_TIME"],
-            )
-        )
-    )
-    assert len(run_ids_list) == 1
-    run = asyncio.run(
-        langchain_client.runs.retrieve(
-            str(run_ids_list[0].id),
-            project_id=str(_tfp_project.id),
-            start_time=run_ids_list[0].start_time,
-            selects=["ID", "ATTACHMENTS"],
-        )
-    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    assert len(runs) == 1
+    run = runs[0]
     assert run.attachments
     assert (
-        requests.get(run.attachments["foo"], timeout=10).content
+        run.attachments["foo"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
     assert (
-        requests.get(run.attachments["bar"], timeout=10).content
+        run.attachments["bar"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
 
@@ -683,42 +546,30 @@ async def test_trace_to_multiple_projects(langchain_client: Client):
     )
     assert len(runs1) == 2
     runs1_dict = {run.name: run for run in runs1}
-    assert not runs1_dict["my_chain"].parent_run_ids
-    assert runs1_dict["my_chain"].run_type == "CHAIN"
-    assert (
-        runs1_dict["my_llm"].parent_run_ids
-        and runs1_dict["my_llm"].parent_run_ids[-1] == runs1_dict["my_chain"].id
-    )
-    assert runs1_dict["my_llm"].run_type == "LLM"
+    assert runs1_dict["my_chain"].parent_run_id is None
+    assert runs1_dict["my_chain"].run_type == "chain"
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs1_dict["my_llm"].run_type == "llm"
     assert runs1_dict["my_llm"].inputs == {"text": "test_input"}
-    assert runs1_dict["my_chain"].reference_example_id == str(reference_example_id)
+    assert runs1_dict["my_chain"].reference_example_id == reference_example_id
 
     runs2 = poll_runs_until_count(
         langchain_client, project_names[1], 2, filter_=filter_
     )
     assert len(runs2) == 2
     runs2_dict = {run.name: run for run in runs2}
-    assert not runs2_dict["my_chain"].parent_run_ids
-    assert runs2_dict["my_chain"].run_type == "CHAIN"
-    assert (
-        runs2_dict["my_llm"].parent_run_ids
-        and runs2_dict["my_llm"].parent_run_ids[-1] == runs2_dict["my_chain"].id
-    )
-    assert runs2_dict["my_llm"].run_type == "LLM"
+    assert runs2_dict["my_chain"].parent_run_id is None
+    assert runs2_dict["my_chain"].run_type == "chain"
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
+    assert runs2_dict["my_llm"].run_type == "llm"
     assert runs2_dict["my_llm"].inputs == {"text": "test_input"}
     assert runs2_dict["my_chain"].reference_example_id is None
 
     assert runs1_dict["my_chain"].id != runs2_dict["my_chain"].id
     assert runs1_dict["my_llm"].id != runs2_dict["my_llm"].id
 
-    assert (
-        runs1_dict["my_llm"].parent_run_ids
-        and runs1_dict["my_llm"].parent_run_ids[-1] == runs1_dict["my_chain"].id
-    )
-    assert (
-        runs2_dict["my_llm"].parent_run_ids
-        and runs2_dict["my_llm"].parent_run_ids[-1] == runs2_dict["my_chain"].id
-    )
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
 
     assert runs1_dict["my_chain"].trace_id != runs2_dict["my_chain"].trace_id
 
@@ -780,31 +631,24 @@ def test_usage_metadata(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
     )
-    _um_project = langchain_client.read_project(project_name=project_name)
-    runs = asyncio.run(
-        _alist(
-            langchain_client.runs.query(
-                project_ids=[str(_um_project.id)],
-                filter=_filter,
-                selects=DEFAULT_SELECTS,
-            )
-        )
-    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     for run in runs:
-        assert run.prompt_tokens == 10
-        assert run.completion_tokens == 20
+        assert run.input_tokens == 10
+        assert run.output_tokens == 20
         assert run.total_tokens == 30
-        assert run.prompt_cost == pytest.approx(1e-6)
-        assert run.completion_cost == pytest.approx(2e-6)
-        assert run.total_cost == pytest.approx(3e-6)
-        assert run.prompt_token_details.raw == {"audio": 1, "foo": 2}
-        assert run.completion_token_details.raw == {"reasoning": 3, "foo": 4}
-        assert run.prompt_cost_details.raw == pytest.approx(
-            {"audio": 1e-7, "foo": 2e-7}
-        )
-        assert run.completion_cost_details.raw == pytest.approx(
-            {"reasoning": 3e-7, "foo": 4e-7}
-        )
+        assert run.input_cost == Decimal("1e-6")
+        assert run.output_cost == Decimal("2e-6")
+        assert run.total_cost == Decimal("3e-6")
+        assert run.input_token_details == {"audio": 1, "foo": 2}
+        assert run.output_token_details == {"reasoning": 3, "foo": 4}
+        assert run.input_cost_details == {
+            "audio": Decimal("1e-7"),
+            "foo": Decimal("2e-7"),
+        }
+        assert run.output_cost_details == {
+            "reasoning": Decimal("3e-7"),
+            "foo": Decimal("4e-7"),
+        }
 
     @configured_traceable
     def my_func4(inputs: str):
@@ -883,29 +727,25 @@ async def test_usage_metadata_async(langchain_client: Client):
     poll_runs_until_count(
         langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
     )
-    _uma_project = langchain_client.read_project(project_name=project_name)
-    runs = [
-        x
-        async for x in langchain_client.runs.query(
-            project_ids=[str(_uma_project.id)], filter=_filter, selects=DEFAULT_SELECTS
-        )
-    ]
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
 
     for run in runs:
-        assert run.prompt_tokens == 10
-        assert run.completion_tokens == 20
+        assert run.input_tokens == 10
+        assert run.output_tokens == 20
         assert run.total_tokens == 30
-        assert run.prompt_cost == pytest.approx(1e-6)
-        assert run.completion_cost == pytest.approx(2e-6)
-        assert run.total_cost == pytest.approx(3e-6)
-        assert run.prompt_token_details.raw == {"audio": 1, "foo": 2}
-        assert run.completion_token_details.raw == {"reasoning": 3, "foo": 4}
-        assert run.prompt_cost_details.raw == pytest.approx(
-            {"audio": 1e-7, "foo": 2e-7}
-        )
-        assert run.completion_cost_details.raw == pytest.approx(
-            {"reasoning": 3e-7, "foo": 4e-7}
-        )
+        assert run.input_cost == Decimal("1e-6")
+        assert run.output_cost == Decimal("2e-6")
+        assert run.total_cost == Decimal("3e-6")
+        assert run.input_token_details == {"audio": 1, "foo": 2}
+        assert run.output_token_details == {"reasoning": 3, "foo": 4}
+        assert run.input_cost_details == {
+            "audio": Decimal("1e-7"),
+            "foo": Decimal("2e-7"),
+        }
+        assert run.output_cost_details == {
+            "reasoning": Decimal("3e-7"),
+            "foo": Decimal("4e-7"),
+        }
 
     @configured_traceable
     async def my_func4(inputs: str):
@@ -965,7 +805,7 @@ async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
     assert len(runs1) == 1
     run1 = runs1[0]
     assert run1.name == "echo_input"
-    assert run1.reference_example_id == str(reference_example_id)
+    assert run1.reference_example_id == reference_example_id
     assert run1.inputs == {"x": "hello"}
     assert run1.outputs == {"output": "Echo: hello"}
 
