@@ -111,7 +111,6 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
-from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -266,7 +265,7 @@ if TYPE_CHECKING:
 
     from langsmith import schemas
     from langsmith._openapi_client.resources.online_evaluators import (
-        OnlineEvaluatorsResource,
+        AsyncOnlineEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
 
@@ -880,7 +879,6 @@ class Client:
         "_profile_auth",
         "_profile_auth_headers",
         "_langsmith_api",
-        "_langsmith_api_sync",
     ]
 
     _api_key: Optional[str]
@@ -1441,18 +1439,6 @@ class Client:
             ),
             default_headers=self._headers or None,
         )
-        self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
-            api_key=self._api_key,
-            tenant_id=str(self._workspace_id) if self._workspace_id else None,
-            base_url=self.api_url,
-            timeout=_httpx.Timeout(
-                connect=self._timeout[0],
-                read=self._timeout[1],
-                write=self._timeout[1],
-                pool=self._timeout[0],
-            ),
-            default_headers=self._headers or None,
-        )
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1468,10 +1454,10 @@ class Client:
         return self._langsmith_api.runs
 
     @property
-    def online_evaluators(self) -> OnlineEvaluatorsResource:
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         """Access generated online evaluator CRUD methods."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api_sync.online_evaluators
+        return self._langsmith_api.online_evaluators
 
     def _dump_failed_trace(
         self,

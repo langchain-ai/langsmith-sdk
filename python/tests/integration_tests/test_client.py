@@ -122,7 +122,9 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-def test_online_evaluators_generated_client_crud(langchain_client: Client) -> None:
+async def test_online_evaluators_generated_client_crud(
+    langchain_client: Client,
+) -> None:
     """Exercise the generated OpenAPI online evaluators resource end to end."""
     evaluator = None
     name = "__sdk_online_evaluator_integration_" + "".join(
@@ -130,7 +132,7 @@ def test_online_evaluators_generated_client_crud(langchain_client: Client) -> No
     )
 
     try:
-        created = langchain_client.online_evaluators.create(
+        created = await langchain_client.online_evaluators.create(
             name=name,
             type="code",
             code_evaluator={
@@ -144,27 +146,28 @@ def test_online_evaluators_generated_client_crud(langchain_client: Client) -> No
         assert evaluator.name == name
         assert evaluator.type == "code"
 
-        retrieved = langchain_client.online_evaluators.retrieve(evaluator.id)
+        retrieved = await langchain_client.online_evaluators.retrieve(evaluator.id)
         assert retrieved.id == evaluator.id
         assert retrieved.name == name
 
         updated_name = f"{name}_updated"
-        updated = langchain_client.online_evaluators.update(
+        updated = await langchain_client.online_evaluators.update(
             evaluator.id,
             name=updated_name,
         )
         assert updated.evaluator is not None
         assert updated.evaluator.name == updated_name
 
-        evaluators = list(
-            langchain_client.online_evaluators.list(
+        evaluators = [
+            item
+            async for item in langchain_client.online_evaluators.list(
                 name_contains=updated_name, limit=10
             )
-        )
+        ]
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            langchain_client.online_evaluators.delete(
+            await langchain_client.online_evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
 
