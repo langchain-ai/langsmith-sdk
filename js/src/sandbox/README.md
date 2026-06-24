@@ -635,16 +635,12 @@ const snapshot = await client.createSnapshot(
   1_073_741_824, // 1 GiB
 );
 
-// Build from a private registry (use registryId or explicit credentials)
+// Build from a private registry
 const privateSnapshot = await client.createSnapshot(
   "internal-python",
   "registry.example.com/internal/python:3.12",
   2_147_483_648,
-  {
-    registryUrl: "https://registry.example.com",
-    registryUsername: "me",
-    registryPassword: process.env.REGISTRY_PASSWORD,
-  },
+  { registryId: "registry-id" },
 );
 
 // Capture the state of a running sandbox for later reuse. Persistent paths
@@ -848,9 +844,6 @@ try {
 | Property | Description |
 |----------|-------------|
 | `registryId?` | Private registry ID |
-| `registryUrl?` | Registry URL for private images |
-| `registryUsername?` | Registry username |
-| `registryPassword?` | Registry password |
 | `timeout?` | Wait timeout in seconds (default: 60) |
 | `signal?` | `AbortSignal` for cancellation |
 

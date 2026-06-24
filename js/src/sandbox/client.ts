@@ -867,7 +867,7 @@ export class SandboxClient {
    * @param name - Snapshot name.
    * @param dockerImage - Docker image to build from (e.g., "python:3.12-slim").
    * @param fsCapacityBytes - Filesystem capacity in bytes.
-   * @param options - Additional options (registry credentials, timeout).
+   * @param options - Additional options (registry ID, timeout).
    * @returns Snapshot in "ready" status.
    */
   async createSnapshot(
@@ -876,14 +876,7 @@ export class SandboxClient {
     fsCapacityBytes: number,
     options: CreateSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const {
-      registryId,
-      registryUrl,
-      registryUsername,
-      registryPassword,
-      timeout = 60,
-      signal,
-    } = options;
+    const { registryId, timeout = 60, signal } = options;
     const url = `${this._baseUrl}/snapshots`;
 
     const payload: Record<string, unknown> = {
@@ -893,15 +886,6 @@ export class SandboxClient {
     };
     if (registryId !== undefined) {
       payload.registry_id = registryId;
-    }
-    if (registryUrl !== undefined) {
-      payload.registry_url = registryUrl;
-    }
-    if (registryUsername !== undefined) {
-      payload.registry_username = registryUsername;
-    }
-    if (registryPassword !== undefined) {
-      payload.registry_password = registryPassword;
     }
 
     const response = await this._postJson(url, payload, { signal });

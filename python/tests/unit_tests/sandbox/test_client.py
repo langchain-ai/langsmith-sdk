@@ -1000,10 +1000,21 @@ class TestSnapshotOperations:
             },
         )
 
-        snapshot = client.create_snapshot("my-env", "python:3.12-slim", 4294967296)
+        import json
+
+        snapshot = client.create_snapshot(
+            "my-env", "python:3.12-slim", 4294967296, registry_id="reg-1"
+        )
 
         assert snapshot.id == "snap-1"
         assert snapshot.status == "ready"
+        request = httpx_mock.get_requests()[0]
+        assert json.loads(request.content) == {
+            "name": "my-env",
+            "docker_image": "python:3.12-slim",
+            "fs_capacity_bytes": 4294967296,
+            "registry_id": "reg-1",
+        }
 
     def test_capture_snapshot(self, client: SandboxClient, httpx_mock: HTTPXMock):
         """Test capturing a snapshot from a running sandbox."""

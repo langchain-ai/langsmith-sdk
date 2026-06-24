@@ -777,9 +777,6 @@ class AsyncSandboxClient:
         fs_capacity_bytes: int,
         *,
         registry_id: Optional[str] = None,
-        registry_url: Optional[str] = None,
-        registry_username: Optional[str] = None,
-        registry_password: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -791,10 +788,7 @@ class AsyncSandboxClient:
             name: Snapshot name.
             docker_image: Docker image to build from (e.g., "python:3.12-slim").
             fs_capacity_bytes: Filesystem capacity in bytes.
-            registry_id: Private registry ID (alternative to URL/credentials).
-            registry_url: Registry URL for private images.
-            registry_username: Registry username.
-            registry_password: Registry password.
+            registry_id: Private registry ID.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -814,12 +808,6 @@ class AsyncSandboxClient:
         }
         if registry_id is not None:
             payload["registry_id"] = registry_id
-        if registry_url is not None:
-            payload["registry_url"] = registry_url
-        if registry_username is not None:
-            payload["registry_username"] = registry_username
-        if registry_password is not None:
-            payload["registry_password"] = registry_password
 
         try:
             response = await self._http.post(
