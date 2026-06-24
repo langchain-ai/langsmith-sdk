@@ -5,12 +5,17 @@ from __future__ import annotations
 from .dataset import Dataset as Dataset
 from .data_type import DataType as DataType
 from .missing_param import MissingParam as MissingParam
+from .run_type_enum import RunTypeEnum as RunTypeEnum
 from .tracer_session import TracerSession as TracerSession
 from .dataset_version import DatasetVersion as DatasetVersion
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
+from .run_query_params import RunQueryParams as RunQueryParams
 from .info_list_response import InfoListResponse as InfoListResponse
 from .online_spend_limit import OnlineSpendLimit as OnlineSpendLimit
+from .query_run_response import QueryRunResponse as QueryRunResponse
 from .dataset_list_params import DatasetListParams as DatasetListParams
+from .run_query_v2_params import RunQueryV2Params as RunQueryV2Params
+from .run_retrieve_params import RunRetrieveParams as RunRetrieveParams
 from .session_list_params import SessionListParams as SessionListParams
 from .dataset_clone_params import DatasetCloneParams as DatasetCloneParams
 from .online_llm_evaluator import OnlineLlmEvaluator as OnlineLlmEvaluator
@@ -25,6 +30,7 @@ from .session_update_params import SessionUpdateParams as SessionUpdateParams
 from .timedelta_input_param import TimedeltaInputParam as TimedeltaInputParam
 from .dataset_clone_response import DatasetCloneResponse as DatasetCloneResponse
 from .dataset_transformation import DatasetTransformation as DatasetTransformation
+from .run_retrieve_v2_params import RunRetrieveV2Params as RunRetrieveV2Params
 from .sort_by_dataset_column import SortByDatasetColumn as SortByDatasetColumn
 from .dataset_update_response import DatasetUpdateResponse as DatasetUpdateResponse
 from .session_retrieve_params import SessionRetrieveParams as SessionRetrieveParams
@@ -50,6 +56,7 @@ from .create_online_evaluator_response import CreateOnlineEvaluatorResponse as C
 from .update_online_evaluator_response import UpdateOnlineEvaluatorResponse as UpdateOnlineEvaluatorResponse
 from .bulk_delete_evaluator_failed_item import BulkDeleteEvaluatorFailedItem as BulkDeleteEvaluatorFailedItem
 from .dataset_retrieve_openai_ft_params import DatasetRetrieveOpenAIFtParams as DatasetRetrieveOpenAIFtParams
+from .runs_filter_data_source_type_enum import RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum
 from .get_online_evaluator_spend_response import GetOnlineEvaluatorSpendResponse as GetOnlineEvaluatorSpendResponse
 from .online_evaluator_bulk_delete_params import OnlineEvaluatorBulkDeleteParams as OnlineEvaluatorBulkDeleteParams
 from .tracer_session_without_virtual_fields import (
