@@ -32,7 +32,6 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _profiles
 from langsmith._internal._backend_version import _check_backend_version
-from langsmith._internal._beta_decorator import deprecated
 from langsmith._internal._hub import (
     HUB,
     REPO_HANDLE_PATTERN,
@@ -297,7 +296,7 @@ class AsyncClient:
             tenant_id=self._workspace_id,
             base_url=str(self._client.base_url),
             timeout=self._client.timeout,
-            default_headers=self._headers or None,
+            default_headers=_headers or None,
         )
 
     # ------------------------------------------------------------------
