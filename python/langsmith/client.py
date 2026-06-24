@@ -92,6 +92,7 @@ from langsmith._internal._hub import (
     build_commit_url,
     platform_hub_path,
     validate_parent_commit,
+    wrap_manifest_for_hub_push,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
@@ -11169,68 +11170,6 @@ def dump_model(model, *, exclude_none: bool = False) -> dict[str, Any]:
         return model.dict(exclude_none=exclude_none)
     else:
         raise TypeError("Unsupported model type")
-
-
-_FLAT_HUB_PROMPT_TAGS = frozenset(
-    {"StructuredPrompt", "ChatPromptTemplate", "PromptTemplate"}
-)
-
-
-def _hub_manifest_tag(manifest: dict[str, Any]) -> Optional[str]:
-    id_ = manifest.get("id")
-    if not isinstance(id_, list) or not id_:
-        return None
-    tag = id_[-1]
-    return tag if isinstance(tag, str) else None
-
-
-def _default_hub_model_manifest() -> dict[str, Any]:
-    return {
-        "id": ["langchain", "schema", "runnable", "RunnableBinding"],
-        "lc": 1,
-        "type": "constructor",
-        "kwargs": {
-            "bound": {
-                "id": ["langchain", "chat_models", "openai", "ChatOpenAI"],
-                "lc": 1,
-                "type": "constructor",
-                "kwargs": {
-                    "openai_api_key": {
-                        "id": ["OPENAI_API_KEY"],
-                        "lc": 1,
-                        "type": "secret",
-                    }
-                },
-            },
-            "kwargs": {},
-        },
-    }
-
-
-def wrap_manifest_for_hub_push(manifest: dict[str, Any]) -> dict[str, Any]:
-    """Wrap flat prompt manifests in PromptPlayground format for Hub commits.
-
-    Playground saves and SDK pushes that pipe a prompt to a model store the prompt
-    under ``kwargs.first`` and the model under ``kwargs.last``. Bare
-    ``push_prompt(StructuredPrompt)`` commits omit that wrapper; wrapping on push
-    matches the Playground commit shape Hub consumers expect.
-    """
-    tag = _hub_manifest_tag(manifest)
-    if tag in ("PromptPlayground", "RunnableSequence"):
-        return manifest
-    if manifest.get("lc") != 1 or manifest.get("type") != "constructor":
-        return manifest
-    if tag not in _FLAT_HUB_PROMPT_TAGS:
-        return manifest
-    return {
-        "lc": 1,
-        "type": "constructor",
-        "id": ["langsmith", "playground", "PromptPlayground"],
-        "kwargs": {
-            "first": manifest,
-            "last": _default_hub_model_manifest(),
-        },
-    }
 
 
 def prep_obj_for_push(obj: Any) -> Any:

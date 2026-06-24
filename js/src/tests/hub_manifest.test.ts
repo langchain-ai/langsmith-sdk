@@ -1,54 +1,48 @@
 import { describe, expect, it } from "@jest/globals";
 
-import {
-  defaultHubModelManifest,
-  wrapManifestForHubPush,
-} from "../utils/hub_manifest.js";
+import { wrapManifestForHubPush } from "../utils/hub_manifest.js";
+
+const FLAT_STRUCTURED_PROMPT = {
+  lc: 1,
+  type: "constructor",
+  id: ["langchain_core", "prompts", "structured", "StructuredPrompt"],
+  kwargs: {
+    input_variables: ["input"],
+    messages: [],
+    schema_: {
+      type: "object",
+      properties: { score: { type: "boolean" } },
+    },
+  },
+};
 
 describe("wrapManifestForHubPush", () => {
   it("wraps flat StructuredPrompt manifests", () => {
-    const flat = {
-      lc: 1,
-      type: "constructor",
-      id: ["langchain_core", "prompts", "structured", "StructuredPrompt"],
-      kwargs: {
-        input_variables: ["input"],
-        messages: [],
-        schema_: {
-          type: "object",
-          properties: { score: { type: "boolean" } },
-        },
-      },
-    };
-
-    const wrapped = wrapManifestForHubPush(flat);
+    const wrapped = wrapManifestForHubPush(FLAT_STRUCTURED_PROMPT);
 
     expect(wrapped.id).toEqual(["langsmith", "playground", "PromptPlayground"]);
-    expect((wrapped as { kwargs: { first: unknown } }).kwargs.first).toBe(flat);
-    expect(defaultHubModelManifest().id).toEqual([
-      "langchain",
-      "schema",
-      "runnable",
-      "RunnableBinding",
-    ]);
+    expect((wrapped as { kwargs: { first: unknown } }).kwargs.first).toBe(
+      FLAT_STRUCTURED_PROMPT,
+    );
+    expect((wrapped as { kwargs: { last: { id: string[] } } }).kwargs.last.id).toEqual(
+      ["langchain", "schema", "runnable", "RunnableBinding"],
+    );
   });
 
-  it("leaves PromptPlayground manifests unchanged", () => {
-    const manifest = {
-      lc: 1,
-      type: "constructor",
+  it.each([
+    {
       id: ["langsmith", "playground", "PromptPlayground"],
-      kwargs: { first: { id: ["prompt"] }, last: { id: ["model"] } },
-    };
-
-    expect(wrapManifestForHubPush(manifest)).toBe(manifest);
-  });
-
-  it("leaves RunnableSequence manifests unchanged", () => {
+      label: "PromptPlayground",
+    },
+    {
+      id: ["langchain", "schema", "runnable", "RunnableSequence"],
+      label: "RunnableSequence",
+    },
+  ])("leaves $label manifests unchanged", ({ id }) => {
     const manifest = {
       lc: 1,
       type: "constructor",
-      id: ["langchain", "schema", "runnable", "RunnableSequence"],
+      id,
       kwargs: { first: { id: ["prompt"] }, last: { id: ["model"] } },
     };
 

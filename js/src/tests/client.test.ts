@@ -751,53 +751,6 @@ describe("Client", () => {
       expect(parsed.description).toBe("initial prompt version");
     });
 
-    it("should wrap flat StructuredPrompt manifests for Hub commits", async () => {
-      const client = new Client({ apiKey: "test-api-key" });
-      const flatStructuredPrompt = {
-        lc: 1,
-        type: "constructor",
-        id: ["langchain_core", "prompts", "structured", "StructuredPrompt"],
-        kwargs: {
-          input_variables: ["input"],
-          messages: [],
-          schema_: {
-            type: "object",
-            properties: { score: { type: "boolean" } },
-          },
-        },
-      };
-
-      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
-      jest
-        .spyOn(client as any, "_getLatestCommitHash")
-        .mockResolvedValue("parent123");
-      jest.spyOn(client as any, "_fetch").mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ commit: { commit_hash: "new123", id: "1" } }),
-        text: async () => "",
-        headers: new Headers(),
-      });
-      jest
-        .spyOn(client as any, "_getPromptUrl")
-        .mockReturnValue("https://smith.langchain.com/prompts/test");
-
-      const fetchSpy = jest.spyOn(client as any, "_fetch");
-
-      await client.createCommit("owner/my-prompt", flatStructuredPrompt);
-
-      const fetchCall = fetchSpy.mock.calls[0];
-      const capturedBody = (fetchCall[1] as Record<string, unknown>)
-        ?.body as string;
-      const parsed = JSON.parse(capturedBody);
-      expect(parsed.manifest.id).toEqual([
-        "langsmith",
-        "playground",
-        "PromptPlayground",
-      ]);
-      expect(parsed.manifest.kwargs.first).toEqual(flatStructuredPrompt);
-    });
-
     it("should omit description from request body when not provided", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 

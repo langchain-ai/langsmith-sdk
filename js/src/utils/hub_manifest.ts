@@ -3,6 +3,10 @@ const FLAT_HUB_PROMPT_TAGS = new Set([
   "ChatPromptTemplate",
   "PromptTemplate",
 ]);
+const WRAPPED_HUB_PROMPT_TAGS = new Set([
+  "PromptPlayground",
+  "RunnableSequence",
+]);
 
 function hubManifestTag(manifest: Record<string, unknown>): string | undefined {
   const id = manifest.id;
@@ -13,8 +17,7 @@ function hubManifestTag(manifest: Record<string, unknown>): string | undefined {
   return typeof tag === "string" ? tag : undefined;
 }
 
-/** Default OpenAI chat model manifest used when wrapping flat Hub prompt commits. */
-export function defaultHubModelManifest(): Record<string, unknown> {
+function defaultHubModelManifest(): Record<string, unknown> {
   return {
     id: ["langchain", "schema", "runnable", "RunnableBinding"],
     lc: 1,
@@ -37,17 +40,12 @@ export function defaultHubModelManifest(): Record<string, unknown> {
   };
 }
 
-/**
- * Wrap flat prompt manifests in PromptPlayground format for Hub commits.
- *
- * Matches Playground saves and SDK pushes that pipe a prompt to a model
- * (`kwargs.first` + `kwargs.last`).
- */
+/** Wrap flat prompt manifests in PromptPlayground format for Hub commits. */
 export function wrapManifestForHubPush<T extends Record<string, unknown>>(
   manifest: T,
 ): T | Record<string, unknown> {
   const tag = hubManifestTag(manifest);
-  if (tag === "PromptPlayground" || tag === "RunnableSequence") {
+  if (tag && WRAPPED_HUB_PROMPT_TAGS.has(tag)) {
     return manifest;
   }
   if (manifest.lc !== 1 || manifest.type !== "constructor") {
