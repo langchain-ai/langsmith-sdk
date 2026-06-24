@@ -831,7 +831,7 @@ def test_create_run_unicode() -> None:
 def test_online_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
-    with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
+    with mock.patch("langsmith.client.SyncLangsmithOpenAPIClient") as openapi_client:
         openapi_client.return_value.online_evaluators = resource
 
         client = Client(

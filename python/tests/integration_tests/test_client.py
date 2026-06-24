@@ -4252,13 +4252,22 @@ def v2_client() -> Client:
 
 
 async def test_runs_retrieve(v2_client: Client) -> None:
+    import time as _time
+
     project_name = _v2_create_project_name("runs_retrieve")
     run_id, project_id, start = _v2_post_trace(project_name)
-    run = await v2_client.runs.retrieve(
-        run_id=run_id,
-        project_id=project_id,
-        start_time=start.isoformat(),
-    )
+    run = None
+    for _ in range(15):
+        try:
+            run = await v2_client.runs.retrieve(
+                run_id=run_id,
+                project_id=project_id,
+                start_time=start.isoformat(),
+            )
+            break
+        except Exception:
+            _time.sleep(2)
+    assert run is not None
     assert run.id == run_id
     _v2_cleanup_project(v2_client, project_name)
 
