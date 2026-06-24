@@ -4,5 +4,5 @@
 import * as qs from '../qs/stringify.js';
 
 export function stringifyQuery(query: object | Record<string, unknown>) {
-  return qs.stringify(query, { arrayFormat: 'comma' });
+  return qs.stringify(query, { arrayFormat: 'repeat' });
 }

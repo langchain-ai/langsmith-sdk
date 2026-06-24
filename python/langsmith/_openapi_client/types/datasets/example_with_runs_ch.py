@@ -2,9 +2,9 @@
 
 from typing import Dict, List, Optional
 from datetime import datetime
-from typing_extensions import Literal
 
 from ..._models import BaseModel
+from ..run_type_enum import RunTypeEnum
 
 __all__ = ["ExampleWithRunsCh", "Run"]
 
@@ -16,7 +16,7 @@ class Run(BaseModel):
 
     name: str
 
-    run_type: Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"]
+    run_type: RunTypeEnum
     """Enum for run types."""
 
     session_id: str

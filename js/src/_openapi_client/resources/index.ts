@@ -62,6 +62,21 @@ export {
   type OnlineEvaluatorsOffsetPaginationOnlineEvaluators,
 } from './online-evaluators.js';
 export {
+  Runs,
+  type QueryRunResponse,
+  type ResponseBodyForRunsGenerateQuery,
+  type Run,
+  type RunSchema,
+  type RunStatsQueryParams,
+  type RunTypeEnum,
+  type RunsFilterDataSourceTypeEnum,
+  type RunQueryV2Params,
+  type RunRetrieveV2Params,
+  type RunRetrieveParams,
+  type RunQueryParams,
+  type QueryRunResponsesItemsCursorPostPagination,
+} from './runs/runs.js';
+export {
   Sessions,
   type CustomChartsSection,
   type CustomChartsSectionRequest,

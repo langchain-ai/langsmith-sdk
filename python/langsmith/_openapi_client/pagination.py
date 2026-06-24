@@ -302,7 +302,7 @@ class SyncCursorPagination(BaseSyncPage[_T], BasePage[_T], Generic[_T]):
         if not next:
             return None
 
-        return PageInfo(params={"cursor": next})
+        return PageInfo(json={"cursor": next})
 
 
 class AsyncCursorPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
@@ -325,7 +325,7 @@ class AsyncCursorPagination(BaseAsyncPage[_T], BasePage[_T], Generic[_T]):
         if not next:
             return None
 
-        return PageInfo(params={"cursor": next})
+        return PageInfo(json={"cursor": next})
 
 
 class SyncItemsCursorPostPagination(BaseSyncPage[_T], BasePage[_T], Generic[_T]):

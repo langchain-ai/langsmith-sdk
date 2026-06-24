@@ -36,8 +36,9 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info, datasets, sessions, online_evaluators
+    from .resources import info, runs, datasets, sessions, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
+    from .resources.runs import RunsResource, AsyncRunsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sessions.sessions import SessionsResource, AsyncSessionsResource
@@ -135,6 +136,12 @@ class Langsmith(SyncAPIClient):
         return DatasetsResource(self)
 
     @cached_property
+    def runs(self) -> RunsResource:
+        from .resources.runs import RunsResource
+
+        return RunsResource(self)
+
+    @cached_property
     def online_evaluators(self) -> OnlineEvaluatorsResource:
         from .resources.online_evaluators import OnlineEvaluatorsResource
 
@@ -157,7 +164,7 @@ class Langsmith(SyncAPIClient):
     @property
     @override
     def qs(self) -> Querystring:
-        return Querystring(array_format="comma")
+        return Querystring(array_format="repeat")
 
     @property
     @override
@@ -367,6 +374,12 @@ class AsyncLangsmith(AsyncAPIClient):
         return AsyncDatasetsResource(self)
 
     @cached_property
+    def runs(self) -> AsyncRunsResource:
+        from .resources.runs import AsyncRunsResource
+
+        return AsyncRunsResource(self)
+
+    @cached_property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         from .resources.online_evaluators import AsyncOnlineEvaluatorsResource
 
@@ -389,7 +402,7 @@ class AsyncLangsmith(AsyncAPIClient):
     @property
     @override
     def qs(self) -> Querystring:
-        return Querystring(array_format="comma")
+        return Querystring(array_format="repeat")
 
     @property
     @override
@@ -537,6 +550,12 @@ class LangsmithWithRawResponse:
         return DatasetsResourceWithRawResponse(self._client.datasets)
 
     @cached_property
+    def runs(self) -> runs.RunsResourceWithRawResponse:
+        from .resources.runs import RunsResourceWithRawResponse
+
+        return RunsResourceWithRawResponse(self._client.runs)
+
+    @cached_property
     def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithRawResponse:
         from .resources.online_evaluators import OnlineEvaluatorsResourceWithRawResponse
 
@@ -566,6 +585,12 @@ class AsyncLangsmithWithRawResponse:
         from .resources.datasets import AsyncDatasetsResourceWithRawResponse
 
         return AsyncDatasetsResourceWithRawResponse(self._client.datasets)
+
+    @cached_property
+    def runs(self) -> runs.AsyncRunsResourceWithRawResponse:
+        from .resources.runs import AsyncRunsResourceWithRawResponse
+
+        return AsyncRunsResourceWithRawResponse(self._client.runs)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithRawResponse:
@@ -599,6 +624,12 @@ class LangsmithWithStreamedResponse:
         return DatasetsResourceWithStreamingResponse(self._client.datasets)
 
     @cached_property
+    def runs(self) -> runs.RunsResourceWithStreamingResponse:
+        from .resources.runs import RunsResourceWithStreamingResponse
+
+        return RunsResourceWithStreamingResponse(self._client.runs)
+
+    @cached_property
     def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithStreamingResponse:
         from .resources.online_evaluators import OnlineEvaluatorsResourceWithStreamingResponse
 
@@ -628,6 +659,12 @@ class AsyncLangsmithWithStreamedResponse:
         from .resources.datasets import AsyncDatasetsResourceWithStreamingResponse
 
         return AsyncDatasetsResourceWithStreamingResponse(self._client.datasets)
+
+    @cached_property
+    def runs(self) -> runs.AsyncRunsResourceWithStreamingResponse:
+        from .resources.runs import AsyncRunsResourceWithStreamingResponse
+
+        return AsyncRunsResourceWithStreamingResponse(self._client.runs)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithStreamingResponse:

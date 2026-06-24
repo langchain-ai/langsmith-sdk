@@ -98,6 +98,21 @@ import {
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
 import {
+  QueryRunResponse,
+  QueryRunResponsesItemsCursorPostPagination,
+  ResponseBodyForRunsGenerateQuery,
+  Run,
+  RunQueryParams,
+  RunQueryV2Params,
+  RunRetrieveParams,
+  RunRetrieveV2Params,
+  RunSchema,
+  RunStatsQueryParams,
+  RunTypeEnum,
+  Runs,
+  RunsFilterDataSourceTypeEnum,
+} from './resources/runs/runs.js';
+import {
   CustomChartsSection,
   CustomChartsSectionRequest,
   RunStatsGroupBy,
@@ -884,12 +899,14 @@ export class Langsmith {
 
   sessions: API.Sessions = new API.Sessions(this);
   datasets: API.Datasets = new API.Datasets(this);
+  runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
 }
 
 Langsmith.Sessions = Sessions;
 Langsmith.Datasets = Datasets;
+Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
 
@@ -990,6 +1007,22 @@ export declare namespace Langsmith {
     type DatasetRetrieveVersionParams as DatasetRetrieveVersionParams,
     type DatasetUpdateTagsParams as DatasetUpdateTagsParams,
     type DatasetUploadParams as DatasetUploadParams,
+  };
+
+  export {
+    Runs as Runs,
+    type QueryRunResponse as QueryRunResponse,
+    type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
+    type Run as Run,
+    type RunSchema as RunSchema,
+    type RunStatsQueryParams as RunStatsQueryParams,
+    type RunTypeEnum as RunTypeEnum,
+    type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
+    type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
+    type RunQueryV2Params as RunQueryV2Params,
+    type RunRetrieveV2Params as RunRetrieveV2Params,
+    type RunRetrieveParams as RunRetrieveParams,
+    type RunQueryParams as RunQueryParams,
   };
 
   export {
