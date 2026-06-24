@@ -144,11 +144,6 @@ class AsyncClient:
             self._info = ls_schemas.LangSmithInfo()
         return self._info
 
-    @property
-    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated async online evaluator CRUD methods."""
-        return self._langsmith_api.online_evaluators
-
     def __init__(
         self,
         api_url: Optional[str] = None,
@@ -310,6 +305,11 @@ class AsyncClient:
     def runs(self) -> AsyncRunsResource:
         """Access the v2 runs resource."""
         return self._langsmith_api.runs
+
+    @property
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
+        """Access generated async online evaluator CRUD methods."""
+        return self._langsmith_api.online_evaluators
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

@@ -1453,6 +1453,12 @@ class Client:
         _check_backend_version(self.info.version)
         return self._langsmith_api.runs
 
+    @property
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
+        """Access generated online evaluator CRUD methods."""
+        _check_backend_version(self.info.version)
+        return self._langsmith_api.online_evaluators
+
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1679,12 +1685,6 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
-
-    @property
-    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated online evaluator CRUD methods."""
-        _check_backend_version(self.info.version)
-        return self._langsmith_api.online_evaluators
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
