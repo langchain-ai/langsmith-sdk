@@ -35,6 +35,10 @@ def langchain_client() -> Generator[Client, None, None]:
     )
 
 
+async def _alist(paginator):
+    return [x async for x in paginator]
+
+
 DEFAULT_SELECTS = [
     "ID",
     "NAME",
@@ -81,10 +85,9 @@ def poll_runs_until_count(
         try:
             project = langchain_client.read_project(project_name=project_name)
             runs = list(
-                langchain_client.runs.query(
-                    project_ids=[str(project.id)],
+                langchain_client.list_runs(
+                    project_id=str(project.id),
                     filter=filter_,
-                    selects=DEFAULT_SELECTS,
                 )
             )
             if len(runs) == count:
@@ -127,11 +130,13 @@ def test_nested_runs(
     for _ in range(30):
         try:
             project = langchain_client.read_project(project_name=project_name)
-            runs = list(
-                langchain_client.runs.query(
-                    project_ids=[str(project.id)],
-                    filter=f"and(eq(metadata_key,'test_run'),eq(metadata_value,'{run_meta}'))",
-                    selects=DEFAULT_SELECTS,
+            runs = asyncio.run(
+                _alist(
+                    langchain_client.runs.query(
+                        project_ids=[str(project.id)],
+                        filter=f"and(eq(metadata_key,'test_run'),eq(metadata_value,'{run_meta}'))",
+                        selects=DEFAULT_SELECTS,
+                    )
                 )
             )
             assert len(runs) == 3
@@ -188,13 +193,14 @@ async def test_list_runs_multi_project(langchain_client: Client):
     project_ids = [
         str(langchain_client.read_project(project_name=pn).id) for pn in project_names
     ]
-    runs = list(
-        langchain_client.runs.query(
+    runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=project_ids,
             filter=filter_,
             selects=DEFAULT_SELECTS,
         )
-    )
+    ]
     assert len(runs) == 2
     assert all([run.outputs["output"] == "Completed: foo" for run in runs])  # type: ignore
     assert runs[0].project_id != runs[1].project_id
@@ -261,19 +267,21 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         langchain_client, project_name, 17, filter_=filter_, max_retries=30
     )
     _nar_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
+    runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_nar_project.id)], filter=filter_, selects=DEFAULT_SELECTS
         )
-    )
-    trace_runs = list(
-        langchain_client.runs.query(
+    ]
+    trace_runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_nar_project.id)],
             trace_id=runs[0].trace_id,
             filter=filter_,
             selects=DEFAULT_SELECTS,
         )
-    )
+    ]
     assert len(trace_runs) == 17
     assert len(runs) == 17
     assert sum([run.run_type == "LLM" for run in runs]) == 8
@@ -338,11 +346,12 @@ async def test_context_manager(langchain_client: Client) -> None:
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
     poll_runs_until_count(langchain_client, project_name, 8, filter_=_filter)
     _ctx_project = langchain_client.read_project(project_name=project_name)
-    runs_ = list(
-        langchain_client.runs.query(
+    runs_ = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_ctx_project.id)], filter=_filter, selects=DEFAULT_SELECTS
         )
-    )
+    ]
     assert len(runs_) == 8
 
 
@@ -370,9 +379,13 @@ def test_sync_generator(langchain_client: Client):
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
     _sg_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
-            project_ids=[str(_sg_project.id)], filter=_filter, selects=DEFAULT_SELECTS
+    runs = asyncio.run(
+        _alist(
+            langchain_client.runs.query(
+                project_ids=[str(_sg_project.id)],
+                filter=_filter,
+                selects=DEFAULT_SELECTS,
+            )
         )
     )
     run = runs[0]
@@ -410,9 +423,13 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
         langchain_client, project_name, 1, max_retries=20, filter_=filter_
     )
     _sgrf_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
-            project_ids=[str(_sgrf_project.id)], filter=filter_, selects=DEFAULT_SELECTS
+    runs = asyncio.run(
+        _alist(
+            langchain_client.runs.query(
+                project_ids=[str(_sgrf_project.id)],
+                filter=filter_,
+                selects=DEFAULT_SELECTS,
+            )
         )
     )
     run = runs[0]
@@ -456,11 +473,12 @@ async def test_async_generator(langchain_client: Client):
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
     _ag_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
+    runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_ag_project.id)], filter=_filter, selects=DEFAULT_SELECTS
         )
-    )
+    ]
     run = runs[0]
     assert run.run_type == "CHAIN"
     assert run.name == "my_async_generator"
@@ -512,11 +530,12 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
         langchain_client, project_name, 1, max_retries=30, sleep_time=5, filter_=filter_
     )
     _agrf_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
+    runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_agrf_project.id)], filter=filter_, selects=DEFAULT_SELECTS
         )
-    )
+    ]
     run = runs[0]
     assert run.run_type == "CHAIN"
     assert run.name == "my_async_generator"
@@ -554,11 +573,12 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     poll_runs_until_count(langchain_client, project_name, 1, filter_=filter_)
 
     _emrt_project = langchain_client.read_project(project_name=project_name)
-    runs_ = list(
-        langchain_client.runs.query(
+    runs_ = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_emrt_project.id)], filter=filter_, selects=DEFAULT_SELECTS
         )
-    )
+    ]
     run = runs_[0]
     assert run.run_type == "CHAIN"
     assert run.metadata["final_metadata"] == run_id.hex
@@ -597,19 +617,23 @@ def test_trace_file_path(langchain_client: Client) -> None:
         langchain_client, project_name, 1, max_retries=30, filter_=_filter
     )
     _tfp_project = langchain_client.read_project(project_name=project_name)
-    run_ids_list = list(
-        langchain_client.runs.query(
-            project_ids=[str(_tfp_project.id)],
-            filter=_filter,
-            selects=["ID", "START_TIME"],
+    run_ids_list = asyncio.run(
+        _alist(
+            langchain_client.runs.query(
+                project_ids=[str(_tfp_project.id)],
+                filter=_filter,
+                selects=["ID", "START_TIME"],
+            )
         )
     )
     assert len(run_ids_list) == 1
-    run = langchain_client.runs.retrieve(
-        str(run_ids_list[0].id),
-        project_id=str(_tfp_project.id),
-        start_time=run_ids_list[0].start_time,
-        selects=["ID", "ATTACHMENTS"],
+    run = asyncio.run(
+        langchain_client.runs.retrieve(
+            str(run_ids_list[0].id),
+            project_id=str(_tfp_project.id),
+            start_time=run_ids_list[0].start_time,
+            selects=["ID", "ATTACHMENTS"],
+        )
     )
     assert run.attachments
     assert (
@@ -757,9 +781,13 @@ def test_usage_metadata(langchain_client: Client):
         langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
     )
     _um_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
-            project_ids=[str(_um_project.id)], filter=_filter, selects=DEFAULT_SELECTS
+    runs = asyncio.run(
+        _alist(
+            langchain_client.runs.query(
+                project_ids=[str(_um_project.id)],
+                filter=_filter,
+                selects=DEFAULT_SELECTS,
+            )
         )
     )
     for run in runs:
@@ -856,11 +884,12 @@ async def test_usage_metadata_async(langchain_client: Client):
         langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
     )
     _uma_project = langchain_client.read_project(project_name=project_name)
-    runs = list(
-        langchain_client.runs.query(
+    runs = [
+        x
+        async for x in langchain_client.runs.query(
             project_ids=[str(_uma_project.id)], filter=_filter, selects=DEFAULT_SELECTS
         )
-    )
+    ]
 
     for run in runs:
         assert run.prompt_tokens == 10

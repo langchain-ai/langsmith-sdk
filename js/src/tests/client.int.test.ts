@@ -2437,12 +2437,17 @@ describe("client.runs v2 resource", () => {
       await deleteProject(client, proj);
       return;
     }
-    const runs: unknown[] = [];
-    for await (const run of client.runs.query({
-      project_ids: [projectId],
-      selects: ["ID", "NAME", "RUN_TYPE", "TRACE_ID"],
-    })) {
-      runs.push(run);
+    let runs: unknown[] = [];
+    for (let i = 0; i < 30; i++) {
+      runs = [];
+      for await (const run of client.runs.query({
+        project_ids: [projectId],
+        selects: ["ID", "NAME", "RUN_TYPE", "TRACE_ID"],
+      })) {
+        runs.push(run);
+      }
+      if (runs.length >= 1) break;
+      await new Promise((r) => setTimeout(r, 2000));
     }
     expect(runs.length).toBeGreaterThanOrEqual(1);
     const traceIds = runs.map((r: any) => r.trace_id);
