@@ -111,6 +111,7 @@ import {
   hasLargeString,
   SerializeWorker,
 } from "./utils/serialize_worker.js";
+import { wrapManifestForHubPush } from "./utils/hub_manifest.js";
 
 function assertPullPublicPromptAllowed(
   promptIdentifier: string,
@@ -6243,7 +6244,9 @@ export class Client implements LangSmithTracingClientInterface {
         : options?.parentCommitHash;
 
     const payload = {
-      manifest: JSON.parse(JSON.stringify(object)),
+      manifest: wrapManifestForHubPush(
+        JSON.parse(JSON.stringify(object)) as Record<string, unknown>,
+      ),
       parent_commit: resolvedParentCommitHash,
       ...(options?.description !== undefined && {
         description: options.description,

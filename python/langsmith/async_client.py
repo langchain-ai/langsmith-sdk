@@ -1939,6 +1939,8 @@ class AsyncClient:
             json_object = dumps(prepped)
             manifest_dict = json.loads(json_object)
 
+        manifest_dict = ls_client.wrap_manifest_for_hub_push(manifest_dict)
+
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"
 

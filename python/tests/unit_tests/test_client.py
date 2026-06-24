@@ -54,12 +54,111 @@ from langsmith.client import (
     _parse_token_or_url,
     _reject_filesystem_attachments,
     _resolve_tracing_mode,
+    wrap_manifest_for_hub_push,
 )
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 from tests.unit_tests.conftest import parse_request_data
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
+
+
+def test_wrap_manifest_for_hub_push_wraps_flat_structured_prompt() -> None:
+    flat = {
+        "lc": 1,
+        "type": "constructor",
+        "id": ["langchain_core", "prompts", "structured", "StructuredPrompt"],
+        "kwargs": {
+            "input_variables": ["input"],
+            "messages": [],
+            "schema_": {
+                "type": "object",
+                "properties": {"score": {"type": "boolean"}},
+            },
+        },
+    }
+
+    wrapped = wrap_manifest_for_hub_push(flat)
+
+    assert wrapped["id"] == ["langsmith", "playground", "PromptPlayground"]
+    assert wrapped["kwargs"]["first"] == flat
+    assert wrapped["kwargs"]["last"]["id"][-1] == "RunnableBinding"
+
+
+def test_wrap_manifest_for_hub_push_leaves_playground_manifest_unchanged() -> None:
+    manifest = {
+        "lc": 1,
+        "type": "constructor",
+        "id": ["langsmith", "playground", "PromptPlayground"],
+        "kwargs": {"first": {"id": ["prompt"]}, "last": {"id": ["model"]}},
+    }
+
+    assert wrap_manifest_for_hub_push(manifest) is manifest
+
+
+def test_wrap_manifest_for_hub_push_leaves_runnable_sequence_unchanged() -> None:
+    manifest = {
+        "lc": 1,
+        "type": "constructor",
+        "id": ["langchain", "schema", "runnable", "RunnableSequence"],
+        "kwargs": {"first": {"id": ["prompt"]}, "last": {"id": ["model"]}},
+    }
+
+    assert wrap_manifest_for_hub_push(manifest) is manifest
+
+
+def test_create_commit_wraps_flat_structured_prompt_manifest() -> None:
+    flat = {
+        "lc": 1,
+        "type": "constructor",
+        "id": ["langchain_core", "prompts", "structured", "StructuredPrompt"],
+        "kwargs": {
+            "input_variables": ["input"],
+            "messages": [],
+            "schema_": {
+                "type": "object",
+                "properties": {"score": {"type": "boolean"}},
+            },
+        },
+    }
+    posted: dict = {}
+    mock_session = mock.Mock()
+
+    def mock_request(method, url, **kwargs):
+        if method == "POST" and "/commits/" in url:
+            posted.update(kwargs.get("json", {}))
+            return mock.Mock(
+                json=lambda: {"commit": {"commit_hash": "new_hash", "id": "new_id"}}
+            )
+        return mock.Mock(json=lambda: {})
+
+    mock_session.request.side_effect = mock_request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        auto_batch_tracing=False,
+    )
+
+    with (
+        mock.patch("langsmith.client.Client._prompt_exists", return_value=True),
+        mock.patch(
+            "langsmith.client.Client._get_latest_commit_hash",
+            return_value="parent_hash",
+        ),
+        mock.patch(
+            "langsmith.client.Client._get_settings",
+            return_value=ls_schemas.LangSmithSettings(
+                id="test-tenant-id",
+                display_name="Test Tenant",
+                created_at=_CREATED_AT,
+            ),
+        ),
+    ):
+        client.create_commit("owner/my-prompt", flat)
+
+    assert posted["manifest"]["id"] == ["langsmith", "playground", "PromptPlayground"]
+    assert posted["manifest"]["kwargs"]["first"] == flat
 
 
 def test_is_localhost() -> None:
