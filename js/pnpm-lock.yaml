@@ -20,14 +20,14 @@ importers:
         version: 6.6.2
     devDependencies:
       '@ai-sdk/anthropic':
-        specifier: 4.0.0-canary.55
-        version: 4.0.0-canary.55(zod@4.4.3)
+        specifier: 4.0.0-beta.67
+        version: 4.0.0-beta.67(zod@4.4.3)
       '@ai-sdk/openai':
-        specifier: 4.0.0-canary.59
-        version: 4.0.0-canary.59(zod@4.4.3)
+        specifier: 4.0.0-beta.74
+        version: 4.0.0-beta.74(zod@4.4.3)
       '@ai-sdk/provider':
-        specifier: 4.0.0-canary.16
-        version: 4.0.0-canary.16
+        specifier: 4.0.0-beta.19
+        version: 4.0.0-beta.19
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.150
         version: 0.3.150(@anthropic-ai/sdk@0.98.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(zod@4.4.3)
@@ -104,8 +104,8 @@ importers:
         specifier: ^5.59.8
         version: 5.62.0(eslint@8.57.1)(typescript@6.0.3)
       ai:
-        specifier: 7.0.0-canary.142
-        version: 7.0.0-canary.142(zod@4.4.3)
+        specifier: 7.0.0-beta.178
+        version: 7.0.0-beta.178(zod@4.4.3)
       babel-jest:
         specifier: ^30.2.0
         version: 30.4.1(@babel/core@7.29.7)
@@ -169,33 +169,33 @@ importers:
 
 packages:
 
-  '@ai-sdk/anthropic@4.0.0-canary.55':
-    resolution: {integrity: sha512-lL2lujwSqiVX44xSKcSFlK1+eUCrh2a545qaGacAkREKBcZNJjW/4oimdLrysa9O+26tjmiQ3zV2OQcHxnUsjA==}
-    engines: {node: '>=18'}
+  '@ai-sdk/anthropic@4.0.0-beta.67':
+    resolution: {integrity: sha512-R0TMMlTui9AoaHTjiJWpnaQLBNBc/oKMCWaqalSnDPtKundJ0sIWZ+wkdNTZbEhq92blzYA7YLDvbDDl8UbGdQ==}
+    engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/gateway@4.0.0-canary.83':
-    resolution: {integrity: sha512-/vLA9WoE3VGtGdnjWU5roVyibrDgRkpyoCxde7tfndNVN3mLq+UjQWyK6t5GnrwAPpKqv4JIDyu6tkN54jtcNw==}
-    engines: {node: '>=18'}
+  '@ai-sdk/gateway@4.0.0-beta.109':
+    resolution: {integrity: sha512-W/1kLlPb6Bgbhwep3CA3R6do0HD7SXV5gyuz2XBLY1YABqgxYkw+IhEcjOYlmn9v+Tifjqy5yJqmWdSHMJhyPQ==}
+    engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai@4.0.0-canary.59':
-    resolution: {integrity: sha512-YRMnbkPRuozy9+BmZ+P8bjcdFh4QH6bOKDNLzVlce07OnIr09WNMAJKAX7trRS1saANFjiMx25ILa5Tgz6D1nw==}
-    engines: {node: '>=18'}
+  '@ai-sdk/openai@4.0.0-beta.74':
+    resolution: {integrity: sha512-1iss50q+WXsqUAJ2wxYugsNgczOpM3GNwNeUJPffui1FMOJEq17llhQMbtjby5xP+/sKd8rYciR29wL4Gn6nhA==}
+    engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.0-canary.41':
-    resolution: {integrity: sha512-0bNrlQJr+R8QPvoVu/uIsS7K5SZLqVK3dWJoUYAz+z8NWFtB9qWfMADFls1bwXy8m+9HCRW9CmiNNkK79ppQmg==}
-    engines: {node: '>=18'}
+  '@ai-sdk/provider-utils@5.0.0-beta.49':
+    resolution: {integrity: sha512-7xnpAQLpW0KGIsh0CQERcIZuXEGqv7FtFW2BdFk14iuMxRMVpXhTVvEQyqkm6tWAbQ7OsGQJhO6M0Me9gHQ52g==}
+    engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider@4.0.0-canary.16':
-    resolution: {integrity: sha512-IJKj5cOfRNbc1+rBIdyqFbsd4tjWY3wrM3y2D2YdZCHLi6qpS2yLN0P+ajEPCEnto6iZFWQHk28iRMwgvFSJRg==}
-    engines: {node: '>=18'}
+  '@ai-sdk/provider@4.0.0-beta.19':
+    resolution: {integrity: sha512-Aca/KiGeRtMM7rOJ38Qio+Dc2V45PpiGoWgdrdtIkgM9zkhYpS043t0ggKoNOWgm/csv99XWGrfSF63PSkVeHw==}
+    engines: {node: '>=22'}
 
   '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.150':
     resolution: {integrity: sha512-YVWJ0MHdSy0tobHO2G5/+vd9iRGyosg3wM6sY4pirezsnwZJBkJv/9IeVIaKqdLv83OA6HUcxxOLGzKSBawq2Q==}
@@ -2633,9 +2633,9 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
-  ai@7.0.0-canary.142:
-    resolution: {integrity: sha512-i+7o7QIL4E4mNX7jklwIAAvurmJn35gtIyqh7glx66ylj8QfAEJcXY5M2uVNrycliECOCYqTSBIiv7Ai67SXOQ==}
-    engines: {node: '>=18'}
+  ai@7.0.0-beta.178:
+    resolution: {integrity: sha512-kOfIbf23FDkvvfDHOS1gIjImBF9MlYut8fEMlps57vvS622VKL1PeEDLJ181aVd2LPSiDr3SupAMSzI2rEaW3w==}
+    engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
@@ -5035,34 +5035,34 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/anthropic@4.0.0-canary.55(zod@4.4.3)':
+  '@ai-sdk/anthropic@4.0.0-beta.67(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-canary.16
-      '@ai-sdk/provider-utils': 5.0.0-canary.41(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-beta.19
+      '@ai-sdk/provider-utils': 5.0.0-beta.49(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/gateway@4.0.0-canary.83(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.0-beta.109(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-canary.16
-      '@ai-sdk/provider-utils': 5.0.0-canary.41(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-beta.19
+      '@ai-sdk/provider-utils': 5.0.0-beta.49(zod@4.4.3)
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
-  '@ai-sdk/openai@4.0.0-canary.59(zod@4.4.3)':
+  '@ai-sdk/openai@4.0.0-beta.74(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-canary.16
-      '@ai-sdk/provider-utils': 5.0.0-canary.41(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-beta.19
+      '@ai-sdk/provider-utils': 5.0.0-beta.49(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/provider-utils@5.0.0-canary.41(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.0-beta.49(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-canary.16
+      '@ai-sdk/provider': 4.0.0-beta.19
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.0.8
       zod: 4.4.3
 
-  '@ai-sdk/provider@4.0.0-canary.16':
+  '@ai-sdk/provider@4.0.0-beta.19':
     dependencies:
       json-schema: 0.4.0
 
@@ -7978,11 +7978,11 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@7.0.0-canary.142(zod@4.4.3):
+  ai@7.0.0-beta.178(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 4.0.0-canary.83(zod@4.4.3)
-      '@ai-sdk/provider': 4.0.0-canary.16
-      '@ai-sdk/provider-utils': 5.0.0-canary.41(zod@4.4.3)
+      '@ai-sdk/gateway': 4.0.0-beta.109(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.0-beta.19
+      '@ai-sdk/provider-utils': 5.0.0-beta.49(zod@4.4.3)
       zod: 4.4.3
 
   ajv-formats@3.0.1(ajv@8.20.0):
