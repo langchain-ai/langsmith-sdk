@@ -13,9 +13,6 @@ __all__ = ["RunQueryV2Params"]
 
 
 class RunQueryV2Params(TypedDict, total=False):
-    ai_query: str
-    """`ai_query` is a natural-language query to filter runs using AI."""
-
     cursor: str
     """`cursor` is the opaque string from a previous response's `next_cursor`.
 
@@ -140,12 +137,6 @@ class RunQueryV2Params(TypedDict, total=False):
 
     If omitted, only `id` is returned. Properties not listed are omitted from each
     run object.
-    """
-
-    sort_order: Literal["ASC", "DESC"]
-    """`sort_order` is the sort direction for `start_time` (`ASC` or `DESC`).
-
-    Defaults to `DESC` when omitted. Maps to the SmithDB proto `Order` field.
     """
 
     trace_filter: str

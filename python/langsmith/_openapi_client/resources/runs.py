@@ -49,7 +49,6 @@ class RunsResource(SyncAPIResource):
     def query_v2(
         self,
         *,
-        ai_query: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
@@ -111,7 +110,6 @@ class RunsResource(SyncAPIResource):
             ]
         ]
         | Omit = omit,
-        sort_order: Literal["ASC", "DESC"] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_id: str | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -129,8 +127,6 @@ class RunsResource(SyncAPIResource):
         cursor pagination, and `selects` to select fields to return.
 
         Args:
-          ai_query: `ai_query` is a natural-language query to filter runs using AI.
-
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -174,9 +170,6 @@ class RunsResource(SyncAPIResource):
           selects: `selects` lists which properties to include on each returned run. If omitted,
               only `id` is returned. Properties not listed are omitted from each run object.
 
-          sort_order: `sort_order` is the sort direction for `start_time` (`ASC` or `DESC`). Defaults
-              to `DESC` when omitted. Maps to the SmithDB proto `Order` field.
-
           trace_filter: `trace_filter` narrows results to runs whose root trace matches this LangSmith
               filter expression. Use this to filter by properties of the trace's root run —
               for example eq(status, "success") to include only traces that completed without
@@ -208,7 +201,6 @@ class RunsResource(SyncAPIResource):
             page=SyncItemsCursorPostPagination[QueryRunResponse],
             body=maybe_transform(
                 {
-                    "ai_query": ai_query,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,
@@ -222,7 +214,6 @@ class RunsResource(SyncAPIResource):
                     "reference_examples": reference_examples,
                     "run_type": run_type,
                     "selects": selects,
-                    "sort_order": sort_order,
                     "trace_filter": trace_filter,
                     "trace_id": trace_id,
                     "tree_filter": tree_filter,
@@ -372,7 +363,6 @@ class AsyncRunsResource(AsyncAPIResource):
     def query_v2(
         self,
         *,
-        ai_query: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
@@ -434,7 +424,6 @@ class AsyncRunsResource(AsyncAPIResource):
             ]
         ]
         | Omit = omit,
-        sort_order: Literal["ASC", "DESC"] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_id: str | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -452,8 +441,6 @@ class AsyncRunsResource(AsyncAPIResource):
         cursor pagination, and `selects` to select fields to return.
 
         Args:
-          ai_query: `ai_query` is a natural-language query to filter runs using AI.
-
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -497,9 +484,6 @@ class AsyncRunsResource(AsyncAPIResource):
           selects: `selects` lists which properties to include on each returned run. If omitted,
               only `id` is returned. Properties not listed are omitted from each run object.
 
-          sort_order: `sort_order` is the sort direction for `start_time` (`ASC` or `DESC`). Defaults
-              to `DESC` when omitted. Maps to the SmithDB proto `Order` field.
-
           trace_filter: `trace_filter` narrows results to runs whose root trace matches this LangSmith
               filter expression. Use this to filter by properties of the trace's root run —
               for example eq(status, "success") to include only traces that completed without
@@ -531,7 +515,6 @@ class AsyncRunsResource(AsyncAPIResource):
             page=AsyncItemsCursorPostPagination[QueryRunResponse],
             body=maybe_transform(
                 {
-                    "ai_query": ai_query,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,
@@ -545,7 +528,6 @@ class AsyncRunsResource(AsyncAPIResource):
                     "reference_examples": reference_examples,
                     "run_type": run_type,
                     "selects": selects,
-                    "sort_order": sort_order,
                     "trace_filter": trace_filter,
                     "trace_id": trace_id,
                     "tree_filter": tree_filter,

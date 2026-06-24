@@ -754,11 +754,6 @@ export type RunsFilterDataSourceTypeEnum =
 
 export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   /**
-   * Body param: `ai_query` is a natural-language query to filter runs using AI.
-   */
-  ai_query?: string;
-
-  /**
    * Body param: `filter` narrows results to runs matching this LangSmith filter
    * expression, evaluated against each individual run. For example: and(eq(run_type,
    * "llm"), gt(latency, 5)) or eq(status, "error"). See
@@ -874,13 +869,6 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
-
-  /**
-   * Body param: `sort_order` is the sort direction for `start_time` (`ASC` or
-   * `DESC`). Defaults to `DESC` when omitted. Maps to the SmithDB proto `Order`
-   * field.
-   */
-  sort_order?: 'ASC' | 'DESC';
 
   /**
    * Body param: `trace_filter` narrows results to runs whose root trace matches this
@@ -1057,11 +1045,6 @@ export interface RunRetrieveParams {
 
 export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   /**
-   * Body param: `ai_query` is a natural-language query to filter runs using AI.
-   */
-  ai_query?: string;
-
-  /**
    * Body param: `filter` narrows results to runs matching this LangSmith filter
    * expression, evaluated against each individual run. For example: and(eq(run_type,
    * "llm"), gt(latency, 5)) or eq(status, "error"). See
@@ -1177,13 +1160,6 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
-
-  /**
-   * Body param: `sort_order` is the sort direction for `start_time` (`ASC` or
-   * `DESC`). Defaults to `DESC` when omitted. Maps to the SmithDB proto `Order`
-   * field.
-   */
-  sort_order?: 'ASC' | 'DESC';
 
   /**
    * Body param: `trace_filter` narrows results to runs whose root trace matches this
