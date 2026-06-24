@@ -1,4 +1,4 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast test-wheel-imports
 
 
 OUTPUT ?= out/benchmark.json
@@ -67,6 +67,17 @@ build:
 
 publish:
 	uv publish --dry-run
+
+test-wheel-imports:
+	uv build --no-sources
+	uv run python3 -c "import tomllib; f=open('pyproject.toml','rb'); d=tomllib.load(f); f.close(); print('\n'.join(d['project']['dependencies']))" > /tmp/langsmith-declared-deps.txt
+	uv venv /tmp/langsmith-strict-test
+	uv pip install dist/langsmith-*.whl --no-deps --python /tmp/langsmith-strict-test
+	uv pip install -r /tmp/langsmith-declared-deps.txt --python /tmp/langsmith-strict-test
+	/tmp/langsmith-strict-test/bin/python -c "\
+from langsmith._openapi_client import Langsmith; \
+from langsmith.client import Client"
+	rm -rf /tmp/langsmith-strict-test /tmp/langsmith-declared-deps.txt
 
 api_docs_build:
 	uv run python docs/create_api_rst.py

@@ -1177,7 +1177,7 @@ def test_multipart_ingest_create_with_attachments_error(
     ]
 
     # make sure no warnings logged
-    with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+    with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
@@ -1377,7 +1377,7 @@ def test_multipart_ingest_update_with_attachments_error(
                 },
             }
         ]
-        with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+        with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
             langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
 

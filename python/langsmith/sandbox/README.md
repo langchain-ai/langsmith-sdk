@@ -129,8 +129,8 @@ short-lived write-only values with `opaque_secret(...)`.
 
 Use the GCP auth proxy when sandbox code needs to call Google APIs. You
 configure service account JSON on the sandbox proxy, and the proxy injects OAuth
-bearer tokens for the Google API hosts you explicitly match. The real service
-account JSON stays outside the sandbox.
+bearer tokens for Google API hosts matched automatically by the sandbox proxy.
+The real service account JSON stays outside the sandbox.
 
 Store the service account JSON as a LangSmith workspace secret, then reference
 that secret name in the proxy config:
@@ -170,13 +170,13 @@ Plaintext service account JSON is not accepted directly.
 
 Use mounts when sandbox code needs filesystem access to external data such as
 object storage buckets or public Git repositories. Mount specs contain only the
-mount target. Provider credentials stay in explicit auth config, and the SDK
-expands `mount_config` into the backend `mounts` and `proxy_config` fields.
-If you also pass `proxy_config`, its rules are merged with the mount-generated
-proxy auth rules.
-Provider auth for the same provider must appear in only one place.
+mount target. Provider credentials stay in `mount_config.auth`; the backend
+expands them into runtime proxy auth rules. You can also pass `proxy_config` for
+non-mount proxy behavior such as custom headers, callbacks, access control, and
+generic egress rules. Explicit AWS/GCP proxy auth rules conflict with
+`mount_config` auth for the same provider.
 
-S3 mounts require an enabled AWS auth proxy rule:
+S3 mounts require AWS auth:
 
 ```python
 from langsmith.sandbox import (
@@ -215,10 +215,7 @@ with client.sandbox(
     print(result.stdout)
 ```
 
-GCS mounts require an enabled GCP auth proxy rule covering
-`storage.googleapis.com` and `www.googleapis.com`. Read/write mounts require
-`devstorage.read_write` or `cloud-platform`; read-only mounts can also use
-`devstorage.read_only`.
+GCS mounts require GCP auth:
 
 ```python
 from langsmith.sandbox import (
@@ -233,8 +230,7 @@ mount_cfg = mount_config(
         gcp_auth(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
-            ),
-            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+            )
         )
     ],
     mounts=[
@@ -285,7 +281,7 @@ requires proxy-managed auth. There is not yet a high-level private Git auth
 helper.
 
 If one sandbox needs S3, GCS, and Git mounts, build one `mount_config` with the
-bucket provider rules and all mount specs:
+bucket provider auth blocks and all mount specs:
 
 ```python
 from langsmith.sandbox import (
@@ -307,8 +303,7 @@ mount_cfg = mount_config(
         gcp_auth(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
-            ),
-            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+            )
         ),
     ],
     mounts=[

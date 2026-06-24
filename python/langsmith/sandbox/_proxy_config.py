@@ -15,8 +15,6 @@ class SandboxProxySecret(TypedDict):
 
 SandboxProxyRule = dict[str, Any]
 SandboxProxyConfig = dict[str, Any]
-DEFAULT_GCP_AUTH_MATCH_HOSTS = ["storage.googleapis.com", "www.googleapis.com"]
-_PROVIDER_RULE_TYPES = {"aws", "gcp"}
 
 
 def _require_non_empty_string(value: str, field: str) -> str:
@@ -73,8 +71,18 @@ def _normalize_proxy_rules(
     for rule in rules:
         if not isinstance(rule, dict) or not rule:
             raise ValueError("rules must be a list of proxy rule dictionaries")
+        _validate_proxy_provider_rule(rule)
         normalized.append(rule)
     return normalized
+
+
+def _validate_proxy_provider_rule(rule: SandboxProxyRule) -> None:
+    if rule.get("type") != "gcp":
+        return
+    gcp = rule.get("gcp")
+    if not isinstance(gcp, dict) or "scopes" not in gcp:
+        raise ValueError("gcp proxy auth rules require scopes")
+    _require_non_empty_string_list(gcp["scopes"], "scopes")
 
 
 def proxy_config(
@@ -96,50 +104,6 @@ def proxy_config(
             raise ValueError("access_control must be a dictionary")
         config["access_control"] = dict(access_control)
     return config
-
-
-def _provider_rule_types(config: SandboxProxyConfig) -> set[str]:
-    providers: set[str] = set()
-    rules = config.get("rules", [])
-    if not isinstance(rules, list):
-        raise ValueError("proxy_config rules must be lists when merged")
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
-        rule_type = rule.get("type")
-        if isinstance(rule_type, str) and rule_type in _PROVIDER_RULE_TYPES:
-            providers.add(rule_type)
-    return providers
-
-
-def merge_proxy_configs(
-    generated_config: SandboxProxyConfig | None,
-    explicit_config: SandboxProxyConfig | None,
-) -> SandboxProxyConfig | None:
-    """Merge SDK-generated proxy config with explicit caller proxy config."""
-    if generated_config is None:
-        return explicit_config
-    if explicit_config is None:
-        return generated_config
-
-    generated_rules = generated_config.get("rules", [])
-    explicit_rules = explicit_config.get("rules", [])
-    if not isinstance(generated_rules, list) or not isinstance(explicit_rules, list):
-        raise ValueError("proxy_config rules must be lists when merged")
-
-    conflicts = _provider_rule_types(generated_config) & _provider_rule_types(
-        explicit_config
-    )
-    if conflicts:
-        provider = sorted(conflicts)[0]
-        raise ValueError(
-            f"{provider} auth cannot be provided in both mount_config and proxy_config"
-        )
-
-    merged = dict(generated_config)
-    merged.update(explicit_config)
-    merged["rules"] = [*generated_rules, *explicit_rules]
-    return merged
 
 
 def aws_auth(
@@ -171,30 +135,27 @@ def aws_auth(
 def gcp_auth(
     *,
     service_account_json: SandboxProxySecret,
-    scopes: Sequence[str],
-    match_hosts: Sequence[str] | None = None,
+    scopes: Sequence[str] | None = None,
     name: str = "gcp",
     enabled: bool = True,
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that injects GCP OAuth bearer auth.
 
     The sandbox proxy keeps the service account JSON outside the sandbox and
-    injects OAuth bearer tokens for the configured Google API hosts.
+    injects OAuth bearer tokens for built-in Google API host matching.
     ``service_account_json`` must be supplied as a ``workspace_secret`` or
     ``opaque`` value; plaintext service account JSON is intentionally not
     supported.
     """
     rule_name = _require_non_empty_string(name, "name")
+    gcp_config: dict[str, Any] = {
+        "service_account_json": service_account_json,
+    }
+    if scopes is not None:
+        gcp_config["scopes"] = _require_non_empty_string_list(scopes, "scopes")
     return {
         "name": rule_name,
         "type": "gcp",
         "enabled": enabled,
-        "match_hosts": _require_non_empty_string_list(
-            DEFAULT_GCP_AUTH_MATCH_HOSTS if match_hosts is None else match_hosts,
-            "match_hosts",
-        ),
-        "gcp": {
-            "service_account_json": service_account_json,
-            "scopes": _require_non_empty_string_list(scopes, "scopes"),
-        },
+        "gcp": gcp_config,
     }

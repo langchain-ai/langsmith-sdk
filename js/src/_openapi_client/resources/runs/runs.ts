@@ -668,6 +668,8 @@ export interface RunStatsQueryParams {
 
   groups?: Array<string | null> | null;
 
+  include_details?: boolean;
+
   is_root?: boolean | null;
 
   parent_run?: string | null;

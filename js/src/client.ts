@@ -477,6 +477,7 @@ interface FeedbackCreate {
   session_id?: string;
   start_time?: number | string;
   comparative_experiment_id?: string;
+  extend_trace_retention?: boolean;
 }
 
 interface FeedbackUpdate {
@@ -4947,6 +4948,7 @@ export class Client implements LangSmithTracingClientInterface {
       comparativeExperimentId,
       sessionId,
       startTime,
+      extendTraceRetention,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -4964,6 +4966,8 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId?: string;
       /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
       startTime?: number | string;
+      /** If false, create feedback without extending the trace's retention tier. */
+      extendTraceRetention?: boolean;
     },
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -5002,6 +5006,7 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackConfig,
       session_id: sessionId ?? projectId,
       start_time: startTime,
+      extend_trace_retention: extendTraceRetention,
     };
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;

@@ -973,6 +973,7 @@ class AsyncClient:
         session_id: Optional[ls_client.ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
+        extend_trace_retention: bool = True,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -1003,6 +1004,8 @@ class AsyncClient:
             session_id: The project ID of the run this feedback is for.
             start_time: The start time of the run this feedback is for.
             comment: A comment about this feedback.
+            extend_trace_retention: If false, create the feedback without
+                extending the trace's retention tier.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1080,6 +1083,7 @@ class AsyncClient:
             ),
             extra=extra,
             error=error,
+            extend_trace_retention=extend_trace_retention,
         )
         # Retry on NotFound: the run referenced by run_id/trace_id may have been
         # submitted moments ago and not yet ingested when this write lands.

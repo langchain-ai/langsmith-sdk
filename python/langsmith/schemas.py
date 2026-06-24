@@ -683,6 +683,8 @@ class FeedbackCreate(FeedbackBase):
     """The source of the feedback."""
     feedback_config: Optional[FeedbackConfig] = None
     """The config for the feedback"""
+    extend_trace_retention: bool = True
+    """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
 
 

@@ -20,6 +20,15 @@ TEST=tests/unit_tests/test_client.py make tests
 
 Any pytest options may be included inside the `TEST` variable.
 
+## Releasing
+
+Releasing the SDK is governed **exclusively** by the "Cutting a release" section of
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md). When asked to cut or publish a release,
+you **must** follow that process: use the documented `uv run bump2version` flow and
+open a version-bump PR against `main`. Do **not** hand-edit `langsmith/__init__.py`
+or `.bumpversion.cfg`, bump the version by any other means, push tags, or invent an
+alternative release path.
+
 ## Notes
 
 - The project uses `uv` for dependency management and the Makefile commands will automatically run inside the `uv` environment.

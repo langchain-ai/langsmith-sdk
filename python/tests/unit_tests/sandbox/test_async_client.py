@@ -223,10 +223,10 @@ class TestAsyncSandboxOperations:
                 ],
             )
 
-    async def test_create_sandbox_expands_mount_config(
+    async def test_create_sandbox_forwards_mount_config(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """mount_config should expand to mounts and proxy_config in the POST body."""
+        """mount_config should appear as a nested public field in the POST body."""
         import json
 
         httpx_mock.add_response(
@@ -259,13 +259,14 @@ class TestAsyncSandboxOperations:
         )
 
         body = json.loads(httpx_mock.get_request().content)
-        assert body["mounts"] == config["mounts"]
-        assert body["proxy_config"] == config["proxy_config"]
+        assert body["mount_config"] == config
+        assert "mounts" not in body
+        assert "proxy_config" not in body
 
-    async def test_create_sandbox_merges_mount_config_with_proxy_config(
+    async def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """mount_config provider auth should compose with explicit proxy_config."""
+        """mount_config and explicit proxy_config should remain independent."""
         import json
 
         httpx_mock.add_response(
@@ -276,7 +277,7 @@ class TestAsyncSandboxOperations:
             },
             status_code=201,
         )
-        aws_rule = aws_auth(
+        aws_auth_block = aws_auth(
             access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
             secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
         )
@@ -288,7 +289,7 @@ class TestAsyncSandboxOperations:
             "headers": {"authorization": "Bearer {GITHUB_TOKEN}"},
         }
         config = mount_config(
-            auth=[aws_rule],
+            auth=[aws_auth_block],
             mounts=[
                 s3_mount(
                     id="s3_data",
@@ -310,9 +311,10 @@ class TestAsyncSandboxOperations:
         )
 
         body = json.loads(httpx_mock.get_request().content)
-        assert body["mounts"] == config["mounts"]
+        assert body["mount_config"] == config
+        assert "mounts" not in body
         assert body["proxy_config"] == {
-            "rules": [aws_rule, extra_rule],
+            "rules": [extra_rule],
             "no_proxy": ["metadata.google.internal"],
             "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
         }
