@@ -545,7 +545,6 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
-    @deprecated("read_run() is deprecated. Use client.runs.retrieve(...) instead.")
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
         """Read a run."""
         response = await self._arequest_with_retries(
@@ -554,7 +553,6 @@ class AsyncClient:
         )
         return ls_schemas.Run(**response.json())
 
-    @deprecated("list_runs() is deprecated. Use client.runs.query(...) instead.")
     async def list_runs(
         self,
         *,

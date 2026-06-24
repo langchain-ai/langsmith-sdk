@@ -2743,7 +2743,6 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /** @deprecated Use `client.runs.retrieve(...)` instead. */
   public async readRun(
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
@@ -2839,8 +2838,6 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * @deprecated Use `client.runs.query(...)` instead.
-   *
    * List runs from the LangSmith server.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.

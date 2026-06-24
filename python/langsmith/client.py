@@ -3897,7 +3897,6 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
-    @deprecated("read_run() is deprecated. Use client.runs.retrieve(...) instead.")
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
@@ -3993,7 +3992,6 @@ class Client:
             **kwargs,
         )
 
-    @deprecated("list_runs() is deprecated. Use client.runs.query(...) instead.")
     def list_runs(
         self,
         *,
