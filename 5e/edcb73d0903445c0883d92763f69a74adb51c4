@@ -1,0 +1,32 @@
+python/Makefile
+  s_f3e529077cf9d5::t_6b60da59c6bfc8 1
+  s_f3e529077cf9d5::t_7faefa5ae58853 77-78
+  s_f3e529077cf9d5::t_acafe787cab968 79
+  s_f3e529077cf9d5::t_a40d239dfd3c81 71-76,80-81
+.github/workflows/ci.yml
+  s_f3e529077cf9d5::t_8340275c15bf18 110-111,124
+  s_f3e529077cf9d5::t_3339604fcc4574 666
+  s_f3e529077cf9d5::t_30863b91613a16 112-123,127
+  s_f3e529077cf9d5::t_4a380f876b41ac 125-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "5eedcb73d0903445c0883d92763f69a74adb51c4",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f3e529077cf9d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3864cdab-409f-4ec5-b334-6b49a5037f9a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

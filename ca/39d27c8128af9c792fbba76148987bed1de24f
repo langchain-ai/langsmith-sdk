@@ -1,0 +1,19 @@
+python/pyproject.toml
+  s_f3e529077cf9d5::t_8541edda90ca07 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "ca39d27c8128af9c792fbba76148987bed1de24f",
+  "prompts": {},
+  "sessions": {
+    "s_f3e529077cf9d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3864cdab-409f-4ec5-b334-6b49a5037f9a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

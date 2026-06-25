@@ -1,0 +1,24 @@
+CONTRIBUTING.md
+  s_efa5898ca178e9::t_1939bb90e5194d 7-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "a682b39dbaf4e918ec6fac238617dc01b76f146b",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_efa5898ca178e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac3dbe8-85fb-4fcc-a48e-ea381e7d0531",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

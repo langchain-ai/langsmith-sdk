@@ -1,0 +1,24 @@
+python/langsmith/_openapi_client/_client.py
+  s_2da6a06d98c186::t_6093b80974841e 167,405
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "612252f386a0acaef41f41ba9638ad5632c33581",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_2da6a06d98c186": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "47dbcfc5-ae77-4815-8a33-b144c5ba9c19",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

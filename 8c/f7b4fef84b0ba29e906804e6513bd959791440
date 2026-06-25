@@ -1,0 +1,21 @@
+python/tests/integration_tests/test_async_client.py
+  s_c644ae2d638e9b::t_7dbf9c2abb006c 47,52-53,58,87-88,218,222,224,230,237,243,465,471
+python/tests/integration_tests/wrappers/test_openai_agents.py
+  s_c644ae2d638e9b::t_7dbf9c2abb006c 174-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "8cf7b4fef84b0ba29e906804e6513bd959791440",
+  "prompts": {},
+  "sessions": {
+    "s_c644ae2d638e9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "888ba9b1-0abf-418f-8159-b7c6f321876a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
