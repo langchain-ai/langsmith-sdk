@@ -161,61 +161,38 @@ class TestSandboxStatusFields:
         assert sb.status == "ready"
         assert sb.status_message is None
 
-    def test_provisioning_sandbox_blocks_run(self, client):
-        """Test that run() raises SandboxNotReadyError for non-ready sandbox."""
+    def test_dataplane_op_not_gated_on_status(self, client, httpx_mock: HTTPXMock):
+        """The client does not pre-check status: a stopped sandbox still runs;
+        the platform resumes it when the dataplane request arrives."""
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "ok\n", "stderr": "", "exit_code": 0},
+        )
         sb = Sandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "status": "provisioning",
+                "status": "stopped",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             client=client,
             auto_delete=False,
         )
-        with pytest.raises(SandboxNotReadyError, match="not ready"):
-            sb.run("echo hello")
+        assert sb.run("echo ok").stdout == "ok\n"
 
-    def test_failed_sandbox_blocks_run(self, client):
-        """Test that run() raises SandboxNotReadyError for failed sandbox."""
+    def test_missing_dataplane_url_raises_regardless_of_status(self, client):
+        """Without a dataplane_url, dataplane ops raise
+        DataplaneNotConfiguredError — the only client-side precondition."""
         sb = Sandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "status": "failed",
-                "status_message": "No capacity",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
+            data={"name": "test-sandbox", "status": "stopped"},
             client=client,
             auto_delete=False,
         )
-        with pytest.raises(SandboxNotReadyError):
+        with pytest.raises(DataplaneNotConfiguredError):
             sb.run("echo hello")
-
-    def test_provisioning_sandbox_blocks_write(self, client):
-        """Test that write() raises SandboxNotReadyError for non-ready sandbox."""
-        sb = Sandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "status": "provisioning",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        with pytest.raises(SandboxNotReadyError):
+        with pytest.raises(DataplaneNotConfiguredError):
             sb.write("/tmp/test.txt", "hello")
-
-    def test_provisioning_sandbox_blocks_read(self, client):
-        """Test that read() raises SandboxNotReadyError for non-ready sandbox."""
-        sb = Sandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "status": "provisioning",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        with pytest.raises(SandboxNotReadyError):
+        with pytest.raises(DataplaneNotConfiguredError):
             sb.read("/tmp/test.txt")
 
 
