@@ -349,36 +349,45 @@ async def wrap_flow_call_llm_async(
         return
 
     llm_request = args[1] if len(args) > 1 else kwargs.get("llm_request")
-    model_name = extract_model_name(llm_request) if llm_request else None
-    messages = convert_llm_request_to_messages(llm_request) if llm_request else None
-    tools = extract_tools_from_llm_request(llm_request) if llm_request else []
-
-    inputs: dict[str, Any] = {}
-    if messages:
-        inputs["messages"] = messages
-
-    metadata: dict[str, Any] = {"ls_provider": _get_ls_provider()}
-    if model_name:
-        metadata["ls_model_name"] = model_name
-
-    # Build extra dict with invocation_params if tools exist
-    extra: dict[str, Any] = {"metadata": metadata}
-    if tools:
-        extra["invocation_params"] = {"tools": tools}
 
     start_time = time.time()
+    # Anchor start time now, but capture inputs later:
+    # ADK's before_model_callback mutates llm_request in-place in wrapped().
     llm_run = parent.create_child(
-        name=model_name or "google_adk_llm",
+        name="google_adk_llm",
         run_type="llm",
-        inputs=inputs,
-        extra=extra,
+        inputs={},
+        extra={"metadata": {"ls_provider": _get_ls_provider()}},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
     )
 
-    try:
-        llm_run.post()
-    except Exception as e:
-        logger.debug(f"Failed to post LLM run: {e}")
+    posted = False
+
+    def _capture_inputs_and_post() -> None:
+        """Capture the final llm_request state and post the run (idempotent)."""
+        nonlocal posted
+        if posted:
+            return
+        posted = True
+
+        model_name = extract_model_name(llm_request) if llm_request else None
+        messages = (
+            convert_llm_request_to_messages(llm_request) if llm_request else None
+        )
+        tools = extract_tools_from_llm_request(llm_request) if llm_request else []
+
+        if messages:
+            llm_run.inputs = {"messages": messages}
+        if model_name:
+            llm_run.name = model_name
+            llm_run.extra.setdefault("metadata", {})["ls_model_name"] = model_name
+        if tools:
+            llm_run.extra.setdefault("invocation_params", {})["tools"] = tools
+
+        try:
+            llm_run.post()
+        except Exception as e:
+            logger.debug(f"Failed to post LLM run: {e}")
 
     first_token_time: Optional[float] = None
     last_event = None
@@ -387,6 +396,9 @@ async def wrap_flow_call_llm_async(
     try:
         async with aclosing(wrapped(*args, **kwargs)) as agen:
             async for event in agen:
+                # Callbacks have run; llm_request now reflects the final request.
+                _capture_inputs_and_post()
+
                 is_partial = getattr(event, "partial", False)
 
                 if first_token_time is None and is_partial:
@@ -407,6 +419,9 @@ async def wrap_flow_call_llm_async(
                 if hasattr(event, "content") and event.content is not None:
                     event_with_content = event
                 yield event
+
+        # Record the run even if no event was yielded.
+        _capture_inputs_and_post()
 
         outputs: dict[str, Any] = {"role": "assistant"}
         content_source = event_with_content or last_event
@@ -462,6 +477,8 @@ async def wrap_flow_call_llm_async(
             logger.debug(f"Failed to patch LLM run: {e}")
 
     except Exception as e:
+        # Record the run even if wrapped() raised before yielding.
+        _capture_inputs_and_post()
         llm_run.end(error=str(e))
         try:
             llm_run.patch()
