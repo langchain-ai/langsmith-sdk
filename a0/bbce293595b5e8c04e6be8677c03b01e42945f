@@ -1,0 +1,21 @@
+python/.bumpversion.cfg
+  s_078295dba90328::t_6ffd6e98f1d5ca 2
+python/langsmith/__init__.py
+  s_078295dba90328::t_195069a4816642 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "a0bbce293595b5e8c04e6be8677c03b01e42945f",
+  "prompts": {},
+  "sessions": {
+    "s_078295dba90328": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06a0e9b4-b344-4048-ba24-c4abc087c0d1",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
