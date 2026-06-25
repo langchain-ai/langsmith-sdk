@@ -32,7 +32,6 @@ import {
   LangSmithValidationError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxCreationError,
-  LangSmithSandboxNotReadyError,
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
@@ -1286,19 +1285,22 @@ describe("Sandbox - status fields and not-ready guard", () => {
     expect(sandbox.status_message).toBe("Waiting for resources");
   });
 
-  it("should throw LangSmithSandboxNotReadyError when status is not ready", async () => {
+  it("does not gate dataplane ops on status (stopped runs; platform resumes)", async () => {
+    const mockFetch = createMockFetch({
+      ok: true,
+      json: async () => ({ stdout: "ok\n", stderr: "", exit_code: 0 }),
+    });
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
         dataplane_url: "https://dp.example.com",
-        status: "provisioning",
+        status: "stopped",
       },
-      createMockClient(),
+      createMockClient({ _fetch: mockFetch }),
     );
 
-    await expect(sandbox.run("echo hello")).rejects.toThrow(
-      LangSmithSandboxNotReadyError,
-    );
+    const result = await sandbox.run("echo ok");
+    expect(result.stdout).toBe("ok\n");
   });
 
   it("should allow operations when status is ready", async () => {
