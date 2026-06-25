@@ -49,7 +49,6 @@ from langsmith.client import (
     _dataset_examples_path,
     _default_retry_config,
     _dumps_json,
-    _get_openapi_base_url,
     _is_langchain_hosted,
     _parse_token_or_url,
     _reject_filesystem_attachments,
@@ -830,17 +829,18 @@ def test_create_run_unicode() -> None:
 
 
 def test_online_evaluators_uses_generated_openapi_resource() -> None:
-    client = Client(
-        api_url="http://localhost:8080",
-        api_key="test-api-key",
-        workspace_id="test-workspace-id",
-        timeout_ms=(1234, 5678),
-        info=ls_schemas.LangSmithInfo(),
-    )
     resource = object()
 
-    with mock.patch("langsmith._openapi_client.Langsmith") as openapi_client:
+    with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
         openapi_client.return_value.online_evaluators = resource
+
+        client = Client(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+            info=ls_schemas.LangSmithInfo(),
+        )
 
         assert client.online_evaluators is resource
 
@@ -854,16 +854,17 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
 
 
 def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
-    client = AsyncClient(
-        api_url="http://localhost:8080",
-        api_key="test-api-key",
-        workspace_id="test-workspace-id",
-        timeout_ms=(1234, 5678),
-    )
     resource = object()
 
     with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
         openapi_client.return_value.online_evaluators = resource
+
+        client = AsyncClient(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+        )
 
         assert client.online_evaluators is resource
 
@@ -875,21 +876,9 @@ def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.connect == 1.234
     assert timeout.read == 5.678
     assert (
-        openapi_client.call_args.kwargs["default_headers"]["x-tenant-id"]
+        openapi_client.call_args.kwargs["default_headers"]["X-Tenant-Id"]
         == "test-workspace-id"
     )
-
-
-@pytest.mark.parametrize(
-    ("api_url", "expected"),
-    [
-        ("http://localhost:8080", "http://localhost:8080"),
-        ("http://localhost:8080/v1", "http://localhost:8080"),
-        ("http://localhost:8080/api/v1", "http://localhost:8080"),
-    ],
-)
-def test_get_openapi_base_url(api_url: str, expected: str) -> None:
-    assert _get_openapi_base_url(api_url) == expected
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))

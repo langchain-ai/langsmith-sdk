@@ -22,6 +22,11 @@ from typing import (
 
 import httpx
 
+import langsmith._openapi_client as _langsmith_api_module
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
+
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -61,6 +66,7 @@ class AsyncClient:
         "_workspace_id",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
         "_info",
     )
 
@@ -137,19 +143,6 @@ class AsyncClient:
             logger.warning(f"Failed to get info from {self._api_url}: {repr(e)}")
             self._info = ls_schemas.LangSmithInfo()
         return self._info
-
-    @property
-    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated async online evaluator CRUD methods."""
-        from langsmith._openapi_client import AsyncLangsmith as AsyncOpenAPILangsmith
-
-        return AsyncOpenAPILangsmith(
-            api_key=self.api_key,
-            tenant_id=self.workspace_id,
-            base_url=ls_client._get_openapi_base_url(self._api_url),
-            timeout=self._client.timeout,
-            default_headers=self._headers,
-        ).online_evaluators
 
     def __init__(
         self,
@@ -292,6 +285,31 @@ class AsyncClient:
             self._cache = async_prompt_cache_singleton
         else:
             self._cache = None
+
+        self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
+            api_key=self._api_key,
+            tenant_id=self._workspace_id,
+            base_url=str(self._client.base_url),
+            timeout=self._client.timeout,
+            default_headers=_headers or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> AsyncRunsResource:
+        """Access the v2 runs resource."""
+        return self._langsmith_api.runs
+
+    @property
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
+        """Access generated async online evaluator CRUD methods."""
+        return self._langsmith_api.online_evaluators
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

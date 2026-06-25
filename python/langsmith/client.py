@@ -53,7 +53,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx
+import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -110,6 +110,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -147,14 +148,6 @@ def _reset_tracing_drop_log() -> None:
     with _tracing_drops_lock:
         _tracing_drops_count = 0
         _tracing_drops_last_log_time = 0.0
-
-
-def _get_openapi_base_url(api_url: str) -> str:
-    """Convert a handwritten client API URL to a generated OpenAPI base URL."""
-    api_url = api_url.rstrip("/")
-    if api_url.endswith("/api/v1"):
-        return api_url[: -len("/api/v1")]
-    return api_url[:-3] if api_url.endswith("/v1") else api_url
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -272,8 +265,9 @@ if TYPE_CHECKING:
 
     from langsmith import schemas
     from langsmith._openapi_client.resources.online_evaluators import (
-        OnlineEvaluatorsResource,
+        AsyncOnlineEvaluatorsResource,
     )
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
 
     # OTEL imports for type hints
     try:
@@ -884,6 +878,7 @@ class Client:
         "_tracing_mode",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     ]
 
     _api_key: Optional[str]
@@ -1432,6 +1427,38 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
+        self._langsmith_api = LangsmithOpenAPIClient(
+            api_key=self._api_key,
+            tenant_id=str(self._workspace_id) if self._workspace_id else None,
+            base_url=self.api_url,
+            timeout=_httpx.Timeout(
+                connect=self._timeout[0],
+                read=self._timeout[1],
+                write=self._timeout[1],
+                pool=self._timeout[0],
+            ),
+            default_headers=self._headers or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    @property
+    def runs(self) -> AsyncRunsResource:
+        """Access the v2 runs resource."""
+        _check_backend_version(self.info.version)
+        return self._langsmith_api.runs
+
+    @property
+    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
+        """Access generated online evaluator CRUD methods."""
+        _check_backend_version(self.info.version)
+        return self._langsmith_api.online_evaluators
+
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1658,25 +1685,6 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
-
-    @property
-    def online_evaluators(self) -> OnlineEvaluatorsResource:
-        """Access generated online evaluator CRUD methods."""
-        from langsmith._openapi_client import Langsmith as OpenAPILangsmith
-
-        _check_backend_version(self.info.version)
-        self._ensure_profile_auth()
-        headers = self._headers
-        if self._profile_auth is not None:
-            headers = self._profile_auth.prepare_request_headers(headers)
-
-        return OpenAPILangsmith(
-            api_key=self.api_key,
-            tenant_id=self.workspace_id,
-            base_url=_get_openapi_base_url(self.api_url),
-            timeout=httpx.Timeout(self._timeout[1], connect=self._timeout[0]),
-            default_headers=headers,
-        ).online_evaluators
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.

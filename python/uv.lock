@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-06-23T13:07:05.171766Z"
 exclude-newer-span = "P1D"
 
 [[package]]
@@ -1427,12 +1427,16 @@ wheels = [
 name = "langsmith"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
     { name = "httpx" },
     { name = "orjson", marker = "platform_python_implementation != 'PyPy'" },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
     { name = "uuid-utils" },
     { name = "websockets" },
     { name = "xxhash" },
@@ -1535,7 +1539,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=3.5.0" },
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10' and extra == 'claude-agent-sdk'", specifier = ">=0.1.0" },
+    { name = "distro", specifier = ">=1.7.0" },
     { name = "google-adk", marker = "extra == 'google-adk'", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
@@ -1553,8 +1559,10 @@ requires-dist = [
     { name = "requests", specifier = ">=2.0.0" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
     { name = "rich", marker = "extra == 'pytest'", specifier = ">=13.9.4" },
+    { name = "sniffio", specifier = ">=1.1" },
     { name = "strands-agents", marker = "extra == 'strands-agents'", specifier = ">=0.1.0" },
     { name = "strands-agents-tools", marker = "extra == 'strands-agents'", specifier = ">=0.2.0" },
+    { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "uuid-utils", specifier = ">=0.12.0,<1.0" },
     { name = "vcrpy", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
     { name = "vcrpy", marker = "extra == 'vcr'", specifier = ">=7.0.0" },

@@ -76,6 +76,7 @@ import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
 import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -1456,6 +1457,10 @@ export class Client implements LangSmithTracingClientInterface {
 
   public get onlineEvaluators(): OnlineEvaluators {
     return this.openAPIClient.onlineEvaluators;
+  }
+
+  public get runs(): OpenAPIRuns {
+    return this.openAPIClient.runs;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
