@@ -5,6 +5,8 @@
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
+import { Langsmith as OpenAPILangsmith } from "../_openapi_client/index.js";
+import { Registries } from "../_openapi_client/resources/sandboxes/registries.js";
 import type {
   CaptureSnapshotOptions,
   CreateDockerfileSnapshotOptions,
@@ -363,6 +365,7 @@ export class SandboxClient {
   private _defaultHeaders: Record<string, string>;
   private _fetchImpl: typeof fetch;
   private _caller: AsyncCaller;
+  private _registriesClient?: OpenAPILangsmith;
 
   constructor(config: SandboxClientConfig = {}) {
     this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
@@ -376,6 +379,53 @@ export class SandboxClient {
       maxRetries: config.maxRetries ?? 3,
       maxConcurrency: config.maxConcurrency ?? Infinity,
     });
+  }
+
+  private _apiRoot(): string {
+    const suffix = "/v2/sandboxes";
+    return this._baseUrl.endsWith(suffix)
+      ? this._baseUrl.slice(0, -suffix.length)
+      : this._baseUrl;
+  }
+
+  /**
+   * Manage sandbox image registries: create, list, retrieve, update, delete.
+   *
+   * A registry stores credentials for pulling private images. Create one, then
+   * pass its `id` as `registryId` when building a snapshot.
+   *
+   * @example
+   * ```typescript
+   * const registry = await client.registries.create({
+   *   name: "internal",
+   *   url: "registry.example.com",
+   *   username: "robot",
+   *   password: process.env.REGISTRY_PASSWORD,
+   * });
+   * const snapshot = await client.createSnapshot(
+   *   "internal-python",
+   *   "registry.example.com/internal/python:3.12",
+   *   2_147_483_648,
+   *   { registryId: registry.id },
+   * );
+   * ```
+   */
+  get registries(): Registries {
+    if (!this._registriesClient) {
+      const defaultHeaders: Record<string, string | null> = {
+        ...this._defaultHeaders,
+      };
+      if (this._apiKey === undefined) {
+        defaultHeaders["X-API-Key"] = null;
+      }
+      this._registriesClient = new OpenAPILangsmith({
+        apiKey: this._apiKey,
+        baseURL: this._apiRoot(),
+        defaultHeaders,
+        fetch: this._fetchImpl,
+      });
+    }
+    return this._registriesClient.sandboxes.registries;
   }
 
   /**
@@ -867,7 +917,7 @@ export class SandboxClient {
    * @param name - Snapshot name.
    * @param dockerImage - Docker image to build from (e.g., "python:3.12-slim").
    * @param fsCapacityBytes - Filesystem capacity in bytes.
-   * @param options - Additional options (registry credentials, timeout).
+   * @param options - Additional options (registry ID, timeout).
    * @returns Snapshot in "ready" status.
    */
   async createSnapshot(
@@ -876,14 +926,7 @@ export class SandboxClient {
     fsCapacityBytes: number,
     options: CreateSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const {
-      registryId,
-      registryUrl,
-      registryUsername,
-      registryPassword,
-      timeout = 60,
-      signal,
-    } = options;
+    const { registryId, timeout = 60, signal } = options;
     const url = `${this._baseUrl}/snapshots`;
 
     const payload: Record<string, unknown> = {
@@ -893,15 +936,6 @@ export class SandboxClient {
     };
     if (registryId !== undefined) {
       payload.registry_id = registryId;
-    }
-    if (registryUrl !== undefined) {
-      payload.registry_url = registryUrl;
-    }
-    if (registryUsername !== undefined) {
-      payload.registry_username = registryUsername;
-    }
-    if (registryPassword !== undefined) {
-      payload.registry_password = registryPassword;
     }
 
     const response = await this._postJson(url, payload, { signal });
