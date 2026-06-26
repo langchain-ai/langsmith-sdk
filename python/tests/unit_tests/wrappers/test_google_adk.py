@@ -288,6 +288,77 @@ def test_sequential_agent_sync_async_inputs_outputs_no_errors(
         assert not run.get("error"), run
 
 
+def _build_llm_agent_with_before_callback(injected_instruction: str):
+    """Build an LlmAgent backed by a fake model with a before_model_callback.
+
+    The callback mutates ``llm_request`` in place (as real ADK plugins do via
+    ``llm_request.append_instructions(...)``) inside ``_call_llm_async``, after
+    the LangSmith wrapper has already created the LLM run.
+    """
+    from google.adk.agents import LlmAgent
+    from google.adk.models.base_llm import BaseLlm
+    from google.adk.models.llm_response import LlmResponse
+    from google.genai import types
+
+    class _FakeLlm(BaseLlm):
+        model: str = "fake-model"
+
+        async def generate_content_async(self, llm_request, stream=False):
+            # Echo the system instruction so we can confirm the model received it.
+            sys_inst = ""
+            if getattr(llm_request, "config", None):
+                sys_inst = str(llm_request.config.system_instruction or "")
+            yield LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text=f"ok::{sys_inst}")],
+                )
+            )
+
+    def _before_model(callback_context, llm_request):
+        llm_request.append_instructions([injected_instruction])
+        return None
+
+    return LlmAgent(
+        name="haiku_agent",
+        model=_FakeLlm(),
+        description="agent with before_model_callback",
+        before_model_callback=_before_model,
+    )
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_before_model_callback_mutations_reflected_in_llm_inputs(
+    mode: str, mock_ls_client: Client
+):
+    """LLM run inputs must reflect before_model_callback mutations (LSDK-279).
+
+    ADK runs before_model_callback inside ``_call_llm_async`` and lets it mutate
+    ``llm_request`` in place. The wrapper must capture inputs *after* those
+    callbacks run, otherwise injected instructions never appear in the trace.
+    """
+    injected = "Always respond in Haiku."
+    agent = _build_llm_agent_with_before_callback(injected)
+
+    response, runs = _run_agent(mode, agent, mock_ls_client, input_text="hi")
+
+    # Sanity check: the model actually received the injected instruction.
+    assert response is not None and injected in response
+
+    llm_run = next((r for r in runs if r.get("run_type") == "llm"), None)
+    assert llm_run is not None, (
+        f"No LLM run found. Present: {[r.get('name') for r in runs]}"
+    )
+
+    messages = (llm_run.get("inputs") or {}).get("messages") or []
+    system_text = " ".join(
+        str(m.get("content") or "") for m in messages if m.get("role") == "system"
+    )
+    assert injected in system_text, (
+        f"Injected instruction missing from LLM inputs. messages={messages}"
+    )
+
+
 @pytest.mark.parametrize("mode", ["sync", "async"])
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_error_agent_sync_async_records_errors(mode: str, mock_ls_client: Client):
