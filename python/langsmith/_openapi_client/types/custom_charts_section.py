@@ -164,7 +164,7 @@ class ChartSeriesMetricDefinitionCustomChartMetricScalar(BaseModel):
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricPercentileParams(BaseModel):
-    p: int
+    p: float
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricPercentile(BaseModel):
@@ -210,7 +210,7 @@ class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominatorCustomCh
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominatorCustomChartMetricPercentileParams(BaseModel):
-    p: int
+    p: float
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominatorCustomChartMetricPercentile(BaseModel):
@@ -263,7 +263,7 @@ class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumeratorCustomChar
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumeratorCustomChartMetricPercentileParams(BaseModel):
-    p: int
+    p: float
 
 
 class ChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumeratorCustomChartMetricPercentile(BaseModel):
@@ -508,7 +508,7 @@ class SubSectionChartSeriesMetricDefinitionCustomChartMetricScalar(BaseModel):
 
 
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricPercentileParams(BaseModel):
-    p: int
+    p: float
 
 
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricPercentile(BaseModel):
@@ -556,7 +556,7 @@ class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominat
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominatorCustomChartMetricPercentileParams(
     BaseModel
 ):
-    p: int
+    p: float
 
 
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputDenominatorCustomChartMetricPercentile(
@@ -615,7 +615,7 @@ class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumerator
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumeratorCustomChartMetricPercentileParams(
     BaseModel
 ):
-    p: int
+    p: float
 
 
 class SubSectionChartSeriesMetricDefinitionCustomChartMetricRatioOutputNumeratorCustomChartMetricPercentile(BaseModel):
