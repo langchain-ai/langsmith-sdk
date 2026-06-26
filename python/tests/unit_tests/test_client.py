@@ -163,6 +163,21 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
 
+def test_client_init_does_not_eagerly_initialize_openapi_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NO_PROXY", "::/0")
+    monkeypatch.setenv("no_proxy", "::/0")
+
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+    )
+
+    assert client._langsmith_api is None
+
+
 def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     # Scenario 1: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
     # but api_key is not

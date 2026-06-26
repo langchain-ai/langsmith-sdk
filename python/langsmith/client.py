@@ -892,6 +892,7 @@ class Client:
     _manual_cleanup: bool
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
+    _langsmith_api: Optional[LangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1430,18 +1431,7 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        self._langsmith_api = LangsmithOpenAPIClient(
-            api_key=self._api_key,
-            tenant_id=str(self._workspace_id) if self._workspace_id else None,
-            base_url=self.api_url,
-            timeout=_httpx.Timeout(
-                connect=self._timeout[0],
-                read=self._timeout[1],
-                write=self._timeout[1],
-                pool=self._timeout[0],
-            ),
-            default_headers=self._headers or None,
-        )
+        self._langsmith_api = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1450,17 +1440,33 @@ class Client:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _get_langsmith_api(self) -> LangsmithOpenAPIClient:
+        if self._langsmith_api is None:
+            self._langsmith_api = LangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._langsmith_api
+
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the v2 runs resource."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api.runs
+        return self._get_langsmith_api().runs
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         """Access generated online evaluator CRUD methods."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api.online_evaluators
+        return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
