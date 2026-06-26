@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import httpx
 
 from langsmith import utils as ls_utils
+from langsmith._openapi_client import Langsmith
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -43,6 +44,9 @@ from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
 
 if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.sandboxes.registries import (
+        RegistriesResource,
+    )
     from langsmith.sandbox._async_client import AsyncSandboxClient
 
 
@@ -221,6 +225,43 @@ class SandboxClient:
         self._http = httpx.Client(
             transport=transport, timeout=timeout, headers=client_headers
         )
+        self._registries_client: Optional[Langsmith] = None
+
+    def _api_root(self) -> str:
+        """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
+        suffix = "/v2/sandboxes"
+        if self._base_url.endswith(suffix):
+            return self._base_url[: -len(suffix)]
+        return self._base_url
+
+    @property
+    def registries(self) -> RegistriesResource:
+        """Manage sandbox image registries: create, list, retrieve, update, delete.
+
+        A registry stores credentials for pulling private images. Create one,
+        then pass its ``id`` as ``registry_id`` when building a snapshot.
+
+        Example:
+            registry = client.registries.create(
+                name="internal",
+                url="registry.example.com",
+                username="robot",
+                password=os.environ["REGISTRY_PASSWORD"],
+            )
+            snapshot = client.create_snapshot(
+                "internal-python",
+                docker_image="registry.example.com/internal/python:3.12",
+                fs_capacity_bytes=2 * 1024**3,
+                registry_id=registry.id,
+            )
+        """
+        if self._registries_client is None:
+            self._registries_client = Langsmith(
+                api_key=self._api_key,
+                base_url=self._api_root(),
+                default_headers=self._default_headers or None,
+            )
+        return self._registries_client.sandboxes.registries
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge default client headers with per-request overrides."""
@@ -261,12 +302,16 @@ class SandboxClient:
     def close(self) -> None:
         """Close the HTTP client."""
         self._http.close()
+        if self._registries_client is not None:
+            self._registries_client.close()
 
     def __del__(self) -> None:
         """Close the HTTP client on garbage collection."""
         try:
             if not self._http.is_closed:
                 self._http.close()
+            if self._registries_client is not None:
+                self._registries_client.close()
         except Exception:
             pass
 

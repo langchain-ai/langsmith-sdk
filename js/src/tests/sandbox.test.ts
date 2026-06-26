@@ -2442,3 +2442,16 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     );
   });
 });
+
+describe("SandboxClient registries", () => {
+  it("exposes a cached registries accessor backed by the generated client", () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.smith.langchain.com/v2/sandboxes",
+      apiKey: "k",
+    });
+    const first = client.registries;
+    expect(first).toBeDefined();
+    // Lazily built once and reused.
+    expect(client.registries).toBe(first);
+  });
+});

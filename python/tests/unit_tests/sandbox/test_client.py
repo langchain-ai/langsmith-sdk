@@ -1582,3 +1582,45 @@ class TestSandboxClientRepr:
             == "SandboxClient (API URL: https://api.smith.langchain.com/v2/sandboxes)"
         )
         client.close()
+
+
+class TestRegistries:
+    """Registry management exposed via the generated client."""
+
+    def test_api_root_strips_sandbox_suffix(self):
+        client = SandboxClient(
+            api_endpoint="https://api.smith.langchain.com/v2/sandboxes",
+            api_key="k",
+        )
+        assert client._api_root() == "https://api.smith.langchain.com"
+        client.close()
+
+    def test_api_root_without_suffix(self):
+        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
+        assert client._api_root() == "http://test-server:8080"
+        client.close()
+
+    def test_registries_resource_is_cached(self):
+        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
+        first = client.registries
+        second = client.registries
+        assert client._registries_client is not None
+        assert first is second
+        client.close()
+
+    def test_registries_create(self, httpx_mock: HTTPXMock):
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/v2/sandboxes/registries",
+            json={"id": "reg-1", "name": "internal", "url": "registry.example.com"},
+        )
+        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
+        registry = client.registries.create(
+            name="internal",
+            url="registry.example.com",
+            username="me",
+            password="secret",
+        )
+        assert registry.id == "reg-1"
+        assert registry.name == "internal"
+        client.close()

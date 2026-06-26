@@ -7,11 +7,12 @@ import os
 import posixpath
 import uuid
 from collections.abc import Callable, Mapping
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import httpx
 
 from langsmith import utils as ls_utils
+from langsmith._openapi_client import AsyncLangsmith
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
@@ -44,6 +45,11 @@ from langsmith.sandbox._mounts import (
 )
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._transport import AsyncRetryTransport
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.sandboxes.registries import (
+        AsyncRegistriesResource,
+    )
 
 
 def _get_default_api_endpoint() -> str:
@@ -117,6 +123,43 @@ class AsyncSandboxClient:
         self._http = httpx.AsyncClient(
             transport=transport, timeout=timeout, headers=client_headers
         )
+        self._registries_client: Optional[AsyncLangsmith] = None
+
+    def _api_root(self) -> str:
+        """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
+        suffix = "/v2/sandboxes"
+        if self._base_url.endswith(suffix):
+            return self._base_url[: -len(suffix)]
+        return self._base_url
+
+    @property
+    def registries(self) -> AsyncRegistriesResource:
+        """Manage sandbox image registries: create, list, retrieve, update, delete.
+
+        A registry stores credentials for pulling private images. Create one,
+        then pass its ``id`` as ``registry_id`` when building a snapshot.
+
+        Example:
+            registry = await client.registries.create(
+                name="internal",
+                url="registry.example.com",
+                username="robot",
+                password=os.environ["REGISTRY_PASSWORD"],
+            )
+            snapshot = await client.create_snapshot(
+                "internal-python",
+                docker_image="registry.example.com/internal/python:3.12",
+                fs_capacity_bytes=2 * 1024**3,
+                registry_id=registry.id,
+            )
+        """
+        if self._registries_client is None:
+            self._registries_client = AsyncLangsmith(
+                api_key=self._api_key,
+                base_url=self._api_root(),
+                default_headers=self._default_headers or None,
+            )
+        return self._registries_client.sandboxes.registries
 
     def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge default client headers with per-request overrides."""
@@ -155,6 +198,8 @@ class AsyncSandboxClient:
     async def aclose(self) -> None:
         """Close the async HTTP client."""
         await self._http.aclose()
+        if self._registries_client is not None:
+            await self._registries_client.close()
 
     def __del__(self) -> None:
         """Best-effort cleanup of the async HTTP client on garbage collection.
