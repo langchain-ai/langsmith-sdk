@@ -2229,6 +2229,8 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if "events" in run_create and run_create["events"] is not None:
             run_create["events"] = self._filter_new_token_events(run_create["events"])
+        if "error" in run_create and run_create["error"] is not None:
+            run_create["error"] = self._hide_run_error(run_create["error"])
         # Hide metadata in extra if present
         if "extra" in run_create and isinstance(run_create["extra"], dict):
             extra = run_create["extra"]
@@ -2653,6 +2655,28 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _hide_run_error(self, error: Any):
+        """Apply the configured anonymizer to a run's error string.
+
+        Unlike inputs/outputs, ``error`` is a plain string (``repr(exc)`` plus a
+        formatted traceback, see ``run_helpers._format_error_with_exceptions_to_handle``)
+        that can capture credentials the user never explicitly logged -- e.g. an
+        HTTP client exception whose request-object repr includes an
+        ``Authorization`` header. Route it through the same anonymizer as
+        inputs/outputs so secrets are scrubbed client-side before upload.
+
+        The value is wrapped as ``{"error": ...}`` so that both
+        ``create_secret_anonymizer`` and a user-supplied anonymizer matching the
+        documented ``Callable[[dict], dict]`` signature receive a dict (a bare
+        string would break a dict-typed anonymizer), then unwrapped.
+        """
+        if not self._anonymizer or error is None:
+            return error
+        scrubbed = self._anonymizer({"error": error})
+        if isinstance(scrubbed, dict) and "error" in scrubbed:
+            return scrubbed["error"]
+        return error
 
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
@@ -3572,7 +3596,7 @@ class Client:
         else:
             data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
-            data["error"] = error
+            data["error"] = self._hide_run_error(error)
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:

@@ -1493,6 +1493,72 @@ def test_hide_metadata(
         )
 
 
+def test_anonymizer_redacts_error_field() -> None:
+    """The configured anonymizer must scrub ``error``, not just inputs/outputs.
+
+    A credential can land in the error field via an exception traceback (e.g. an
+    HTTP-client error whose request-object repr includes an ``Authorization``
+    header), and it must not be uploaded raw. Covers both the create/post path
+    (via ``_run_transform``) and the patch path (via ``_hide_run_error``).
+    """
+    from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
+
+    # Assembled at runtime so no literal secret-shaped string sits in source.
+    fake_key = "sk-ant-api03-" + "A" * 30
+    traceback_str = (
+        "Traceback (most recent call last):\n"
+        '  ClientResponseError: 401, request_info=headers={"Authorization": '
+        f'"Bearer {fake_key}"}}'
+    )
+
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        anonymizer=create_secret_anonymizer(),
+    )
+
+    # ── create/post path goes through _run_transform ────────────────────────
+    client.create_run(
+        "errored_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=uuid.uuid4(),
+        error=traceback_str,
+    )
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+    assert post_call is not None, "POST request to /runs not found"
+    payload_data = post_call.kwargs.get("data", b"{}")
+    payload = json.loads(
+        payload_data.decode("utf-8")
+        if isinstance(payload_data, bytes)
+        else payload_data
+    )
+    assert fake_key not in payload["error"]
+    assert SECRET_PLACEHOLDER in payload["error"]
+
+    # ── patch path uses _hide_run_error directly ────────────────────────────
+    scrubbed = client._hide_run_error(traceback_str)
+    assert fake_key not in scrubbed
+    assert SECRET_PLACEHOLDER in scrubbed
+
+    # ── no anonymizer configured -> error passes through unchanged ──────────
+    plain = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=mock.MagicMock(spec=requests.Session),
+    )
+    assert plain._hide_run_error(traceback_str) == traceback_str
+    assert plain._hide_run_error(None) is None
+
+
 def test_omit_traced_runtime_info() -> None:
     """Test that omit_traced_runtime_info prevents runtime info from being added."""
     session = mock.MagicMock(spec=requests.Session)
