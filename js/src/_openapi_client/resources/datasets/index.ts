@@ -39,18 +39,19 @@ export {
   type DatasetVersionsOffsetPaginationTopLevelArray,
   type DatasetsOffsetPaginationTopLevelArray,
 } from './datasets.js';
-export { Experiments, type ExperimentGroupedResponse, type ExperimentGroupedParams } from './experiments.js';
-export { Group, type GroupRunsResponse, type GroupRunsParams } from './group.js';
+export {
+  ExperimentRuns,
+  type ExperimentRunCreateResponse,
+  type ExperimentRunCreateParams,
+  type ExperimentRunCreateResponsesItemsCursorPostPagination,
+} from './experiment-runs.js';
 export {
   Runs,
   type ExampleWithRunsCh,
   type QueryExampleSchemaWithRuns,
-  type QueryFeedbackDelta,
-  type SessionFeedbackDelta,
   type SortParamsForRunsComparisonView,
   type RunCreateResponse,
   type RunCreateParams,
-  type RunDeltaParams,
 } from './runs.js';
 export { Share, type DatasetShareSchema, type ShareDeleteAllResponse, type ShareCreateParams } from './share.js';
 export {

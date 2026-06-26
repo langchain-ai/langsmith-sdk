@@ -11,20 +11,20 @@ import {
   SimpleExperimentInfo,
   SortByComparativeExperimentColumn,
 } from './comparative.js';
-import * as ExperimentsAPI from './experiments.js';
-import { ExperimentGroupedParams, ExperimentGroupedResponse, Experiments } from './experiments.js';
-import * as GroupAPI from './group.js';
-import { Group, GroupRunsParams, GroupRunsResponse } from './group.js';
+import * as ExperimentRunsAPI from './experiment-runs.js';
+import {
+  ExperimentRunCreateParams,
+  ExperimentRunCreateResponse,
+  ExperimentRunCreateResponsesItemsCursorPostPagination,
+  ExperimentRuns,
+} from './experiment-runs.js';
 import * as RunsAPI from './runs.js';
 import {
   ExampleWithRunsCh,
   QueryExampleSchemaWithRuns,
-  QueryFeedbackDelta,
   RunCreateParams,
   RunCreateResponse,
-  RunDeltaParams,
   Runs,
-  SessionFeedbackDelta,
   SortParamsForRunsComparisonView,
 } from './runs.js';
 import * as ShareAPI from './share.js';
@@ -58,8 +58,7 @@ import { path } from '../../internal/utils/path.js';
 export class Datasets extends APIResource {
   versions: VersionsAPI.Versions = new VersionsAPI.Versions(this._client);
   runs: RunsAPI.Runs = new RunsAPI.Runs(this._client);
-  group: GroupAPI.Group = new GroupAPI.Group(this._client);
-  experiments: ExperimentsAPI.Experiments = new ExperimentsAPI.Experiments(this._client);
+  experimentRuns: ExperimentRunsAPI.ExperimentRuns = new ExperimentRunsAPI.ExperimentRuns(this._client);
   share: ShareAPI.Share = new ShareAPI.Share(this._client);
   comparative: ComparativeAPI.Comparative = new ComparativeAPI.Comparative(this._client);
   splits: SplitsAPI.Splits = new SplitsAPI.Splits(this._client);
@@ -630,8 +629,7 @@ export interface DatasetUploadParams {
 
 Datasets.Versions = Versions;
 Datasets.Runs = Runs;
-Datasets.Group = Group;
-Datasets.Experiments = Experiments;
+Datasets.ExperimentRuns = ExperimentRuns;
 Datasets.Share = Share;
 Datasets.Comparative = Comparative;
 Datasets.Splits = Splits;
@@ -677,24 +675,16 @@ export declare namespace Datasets {
     Runs as Runs,
     type ExampleWithRunsCh as ExampleWithRunsCh,
     type QueryExampleSchemaWithRuns as QueryExampleSchemaWithRuns,
-    type QueryFeedbackDelta as QueryFeedbackDelta,
-    type SessionFeedbackDelta as SessionFeedbackDelta,
     type SortParamsForRunsComparisonView as SortParamsForRunsComparisonView,
     type RunCreateResponse as RunCreateResponse,
     type RunCreateParams as RunCreateParams,
-    type RunDeltaParams as RunDeltaParams,
   };
 
   export {
-    Group as Group,
-    type GroupRunsResponse as GroupRunsResponse,
-    type GroupRunsParams as GroupRunsParams,
-  };
-
-  export {
-    Experiments as Experiments,
-    type ExperimentGroupedResponse as ExperimentGroupedResponse,
-    type ExperimentGroupedParams as ExperimentGroupedParams,
+    ExperimentRuns as ExperimentRuns,
+    type ExperimentRunCreateResponse as ExperimentRunCreateResponse,
+    type ExperimentRunCreateResponsesItemsCursorPostPagination as ExperimentRunCreateResponsesItemsCursorPostPagination,
+    type ExperimentRunCreateParams as ExperimentRunCreateParams,
   };
 
   export {
