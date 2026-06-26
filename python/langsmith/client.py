@@ -1472,7 +1472,7 @@ class Client:
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the v2 sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api.sandboxes
+        return self._get_langsmith_api().sandboxes
 
     def _dump_failed_trace(
         self,
