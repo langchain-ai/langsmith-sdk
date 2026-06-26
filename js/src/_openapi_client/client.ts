@@ -113,6 +113,15 @@ import {
   RunsFilterDataSourceTypeEnum,
 } from './resources/runs/runs.js';
 import {
+  SandboxListResponse,
+  SandboxResponse,
+  SandboxStatusResponse,
+  Sandboxes,
+  ServiceURLResponse,
+  SnapshotListResponse,
+  SnapshotResponse,
+} from './resources/sandboxes/sandboxes.js';
+import {
   CustomChartsSection,
   CustomChartsSectionRequest,
   RunStatsGroupBy,
@@ -902,6 +911,7 @@ export class Langsmith {
   runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
+  sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
 Langsmith.Sessions = Sessions;
@@ -909,6 +919,7 @@ Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
+Langsmith.Sandboxes = Sandboxes;
 
 export declare namespace Langsmith {
   export type RequestOptions = Opts.RequestOptions;
@@ -1056,4 +1067,14 @@ export declare namespace Langsmith {
   };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
+
+  export {
+    Sandboxes as Sandboxes,
+    type SandboxListResponse as SandboxListResponse,
+    type SandboxResponse as SandboxResponse,
+    type SandboxStatusResponse as SandboxStatusResponse,
+    type ServiceURLResponse as ServiceURLResponse,
+    type SnapshotListResponse as SnapshotListResponse,
+    type SnapshotResponse as SnapshotResponse,
+  };
 }
