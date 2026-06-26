@@ -635,12 +635,21 @@ const snapshot = await client.createSnapshot(
   1_073_741_824, // 1 GiB
 );
 
+// Create a private registry once, then reference it by id. Store the password
+// in a secret, not in source.
+const registry = await client.sandboxes.registries.create({
+  name: "internal",
+  url: "registry.example.com",
+  username: "robot",
+  password: "...",
+});
+
 // Build from a private registry
 const privateSnapshot = await client.createSnapshot(
   "internal-python",
   "registry.example.com/internal/python:3.12",
   2_147_483_648,
-  { registryId: "registry-id" },
+  { registryId: registry.id },
 );
 
 // Capture the state of a running sandbox for later reuse. Persistent paths

@@ -268,6 +268,9 @@ if TYPE_CHECKING:
         AsyncOnlineEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
 
     # OTEL imports for type hints
     try:
@@ -1458,6 +1461,12 @@ class Client:
         """Access generated online evaluator CRUD methods."""
         _check_backend_version(self.info.version)
         return self._langsmith_api.online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access the v2 sandboxes resource (registries, snapshots, boxes)."""
+        _check_backend_version(self.info.version)
+        return self._langsmith_api.sandboxes
 
     def _dump_failed_trace(
         self,

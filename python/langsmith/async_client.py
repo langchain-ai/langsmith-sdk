@@ -49,6 +49,9 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource,
     )
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
 
 
 class AsyncClient:
@@ -310,6 +313,11 @@ class AsyncClient:
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
         """Access generated async online evaluator CRUD methods."""
         return self._langsmith_api.online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access generated async sandbox resources (registries, snapshots, boxes)."""
+        return self._langsmith_api.sandboxes
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

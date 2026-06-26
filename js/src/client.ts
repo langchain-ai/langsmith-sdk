@@ -77,6 +77,7 @@ import { __version__ } from "./index.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
 import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
+import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -1461,6 +1462,11 @@ export class Client implements LangSmithTracingClientInterface {
 
   public get runs(): OpenAPIRuns {
     return this.openAPIClient.runs;
+  }
+
+  /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
+  public get sandboxes(): Sandboxes {
+    return this.openAPIClient.sandboxes;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
