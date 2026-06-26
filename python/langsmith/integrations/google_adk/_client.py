@@ -371,9 +371,7 @@ async def wrap_flow_call_llm_async(
         posted = True
 
         model_name = extract_model_name(llm_request) if llm_request else None
-        messages = (
-            convert_llm_request_to_messages(llm_request) if llm_request else None
-        )
+        messages = convert_llm_request_to_messages(llm_request) if llm_request else None
         tools = extract_tools_from_llm_request(llm_request) if llm_request else []
 
         if messages:
