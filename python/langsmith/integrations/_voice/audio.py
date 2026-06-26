@@ -1,0 +1,155 @@
+"""Payload scrubbing and stereo-WAV reconstruction for event-stream traces.
+
+Used by the Track B ``EventSession`` (and the per-framework adapters that feed
+it audio). Two concerns:
+
+* ``scrub`` / ``dump_event`` — turn an arbitrary event object into a compact,
+  safe payload (raw audio ``bytes`` → ``<N bytes>``, long strings truncated) so
+  a span never carries megabytes of audio or un-serializable junk.
+* ``build_stereo_session_wav`` — reconstruct one stereo conversation WAV from
+  the timestamped PCM16 chunks each side recorded (L=user, R=agent), laid out at
+  natural play time so bursts don't overlap.
+"""
+
+from __future__ import annotations
+
+import array
+import io
+import math
+import wave
+from typing import Any
+
+# Longest string kept on a span before truncating. Transcripts are short; this
+# only ever trims an unexpectedly large blob.
+MAX_STR = 2000
+
+
+def scrub(obj: Any) -> Any:
+    """Make an event payload safe and compact for a span.
+
+    Replaces raw ``bytes`` (audio / base64 blobs) with a ``<N bytes>``
+    placeholder and truncates very long strings, recursing through dicts and
+    sequences, so a span never ships megabytes of payload or breaks JSON
+    serialization.
+    """
+    if isinstance(obj, bytes):
+        return f"<{len(obj)} bytes>"
+    if isinstance(obj, str):
+        if len(obj) > MAX_STR:
+            return obj[:MAX_STR] + f"... <+{len(obj) - MAX_STR} chars>"
+        return obj
+    if isinstance(obj, dict):
+        return {k: scrub(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [scrub(v) for v in obj]
+    return obj
+
+
+def dump_event(event: Any) -> dict[str, Any]:
+    """Best-effort conversion of an event object to a plain dict."""
+    if hasattr(event, "model_dump"):
+        try:
+            return event.model_dump()
+        except Exception:
+            pass
+    if isinstance(event, dict):
+        return event
+    return {"repr": repr(event)}
+
+
+def pcm_to_wav(pcm: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
+    """Wrap raw PCM16 bytes in a WAV container.
+
+    For already-merged PCM (e.g. the output of Pipecat's ``AudioBufferProcessor``,
+    where ``num_channels=2`` is user-left / bot-right). Returns ``b""`` for empty
+    input.
+    """
+    if not pcm:
+        return b""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(num_channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _layout_chunks_to_play_time(
+    chunks: list[tuple[float, bytes]], sample_rate: int
+) -> list[tuple[float, bytes]]:
+    """Rewrite receipt timestamps into natural-play timestamps.
+
+    Receipt times reflect when bytes arrived from the source, not when they
+    play. The agent channel especially arrives in bursts faster than realtime —
+    multiple chunks can land within a few ms of each other, and placing them at
+    receipt time makes them overlap and overwrite each other (you hear scrambled
+    tail-ends). The correct natural play time for a chunk is the LATER of where
+    the previous chunk ended and when this chunk arrived, which preserves real
+    gaps between bursts and keeps consecutive bursts contiguous.
+    """
+    out: list[tuple[float, bytes]] = []
+    cur_time = 0.0
+    for i, (t_recv, data) in enumerate(chunks):
+        cur_time = t_recv if i == 0 else max(cur_time, t_recv)
+        out.append((cur_time, data))
+        cur_time += (len(data) // 2) / sample_rate
+    return out
+
+
+def build_stereo_session_wav(
+    user_chunks: list[tuple[float, bytes]],
+    agent_chunks: list[tuple[float, bytes]],
+    sample_rate: int,
+) -> bytes:
+    """Reconstruct a stereo WAV from timestamped PCM16 chunks.
+
+    Left channel = user, right channel = agent. Both channels are laid out at
+    natural play time (see ``_layout_chunks_to_play_time``). Gaps between bursts
+    are silence; overlap between user and agent (during a barge-in) is preserved
+    because they live on different channels.
+    """
+    if not user_chunks and not agent_chunks:
+        return b""
+
+    user = _layout_chunks_to_play_time(user_chunks, sample_rate)
+    agent = _layout_chunks_to_play_time(agent_chunks, sample_rate)
+
+    def chunk_end(t: float, data: bytes) -> float:
+        return t + (len(data) // 2) / sample_rate
+
+    user_end = max((chunk_end(t, d) for t, d in user), default=0.0)
+    agent_end = max((chunk_end(t, d) for t, d in agent), default=0.0)
+    total_samples = int(math.ceil(max(user_end, agent_end) * sample_rate))
+    if total_samples <= 0:
+        return b""
+
+    def mono_channel(chunks: list[tuple[float, bytes]]) -> array.array:
+        # One zero-filled PCM16 channel; each chunk is copied in at its offset.
+        # The layout guarantees chunks within a channel never overlap, so a
+        # plain slice assignment is correct.
+        chan = array.array("h", bytes(2 * total_samples))
+        for t, data in chunks:
+            offset = int(t * sample_rate)
+            samples = array.array("h", data[: 2 * (len(data) // 2)])
+            n = min(len(samples), total_samples - offset)
+            if n > 0:
+                chan[offset : offset + n] = samples[:n]
+        return chan
+
+    left = mono_channel(user)  # user channel
+    right = mono_channel(agent)  # agent channel
+
+    # Interleave L/R via extended-slice assignment (a C-level strided copy).
+    # Overlap between the two parties is preserved: they live on separate channels.
+    stereo = array.array("h", bytes(4 * total_samples))
+    stereo[0::2] = left
+    stereo[1::2] = right
+
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(stereo.tobytes())
+    return wav_io.getvalue()
