@@ -368,7 +368,6 @@ async def wrap_flow_call_llm_async(
         nonlocal posted
         if posted:
             return
-        posted = True
 
         model_name = extract_model_name(llm_request) if llm_request else None
         messages = convert_llm_request_to_messages(llm_request) if llm_request else None
@@ -382,6 +381,7 @@ async def wrap_flow_call_llm_async(
         if tools:
             llm_run.extra.setdefault("invocation_params", {})["tools"] = tools
 
+        posted = True
         try:
             llm_run.post()
         except Exception as e:
