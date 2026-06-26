@@ -77,6 +77,15 @@ export {
   type QueryRunResponsesItemsCursorPostPagination,
 } from './runs/runs.js';
 export {
+  Sandboxes,
+  type SandboxListResponse,
+  type SandboxResponse,
+  type SandboxStatusResponse,
+  type ServiceURLResponse,
+  type SnapshotListResponse,
+  type SnapshotResponse,
+} from './sandboxes/sandboxes.js';
+export {
   Sessions,
   type CustomChartsSection,
   type CustomChartsSectionRequest,
