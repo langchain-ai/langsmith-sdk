@@ -1458,19 +1458,19 @@ class Client:
 
     @property
     def runs(self) -> AsyncRunsResource:
-        """Access the v2 runs resource."""
+        """Access the runs resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().runs
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated online evaluator CRUD methods."""
+        """Access the online evaluator resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
-        """Access the v2 sandboxes resource (registries, snapshots, boxes)."""
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().sandboxes
 
