@@ -306,7 +306,7 @@ class AsyncClient:
 
     @property
     def runs(self) -> AsyncRunsResource:
-        """Access v2 runs resource."""
+        """Access the runs resource."""
         return self._langsmith_api.runs
 
     @property
