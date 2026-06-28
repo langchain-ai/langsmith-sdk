@@ -50,6 +50,13 @@ __all__ = [
 
 
 class BoxCreateParams(TypedDict, total=False):
+    cpu_millicores: int
+    """CPUMillicores optionally requests CPU at millicore granularity (e.g.
+
+    500 = 0.5 vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are
+    not available for every sandbox.
+    """
+
     delete_after_stop_seconds: int
 
     env_vars: Dict[str, str]

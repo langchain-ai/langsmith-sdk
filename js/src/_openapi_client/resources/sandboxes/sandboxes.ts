@@ -38,6 +38,8 @@ export interface SandboxListResponse {
 export interface SandboxResponse {
   id?: string;
 
+  cpu_millicores?: number;
+
   created_at?: string;
 
   created_by?: string;

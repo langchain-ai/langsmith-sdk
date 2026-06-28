@@ -377,6 +377,8 @@ class ProxyConfig(BaseModel):
 class SandboxResponse(BaseModel):
     id: Optional[str] = None
 
+    cpu_millicores: Optional[int] = None
+
     created_at: Optional[str] = None
 
     created_by: Optional[str] = None
