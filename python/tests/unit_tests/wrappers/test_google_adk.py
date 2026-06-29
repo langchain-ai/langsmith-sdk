@@ -12,7 +12,7 @@ from pydantic import Field
 
 from langsmith import Client
 from langsmith.integrations.google_adk import configure_google_adk
-from langsmith.run_helpers import tracing_context
+from langsmith.run_helpers import trace, tracing_context
 from tests.unit_tests.test_run_helpers import _get_calls
 
 APP_NAME = "test_app"
@@ -383,3 +383,45 @@ def test_error_agent_sync_async_records_errors(mode: str, mock_ls_client: Client
     runs = _collect_runs(mock_ls_client)
     assert any(run.get("error") for run in runs), runs
     assert any("boom" in (run.get("error") or "") for run in runs), runs
+
+
+def test_wrap_tool_run_async_sets_tool_as_active_context(mock_ls_client: Client):
+    """get_current_run_tree() inside a tool body must return the tool span."""
+    from langsmith.integrations.google_adk._client import wrap_tool_run_async
+    from langsmith.run_helpers import get_current_run_tree
+
+    captured_run_id = None
+
+    async def _fake_body(*args, **kwargs):
+        nonlocal captured_run_id
+        run = get_current_run_tree()
+        if run:
+            captured_run_id = str(run.id)
+        return {"output": "ok"}
+
+    class _FakeTool:
+        name = "test_tool"
+
+    async def _run():
+        with tracing_context(client=mock_ls_client, enabled=True):
+            with trace("parent", run_type="chain"):
+                await wrap_tool_run_async(
+                    wrapped=_fake_body,
+                    instance=_FakeTool(),
+                    args=({"query": "hello"},),
+                    kwargs={},
+                )
+
+    asyncio.run(_run())
+    mock_ls_client.flush()
+
+    runs = _collect_runs(mock_ls_client)
+    tool_run = _find_run(runs, "test_tool")
+
+    assert captured_run_id is not None, (
+        "get_current_run_tree() returned None inside tool body"
+    )
+    assert captured_run_id == tool_run["id"], (
+        f"Expected active context inside tool to be the tool span "
+        f"({tool_run['id']}), got {captured_run_id}"
+    )
