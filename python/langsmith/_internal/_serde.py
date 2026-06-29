@@ -124,20 +124,13 @@ def _serialize_json(obj: Any) -> Any:
         return str(obj)
 
 
-def _stringify_json_key(key: Any) -> Any:
-    """Coerce a dict key into a type that orjson/``json`` accepts natively.
-
-    ``OPT_NON_STR_KEYS`` already covers ``int``/``float``/``datetime``/``UUID``
-    /``bytes``/etc., so those pass through untouched; anything else (e.g. tuples,
-    arbitrary objects) falls back to its ``str`` representation.
-    """
-    if isinstance(key, _JSON_KEY_TYPES):
-        return key
-    return str(key)
-
-
-def _normalize_json_keys(obj: Any) -> Any:
+def _normalize_json_keys(obj: Any) -> tuple[Any, bool]:
     """Recursively stringify dict keys that orjson will reject.
+
+    Returns the normalized object and whether any key was actually coerced
+    (the flag lets callers such as ``dumps_json`` skip a guaranteed-to-fail
+    orjson retry when the original failure was unrelated to keys, e.g. lone
+    UTF-16 surrogates in a value).
 
     Walks ``dict``, ``list``, ``tuple`` and ``deque`` so that unsupported keys
     hidden at any depth are coerced before serialization. Tuples and deques
@@ -146,27 +139,40 @@ def _normalize_json_keys(obj: Any) -> Any:
     ``default`` hook, so a bad-keyed dict nested inside one would otherwise
     slip past normalization. Cycles are handled downstream by
     ``_serialize_json`` (which collapses them to ``str``), not here.
+
+    JSON object keys must ultimately be ``str``/``int``/``float``/``bool``/
+    ``None``; other key types are stringified via ``_simple_default`` so they
+    match the formats the fast path would produce (e.g. ``datetime`` -> ISO
+    8601, ``bytes`` -> base64) rather than Python's ``str()`` or ``repr()``.
     """
-    if isinstance(obj, dict):
-        return {
-            _stringify_json_key(key): _normalize_json_keys(value)
-            for key, value in obj.items()
-        }
-    if isinstance(obj, list):
-        return [_normalize_json_keys(value) for value in obj]
-    if isinstance(obj, tuple) and not (
-        hasattr(obj, "_asdict") and callable(obj._asdict)
-    ):
-        # Plain tuples recurse; NamedTuples are left for _serialize_json, which
-        # converts them to dicts (preserving field names) before normalization.
-        return tuple(_normalize_json_keys(value) for value in obj)
-    if isinstance(obj, collections.deque):
-        return collections.deque(_normalize_json_keys(value) for value in obj)
-    return obj
+    changed = False
+
+    def _normalize(o: Any) -> Any:
+        nonlocal changed
+        if isinstance(o, dict):
+            new = {}
+            for key, value in o.items():
+                if not isinstance(key, _JSON_KEY_TYPES):
+                    changed = True
+                    key = str(_simple_default(key))
+                new[key] = _normalize(value)
+            return new
+        if isinstance(o, list):
+            return [_normalize(value) for value in o]
+        if isinstance(o, tuple) and not (hasattr(o, "_asdict") and callable(o._asdict)):
+            # Plain tuples recurse; NamedTuples are left for _serialize_json,
+            # which converts them to dicts (preserving field names) before the
+            # default hook re-normalizes them.
+            return tuple(_normalize(value) for value in o)
+        if isinstance(o, collections.deque):
+            return collections.deque(_normalize(value) for value in o)
+        return o
+
+    return _normalize(obj), changed
 
 
 def _serialize_json_with_normalized_keys(obj: Any) -> Any:
-    return _normalize_json_keys(_serialize_json(obj))
+    return _normalize_json_keys(_serialize_json(obj))[0]
 
 
 def _elide_surrogates(s: bytes) -> bytes:
@@ -199,18 +205,26 @@ def dumps_json(obj: Any) -> bytes:
     except TypeError as e:
         # Usually caused by UTF surrogate characters
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
-        normalized_obj = _normalize_json_keys(obj)
-        try:
-            return _orjson.dumps(
-                normalized_obj,
-                default=_serialize_json_with_normalized_keys,
-                option=_ORJSON_OPTIONS,
-            )
-        except TypeError as retry_e:
-            logger.debug(
-                "Orjson serialization with normalized keys failed: "
-                f"{repr(retry_e)}. Falling back to json."
-            )
+        normalized_obj, keys_changed = _normalize_json_keys(obj)
+        # Retry orjson only when key normalization could plausibly fix the
+        # failure; otherwise we go straight to stdlib ``json`` (which tolerates
+        # lone UTF-16 surrogates via ensure_ascii=True). ``keys_changed`` covers
+        # bad keys visible at the top level; the message check additionally
+        # catches bad keys hidden behind an object's ``to_dict``/``model_dump``
+        # (which only surface once ``_serialize_json`` runs inside orjson).
+        error_hinted_at_keys = "Dict key" in str(e)
+        if keys_changed or error_hinted_at_keys:
+            try:
+                return _orjson.dumps(
+                    normalized_obj,
+                    default=_serialize_json_with_normalized_keys,
+                    option=_ORJSON_OPTIONS,
+                )
+            except TypeError as retry_e:
+                logger.debug(
+                    "Orjson serialization with normalized keys failed: "
+                    f"{repr(retry_e)}. Falling back to json."
+                )
         result = json.dumps(
             normalized_obj,
             default=_serialize_json_with_normalized_keys,
