@@ -125,60 +125,43 @@ def _serialize_json(obj: Any) -> Any:
 
 
 def _stringify_json_key(key: Any) -> Any:
+    """Coerce a dict key into a type that orjson/``json`` accepts natively.
+
+    ``OPT_NON_STR_KEYS`` already covers ``int``/``float``/``datetime``/``UUID``
+    /``bytes``/etc., so those pass through untouched; anything else (e.g. tuples,
+    arbitrary objects) falls back to its ``str`` representation.
+    """
     if isinstance(key, _JSON_KEY_TYPES):
         return key
-    return str(_simple_default(key))
+    return str(key)
 
 
-def _normalize_json_keys(obj: Any, seen: set[int] | None = None) -> Any:
-    if seen is None:
-        seen = set()
+def _normalize_json_keys(obj: Any) -> Any:
+    """Recursively stringify dict keys that orjson will reject.
 
+    Walks ``dict``, ``list``, ``tuple`` and ``deque`` so that unsupported keys
+    hidden at any depth are coerced before serialization. Tuples and deques
+    are covered here even though they're only ever *values*: orjson serializes
+    them natively (as arrays) and therefore never routes them through the
+    ``default`` hook, so a bad-keyed dict nested inside one would otherwise
+    slip past normalization. Cycles are handled downstream by
+    ``_serialize_json`` (which collapses them to ``str``), not here.
+    """
     if isinstance(obj, dict):
-        obj_id = id(obj)
-        if obj_id in seen:
-            return obj
-        seen.add(obj_id)
-        try:
-            return {
-                _stringify_json_key(key): _normalize_json_keys(value, seen)
-                for key, value in obj.items()
-            }
-        finally:
-            seen.remove(obj_id)
-
+        return {
+            _stringify_json_key(key): _normalize_json_keys(value)
+            for key, value in obj.items()
+        }
     if isinstance(obj, list):
-        obj_id = id(obj)
-        if obj_id in seen:
-            return obj
-        seen.add(obj_id)
-        try:
-            return [_normalize_json_keys(value, seen) for value in obj]
-        finally:
-            seen.remove(obj_id)
-
-    if isinstance(obj, tuple):
-        if hasattr(obj, "_asdict") and callable(obj._asdict):
-            return obj
-        obj_id = id(obj)
-        if obj_id in seen:
-            return obj
-        seen.add(obj_id)
-        try:
-            return tuple(_normalize_json_keys(value, seen) for value in obj)
-        finally:
-            seen.remove(obj_id)
-
+        return [_normalize_json_keys(value) for value in obj]
+    if isinstance(obj, tuple) and not (
+        hasattr(obj, "_asdict") and callable(obj._asdict)
+    ):
+        # Plain tuples recurse; NamedTuples are left for _serialize_json, which
+        # converts them to dicts (preserving field names) before normalization.
+        return tuple(_normalize_json_keys(value) for value in obj)
     if isinstance(obj, collections.deque):
-        obj_id = id(obj)
-        if obj_id in seen:
-            return obj
-        seen.add(obj_id)
-        try:
-            return collections.deque(_normalize_json_keys(value, seen) for value in obj)
-        finally:
-            seen.remove(obj_id)
-
+        return collections.deque(_normalize_json_keys(value) for value in obj)
     return obj
 
 
