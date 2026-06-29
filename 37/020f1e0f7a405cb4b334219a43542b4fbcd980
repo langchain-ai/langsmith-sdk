@@ -1,0 +1,23 @@
+python/langsmith/integrations/livekit/processor.py
+  s_30c3629a45db25::t_48326d08e3da84 1-625
+python/pyproject.toml
+  s_30c3629a45db25::t_48326d08e3da84 72-77
+python/langsmith/integrations/livekit/__init__.py
+  s_30c3629a45db25::t_48326d08e3da84 1-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "37020f1e0f7a405cb4b334219a43542b4fbcd980",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
