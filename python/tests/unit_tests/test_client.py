@@ -6590,16 +6590,8 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
     )
 
 
-@pytest.mark.xfail(
-    reason="Pending _openapi_client regeneration from langchainplus#28358 stainless.yml changes",
-    strict=False,
-)
 def test_removed_sdk_methods_absent() -> None:
-    """Verify de-publicized methods were removed from the generated SDK in PR #28358.
-
-    This test is xfail until the _openapi_client is regenerated via Stainless from the
-    updated stainless.yml in langchainplus#28358. Once regenerated, remove the xfail marker.
-    """
+    """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
     from langsmith._openapi_client.resources.datasets.runs import RunsResource
     from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
 
