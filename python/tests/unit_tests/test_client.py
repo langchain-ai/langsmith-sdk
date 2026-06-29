@@ -2087,6 +2087,27 @@ def test__dumps_json():
     assert "\\uDC00" not in serialized_str
 
 
+def test__dumps_json_normalizes_unsupported_dict_keys():
+    class TupleKeyedDict:
+        def to_dict(self) -> Dict:
+            return {(1, 2): "custom"}
+
+    serialized_json = _dumps_json(
+        {
+            (1, 2): "value",
+            "nested": [{("a", "b"): pathlib.Path("c")}],
+            "custom": TupleKeyedDict(),
+        }
+    )
+
+    assert isinstance(serialized_json, bytes)
+    assert _orjson.loads(serialized_json) == {
+        "(1, 2)": "value",
+        "nested": [{"('a', 'b')": "c"}],
+        "custom": {"(1, 2)": "custom"},
+    }
+
+
 @patch("langsmith.client.requests.Session", autospec=True)
 def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")

@@ -23,6 +23,13 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+_ORJSON_OPTIONS = (
+    _orjson.OPT_SERIALIZE_NUMPY
+    | _orjson.OPT_SERIALIZE_DATACLASS
+    | _orjson.OPT_SERIALIZE_UUID
+    | _orjson.OPT_NON_STR_KEYS
+)
+_JSON_KEY_TYPES = (str, int, float, bool, type(None))
 
 
 def _simple_default(obj):
@@ -117,6 +124,68 @@ def _serialize_json(obj: Any) -> Any:
         return str(obj)
 
 
+def _stringify_json_key(key: Any) -> Any:
+    if isinstance(key, _JSON_KEY_TYPES):
+        return key
+    return str(_simple_default(key))
+
+
+def _normalize_json_keys(obj: Any, seen: set[int] | None = None) -> Any:
+    if seen is None:
+        seen = set()
+
+    if isinstance(obj, dict):
+        obj_id = id(obj)
+        if obj_id in seen:
+            return obj
+        seen.add(obj_id)
+        try:
+            return {
+                _stringify_json_key(key): _normalize_json_keys(value, seen)
+                for key, value in obj.items()
+            }
+        finally:
+            seen.remove(obj_id)
+
+    if isinstance(obj, list):
+        obj_id = id(obj)
+        if obj_id in seen:
+            return obj
+        seen.add(obj_id)
+        try:
+            return [_normalize_json_keys(value, seen) for value in obj]
+        finally:
+            seen.remove(obj_id)
+
+    if isinstance(obj, tuple):
+        if hasattr(obj, "_asdict") and callable(obj._asdict):
+            return obj
+        obj_id = id(obj)
+        if obj_id in seen:
+            return obj
+        seen.add(obj_id)
+        try:
+            return tuple(_normalize_json_keys(value, seen) for value in obj)
+        finally:
+            seen.remove(obj_id)
+
+    if isinstance(obj, collections.deque):
+        obj_id = id(obj)
+        if obj_id in seen:
+            return obj
+        seen.add(obj_id)
+        try:
+            return collections.deque(_normalize_json_keys(value, seen) for value in obj)
+        finally:
+            seen.remove(obj_id)
+
+    return obj
+
+
+def _serialize_json_with_normalized_keys(obj: Any) -> Any:
+    return _normalize_json_keys(_serialize_json(obj))
+
+
 def _elide_surrogates(s: bytes) -> bytes:
     pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
     result = pattern.sub(b"", s)
@@ -142,17 +211,26 @@ def dumps_json(obj: Any) -> bytes:
         return _orjson.dumps(
             obj,
             default=_serialize_json,
-            option=_orjson.OPT_SERIALIZE_NUMPY
-            | _orjson.OPT_SERIALIZE_DATACLASS
-            | _orjson.OPT_SERIALIZE_UUID
-            | _orjson.OPT_NON_STR_KEYS,
+            option=_ORJSON_OPTIONS,
         )
     except TypeError as e:
         # Usually caused by UTF surrogate characters
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        normalized_obj = _normalize_json_keys(obj)
+        try:
+            return _orjson.dumps(
+                normalized_obj,
+                default=_serialize_json_with_normalized_keys,
+                option=_ORJSON_OPTIONS,
+            )
+        except TypeError as retry_e:
+            logger.debug(
+                "Orjson serialization with normalized keys failed: "
+                f"{repr(retry_e)}. Falling back to json."
+            )
         result = json.dumps(
-            obj,
-            default=_serialize_json,
+            normalized_obj,
+            default=_serialize_json_with_normalized_keys,
             ensure_ascii=True,
         ).encode("utf-8")
         try:
