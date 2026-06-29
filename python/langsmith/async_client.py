@@ -306,17 +306,17 @@ class AsyncClient:
 
     @property
     def runs(self) -> AsyncRunsResource:
-        """Access the v2 runs resource."""
+        """Access the runs resource."""
         return self._langsmith_api.runs
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated async online evaluator CRUD methods."""
+        """Access the online evaluator resource."""
         return self._langsmith_api.online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
-        """Access generated async sandbox resources (registries, snapshots, boxes)."""
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
         return self._langsmith_api.sandboxes
 
     async def __aenter__(self) -> AsyncClient:
