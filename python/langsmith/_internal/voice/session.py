@@ -355,14 +355,25 @@ class EventSession:
         *,
         outputs: dict[str, Any] | None = None,
         usage_metadata: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """End and patch a span previously opened with ``open_span``.
 
         Any error already set on ``run`` (``run.error``) is preserved. Outputs
-        pass through ``scrub`` like every other span payload.
+        pass through ``scrub`` like every other span payload. ``metadata`` is
+        merged into the run's existing metadata at close — for detail only known
+        when the span ends (e.g. the raw wire payload of the event that closed
+        it), so an ``open_span`` span can preserve it the way ``event_span``
+        does. It passes through ``scrub`` like any other payload.
         """
         if usage_metadata is not None:
             run.set(usage_metadata=cast("Any", usage_metadata))
+        if metadata:
+            extra = run.extra or {}
+            merged = dict(extra.get("metadata") or {})
+            merged.update(scrub(metadata))
+            extra["metadata"] = merged
+            run.extra = extra
         run.end(outputs=scrub(outputs) if outputs is not None else {})
         run.patch()
 

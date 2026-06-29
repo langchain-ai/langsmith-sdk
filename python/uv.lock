@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-28T23:56:46.539135Z"
+exclude-newer = "2026-06-30T17:32:20.763124Z"
 exclude-newer-span = "P1D"
 
 [[package]]
@@ -1650,6 +1650,9 @@ google-adk = [
     { name = "google-adk" },
     { name = "wrapt" },
 ]
+google-adk-live = [
+    { name = "google-adk" },
+]
 langsmith-pyo3 = [
     { name = "langsmith-pyo3" },
 ]
@@ -1763,6 +1766,7 @@ requires-dist = [
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10' and extra == 'claude-agent-sdk'", specifier = ">=0.1.0" },
     { name = "distro", specifier = ">=1.7.0" },
     { name = "google-adk", marker = "extra == 'google-adk'", specifier = ">=1.0.0" },
+    { name = "google-adk", marker = "extra == 'google-adk-live'", specifier = ">=1.14.0" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
     { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.0" },
@@ -1801,7 +1805,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "google-adk", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
+provides-extras = ["claude-agent-sdk", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [
