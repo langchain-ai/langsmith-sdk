@@ -76,10 +76,7 @@ async def test_projects_list(client: Client) -> None:
     try:
         created = await client.projects.create(name=name)
         project_id = created.id
-        results = [
-            p
-            async for p in client.projects.list(name=name, limit=10)
-        ]
+        results = [p async for p in client.projects.list(name=name, limit=10)]
         assert any(str(p.id) == str(project_id) for p in results)
     finally:
         if project_id is not None:
