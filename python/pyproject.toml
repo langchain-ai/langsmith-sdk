@@ -58,6 +58,17 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
 ]
 
+# Enabled via `pip install langsmith[pipecat]`
+# pipecat-ai requires Python >=3.11; the marker keeps universal resolution
+# satisfiable on 3.10 (the extra is simply unavailable there).
+pipecat = [
+    "pipecat-ai>=1.0; python_version>='3.11'",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "cachetools>=5.0.0",
+]
+
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
@@ -119,6 +130,7 @@ dev = [
     "opentelemetry-sdk>=1.34.1",
     "opentelemetry-exporter-otlp-proto-http>=1.34.1",
     "opentelemetry-api>=1.34.1",
+    "cachetools>=5.0.0",
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
     "claude-agent-sdk>=0.1.0; python_version>='3.10'",
