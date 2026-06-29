@@ -1,0 +1,66 @@
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_84b1d1bd3be3be::t_eb2a416feb93f2 1-430
+python/langsmith/integrations/openai_realtime/_session.py
+  s_84b1d1bd3be3be::t_b3d86795b352ea 1-502
+python/langsmith/integrations/pipecat/__init__.py
+  s_84b1d1bd3be3be::t_0870face7a0383 1-7,9-11,14-82
+  s_84b1d1bd3be3be::t_2c2e905700adb8 8,12-13
+python/langsmith/integrations/google_adk_live/__init__.py
+  s_84b1d1bd3be3be::t_7035cedc95e46f 17-18,21-22
+  s_84b1d1bd3be3be::t_e1d0fd4b0b97e4 1-16,19-20,23-32
+python/langsmith/integrations/pipecat/processor.py
+  s_84b1d1bd3be3be::t_fd82f79fa09850 1-270
+python/langsmith/integrations/_voice/audio.py
+  s_84b1d1bd3be3be::t_89d910226c19ca 16
+  s_84b1d1bd3be3be::t_9519bf0f0221cd 1-15,17-108,115-123,126,132-133,136,151-154
+  s_84b1d1bd3be3be::t_2c405c1de5ce5d 109-111
+  s_84b1d1bd3be3be::t_92028ab9e995a6 124-125,127-131,134-135,137-150,155
+  s_84b1d1bd3be3be::t_8c62f6e9bcf273 112-114
+python/langsmith/integrations/_voice/base.py
+  s_84b1d1bd3be3be::t_7cde43b84f893d 15-18
+  s_84b1d1bd3be3be::t_53594c35fd6191 12-14
+  s_84b1d1bd3be3be::t_bb2ab0d561c2db 1-11,22-106,114-280
+  s_84b1d1bd3be3be::t_e7c0c2fec46799 110
+  s_84b1d1bd3be3be::t_20f12fbf4774fe 19-21,107-109
+  s_84b1d1bd3be3be::t_1654ea0741ab67 111-113
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_84b1d1bd3be3be::t_0fc606ba9da441 16,19-20
+  s_84b1d1bd3be3be::t_6174950fea5a00 1-15,17-18,21-22
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_84b1d1bd3be3be::t_e1738f10d7f4f9 1-235
+python/langsmith/integrations/livekit/processor.py
+  s_84b1d1bd3be3be::t_fd82f79fa09850 58-59,61,268,270,380-383
+  s_84b1d1bd3be3be::t_0870face7a0383 1-57,60,62-237,242-267,269,271-275,281-314,316-362,364-367,369-379,384-504
+  s_84b1d1bd3be3be::t_db008052044f50 363,368
+  s_84b1d1bd3be3be::t_e5d4a0c6a58a3a 276-280
+  s_84b1d1bd3be3be::t_60138b18e4b37c 315
+  s_84b1d1bd3be3be::t_108303e746eded 238-241
+python/pyproject.toml
+  s_84b1d1bd3be3be::t_8929088be1cdf5 61-76,81,83-84
+  s_84b1d1bd3be3be::t_b7cb54624bba77 97
+  s_84b1d1bd3be3be::t_654945532d382b 77-80,82,94-96
+python/langsmith/integrations/_voice/__init__.py
+  s_84b1d1bd3be3be::t_17237281b8697c 16-42
+  s_84b1d1bd3be3be::t_8f97f4b262dfa6 1-15
+python/langsmith/integrations/_voice/session.py
+  s_84b1d1bd3be3be::t_fd82f79fa09850 1-327
+python/langsmith/integrations/livekit/__init__.py
+  s_84b1d1bd3be3be::t_0b8ed51c89b636 9,13-14
+  s_84b1d1bd3be3be::t_1cce8011d45718 1-8,10-12,15-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "902a77003c1b4c5958a4fbd0d514022700f1d89a",
+  "prompts": {},
+  "sessions": {
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
