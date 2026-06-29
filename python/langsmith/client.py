@@ -10952,17 +10952,8 @@ class Client:
             params["status"] = status
         if priority is not None:
             params["priority"] = priority
-        path = _platform_path(self.api_url, "forge-issues")
-        full_url = _construct_url(self.api_url, path)
-        self._ensure_profile_auth()
-        response = self.session.request(
-            "GET",
-            full_url,
-            params=params,
-            headers=self._headers,
-            timeout=self._timeout,
-        )
-        ls_utils.raise_for_status_with_text(response)
+        path = _platform_path(self.api_url, "issues")
+        response = self.request_with_retries("GET", path, params=params)
         return response.json()
 
     def _ensure_insights_api_key(
