@@ -1,0 +1,43 @@
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_187d504f477358 1,3-8,13,15,35-114
+python/langsmith/integrations/openai_realtime/_session.py
+  s_30c3629a45db25::t_46a05e1297e95f 72
+  s_30c3629a45db25::t_22d6a26c89f203 69-71
+  s_30c3629a45db25::t_835573561da0e8 73-75
+  s_30c3629a45db25::t_ea670dd12027b9 1-68,76-503
+python/langsmith/integrations/_voice/session.py
+  s_30c3629a45db25::t_a9dc97d485f7ff 290-294
+  s_30c3629a45db25::t_12e4649fe86ffb 34-35
+  s_30c3629a45db25::t_ec95dd99b9918c 31-33
+  s_30c3629a45db25::t_2474a821dfbc33 36-38,287-289
+  s_30c3629a45db25::t_fd3e530a48e6d2 295-297
+  s_30c3629a45db25::t_38e33e0dab23ba 1-30,39-286,298-332
+python/langsmith/integrations/_voice/payloads.py
+  s_30c3629a45db25::t_b989fa0906f8c1 1-51
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_30c3629a45db25::t_630204cd269563 1-59
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_30c3629a45db25::t_f1ff2b36acbb38 1-22
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_30c3629a45db25::t_a7e8b02bb5b55c 1-430
+python/pyproject.toml
+  s_30c3629a45db25::t_0c61980cd8803e 81-88
+python/uv.lock
+  s_30c3629a45db25::t_263fcd70fdb6ba 14,1666-1669,1769,1771,1804
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "1894e7cfe04f4008a59fd8de3eee7a4ee72161af",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
