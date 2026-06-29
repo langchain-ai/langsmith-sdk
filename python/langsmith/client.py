@@ -264,6 +264,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
+    )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource,
     )
@@ -1473,6 +1476,12 @@ class Client:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().sandboxes
+
+    @property
+    def datasets(self) -> AsyncDatasetsResource:
+        """Access the v2 datasets resource (experiment_runs, etc.)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().datasets
 
     def _dump_failed_trace(
         self,
