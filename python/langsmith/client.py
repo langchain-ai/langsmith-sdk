@@ -264,15 +264,15 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
+    )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
-    )
-    from langsmith._openapi_client.resources.datasets.datasets import (
-        AsyncDatasetsResource,
     )
 
     # OTEL imports for type hints
