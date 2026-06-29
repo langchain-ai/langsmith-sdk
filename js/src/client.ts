@@ -881,6 +881,8 @@ export class Client implements LangSmithTracingClientInterface {
     | boolean
     | ((metadata: KVMap) => KVMap | Promise<KVMap>);
 
+  private anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
@@ -1266,6 +1268,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
     this.hideMetadata = config.hideMetadata ?? defaultConfig.hideMetadata;
+    this.anonymizer = config.anonymizer;
 
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
@@ -1509,6 +1512,24 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Apply the configured anonymizer to a run's error string.
+   *
+   * Unlike inputs/outputs, `error` is a plain string (an exception message or
+   * traceback) that can carry credentials the user never explicitly logged --
+   * e.g. an HTTP-client error whose message embeds an `Authorization` header.
+   * The anonymizer is typed `(KVMap) => KVMap`, so the string is wrapped as
+   * `{ error }`, scrubbed, and unwrapped. Mirrors the Python SDK's
+   * `Client._hide_run_error`.
+   */
+  private async processError(error: string): Promise<string> {
+    if (this.anonymizer == null) {
+      return error;
+    }
+    const result = await this.anonymizer({ error });
+    return typeof result?.error === "string" ? result.error : error;
+  }
+
+  /**
    * Filter content from new_token events to prevent streaming LLM output
    * from being uploaded via events.
    */
@@ -1544,6 +1565,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
+    }
+    if (runParams.error !== undefined) {
+      runParams.error = await this.processError(runParams.error);
     }
     if (runParams.extra != null && "metadata" in runParams.extra) {
       runParams.extra = {
@@ -2670,6 +2694,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
+    }
+    if (run.error) {
+      run.error = await this.processError(run.error);
     }
     if (run.extra != null && "metadata" in run.extra) {
       run.extra = {
