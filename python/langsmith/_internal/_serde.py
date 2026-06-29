@@ -153,9 +153,8 @@ def _normalize_json_keys(obj: Any) -> Any:
             )
             if norm_key in new:
                 logger.debug(
-                    "Dict key collision during JSON key normalization: "
-                    f"{key!r} maps to {norm_key!r}, which already exists; "
-                    f"the previous value will be overwritten."
+                    "Dict key collision during JSON key normalization; "
+                    "an existing value will be overwritten."
                 )
             new[norm_key] = _normalize_json_keys(value)
         return new
