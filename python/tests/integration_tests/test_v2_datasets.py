@@ -2,19 +2,18 @@
 
 Covers langchainplus#28358:
   - POST /v2/datasets/{id}/experiment-runs  (new, cursor pagination)
-  - POST /api/v1/datasets/{id}/runs         (unchanged, offset pagination, bare-list response)
+  - POST /api/v1/datasets/{id}/runs  (unchanged, offset pagination, bare-list response)
 """
 
-import threading
-import time
+import asyncio
 import logging
-from typing import Any, Callable, Dict
+import threading
+from typing import Any, Callable, Coroutine
 
 import pytest
 
 from langsmith import uuid7
 from langsmith.client import Client
-from langsmith.schemas import Dataset
 from langsmith.utils import get_env_var
 
 logger = logging.getLogger(__name__)
@@ -30,17 +29,21 @@ def _safe_delete_dataset(client: Client, dataset_name: str) -> None:
             logger.warning(f"Failed to delete dataset: {e}")
 
 
-def _wait_for(
-    condition: Callable[[], bool], max_sleep_time: int = 60, sleep_time: int = 3
+async def _wait_for_async(
+    condition: Callable[[], Coroutine],
+    max_sleep_time: int = 60,
+    sleep_time: int = 3,
 ) -> None:
+    import time
+
     start = time.time()
     while time.time() - start < max_sleep_time:
         try:
-            if condition():
+            if await condition():
                 return
         except Exception:
             pass
-        time.sleep(sleep_time)
+        await asyncio.sleep(sleep_time)
     raise ValueError(f"Condition not met within {max_sleep_time}s")
 
 
@@ -80,20 +83,20 @@ def langchain_client() -> Client:
 # ---------------------------------------------------------------------------
 
 
-def test_v2_experiment_runs_create(langchain_client: Client) -> None:
+async def test_v2_experiment_runs_create(langchain_client: Client) -> None:
     """v2 endpoint returns {items: [...], next_cursor} — not a bare list."""
     dataset_name = "__test_v2_exp_runs_" + uuid7().hex
     dataset, experiment_id = _setup_experiment(langchain_client, dataset_name)
 
-    def _ready() -> bool:
-        page = langchain_client.datasets.experiment_runs.create(
+    async def _ready() -> bool:
+        page = await langchain_client.datasets.experiment_runs.create(
             str(dataset.id), experiment_ids=[experiment_id], page_size=10
         )
         return len(page.items) > 0
 
-    _wait_for(_ready, max_sleep_time=30)
+    await _wait_for_async(_ready, max_sleep_time=30)
 
-    page = langchain_client.datasets.experiment_runs.create(
+    page = await langchain_client.datasets.experiment_runs.create(
         str(dataset.id), experiment_ids=[experiment_id], page_size=10
     )
 
@@ -107,26 +110,28 @@ def test_v2_experiment_runs_create(langchain_client: Client) -> None:
     _safe_delete_dataset(langchain_client, dataset_name)
 
 
-def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) -> None:
+async def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) -> None:
     """page_size=1 + following next_cursor returns all examples without duplicates."""
     dataset_name = "__test_v2_exp_cursor_" + uuid7().hex
-    dataset, experiment_id = _setup_experiment(langchain_client, dataset_name, num_examples=3)
+    dataset, experiment_id = _setup_experiment(
+        langchain_client, dataset_name, num_examples=3
+    )
 
-    def _ready() -> bool:
-        page = langchain_client.datasets.experiment_runs.create(
+    async def _ready() -> bool:
+        page = await langchain_client.datasets.experiment_runs.create(
             str(dataset.id), experiment_ids=[experiment_id], page_size=10
         )
         return len(page.items) == 3
 
-    _wait_for(_ready, max_sleep_time=30)
+    await _wait_for_async(_ready, max_sleep_time=30)
 
     all_items: list = []
     cursor = None
     for _ in range(10):
-        kwargs: Dict[str, Any] = {"experiment_ids": [experiment_id], "page_size": 1}
+        kwargs: dict[str, Any] = {"experiment_ids": [experiment_id], "page_size": 1}
         if cursor:
             kwargs["cursor"] = cursor
-        page = langchain_client.datasets.experiment_runs.create(
+        page = await langchain_client.datasets.experiment_runs.create(
             str(dataset.id), **kwargs
         )
         all_items.extend(page.items)
@@ -145,20 +150,26 @@ def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_v1_runs_create_backward_compat(langchain_client: Client) -> None:
-    """v1 endpoint still returns a bare list (not {items:...}) after de-publicization."""
+async def test_v1_runs_create_backward_compat(langchain_client: Client) -> None:
+    """v1 endpoint still returns a bare list (not {items:...}) after de-publicization."""  # noqa: E501
     dataset_name = "__test_v1_runs_compat_" + uuid7().hex
-    dataset, experiment_id = _setup_experiment(langchain_client, dataset_name, num_examples=1)
+    dataset, experiment_id = _setup_experiment(
+        langchain_client, dataset_name, num_examples=1
+    )
 
-    def _ready() -> bool:
-        resp = langchain_client.datasets.runs.create(
-            str(dataset.id), session_ids=[experiment_id], limit=10, offset=0, preview=True
+    async def _ready() -> bool:
+        resp = await langchain_client.datasets.runs.create(
+            str(dataset.id),
+            session_ids=[experiment_id],
+            limit=10,
+            offset=0,
+            preview=True,
         )
         return isinstance(resp, list) and len(resp) >= 1
 
-    _wait_for(_ready, max_sleep_time=30)
+    await _wait_for_async(_ready, max_sleep_time=30)
 
-    resp = langchain_client.datasets.runs.create(
+    resp = await langchain_client.datasets.runs.create(
         str(dataset.id), session_ids=[experiment_id], limit=10, offset=0, preview=True
     )
     assert isinstance(resp, list)
