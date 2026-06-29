@@ -473,10 +473,7 @@ class OTELExporter:
         self._last_cleanup = current_time
         cutoff_time = current_time - self._span_ttl_seconds
 
-        # Remove spans older than TTL in one pass. stale_ids() snapshots the
-        # underlying dict under the lock, so concurrent inserts/deletes from
-        # another batch worker cannot raise "dictionary changed size during
-        # iteration".
+        # Remove spans older than TTL in one pass.
         stale_span_ids = self._span_info.stale_ids(cutoff_time)
 
         if stale_span_ids:
