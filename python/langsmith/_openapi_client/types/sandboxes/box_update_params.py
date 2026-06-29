@@ -25,6 +25,8 @@ __all__ = [
 
 
 class BoxUpdateParams(TypedDict, total=False):
+    cpu_millicores: int
+
     delete_after_stop_seconds: int
 
     fs_capacity_bytes: int

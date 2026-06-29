@@ -56,6 +56,7 @@ class BoxesResource(SyncAPIResource):
     def create(
         self,
         *,
+        cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         env_vars: Dict[str, str] | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
@@ -83,6 +84,10 @@ class BoxesResource(SyncAPIResource):
         blueprint.
 
         Args:
+          cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
+              vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
+              available for every sandbox.
+
           restore_memory:
               RestoreMemory selects how the sandbox handles a snapshot's captured memory:
 
@@ -104,6 +109,7 @@ class BoxesResource(SyncAPIResource):
             "/v2/sandboxes/boxes",
             body=maybe_transform(
                 {
+                    "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "env_vars": env_vars,
                     "fs_capacity_bytes": fs_capacity_bytes,
@@ -164,6 +170,7 @@ class BoxesResource(SyncAPIResource):
         self,
         path_name: str,
         *,
+        cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         idle_ttl_seconds: int | Omit = omit,
@@ -198,6 +205,7 @@ class BoxesResource(SyncAPIResource):
             path_template("/v2/sandboxes/boxes/{path_name}", path_name=path_name),
             body=maybe_transform(
                 {
+                    "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "idle_ttl_seconds": idle_ttl_seconds,
@@ -550,6 +558,7 @@ class AsyncBoxesResource(AsyncAPIResource):
     async def create(
         self,
         *,
+        cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         env_vars: Dict[str, str] | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
@@ -577,6 +586,10 @@ class AsyncBoxesResource(AsyncAPIResource):
         blueprint.
 
         Args:
+          cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
+              vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
+              available for every sandbox.
+
           restore_memory:
               RestoreMemory selects how the sandbox handles a snapshot's captured memory:
 
@@ -598,6 +611,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             "/v2/sandboxes/boxes",
             body=await async_maybe_transform(
                 {
+                    "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "env_vars": env_vars,
                     "fs_capacity_bytes": fs_capacity_bytes,
@@ -658,6 +672,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         self,
         path_name: str,
         *,
+        cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         idle_ttl_seconds: int | Omit = omit,
@@ -692,6 +707,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             path_template("/v2/sandboxes/boxes/{path_name}", path_name=path_name),
             body=await async_maybe_transform(
                 {
+                    "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "idle_ttl_seconds": idle_ttl_seconds,

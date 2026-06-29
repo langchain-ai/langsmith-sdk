@@ -111,6 +111,13 @@ export class Boxes extends APIResource {
 }
 
 export interface BoxCreateParams {
+  /**
+   * CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
+   * vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
+   * available for every sandbox.
+   */
+  cpu_millicores?: number;
+
   delete_after_stop_seconds?: number;
 
   env_vars?: { [key: string]: string };
@@ -504,6 +511,8 @@ export namespace BoxCreateParams {
 }
 
 export interface BoxUpdateParams {
+  cpu_millicores?: number;
+
   delete_after_stop_seconds?: number;
 
   fs_capacity_bytes?: number;

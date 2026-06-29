@@ -18,9 +18,8 @@ from ..._response import (
     async_to_streamed_response_wrapper,
 )
 from ..._base_client import make_request_options
-from ...types.datasets import run_delta_params, run_create_params
+from ...types.datasets import run_create_params
 from ...types.datasets.run_create_response import RunCreateResponse
-from ...types.datasets.session_feedback_delta import SessionFeedbackDelta
 from ...types.datasets.sort_params_for_runs_comparison_view_param import SortParamsForRunsComparisonViewParam
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
@@ -110,59 +109,6 @@ class RunsResource(SyncAPIResource):
             cast_to=RunCreateResponse,
         )
 
-    def delta(
-        self,
-        dataset_id: str,
-        *,
-        baseline_session_id: str,
-        comparison_session_ids: SequenceNotStr[str],
-        feedback_key: str,
-        comparative_experiment_id: Optional[str] | Omit = omit,
-        filters: Optional[Dict[str, SequenceNotStr[str]]] | Omit = omit,
-        limit: int | Omit = omit,
-        offset: int | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SessionFeedbackDelta:
-        """
-        Fetch the number of regressions/improvements for each example in a dataset,
-        between sessions[0] and sessions[1].
-
-        Args:
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not dataset_id:
-            raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
-        return self._post(
-            path_template("/api/v1/datasets/{dataset_id}/runs/delta", dataset_id=dataset_id),
-            body=maybe_transform(
-                {
-                    "baseline_session_id": baseline_session_id,
-                    "comparison_session_ids": comparison_session_ids,
-                    "feedback_key": feedback_key,
-                    "comparative_experiment_id": comparative_experiment_id,
-                    "filters": filters,
-                    "limit": limit,
-                    "offset": offset,
-                },
-                run_delta_params.RunDeltaParams,
-            ),
-            options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
-            ),
-            cast_to=SessionFeedbackDelta,
-        )
-
 
 class AsyncRunsResource(AsyncAPIResource):
     @cached_property
@@ -248,59 +194,6 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunCreateResponse,
         )
 
-    async def delta(
-        self,
-        dataset_id: str,
-        *,
-        baseline_session_id: str,
-        comparison_session_ids: SequenceNotStr[str],
-        feedback_key: str,
-        comparative_experiment_id: Optional[str] | Omit = omit,
-        filters: Optional[Dict[str, SequenceNotStr[str]]] | Omit = omit,
-        limit: int | Omit = omit,
-        offset: int | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SessionFeedbackDelta:
-        """
-        Fetch the number of regressions/improvements for each example in a dataset,
-        between sessions[0] and sessions[1].
-
-        Args:
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not dataset_id:
-            raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
-        return await self._post(
-            path_template("/api/v1/datasets/{dataset_id}/runs/delta", dataset_id=dataset_id),
-            body=await async_maybe_transform(
-                {
-                    "baseline_session_id": baseline_session_id,
-                    "comparison_session_ids": comparison_session_ids,
-                    "feedback_key": feedback_key,
-                    "comparative_experiment_id": comparative_experiment_id,
-                    "filters": filters,
-                    "limit": limit,
-                    "offset": offset,
-                },
-                run_delta_params.RunDeltaParams,
-            ),
-            options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
-            ),
-            cast_to=SessionFeedbackDelta,
-        )
-
 
 class RunsResourceWithRawResponse:
     def __init__(self, runs: RunsResource) -> None:
@@ -308,9 +201,6 @@ class RunsResourceWithRawResponse:
 
         self.create = to_raw_response_wrapper(
             runs.create,
-        )
-        self.delta = to_raw_response_wrapper(
-            runs.delta,
         )
 
 
@@ -321,9 +211,6 @@ class AsyncRunsResourceWithRawResponse:
         self.create = async_to_raw_response_wrapper(
             runs.create,
         )
-        self.delta = async_to_raw_response_wrapper(
-            runs.delta,
-        )
 
 
 class RunsResourceWithStreamingResponse:
@@ -333,9 +220,6 @@ class RunsResourceWithStreamingResponse:
         self.create = to_streamed_response_wrapper(
             runs.create,
         )
-        self.delta = to_streamed_response_wrapper(
-            runs.delta,
-        )
 
 
 class AsyncRunsResourceWithStreamingResponse:
@@ -344,7 +228,4 @@ class AsyncRunsResourceWithStreamingResponse:
 
         self.create = async_to_streamed_response_wrapper(
             runs.create,
-        )
-        self.delta = async_to_streamed_response_wrapper(
-            runs.delta,
         )
