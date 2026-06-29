@@ -151,7 +151,7 @@ def _normalize_json_keys(obj: Any) -> Any:
             norm_key: Any = (
                 key if isinstance(key, _JSON_KEY_TYPES) else str(_simple_default(key))
             )
-            if norm_key in new and norm_key != key:
+            if norm_key in new:
                 logger.debug(
                     "Dict key collision during JSON key normalization: "
                     f"{key!r} maps to {norm_key!r}, which already exists; "
