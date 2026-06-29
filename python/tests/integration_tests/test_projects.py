@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-import datetime
 import random
 import string
-import time
-from typing import Callable
 
 import pytest
 
 from langsmith._openapi_client._exceptions import NotFoundError
-from langsmith import uuid7
 from langsmith.client import Client
 
 
 def _rand_name(prefix: str = "__sdk_test_project_") -> str:
     return prefix + "".join(random.sample(string.ascii_lowercase, 10))
-
-
-def _wait_for(condition: Callable[[], bool], max_seconds: int = 30, interval: int = 2) -> None:
-    deadline = time.time() + max_seconds
-    while time.time() < deadline:
-        try:
-            if condition():
-                return
-        except Exception:
-            pass
-        time.sleep(interval)
-    raise TimeoutError("Condition not met within timeout")
 
 
 @pytest.fixture
