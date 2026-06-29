@@ -139,14 +139,26 @@ def _normalize_json_keys(obj: Any) -> Any:
     ``None``; other key types are stringified via ``_simple_default`` so they
     match the formats the fast path would produce (e.g. ``datetime`` -> ISO
     8601, ``bytes`` -> base64) rather than Python's ``str()`` or ``repr()``.
+
+    Note: stringifying a non-str key can collide with another key (e.g. a
+    literal ``"(1, 2)"`` and a coerced ``(1, 2)``). When that happens one entry
+    overwrites the other (last-in-iteration-order wins); the collision is
+    logged at debug level so the data loss is traceable.
     """
     if isinstance(obj, dict):
-        return {
-            (
+        new: dict[Any, Any] = {}
+        for key, value in obj.items():
+            norm_key: Any = (
                 key if isinstance(key, _JSON_KEY_TYPES) else str(_simple_default(key))
-            ): _normalize_json_keys(value)
-            for key, value in obj.items()
-        }
+            )
+            if norm_key in new and norm_key != key:
+                logger.debug(
+                    "Dict key collision during JSON key normalization: "
+                    f"{key!r} maps to {norm_key!r}, which already exists; "
+                    f"the previous value will be overwritten."
+                )
+            new[norm_key] = _normalize_json_keys(value)
+        return new
     if isinstance(obj, list):
         return [_normalize_json_keys(value) for value in obj]
     if isinstance(obj, tuple) and not (
