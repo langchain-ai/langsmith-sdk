@@ -38,6 +38,7 @@ from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
+from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
 from langsmith.client import (
     Client,
     _apply_auth_overrides,
@@ -1493,26 +1494,32 @@ def test_hide_metadata(
         )
 
 
-def test_anonymizer_redacts_error_field() -> None:
-    """The configured anonymizer must scrub ``error``, not just inputs/outputs.
-
-    A credential can land in the error field via an exception traceback (e.g. an
-    HTTP-client error whose request-object repr includes an ``Authorization``
-    header), and it must not be uploaded raw. Covers both the create/post path
-    (via ``_run_transform``) and the patch path (via ``_hide_run_error``).
-    """
-    from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
-
-    # Assembled at runtime so no literal secret-shaped string sits in source.
+def _error_traceback_with_secret() -> tuple[str, str]:
+    """Return ``(fake_key, traceback_str)`` assembled at runtime so no literal
+    secret-shaped string sits in source (the repo secret-scanner would otherwise
+    rewrite it)."""
     fake_key = "sk-ant-api03-" + "A" * 30
     traceback_str = (
         "Traceback (most recent call last):\n"
         '  ClientResponseError: 401, request_info=headers={"Authorization": '
         f'"Bearer {fake_key}"}}'
     )
+    return fake_key, traceback_str
 
-    session = mock.MagicMock(spec=requests.Session)
-    client = Client(
+
+def _find_request_payload(
+    session: mock.MagicMock, method: str, url_substr: str
+) -> dict:
+    """Return the JSON body of the first mocked request matching method + URL."""
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == method and url_substr in call.args[1]:
+            data = call.kwargs.get("data", b"{}")
+            return json.loads(data.decode("utf-8") if isinstance(data, bytes) else data)
+    raise AssertionError(f"{method} request matching {url_substr!r} not found")
+
+
+def _client_with_secret_anonymizer(session: mock.MagicMock) -> Client:
+    return Client(
         api_url="http://localhost:1984",
         api_key="123",
         auto_batch_tracing=False,  # Easier to inspect single calls
@@ -1520,7 +1527,19 @@ def test_anonymizer_redacts_error_field() -> None:
         anonymizer=create_secret_anonymizer(),
     )
 
-    # ── create/post path goes through _run_transform ────────────────────────
+
+def test_anonymizer_redacts_error_field_on_create() -> None:
+    """The anonymizer must scrub ``error`` on the create/post path, not just
+    inputs/outputs.
+
+    A credential can land in the error field via an exception traceback -- e.g.
+    an HTTP-client error whose request-object repr includes an ``Authorization``
+    header -- and it must not be uploaded raw.
+    """
+    fake_key, traceback_str = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
     client.create_run(
         "errored_run",
         inputs={"in": "put"},
@@ -1528,35 +1547,36 @@ def test_anonymizer_redacts_error_field() -> None:
         id=uuid.uuid4(),
         error=traceback_str,
     )
-    post_call = None
-    for call in session.request.mock_calls:
-        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
-            post_call = call
-            break
-    assert post_call is not None, "POST request to /runs not found"
-    payload_data = post_call.kwargs.get("data", b"{}")
-    payload = json.loads(
-        payload_data.decode("utf-8")
-        if isinstance(payload_data, bytes)
-        else payload_data
-    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
     assert fake_key not in payload["error"]
     assert SECRET_PLACEHOLDER in payload["error"]
 
-    # ── patch path uses _hide_run_error directly ────────────────────────────
-    scrubbed = client._hide_run_error(traceback_str)
-    assert fake_key not in scrubbed
-    assert SECRET_PLACEHOLDER in scrubbed
 
-    # ── no anonymizer configured -> error passes through unchanged ──────────
-    plain = Client(
+def test_anonymizer_redacts_error_field_on_update() -> None:
+    """The anonymizer must also scrub ``error`` on the update/patch path."""
+    fake_key, traceback_str = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.update_run(uuid.uuid4(), error=traceback_str)
+
+    payload = _find_request_payload(session, "PATCH", "/runs/")
+    assert fake_key not in payload["error"]
+    assert SECRET_PLACEHOLDER in payload["error"]
+
+
+def test_hide_run_error_passthrough_without_anonymizer() -> None:
+    """With no anonymizer configured, the error is left unchanged."""
+    _, traceback_str = _error_traceback_with_secret()
+    client = Client(
         api_url="http://localhost:1984",
         api_key="123",
         auto_batch_tracing=False,
         session=mock.MagicMock(spec=requests.Session),
     )
-    assert plain._hide_run_error(traceback_str) == traceback_str
-    assert plain._hide_run_error(None) is None
+    assert client._hide_run_error(traceback_str) == traceback_str
+    assert client._hide_run_error(None) is None
 
 
 def test_omit_traced_runtime_info() -> None:
