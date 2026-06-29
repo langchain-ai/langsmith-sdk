@@ -158,6 +158,14 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  /**
+   * A function applied for masking serialized run inputs and outputs,
+   * before sending to the API. Can be called with raw inputs, raw
+   * outputs, or a nested `{ error: string }` object for errors.
+   *
+   * If a `hideInputs` or `hideOutputs` function is present,
+   * the client will call it instead of the anonymizer as appropriate.
+   */
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
@@ -1520,6 +1528,8 @@ export class Client implements LangSmithTracingClientInterface {
    * The anonymizer is typed `(KVMap) => KVMap`, so the string is wrapped as
    * `{ error }`, scrubbed, and unwrapped. Mirrors the Python SDK's
    * `Client._hide_run_error`.
+   *
+   * TODO: Update anonymizer to always nest inputs/outputs/error for consistency
    */
   private async processError(error: string): Promise<string> {
     if (this.anonymizer == null) {
