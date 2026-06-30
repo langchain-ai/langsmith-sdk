@@ -8,49 +8,33 @@ from typing_extensions import Literal
 
 import httpx
 
-from ...types import (
+from ..types import (
     SessionSortableColumns,
     session_list_params,
     session_create_params,
     session_update_params,
     session_retrieve_params,
-    session_dashboard_params,
 )
-from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
-from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
-from .insights import (
-    InsightsResource,
-    AsyncInsightsResource,
-    InsightsResourceWithRawResponse,
-    AsyncInsightsResourceWithRawResponse,
-    InsightsResourceWithStreamingResponse,
-    AsyncInsightsResourceWithStreamingResponse,
-)
-from ..._compat import cached_property
-from ..._resource import SyncAPIResource, AsyncAPIResource
-from ..._response import (
+from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
+from .._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
+from .._compat import cached_property
+from .._resource import SyncAPIResource, AsyncAPIResource
+from .._response import (
     to_raw_response_wrapper,
     to_streamed_response_wrapper,
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ...pagination import SyncOffsetPaginationTopLevelArray, AsyncOffsetPaginationTopLevelArray
-from ..._base_client import AsyncPaginator, make_request_options
-from ...types.tracer_session import TracerSession
-from ...types.custom_charts_section import CustomChartsSection
-from ...types.timedelta_input_param import TimedeltaInputParam
-from ...types.run_stats_group_by_param import RunStatsGroupByParam
-from ...types.session_sortable_columns import SessionSortableColumns
-from ...types.tracer_session_without_virtual_fields import TracerSessionWithoutVirtualFields
+from ..pagination import SyncOffsetPaginationTopLevelArray, AsyncOffsetPaginationTopLevelArray
+from .._base_client import AsyncPaginator, make_request_options
+from ..types.tracer_session import TracerSession
+from ..types.session_sortable_columns import SessionSortableColumns
+from ..types.tracer_session_without_virtual_fields import TracerSessionWithoutVirtualFields
 
 __all__ = ["SessionsResource", "AsyncSessionsResource"]
 
 
 class SessionsResource(SyncAPIResource):
-    @cached_property
-    def insights(self) -> InsightsResource:
-        return InsightsResource(self._client)
-
     @cached_property
     def with_raw_response(self) -> SessionsResourceWithRawResponse:
         """
@@ -96,7 +80,7 @@ class SessionsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSessionWithoutVirtualFields:
         """
-        Create a new session.
+        Create a new project.
 
         Args:
           extra_headers: Send extra headers
@@ -140,7 +124,7 @@ class SessionsResource(SyncAPIResource):
 
     def retrieve(
         self,
-        session_id: str,
+        project_id: str,
         *,
         include_stats: bool | Omit = omit,
         stats_start_time: Union[str, datetime, None] | Omit = omit,
@@ -153,7 +137,7 @@ class SessionsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSession:
         """
-        Get a specific session.
+        Get a specific project.
 
         Args:
           extra_headers: Send extra headers
@@ -164,11 +148,11 @@ class SessionsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         extra_headers = {**strip_not_given({"accept": accept}), **(extra_headers or {})}
         return self._get(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -187,7 +171,7 @@ class SessionsResource(SyncAPIResource):
 
     def update(
         self,
-        session_id: str,
+        project_id: str,
         *,
         default_dataset_id: Optional[str] | Omit = omit,
         description: Optional[str] | Omit = omit,
@@ -203,7 +187,7 @@ class SessionsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSessionWithoutVirtualFields:
         """
-        Update a session.
+        Update a project.
 
         Args:
           extra_headers: Send extra headers
@@ -214,10 +198,10 @@ class SessionsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         return self._patch(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             body=maybe_transform(
                 {
                     "default_dataset_id": default_dataset_id,
@@ -268,7 +252,7 @@ class SessionsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SyncOffsetPaginationTopLevelArray[TracerSession]:
         """
-        Get all sessions.
+        List all projects.
 
         Args:
           extra_headers: Send extra headers
@@ -320,7 +304,7 @@ class SessionsResource(SyncAPIResource):
 
     def delete(
         self,
-        session_id: str,
+        project_id: str,
         *,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -330,7 +314,7 @@ class SessionsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> object:
         """
-        Delete a specific session.
+        Delete a specific project.
 
         Args:
           extra_headers: Send extra headers
@@ -341,78 +325,18 @@ class SessionsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         return self._delete(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=object,
         )
 
-    def dashboard(
-        self,
-        session_id: str,
-        *,
-        end_time: Union[str, datetime, None] | Omit = omit,
-        group_by: Optional[RunStatsGroupByParam] | Omit = omit,
-        omit_data: bool | Omit = omit,
-        start_time: Union[str, datetime, None] | Omit = omit,
-        stride: TimedeltaInputParam | Omit = omit,
-        timezone: str | Omit = omit,
-        accept: str | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> CustomChartsSection:
-        """
-        Get a prebuilt dashboard for a tracing project.
-
-        Args:
-          group_by: Group by param for run stats.
-
-          stride: Timedelta input.
-
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
-        extra_headers = {**strip_not_given({"accept": accept}), **(extra_headers or {})}
-        return self._post(
-            path_template("/api/v1/sessions/{session_id}/dashboard", session_id=session_id),
-            body=maybe_transform(
-                {
-                    "end_time": end_time,
-                    "group_by": group_by,
-                    "omit_data": omit_data,
-                    "start_time": start_time,
-                    "stride": stride,
-                    "timezone": timezone,
-                },
-                session_dashboard_params.SessionDashboardParams,
-            ),
-            options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
-            ),
-            cast_to=CustomChartsSection,
-        )
-
 
 class AsyncSessionsResource(AsyncAPIResource):
-    @cached_property
-    def insights(self) -> AsyncInsightsResource:
-        return AsyncInsightsResource(self._client)
-
     @cached_property
     def with_raw_response(self) -> AsyncSessionsResourceWithRawResponse:
         """
@@ -458,7 +382,7 @@ class AsyncSessionsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSessionWithoutVirtualFields:
         """
-        Create a new session.
+        Create a new project.
 
         Args:
           extra_headers: Send extra headers
@@ -502,7 +426,7 @@ class AsyncSessionsResource(AsyncAPIResource):
 
     async def retrieve(
         self,
-        session_id: str,
+        project_id: str,
         *,
         include_stats: bool | Omit = omit,
         stats_start_time: Union[str, datetime, None] | Omit = omit,
@@ -515,7 +439,7 @@ class AsyncSessionsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSession:
         """
-        Get a specific session.
+        Get a specific project.
 
         Args:
           extra_headers: Send extra headers
@@ -526,11 +450,11 @@ class AsyncSessionsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         extra_headers = {**strip_not_given({"accept": accept}), **(extra_headers or {})}
         return await self._get(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -549,7 +473,7 @@ class AsyncSessionsResource(AsyncAPIResource):
 
     async def update(
         self,
-        session_id: str,
+        project_id: str,
         *,
         default_dataset_id: Optional[str] | Omit = omit,
         description: Optional[str] | Omit = omit,
@@ -565,7 +489,7 @@ class AsyncSessionsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TracerSessionWithoutVirtualFields:
         """
-        Update a session.
+        Update a project.
 
         Args:
           extra_headers: Send extra headers
@@ -576,10 +500,10 @@ class AsyncSessionsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         return await self._patch(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             body=await async_maybe_transform(
                 {
                     "default_dataset_id": default_dataset_id,
@@ -630,7 +554,7 @@ class AsyncSessionsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> AsyncPaginator[TracerSession, AsyncOffsetPaginationTopLevelArray[TracerSession]]:
         """
-        Get all sessions.
+        List all projects.
 
         Args:
           extra_headers: Send extra headers
@@ -682,7 +606,7 @@ class AsyncSessionsResource(AsyncAPIResource):
 
     async def delete(
         self,
-        session_id: str,
+        project_id: str,
         *,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -692,7 +616,7 @@ class AsyncSessionsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> object:
         """
-        Delete a specific session.
+        Delete a specific project.
 
         Args:
           extra_headers: Send extra headers
@@ -703,70 +627,14 @@ class AsyncSessionsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
+        if not project_id:
+            raise ValueError(f"Expected a non-empty value for `project_id` but received {project_id!r}")
         return await self._delete(
-            path_template("/api/v1/sessions/{session_id}", session_id=session_id),
+            path_template("/api/v1/sessions/{project_id}", project_id=project_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=object,
-        )
-
-    async def dashboard(
-        self,
-        session_id: str,
-        *,
-        end_time: Union[str, datetime, None] | Omit = omit,
-        group_by: Optional[RunStatsGroupByParam] | Omit = omit,
-        omit_data: bool | Omit = omit,
-        start_time: Union[str, datetime, None] | Omit = omit,
-        stride: TimedeltaInputParam | Omit = omit,
-        timezone: str | Omit = omit,
-        accept: str | Omit = omit,
-        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
-        # The extra values given here take precedence over values defined on the client or passed to this method.
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> CustomChartsSection:
-        """
-        Get a prebuilt dashboard for a tracing project.
-
-        Args:
-          group_by: Group by param for run stats.
-
-          stride: Timedelta input.
-
-          extra_headers: Send extra headers
-
-          extra_query: Add additional query parameters to the request
-
-          extra_body: Add additional JSON properties to the request
-
-          timeout: Override the client-level default timeout for this request, in seconds
-        """
-        if not session_id:
-            raise ValueError(f"Expected a non-empty value for `session_id` but received {session_id!r}")
-        extra_headers = {**strip_not_given({"accept": accept}), **(extra_headers or {})}
-        return await self._post(
-            path_template("/api/v1/sessions/{session_id}/dashboard", session_id=session_id),
-            body=await async_maybe_transform(
-                {
-                    "end_time": end_time,
-                    "group_by": group_by,
-                    "omit_data": omit_data,
-                    "start_time": start_time,
-                    "stride": stride,
-                    "timezone": timezone,
-                },
-                session_dashboard_params.SessionDashboardParams,
-            ),
-            options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
-            ),
-            cast_to=CustomChartsSection,
         )
 
 
@@ -789,13 +657,6 @@ class SessionsResourceWithRawResponse:
         self.delete = to_raw_response_wrapper(
             sessions.delete,
         )
-        self.dashboard = to_raw_response_wrapper(
-            sessions.dashboard,
-        )
-
-    @cached_property
-    def insights(self) -> InsightsResourceWithRawResponse:
-        return InsightsResourceWithRawResponse(self._sessions.insights)
 
 
 class AsyncSessionsResourceWithRawResponse:
@@ -817,13 +678,6 @@ class AsyncSessionsResourceWithRawResponse:
         self.delete = async_to_raw_response_wrapper(
             sessions.delete,
         )
-        self.dashboard = async_to_raw_response_wrapper(
-            sessions.dashboard,
-        )
-
-    @cached_property
-    def insights(self) -> AsyncInsightsResourceWithRawResponse:
-        return AsyncInsightsResourceWithRawResponse(self._sessions.insights)
 
 
 class SessionsResourceWithStreamingResponse:
@@ -845,13 +699,6 @@ class SessionsResourceWithStreamingResponse:
         self.delete = to_streamed_response_wrapper(
             sessions.delete,
         )
-        self.dashboard = to_streamed_response_wrapper(
-            sessions.dashboard,
-        )
-
-    @cached_property
-    def insights(self) -> InsightsResourceWithStreamingResponse:
-        return InsightsResourceWithStreamingResponse(self._sessions.insights)
 
 
 class AsyncSessionsResourceWithStreamingResponse:
@@ -873,10 +720,3 @@ class AsyncSessionsResourceWithStreamingResponse:
         self.delete = async_to_streamed_response_wrapper(
             sessions.delete,
         )
-        self.dashboard = async_to_streamed_response_wrapper(
-            sessions.dashboard,
-        )
-
-    @cached_property
-    def insights(self) -> AsyncInsightsResourceWithStreamingResponse:
-        return AsyncInsightsResourceWithStreamingResponse(self._sessions.insights)
