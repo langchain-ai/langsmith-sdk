@@ -1,0 +1,33 @@
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1,3-8,13,15,35-114
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-22
+python/pyproject.toml
+  s_30c3629a45db25::t_c93dc436fb25d0 81-88
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-430
+python/langsmith/integrations/_voice/session.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-332
+python/langsmith/integrations/openai_realtime/_session.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-503
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-59
+python/langsmith/integrations/_voice/payloads.py
+  s_30c3629a45db25::t_c93dc436fb25d0 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "3b7f6f5480ca28aa5e7f8ebb55c602eff9da5b00",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

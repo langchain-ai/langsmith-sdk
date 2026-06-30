@@ -1,0 +1,91 @@
+python/pyproject.toml
+  s_ae69c515eece8d::t_b6e2771c45539b 69
+  s_84b1d1bd3be3be::t_9f936b464a463d 61,64,66-67
+  s_ae69c515eece8d::t_a3b5f549db5b50 133
+  s_30c3629a45db25::t_97730b5519bc39 62-63,65
+  s_30c3629a45db25::t_6a9b8957af9f81 68,70-71
+python/uv.lock
+  s_30c3629a45db25::t_d0e8cbcc09db41 8-9,14,17-25,303-358,442-450,971-978,1401-1409,1522-1523,1530-1531,1557-1563,1583,1642-1643,1645,1651,1654,1657,1661,1667,1670,1679,1684,1854-1907,2203-2253,2327-2328,2405-2442,2706-2707,2824-2856,3251-3264,3566-3577,3740-3752,3925-4055,4104-4134,4640-4648,4749-4757
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_769472803b0acb 1-5
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 6-29
+python/langsmith/integrations/_voice/__init__.py
+  s_30c3629a45db25::t_18678fdeeb52f2 6-8
+  s_30c3629a45db25::t_45d226652994a9 36-39
+  s_ae69c515eece8d::t_80e628594161f5 19,21-22,27-35,40-46
+  s_30c3629a45db25::t_48cfcf0d8f0a1c 23-26
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-5,9-18,20,47-68
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_ae69c515eece8d::t_9fff9753d56b15 133-172
+  s_ae69c515eece8d::t_e4de3e37200a68 413-480,482-485,488-503,506,508-510,512-513
+  s_30c3629a45db25::t_9fba3f400bfb1f 411-412
+  s_ae69c515eece8d::t_89d81bc7fa1f6c 21-22
+  s_30c3629a45db25::t_b2c3a5fbbac296 90-93,98,346-348,356-358,365-368
+  s_30c3629a45db25::t_abb88567dcafbb 481,486-487,504-505,507,511
+  s_30c3629a45db25::t_e7aa6194006064 1-20,23-25,27-89,94-97,99-132,173-231,234-345,349-355,359-364,369-393,395,400-410,549-561
+  s_30c3629a45db25::t_d22d34f01645e6 394,396-399
+  s_30c3629a45db25::t_12c4f15affb5b0 26
+  s_30c3629a45db25::t_89e89db02dd54b 232-233
+  s_30c3629a45db25::t_4ad334979632b7 514-548
+python/langsmith/integrations/pipecat/processor.py
+  s_30c3629a45db25::t_93b043bc57aa64 42
+  s_30c3629a45db25::t_0bff6a38a4ea04 43,45,49,52-62
+  s_30c3629a45db25::t_ff2b2e6d6a5994 105
+  s_30c3629a45db25::t_2f1bfa3c1041e1 112
+  s_ae69c515eece8d::t_ff781f4f42b50d 154-157
+  s_ae69c515eece8d::t_76bbe183d8d49e 77,88-90,103-104,110-111
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-40,44,46-48,65-76,78-87,91-102,108-109,115-153,158-160,162-179,184-188,190-198,222-223,226-241,243-254,256,258,260-270,272,275,277-285,289,292-310,323-331
+  s_30c3629a45db25::t_53a1ba4a9b47c9 161,181-183
+  s_ae69c515eece8d::t_62d11884e37153 242
+  s_ae69c515eece8d::t_5540d61c98838e 199-221
+  s_ae69c515eece8d::t_92c011ca9a512c 41,50-51
+  s_30c3629a45db25::t_5d357650b4e514 286-288
+  s_30c3629a45db25::t_8669f157b5ef84 63-64
+  s_30c3629a45db25::t_5c77522e5c604c 106-107,113-114
+  s_30c3629a45db25::t_0cf610ec89cdd7 189,224-225,255,257,259,271,273-274,276,290-291
+  s_ae69c515eece8d::t_e4701df32f6c91 180
+  s_ae69c515eece8d::t_48b955dec26ec3 311-322
+python/langsmith/integrations/pipecat/__init__.py
+  s_30c3629a45db25::t_d4a3b75cfd1259 6
+  s_ae69c515eece8d::t_a89e2cd20657cd 8,15-20
+  s_30c3629a45db25::t_74cdcf2ad01628 44-48
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-5,7,9-14,21-43,49,52-63,65-70,72-88
+  s_30c3629a45db25::t_626ae1d80adc04 50-51
+  s_30c3629a45db25::t_71ab675d58cb7e 64,71
+python/langsmith/integrations/_voice/base_span_processor.py
+  s_30c3629a45db25::t_b239323d0519b2 166,169-172,176
+  s_30c3629a45db25::t_7a484bace2df95 26
+  s_30c3629a45db25::t_2773b69aee5ccc 1-25,27-165,167-168,173-175,177-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "4af728f3dcfe339d0c3fc5b7ae94b3a24b261a4c",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_ae69c515eece8d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0297c47-fca8-451f-83b4-1646f5637ce0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

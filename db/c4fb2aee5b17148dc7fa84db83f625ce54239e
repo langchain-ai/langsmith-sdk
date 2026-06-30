@@ -1,0 +1,82 @@
+python/langsmith/integrations/_voice/base_span_processor.py
+  s_30c3629a45db25::t_2773b69aee5ccc 1-368
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_ae69c515eece8d::t_9fff9753d56b15 134-173
+  s_ae69c515eece8d::t_89d81bc7fa1f6c 21-22,29
+  s_30c3629a45db25::t_e7aa6194006064 1-20,23-25,27-28,30-90,95-98,100-133,174-232,235-346,350-356,360-365,370-406,408,413-423,568-580
+  s_30c3629a45db25::t_9fba3f400bfb1f 424-425
+  s_30c3629a45db25::t_4ad334979632b7 533-567
+  s_30c3629a45db25::t_b2c3a5fbbac296 91-94,99,347-349,357-359,366-369
+  s_ae69c515eece8d::t_e4de3e37200a68 426-532
+  s_30c3629a45db25::t_12c4f15affb5b0 26
+  s_30c3629a45db25::t_89e89db02dd54b 233-234
+  s_30c3629a45db25::t_d22d34f01645e6 407,409-412
+python/pyproject.toml
+  s_84b1d1bd3be3be::t_9f936b464a463d 61,64,66-67
+  s_30c3629a45db25::t_97730b5519bc39 62-63,65
+  s_ae69c515eece8d::t_a3b5f549db5b50 133
+  s_ae69c515eece8d::t_b6e2771c45539b 69
+  s_30c3629a45db25::t_6a9b8957af9f81 68,70-71
+python/langsmith/integrations/pipecat/__init__.py
+  s_ae69c515eece8d::t_a89e2cd20657cd 8,15-20
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-7,9-14,21-45,48,53-64,66-71,73-90
+  s_30c3629a45db25::t_71ab675d58cb7e 65,72
+  s_30c3629a45db25::t_626ae1d80adc04 46-47
+  s_ae69c515eece8d::t_54b83f37a4452d 49-52
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_769472803b0acb 1-5
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 6-29
+python/uv.lock
+  s_30c3629a45db25::t_d0e8cbcc09db41 8-9,14,17-25,303-358,442-450,971-978,1401-1409,1522-1523,1530-1531,1557-1563,1583,1642-1643,1645,1651,1654,1657,1661,1667,1670,1679,1684,1854-1907,2203-2253,2327-2328,2405-2442,2706-2707,2824-2856,3251-3264,3566-3577,3740-3752,3925-4055,4104-4134,4640-4648,4749-4757
+python/langsmith/integrations/_voice/__init__.py
+  s_30c3629a45db25::t_18678fdeeb52f2 6-8
+  s_ae69c515eece8d::t_80e628594161f5 19,21-48
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-5,9-18,20,49-70
+python/langsmith/integrations/pipecat/processor.py
+  s_ae69c515eece8d::t_d776b68e43e25e 102,107
+  s_30c3629a45db25::t_5d357650b4e514 279-281
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-40,42-46,55-69,71-81,87-99,103-104,108-146,151-153,155-172,177-181,183-191,215-216,219-234,236-247,249,251,253-263,265,268,270-278,282,285-303,316-324
+  s_ae69c515eece8d::t_92c011ca9a512c 41,48-50,52-54
+  s_30c3629a45db25::t_97e22f20d78c5c 47
+  s_ae69c515eece8d::t_e4701df32f6c91 173
+  s_ae69c515eece8d::t_76bbe183d8d49e 70,82-86,100-101,105-106
+  s_ae69c515eece8d::t_56b63ffadcfae8 51
+  s_ae69c515eece8d::t_ff781f4f42b50d 147-150
+  s_30c3629a45db25::t_53a1ba4a9b47c9 154,174-176
+  s_30c3629a45db25::t_0cf610ec89cdd7 182,217-218,248,250,252,264,266-267,269,283-284
+  s_ae69c515eece8d::t_5540d61c98838e 192-214
+  s_ae69c515eece8d::t_48b955dec26ec3 304-315
+  s_ae69c515eece8d::t_62d11884e37153 235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "dbc4fb2aee5b17148dc7fa84db83f625ce54239e",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_ae69c515eece8d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0297c47-fca8-451f-83b4-1646f5637ce0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

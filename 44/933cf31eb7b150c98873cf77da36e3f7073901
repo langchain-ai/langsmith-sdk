@@ -1,0 +1,27 @@
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_84b1d1bd3be3be::t_e76bfd7afe7b32 1-430
+python/pyproject.toml
+  s_84b1d1bd3be3be::t_08ed46bc5b291e 77-84
+python/langsmith/integrations/_voice/session.py
+  s_84b1d1bd3be3be::t_e76bfd7afe7b32 1-327
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_84b1d1bd3be3be::t_e76bfd7afe7b32 1-22
+python/langsmith/integrations/openai_realtime/_session.py
+  s_84b1d1bd3be3be::t_e76bfd7afe7b32 1-502
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "44933cf31eb7b150c98873cf77da36e3f7073901",
+  "prompts": {},
+  "sessions": {
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+python/langsmith/integrations/_voice/__init__.py
+  s_30c3629a45db25::t_b42700142c979c 1-68
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_30c3629a45db25::t_b42700142c979c 1-563
+python/langsmith/integrations/pipecat/processor.py
+  s_30c3629a45db25::t_b42700142c979c 1-342
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_b42700142c979c 1-29
+python/langsmith/integrations/pipecat/__init__.py
+  s_30c3629a45db25::t_b42700142c979c 1-88
+python/pyproject.toml
+  s_30c3629a45db25::t_b42700142c979c 61-71,133
+python/langsmith/integrations/_voice/base_span_processor.py
+  s_30c3629a45db25::t_b42700142c979c 1-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "c04b4a8d589cb7c2f9b32b1ddef04b6d967bec89",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
