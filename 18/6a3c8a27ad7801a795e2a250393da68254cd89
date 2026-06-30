@@ -1,0 +1,34 @@
+js/src/client.ts
+  s_80a88393a4c4d6::t_f3c1d153c58523 82
+  s_80a88393a4c4d6::t_39202867b8f88c 81
+  s_80a88393a4c4d6::t_40710a111d82ea 163-170,894-895,1281,1490-1494,1534-1553,1591-1593,2720-2722
+python/langsmith/async_client.py
+  s_80a88393a4c4d6::t_15e2be6a58372b 331
+  s_80a88393a4c4d6::t_6cd5499dde5208 332-334
+  s_80a88393a4c4d6::t_1d2126a9067ee5 49-51,313,318,323,335
+python/langsmith/client.py
+  s_80a88393a4c4d6::t_2ccfd0d4463e85 1487
+  s_80a88393a4c4d6::t_97d74b6fdedbf8 1488-1490
+  s_80a88393a4c4d6::t_16b98f9b049e68 267-269,1465,1471,1477,1491-1492,2254-2255,2681-2702,3621,10962-10963
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "186a3c8a27ad7801a795e2a250393da68254cd89",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_80a88393a4c4d6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eaa3b976-bf0c-43d1-88c3-74a89846b8c6",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
