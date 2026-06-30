@@ -1,0 +1,29 @@
+python/langsmith/integrations/livekit/processor.py
+  s_1a6d51e52b3af9::t_36177cc01e1558 70-664
+  s_1a6d51e52b3af9::t_c0ad491bf0bdfb 1-69
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_1a6d51e52b3af9::t_36177cc01e1558 20
+  s_1a6d51e52b3af9::t_854fb9896fac92 1-19,21-196
+python/langsmith/integrations/livekit/__init__.py
+  s_1a6d51e52b3af9::t_384506da2d3427 1-82
+python/pyproject.toml
+  s_1a6d51e52b3af9::t_0ca8a7a3d41979 69-77
+python/uv.lock
+  s_1a6d51e52b3af9::t_c50cc49b8b81e6 14,371-407,971-979,1265-1325,1656-1662,1757,1764,1766,1770,1774,1798,1973-2098,2448-2456,2748-2760,2773-2790,3151-3159,4350-4358,4398-4413,4704-4727,5024-5140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "b052244c149870f5676b156f70d7c297dba36fe7",
+  "prompts": {},
+  "sessions": {
+    "s_1a6d51e52b3af9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "498b63ad-8bb7-4e7a-9b8b-bb7adbf54e96",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
