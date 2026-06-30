@@ -78,6 +78,14 @@ livekit = [
     "cachetools>=5.0.0",
 ]
 
+# Enabled via `pip install langsmith[openai-realtime]`
+# Covers both OpenAI Realtime wrappers: the raw connection (wrap_realtime) and
+# the Agents SDK session (wrap_realtime_session).
+openai-realtime = [
+    "openai>=1.50",
+    "openai-agents>=0.2",
+]
+
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
