@@ -69,6 +69,22 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
+  CustomChartsSection,
+  CustomChartsSectionRequest,
+  RunStatsGroupBy,
+  SessionCreateParams,
+  SessionDeleteResponse,
+  SessionListParams,
+  SessionRetrieveParams,
+  SessionSortableColumns,
+  SessionUpdateParams,
+  Sessions,
+  TimedeltaInput,
+  TracerSession,
+  TracerSessionWithoutVirtualFields,
+  TracerSessionsOffsetPaginationTopLevelArray,
+} from './resources/sessions.js';
+import {
   DataType,
   Dataset,
   DatasetCloneParams,
@@ -121,23 +137,6 @@ import {
   SnapshotListResponse,
   SnapshotResponse,
 } from './resources/sandboxes/sandboxes.js';
-import {
-  CustomChartsSection,
-  CustomChartsSectionRequest,
-  RunStatsGroupBy,
-  SessionCreateParams,
-  SessionDashboardParams,
-  SessionDeleteResponse,
-  SessionListParams,
-  SessionRetrieveParams,
-  SessionSortableColumns,
-  SessionUpdateParams,
-  Sessions,
-  TimedeltaInput,
-  TracerSession,
-  TracerSessionWithoutVirtualFields,
-  TracerSessionsOffsetPaginationTopLevelArray,
-} from './resources/sessions/sessions.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -987,7 +986,6 @@ export declare namespace Langsmith {
     type SessionRetrieveParams as SessionRetrieveParams,
     type SessionUpdateParams as SessionUpdateParams,
     type SessionListParams as SessionListParams,
-    type SessionDashboardParams as SessionDashboardParams,
   };
 
   export {

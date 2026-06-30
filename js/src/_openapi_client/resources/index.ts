@@ -99,6 +99,5 @@ export {
   type SessionRetrieveParams,
   type SessionUpdateParams,
   type SessionListParams,
-  type SessionDashboardParams,
   type TracerSessionsOffsetPaginationTopLevelArray,
-} from './sessions/sessions.js';
+} from './sessions.js';
