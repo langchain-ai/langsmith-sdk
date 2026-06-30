@@ -26,7 +26,7 @@ export class Runs extends APIResource {
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
-   * for await (const queryRunResponse of client.runs.queryV2()) {
+   * for await (const run of client.runs.queryV2()) {
    *   // ...
    * }
    * ```
@@ -34,9 +34,9 @@ export class Runs extends APIResource {
   queryV2(
     params: RunQueryV2Params,
     options?: RequestOptions,
-  ): PagePromise<QueryRunResponsesItemsCursorPostPagination, QueryRunResponse> {
+  ): PagePromise<RunsItemsCursorPostPagination, Run> {
     const { Accept, ...body } = params;
-    return this._client.getAPIList('/v2/runs/query', ItemsCursorPostPagination<QueryRunResponse>, {
+    return this._client.getAPIList('/v2/runs/query', ItemsCursorPostPagination<Run>, {
       body,
       method: 'post',
       ...options,
@@ -51,7 +51,7 @@ export class Runs extends APIResource {
    *
    * @example
    * ```ts
-   * const queryRunResponse = await client.runs.retrieveV2(
+   * const run = await client.runs.retrieveV2(
    *   '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
    *   {
    *     project_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
@@ -60,11 +60,7 @@ export class Runs extends APIResource {
    * );
    * ```
    */
-  retrieveV2(
-    runID: string,
-    params: RunRetrieveV2Params,
-    options?: RequestOptions,
-  ): APIPromise<QueryRunResponse> {
+  retrieveV2(runID: string, params: RunRetrieveV2Params, options?: RequestOptions): APIPromise<Run> {
     const { Accept, ...query } = params;
     return this._client.get(path`/v2/runs/${runID}`, {
       query,
@@ -78,9 +74,15 @@ export class Runs extends APIResource {
   query = this.queryV2;
 }
 
-export type QueryRunResponsesItemsCursorPostPagination = ItemsCursorPostPagination<QueryRunResponse>;
+export type RunsItemsCursorPostPagination = ItemsCursorPostPagination<Run>;
 
-export interface QueryRunResponse {
+export interface ResponseBodyForRunsGenerateQuery {
+  feedback_urls: { [key: string]: string };
+
+  filter: string;
+}
+
+export interface Run {
   /**
    * `id` is this run's UUID.
    */
@@ -107,14 +109,14 @@ export interface QueryRunResponse {
    * `completion_cost`. Categories mirror `completion_token_details`. Returned only
    * when the `COMPLETION_COST_DETAILS` field is requested.
    */
-  completion_cost_details?: QueryRunResponse.CompletionCostDetails;
+  completion_cost_details?: Run.CompletionCostDetails;
 
   /**
    * `completion_token_details` is the per-category breakdown of `completion_tokens`.
    * Category names are model-specific (for example `reasoning`, `audio`). Returned
    * only when the `COMPLETION_TOKEN_DETAILS` field is requested.
    */
-  completion_token_details?: QueryRunResponse.CompletionTokenDetails;
+  completion_token_details?: Run.CompletionTokenDetails;
 
   /**
    * `completion_tokens` is the completion-side token count.
@@ -145,7 +147,7 @@ export interface QueryRunResponse {
   /**
    * `events` is the ordered list of run events (for example streaming tokens).
    */
-  events?: Array<QueryRunResponse.Event>;
+  events?: Array<Run.Event>;
 
   /**
    * `extra` is additional runtime JSON attached to the run.
@@ -155,7 +157,7 @@ export interface QueryRunResponse {
   /**
    * `feedback_stats` aggregates feedback scores keyed by feedback key.
    */
-  feedback_stats?: { [key: string]: QueryRunResponse.FeedbackStats };
+  feedback_stats?: { [key: string]: Run.FeedbackStats };
 
   /**
    * `first_token_time` is when the first output token was produced (RFC3339
@@ -242,14 +244,14 @@ export interface QueryRunResponse {
    * Categories mirror `prompt_token_details`. Returned only when the
    * `PROMPT_COST_DETAILS` field is requested.
    */
-  prompt_cost_details?: QueryRunResponse.PromptCostDetails;
+  prompt_cost_details?: Run.PromptCostDetails;
 
   /**
    * `prompt_token_details` is the per-category breakdown of `prompt_tokens`.
    * Category names are model-specific (for example `cache_read`, `cache_write`).
    * Returned only when the `PROMPT_TOKEN_DETAILS` field is requested.
    */
-  prompt_token_details?: QueryRunResponse.PromptTokenDetails;
+  prompt_token_details?: Run.PromptTokenDetails;
 
   /**
    * `prompt_tokens` is the prompt-side token count.
@@ -327,7 +329,7 @@ export interface QueryRunResponse {
   trace_id?: string;
 }
 
-export namespace QueryRunResponse {
+export namespace Run {
   /**
    * `completion_cost_details` is the per-category USD breakdown of
    * `completion_cost`. Categories mirror `completion_token_details`. Returned only
@@ -474,13 +476,7 @@ export namespace QueryRunResponse {
   }
 }
 
-export interface ResponseBodyForRunsGenerateQuery {
-  feedback_urls: { [key: string]: string };
-
-  filter: string;
-}
-
-export interface Run {
+export interface RunIngest {
   id?: string;
 
   dotted_order?: string;
@@ -1198,14 +1194,14 @@ Runs.Rules = Rules;
 
 export declare namespace Runs {
   export {
-    type QueryRunResponse as QueryRunResponse,
     type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
     type Run as Run,
+    type RunIngest as RunIngest,
     type RunSchema as RunSchema,
     type RunStatsQueryParams as RunStatsQueryParams,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
-    type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
+    type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,

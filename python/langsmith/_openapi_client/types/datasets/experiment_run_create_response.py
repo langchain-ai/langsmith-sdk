@@ -3,8 +3,8 @@
 from typing import List, Optional
 from datetime import datetime
 
+from ..run import Run
 from ..._models import BaseModel
-from ..query_run_response import QueryRunResponse
 
 __all__ = ["ExperimentRunCreateResponse"]
 
@@ -37,7 +37,7 @@ class ExperimentRunCreateResponse(BaseModel):
     outputs: Optional[object] = None
     """`outputs` is the example reference-output payload (arbitrary JSON object)."""
 
-    runs: Optional[List[QueryRunResponse]] = None
+    runs: Optional[List[Run]] = None
     """`runs` is the list of experiment runs produced for this example."""
 
     source_run_id: Optional[str] = None
