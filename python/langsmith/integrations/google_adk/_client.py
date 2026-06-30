@@ -301,7 +301,8 @@ async def wrap_tool_run_async(
         logger.debug(f"Failed to post tool run: {e}")
 
     try:
-        result = await wrapped(*args, **kwargs)
+        with set_tracing_parent(tool_run):
+            result = await wrapped(*args, **kwargs)
         if isinstance(result, dict):
             outputs = result
         elif isinstance(result, list):

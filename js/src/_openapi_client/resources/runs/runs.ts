@@ -2,9 +2,9 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
+import * as SessionsAPI from '../sessions.js';
 import * as RulesAPI from './rules.js';
 import { Rules } from './rules.js';
-import * as SessionsAPI from '../sessions/sessions.js';
 import { APIPromise } from '../../core/api-promise.js';
 import {
   ItemsCursorPostPagination,

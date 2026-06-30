@@ -39,9 +39,9 @@ if TYPE_CHECKING:
     from .resources import info, runs, datasets, sessions, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.runs import RunsResource, AsyncRunsResource
+    from .resources.sessions import SessionsResource, AsyncSessionsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
-    from .resources.sessions.sessions import SessionsResource, AsyncSessionsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource
 
 __all__ = [

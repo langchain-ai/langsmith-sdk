@@ -38,6 +38,7 @@ from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
+from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
 from langsmith.client import (
     Client,
     _apply_auth_overrides,
@@ -737,6 +738,39 @@ def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         args, kwargs = client.session.request.call_args
         assert kwargs["timeout"] == client._timeout
         assert kwargs["headers"]["x-api-key"] == "abc"
+
+
+@pytest.mark.parametrize(
+    ("api_url", "expected_url"),
+    [
+        ("http://localhost:1984", "http://localhost:1984/v1/platform/issues"),
+        (
+            "http://localhost:1984/api/v1",
+            "http://localhost:1984/api/v1/platform/issues",
+        ),
+    ],
+)
+def test_list_project_issues_uses_platform_issues_endpoint(
+    api_url: str, expected_url: str
+) -> None:
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = [{"id": "issue-1"}]
+    mock_session.request.return_value = mock_response
+
+    client = Client(api_url=api_url, api_key="test", session=mock_session)
+    issues = client.list_project_issues("my-project", status="open", priority="high")
+
+    assert issues == [{"id": "issue-1"}]
+    args, kwargs = mock_session.request.call_args
+    assert args[0] == "GET"
+    assert args[1] == expected_url
+    assert kwargs["params"] == {
+        "session_name": "my-project",
+        "status": "open",
+        "priority": "high",
+    }
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -1506,6 +1540,91 @@ def test_hide_metadata(
         assert all(k not in payload_extra["metadata"] for k in initial_metadata), (
             f"Metadata key should NOT be present in extra {payload_extra}"
         )
+
+
+def _error_traceback_with_secret() -> tuple[str, str]:
+    """Return ``(fake_key, traceback_str)`` assembled at runtime so no literal
+    secret-shaped string sits in source (the repo secret-scanner would otherwise
+    rewrite it)."""
+    fake_key = "sk-ant-api03-" + "A" * 30
+    traceback_str = (
+        "Traceback (most recent call last):\n"
+        '  ClientResponseError: 401, request_info=headers={"Authorization": '
+        f'"Bearer {fake_key}"}}'
+    )
+    return fake_key, traceback_str
+
+
+def _find_request_payload(
+    session: mock.MagicMock, method: str, url_substr: str
+) -> dict:
+    """Return the JSON body of the first mocked request matching method + URL."""
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == method and url_substr in call.args[1]:
+            data = call.kwargs.get("data", b"{}")
+            return json.loads(data.decode("utf-8") if isinstance(data, bytes) else data)
+    raise AssertionError(f"{method} request matching {url_substr!r} not found")
+
+
+def _client_with_secret_anonymizer(session: mock.MagicMock) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        anonymizer=create_secret_anonymizer(),
+    )
+
+
+def test_anonymizer_redacts_error_field_on_create() -> None:
+    """The anonymizer must scrub ``error`` on the create/post path, not just
+    inputs/outputs.
+
+    A credential can land in the error field via an exception traceback -- e.g.
+    an HTTP-client error whose request-object repr includes an ``Authorization``
+    header -- and it must not be uploaded raw.
+    """
+    fake_key, traceback_str = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.create_run(
+        "errored_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=uuid.uuid4(),
+        error=traceback_str,
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    assert fake_key not in payload["error"]
+    assert SECRET_PLACEHOLDER in payload["error"]
+
+
+def test_anonymizer_redacts_error_field_on_update() -> None:
+    """The anonymizer must also scrub ``error`` on the update/patch path."""
+    fake_key, traceback_str = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.update_run(uuid.uuid4(), error=traceback_str)
+
+    payload = _find_request_payload(session, "PATCH", "/runs/")
+    assert fake_key not in payload["error"]
+    assert SECRET_PLACEHOLDER in payload["error"]
+
+
+def test_hide_run_error_passthrough_without_anonymizer() -> None:
+    """With no anonymizer configured, the error is left unchanged."""
+    _, traceback_str = _error_traceback_with_secret()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=mock.MagicMock(spec=requests.Session),
+    )
+    assert client._hide_run_error(traceback_str) == traceback_str
+    assert client._hide_run_error(None) is None
 
 
 def test_omit_traced_runtime_info() -> None:
@@ -6587,4 +6706,20 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
         inputs={},
         run_type="chain",
         attachments={"ok": ("text/plain", b"data")},
+    )
+
+
+def test_removed_sdk_methods_absent() -> None:
+    """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
+    from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
+    from langsmith._openapi_client.resources.datasets.runs import RunsResource
+
+    assert not hasattr(RunsResource, "delta"), (
+        "datasets.runs.delta was de-publicized in PR #28358 and should not exist"
+    )
+    assert not hasattr(DatasetsResource, "group"), (
+        "datasets.group.runs was de-publicized in PR #28358 and should not exist"
+    )
+    assert not hasattr(DatasetsResource, "experiments"), (
+        "datasets.experiments.grouped was de-publicized in PR #28358 and should not exist"
     )

@@ -211,6 +211,64 @@ describe("client", () => {
   });
 });
 
+describe("error field", () => {
+  // Assembled at runtime so no literal secret-shaped string sits in source.
+  const fakeKey = "sk-ant-api03-" + "A".repeat(30);
+  const errorWithSecret = `ClientResponseError: 401, headers={"Authorization": "Bearer ${fakeKey}"}`;
+
+  test("anonymizer redacts the error field on run create", async () => {
+    const { client, callSpy } = mockClient({
+      anonymizer: createSecretAnonymizer(),
+    });
+
+    await client.createRun({
+      id: uuid(),
+      name: "errored",
+      run_type: "llm",
+      inputs: { in: "put" },
+      error: errorWithSecret,
+    });
+
+    const { data } = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(data["errored:0"].error).not.toContain(fakeKey);
+    expect(data["errored:0"].error).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("anonymizer redacts the error field on run update", async () => {
+    const { client, callSpy } = mockClient({
+      anonymizer: createSecretAnonymizer(),
+    });
+
+    const id = uuid();
+    await client.createRun({
+      id,
+      name: "errored",
+      run_type: "llm",
+      inputs: { in: "put" },
+    });
+    await client.updateRun(id, { error: errorWithSecret });
+
+    const { data } = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(data["errored:0"].error).not.toContain(fakeKey);
+    expect(data["errored:0"].error).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("error is left unchanged when no anonymizer is configured", async () => {
+    const { client, callSpy } = mockClient({});
+
+    await client.createRun({
+      id: uuid(),
+      name: "errored",
+      run_type: "llm",
+      inputs: { in: "put" },
+      error: errorWithSecret,
+    });
+
+    const { data } = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(data["errored:0"].error).toBe(errorWithSecret);
+  });
+});
+
 describe("createSecretAnonymizer", () => {
   const redact = createSecretAnonymizer();
 
