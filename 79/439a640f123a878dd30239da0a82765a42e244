@@ -1,0 +1,71 @@
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_6703f022e1e3d5::t_9279eb16997833 107-110,177-179,216-218,234-239,280-282,286-295,339-343
+  s_6703f022e1e3d5::t_144d2b982463dc 1-106,111-176,180-215,219-233,240-279,283-285,296-338,344-392
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_6703f022e1e3d5::t_524373433f5120 352,361,373
+  s_6703f022e1e3d5::t_cf9543c60cd6d4 387-401
+  s_6703f022e1e3d5::t_d57a02cf059690 414
+  s_6703f022e1e3d5::t_d54de3fa9d526b 184-186
+  s_6703f022e1e3d5::t_839953adfeb483 438-439,449
+  s_6703f022e1e3d5::t_0702776ef7a9be 30,42
+  s_6703f022e1e3d5::t_34bdf8f971499d 316,321
+  s_6703f022e1e3d5::t_b41d5d6606f4c6 36
+  s_6703f022e1e3d5::t_e890bcdc5c2930 43
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_6703f022e1e3d5::t_0e489ffef37d4c 74-79,110,121-126
+  s_6703f022e1e3d5::t_287ef98c008d4c 1-17,19-73,80-109,111-120,127-135,137,139-261
+  s_6703f022e1e3d5::t_b0dc418c32fee8 18
+  s_6703f022e1e3d5::t_662df5b01a5b2b 136,138
+python/langsmith/integrations/_voice/helpers.py
+  s_6703f022e1e3d5::t_d8858b4fea2035 1-35,45
+  s_6703f022e1e3d5::t_d08e52bb51134b 36-37
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_6703f022e1e3d5::t_c29b323e99e365 38-39,42-45,49,57-59
+  s_6703f022e1e3d5::t_4b06e4d1704063 4,13
+python/langsmith/integrations/openai_realtime/_session.py
+  s_6703f022e1e3d5::t_1291e1bf845c33 424
+  s_6703f022e1e3d5::t_19425c6472c2e3 254-256
+  s_6703f022e1e3d5::t_d10e59f549886c 440-454
+  s_6703f022e1e3d5::t_64738080876868 467
+  s_6703f022e1e3d5::t_4ee33768e6f2a1 33,42
+  s_6703f022e1e3d5::t_0eeee608188832 488
+  s_6703f022e1e3d5::t_7d59ef3eb8b5bc 511-512,522
+  s_6703f022e1e3d5::t_137a5d0789f409 39
+  s_6703f022e1e3d5::t_d21e6076fa8bdf 398,407
+  s_6703f022e1e3d5::t_a5a3dd49e50ae2 43
+python/langsmith/integrations/_voice/session.py
+  s_6703f022e1e3d5::t_43c1468c11ac1c 60-65,72-75
+  s_6703f022e1e3d5::t_31fe5233055aa2 369,375-378,395-399,405
+  s_6703f022e1e3d5::t_f058ec074eda78 26,37-38
+  s_6703f022e1e3d5::t_4f8b8ee09235e3 320-325,332-333,337-345
+  s_6703f022e1e3d5::t_a569cf883f6f7f 134-138,143-145,149-153,158-160,163-172
+  s_6703f022e1e3d5::t_0e489ffef37d4c 139-142,154-157
+  s_6703f022e1e3d5::t_ff0b423fee28d0 382-385,392
+  s_6703f022e1e3d5::t_714dddba3cb901 36
+  s_6703f022e1e3d5::t_1332e7f1f3247e 173
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_6703f022e1e3d5::t_ae708d60128ab1 1-37,39-114,117-126,140-151,154,157,160,162-163,166-176
+  s_6703f022e1e3d5::t_d2e7d102cf9f63 134-136
+  s_6703f022e1e3d5::t_b471d67dba8c73 177,180
+  s_6703f022e1e3d5::t_e25fb19d3499af 152-153,155-156,158-159,161,164-165
+  s_6703f022e1e3d5::t_70927d007caa93 115-116
+  s_6703f022e1e3d5::t_9dd014ac13177f 178-179,181
+  s_6703f022e1e3d5::t_be59c9c4902e56 38
+  s_6703f022e1e3d5::t_73faae8797af3c 127-133,137-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "79439a640f123a878dd30239da0a82765a42e244",
+  "prompts": {},
+  "sessions": {
+    "s_6703f022e1e3d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa3dfd83-cd4e-49fb-a393-edf5b3ec1257",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
