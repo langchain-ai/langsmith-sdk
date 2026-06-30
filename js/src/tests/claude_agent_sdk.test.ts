@@ -625,7 +625,7 @@ describe("wrapClaudeAgentSDK", () => {
           run_type: "chain",
           extra: {
             metadata: {
-              raw_usage: {
+              ls_aggregated_usage: {
                 input_tokens: 10,
                 output_tokens: 15,
                 total_tokens: 25,
@@ -768,7 +768,7 @@ describe("wrapClaudeAgentSDK", () => {
           inputs: { messages: [{ content: "Test", role: "user" }] },
           extra: {
             metadata: {
-              raw_usage: {
+              ls_aggregated_usage: {
                 input_tokens: 13,
                 output_tokens: 8,
                 total_tokens: 21,
@@ -895,7 +895,7 @@ describe("wrapClaudeAgentSDK", () => {
               duration_ms: 1500,
               duration_api_ms: 1200,
 
-              raw_usage: {
+              ls_aggregated_usage: {
                 input_tokens: 10,
                 output_tokens: 5,
                 total_tokens: 15,
@@ -1429,7 +1429,7 @@ describe("wrapClaudeAgentSDK", () => {
     }
   });
 
-  test("stores aggregate modelUsage as raw_usage without parent rollup usage", async () => {
+  test("stores aggregate modelUsage as ls_aggregated_usage without parent rollup usage", async () => {
     const { client, callSpy } = mockClient();
     const mockSDK = {
       ...createMockSDK(),
@@ -1517,7 +1517,7 @@ describe("wrapClaudeAgentSDK", () => {
           },
           extra: {
             metadata: {
-              raw_usage: {
+              ls_aggregated_usage: {
                 input_tokens: 120,
                 output_tokens: 50,
                 total_tokens: 170,
