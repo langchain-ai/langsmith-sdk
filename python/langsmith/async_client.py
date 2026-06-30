@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
 
 
 class AsyncClient:
@@ -321,6 +322,11 @@ class AsyncClient:
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
         return self._langsmith_api.sandboxes
+
+    @property
+    def projects(self) -> AsyncSessionsResource:
+        """Access the projects resource."""
+        return self._langsmith_api.sessions
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
