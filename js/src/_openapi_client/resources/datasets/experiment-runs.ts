@@ -81,7 +81,7 @@ export interface ExperimentRunCreateResponse {
   /**
    * `runs` is the list of experiment runs produced for this example.
    */
-  runs?: Array<RunsAPI.QueryRunResponse>;
+  runs?: Array<RunsAPI.Run>;
 
   /**
    * `source_run_id` is the run UUID the example was created from, if any.

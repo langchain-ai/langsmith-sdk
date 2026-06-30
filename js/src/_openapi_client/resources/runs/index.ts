@@ -4,9 +4,9 @@
 export { Rules } from './rules.js';
 export {
   Runs,
-  type QueryRunResponse,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
+  type RunIngest,
   type RunSchema,
   type RunStatsQueryParams,
   type RunTypeEnum,
@@ -15,5 +15,5 @@ export {
   type RunRetrieveV2Params,
   type RunRetrieveParams,
   type RunQueryParams,
-  type QueryRunResponsesItemsCursorPostPagination,
+  type RunsItemsCursorPostPagination,
 } from './runs.js';

@@ -7,7 +7,7 @@ from typing_extensions import Literal
 from .._models import BaseModel
 
 __all__ = [
-    "QueryRunResponse",
+    "Run",
     "CompletionCostDetails",
     "CompletionTokenDetails",
     "Event",
@@ -155,7 +155,7 @@ class PromptTokenDetails(BaseModel):
     """`raw` maps each category name to its prompt-token count."""
 
 
-class QueryRunResponse(BaseModel):
+class Run(BaseModel):
     id: Optional[str] = None
     """`id` is this run's UUID."""
 

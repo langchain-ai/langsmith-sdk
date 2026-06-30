@@ -114,10 +114,9 @@ import {
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
 import {
-  QueryRunResponse,
-  QueryRunResponsesItemsCursorPostPagination,
   ResponseBodyForRunsGenerateQuery,
   Run,
+  RunIngest,
   RunQueryParams,
   RunQueryV2Params,
   RunRetrieveParams,
@@ -127,6 +126,7 @@ import {
   RunTypeEnum,
   Runs,
   RunsFilterDataSourceTypeEnum,
+  RunsItemsCursorPostPagination,
 } from './resources/runs/runs.js';
 import {
   SandboxListResponse,
@@ -1020,14 +1020,14 @@ export declare namespace Langsmith {
 
   export {
     Runs as Runs,
-    type QueryRunResponse as QueryRunResponse,
     type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
     type Run as Run,
+    type RunIngest as RunIngest,
     type RunSchema as RunSchema,
     type RunStatsQueryParams as RunStatsQueryParams,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
-    type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
+    type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,
