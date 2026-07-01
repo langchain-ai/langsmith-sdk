@@ -16,6 +16,14 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
+from .issues import (
+    IssuesResource,
+    AsyncIssuesResource,
+    IssuesResourceWithRawResponse,
+    AsyncIssuesResourceWithRawResponse,
+    IssuesResourceWithStreamingResponse,
+    AsyncIssuesResourceWithStreamingResponse,
+)
 from .datasets import (
     DatasetsResource,
     AsyncDatasetsResource,
@@ -80,6 +88,12 @@ __all__ = [
     "AsyncInfoResourceWithRawResponse",
     "InfoResourceWithStreamingResponse",
     "AsyncInfoResourceWithStreamingResponse",
+    "IssuesResource",
+    "AsyncIssuesResource",
+    "IssuesResourceWithRawResponse",
+    "AsyncIssuesResourceWithRawResponse",
+    "IssuesResourceWithStreamingResponse",
+    "AsyncIssuesResourceWithStreamingResponse",
     "SandboxesResource",
     "AsyncSandboxesResource",
     "SandboxesResourceWithRawResponse",

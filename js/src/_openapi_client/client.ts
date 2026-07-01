@@ -28,6 +28,8 @@ import {
   OffsetPaginationCommitsResponse,
   type OffsetPaginationInsightsClusteringJobsParams,
   OffsetPaginationInsightsClusteringJobsResponse,
+  type OffsetPaginationIssuesParams,
+  OffsetPaginationIssuesResponse,
   type OffsetPaginationOnlineEvaluatorsParams,
   OffsetPaginationOnlineEvaluatorsResponse,
   type OffsetPaginationReposParams,
@@ -39,6 +41,7 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
+import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -910,6 +913,7 @@ export class Langsmith {
   runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
+  issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
@@ -918,6 +922,7 @@ Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
+Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
 
 export declare namespace Langsmith {
@@ -927,6 +932,12 @@ export declare namespace Langsmith {
   export {
     type OffsetPaginationTopLevelArrayParams as OffsetPaginationTopLevelArrayParams,
     type OffsetPaginationTopLevelArrayResponse as OffsetPaginationTopLevelArrayResponse,
+  };
+
+  export import OffsetPaginationIssues = Pagination.OffsetPaginationIssues;
+  export {
+    type OffsetPaginationIssuesParams as OffsetPaginationIssuesParams,
+    type OffsetPaginationIssuesResponse as OffsetPaginationIssuesResponse,
   };
 
   export import OffsetPaginationRepos = Pagination.OffsetPaginationRepos;
@@ -1065,6 +1076,13 @@ export declare namespace Langsmith {
   };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
+
+  export {
+    Issues as Issues,
+    type Issue as Issue,
+    type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueListParams as IssueListParams,
+  };
 
   export {
     Sandboxes as Sandboxes,
