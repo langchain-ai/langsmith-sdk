@@ -891,6 +891,7 @@ describe("wrapClaudeAgentSDK", () => {
               num_turns: 3,
               is_error: false,
               session_id: "session_abc123",
+              thread_id: "session_abc123",
 
               duration_ms: 1500,
               duration_api_ms: 1200,
