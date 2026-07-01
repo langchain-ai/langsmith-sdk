@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import utils as ls_utils
 
-from .processor import OtelExporter, OtelSpanProcessor
-
 if TYPE_CHECKING:
     from langsmith.client import Client
+
+    from .processor import OtelExporter, OtelSpanProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,15 @@ __all__ = [
     "langsmith_run_id_from_otel_span_id",
     "get_langsmith_run_url_for_span",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily import processor exports so offline helpers stay dependency-free."""
+    if name in ("OtelSpanProcessor", "OtelExporter"):
+        from . import processor
+
+        return getattr(processor, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def langsmith_run_id_from_otel_span_id(span_id: Union[int, bytes]) -> uuid.UUID:
@@ -46,12 +55,18 @@ def langsmith_run_id_from_otel_span_id(span_id: Union[int, bytes]) -> uuid.UUID:
         if not 1 <= len(span_id) <= 16:
             raise ValueError(f"span_id bytes must be 1-16 bytes, got {len(span_id)}")
         raw = span_id.rjust(16, b"\x00")
+    elif isinstance(span_id, bool):
+        # bool is an int subclass; reject to avoid silent True/False span IDs.
+        raise TypeError("span_id must be int or bytes, got bool")
     elif isinstance(span_id, int):
-        if not 0 <= span_id < (1 << 128):
-            raise ValueError("span_id int does not fit in 16 bytes")
+        # OTel span IDs are non-zero 64-bit integers; 0 is the invalid sentinel.
+        if not 1 <= span_id < (1 << 64):
+            raise ValueError("span_id int must be a non-zero 64-bit value")
         raw = span_id.to_bytes(16, "big")
     else:
         raise TypeError(f"span_id must be int or bytes, got {type(span_id)}")
+    if raw == b"\x00" * 16:
+        raise ValueError("span_id is all-zero, which is not a valid OTel span ID")
     return uuid.UUID(bytes=raw)
 
 
@@ -212,6 +227,8 @@ def configure(
             return False
 
         project_name = project_name or ls_utils.get_tracer_project()
+
+        from .processor import OtelSpanProcessor
 
         processor = OtelSpanProcessor(
             api_key=api_key, project=project_name, SpanProcessor=SpanProcessor

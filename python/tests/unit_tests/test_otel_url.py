@@ -62,6 +62,46 @@ def test_invalid_bytes_length():
         langsmith_run_id_from_otel_span_id(b"\x00" * 17)
 
 
+def test_reject_zero_int():
+    with pytest.raises(ValueError):
+        langsmith_run_id_from_otel_span_id(0)
+
+
+def test_reject_all_zero_bytes():
+    with pytest.raises(ValueError):
+        langsmith_run_id_from_otel_span_id(b"\x00" * 8)
+
+
+def test_reject_int_wider_than_64_bits():
+    with pytest.raises(ValueError):
+        langsmith_run_id_from_otel_span_id(1 << 64)
+
+
+def test_reject_bool():
+    with pytest.raises(TypeError):
+        langsmith_run_id_from_otel_span_id(True)  # type: ignore[arg-type]
+
+
+def test_importing_helper_does_not_import_processor():
+    """Offline helper import must not eagerly import the .processor module."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; import langsmith.integrations.otel as m; "
+        "assert m.langsmith_run_id_from_otel_span_id(1); "
+        "assert 'langsmith.integrations.otel.processor' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-W", "error", "-c", code], check=True)
+
+
+def test_lazy_processor_exports_still_accessible():
+    import langsmith.integrations.otel as m
+
+    assert m.OtelSpanProcessor is not None
+    assert m.OtelExporter is not None
+
+
 def _make_client():
     client = MagicMock()
     client._host_url = "https://smith.langchain.com"
