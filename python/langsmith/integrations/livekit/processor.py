@@ -112,6 +112,44 @@ _LLM_EVENT_ROLES = {
 }
 _LLM_CHOICE_EVENT = "gen_ai.choice"
 
+# LiveKit reports some providers as the API base-URL host (e.g. its OpenAI
+# plugin → ``api.openai.com``), but LangSmith's cost engine keys on provider
+# *slugs* (``openai`` / ``deepgram`` / …), so a hostname never matches a price.
+# We recover the slug by substring — so ``beta.anthropic.com`` still → ``anthropic``
+# — mirroring how LangSmith itself infers the provider from a model name.
+_PROVIDER_ALIASES = (
+    "openai",
+    "anthropic",
+    "gemini",
+    "google",
+    "deepgram",
+    "cartesia",
+    "elevenlabs",
+    "cohere",
+    "mistral",
+    "groq",
+)
+
+
+def _normalize_provider(raw: Any) -> Optional[str]:
+    """Map a LiveKit provider (often an API host) to a LangSmith provider slug.
+
+    Matches a known provider slug as a substring (so ``api.openai.com`` and
+    ``beta.anthropic.com`` resolve to ``openai`` / ``anthropic``); otherwise
+    returns the value's host, stripped of scheme/path. Returns ``None`` for
+    empty input or LiveKit's ``"unknown"`` placeholder, so we never stamp a
+    non-matching provider.
+    """
+    if not raw:
+        return None
+    value = str(raw).strip().lower()
+    if not value or value == "unknown":
+        return None
+    for alias in _PROVIDER_ALIASES:
+        if alias in value:
+            return alias
+    return value.split("://", 1)[-1].split("/", 1)[0] or None
+
 
 class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     """Enriches LiveKit Agents' OTel spans with LangSmith-compatible attributes."""
@@ -247,12 +285,37 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     # -- per-span-type handlers ----------------------------------------------
 
+    def _stamp_provider(self, tspan: TranslatedSpan, metrics_attr: str) -> None:
+        """Normalize the provider to a LangSmith slug for a LiveKit span.
+
+        LiveKit reports the provider as the API-base-URL host (its OpenAI plugin
+        → ``api.openai.com``) and, depending on version, under either
+        ``gen_ai.provider.name`` (livekit-agents ≥1.5) or ``gen_ai.system``.
+        LangSmith ingestion maps either to ``ls_provider``, so we resolve a slug
+        from the metric blob's ``metadata.model_provider`` or whichever key the
+        span carries, then write it back to *both* keys. No-ops when no usable
+        provider is available, rather than stamp ``"unknown"``.
+        """
+        provider = None
+        metrics = self._try_parse_json_object(tspan.attributes.get(metrics_attr))
+        if isinstance(metrics, dict):
+            provider = (metrics.get("metadata") or {}).get("model_provider")
+        provider = (
+            _normalize_provider(provider)
+            or _normalize_provider(tspan.attributes.get("gen_ai.provider.name"))
+            or _normalize_provider(tspan.attributes.get("gen_ai.system"))
+        )
+        if provider:
+            tspan.attributes["gen_ai.provider.name"] = provider
+            tspan.attributes["gen_ai.system"] = provider
+
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
         """STT (``user_turn``): audio input → transcribed text."""
         self._set_kind(tspan, "llm")
         model = tspan.attributes.get("gen_ai.request.model")
         if model:
             tspan.attributes["langsmith.metadata.model_name"] = str(model)
+        self._stamp_provider(tspan, "lk.stt_metrics")
 
         transcript = tspan.attributes.get("lk.user_transcript")
         self._set_messages(
@@ -286,6 +349,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._set_messages_json(
             tspan, prompt=prompt or None, completion=completion or None
         )
+        # Normalize the provider (LiveKit's OpenAI plugin reports the
+        # ``api.openai.com`` host, which won't match a LangSmith price).
+        self._stamp_provider(tspan, "lk.llm_metrics")
 
         # Drop the translated events (keep others, e.g. exceptions) on the
         # draft — finalize rebuilds the span from it, so span._events is left
@@ -364,6 +430,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if model:
             tspan.attributes["gen_ai.request.model"] = str(model)
             tspan.attributes["langsmith.metadata.model_name"] = str(model)
+        self._stamp_provider(tspan, "lk.tts_metrics")
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Render an ``agent_turn``: one user/assistant exchange.
@@ -674,6 +741,17 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             if ms_key in tspan.attributes:  # don't clobber what a branch set
                 continue
             tspan.attributes[ms_key] = v
+
+        # Normalize the provider to a LangSmith slug on EVERY exported span,
+        # under both keys LiveKit/LangSmith use across versions —
+        # ``gen_ai.provider.name`` (livekit-agents ≥1.5) and the legacy
+        # ``gen_ai.system`` — so ``api.openai.com`` → ``openai`` regardless of
+        # which one carries it. Done at the single export chokepoint so it also
+        # catches spans that never reach the per-stage handlers.
+        for key in ("gen_ai.provider.name", "gen_ai.system"):
+            normalized = _normalize_provider(tspan.attributes.get(key))
+            if normalized:
+                tspan.attributes[key] = normalized
 
     @staticmethod
     def _try_parse_json_object(value: Any) -> Optional[dict]:

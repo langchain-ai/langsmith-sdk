@@ -230,6 +230,23 @@ def describe_event(event: Any) -> tuple[str, dict[str, Any], bool]:
     return etype, payload, inbound
 
 
+def _resolve_model(session: Any) -> Optional[str]:
+    """Best-effort model name for a ``RealtimeSession`` (attribution only).
+
+    The Agents SDK emits no per-response usage, so this never drives cost; it
+    just tags the assistant ``llm`` span with ``ls_model_name``. Returns ``None``
+    when the model can't be read from the session.
+    """
+    model = getattr(session, "model", None)
+    if isinstance(model, str):
+        return model or None
+    for attr in ("model_name", "model"):
+        name = getattr(model, attr, None)
+        if isinstance(name, str) and name:
+            return name
+    return None
+
+
 class _AgentsRealtimeTracer:
     """Reconstructs the conversation from history snapshots and emits its spans.
 
@@ -246,9 +263,11 @@ class _AgentsRealtimeTracer:
         session: EventSession,
         *,
         on_message: Optional[Callable[[str, str], None]] = None,
+        model: Optional[str] = None,
     ) -> None:
         self._trace = session
         self._on_message = on_message
+        self._model = model
         # item_id → {"role", "text"}, in arrival order (dict preserves insertion).
         self._items: dict[str, dict[str, Any]] = {}
         self._emitted: set[str] = set()  # item_ids already turned into spans
@@ -439,7 +458,10 @@ class _AgentsRealtimeTracer:
             ):
                 pass
         else:
-            self._trace.record_llm(outputs={"role": "assistant", "content": text})
+            self._trace.record_llm(
+                outputs={"role": "assistant", "content": text},
+                metadata={"ls_provider": "openai", "ls_model_name": self._model},
+            )
 
 
 class _TracedRealtimeSession:
@@ -514,7 +536,9 @@ class _TracedRealtimeSession:
             )
             ctx.__enter__()
             self._ctx = ctx
-            self._tracer = _AgentsRealtimeTracer(trace, on_message=self._on_message)
+            self._tracer = _AgentsRealtimeTracer(
+                trace, on_message=self._on_message, model=_resolve_model(self._session)
+            )
         except BaseException:
             if self._ctx is not None:
                 try:

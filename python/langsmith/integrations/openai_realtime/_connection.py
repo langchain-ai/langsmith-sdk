@@ -202,6 +202,7 @@ class _RealtimeTracer:
         # The currently open event span, kept active until the next event:
         # (event_span_cm, tracing_context_cm). None = nothing open.
         self._open: tuple[Any, Any] | None = None
+        self._model: str | None = None
 
     def observe(self, event: Any) -> None:
         """Observe one received event; span it where warranted.
@@ -215,6 +216,13 @@ class _RealtimeTracer:
         etype = getattr(event, "type", None)
         if etype is None:
             return  # not a recognizable Realtime event; nothing to span
+
+        # Capture the session's model (for the llm span's ls_model_name); the
+        # response.done payload has no model field, but the session events do.
+        if etype in ("session.created", "session.updated"):
+            model = getattr(getattr(event, "session", None), "model", None)
+            if model:
+                self._model = str(model)
 
         # No-span events: observed for side-state only.
         if etype == "response.output_audio.delta":
@@ -304,11 +312,16 @@ class _RealtimeTracer:
             self._await_audio_since = None
 
     def _record_response_llm(self, run: RunTree, response: Any) -> None:
+        metadata: dict[str, Any] = {
+            "status": getattr(response, "status", None),
+            "ls_provider": "openai",
+            "ls_model_name": self._model,
+        }
         self._session.record_llm(
             run,
             outputs=response_assistant_output(response),
             usage_metadata=response_usage_metadata(response),
-            metadata={"status": getattr(response, "status", None)},
+            metadata=metadata,
         )
 
 
