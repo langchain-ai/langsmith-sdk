@@ -48,7 +48,12 @@ from google.adk.plugins.base_plugin import BasePlugin
 
 from langsmith import RunTree
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal.voice.helpers import dump_event, observe_safely, scrub
+from langsmith._internal._package_version import get_package_version
+from langsmith._internal.voice.helpers import (
+    dump_event,
+    observe_safely,
+    scrub,
+)
 from langsmith._internal.voice.session import EventSession, start_session
 
 if TYPE_CHECKING:
@@ -452,6 +457,8 @@ class LangSmithGoogleADKLivePlugin(BasePlugin):
                 max_audio_seconds=self._max_audio_seconds,
                 client=self._client,
                 replicas=self._replicas,
+                integration="google-adk-live",
+                integration_version=get_package_version("google-adk"),
             )
             key = self._session_key(invocation_context)
             with self._lock:

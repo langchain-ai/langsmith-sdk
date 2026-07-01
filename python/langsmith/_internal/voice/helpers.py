@@ -1,4 +1,4 @@
-"""Shared helpers for the Track-B ``EventSession`` adapters.
+"""Shared helpers for the voice integration adapters.
 
 * ``dump_event`` — best-effort conversion of an event object to a plain dict
   (Pydantic ``model_dump`` → ``dict`` → ``repr`` fallback).
@@ -15,6 +15,8 @@ import logging
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["dump_event", "scrub", "observe_safely"]
 
 # Longest string kept on a span before truncating. Transcripts are short; this
 # only ever trims an unexpectedly large blob.

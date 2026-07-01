@@ -1,11 +1,11 @@
 import logging
 import weakref
 from datetime import datetime
-from functools import cache
 from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
+from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree
 
 try:
@@ -91,16 +91,6 @@ except ImportError:
 from langsmith import client as ls_client
 
 logger = logging.getLogger(__name__)
-
-
-@cache
-def _get_package_version(package_name: str) -> str | None:
-    try:
-        from importlib.metadata import version
-
-        return version(package_name)
-    except Exception:
-        return None
 
 
 if HAVE_AGENTS:
@@ -202,7 +192,7 @@ if HAVE_AGENTS:
                 "metadata": {
                     **(self._metadata or {}),
                     "ls_integration": "openai-agents-sdk",
-                    "ls_integration_version": _get_package_version("openai-agents"),
+                    "ls_integration_version": get_package_version("openai-agents"),
                     "ls_agent_type": "root",
                 }
             }

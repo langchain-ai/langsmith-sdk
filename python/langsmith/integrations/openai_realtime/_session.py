@@ -36,6 +36,7 @@ import sys
 import uuid
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import EventSession, start_session
 from langsmith.run_helpers import tracing_context
@@ -501,6 +502,8 @@ class _TracedRealtimeSession:
                 max_audio_seconds=self._max_audio_seconds,
                 client=self._client,
                 replicas=self._replicas,
+                integration="openai-agents-realtime",
+                integration_version=get_package_version("openai-agents"),
             )
             self._trace = trace
             ctx = tracing_context(

@@ -113,6 +113,8 @@ class TestDeferredRootRelease:
         exported = [c.args[0] for c in proc.downstream.on_end.call_args_list]
         root = next(s for s in exported if s._attributes.get("langsmith.root_span"))
         assert root._attributes["langsmith.metadata.ls_modality"] == "audio"
+        # The root is attributed to this integration so usage is trackable.
+        assert root._attributes["langsmith.metadata.ls_integration"] == "livekit"
         completion = json.loads(root._attributes["gen_ai.completion"])
         assert completion[0]["content"] == "sunny"
         # Per-conversation state freed after release.

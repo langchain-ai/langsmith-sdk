@@ -165,7 +165,9 @@ def _tracer(session, **kwargs):
 
 class TestTracer:
     def test_history_turn_collapses_partials_and_emits_spans(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -203,7 +205,9 @@ class TestTracer:
         assert "latency_to_first_audio_ms" in (turn.extra or {}).get("metadata", {})
 
     def test_hold_last_defers_final_message_until_teardown(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -226,7 +230,9 @@ class TestTracer:
         assert any(n == "model" for n, _ in created)
 
     def test_tool_start_and_end_become_one_tool_span(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -252,7 +258,9 @@ class TestTracer:
         assert tool.outputs == {"output": "sunny"}
 
     def test_tool_end_without_start_falls_back_to_point_in_time(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -271,7 +279,9 @@ class TestTracer:
         assert tool.outputs == {"output": "sunny"}
 
     def test_orphan_tool_span_closed_with_error_at_teardown(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -285,7 +295,9 @@ class TestTracer:
         assert tool.error
 
     def test_audio_interrupted_flags_open_turn(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -296,7 +308,9 @@ class TestTracer:
         assert any(n == "audio_interrupted" for n, _ in created)
 
     def test_raw_model_event_user_transcript(self, monkeypatch):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         created = _spy_children(monkeypatch)
         tracer = _tracer(session)
 
@@ -316,7 +330,9 @@ class TestTracer:
         assert any(n == "user_message" for n, _ in created)
 
     def test_on_message_called_once_per_finalized_line(self):
-        session = start_session(thread_id="t", sample_rate=24_000)
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
         seen: list = []
         tracer = _tracer(
             session, on_message=lambda role, text: seen.append((role, text))
@@ -395,6 +411,9 @@ class TestProxy:
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": "yo"},
         ]
+        # The root is attributed to the Agents SDK realtime backend.
+        root_meta = (trace.run.extra or {}).get("metadata") or {}
+        assert root_meta["ls_integration"] == "openai-agents-realtime"
 
     async def test_broken_tracer_does_not_break_loop(self, monkeypatch):
         events = [NS(type="audio"), NS(type="other")]

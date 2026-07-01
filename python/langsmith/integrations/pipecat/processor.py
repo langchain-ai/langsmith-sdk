@@ -44,6 +44,7 @@ from typing import Any, Optional
 
 from cachetools import TTLCache
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.audio import pcm_to_wav
 from langsmith._internal.voice.base_span_processor import (
     BaseLangSmithSpanProcessor,
@@ -302,6 +303,12 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._set_kind(tspan, "chain")
         tspan.attributes["langsmith.root_span"] = True
         tspan.attributes["langsmith.metadata.ls_modality"] = "audio"
+        tspan.attributes["langsmith.metadata.ls_integration"] = "pipecat"
+        # "" not None: OTel span attributes reject a null value (unlike the
+        # RunTree metadata path); pipecat-ai is a hard dep, so this is ~always set.
+        tspan.attributes["langsmith.metadata.ls_integration_version"] = (
+            get_package_version("pipecat-ai") or ""
+        )
 
         messages = self._conversation_by_trace.get(trace_id, [])
         if messages:

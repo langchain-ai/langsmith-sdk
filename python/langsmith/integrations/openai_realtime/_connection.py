@@ -30,6 +30,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal._usage import _create_usage_metadata
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import EventSession, start_session
@@ -409,6 +410,8 @@ class _RealtimeTracingSession:
             max_audio_seconds=self._max_audio_seconds,
             client=self._client,
             replicas=self._replicas,
+            integration="openai-realtime",
+            integration_version=get_package_version("openai"),
         )
         self._ctx = tracing_context(
             metadata={"thread_id": self._thread_id},

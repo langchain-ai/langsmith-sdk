@@ -240,6 +240,10 @@ class TestEndToEnd:
         # First user utterance named the trace (the root run's display name).
         assert session.run.name == "what's the weather?"
 
+        # The root is attributed to the raw-Realtime-API integration.
+        root_meta = (session.run.extra or {}).get("metadata") or {}
+        assert root_meta["ls_integration"] == "openai-realtime"
+
         # Exactly one turn, and first-audio latency was timed onto it.
         turns = [child for name, child in created if name == "turn"]
         assert len(turns) == 1
