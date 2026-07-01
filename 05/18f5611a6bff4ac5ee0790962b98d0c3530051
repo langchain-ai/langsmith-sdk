@@ -1,0 +1,61 @@
+python/pyproject.toml
+  s_a22a9bc0776d5e::t_2b3660be01130d 101
+  s_a22a9bc0776d5e::t_e81653fbd1c982 98-100
+  s_a22a9bc0776d5e::t_4bd301026cf5b9 102
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_cba39d94b3ece6 232-239,247,252,258-259,269-271,274
+  s_a22a9bc0776d5e::t_42a367ec702443 157-160
+  s_a22a9bc0776d5e::t_08f5c8c9d52086 18-28,33-37
+  s_a22a9bc0776d5e::t_376422dd55e1f4 29,49-156,161-182,185-201,203,205,212-214,220,223,225-231,240-246,248-251,253-257,260-268,272-273,275-499
+  s_a22a9bc0776d5e::t_ddf5014750252c 202,204
+  s_a22a9bc0776d5e::t_d1f5ac0c7bda0f 183-184,206-211,215-219,221-222,224
+  s_a22a9bc0776d5e::t_f3e93b5b243839 15-17
+  s_a22a9bc0776d5e::t_7cb3662de18598 30-32
+  s_a22a9bc0776d5e::t_0808923d4ccfe9 38-40,46-48
+  s_a22a9bc0776d5e::t_a6dd5ea1d40bd3 1-14,41-45
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_83932b94648888 358,363-367,371-376
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_bf5ebcb0f19cba 3-204,208-279,311,332-333,354,356,359-374,378-381,386-389,392-393,401-407,411,419-434,438-449,455-457,459-515,517-531,535,537,584,586,593,611,620,633,635
+  s_a22a9bc0776d5e::t_290fa13403eb6c 516
+  s_a22a9bc0776d5e::t_504ec053f9708c 205-207,408-410,435-437,450-454,458
+  s_a22a9bc0776d5e::t_aa7b11f2a3fa94 355,377,382-383,390-391,397-400,414-418
+  s_a22a9bc0776d5e::t_7954c2da1bbe84 1-2
+  s_a22a9bc0776d5e::t_98bc7e0560f1f4 280-282,308-310
+  s_a22a9bc0776d5e::t_a758e327b545f1 312-314,329-331
+  s_a22a9bc0776d5e::t_3d191146a5815d 334-336,351-353
+  s_a22a9bc0776d5e::t_9c53cd669ce3a3 357-358
+  s_a22a9bc0776d5e::t_835b6808a65ce6 375-376
+  s_a22a9bc0776d5e::t_e27c3fdc9f372b 384-385
+  s_a22a9bc0776d5e::t_a40e6ae7e05180 394-396
+  s_a22a9bc0776d5e::t_d6b8f16fff9820 412-413
+  s_a22a9bc0776d5e::t_d37eb9e075c2af 532-534
+  s_a22a9bc0776d5e::t_b9c8b4e177644e 536
+  s_a22a9bc0776d5e::t_e5993f46a4d142 538-540,581-583
+  s_a22a9bc0776d5e::t_6651c0e7a1ca2c 585
+  s_a22a9bc0776d5e::t_7fb4a34f3d89e9 587-592
+  s_a22a9bc0776d5e::t_5da5948f2deea2 594-596,608-610
+  s_a22a9bc0776d5e::t_c5ee8391a969c2 612-614,617-619
+  s_a22a9bc0776d5e::t_95106c8da75d38 621-623,630-632
+  s_a22a9bc0776d5e::t_4d3461cdf27794 634
+  s_a22a9bc0776d5e::t_1859f1f2126935 636-638
+  s_a22a9bc0776d5e::t_3870d667636736 283-307,315-328,337-350,541-580,597-607,615-616,624-629,639-642
+python/uv.lock
+  s_a22a9bc0776d5e::t_ae895575fb1d6f 14,1653-1655,1769,1808
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "0518f5611a6bff4ac5ee0790962b98d0c3530051",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
