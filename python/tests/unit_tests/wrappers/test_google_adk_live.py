@@ -1,6 +1,6 @@
 """Unit tests for the Google ADK Live voice tracing integration.
 
-Pure unit tests: they exercise ``LangSmithLivePlugin`` / ``_AdkLiveTracer`` /
+Pure unit tests: they exercise ``LangSmithGoogleADKLivePlugin`` / ``_AdkLiveTracer`` /
 ``_LiveEventView`` without a network round-trip and without requiring the heavy
 ``google-adk`` install. Two seams make that possible:
 
@@ -64,7 +64,7 @@ from langsmith._internal._beta_decorator import (  # noqa: E402
 )
 from langsmith.integrations.google_adk_live import _plugin as adk_plugin  # noqa: E402
 from langsmith.integrations.google_adk_live._plugin import (  # noqa: E402
-    LangSmithLivePlugin,
+    LangSmithGoogleADKLivePlugin,
     _LiveEventView,
     _usage_metadata,
 )
@@ -133,7 +133,7 @@ def _new_plugin(**kwargs):
     """Construct the plugin, silencing the one-shot beta warning."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", LangSmithBetaWarning)
-        return LangSmithLivePlugin(**kwargs)
+        return LangSmithGoogleADKLivePlugin(**kwargs)
 
 
 @pytest.fixture
@@ -254,15 +254,15 @@ class TestUsageMetadata:
 class TestSessionKey:
     def test_prefers_session_id(self):
         ctx = _ctx(session_id="sess-1", invocation_id="inv-1")
-        assert LangSmithLivePlugin._session_key(ctx) == "sess-1"
+        assert LangSmithGoogleADKLivePlugin._session_key(ctx) == "sess-1"
 
     def test_falls_back_to_invocation_id(self):
         ctx = _ctx(session_id=None, invocation_id="inv-1")
-        assert LangSmithLivePlugin._session_key(ctx) == "inv-1"
+        assert LangSmithGoogleADKLivePlugin._session_key(ctx) == "inv-1"
 
     def test_falls_back_to_object_identity(self):
         ctx = _ctx(session_id=None, invocation_id=None)
-        assert LangSmithLivePlugin._session_key(ctx) == str(id(ctx))
+        assert LangSmithGoogleADKLivePlugin._session_key(ctx) == str(id(ctx))
 
 
 # --------------------------------------------------------------------------- #
@@ -291,6 +291,23 @@ class TestLifecycle:
         plugin = _new_plugin(max_audio_seconds=30.0)
         _run(plugin.before_run_callback(invocation_context=_ctx(session_id="A")))
         assert calls[0]["max_audio_seconds"] == 30.0
+
+    def test_client_and_replicas_are_plumbed_to_start_session(self, monkeypatch):
+        # An explicit client / replicas must reach start_session so tracing
+        # writes can be routed and mirrored per the caller's configuration.
+        calls = []
+
+        def fake_start_session(**kwargs):
+            calls.append(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(adk_plugin, "start_session", fake_start_session)
+        client = MagicMock()
+        replicas = [{"project_name": "replica"}]
+        plugin = _new_plugin(client=client, replicas=replicas)
+        _run(plugin.before_run_callback(invocation_context=_ctx(session_id="A")))
+        assert calls[0]["client"] is client
+        assert calls[0]["replicas"] == replicas
 
     def test_two_conversations_are_isolated(self, make_plugin):
         factory, created = make_plugin
@@ -639,4 +656,4 @@ class TestBetaWarning:
     def test_construction_emits_beta_warning(self):
         _warn_once.cache_clear()  # @warn_beta dedupes per message; reset it
         with pytest.warns(LangSmithBetaWarning):
-            LangSmithLivePlugin()
+            LangSmithGoogleADKLivePlugin()

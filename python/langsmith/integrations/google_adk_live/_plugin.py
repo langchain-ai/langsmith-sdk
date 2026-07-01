@@ -3,7 +3,7 @@
 ADK emits ``gen_ai.*`` OTel spans for its non-live paths, but ``run_live`` — the
 whole voice loop — isn't instrumented, so an OTel-only setup yields an empty
 root. This integration builds the trace from the live event stream instead,
-using ADK's official plugin hook: :class:`LangSmithLivePlugin` is a
+using ADK's official plugin hook: :class:`LangSmithGoogleADKLivePlugin` is a
 ``BasePlugin`` whose ``before_run_callback`` / ``on_event_callback`` /
 ``after_run_callback`` hooks open the conversation root span, span each
 meaningful event, and finalize.
@@ -42,7 +42,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from google.adk.plugins.base_plugin import BasePlugin
 
@@ -50,6 +50,12 @@ from langsmith import RunTree
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal.voice.helpers import dump_event, observe_safely, scrub
 from langsmith._internal.voice.session import EventSession, start_session
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from langsmith import Client
+    from langsmith.run_trees import WriteReplica
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +311,7 @@ class _AdkLiveTracer:
         self._open_tools.clear()
 
 
-class LangSmithLivePlugin(BasePlugin):
+class LangSmithGoogleADKLivePlugin(BasePlugin):
     """An ADK ``BasePlugin`` that traces ``run_live`` conversations to LangSmith.
 
     Register it on the ``Runner`` (``Runner(..., plugins=[plugin])``). One run =
@@ -324,13 +330,15 @@ class LangSmithLivePlugin(BasePlugin):
     def __init__(
         self,
         *,
-        name: str = "langsmith_live",
+        name: str = "langsmith_google_adk_live",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         thread_id_provider: Optional[Callable[[], Optional[str]]] = None,
         project_name: Optional[str] = None,
         tags: Optional[list[str]] = None,
         metadata: Optional[dict[str, Any]] = None,
         max_audio_seconds: Optional[float] = None,
+        client: Optional[Client] = None,
+        replicas: Optional[Sequence[WriteReplica]] = None,
     ) -> None:
         """Create the plugin.
 
@@ -345,6 +353,10 @@ class LangSmithLivePlugin(BasePlugin):
                 bound memory. Since one shared plugin can trace many (and
                 long-running) conversations, set this on a server to keep audio
                 buffers from growing unbounded; ``None`` (default) keeps all audio.
+            client: LangSmith ``Client`` for tracing writes; ``None`` (default)
+                uses the SDK's standard env-based resolution (``LANGSMITH_*``).
+            replicas: tracing replicas to mirror the conversation trace to
+                additional destinations; ``None`` (default) disables replication.
         """
         super().__init__(name=name)
         self._sample_rate = sample_rate
@@ -353,6 +365,8 @@ class LangSmithLivePlugin(BasePlugin):
         self._tags = tags
         self._metadata = metadata
         self._max_audio_seconds = max_audio_seconds
+        self._client = client
+        self._replicas = replicas
         # One tracer per concurrent conversation, keyed by ADK session id. The
         # plugin instance is shared across all run_live invocations, so a single
         # attribute would let concurrent conversations clobber each other. The
@@ -436,6 +450,8 @@ class LangSmithLivePlugin(BasePlugin):
                 tags=self._tags,
                 metadata=self._metadata,
                 max_audio_seconds=self._max_audio_seconds,
+                client=self._client,
+                replicas=self._replicas,
             )
             key = self._session_key(invocation_context)
             with self._lock:

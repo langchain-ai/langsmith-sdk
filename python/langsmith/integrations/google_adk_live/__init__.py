@@ -1,6 +1,6 @@
 """LangSmith integration for Google ADK Live (Gemini Live voice).
 
-Provides :class:`LangSmithLivePlugin`, an ADK ``BasePlugin`` that traces
+Provides :class:`LangSmithGoogleADKLivePlugin`, an ADK ``BasePlugin`` that traces
 ``Runner.run_live`` voice conversations. Kept in its own package (and behind the
 ``google-adk-live`` extra) so that users of the non-streaming
 ``langsmith.integrations.google_adk`` integration do not take on its
@@ -15,14 +15,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ._plugin import LangSmithLivePlugin
+    from langsmith.integrations.google_adk_live._plugin import (
+        LangSmithGoogleADKLivePlugin,
+    )
 
-__all__ = ["LangSmithLivePlugin"]
+__all__ = ["LangSmithGoogleADKLivePlugin"]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "LangSmithLivePlugin":
-        from ._plugin import LangSmithLivePlugin
+    if name == "LangSmithGoogleADKLivePlugin":
+        from langsmith.integrations.google_adk_live._plugin import (
+            LangSmithGoogleADKLivePlugin,
+        )
 
-        return LangSmithLivePlugin
+        return LangSmithGoogleADKLivePlugin
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
