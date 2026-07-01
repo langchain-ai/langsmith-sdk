@@ -1,15 +1,124 @@
 """OpenTelemetry integration for LangSmith."""
 
 import logging
-from typing import Optional, cast
+import uuid
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import utils as ls_utils
 
 from .processor import OtelExporter, OtelSpanProcessor
 
+if TYPE_CHECKING:
+    from langsmith.client import Client
+
 logger = logging.getLogger(__name__)
 
-__all__ = ["configure", "OtelSpanProcessor", "OtelExporter"]
+__all__ = [
+    "configure",
+    "OtelSpanProcessor",
+    "OtelExporter",
+    "langsmith_run_id_from_otel_span_id",
+    "get_langsmith_run_url_for_span",
+]
+
+
+def langsmith_run_id_from_otel_span_id(span_id: Union[int, bytes]) -> uuid.UUID:
+    """Map an OpenTelemetry span ID to its LangSmith run ID.
+
+    The LangSmith backend derives a run's UUID from the OTel span ID during
+    ingest: the span-ID bytes are copied right-aligned into a 16-byte,
+    zero-padded buffer, and those bytes become the run UUID.
+
+    This mapping is deterministic and fully offline: it makes no network
+    request and does not require `opentelemetry` to be installed. The span ID
+    to run ID relationship is fixed by the server's ingest rule, so the run ID
+    is stable regardless of when (or whether) ingest has completed.
+
+    Args:
+        span_id: The OTel span ID, either as an `int` (as returned by
+            `span.get_span_context().span_id`) or as raw `bytes` (8 to 16
+            bytes; left-padded with zeros to 16 bytes).
+
+    Returns:
+        The LangSmith run ID as a `uuid.UUID`.
+    """
+    if isinstance(span_id, bytes):
+        if not 1 <= len(span_id) <= 16:
+            raise ValueError(f"span_id bytes must be 1-16 bytes, got {len(span_id)}")
+        raw = span_id.rjust(16, b"\x00")
+    elif isinstance(span_id, int):
+        if not 0 <= span_id < (1 << 128):
+            raise ValueError("span_id int does not fit in 16 bytes")
+        raw = span_id.to_bytes(16, "big")
+    else:
+        raise TypeError(f"span_id must be int or bytes, got {type(span_id)}")
+    return uuid.UUID(bytes=raw)
+
+
+def _extract_span_id(span: Any) -> int:
+    """Extract the integer span ID from an OTel span or span context."""
+    ctx = span.get_span_context() if hasattr(span, "get_span_context") else span
+    span_id = getattr(ctx, "span_id", None)
+    if span_id is None:
+        raise TypeError(
+            "Expected an OTel span, span context, or object with a span_id; "
+            f"got {type(span)}"
+        )
+    return span_id
+
+
+def get_langsmith_run_url_for_span(
+    span: Any,
+    *,
+    project_id: Optional[Union[uuid.UUID, str]] = None,
+    project_name: Optional[str] = None,
+    client: Optional["Client"] = None,
+) -> str:
+    """Build the LangSmith run URL for a native OpenTelemetry span.
+
+    Useful when your application creates and exports OTel spans to LangSmith
+    and wants to surface a run URL immediately, without polling or waiting for
+    asynchronous OTel ingest to complete.
+
+    The span ID to run ID mapping is deterministic and offline (see
+    `langsmith_run_id_from_otel_span_id`). The returned URL is "eventually
+    valid": it points at the run that will materialize once OTel ingest
+    finishes, which may not have happened yet at the time of the call.
+
+    Network usage:
+        - The span to run ID mapping is fully offline.
+        - Resolving `tenant_id` and `host_url` for the URL uses `client`
+          (a default `Client` is constructed if none is given).
+        - Passing `project_name` instead of `project_id` requires a network
+          call to resolve the name to an ID; `project_id` is the offline path.
+
+    Args:
+        span: An OTel span, span context, or any object exposing `span_id`
+            (directly or via `get_span_context()`).
+        project_id: The LangSmith project (session) ID. Offline path.
+        project_name: The project name, resolved to an ID via the network.
+        client: Optional `Client` used to resolve tenant/host/project.
+
+    Returns:
+        The full LangSmith run URL.
+    """
+    from langsmith.client import Client
+
+    if project_id is None and project_name is None:
+        raise ValueError("One of project_id or project_name must be provided.")
+
+    client = client or Client()
+    run_id = langsmith_run_id_from_otel_span_id(_extract_span_id(span))
+
+    if project_id is not None:
+        session_id = project_id
+    else:
+        session_id = client.read_project(project_name=project_name).id
+
+    return (
+        f"{client._host_url}/o/{client._get_tenant_id()}/projects/p/{session_id}/"
+        f"r/{run_id}?poll=true"
+    )
 
 
 def configure(
