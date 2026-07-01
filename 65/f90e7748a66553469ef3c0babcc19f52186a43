@@ -1,0 +1,29 @@
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_b3af624206e794 35,145-157,187,189-190,241-245,247,249-254,486-488
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_aa7a498ffe1f90 69,122-123,125-126,230-246,448-451,465,467-468,470,476-492
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_99d36401a3ba47 219,253-254,258-260
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_2b3dfc95be92f0 203-205
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_9c8baea3ca44b6 204,219-225,314-318,323
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_464d2b32103276 232-248,265,269,460-463,538-540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "65f90e7748a66553469ef3c0babcc19f52186a43",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
