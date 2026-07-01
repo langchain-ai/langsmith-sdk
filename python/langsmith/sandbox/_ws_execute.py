@@ -19,10 +19,10 @@ from langsmith.sandbox._helpers import merge_headers
 def _ensure_websockets():
     """Import websockets or raise a clear error."""
     try:
-        from websockets.exceptions import ConnectionClosed, InvalidStatus
+        from websockets.exceptions import ConnectionClosed, InvalidHandshake
         from websockets.sync.client import connect as ws_connect
 
-        return ws_connect, ConnectionClosed, InvalidStatus
+        return ws_connect, ConnectionClosed, InvalidHandshake
     except ImportError:
         raise ImportError(
             "WebSocket-based execution requires the 'websockets' package, "
@@ -35,9 +35,9 @@ def _ensure_websockets_async():
     """Import async websockets or raise a clear error."""
     try:
         from websockets.asyncio.client import connect as ws_connect_async
-        from websockets.exceptions import ConnectionClosed, InvalidStatus
+        from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
-        return ws_connect_async, ConnectionClosed, InvalidStatus
+        return ws_connect_async, ConnectionClosed, InvalidHandshake
     except ImportError:
         raise ImportError(
             "WebSocket-based execution requires the 'websockets' package, "
@@ -158,11 +158,14 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
-def _raise_for_invalid_status(exc: Exception, ws_url: str) -> None:
-    """Raise a clear error when the server rejects the WebSocket upgrade.
+def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
+    """Raise a clear error when the WebSocket upgrade handshake fails.
 
-    The most common case is HTTP 404 — the server doesn't have the
-    /execute/ws endpoint, meaning it doesn't support WebSocket streaming.
+    Covers both a rejection carrying an HTTP status (``InvalidStatus`` — most
+    commonly 404 when the server lacks the /execute/ws endpoint) and a response
+    that isn't valid HTTP at all (``InvalidMessage``, "did not receive a valid
+    HTTP response") — e.g. a stopped or recycled sandbox dataplane answering the
+    upgrade with garbage. Both subclass ``InvalidHandshake``.
     """
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status == 404:
@@ -176,9 +179,15 @@ def _raise_for_invalid_status(exc: Exception, ws_url: str) -> None:
         raise SandboxNotReadyError(
             f"Sandbox is not ready for WebSocket command execution: {exc}"
         ) from exc
-    # For other HTTP status codes, include the status in the message
+    if status is not None:
+        raise SandboxConnectionError(
+            f"WebSocket upgrade rejected by server (HTTP {status}): {exc}"
+        ) from exc
+    # No HTTP status at all — the peer didn't return a valid HTTP response,
+    # typically a stopped/unreachable sandbox dataplane.
     raise SandboxConnectionError(
-        f"WebSocket upgrade rejected by server (HTTP {status}): {exc}"
+        f"WebSocket upgrade to {ws_url} failed (no valid HTTP response); "
+        f"the sandbox may be stopped or unreachable: {exc}"
     ) from exc
 
 
@@ -245,7 +254,7 @@ def run_ws_stream(
     If on_stdout/on_stderr callbacks are provided, they are invoked as
     data arrives in addition to yielding the messages.
     """
-    ws_connect, ConnectionClosed, InvalidStatus = _ensure_websockets()
+    ws_connect, ConnectionClosed, InvalidHandshake = _ensure_websockets()
     ws_url = _build_ws_url(dataplane_url)
     request_headers = _build_auth_headers(api_key, headers)
     control = _WSStreamControl()
@@ -305,8 +314,8 @@ def run_ws_stream(
                     elif msg_type == "error":
                         _raise_from_error_msg(msg)
 
-        except InvalidStatus as e:
-            _raise_for_invalid_status(e, ws_url)
+        except InvalidHandshake as e:
+            _raise_for_invalid_handshake(e, ws_url)
         except ConnectionClosed as e:
             if e.rcvd and e.rcvd.code == 1001:
                 raise SandboxServerReloadError(
@@ -344,7 +353,7 @@ def reconnect_ws_stream(
     from there. If the requested offset is older than the buffer's
     earliest data, the server sends from the earliest available offset.
     """
-    ws_connect, ConnectionClosed, InvalidStatus = _ensure_websockets()
+    ws_connect, ConnectionClosed, InvalidHandshake = _ensure_websockets()
     ws_url = _build_ws_url(dataplane_url)
     request_headers = _build_auth_headers(api_key, headers)
     control = _WSStreamControl()
@@ -388,8 +397,8 @@ def reconnect_ws_stream(
                     elif msg_type == "error":
                         _raise_from_error_msg(msg, command_id=command_id)
 
-        except InvalidStatus as e:
-            _raise_for_invalid_status(e, ws_url)
+        except InvalidHandshake as e:
+            _raise_for_invalid_handshake(e, ws_url)
         except ConnectionClosed as e:
             if e.rcvd and e.rcvd.code == 1001:
                 raise SandboxServerReloadError(
@@ -432,7 +441,7 @@ async def run_ws_stream_async(
 
     Returns (async_message_iterator, async_control).
     """
-    ws_connect_async, ConnectionClosed, InvalidStatus = _ensure_websockets_async()
+    ws_connect_async, ConnectionClosed, InvalidHandshake = _ensure_websockets_async()
     ws_url = _build_ws_url(dataplane_url)
     request_headers = _build_auth_headers(api_key, headers)
     control = _AsyncWSStreamControl()
@@ -486,8 +495,8 @@ async def run_ws_stream_async(
                     elif msg_type == "error":
                         _raise_from_error_msg(msg)
 
-        except InvalidStatus as e:
-            _raise_for_invalid_status(e, ws_url)
+        except InvalidHandshake as e:
+            _raise_for_invalid_handshake(e, ws_url)
         except ConnectionClosed as e:
             if e.rcvd and e.rcvd.code == 1001:
                 raise SandboxServerReloadError(
@@ -514,7 +523,7 @@ async def reconnect_ws_stream_async(
     headers: Optional[Mapping[str, str]] = None,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of reconnect_ws_stream."""
-    ws_connect_async, ConnectionClosed, InvalidStatus = _ensure_websockets_async()
+    ws_connect_async, ConnectionClosed, InvalidHandshake = _ensure_websockets_async()
     ws_url = _build_ws_url(dataplane_url)
     request_headers = _build_auth_headers(api_key, headers)
     control = _AsyncWSStreamControl()
@@ -554,8 +563,8 @@ async def reconnect_ws_stream_async(
                     elif msg_type == "error":
                         _raise_from_error_msg(msg, command_id=command_id)
 
-        except InvalidStatus as e:
-            _raise_for_invalid_status(e, ws_url)
+        except InvalidHandshake as e:
+            _raise_for_invalid_handshake(e, ws_url)
         except ConnectionClosed as e:
             if e.rcvd and e.rcvd.code == 1001:
                 raise SandboxServerReloadError(
