@@ -1,0 +1,142 @@
+python/langsmith/_openapi_client/resources/threads/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-33
+python/langsmith/_openapi_client/types/bulk_delete_evaluator_failed_item.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-13
+python/langsmith/_openapi_client/types/run_type_enum.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-7
+python/langsmith/_openapi_client/types/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 5-12,14-55
+python/langsmith/_openapi_client/resources/online_evaluators.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-921
+python/langsmith/_openapi_client/types/create_online_evaluator_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-12
+python/langsmith/_openapi_client/_client.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 39,41-44,126-149,364-387,540-563,577-600,614-637,651-673
+python/langsmith/_openapi_client/resources/traces/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-33
+python/langsmith/_openapi_client/types/threads/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-5
+python/langsmith/_openapi_client/types/update_online_llm_evaluator_request_param.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-19
+python/langsmith/_openapi_client/resources/runs.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-1516
+python/langsmith/_openapi_client/types/online_evaluator_update_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-18
+python/langsmith/_openapi_client/types/run_retrieve_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-78
+python/langsmith/_openapi_client/types/run_update_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-54
+python/langsmith/_openapi_client/types/online_evaluator_spend_day.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-15
+python/langsmith/_openapi_client/types/online_evaluator.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-36
+python/langsmith/_openapi_client/resources/traces/traces.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-102
+python/langsmith/_openapi_client/resources/threads/traces.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-297
+python/langsmith/_openapi_client/types/run_ingest_batch_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-13
+python/langsmith/_openapi_client/types/run_query_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-175
+python/langsmith/_openapi_client/types/thread_query_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-51
+python/langsmith/_openapi_client/types/online_evaluator_list_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-38
+python/langsmith/_openapi_client/types/online_llm_evaluator.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-32
+python/langsmith/_openapi_client/types/traces/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-5
+python/langsmith/_openapi_client/types/traces/run_list_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-93
+python/langsmith/_openapi_client/types/runs/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-3
+python/langsmith/_openapi_client/types/create_online_code_evaluator_request_param.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-14
+python/langsmith/_openapi_client/resources/__init__.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 11-42,45-68
+python/langsmith/_openapi_client/types/run_create_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-13
+python/langsmith/_openapi_client/types/thread_list_item.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-196
+python/langsmith/_openapi_client/types/bulk_delete_evaluators_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-14
+python/langsmith/_openapi_client/types/run_stats_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-128
+python/langsmith/_openapi_client/types/online_evaluator_spend_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-44
+python/langsmith/_openapi_client/types/update_online_code_evaluator_request_param.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-13
+python/langsmith/_openapi_client/pagination.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 19-20,26-29,191-236,305,328-408
+python/langsmith/_openapi_client/types/thread_trace_list_item.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-183
+python/langsmith/_openapi_client/types/run_create_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-54
+python/langsmith/_openapi_client/types/run_stats_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-111
+python/langsmith/_openapi_client/types/threads/trace_list_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-66
+python/langsmith/_openapi_client/types/create_online_llm_evaluator_request_param.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-15
+python/langsmith/_openapi_client/types/update_online_evaluator_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-12
+python/langsmith/_openapi_client/types/online_evaluator_bulk_delete_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-19
+python/langsmith/_openapi_client/types/online_evaluator_delete_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-14
+python/langsmith/_openapi_client/types/online_evaluator_run_rule.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-43
+python/langsmith/_openapi_client/types/query_run_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-347
+python/langsmith/_openapi_client/types/get_online_evaluator_spend_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-16
+python/langsmith/_openapi_client/types/query_trace_response_body.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-16
+python/langsmith/_openapi_client/types/runs_filter_data_source_type_enum.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-9
+python/langsmith/_openapi_client/types/online_evaluator_create_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-21
+python/langsmith/_openapi_client/types/online_evaluator_spend_group.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-39
+python/langsmith/_openapi_client/resources/traces/runs.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-345
+python/langsmith/client.py
+  h_53e10026eac609 267-269
+python/langsmith/_openapi_client/types/run_update_response.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-13
+python/langsmith/_openapi_client/types/run_param.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-54
+python/langsmith/_openapi_client/types/online_evaluator_type.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-7
+python/langsmith/_openapi_client/types/online_spend_limit.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-15
+python/langsmith/_openapi_client/types/online_code_evaluator.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-16
+python/langsmith/_openapi_client/types/run_ingest_batch_params.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-16
+python/langsmith/_openapi_client/types/thread_trace_select_field.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-29
+python/langsmith/_openapi_client/resources/threads/threads.py
+  s_54921c5a7a18dc::t_37f2ac3d9ea196 1-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "8f185183f14520a1ed58058fb7fed71082b26d37",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_54921c5a7a18dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6805e562-eb70-49c9-9fd0-2dc305a4daa2",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

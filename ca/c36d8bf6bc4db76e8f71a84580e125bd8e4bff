@@ -1,0 +1,24 @@
+python/langsmith/integrations/livekit/__init__.py
+  s_84b1d1bd3be3be::t_d537b4be1e67e3 1-79
+python/langsmith/integrations/livekit/processor.py
+  s_84b1d1bd3be3be::t_d537b4be1e67e3 1-620
+python/pyproject.toml
+  s_84b1d1bd3be3be::t_d2756277e37fa4 69-73
+  s_84b1d1bd3be3be::t_fee59477ac59be 66-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "cac36d8bf6bc4db76e8f71a84580e125bd8e4bff",
+  "prompts": {},
+  "sessions": {
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

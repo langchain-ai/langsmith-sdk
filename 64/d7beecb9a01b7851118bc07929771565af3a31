@@ -1,0 +1,43 @@
+python/langsmith/integrations/pipecat/__init__.py
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-40,43-81
+  s_30c3629a45db25::t_626ae1d80adc04 41-42
+python/langsmith/integrations/_voice/audio.py
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-155
+python/langsmith/integrations/pipecat/processor.py
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-270
+python/langsmith/integrations/_voice/base.py
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-280
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_30c3629a45db25::t_b2c3a5fbbac296 88-91,96,304-306,314-316,323-326
+  s_30c3629a45db25::t_89e89db02dd54b 190-191
+  s_30c3629a45db25::t_e7aa6194006064 1-87,92-95,97-189,192-303,307-313,317-322,327-429
+python/langsmith/integrations/_voice/__init__.py
+  s_84b1d1bd3be3be::t_abd73ea7f7f6a7 1-41
+python/pyproject.toml
+  s_84b1d1bd3be3be::t_e834f81540fe61 58-60
+  s_84b1d1bd3be3be::t_9f936b464a463d 61-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "64d7beecb9a01b7851118bc07929771565af3a31",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_84b1d1bd3be3be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbe9bcb0-d355-43a5-b559-662d0fa43c90",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

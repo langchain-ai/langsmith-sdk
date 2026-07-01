@@ -1,0 +1,23 @@
+python/tests/unit_tests/test_client.py
+  s_8db11acfdc761b::t_dd781a431037c6 77-78
+js/src/tests/client.test.ts
+  s_8db11acfdc761b::t_f4813abf48c9a8 1651-1652
+js/src/client.ts
+  s_8db11acfdc761b::t_4c8a91ff9f928a 705
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "c8ccb7277eee6850a61b12e2b5cca41538499222",
+  "prompts": {},
+  "sessions": {
+    "s_8db11acfdc761b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43df3742-c1f2-4d11-8822-871ffd73decf",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

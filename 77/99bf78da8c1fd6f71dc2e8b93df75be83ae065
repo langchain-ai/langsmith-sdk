@@ -1,0 +1,28 @@
+python/uv.lock
+  s_30c3629a45db25::t_50909e67df357a 14,1653-1655,1769,1808
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_30c3629a45db25::t_1c756e043ce208 127,178,180-182,215
+  s_30c3629a45db25::t_f5bbfdc81abdaf 179
+  s_30c3629a45db25::t_3923fc08ef878c 31-36
+  s_30c3629a45db25::t_843476547f97c1 1-30,37-126,128-177,183-214,216-243
+python/pyproject.toml
+  s_30c3629a45db25::t_eaeffdfa9820b7 98-101
+python/langsmith/integrations/google_adk_live/__init__.py
+  s_30c3629a45db25::t_1725f88e1a5d6f 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "7799bf78da8c1fd6f71dc2e8b93df75be83ae065",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+python/langsmith/integrations/livekit/processor.py
+  s_30c3629a45db25::t_48326d08e3da84 1-625
+python/langsmith/integrations/livekit/__init__.py
+  s_30c3629a45db25::t_48326d08e3da84 1-38,44-63,66-76,81
+  s_30c3629a45db25::t_b1fb9f9df44bda 39-43,64-65,77-80
+python/pyproject.toml
+  s_30c3629a45db25::t_48326d08e3da84 72-77
+  s_30c3629a45db25::t_cb2bfa20a17b99 69-71
+python/uv.lock
+  s_30c3629a45db25::t_4957a7a771dcb2 14,371-407,971-979,1265-1325,1656-1662,1757,1764,1766,1770,1774,1798,1973-2098,2448-2456,2748-2760,2773-2790,3151-3159,4350-4358,4398-4413,4704-4727,5024-5140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "59820f54d905a842d85ad6ebdeed143a0e79e016",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

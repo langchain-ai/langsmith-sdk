@@ -1,0 +1,67 @@
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_e9d10764cf1246::t_0ffd32bd5b5064 1-16,19-105,112-113,117,119-261
+  s_e9d10764cf1246::t_4369f0a02f9518 17-18
+  s_f3354ad1a417ca::t_5c7516e19620c6 106-111,114-116,118
+python/uv.lock
+  s_e9d10764cf1246::t_39ffa9c63f3af4 14,1666-1669,1769,1771,1804
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_e9d10764cf1246::t_e6820eec898e2e 1-25
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_f3354ad1a417ca::t_a3fd3a7d3154de 228,241-243,247
+  s_e9d10764cf1246::t_4369f0a02f9518 18-19
+  s_e9d10764cf1246::t_afe06699824be3 1-17,20-227,229-240,244-246,248-371,373-392
+  s_f3354ad1a417ca::t_eb287c17693bab 372
+python/pyproject.toml
+  s_e9d10764cf1246::t_1e6d4fe7871d87 81-88
+python/langsmith/_internal/voice/session.py
+  s_e9d10764cf1246::t_deede81c820ba2 1-406
+python/langsmith/integrations/openai_realtime/_session.py
+  s_e9d10764cf1246::t_ee6157af389b0d 1-15,18-25,27-35,37,42-278,281,283-285,326-328,335-456,494-522
+  s_f3354ad1a417ca::t_9ffdadf7f73dc6 16-17,26
+  s_f3354ad1a417ca::t_1d270161edc28e 279-280,282,286-325,329-334
+  s_f3354ad1a417ca::t_1b339108009d2f 36,41
+  s_e9d10764cf1246::t_4369f0a02f9518 38-39
+  s_f3354ad1a417ca::t_602f0aff650c21 457-493
+  s_e9d10764cf1246::t_f5ba9d93eda935 40
+python/langsmith/_internal/voice/helpers.py
+  s_e9d10764cf1246::t_b7c961b1510451 1-68
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_e9d10764cf1246::t_73acd4f1e24452 1-15,18-181
+  s_e9d10764cf1246::t_4369f0a02f9518 16-17
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_e9d10764cf1246::t_84e95a2193a4cb 1-32,36-80,87-443
+  s_e9d10764cf1246::t_4369f0a02f9518 33-34
+  s_f3354ad1a417ca::t_43dddf32009634 81-86
+  s_e9d10764cf1246::t_f5ba9d93eda935 35
+  s_e9d10764cf1246::t_162ca98ea27fb4 444-446
+  s_f3354ad1a417ca::t_efb55657f07ae3 447-449
+python/langsmith/_internal/voice/audio.py
+  s_e9d10764cf1246::t_4df3bc95415c6b 1,3-8,13,15,35-114
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_e9d10764cf1246::t_4369f0a02f9518 12-13
+  s_e9d10764cf1246::t_a102fbf5f3a462 1-11,14-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "c22433ddf5af04f7def922079ba6c4561c6bda5f",
+  "prompts": {},
+  "sessions": {
+    "s_e9d10764cf1246": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66ae4bc1-a711-44ef-a4c0-1a84c759680d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_f3354ad1a417ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6c27bd81-fbff-457f-b7a6-0851054d9190",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

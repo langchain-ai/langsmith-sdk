@@ -1,0 +1,34 @@
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_30c3629a45db25::t_b42700142c979c 1-563
+python/pyproject.toml
+  s_30c3629a45db25::t_b42700142c979c 61-71,133
+python/langsmith/integrations/pipecat/__init__.py
+  s_30c3629a45db25::t_b42700142c979c 1-88
+python/langsmith/integrations/_voice/__init__.py
+  s_30c3629a45db25::t_b42700142c979c 1-68
+python/langsmith/integrations/_voice/base_span_processor.py
+  s_30c3629a45db25::t_98f3cc7d6d63fb 35-39
+  s_30c3629a45db25::t_b42700142c979c 1-34,40-328
+python/langsmith/integrations/_voice/audio.py
+  s_30c3629a45db25::t_b42700142c979c 1-29
+python/langsmith/integrations/pipecat/processor.py
+  s_30c3629a45db25::t_b42700142c979c 1-342
+python/uv.lock
+  s_30c3629a45db25::t_52a98d384ec8e5 8-9,14,17-25,303-358,442-450,971-978,1401-1409,1557-1563,1583,1643,1651,1654,1657,1661,1679,1684,1854-1907,2203-2253,2327-2328,2405-2442,2706-2707,2824-2856,3251-3264,3566-3577,3740-3752,3925-4055,4104-4134,4640-4648,4749-4757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "44b8b3ada08f63218196de88f552b90c90458212",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
