@@ -25,6 +25,8 @@ from langsmith.sandbox._ws_execute import (
     _build_ws_url,
     _raise_from_error_msg,
     _WSStreamControl,
+    reconnect_ws_stream,
+    run_ws_stream,
 )
 
 # =============================================================================
@@ -844,13 +846,13 @@ class TestSandboxReconnect:
 
 
 # =============================================================================
-# Tests: _raise_for_invalid_status
+# Tests: _raise_for_invalid_handshake
 # =============================================================================
 
 
-class TestRaiseForInvalidStatus:
+class TestRaiseForInvalidHandshake:
     def test_404_gives_clear_message_with_url(self):
-        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -858,7 +860,7 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxConnectionError) as exc_info:
-            _raise_for_invalid_status(
+            _raise_for_invalid_handshake(
                 exc,
                 "ws://example.com/sb-123/execute/ws",
             )
@@ -868,7 +870,7 @@ class TestRaiseForInvalidStatus:
         assert exc_info.value.__cause__ is exc
 
     def test_non_404_includes_status_code(self):
-        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 403
@@ -876,10 +878,10 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
-            _raise_for_invalid_status(exc, "ws://example.com/sb-123/execute/ws")
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
     def test_503_raises_not_ready(self):
-        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 503
@@ -887,4 +889,49 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxNotReadyError, match="not ready"):
-            _raise_for_invalid_status(exc, "ws://example.com/sb-123/execute/ws")
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_no_http_response_gives_unreachable_message(self):
+        """InvalidMessage carries no .response — a stopped/unreachable peer."""
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        exc = Exception("did not receive a valid HTTP response")
+
+        with pytest.raises(SandboxConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+        msg = str(exc_info.value)
+        assert "no valid HTTP response" in msg
+        assert "may be stopped or unreachable" in msg
+        assert "HTTP None" not in msg
+        assert exc_info.value.__cause__ is exc
+
+
+# =============================================================================
+# Tests: handshake failures are wrapped as SandboxConnectionError
+# =============================================================================
+
+
+class TestHandshakeFailureWrapping:
+    """A non-HTTP handshake response (InvalidMessage) must surface as the SDK's
+    typed SandboxConnectionError, not leak as a raw websockets exception."""
+
+    def _invalid_message(self):
+        from websockets.exceptions import InvalidMessage
+
+        return InvalidMessage("did not receive a valid HTTP response")
+
+    def test_run_ws_stream_wraps_invalid_message(self):
+        with patch("websockets.sync.client.connect") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                list(msg_stream)
+
+    def test_reconnect_ws_stream_wraps_invalid_message(self):
+        with patch("websockets.sync.client.connect") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = reconnect_ws_stream(
+                "https://sb.example.com", "key", "cmd-123"
+            )
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                list(msg_stream)

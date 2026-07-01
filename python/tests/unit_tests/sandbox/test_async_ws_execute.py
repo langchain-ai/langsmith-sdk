@@ -19,7 +19,11 @@ from langsmith.sandbox._models import (
     ExecutionResult,
     OutputChunk,
 )
-from langsmith.sandbox._ws_execute import _AsyncWSStreamControl
+from langsmith.sandbox._ws_execute import (
+    _AsyncWSStreamControl,
+    reconnect_ws_stream_async,
+    run_ws_stream_async,
+)
 
 # =============================================================================
 # Helper: async fake message streams
@@ -909,3 +913,40 @@ class TestAsyncSandboxReconnect:
             stderr_offset=0,
             headers={"X-Test-Header": "sandbox-reconnect"},
         )
+
+
+# =============================================================================
+# Tests: async handshake failures are wrapped as SandboxConnectionError
+# =============================================================================
+
+
+class TestAsyncHandshakeFailureWrapping:
+    """A non-HTTP handshake response (InvalidMessage) must surface as the SDK's
+    typed SandboxConnectionError, not leak as a raw websockets exception."""
+
+    def _invalid_message(self):
+        from websockets.exceptions import InvalidMessage
+
+        return InvalidMessage("did not receive a valid HTTP response")
+
+    @pytest.mark.asyncio
+    async def test_run_ws_stream_async_wraps_invalid_message(self):
+        with patch("websockets.asyncio.client.connect") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = await run_ws_stream_async(
+                "https://sb.example.com", "key", "echo hi"
+            )
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                async for _ in msg_stream:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_reconnect_ws_stream_async_wraps_invalid_message(self):
+        with patch("websockets.asyncio.client.connect") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = await reconnect_ws_stream_async(
+                "https://sb.example.com", "key", "cmd-123"
+            )
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                async for _ in msg_stream:
+                    pass
