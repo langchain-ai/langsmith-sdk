@@ -898,9 +898,7 @@ class TestRaiseForInvalidHandshake:
         exc = Exception("did not receive a valid HTTP response")
 
         with pytest.raises(SandboxConnectionError) as exc_info:
-            _raise_for_invalid_handshake(
-                exc, "ws://example.com/sb-123/execute/ws"
-            )
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
         msg = str(exc_info.value)
         assert "no valid HTTP response" in msg
         assert "may be stopped or unreachable" in msg
@@ -925,9 +923,7 @@ class TestHandshakeFailureWrapping:
     def test_run_ws_stream_wraps_invalid_message(self):
         with patch("websockets.sync.client.connect") as mock_connect:
             mock_connect.side_effect = self._invalid_message()
-            msg_stream, _ = run_ws_stream(
-                "https://sb.example.com", "key", "echo hi"
-            )
+            msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
                 list(msg_stream)
 
