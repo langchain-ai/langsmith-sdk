@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-28T23:56:09.130398Z"
+exclude-newer = "2026-06-28T23:56:46.539135Z"
 exclude-newer-span = "P1D"
 
 [[package]]
@@ -1663,6 +1663,10 @@ livekit = [
 openai-agents = [
     { name = "openai-agents" },
 ]
+openai-realtime = [
+    { name = "openai" },
+    { name = "openai-agents" },
+]
 otel = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -1762,7 +1766,9 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
     { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.0" },
+    { name = "openai", marker = "extra == 'openai-realtime'", specifier = ">=1.50" },
     { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.0.3" },
+    { name = "openai-agents", marker = "extra == 'openai-realtime'", specifier = ">=0.2" },
     { name = "opentelemetry-api", marker = "extra == 'livekit'", specifier = ">=1.30.0" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.30.0" },
     { name = "opentelemetry-api", marker = "extra == 'pipecat'", specifier = ">=1.30.0" },
@@ -1795,7 +1801,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "google-adk", "langsmith-pyo3", "livekit", "openai-agents", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
+provides-extras = ["claude-agent-sdk", "google-adk", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [
