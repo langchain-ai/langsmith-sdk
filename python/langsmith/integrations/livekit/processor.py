@@ -316,6 +316,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if model:
             tspan.attributes["langsmith.metadata.model_name"] = str(model)
         self._stamp_provider(tspan, "lk.stt_metrics")
+        # STT bills per audio second (not tokens): emit the pushed-audio duration
+        # as the priced quantity. See _emit_stage_usage.
+        self._emit_stage_usage(
+            tspan,
+            metrics_attr="lk.stt_metrics",
+            count_field="audio_duration",
+            usage_key="gen_ai.usage.input_tokens",
+            unit="audio_seconds",
+        )
 
         transcript = tspan.attributes.get("lk.user_transcript")
         self._set_messages(
@@ -431,6 +440,53 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes["gen_ai.request.model"] = str(model)
             tspan.attributes["langsmith.metadata.model_name"] = str(model)
         self._stamp_provider(tspan, "lk.tts_metrics")
+        # TTS bills per character (not tokens): emit the character count as the
+        # priced quantity. See _emit_stage_usage.
+        self._emit_stage_usage(
+            tspan,
+            metrics_attr="lk.tts_metrics",
+            count_field="characters_count",
+            usage_key="gen_ai.usage.output_tokens",
+            unit="characters",
+        )
+
+    def _emit_stage_usage(
+        self,
+        tspan: TranslatedSpan,
+        *,
+        metrics_attr: str,
+        count_field: str,
+        usage_key: str,
+        unit: str,
+    ) -> None:
+        """Map an STT/TTS metric quantity onto ``gen_ai.usage`` for cost.
+
+        Neither STT (billed per audio second) nor TTS (billed per character) is
+        token-native, so we emit the billed quantity as a pseudo-token count on
+        the priced side. LangSmith then costs it against a custom model price
+        registered in the matching unit (e.g. ``deepgram/nova-3`` priced per
+        audio-second, ``cartesia/sonic`` priced per character) — so the price's
+        unit MUST match ``unit``, which is stamped on the span to make that
+        explicit. (The provider is set separately via ``_stamp_provider``.)
+
+        No-ops when the metric blob or count is absent, so it never fabricates
+        usage.
+        """
+        metrics = self._try_parse_json_object(tspan.attributes.get(metrics_attr))
+        if not isinstance(metrics, dict):
+            return
+        count = metrics.get(count_field)
+        if not isinstance(count, (int, float)):
+            return
+        tspan.attributes[usage_key] = int(round(count))
+        tspan.attributes["langsmith.metadata.usage_unit"] = unit
+        # Model-name fallback: without it LangSmith can't match the custom
+        # STT/TTS price, so pull it from the metric when the span lacked one.
+        meta = metrics.get("metadata") or {}
+        model = tspan.attributes.get("gen_ai.request.model") or meta.get("model_name")
+        if model:
+            tspan.attributes["gen_ai.request.model"] = str(model)
+            tspan.attributes["langsmith.metadata.model_name"] = str(model)
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Render an ``agent_turn``: one user/assistant exchange.
@@ -707,6 +763,24 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 v = metrics.get(src)
                 if isinstance(v, (int, float)):
                     cached[dst] = v
+            # Lift the audio/cache breakdown too, so realtime (speech-to-speech)
+            # cost bills at audio rates. LangSmith reads token detail from
+            # gen_ai.usage.{input,output}_token_details (str(dict), matching its
+            # own OTel exporter). Audio tokens dominate the bill here.
+            in_details: dict[str, int] = {}
+            it = metrics.get("input_token_details")
+            if isinstance(it, dict):
+                if it.get("audio_tokens"):
+                    in_details["audio"] = it["audio_tokens"]
+                if it.get("cached_tokens"):
+                    in_details["cache_read"] = it["cached_tokens"]
+            if in_details:
+                cached["gen_ai.usage.input_token_details"] = str(in_details)
+            ot = metrics.get("output_token_details")
+            if isinstance(ot, dict) and ot.get("audio_tokens"):
+                cached["gen_ai.usage.output_token_details"] = str(
+                    {"audio": ot["audio_tokens"]}
+                )
         if cached:
             self._realtime_metrics_by_parent[parent_id] = cached
 

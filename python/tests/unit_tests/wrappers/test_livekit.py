@@ -341,8 +341,110 @@ class TestMessageFromEvent:
         assert msg["name"] == "lookup"
 
 
+class TestStageAndRealtimeUsage:
+    """STT/TTS billed quantities and realtime audio detail -> gen_ai.usage."""
+
+    @staticmethod
+    def _exported(proc):
+        return proc.downstream.on_end.call_args.args[0]._attributes
+
+    def test_stt_audio_duration_becomes_usage(self):
+        proc = _processor()
+        metrics = json.dumps(
+            {
+                "audio_duration": 4.6,
+                "metadata": {"model_provider": "deepgram", "model_name": "nova-3"},
+            }
+        )
+        span = _make_span(
+            "user_turn",
+            {
+                "lk.user_transcript": "hi",
+                "lk.stt_metrics": metrics,
+                "gen_ai.request.model": "nova-3",
+            },
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.usage.input_tokens"] == 5  # round(4.6) seconds
+        assert attrs["langsmith.metadata.usage_unit"] == "audio_seconds"
+        # Provider is stamped as gen_ai.system by _stamp_provider.
+        assert attrs["gen_ai.system"] == "deepgram"
+
+    def test_stt_model_name_falls_back_to_metrics_metadata(self):
+        # Without gen_ai.request.model on the span, the model name must come from
+        # the metric's metadata -- else LangSmith can't match the custom price.
+        proc = _processor()
+        metrics = json.dumps(
+            {
+                "audio_duration": 2.0,
+                "metadata": {"model_provider": "deepgram", "model_name": "nova-3"},
+            }
+        )
+        span = _make_span(
+            "user_turn", {"lk.user_transcript": "hi", "lk.stt_metrics": metrics}
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["langsmith.metadata.model_name"] == "nova-3"
+        assert attrs["gen_ai.request.model"] == "nova-3"
+
+    def test_tts_character_count_becomes_usage(self):
+        proc = _processor()
+        metrics = json.dumps(
+            {
+                "characters_count": 128,
+                "metadata": {"model_provider": "cartesia", "model_name": "sonic"},
+            }
+        )
+        span = _make_span(
+            "tts_request", {"lk.input_text": "hello", "lk.tts_metrics": metrics}
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.usage.output_tokens"] == 128
+        assert attrs["langsmith.metadata.usage_unit"] == "characters"
+        assert attrs["gen_ai.system"] == "cartesia"
+
+    def test_stt_without_metrics_emits_no_usage(self):
+        proc = _processor()
+        span = _make_span("user_turn", {"lk.user_transcript": "hi"})
+        proc.on_end(span)
+        assert "gen_ai.usage.input_tokens" not in self._exported(proc)
+
+    def test_realtime_audio_detail_lifted_onto_turn(self):
+        proc = _processor()
+        rt_metrics = json.dumps(
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "input_token_details": {"audio_tokens": 80, "cached_tokens": 10},
+                "output_token_details": {"audio_tokens": 45},
+            }
+        )
+        # realtime_metrics span is suppressed; its data caches under its parent.
+        rt = _make_span(
+            "realtime_metrics",
+            {"lk.realtime_model_metrics": rt_metrics},
+            span_id=0x99,
+        )
+        rt.parent.span_id = 0x55
+        proc.on_end(rt)
+        proc.downstream.on_end.assert_not_called()  # suppressed
+        # The agent_turn (same span id as the metrics' parent) drains it.
+        turn = _make_span("agent_turn", {}, span_id=0x55)
+        proc.on_end(turn)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.usage.input_tokens"] == 100
+        assert attrs["gen_ai.usage.input_token_details"] == str(
+            {"audio": 80, "cache_read": 10}
+        )
+        assert attrs["gen_ai.usage.output_token_details"] == str({"audio": 45})
+
+
 class TestProviderAttribution:
-    """LiveKit provider → normalized `gen_ai.system` (LangSmith's cost key)."""
+    """LiveKit provider -> normalized gen_ai.system (LangSmith's cost key)."""
 
     @staticmethod
     def _exported(proc):
@@ -353,9 +455,9 @@ class TestProviderAttribution:
         assert _normalize_provider("beta.anthropic.com") == "anthropic"
         assert _normalize_provider("https://api.deepgram.com/v1") == "deepgram"
         assert _normalize_provider("cartesia") == "cartesia"
-        # No known slug → host, stripped of scheme/path.
+        # No known slug -> host, stripped of scheme/path.
         assert _normalize_provider("https://my-proxy.internal/x") == "my-proxy.internal"
-        # Empty / placeholder → None (never stamp a non-matching provider).
+        # Empty / placeholder -> None (never stamp a non-matching provider).
         assert _normalize_provider("unknown") is None
         assert _normalize_provider(None) is None
 
@@ -370,7 +472,7 @@ class TestProviderAttribution:
 
     def test_llm_provider_host_is_normalized(self):
         # LiveKit's OpenAI plugin reports the api.openai.com host; it must become
-        # the `openai` slug or LangSmith can't match a price.
+        # the openai slug or LangSmith can't match a price.
         proc = _processor()
         span = _make_span("llm_request", {"gen_ai.system": "api.openai.com"})
         proc.on_end(span)

@@ -264,6 +264,27 @@ class TestUsageMetadata:
         )
         assert _usage_metadata(_event(usage_metadata=um)) == {"input_tokens": 10}
 
+    def test_maps_audio_cache_reasoning_details(self):
+        # Voice cost needs audio tokens billed at audio rates, not text rates.
+        um = SimpleNamespace(
+            prompt_token_count=100,
+            candidates_token_count=50,
+            total_token_count=150,
+            prompt_tokens_details=[
+                SimpleNamespace(modality="AUDIO", token_count=80),
+                SimpleNamespace(modality="TEXT", token_count=20),
+            ],
+            candidates_tokens_details=[
+                SimpleNamespace(modality="AUDIO", token_count=45)
+            ],
+            cached_content_token_count=10,
+            thoughts_token_count=5,
+        )
+        out = _usage_metadata(_event(usage_metadata=um))
+        assert out["input_tokens"] == 100
+        assert out["input_token_details"] == {"audio": 80, "cache_read": 10}
+        assert out["output_token_details"] == {"audio": 45, "reasoning": 5}
+
 
 # --------------------------------------------------------------------------- #
 # _session_key — per-conversation key precedence.
