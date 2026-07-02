@@ -1,0 +1,61 @@
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_32951800caa190 243-246
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_32951800caa190 34,412-413
+python/langsmith/integrations/google_adk/_client.py
+  s_a22a9bc0776d5e::t_61bd727d6f69eb 13,128,197
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_b327c673264629 312-320
+  s_a22a9bc0776d5e::t_b5053481589584 326
+  s_a22a9bc0776d5e::t_32951800caa190 321-325
+python/langsmith/integrations/pipecat/processor.py
+  s_a22a9bc0776d5e::t_32951800caa190 52,306-311
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_32951800caa190 433-434,452-458
+  s_a22a9bc0776d5e::t_8429ea1c10d24c 461-469
+python/langsmith/_internal/voice/helpers.py
+  s_a22a9bc0776d5e::t_32951800caa190 1
+  s_a22a9bc0776d5e::t_3f238ed1ada7c2 10-12,20-21,24-25
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_32951800caa190 116-117
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_32951800caa190 168-170,208-210,233-235,261-263,282-284,298-300,311-313,333-335,414-416
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_a22a9bc0776d5e::t_32951800caa190 47,97-121
+  s_a22a9bc0776d5e::t_9dc6a3020b0f06 122-123
+python/langsmith/_internal/_package_version.py
+  s_a22a9bc0776d5e::t_7a2384e62880b2 11,15
+  s_a22a9bc0776d5e::t_95e5367e603598 1-10,12-14,16-18,22-28
+  s_a22a9bc0776d5e::t_ecf84f783a5373 19-21
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_32951800caa190 72,476-481
+python/langsmith/integrations/claude_agent_sdk/_client.py
+  s_a22a9bc0776d5e::t_61bd727d6f69eb 11,488
+python/langsmith/integrations/openai_agents_sdk/_openai_agents.py
+  s_a22a9bc0776d5e::t_61bd727d6f69eb 195
+  s_a22a9bc0776d5e::t_7a2384e62880b2 8
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_32951800caa190 51-56,460-461
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_a22a9bc0776d5e::t_32951800caa190 60-66
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_a22a9bc0776d5e::t_32951800caa190 220-221
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_32951800caa190 39,504-505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "1aa24d49ea274c0133d41806ff846c1e1925cefc",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
