@@ -1233,6 +1233,421 @@ describe.skip("Requires Anthropic API key", () => {
   });
 });
 
+describe("Claude Managed Agents - requires Anthropic API key", () => {
+  test("creates agent, environment, session, and streams traced events", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const anthropic = wrapAnthropic(new Anthropic(), {
+      tracingEnabled: true,
+      tags: ["managed-agents", "anthropic", "integration-test"],
+      metadata: {
+        test: "langsmith-managed-agents-wrapper",
+        test_run_id: suffix,
+      },
+    });
+
+    console.log(`LangSmith managed agents test_run_id: ${suffix}`);
+    let agentID: string | undefined;
+    let environmentID: string | undefined;
+    let sessionID: string | undefined;
+
+    try {
+      const agent = await anthropic.beta.agents.create({
+        name: `LangSmith Managed Agents Test ${suffix}`,
+        model: process.env.ANTHROPIC_MANAGED_AGENTS_MODEL ?? "claude-opus-4-8",
+        system:
+          "You are a concise test agent. Use the bash tool when the user asks you to run a command, then report the result exactly.",
+        tools: [
+          {
+            type: "agent_toolset_20260401",
+            configs: [
+              {
+                name: "bash",
+                enabled: true,
+                permission_policy: { type: "always_allow" },
+              },
+              { name: "edit", enabled: false },
+              { name: "glob", enabled: false },
+              { name: "grep", enabled: false },
+              { name: "read", enabled: false },
+              { name: "web_fetch", enabled: false },
+              { name: "web_search", enabled: false },
+              { name: "write", enabled: false },
+            ],
+          },
+        ],
+        metadata: { test: "langsmith-managed-agents-wrapper" },
+      });
+      agentID = agent.id;
+      expect(agent.version).toBeGreaterThanOrEqual(1);
+
+      const environment = await anthropic.beta.environments.create({
+        name: `langsmith-managed-agents-test-${suffix}`,
+        config: {
+          type: "cloud",
+          networking: { type: "unrestricted" },
+        },
+        metadata: { test: "langsmith-managed-agents-wrapper" },
+      });
+      environmentID = environment.id;
+
+      const session = await anthropic.beta.sessions.create({
+        agent: agent.id,
+        environment_id: environment.id,
+        title: "LangSmith managed agents wrapper integration test",
+      });
+      sessionID = session.id;
+
+      const stream = await anthropic.beta.sessions.events.stream(session.id);
+      await anthropic.beta.sessions.events.send(session.id, {
+        events: [
+          {
+            type: "user.message",
+            content: [
+              {
+                type: "text",
+                text: "Use the bash tool to run: printf 'LangSmith managed agent tool tracing works'. Then reply with exactly the command output and no extra text.",
+              },
+            ],
+          },
+        ],
+      });
+
+      const streamedEvents: any[] = [];
+      const toolUseEvents: any[] = [];
+      const toolResultEvents: any[] = [];
+      let assistantText = "";
+      for await (const event of stream) {
+        streamedEvents.push(event);
+        if (event.type === "agent.tool_use") {
+          toolUseEvents.push(event);
+        } else if (event.type === "agent.tool_result") {
+          toolResultEvents.push(event);
+        }
+        if (event.type === "agent.message") {
+          assistantText += event.content.map((block) => block.text).join("");
+        } else if (event.type === "session.error") {
+          throw new Error(
+            `Managed agent session error: ${event.error?.message ?? "unknown"}`,
+          );
+        } else if (event.type === "session.status_idle") {
+          break;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(streamedEvents.length).toBeGreaterThan(0);
+      expect(
+        streamedEvents.some((event) => event.type === "agent.message"),
+      ).toBe(true);
+      expect(toolUseEvents.length).toBeGreaterThan(0);
+      expect(toolUseEvents.some((event) => event.name === "bash")).toBe(true);
+      expect(toolResultEvents.length).toBeGreaterThan(0);
+      expect(assistantText).toContain(
+        "LangSmith managed agent tool tracing works",
+      );
+
+      const retrievedSession = await anthropic.beta.sessions.retrieve(
+        session.id,
+      );
+      expect(retrievedSession.id).toBe(session.id);
+      expect(retrievedSession.usage).toBeDefined();
+    } finally {
+      if (sessionID) {
+        await anthropic.beta.sessions.delete(sessionID).catch(() => undefined);
+      }
+      if (environmentID) {
+        await anthropic.beta.environments
+          .delete(environmentID)
+          .catch(() => undefined);
+      }
+      if (agentID) {
+        await anthropic.beta.agents.archive(agentID).catch(() => undefined);
+      }
+    }
+  });
+
+  test("streams web search tool events", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const anthropic = wrapAnthropic(new Anthropic(), {
+      tracingEnabled: true,
+      tags: ["managed-agents", "anthropic", "integration-test", "web-search"],
+      metadata: {
+        test: "langsmith-managed-agents-web-search-wrapper",
+        test_run_id: suffix,
+      },
+    });
+
+    console.log(`LangSmith managed agents web search test_run_id: ${suffix}`);
+    let agentID: string | undefined;
+    let environmentID: string | undefined;
+    let sessionID: string | undefined;
+
+    try {
+      const agent = await anthropic.beta.agents.create({
+        name: `LangSmith Managed Agents Web Search Test ${suffix}`,
+        model: process.env.ANTHROPIC_MANAGED_AGENTS_MODEL ?? "claude-opus-4-8",
+        system:
+          "You are a concise test agent. Use the web_search tool when the user asks you to search, then answer using the result.",
+        tools: [
+          {
+            type: "agent_toolset_20260401",
+            configs: [
+              { name: "bash", enabled: false },
+              { name: "edit", enabled: false },
+              { name: "glob", enabled: false },
+              { name: "grep", enabled: false },
+              { name: "read", enabled: false },
+              { name: "web_fetch", enabled: false },
+              {
+                name: "web_search",
+                enabled: true,
+                permission_policy: { type: "always_allow" },
+              },
+              { name: "write", enabled: false },
+            ],
+          },
+        ],
+        metadata: { test: "langsmith-managed-agents-web-search-wrapper" },
+      });
+      agentID = agent.id;
+
+      const environment = await anthropic.beta.environments.create({
+        name: `langsmith-managed-agents-web-search-test-${suffix}`,
+        config: {
+          type: "cloud",
+          networking: { type: "unrestricted" },
+        },
+        metadata: { test: "langsmith-managed-agents-web-search-wrapper" },
+      });
+      environmentID = environment.id;
+
+      const session = await anthropic.beta.sessions.create({
+        agent: agent.id,
+        environment_id: environment.id,
+        title: "LangSmith managed agents web search wrapper integration test",
+      });
+      sessionID = session.id;
+
+      const stream = await anthropic.beta.sessions.events.stream(session.id);
+      await anthropic.beta.sessions.events.send(session.id, {
+        events: [
+          {
+            type: "user.message",
+            content: [
+              {
+                type: "text",
+                text:
+                  process.env.ANTHROPIC_MANAGED_AGENTS_WEB_SEARCH_PROMPT ??
+                  "Use web_search to search for the official LangSmith product page, then answer with the page title or product name only.",
+              },
+            ],
+          },
+        ],
+      });
+
+      const streamedEvents: any[] = [];
+      const webSearchToolUseEvents: any[] = [];
+      const webSearchToolResultEvents: any[] = [];
+      let assistantText = "";
+      for await (const event of stream) {
+        streamedEvents.push(event);
+        if (event.type === "agent.tool_use" && event.name === "web_search") {
+          webSearchToolUseEvents.push(event);
+        } else if (
+          event.type === "agent.tool_result" &&
+          webSearchToolUseEvents.some(
+            (toolUse) => toolUse.id === event.tool_use_id,
+          )
+        ) {
+          webSearchToolResultEvents.push(event);
+        } else if (event.type === "agent.message") {
+          assistantText += event.content.map((block) => block.text).join("");
+        } else if (event.type === "session.error") {
+          throw new Error(
+            `Managed agent web search session error: ${event.error?.message ?? "unknown"}`,
+          );
+        } else if (event.type === "session.status_idle") {
+          break;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(streamedEvents.length).toBeGreaterThan(0);
+      expect(webSearchToolUseEvents.length).toBeGreaterThan(0);
+      expect(webSearchToolResultEvents.length).toBeGreaterThan(0);
+      expect(assistantText.length).toBeGreaterThan(0);
+
+      const retrievedSession = await anthropic.beta.sessions.retrieve(
+        session.id,
+      );
+      expect(retrievedSession.id).toBe(session.id);
+      expect(retrievedSession.usage).toBeDefined();
+    } finally {
+      if (sessionID) {
+        await anthropic.beta.sessions.delete(sessionID).catch(() => undefined);
+      }
+      if (environmentID) {
+        await anthropic.beta.environments
+          .delete(environmentID)
+          .catch(() => undefined);
+      }
+      if (agentID) {
+        await anthropic.beta.agents.archive(agentID).catch(() => undefined);
+      }
+    }
+  });
+
+  test("streams MCP server tool events", async () => {
+    const mcpServerUrl = process.env.ANTHROPIC_MANAGED_AGENTS_MCP_SERVER_URL;
+    const mcpPrompt = process.env.ANTHROPIC_MANAGED_AGENTS_MCP_PROMPT;
+    const expectedToolName = process.env.ANTHROPIC_MANAGED_AGENTS_MCP_TOOL_NAME;
+    if (!mcpServerUrl || !mcpPrompt) {
+      console.warn(
+        "Skipping MCP managed agents integration test. Set ANTHROPIC_MANAGED_AGENTS_MCP_SERVER_URL and ANTHROPIC_MANAGED_AGENTS_MCP_PROMPT to run it.",
+      );
+      return;
+    }
+
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const mcpServerName = `test_mcp_${suffix.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+    const anthropic = wrapAnthropic(new Anthropic(), {
+      tracingEnabled: true,
+      tags: ["managed-agents", "anthropic", "integration-test", "mcp"],
+      metadata: {
+        test: "langsmith-managed-agents-mcp-wrapper",
+        test_run_id: suffix,
+      },
+    });
+
+    console.log(`LangSmith managed agents MCP test_run_id: ${suffix}`);
+    let agentID: string | undefined;
+    let environmentID: string | undefined;
+    let sessionID: string | undefined;
+
+    try {
+      const mcpToolset: any = {
+        type: "mcp_toolset",
+        mcp_server_name: mcpServerName,
+        default_config: {
+          enabled: true,
+          permission_policy: { type: "always_allow" },
+        },
+      };
+      if (expectedToolName) {
+        mcpToolset.configs = [
+          {
+            name: expectedToolName,
+            enabled: true,
+            permission_policy: { type: "always_allow" },
+          },
+        ];
+      }
+
+      const agent = await anthropic.beta.agents.create({
+        name: `LangSmith Managed Agents MCP Test ${suffix}`,
+        model: process.env.ANTHROPIC_MANAGED_AGENTS_MODEL ?? "claude-opus-4-8",
+        system:
+          "You are a concise test agent. Use the available MCP tool when the user asks, then report the result.",
+        mcp_servers: [
+          {
+            name: mcpServerName,
+            type: "url",
+            url: mcpServerUrl,
+          },
+        ],
+        tools: [mcpToolset],
+        metadata: { test: "langsmith-managed-agents-mcp-wrapper" },
+      });
+      agentID = agent.id;
+
+      const environment = await anthropic.beta.environments.create({
+        name: `langsmith-managed-agents-mcp-test-${suffix}`,
+        config: {
+          type: "cloud",
+          networking: { type: "unrestricted" },
+        },
+        metadata: { test: "langsmith-managed-agents-mcp-wrapper" },
+      });
+      environmentID = environment.id;
+
+      const session = await anthropic.beta.sessions.create({
+        agent: agent.id,
+        environment_id: environment.id,
+        title: "LangSmith managed agents MCP wrapper integration test",
+      });
+      sessionID = session.id;
+
+      const stream = await anthropic.beta.sessions.events.stream(session.id);
+      await anthropic.beta.sessions.events.send(session.id, {
+        events: [
+          {
+            type: "user.message",
+            content: [{ type: "text", text: mcpPrompt }],
+          },
+        ],
+      });
+
+      const streamedEvents: any[] = [];
+      const mcpToolUseEvents: any[] = [];
+      const mcpToolResultEvents: any[] = [];
+      let assistantText = "";
+      for await (const event of stream) {
+        streamedEvents.push(event);
+        if (event.type === "agent.mcp_tool_use") {
+          mcpToolUseEvents.push(event);
+        } else if (event.type === "agent.mcp_tool_result") {
+          mcpToolResultEvents.push(event);
+        } else if (event.type === "agent.message") {
+          assistantText += event.content.map((block) => block.text).join("");
+        } else if (event.type === "session.error") {
+          throw new Error(
+            `Managed agent MCP session error: ${event.error?.message ?? "unknown"}`,
+          );
+        } else if (event.type === "session.status_idle") {
+          break;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(streamedEvents.length).toBeGreaterThan(0);
+      expect(mcpToolUseEvents.length).toBeGreaterThan(0);
+      expect(mcpToolResultEvents.length).toBeGreaterThan(0);
+      expect(
+        mcpToolUseEvents.every(
+          (event) => event.mcp_server_name === mcpServerName,
+        ),
+      ).toBe(true);
+      if (expectedToolName) {
+        expect(
+          mcpToolUseEvents.some((event) => event.name === expectedToolName),
+        ).toBe(true);
+      }
+      expect(assistantText.length).toBeGreaterThan(0);
+
+      const retrievedSession = await anthropic.beta.sessions.retrieve(
+        session.id,
+      );
+      expect(retrievedSession.id).toBe(session.id);
+      expect(retrievedSession.usage).toBeDefined();
+    } finally {
+      if (sessionID) {
+        await anthropic.beta.sessions.delete(sessionID).catch(() => undefined);
+      }
+      if (environmentID) {
+        await anthropic.beta.environments
+          .delete(environmentID)
+          .catch(() => undefined);
+      }
+      if (agentID) {
+        await anthropic.beta.agents.archive(agentID).catch(() => undefined);
+      }
+    }
+  });
+});
+
 test("prepopulated invocation params are merged and runtime params override", async () => {
   const { client, callSpy } = mockClient();
 
