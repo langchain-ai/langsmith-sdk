@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .run import Run as Run
+from .issue import Issue as Issue
 from .dataset import Dataset as Dataset
 from .data_type import DataType as DataType
 from .missing_param import MissingParam as MissingParam
@@ -12,6 +13,7 @@ from .dataset_version import DatasetVersion as DatasetVersion
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
 from .run_query_params import RunQueryParams as RunQueryParams
 from .sandbox_response import SandboxResponse as SandboxResponse
+from .issue_list_params import IssueListParams as IssueListParams
 from .snapshot_response import SnapshotResponse as SnapshotResponse
 from .info_list_response import InfoListResponse as InfoListResponse
 from .online_spend_limit import OnlineSpendLimit as OnlineSpendLimit

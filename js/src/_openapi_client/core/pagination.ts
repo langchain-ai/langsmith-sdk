@@ -149,6 +149,47 @@ export class OffsetPaginationTopLevelArray<Item> extends AbstractPage<Item> {
   }
 }
 
+export type OffsetPaginationIssuesResponse<Item> = Item[];
+
+export interface OffsetPaginationIssuesParams {
+  offset?: number;
+
+  limit?: number;
+}
+
+export class OffsetPaginationIssues<Item> extends AbstractPage<Item> {
+  items: Array<Item>;
+
+  constructor(
+    client: Langsmith,
+    response: Response,
+    body: OffsetPaginationIssuesResponse<Item>,
+    options: FinalRequestOptions,
+  ) {
+    super(client, response, body, options);
+
+    this.items = body || [];
+  }
+
+  getPaginatedItems(): Item[] {
+    return this.items ?? [];
+  }
+
+  nextPageRequestOptions(): PageRequestOptions | null {
+    const offset = (this.options.query as OffsetPaginationIssuesParams).offset ?? 0;
+    const length = this.getPaginatedItems().length;
+    const currentCount = offset + length;
+
+    return {
+      ...this.options,
+      query: {
+        ...maybeObj(this.options.query),
+        offset: currentCount,
+      },
+    };
+  }
+}
+
 export interface OffsetPaginationReposResponse<Item> {
   repos: Array<Item>;
 

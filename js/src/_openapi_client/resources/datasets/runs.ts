@@ -56,6 +56,12 @@ export interface ExampleWithRunsCh {
   outputs?: { [key: string]: unknown } | null;
 
   source_run_id?: string | null;
+
+  source_run_start_time?: string | null;
+
+  source_session_id?: string | null;
+
+  source_trace_id?: string | null;
 }
 
 export namespace ExampleWithRunsCh {
