@@ -140,22 +140,6 @@ def test_url_with_span_context_directly():
     assert "r/00000000-0000-0000-0102-030405060708?poll=true" in url
 
 
-def test_url_with_project_name_resolves_via_client():
-    client = _make_client()
-    client.read_project.return_value = MagicMock(
-        id=uuid.UUID("33333333-3333-3333-3333-333333333333")
-    )
-    span_ctx = MagicMock(spec=["span_id"])
-    span_ctx.span_id = 1
-
-    url = get_langsmith_run_url_for_span(
-        span_ctx, project_name="my-project", client=client
-    )
-
-    client.read_project.assert_called_once_with(project_name="my-project")
-    assert "projects/p/33333333-3333-3333-3333-333333333333/" in url
-
-
-def test_url_requires_project():
-    with pytest.raises(ValueError):
+def test_url_requires_project_id():
+    with pytest.raises(TypeError):
         get_langsmith_run_url_for_span(MagicMock(), client=_make_client())

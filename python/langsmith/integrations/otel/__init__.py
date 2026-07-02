@@ -5,9 +5,10 @@ import uuid
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import utils as ls_utils
+from langsmith.client import Client
 
 if TYPE_CHECKING:
-    from langsmith.client import Client
+    from opentelemetry.trace import Span, SpanContext
 
     from .processor import OtelExporter, OtelSpanProcessor
 
@@ -70,24 +71,23 @@ def langsmith_run_id_from_otel_span_id(span_id: Union[int, bytes]) -> uuid.UUID:
     return uuid.UUID(bytes=raw)
 
 
-def _extract_span_id(span: Any) -> int:
+def _extract_span_id(span: "Union[Span, SpanContext]") -> int:
     """Extract the integer span ID from an OTel span or span context."""
-    ctx = span.get_span_context() if hasattr(span, "get_span_context") else span
+    get_ctx = getattr(span, "get_span_context", None)
+    ctx = get_ctx() if callable(get_ctx) else span
     span_id = getattr(ctx, "span_id", None)
     if span_id is None:
         raise TypeError(
-            "Expected an OTel span, span context, or object with a span_id; "
-            f"got {type(span)}"
+            f"Expected an OTel span or span context with a span_id; got {type(span)}"
         )
     return span_id
 
 
 def get_langsmith_run_url_for_span(
-    span: Any,
+    span: "Union[Span, SpanContext]",
+    project_id: uuid.UUID,
     *,
-    project_id: Optional[Union[uuid.UUID, str]] = None,
-    project_name: Optional[str] = None,
-    client: Optional["Client"] = None,
+    client: Optional[Client] = None,
 ) -> str:
     """Build the LangSmith run URL for a native OpenTelemetry span.
 
@@ -104,34 +104,19 @@ def get_langsmith_run_url_for_span(
         - The span to run ID mapping is fully offline.
         - Resolving `tenant_id` and `host_url` for the URL uses `client`
           (a default `Client` is constructed if none is given).
-        - Passing `project_name` instead of `project_id` requires a network
-          call to resolve the name to an ID; `project_id` is the offline path.
 
     Args:
-        span: An OTel span, span context, or any object exposing `span_id`
-            (directly or via `get_span_context()`).
-        project_id: The LangSmith project (session) ID. Offline path.
-        project_name: The project name, resolved to an ID via the network.
-        client: Optional `Client` used to resolve tenant/host/project.
+        span: An OTel span or span context.
+        project_id: The LangSmith project (session) ID.
+        client: Optional `Client` used to resolve tenant and host URL.
 
     Returns:
         The full LangSmith run URL.
     """
-    from langsmith.client import Client
-
-    if project_id is None and project_name is None:
-        raise ValueError("One of project_id or project_name must be provided.")
-
     client = client or Client()
     run_id = langsmith_run_id_from_otel_span_id(_extract_span_id(span))
-
-    if project_id is not None:
-        session_id = project_id
-    else:
-        session_id = client.read_project(project_name=project_name).id
-
     return (
-        f"{client._host_url}/o/{client._get_tenant_id()}/projects/p/{session_id}/"
+        f"{client._host_url}/o/{client._get_tenant_id()}/projects/p/{project_id}/"
         f"r/{run_id}?poll=true"
     )
 
