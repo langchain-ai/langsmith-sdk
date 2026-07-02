@@ -53,15 +53,10 @@ test("Test handoff between run tree and LangChain code.", async () => {
   });
   try {
     const runId = uuidv4();
-    const result = (await app.invoke(
-      [new HumanMessage({ content: "Hello!" })] as unknown as Parameters<
-        typeof app.invoke
-      >[0],
-      {
-        callbacks: [tracer],
-        runId,
-      },
-    )) as unknown as BaseMessage[];
+    const result = await app.invoke([new HumanMessage({ content: "Hello!" })], {
+      callbacks: [tracer],
+      runId,
+    });
     expect(result[result.length - 1].content).toEqual("Hello! world");
 
     // First wait until at least one trace is found in the project

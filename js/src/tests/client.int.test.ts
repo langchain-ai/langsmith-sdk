@@ -1125,11 +1125,7 @@ test("Test pull prompt include model", async () => {
     const pulledPrompt = await client._pullPrompt(promptName, {
       includeModel: true,
     });
-    const rs: RunnableSequence = await load(
-      pulledPrompt,
-      { OPENAI_API_KEY: openaiKey },
-      { "langchain/chat_models/openai": import("@langchain/openai") },
-    );
+    const rs: RunnableSequence = await load(pulledPrompt);
     expect(rs).toBeDefined();
     expect(rs).toBeInstanceOf(RunnableSequence);
   } catch (error: any) {
