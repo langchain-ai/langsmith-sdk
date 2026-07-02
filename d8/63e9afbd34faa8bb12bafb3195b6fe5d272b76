@@ -1,0 +1,26 @@
+python/langsmith/_internal/otel/_otel_exporter.py
+  s_e20ff1be8e83f1::t_340aa823d2f866 29
+python/langsmith/_internal/otel/_attribute_utils.py
+  s_e20ff1be8e83f1::t_742548236c8793 26
+  s_e20ff1be8e83f1::t_18145761972b66 10
+  s_e20ff1be8e83f1::t_9321ed2a965b76 7-9
+  s_e20ff1be8e83f1::t_c2c3f9e24b3c1c 11-13,23-25
+  s_e20ff1be8e83f1::t_5c4508eccc29b7 27-28
+  s_e20ff1be8e83f1::t_5a4a2bb6488237 1-6,14-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "d863e9afbd34faa8bb12bafb3195b6fe5d272b76",
+  "prompts": {},
+  "sessions": {
+    "s_e20ff1be8e83f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc912b33-4c21-4482-b3d4-4186e017dd32",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Zhen Li <zhen@langchain.dev>"
+    }
+  }
+}
