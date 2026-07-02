@@ -1961,11 +1961,20 @@ describe("SandboxClient - snapshot operations", () => {
       "my-env",
       "python:3.12-slim",
       4294967296,
+      { registryId: "reg-1" },
     );
 
     expect(snapshot.id).toBe("snap-1");
     expect(snapshot.status).toBe("ready");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string),
+    ).toEqual({
+      name: "my-env",
+      docker_image: "python:3.12-slim",
+      fs_capacity_bytes: 4294967296,
+      registry_id: "reg-1",
+    });
   });
 
   it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
@@ -2431,5 +2440,18 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
       "captured",
       {},
     );
+  });
+});
+
+describe("SandboxClient registries", () => {
+  it("exposes a cached registries accessor backed by the generated client", () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.smith.langchain.com/v2/sandboxes",
+      apiKey: "k",
+    });
+    const first = client.registries;
+    expect(first).toBeDefined();
+    // Lazily built once and reused.
+    expect(client.registries).toBe(first);
   });
 });

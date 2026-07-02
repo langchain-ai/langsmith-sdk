@@ -16,14 +16,6 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
-from .group import (
-    GroupResource,
-    AsyncGroupResource,
-    GroupResourceWithRawResponse,
-    AsyncGroupResourceWithRawResponse,
-    GroupResourceWithStreamingResponse,
-    AsyncGroupResourceWithStreamingResponse,
-)
 from .share import (
     ShareResource,
     AsyncShareResource,
@@ -92,17 +84,17 @@ from .comparative import (
     ComparativeResourceWithStreamingResponse,
     AsyncComparativeResourceWithStreamingResponse,
 )
-from .experiments import (
-    ExperimentsResource,
-    AsyncExperimentsResource,
-    ExperimentsResourceWithRawResponse,
-    AsyncExperimentsResourceWithRawResponse,
-    ExperimentsResourceWithStreamingResponse,
-    AsyncExperimentsResourceWithStreamingResponse,
-)
 from ...pagination import SyncOffsetPaginationTopLevelArray, AsyncOffsetPaginationTopLevelArray
 from ..._base_client import AsyncPaginator, make_request_options
 from ...types.dataset import Dataset
+from .experiment_runs import (
+    ExperimentRunsResource,
+    AsyncExperimentRunsResource,
+    ExperimentRunsResourceWithRawResponse,
+    AsyncExperimentRunsResourceWithRawResponse,
+    ExperimentRunsResourceWithStreamingResponse,
+    AsyncExperimentRunsResourceWithStreamingResponse,
+)
 from ...types.data_type import DataType
 from ...types.dataset_version import DatasetVersion
 from ...types.dataset_clone_response import DatasetCloneResponse
@@ -123,12 +115,8 @@ class DatasetsResource(SyncAPIResource):
         return RunsResource(self._client)
 
     @cached_property
-    def group(self) -> GroupResource:
-        return GroupResource(self._client)
-
-    @cached_property
-    def experiments(self) -> ExperimentsResource:
-        return ExperimentsResource(self._client)
+    def experiment_runs(self) -> ExperimentRunsResource:
+        return ExperimentRunsResource(self._client)
 
     @cached_property
     def share(self) -> ShareResource:
@@ -796,12 +784,8 @@ class AsyncDatasetsResource(AsyncAPIResource):
         return AsyncRunsResource(self._client)
 
     @cached_property
-    def group(self) -> AsyncGroupResource:
-        return AsyncGroupResource(self._client)
-
-    @cached_property
-    def experiments(self) -> AsyncExperimentsResource:
-        return AsyncExperimentsResource(self._client)
+    def experiment_runs(self) -> AsyncExperimentRunsResource:
+        return AsyncExperimentRunsResource(self._client)
 
     @cached_property
     def share(self) -> AsyncShareResource:
@@ -1518,12 +1502,8 @@ class DatasetsResourceWithRawResponse:
         return RunsResourceWithRawResponse(self._datasets.runs)
 
     @cached_property
-    def group(self) -> GroupResourceWithRawResponse:
-        return GroupResourceWithRawResponse(self._datasets.group)
-
-    @cached_property
-    def experiments(self) -> ExperimentsResourceWithRawResponse:
-        return ExperimentsResourceWithRawResponse(self._datasets.experiments)
+    def experiment_runs(self) -> ExperimentRunsResourceWithRawResponse:
+        return ExperimentRunsResourceWithRawResponse(self._datasets.experiment_runs)
 
     @cached_property
     def share(self) -> ShareResourceWithRawResponse:
@@ -1591,12 +1571,8 @@ class AsyncDatasetsResourceWithRawResponse:
         return AsyncRunsResourceWithRawResponse(self._datasets.runs)
 
     @cached_property
-    def group(self) -> AsyncGroupResourceWithRawResponse:
-        return AsyncGroupResourceWithRawResponse(self._datasets.group)
-
-    @cached_property
-    def experiments(self) -> AsyncExperimentsResourceWithRawResponse:
-        return AsyncExperimentsResourceWithRawResponse(self._datasets.experiments)
+    def experiment_runs(self) -> AsyncExperimentRunsResourceWithRawResponse:
+        return AsyncExperimentRunsResourceWithRawResponse(self._datasets.experiment_runs)
 
     @cached_property
     def share(self) -> AsyncShareResourceWithRawResponse:
@@ -1664,12 +1640,8 @@ class DatasetsResourceWithStreamingResponse:
         return RunsResourceWithStreamingResponse(self._datasets.runs)
 
     @cached_property
-    def group(self) -> GroupResourceWithStreamingResponse:
-        return GroupResourceWithStreamingResponse(self._datasets.group)
-
-    @cached_property
-    def experiments(self) -> ExperimentsResourceWithStreamingResponse:
-        return ExperimentsResourceWithStreamingResponse(self._datasets.experiments)
+    def experiment_runs(self) -> ExperimentRunsResourceWithStreamingResponse:
+        return ExperimentRunsResourceWithStreamingResponse(self._datasets.experiment_runs)
 
     @cached_property
     def share(self) -> ShareResourceWithStreamingResponse:
@@ -1737,12 +1709,8 @@ class AsyncDatasetsResourceWithStreamingResponse:
         return AsyncRunsResourceWithStreamingResponse(self._datasets.runs)
 
     @cached_property
-    def group(self) -> AsyncGroupResourceWithStreamingResponse:
-        return AsyncGroupResourceWithStreamingResponse(self._datasets.group)
-
-    @cached_property
-    def experiments(self) -> AsyncExperimentsResourceWithStreamingResponse:
-        return AsyncExperimentsResourceWithStreamingResponse(self._datasets.experiments)
+    def experiment_runs(self) -> AsyncExperimentRunsResourceWithStreamingResponse:
+        return AsyncExperimentRunsResourceWithStreamingResponse(self._datasets.experiment_runs)
 
     @cached_property
     def share(self) -> AsyncShareResourceWithStreamingResponse:

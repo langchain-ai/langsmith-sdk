@@ -1,8 +1,13 @@
 """Utilities for setting LangSmith OpenTelemetry attributes."""
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith._internal import _orjson
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span  # type: ignore[import]
 
 LANGSMITH_METADATA_PREFIX = "langsmith.metadata"
 
@@ -21,7 +26,7 @@ def otel_safe_attribute_value(value: Any) -> Optional[Any]:
     return str(value)
 
 
-def set_langsmith_metadata_attribute(span: Any, key: str, value: Any) -> None:
+def set_langsmith_metadata_attribute(span: Span, key: str, value: Any) -> None:
     """Set a LangSmith metadata span attribute if the value is OTel-safe."""
     safe_value = otel_safe_attribute_value(value)
     if safe_value is not None:

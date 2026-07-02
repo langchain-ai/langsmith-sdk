@@ -8,14 +8,6 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
-from .group import (
-    GroupResource,
-    AsyncGroupResource,
-    GroupResourceWithRawResponse,
-    AsyncGroupResourceWithRawResponse,
-    GroupResourceWithStreamingResponse,
-    AsyncGroupResourceWithStreamingResponse,
-)
 from .share import (
     ShareResource,
     AsyncShareResource,
@@ -56,13 +48,13 @@ from .comparative import (
     ComparativeResourceWithStreamingResponse,
     AsyncComparativeResourceWithStreamingResponse,
 )
-from .experiments import (
-    ExperimentsResource,
-    AsyncExperimentsResource,
-    ExperimentsResourceWithRawResponse,
-    AsyncExperimentsResourceWithRawResponse,
-    ExperimentsResourceWithStreamingResponse,
-    AsyncExperimentsResourceWithStreamingResponse,
+from .experiment_runs import (
+    ExperimentRunsResource,
+    AsyncExperimentRunsResource,
+    ExperimentRunsResourceWithRawResponse,
+    AsyncExperimentRunsResourceWithRawResponse,
+    ExperimentRunsResourceWithStreamingResponse,
+    AsyncExperimentRunsResourceWithStreamingResponse,
 )
 
 __all__ = [
@@ -78,18 +70,12 @@ __all__ = [
     "AsyncRunsResourceWithRawResponse",
     "RunsResourceWithStreamingResponse",
     "AsyncRunsResourceWithStreamingResponse",
-    "GroupResource",
-    "AsyncGroupResource",
-    "GroupResourceWithRawResponse",
-    "AsyncGroupResourceWithRawResponse",
-    "GroupResourceWithStreamingResponse",
-    "AsyncGroupResourceWithStreamingResponse",
-    "ExperimentsResource",
-    "AsyncExperimentsResource",
-    "ExperimentsResourceWithRawResponse",
-    "AsyncExperimentsResourceWithRawResponse",
-    "ExperimentsResourceWithStreamingResponse",
-    "AsyncExperimentsResourceWithStreamingResponse",
+    "ExperimentRunsResource",
+    "AsyncExperimentRunsResource",
+    "ExperimentRunsResourceWithRawResponse",
+    "AsyncExperimentRunsResourceWithRawResponse",
+    "ExperimentRunsResourceWithStreamingResponse",
+    "AsyncExperimentRunsResourceWithStreamingResponse",
     "ShareResource",
     "AsyncShareResource",
     "ShareResourceWithRawResponse",

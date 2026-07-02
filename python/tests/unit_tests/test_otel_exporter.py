@@ -1,6 +1,7 @@
 """Unit tests for OTEL exporter and span processor."""
 
 import os
+import threading
 import time
 import uuid
 from unittest.mock import MagicMock, patch
@@ -28,18 +29,15 @@ def test_cleanup_stale_spans():
         stale_id = uuid.uuid4()
         fresh_id = uuid.uuid4()
 
-        exporter._span_info[stale_id] = {
-            "span": stale_span,
-            "created_at": time.time() - 2,
-        }
-        exporter._span_info[fresh_id] = {"span": fresh_span, "created_at": time.time()}
+        exporter._span_info.set(stale_id, stale_span, created_at=time.time() - 2)
+        exporter._span_info.set(fresh_id, fresh_span, created_at=time.time())
         exporter._last_cleanup = 0.0  # Force cleanup
 
         exporter._cleanup_stale_spans()
 
         # Verify cleanup
-        assert stale_id not in exporter._span_info
-        assert fresh_id in exporter._span_info
+        assert exporter._span_info.get(stale_id) is None
+        assert exporter._span_info.get(fresh_id) is not None
         stale_span.end.assert_called_once()
         fresh_span.end.assert_not_called()
 
@@ -55,17 +53,58 @@ def test_cleanup_periodic_behavior():
         stale_span = MagicMock()
         stale_id = uuid.uuid4()
 
-        exporter._span_info[stale_id] = {
-            "span": stale_span,
-            "created_at": time.time() - 2,
-        }
+        exporter._span_info.set(stale_id, stale_span, created_at=time.time() - 2)
         exporter._last_cleanup = time.time() - 5  # Recent cleanup
 
         exporter._cleanup_stale_spans()
 
         # Should not clean up due to periodic check
-        assert stale_id in exporter._span_info
+        assert exporter._span_info.get(stale_id) is not None
         stale_span.end.assert_not_called()
+
+
+def test_cleanup_stale_spans_tolerates_concurrent_mutation():
+    """Cleanup plus concurrent insert/delete from other batch workers must not
+    raise ``RuntimeError: dictionary changed size during iteration`` or any
+    ``KeyError``. The span info store locks all access and snapshots before
+    iterating.
+    """
+    with patch(
+        "langsmith._internal.otel._otel_exporter._import_otel_exporter"
+    ) as mock_import:
+        mock_import.return_value = (MagicMock(),) * 8
+
+        exporter = OTELExporter(span_ttl_seconds=1)
+        exporter._last_cleanup = 0.0  # Force cleanup
+
+        errors: list = []
+        stop = threading.Event()
+
+        # Seed one stale span so cleanup has work to do.
+        exporter._span_info.set(uuid.uuid4(), MagicMock(), created_at=time.time() - 2)
+
+        def mutator():
+            while not stop.is_set():
+                sid = uuid.uuid4()
+                try:
+                    exporter._span_info.set(sid, MagicMock())
+                    exporter._span_info.pop(sid)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+
+        threads = [threading.Thread(target=mutator) for _ in range(4)]
+        for t in threads:
+            t.start()
+        try:
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                exporter._cleanup_stale_spans()
+        finally:
+            stop.set()
+            for t in threads:
+                t.join(timeout=2)
+
+        assert not errors, f"concurrent access raised: {errors}"
 
 
 @patch("langsmith.utils.get_env_var")

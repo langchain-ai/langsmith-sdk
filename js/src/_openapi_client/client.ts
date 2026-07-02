@@ -28,6 +28,8 @@ import {
   OffsetPaginationCommitsResponse,
   type OffsetPaginationInsightsClusteringJobsParams,
   OffsetPaginationInsightsClusteringJobsResponse,
+  type OffsetPaginationIssuesParams,
+  OffsetPaginationIssuesResponse,
   type OffsetPaginationOnlineEvaluatorsParams,
   OffsetPaginationOnlineEvaluatorsResponse,
   type OffsetPaginationReposParams,
@@ -39,6 +41,7 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
+import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -69,6 +72,22 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
+  CustomChartsSection,
+  CustomChartsSectionRequest,
+  RunStatsGroupBy,
+  SessionCreateParams,
+  SessionDeleteResponse,
+  SessionListParams,
+  SessionRetrieveParams,
+  SessionSortableColumns,
+  SessionUpdateParams,
+  Sessions,
+  TimedeltaInput,
+  TracerSession,
+  TracerSessionWithoutVirtualFields,
+  TracerSessionsOffsetPaginationTopLevelArray,
+} from './resources/sessions.js';
+import {
   DataType,
   Dataset,
   DatasetCloneParams,
@@ -98,10 +117,9 @@ import {
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
 import {
-  QueryRunResponse,
-  QueryRunResponsesItemsCursorPostPagination,
   ResponseBodyForRunsGenerateQuery,
   Run,
+  RunIngest,
   RunQueryParams,
   RunQueryV2Params,
   RunRetrieveParams,
@@ -111,24 +129,17 @@ import {
   RunTypeEnum,
   Runs,
   RunsFilterDataSourceTypeEnum,
+  RunsItemsCursorPostPagination,
 } from './resources/runs/runs.js';
 import {
-  CustomChartsSection,
-  CustomChartsSectionRequest,
-  RunStatsGroupBy,
-  SessionCreateParams,
-  SessionDashboardParams,
-  SessionDeleteResponse,
-  SessionListParams,
-  SessionRetrieveParams,
-  SessionSortableColumns,
-  SessionUpdateParams,
-  Sessions,
-  TimedeltaInput,
-  TracerSession,
-  TracerSessionWithoutVirtualFields,
-  TracerSessionsOffsetPaginationTopLevelArray,
-} from './resources/sessions/sessions.js';
+  SandboxListResponse,
+  SandboxResponse,
+  SandboxStatusResponse,
+  Sandboxes,
+  ServiceURLResponse,
+  SnapshotListResponse,
+  SnapshotResponse,
+} from './resources/sandboxes/sandboxes.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -902,6 +913,8 @@ export class Langsmith {
   runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
+  issues: API.Issues = new API.Issues(this);
+  sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
 Langsmith.Sessions = Sessions;
@@ -909,6 +922,8 @@ Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
+Langsmith.Issues = Issues;
+Langsmith.Sandboxes = Sandboxes;
 
 export declare namespace Langsmith {
   export type RequestOptions = Opts.RequestOptions;
@@ -917,6 +932,12 @@ export declare namespace Langsmith {
   export {
     type OffsetPaginationTopLevelArrayParams as OffsetPaginationTopLevelArrayParams,
     type OffsetPaginationTopLevelArrayResponse as OffsetPaginationTopLevelArrayResponse,
+  };
+
+  export import OffsetPaginationIssues = Pagination.OffsetPaginationIssues;
+  export {
+    type OffsetPaginationIssuesParams as OffsetPaginationIssuesParams,
+    type OffsetPaginationIssuesResponse as OffsetPaginationIssuesResponse,
   };
 
   export import OffsetPaginationRepos = Pagination.OffsetPaginationRepos;
@@ -976,7 +997,6 @@ export declare namespace Langsmith {
     type SessionRetrieveParams as SessionRetrieveParams,
     type SessionUpdateParams as SessionUpdateParams,
     type SessionListParams as SessionListParams,
-    type SessionDashboardParams as SessionDashboardParams,
   };
 
   export {
@@ -1011,14 +1031,14 @@ export declare namespace Langsmith {
 
   export {
     Runs as Runs,
-    type QueryRunResponse as QueryRunResponse,
     type ResponseBodyForRunsGenerateQuery as ResponseBodyForRunsGenerateQuery,
     type Run as Run,
+    type RunIngest as RunIngest,
     type RunSchema as RunSchema,
     type RunStatsQueryParams as RunStatsQueryParams,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
-    type QueryRunResponsesItemsCursorPostPagination as QueryRunResponsesItemsCursorPostPagination,
+    type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,
@@ -1056,4 +1076,21 @@ export declare namespace Langsmith {
   };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
+
+  export {
+    Issues as Issues,
+    type Issue as Issue,
+    type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueListParams as IssueListParams,
+  };
+
+  export {
+    Sandboxes as Sandboxes,
+    type SandboxListResponse as SandboxListResponse,
+    type SandboxResponse as SandboxResponse,
+    type SandboxStatusResponse as SandboxStatusResponse,
+    type ServiceURLResponse as ServiceURLResponse,
+    type SnapshotListResponse as SnapshotListResponse,
+    type SnapshotResponse as SnapshotResponse,
+  };
 }

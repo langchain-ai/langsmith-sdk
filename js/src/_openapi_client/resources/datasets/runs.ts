@@ -24,14 +24,6 @@ export class Runs extends APIResource {
       ...options,
     });
   }
-
-  /**
-   * Fetch the number of regressions/improvements for each example in a dataset,
-   * between sessions[0] and sessions[1].
-   */
-  delta(datasetID: string, body: RunDeltaParams, options?: RequestOptions): APIPromise<SessionFeedbackDelta> {
-    return this._client.post(path`/api/v1/datasets/${datasetID}/runs/delta`, { body, ...options });
-  }
 }
 
 /**
@@ -64,6 +56,12 @@ export interface ExampleWithRunsCh {
   outputs?: { [key: string]: unknown } | null;
 
   source_run_id?: string | null;
+
+  source_run_start_time?: string | null;
+
+  source_session_id?: string | null;
+
+  source_trace_id?: string | null;
 }
 
 export namespace ExampleWithRunsCh {
@@ -170,40 +168,6 @@ export interface QueryExampleSchemaWithRuns {
   sort_params?: SortParamsForRunsComparisonView | null;
 }
 
-export interface QueryFeedbackDelta {
-  baseline_session_id: string;
-
-  comparison_session_ids: Array<string>;
-
-  feedback_key: string;
-
-  comparative_experiment_id?: string | null;
-
-  filters?: { [key: string]: Array<string> } | null;
-
-  limit?: number;
-
-  offset?: number;
-}
-
-/**
- * List of feedback keys with number of improvements and regressions for each.
- */
-export interface SessionFeedbackDelta {
-  feedback_deltas: { [key: string]: SessionFeedbackDelta.FeedbackDeltas };
-}
-
-export namespace SessionFeedbackDelta {
-  /**
-   * Feedback key with number of improvements and regressions.
-   */
-  export interface FeedbackDeltas {
-    improved_examples: Array<string>;
-
-    regressed_examples: Array<string>;
-  }
-}
-
 export interface SortParamsForRunsComparisonView {
   sort_by: string;
 
@@ -264,31 +228,12 @@ export interface RunCreateParams {
   sort_params?: SortParamsForRunsComparisonView | null;
 }
 
-export interface RunDeltaParams {
-  baseline_session_id: string;
-
-  comparison_session_ids: Array<string>;
-
-  feedback_key: string;
-
-  comparative_experiment_id?: string | null;
-
-  filters?: { [key: string]: Array<string> } | null;
-
-  limit?: number;
-
-  offset?: number;
-}
-
 export declare namespace Runs {
   export {
     type ExampleWithRunsCh as ExampleWithRunsCh,
     type QueryExampleSchemaWithRuns as QueryExampleSchemaWithRuns,
-    type QueryFeedbackDelta as QueryFeedbackDelta,
-    type SessionFeedbackDelta as SessionFeedbackDelta,
     type SortParamsForRunsComparisonView as SortParamsForRunsComparisonView,
     type RunCreateResponse as RunCreateResponse,
     type RunCreateParams as RunCreateParams,
-    type RunDeltaParams as RunDeltaParams,
   };
 }

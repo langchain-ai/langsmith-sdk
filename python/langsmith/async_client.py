@@ -46,9 +46,16 @@ logger = logging.getLogger(__name__)
 ID_TYPE = Union[uuid.UUID, str]
 
 if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
+    )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource,
     )
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
 
 
 class AsyncClient:
@@ -303,13 +310,28 @@ class AsyncClient:
 
     @property
     def runs(self) -> AsyncRunsResource:
-        """Access the v2 runs resource."""
+        """Access the runs resource."""
         return self._langsmith_api.runs
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated async online evaluator CRUD methods."""
+        """Access the online evaluator resource."""
         return self._langsmith_api.online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
+        return self._langsmith_api.sandboxes
+
+    @property
+    def projects(self) -> AsyncSessionsResource:
+        """Access the projects resource."""
+        return self._langsmith_api.sessions
+
+    @property
+    def datasets(self) -> AsyncDatasetsResource:
+        """Access the v2 datasets resource (experiment_runs, etc.)."""
+        return self._langsmith_api.datasets
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

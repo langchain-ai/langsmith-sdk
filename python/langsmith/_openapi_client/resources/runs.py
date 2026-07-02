@@ -19,9 +19,9 @@ from .._response import (
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
+from ..types.run import Run
 from ..pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from .._base_client import AsyncPaginator, make_request_options
-from ..types.query_run_response import QueryRunResponse
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
 
@@ -120,7 +120,7 @@ class RunsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorPostPagination[QueryRunResponse]:
+    ) -> SyncItemsCursorPostPagination[Run]:
         """
         **Alpha:** The request and response contract may change; Returns a paginated
         list of runs for the given projects within min/max start_time. Supports filters,
@@ -198,7 +198,7 @@ class RunsResource(SyncAPIResource):
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/v2/runs/query",
-            page=SyncItemsCursorPostPagination[QueryRunResponse],
+            page=SyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -223,7 +223,7 @@ class RunsResource(SyncAPIResource):
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=QueryRunResponse,
+            model=Run,
             method="post",
         )
 
@@ -289,7 +289,7 @@ class RunsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> QueryRunResponse:
+    ) -> Run:
         """
         **Alpha:** The request and response contract may change; Returns one run by ID
         for the given session and start_time. Use the `selects` query parameter
@@ -332,7 +332,7 @@ class RunsResource(SyncAPIResource):
                     run_retrieve_v2_params.RunRetrieveV2Params,
                 ),
             ),
-            cast_to=QueryRunResponse,
+            cast_to=Run,
         )
 
     retrieve = retrieve_v2
@@ -434,7 +434,7 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[QueryRunResponse, AsyncItemsCursorPostPagination[QueryRunResponse]]:
+    ) -> AsyncPaginator[Run, AsyncItemsCursorPostPagination[Run]]:
         """
         **Alpha:** The request and response contract may change; Returns a paginated
         list of runs for the given projects within min/max start_time. Supports filters,
@@ -512,7 +512,7 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/v2/runs/query",
-            page=AsyncItemsCursorPostPagination[QueryRunResponse],
+            page=AsyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -537,7 +537,7 @@ class AsyncRunsResource(AsyncAPIResource):
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=QueryRunResponse,
+            model=Run,
             method="post",
         )
 
@@ -603,7 +603,7 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> QueryRunResponse:
+    ) -> Run:
         """
         **Alpha:** The request and response contract may change; Returns one run by ID
         for the given session and start_time. Use the `selects` query parameter
@@ -646,7 +646,7 @@ class AsyncRunsResource(AsyncAPIResource):
                     run_retrieve_v2_params.RunRetrieveV2Params,
                 ),
             ),
-            cast_to=QueryRunResponse,
+            cast_to=Run,
         )
 
     retrieve = retrieve_v2

@@ -32,6 +32,7 @@ export {
   type DatasetsOffsetPaginationTopLevelArray,
 } from './datasets/datasets.js';
 export { Info, type InfoListResponse } from './info.js';
+export { Issues, type Issue, type IssueListParams, type IssuesOffsetPaginationIssues } from './issues.js';
 export {
   OnlineEvaluators,
   type BulkDeleteEvaluatorFailedItem,
@@ -63,9 +64,9 @@ export {
 } from './online-evaluators.js';
 export {
   Runs,
-  type QueryRunResponse,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
+  type RunIngest,
   type RunSchema,
   type RunStatsQueryParams,
   type RunTypeEnum,
@@ -74,8 +75,17 @@ export {
   type RunRetrieveV2Params,
   type RunRetrieveParams,
   type RunQueryParams,
-  type QueryRunResponsesItemsCursorPostPagination,
+  type RunsItemsCursorPostPagination,
 } from './runs/runs.js';
+export {
+  Sandboxes,
+  type SandboxListResponse,
+  type SandboxResponse,
+  type SandboxStatusResponse,
+  type ServiceURLResponse,
+  type SnapshotListResponse,
+  type SnapshotResponse,
+} from './sandboxes/sandboxes.js';
 export {
   Sessions,
   type CustomChartsSection,
@@ -90,6 +100,5 @@ export {
   type SessionRetrieveParams,
   type SessionUpdateParams,
   type SessionListParams,
-  type SessionDashboardParams,
   type TracerSessionsOffsetPaginationTopLevelArray,
-} from './sessions/sessions.js';
+} from './sessions.js';

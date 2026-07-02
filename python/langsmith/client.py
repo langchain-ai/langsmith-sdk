@@ -264,10 +264,17 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
+    )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
 
     # OTEL imports for type hints
     try:
@@ -889,6 +896,7 @@ class Client:
     _manual_cleanup: bool
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
+    _langsmith_api: Optional[LangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1427,18 +1435,7 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
-        self._langsmith_api = LangsmithOpenAPIClient(
-            api_key=self._api_key,
-            tenant_id=str(self._workspace_id) if self._workspace_id else None,
-            base_url=self.api_url,
-            timeout=_httpx.Timeout(
-                connect=self._timeout[0],
-                read=self._timeout[1],
-                write=self._timeout[1],
-                pool=self._timeout[0],
-            ),
-            default_headers=self._headers or None,
-        )
+        self._langsmith_api = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1447,17 +1444,51 @@ class Client:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _get_langsmith_api(self) -> LangsmithOpenAPIClient:
+        if self._langsmith_api is None:
+            self._langsmith_api = LangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._langsmith_api
+
     @property
     def runs(self) -> AsyncRunsResource:
-        """Access the v2 runs resource."""
+        """Access the runs resource."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api.runs
+        return self._get_langsmith_api().runs
 
     @property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access generated online evaluator CRUD methods."""
+        """Access the online evaluator resource."""
         _check_backend_version(self.info.version)
-        return self._langsmith_api.online_evaluators
+        return self._get_langsmith_api().online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().sandboxes
+
+    @property
+    def projects(self) -> AsyncSessionsResource:
+        """Access the projects resource."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().sessions
+
+    @property
+    def datasets(self) -> AsyncDatasetsResource:
+        """Access the v2 datasets resource (experiment_runs, etc.)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().datasets
 
     def _dump_failed_trace(
         self,
@@ -2220,6 +2251,8 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if "events" in run_create and run_create["events"] is not None:
             run_create["events"] = self._filter_new_token_events(run_create["events"])
+        if "error" in run_create and run_create["error"] is not None:
+            run_create["error"] = self._hide_run_error(run_create["error"])
         # Hide metadata in extra if present
         if "extra" in run_create and isinstance(run_create["extra"], dict):
             extra = run_create["extra"]
@@ -2644,6 +2677,28 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _hide_run_error(self, error: Any):
+        """Apply the configured anonymizer to a run's error string.
+
+        Unlike inputs/outputs, ``error`` is a plain string (``repr(exc)`` plus a
+        formatted traceback, see ``run_helpers._format_error_with_exceptions_to_handle``)
+        that can capture credentials the user never explicitly logged -- e.g. an
+        HTTP client exception whose request-object repr includes an
+        ``Authorization`` header. Route it through the same anonymizer as
+        inputs/outputs so secrets are scrubbed client-side before upload.
+
+        The value is wrapped as ``{"error": ...}`` so that both
+        ``create_secret_anonymizer`` and a user-supplied anonymizer matching the
+        documented ``Callable[[dict], dict]`` signature receive a dict (a bare
+        string would break a dict-typed anonymizer), then unwrapped.
+        """
+        if not self._anonymizer or error is None:
+            return error
+        scrubbed = self._anonymizer({"error": error})
+        if isinstance(scrubbed, dict) and "error" in scrubbed:
+            return scrubbed["error"]
+        return error
 
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
@@ -3563,7 +3618,7 @@ class Client:
         else:
             data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
-            data["error"] = error
+            data["error"] = self._hide_run_error(error)
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
@@ -10904,17 +10959,8 @@ class Client:
             params["status"] = status
         if priority is not None:
             params["priority"] = priority
-        path = _platform_path(self.api_url, "forge-issues")
-        full_url = _construct_url(self.api_url, path)
-        self._ensure_profile_auth()
-        response = self.session.request(
-            "GET",
-            full_url,
-            params=params,
-            headers=self._headers,
-            timeout=self._timeout,
-        )
-        ls_utils.raise_for_status_with_text(response)
+        path = _platform_path(self.api_url, "issues")
+        response = self.request_with_retries("GET", path, params=params)
         return response.json()
 
     def _ensure_insights_api_key(

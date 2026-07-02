@@ -117,3 +117,9 @@ class ExampleWithRunsCh(BaseModel):
     outputs: Optional[Dict[str, object]] = None
 
     source_run_id: Optional[str] = None
+
+    source_run_start_time: Optional[datetime] = None
+
+    source_session_id: Optional[str] = None
+
+    source_trace_id: Optional[str] = None
