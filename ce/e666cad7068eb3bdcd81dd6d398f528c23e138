@@ -1,0 +1,41 @@
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_91a4230b0be14e 69,122-123,125-126,230-246,448-451,465,467-468,470,476-492
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_c56c6cb8892d8c 348-350
+  s_a22a9bc0776d5e::t_be5fe2e0352654 288-307,314
+  s_a22a9bc0776d5e::t_d39664dee72f0e 118-131,137-141,145-146,148-151
+  s_a22a9bc0776d5e::t_fc3e87c05b0050 115-117,132-136,142-144,147,152
+  s_a22a9bc0776d5e::t_46b271f3f89382 429
+  s_a22a9bc0776d5e::t_3239d58648943f 741-749
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_59ccf5f6ab3613 203-205
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_69a8540249caaf 232-248,265,269,460-463,538-540
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_5cb00da5f3a050 219,253-254,258-260
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_2bca57fc344406 35,145-157,187,189-190,241-245,247,249-254,486-488
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_1bdf8ce921860e 378,382-384,386-387,389-396
+  s_a22a9bc0776d5e::t_fbaa7efc9349dc 379-381,385,388
+  s_a22a9bc0776d5e::t_e8811570639f6b 13-16,342-377
+  s_a22a9bc0776d5e::t_e814eb16523f10 397-408
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_0ed0b261ea03e3 204,219-225,314-318,323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "cee666cad7068eb3bdcd81dd6d398f528c23e138",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
