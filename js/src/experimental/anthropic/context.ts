@@ -108,6 +108,7 @@ export class StreamManager {
       this.namespaces["root"].extra.metadata.is_error = message.is_error;
       this.namespaces["root"].extra.metadata.num_turns = message.num_turns;
       this.namespaces["root"].extra.metadata.session_id = message.session_id;
+      this.namespaces["root"].extra.metadata.thread_id = message.session_id;
       this.namespaces["root"].extra.metadata.duration_ms = message.duration_ms;
       this.namespaces["root"].extra.metadata.duration_api_ms =
         message.duration_api_ms;

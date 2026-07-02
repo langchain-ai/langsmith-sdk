@@ -646,11 +646,13 @@ def instrument_claude_client(original_class: Any) -> None:
                                 )
                         tracker.mark_next_start()
                     elif msg_type == "ResultMessage":
+                        session_id_val = getattr(msg, "session_id", None)
                         meta = {
                             k: v
                             for k, v in {
                                 "num_turns": getattr(msg, "num_turns", None),
-                                "session_id": getattr(msg, "session_id", None),
+                                "session_id": session_id_val,
+                                "thread_id": session_id_val,
                                 "duration_ms": getattr(msg, "duration_ms", None),
                                 "duration_api_ms": getattr(
                                     msg, "duration_api_ms", None
