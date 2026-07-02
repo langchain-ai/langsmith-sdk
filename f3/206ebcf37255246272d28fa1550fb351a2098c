@@ -1,0 +1,48 @@
+python/langsmith/integrations/otel/_utils.py
+  s_85970641055e04::t_3962a907e3c081 1-3
+  s_85970641055e04::t_8290a1cefcb94e 4-8
+python/langsmith/_internal/otel/_attribute_utils.py
+  s_e20ff1be8e83f1::t_5c4508eccc29b7 27-28
+  s_e20ff1be8e83f1::t_9321ed2a965b76 7-9
+  s_e20ff1be8e83f1::t_c2c3f9e24b3c1c 11-13,23-25
+  s_e20ff1be8e83f1::t_742548236c8793 26
+  s_e20ff1be8e83f1::t_5a4a2bb6488237 1-6,14-22
+  s_e20ff1be8e83f1::t_18145761972b66 10
+python/langsmith/_internal/otel/_otel_exporter.py
+  s_85970641055e04::t_57da3cf5082019 530
+  s_e20ff1be8e83f1::t_340aa823d2f866 29
+python/langsmith/integrations/otel/__init__.py
+  s_85970641055e04::t_bbbb21c05fbd46 13
+  s_85970641055e04::t_e33f7fdd009a2a 17
+  s_85970641055e04::t_e708729fb5dc5d 18-19
+  s_85970641055e04::t_464fdd3766adb6 8
+  s_85970641055e04::t_a6f93b081bf61b 14-16
+python/tests/unit_tests/test_otel_exporter.py
+  s_85970641055e04::t_5555a3560cee96 89-104
+  s_85970641055e04::t_98c545cb86d7f4 9,11-12,86-88,105-116,132-134,141
+  s_85970641055e04::t_67a597d68ade78 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "f3206ebcf37255246272d28fa1550fb351a2098c",
+  "prompts": {},
+  "sessions": {
+    "s_85970641055e04": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8bf6e8e-7dc8-42c4-8ec4-5ec4e490205b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_e20ff1be8e83f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc912b33-4c21-4482-b3d4-4186e017dd32",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Zhen Li <zhen@langchain.dev>"
+    }
+  }
+}
