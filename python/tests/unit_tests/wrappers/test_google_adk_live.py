@@ -309,6 +309,21 @@ class TestLifecycle:
         assert calls[0]["client"] is client
         assert calls[0]["replicas"] == replicas
 
+    def test_integration_attribution_is_plumbed_to_start_session(self, monkeypatch):
+        # The trace must be attributable to this integration + the ADK version.
+        calls = []
+
+        def fake_start_session(**kwargs):
+            calls.append(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(adk_plugin, "start_session", fake_start_session)
+        plugin = _new_plugin()
+        _run(plugin.before_run_callback(invocation_context=_ctx(session_id="A")))
+        assert calls[0]["integration"] == "google-adk-live"
+        # Version comes from the installed google-adk package (str or None).
+        assert "integration_version" in calls[0]
+
     def test_two_conversations_are_isolated(self, make_plugin):
         factory, created = make_plugin
         plugin = factory()

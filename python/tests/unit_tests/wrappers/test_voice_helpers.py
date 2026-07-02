@@ -9,6 +9,7 @@ import io
 import wave
 from unittest.mock import MagicMock
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice import audio as audio_utils
 from langsmith._internal.voice import helpers
 
@@ -57,3 +58,10 @@ class TestVoiceHelpers:
         assert helpers.dump_event(model) == {"k": "v"}
         assert helpers.dump_event({"already": "dict"}) == {"already": "dict"}
         assert "repr" in helpers.dump_event(object())
+
+    def test_get_package_version_installed(self):
+        # langsmith itself is always importable in the test env.
+        assert get_package_version("langsmith") is not None
+
+    def test_get_package_version_missing_returns_none(self):
+        assert get_package_version("no-such-package-xyz-123") is None

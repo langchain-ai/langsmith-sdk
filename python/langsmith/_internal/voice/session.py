@@ -430,6 +430,8 @@ def start_session(
     max_audio_seconds: Optional[float] = None,
     client: Optional[Client] = None,
     replicas: Optional[Sequence[WriteReplica]] = None,
+    integration: str,
+    integration_version: Optional[str] = None,
 ) -> EventSession:
     """Create and post the conversation root span, returning an ``EventSession``.
 
@@ -447,9 +449,24 @@ def start_session(
     ``max_audio_seconds`` caps how much audio per channel is retained for the
     stereo WAV, guarding memory on long-running sessions; ``None`` keeps all
     audio. It is converted to a per-channel byte budget at PCM16 (2 bytes/sample).
+
+    ``integration`` / ``integration_version`` stamp ``ls_integration`` and
+    ``ls_integration_version`` on the root (the convention the batch integrations
+    use) so LangSmith can attribute the trace to a specific integration and the
+    framework version in use. Set authoritatively — a caller cannot shadow them
+    via ``metadata``. ``integration_version`` may be ``None`` when the framework
+    version can't be resolved.
     """
     # Mark the root as an audio-modality run (these are voice conversations).
-    md = {"ls_modality": "audio", "thread_id": thread_id, **(metadata or {})}
+    # Integration attribution comes after ``**metadata`` so it wins — a caller
+    # can't shadow ls_integration via their own metadata.
+    md = {
+        "ls_modality": "audio",
+        "thread_id": thread_id,
+        **(metadata or {}),
+        "ls_integration": integration,
+        "ls_integration_version": integration_version,
+    }
     # ``RunTree.session_name`` (aliased ``project_name``) is a ``str`` with a
     # default factory; passing ``None`` explicitly fails validation, so only
     # forward it when set and let the SDK resolve ``LANGSMITH_PROJECT`` otherwise.

@@ -217,6 +217,8 @@ class TestPipecatDispatch:
         assert attrs["langsmith.span.kind"] == "chain"
         assert attrs["langsmith.root_span"] is True
         assert attrs["langsmith.metadata.ls_modality"] == "audio"
+        # The root is attributed to this integration so usage is trackable.
+        assert attrs["langsmith.metadata.ls_integration"] == "pipecat"
         prompt = json.loads(attrs["gen_ai.prompt"])
         assert prompt["messages"][0]["content"] == "hi"
         completion = json.loads(attrs["gen_ai.completion"])

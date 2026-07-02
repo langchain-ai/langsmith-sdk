@@ -65,6 +65,7 @@ from typing import Any, Callable, Optional
 
 from cachetools import TTLCache
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.base_span_processor import (
     BaseLangSmithSpanProcessor,
     TranslatedSpan,
@@ -472,6 +473,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._set_kind(tspan, "chain")
         tspan.attributes["langsmith.root_span"] = True
         tspan.attributes["langsmith.metadata.ls_modality"] = "audio"
+        tspan.attributes["langsmith.metadata.ls_integration"] = "livekit"
+        # "" not None: OTel span attributes reject a null value (unlike the
+        # RunTree metadata path); livekit-agents is a hard dep, so ~always set.
+        tspan.attributes["langsmith.metadata.ls_integration_version"] = (
+            get_package_version("livekit-agents") or ""
+        )
 
         thread = tspan.attributes.get("langsmith.metadata.thread_id")
         if thread is not None:
