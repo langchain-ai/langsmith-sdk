@@ -3356,36 +3356,6 @@ wheels = [
 ]
 
 [[package]]
-name = "opentelemetry-exporter-gcp-logging"
-version = "1.12.0a0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "google-cloud-logging" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-resourcedetector-gcp" },
-    { name = "opentelemetry-sdk" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/77/e4/95ecebaa1c5134adaa0d0374028b25e3b3c5c08535d29a66d39d372a3d11/opentelemetry_exporter_gcp_logging-1.12.0a0.tar.gz", hash = "sha256:586529dbbcae5e22b880f7c121fde3f0fe8ae997aba1bad53f13c20eeb27cb3a", size = 22521, upload-time = "2026-04-28T20:59:40.237Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/93/3a0a9a62db0b90029a8160774e791044c0566aa94d5160ce7bbce8abf242/opentelemetry_exporter_gcp_logging-1.12.0a0-py3-none-any.whl", hash = "sha256:2aca9b01b3248c2fa95d38d01aa71aca8e22f640c44dba36ca6b883930762971", size = 14207, upload-time = "2026-04-28T20:59:35.109Z" },
-]
-
-[[package]]
-name = "opentelemetry-exporter-gcp-trace"
-version = "1.12.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "google-cloud-trace" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-resourcedetector-gcp" },
-    { name = "opentelemetry-sdk" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bf/55/32922e72d88421505383dfdba9c1ee6ad67253f94f2358f6e9dbc4ac3749/opentelemetry_exporter_gcp_trace-1.12.0.tar.gz", hash = "sha256:18c6e56fe123eed020d5005fdd819b196d64f651545bce1ca7e2e2cbaf9d343b", size = 18779, upload-time = "2026-04-28T20:59:41.974Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/68/c60e79992918eecb6de167e782c86946fdd5492bb163fe320f1a18959c3d/opentelemetry_exporter_gcp_trace-1.12.0-py3-none-any.whl", hash = "sha256:1538dab654bcb25e757ed34c94f27a2e30d90dc7deb3630f8d46d1111fcb3bad", size = 14013, upload-time = "2026-04-28T20:59:37.518Z" },
-]
-
-[[package]]
 name = "opentelemetry-exporter-otlp"
 version = "1.39.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3485,21 +3455,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/49/1d/f25d76d8260c156c40c97c9ed4511ec0f9ce353f8108ca6e7561f82a06b2/opentelemetry_proto-1.39.1.tar.gz", hash = "sha256:6c8e05144fc0d3ed4d22c2289c6b126e03bcd0e6a7da0f16cedd2e1c2772e2c8", size = 46152, upload-time = "2025-12-11T13:32:48.681Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/95/b40c96a7b5203005a0b03d8ce8cd212ff23f1793d5ba289c87a097571b18/opentelemetry_proto-1.39.1-py3-none-any.whl", hash = "sha256:22cdc78efd3b3765d09e68bfbd010d4fc254c9818afd0b6b423387d9dee46007", size = 72535, upload-time = "2025-12-11T13:32:33.866Z" },
-]
-
-[[package]]
-name = "opentelemetry-resourcedetector-gcp"
-version = "1.12.0a0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-sdk" },
-    { name = "requests" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/21/ae/b62c5e986c9c7f908a15682ea173bcfcdc00403c0c85243ccbd30eca7fc2/opentelemetry_resourcedetector_gcp-1.12.0a0.tar.gz", hash = "sha256:d5e3f78283a272eb92547e00bbeff45b7332a34ae791a70ab4eba81af9bc3baf", size = 18797, upload-time = "2026-04-28T20:59:43.195Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/84/9db2999adbc41505af3e6717e8d958746778cbfc9e07ed9c670bf9d1e6db/opentelemetry_resourcedetector_gcp-1.12.0a0-py3-none-any.whl", hash = "sha256:e803688d14e2969fe816077be81f7b034368314d485863f12ce49daba7c81919", size = 18798, upload-time = "2026-04-28T20:59:39.257Z" },
 ]
 
 [[package]]
