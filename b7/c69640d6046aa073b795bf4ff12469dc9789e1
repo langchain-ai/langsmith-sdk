@@ -1,0 +1,27 @@
+python/pyproject.toml
+  s_a22a9bc0776d5e::t_51e4773c6f1408 98-102
+python/langsmith/integrations/google_adk_live/__init__.py
+  s_a22a9bc0776d5e::t_51e4773c6f1408 1-28
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_51e4773c6f1408 1-642
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_51e4773c6f1408 1-499
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_51e4773c6f1408 358,363-367,371-376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "b7c69640d6046aa073b795bf4ff12469dc9789e1",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
