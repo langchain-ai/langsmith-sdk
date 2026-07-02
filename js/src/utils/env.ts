@@ -1,15 +1,5 @@
 // Inlined from https://github.com/flexdinesh/browser-or-node
 import { __version__ } from "../index.js";
-declare global {
-  const Deno:
-    | {
-        version: {
-          deno: string;
-        };
-      }
-    | undefined;
-}
-
 let globalEnv: string;
 
 export const isBrowser = () =>
@@ -26,7 +16,8 @@ export const isJsDom = () =>
 
 // Supabase Edge Function provides a `Deno` global object
 // without `version` property
-export const isDeno = () => typeof Deno !== "undefined";
+export const isDeno = () =>
+  typeof (globalThis as { Deno?: unknown }).Deno !== "undefined";
 
 // Mark not-as-node if in Supabase Edge Function
 export const isNode = () =>
