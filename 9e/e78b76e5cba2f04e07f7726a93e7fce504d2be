@@ -1,0 +1,46 @@
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_32951800caa190 433-434,452-458,462-464
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_32951800caa190 243-246
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_a22a9bc0776d5e::t_32951800caa190 60-66
+python/langsmith/integrations/pipecat/processor.py
+  s_a22a9bc0776d5e::t_32951800caa190 52,306-311
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_32951800caa190 34,412-413
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_a22a9bc0776d5e::t_32951800caa190 47,97-121
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_32951800caa190 51-56,460-461
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_a22a9bc0776d5e::t_32951800caa190 220-221
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_b327c673264629 312-320
+  s_a22a9bc0776d5e::t_32951800caa190 321-325
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_32951800caa190 168-170,208-210,233-235,261-263,282-284,298-300,311-313,333-335,414-416
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_32951800caa190 39,504-505
+python/langsmith/_internal/voice/helpers.py
+  s_a22a9bc0776d5e::t_32951800caa190 1,10-11,17,26-39
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_32951800caa190 72,476-481
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_32951800caa190 116-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "9ee78b76e5cba2f04e07f7726a93e7fce504d2be",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,88 @@
+python/tests/unit_tests/test_span_utils.py
+  s_e9d10764cf1246::t_2f24f56cc0f94f 1-40
+python/langsmith/integrations/strands_agents/exporter.py
+  s_e9d10764cf1246::t_2585e67b3bd9cc 222-223
+  s_e9d10764cf1246::t_7d1165eb41b27c 30-31
+python/pyproject.toml
+  s_30c3629a45db25::t_b42700142c979c 61-71,133
+python/langsmith/integrations/pipecat/processor.py
+  s_1a6d51e52b3af9::t_e8c2e249ad9260 166,171,174,176,179,181
+  s_1a6d51e52b3af9::t_65d8b8de421e91 192,194,197,201
+  s_30c3629a45db25::t_22d49de14259bc 349
+  s_1a6d51e52b3af9::t_f00fbda0bf1c4d 350
+  s_1a6d51e52b3af9::t_7eaa2b102e4f1f 244
+  s_1a6d51e52b3af9::t_09ae588557b649 317
+  s_1a6d51e52b3af9::t_3ad637ab520e94 343
+  s_e9d10764cf1246::t_07be77bbc4ca75 211-214,223
+  s_1a6d51e52b3af9::t_20698102259570 167-169,172-173,175,177-178,180,182,193,195-196,198,202,227,235-237,250,253,266,268-270,272,274,281,283-284,286-287,289,293,299,301-304,308,310,312,318,344
+  s_1a6d51e52b3af9::t_0e437ff56efe67 226,249,252
+  s_1a6d51e52b3af9::t_217e9a21ae1372 228-234
+  s_e9d10764cf1246::t_0304208ec13fd9 47-48
+  s_30c3629a45db25::t_b42700142c979c 1-46,52-165,170,183-191,199-200,203-210,215-222,224-225,238-243,245-248,251,254-264,275-279,290-291,294-297,305-306,313-316,319-342,345-348
+  s_e9d10764cf1246::t_7ad1b5d88ff798 49-51
+  s_1a6d51e52b3af9::t_102d12f2248aa7 265,267,271,273,280,282,285,288,292,298,300,307,309,311
+python/langsmith/integrations/pipecat/__init__.py
+  s_30c3629a45db25::t_8ca04344a6e2f9 8,10,23
+  s_30c3629a45db25::t_b42700142c979c 1-7,11-22,24-46,50-90
+  s_e9d10764cf1246::t_dec4e682f85251 9
+  s_1a6d51e52b3af9::t_38cc93d9cdbcf8 47-49
+python/uv.lock
+  s_30c3629a45db25::t_52a98d384ec8e5 8-9,14,17-25,303-358,442-450,971-978,1401-1409,1557-1563,1583,1643,1651,1654,1657,1661,1679,1684,1854-1907,2203-2253,2327-2328,2405-2442,2706-2707,2824-2856,3251-3264,3566-3577,3740-3752,3925-4055,4104-4134,4640-4648,4749-4757
+python/langsmith/_internal/voice/base_span_processor.py
+  s_e9d10764cf1246::t_2eeb6ef566d0d2 223
+  s_e9d10764cf1246::t_3ff49cc887944f 220-222
+  s_e9d10764cf1246::t_4a5055d8d95651 224-226
+  s_e9d10764cf1246::t_a2736cafa3c228 1-219,227-340
+python/langsmith/_internal/otel/_span_utils.py
+  s_e9d10764cf1246::t_21ec02d5f051e0 1-43
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_e9d10764cf1246::t_ab0a793cec020c 20-22
+  s_e9d10764cf1246::t_ab8fad70825d44 169-171,194-195
+  s_1a6d51e52b3af9::t_20698102259570 25,34,38,58,307,317,328,338,347,543
+  s_1a6d51e52b3af9::t_ba8436f57e59b2 33,35-37,39,42,54-57,59-65,74-78,87,95-101,106-109,122-124,127,131,154,163,187,214-219,221,232,272,288,296,306,308,310-311,316,318,320,323,327,329,332,337,339,342,346,348,475,484,493,542
+  s_1a6d51e52b3af9::t_f00fbda0bf1c4d 496-532
+  s_30c3629a45db25::t_b42700142c979c 1-4,6-18,23-24,26-32,40-41,43,45-53,66-73,80-86,88-94,102-105,110-121,125-126,128-130,132-134,150-153,155-162,164-168,172-186,188-193,196-213,220,222-231,234-271,273-287,289-295,297-305,309,312-315,319,321-322,324-326,330-331,333-336,340-341,343-345,349-376,378-451,453-474,476-483,485-492,494-495,533-541,544-550,552-564,566-568,580-586
+  s_1a6d51e52b3af9::t_a19e4f5b3ed700 135-149
+  s_30c3629a45db25::t_2b79c8040dd8fa 44,79,233,452,551,565
+  s_30c3629a45db25::t_78a48a71e1b45c 569-579
+  s_30c3629a45db25::t_3a4993ec35b6d1 587
+  s_e9d10764cf1246::t_011759ffb30b15 377
+  s_30c3629a45db25::t_9d7609f1984a0e 19
+  s_e9d10764cf1246::t_a3ea9dca2c0bf0 5
+python/langsmith/_internal/voice/audio.py
+  s_e9d10764cf1246::t_2baaa82ad5fc0f 1-29
+python/langsmith/_internal/voice/__init__.py
+  s_1a6d51e52b3af9::t_b8375e9daa5ec4 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "aa620d3d25a25999ff4328e053d10c41964f8214",
+  "prompts": {},
+  "sessions": {
+    "s_1a6d51e52b3af9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "498b63ad-8bb7-4e7a-9b8b-bb7adbf54e96",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_e9d10764cf1246": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66ae4bc1-a711-44ef-a4c0-1a84c759680d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

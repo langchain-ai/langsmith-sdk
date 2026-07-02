@@ -1,0 +1,45 @@
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_a027830006b88c 122-123,125-126
+  s_a22a9bc0776d5e::t_d5829a920aec32 462-475
+  s_a22a9bc0776d5e::t_49a279a41138c2 69
+  s_a22a9bc0776d5e::t_9dbe53de6f6c7e 230-246
+  s_a22a9bc0776d5e::t_b62ec7592881ed 431-434,448,450-451,453,459-460
+  s_a22a9bc0776d5e::t_c698a1d35b57af 461
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_db44cca3ae3075 204-207
+  s_a22a9bc0776d5e::t_efe4b96417df01 222-228
+  s_a22a9bc0776d5e::t_6b574d04d4a667 317-322,324,329
+  s_a22a9bc0776d5e::t_39daabbbf4b441 323
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_43ca91d80cb11f 219
+  s_a22a9bc0776d5e::t_97b20875a8d13c 253-254,258-260
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_1a4ce81f93f94f 203-205
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_6f11ecce79f4f4 35
+  s_a22a9bc0776d5e::t_e3ba64c79bed19 235-239,241,243-248
+  s_a22a9bc0776d5e::t_9996e5ad86a11e 470-472
+  s_a22a9bc0776d5e::t_0c060f59b15b43 181,183-184
+  s_a22a9bc0776d5e::t_e1e359a3acc4aa 139-151
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_967fa90c009a9b 232-248
+  s_a22a9bc0776d5e::t_8f3edf3e4bf020 265,269-271
+  s_a22a9bc0776d5e::t_b598f4390490cd 462-465
+  s_a22a9bc0776d5e::t_488ae286fa16ce 540-542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "31d0b263e25cf6ffd95c48a02a166919e1357861",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

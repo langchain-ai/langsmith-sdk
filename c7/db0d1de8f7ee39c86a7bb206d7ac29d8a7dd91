@@ -1,0 +1,20 @@
+js/src/client.ts
+  s_92095b263de560::t_c7730e02603614 2746
+  s_92095b263de560::t_364e742ba37a1c 2842-2843
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "c7db0d1de8f7ee39c86a7bb206d7ac29d8a7dd91",
+  "prompts": {},
+  "sessions": {
+    "s_92095b263de560": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1709c29e-7939-4b69-b978-cdc364c0e717",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

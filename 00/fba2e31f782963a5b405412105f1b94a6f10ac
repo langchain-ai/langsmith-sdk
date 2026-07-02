@@ -1,0 +1,28 @@
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_f1ea1c3e2d5fe2 695-712
+  s_a22a9bc0776d5e::t_dc5b1342f120da 376-418
+  s_a22a9bc0776d5e::t_87c68726f36222 256-264
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_b0e5722e3f38ae 277-279
+  s_a22a9bc0776d5e::t_6b548a346caac5 267-276,280-287
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_fd5991fa63f425 152-168,171-181,186-217
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_b014f414f53ea6 339-421
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "00fba2e31f782963a5b405412105f1b94a6f10ac",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

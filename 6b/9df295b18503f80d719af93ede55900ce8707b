@@ -1,0 +1,56 @@
+python/langsmith/sandbox/_client.py
+  s_18c9d85e255750::t_4207d901c4b2f1 1020-1023
+python/tests/unit_tests/sandbox/test_models.py
+  s_18c9d85e255750::t_83bc6cc9df9e63 207-220
+python/langsmith/sandbox/_async_client.py
+  s_18c9d85e255750::t_f115fca727f5f1 941-944
+python/langsmith/sandbox/_tunnel.py
+  s_18c9d85e255750::t_80af57aeabc7a6 351-354
+js/src/tests/sandbox.test.ts
+  s_18c9d85e255750::t_061a78b3f8be07 622-669
+python/langsmith/sandbox/_models.py
+  s_18c9d85e255750::t_76a5044404b859 649-652
+  s_18c9d85e255750::t_bc1d63c43feec2 388-389
+  s_18c9d85e255750::t_b074e1265c8b74 154,161-163
+  s_18c9d85e255750::t_2f6a63f9d2ac24 224-225
+  s_18c9d85e255750::t_aa914662299a76 298,305-307
+python/langsmith/sandbox/_sandbox.py
+  s_18c9d85e255750::t_9eea0b8138409e 697,703-704
+  s_18c9d85e255750::t_5d95ab5d155a8b 187,190-192,197-198,201-202
+  s_18c9d85e255750::t_b7e9206c41df89 323,393,441,498,547,589,659
+js/src/sandbox/sandbox.ts
+  s_18c9d85e255750::t_6199ef717eb73c 105-110,113-116
+  s_18c9d85e255750::t_e6e9d090381d00 259,299,352,392,431
+python/tests/unit_tests/sandbox/test_sandbox.py
+  s_18c9d85e255750::t_0aef2f15dd02ed 3
+  s_18c9d85e255750::t_c7c44e65030e55 222-235,237-296,345
+  s_18c9d85e255750::t_4b78dcab8ae7d6 297-344
+  s_18c9d85e255750::t_2efc677382f4ea 236
+python/tests/unit_tests/sandbox/test_async_sandbox.py
+  s_18c9d85e255750::t_a917f684a462e1 241-275
+  s_18c9d85e255750::t_923694977071ae 195-240,276
+python/langsmith/sandbox/_async_sandbox.py
+  s_18c9d85e255750::t_b7e9206c41df89 326,394,443,500,549,591,655
+  s_18c9d85e255750::t_db04c66109374a 190,193-195,200-201,204-205
+  s_18c9d85e255750::t_2c7b162a7a437e 694,700-701
+js/src/sandbox/command_handle.ts
+  s_18c9d85e255750::t_2960404cc6e384 232-234
+js/src/sandbox/client.ts
+  s_18c9d85e255750::t_c954c6f49500ea 1016-1019
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.1",
+  "base_commit_sha": "6b9df295b18503f80d719af93ede55900ce8707b",
+  "prompts": {},
+  "sessions": {
+    "s_18c9d85e255750": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "29d3c7cc-3daf-4361-b1f9-f964c6f3b2ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Ramon Nogueira <ramon.nogueira@langchain.dev>"
+    }
+  }
+}

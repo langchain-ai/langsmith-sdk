@@ -1,0 +1,55 @@
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_2dd2d9a4e7d03d 480-484
+  s_a22a9bc0776d5e::t_9a8d06508052ae 72-76
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_eeabd82639ecd7 398-400
+python/langsmith/_internal/voice/helpers.py
+  s_a22a9bc0776d5e::t_20c2c4630fe56d 1,10-11,17,26-39
+  s_a22a9bc0776d5e::t_f163beccd2e70f 40-41
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_37392afb6ad069 243-246
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_96be8d059f6c7a 448-449
+  s_a22a9bc0776d5e::t_92ddcd27390f9f 51-56,64-66
+  s_a22a9bc0776d5e::t_4a1fc12bc2334c 67
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_df02cdd9b961c5 54-59
+  s_a22a9bc0776d5e::t_985a6fc23e1c23 39
+  s_a22a9bc0776d5e::t_9924e49b7f7a33 510-511
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_35ada2554ce54c 418-419
+  s_a22a9bc0776d5e::t_4481ccd7d436ff 34
+  s_a22a9bc0776d5e::t_b992c9d1ee620d 49-54
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_a22a9bc0776d5e::t_d360dbf1339327 220-221
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_a22a9bc0776d5e::t_8f0c9ac084f31f 96-125
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_54612d79fb01d0 295-309
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_723357a6cb7844 433-434,452-457,461-464
+python/langsmith/integrations/pipecat/processor.py
+  s_a22a9bc0776d5e::t_6bca64e9aa5d5f 52,56-58
+  s_a22a9bc0776d5e::t_b488f30edb9b0f 310-314
+  s_a22a9bc0776d5e::t_21e8102f8e2d50 59
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_2d22334739bd7f 116-117
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_a22a9bc0776d5e::t_653ac84a454161 60-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "84bcd38120c266bda3f2cf0af34705ad3356881d",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

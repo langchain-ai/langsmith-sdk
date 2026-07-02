@@ -1,0 +1,31 @@
+python/tests/unit_tests/sandbox/test_sandbox.py
+  s_18c9d85e255750::t_a81204a642ba54 165-170,175,181,183-185,187,191-193,195
+  s_18c9d85e255750::t_50fa1221afbb06 164
+python/langsmith/sandbox/_sandbox.py
+  s_18c9d85e255750::t_f57b7b3dac7061 187-192
+js/src/tests/sandbox.test.ts
+  s_18c9d85e255750::t_b9696bb45bed72 1288-1292,1297,1299,1302-1303
+python/tests/unit_tests/sandbox/test_async_sandbox.py
+  s_18c9d85e255750::t_dadee49f39efc9 152-160,165,171-172,174-176,178,182-186
+python/langsmith/sandbox/_async_sandbox.py
+  s_18c9d85e255750::t_6e6cb5615ecc45 190-195
+js/src/sandbox/sandbox.ts
+  s_18c9d85e255750::t_9b9f51966acff6 101-107
+  s_18c9d85e255750::t_50df8f8507a311 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.1",
+  "base_commit_sha": "fd6709c3ca64558366bcdba3ec944d5e45aaf4d0",
+  "prompts": {},
+  "sessions": {
+    "s_18c9d85e255750": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "29d3c7cc-3daf-4361-b1f9-f964c6f3b2ae",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

@@ -1,0 +1,53 @@
+python/langsmith/integrations/livekit/processor.py
+  s_1a6d51e52b3af9::t_b9f7524ff32946 496
+  s_1a6d51e52b3af9::t_6fb13536cf52cd 493-495
+  s_1a6d51e52b3af9::t_ecffb33af574be 497-499
+  s_1a6d51e52b3af9::t_86e9597b941096 1-492,500-665
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_1a6d51e52b3af9::t_17b4a801cde625 44,50,56,67-68,71,78,83,102-103,105,112,118,126,131-132,134,141,149,167-168,172-173,177,188,191-192,195-212
+  s_1a6d51e52b3af9::t_28d1bdc9c268ad 41-43
+  s_1a6d51e52b3af9::t_dcc45c37d708b1 45-49
+  s_1a6d51e52b3af9::t_b040c3af894653 51-55
+  s_1a6d51e52b3af9::t_4e865d130ef246 57-59,64-66
+  s_1a6d51e52b3af9::t_84e58df7ef61e7 69-70
+  s_1a6d51e52b3af9::t_de61fcf78ce862 72-77
+  s_1a6d51e52b3af9::t_be134241702f8d 79-82
+  s_1a6d51e52b3af9::t_226e8746cc140c 84-86,99-101
+  s_1a6d51e52b3af9::t_1b103bbdf34fa9 104
+  s_1a6d51e52b3af9::t_0423f6e1726cec 106-111
+  s_1a6d51e52b3af9::t_ced97ec0860b80 113-117
+  s_1a6d51e52b3af9::t_85466ff270f3af 119-121,123-125
+  s_1a6d51e52b3af9::t_b0ab79370e4b77 127-130
+  s_1a6d51e52b3af9::t_d71e95417dadde 133
+  s_1a6d51e52b3af9::t_3a3fb704d2e6ce 135-140
+  s_1a6d51e52b3af9::t_a891904a151bc9 142-144,146-148
+  s_1a6d51e52b3af9::t_e91044c4bca051 150-152,164-166
+  s_1a6d51e52b3af9::t_911e4ca239deed 169-171
+  s_1a6d51e52b3af9::t_e630ac3b5749aa 174-176
+  s_1a6d51e52b3af9::t_7cdc75017c0d0e 178-180,185-187
+  s_1a6d51e52b3af9::t_a73657ed6c6838 189-190
+  s_1a6d51e52b3af9::t_5e2b93979085b1 193-194
+  s_1a6d51e52b3af9::t_d2f9b1b17ebbae 1-40,60-63,87-98,122,145,153-163,181-184
+python/langsmith/integrations/livekit/__init__.py
+  s_1a6d51e52b3af9::t_5c78b194e68a48 1-82
+python/pyproject.toml
+  s_1a6d51e52b3af9::t_750e54543e7835 69-77
+python/uv.lock
+  s_1a6d51e52b3af9::t_1cc6b9dd748420 14,371-407,971-979,1265-1325,1656-1662,1757,1764,1766,1770,1774,1798,1973-2098,2448-2456,2748-2760,2773-2790,3151-3159,4350-4358,4398-4413,4704-4727,5024-5140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "05541201bb3f5f20f984034977575782a6137a7b",
+  "prompts": {},
+  "sessions": {
+    "s_1a6d51e52b3af9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "498b63ad-8bb7-4e7a-9b8b-bb7adbf54e96",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

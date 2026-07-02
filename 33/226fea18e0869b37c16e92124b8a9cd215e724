@@ -1,0 +1,40 @@
+python/uv.lock
+  s_30c3629a45db25::t_4957a7a771dcb2 14,371-407,971-979,1265-1325,1656-1662,1757,1764,1766,1770,1774,1798,1973-2098,2448-2456,2748-2760,2773-2790,3151-3159,4350-4358,4398-4413,4704-4727,5024-5140
+python/langsmith/integrations/livekit/processor.py
+  s_30c3629a45db25::t_07cc516cc30d76 119,131-133,144-153,156,160-162,165-170,173
+  s_30c3629a45db25::t_ed8712fffc867c 393
+  s_30c3629a45db25::t_48326d08e3da84 1-61,63-65,67-69,83-118,120-130,134-143,154-155,157-159,163-164,171-172,174-194,196-343,346-353,358-392,394-422,424-491,493-495,497-660
+  s_30c3629a45db25::t_8a5dfef3b7af91 195
+  s_30c3629a45db25::t_037e762c8e2683 344-345,354-357
+  s_30c3629a45db25::t_b6d548c1068396 492,496
+  s_30c3629a45db25::t_f6711c0519b070 423
+  s_30c3629a45db25::t_5172b8f3bcec04 62,66,70-81
+  s_30c3629a45db25::t_cdfcdec04f5ecc 82
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_30c3629a45db25::t_928628052ee434 169-171,178-181
+  s_30c3629a45db25::t_8cdce08f15bb7f 92
+  s_30c3629a45db25::t_88430857fc73f7 1-78,84-91,93-168,172-177,182-195
+  s_30c3629a45db25::t_4ba90e8e827314 79-83
+python/pyproject.toml
+  s_30c3629a45db25::t_cb2bfa20a17b99 69-71
+  s_30c3629a45db25::t_48326d08e3da84 72-77
+python/langsmith/integrations/livekit/__init__.py
+  s_30c3629a45db25::t_b1fb9f9df44bda 39-43,64-65,77-80
+  s_30c3629a45db25::t_48326d08e3da84 1-38,44-63,66-76,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "33226fea18e0869b37c16e92124b8a9cd215e724",
+  "prompts": {},
+  "sessions": {
+    "s_30c3629a45db25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4577000-6d26-42cc-8d52-07f57accc222",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

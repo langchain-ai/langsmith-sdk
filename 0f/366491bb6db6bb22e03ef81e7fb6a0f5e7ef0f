@@ -1,0 +1,23 @@
+python/langsmith/sandbox/_exceptions.py
+  s_6ecc294cdf56b8::t_d879d8b301293f 185-186
+js/src/sandbox/errors.ts
+  s_6ecc294cdf56b8::t_61f307936af79a 168-169
+.github/ISSUE_TEMPLATE/config.yml
+  s_6ecc294cdf56b8::t_0b3655ecc9c022 4-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "0f366491bb6db6bb22e03ef81e7fb6a0f5e7ef0f",
+  "prompts": {},
+  "sessions": {
+    "s_6ecc294cdf56b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e028ac05-ecf7-446e-a0fb-d46392344031",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "lutan-langchain <lucy.tan@langchain.dev>"
+    }
+  }
+}

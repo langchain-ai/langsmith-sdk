@@ -1,0 +1,59 @@
+python/langsmith/integrations/livekit/processor.py
+  s_a6e9609edd2ec5::t_d6935cb500701c 142,275,324,365,419,442,463,487,508,533-550,647
+  s_a6e9609edd2ec5::t_18334a3073aa70 85-90
+  s_a6e9609edd2ec5::t_984755ae353e8d 236-246,663
+  s_a6e9609edd2ec5::t_e62c1312902367 215-225
+  s_a6e9609edd2ec5::t_3ab7ac0ad5d852 82-84
+  s_a6e9609edd2ec5::t_88c347df27dbe7 91-93,139-141
+  s_a6e9609edd2ec5::t_124ae4cc6229be 143-145,212-214
+  s_a6e9609edd2ec5::t_830411742ebf67 226-228,233-235
+  s_a6e9609edd2ec5::t_4f8fdd4bb93f8a 247-249,272-274
+  s_a6e9609edd2ec5::t_255c66d4dc26ef 276-278,321-323
+  s_a6e9609edd2ec5::t_9ff262277d711b 325-327,362-364
+  s_a6e9609edd2ec5::t_1b6dae16adbe3b 366-368,416-418
+  s_a6e9609edd2ec5::t_7e36bade1e3444 420-422,439-441
+  s_a6e9609edd2ec5::t_35d96b10034e5a 443-445,460-462
+  s_a6e9609edd2ec5::t_15b93ec43fa3e5 464-466,484-486
+  s_a6e9609edd2ec5::t_9553a7e9513c00 488-490,505-507
+  s_a6e9609edd2ec5::t_78c45d6f4e7a69 509-511,530-532
+  s_a6e9609edd2ec5::t_247582090002f8 551-553,644-646
+  s_a6e9609edd2ec5::t_dfb6b0330e540f 648-650,660-662
+  s_a6e9609edd2ec5::t_df3217bd36e14c 664-666
+  s_a6e9609edd2ec5::t_aefd8a19522790 1-81,94-138,146-211,229-232,250-271,279-320,328-361,369-415,423-438,446-459,467-483,491-504,512-529,554-643,651-659,667-696
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a6e9609edd2ec5::t_4bafa97361ad48 16-45
+  s_a6e9609edd2ec5::t_b3f3c75c9f9e78 59,65,75-86,119,270-271,287
+  s_a6e9609edd2ec5::t_0f19b4d8082aa2 158-160
+  s_a6e9609edd2ec5::t_0b5d20cee8da54 57,63,69,92-93,95-103,105-108,110,123-157,161-173,178-179,181-182,186-189,191-194,198-202,207-208,210-211,215-218,221-225,243-245,247-250,252-253,267,279-280,284,286
+  s_a6e9609edd2ec5::t_f0582c61a778a3 1-15,46-56,58,60-62,64,66-68,70-74,87-91,94,104,109,111-118,120-122,174-177,180,183-185,190,195-197,203-206,209,212-214,219-220,226-242,246,251,254-266,268-269,272-278,281-283,285,288
+python/langsmith/integrations/livekit/__init__.py
+  s_1a6d51e52b3af9::t_2ff1f1948551cc 1-83
+python/pyproject.toml
+  s_a6e9609edd2ec5::t_2dcc373c7d939b 69-77
+python/uv.lock
+  s_a6e9609edd2ec5::t_d1ff2822617e06 14,371-407,971-979,1265-1325,1656-1662,1757,1764,1766,1770,1774,1798,1973-2098,2448-2456,2748-2760,2773-2790,3151-3159,4350-4358,4398-4413,4704-4727,5024-5140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "ce28eeb2ce9d5946db553968a9eb92bc61573e2a",
+  "prompts": {},
+  "sessions": {
+    "s_1a6d51e52b3af9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "498b63ad-8bb7-4e7a-9b8b-bb7adbf54e96",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_a6e9609edd2ec5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1413a27-475e-45ad-bbc4-c72a4275a3df",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}

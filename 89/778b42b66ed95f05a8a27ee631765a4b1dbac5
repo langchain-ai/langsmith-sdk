@@ -1,0 +1,19 @@
+python/langsmith/async_client.py
+  s_31acef91780662::t_c4cd45dfdda4fa 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "89778b42b66ed95f05a8a27ee631765a4b1dbac5",
+  "prompts": {},
+  "sessions": {
+    "s_31acef91780662": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45593246-906f-467c-b215-508d3da7072b",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

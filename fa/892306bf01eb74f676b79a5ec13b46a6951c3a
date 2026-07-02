@@ -1,0 +1,23 @@
+js/src/utils/constants.ts
+  s_8db11acfdc761b::t_02398ce9ef1bdd 1
+js/src/client.ts
+  s_8db11acfdc761b::t_b2f98e85f5c815 704-731
+  s_8db11acfdc761b::t_c5566519616d90 81
+  s_8db11acfdc761b::t_c41bf28b8b17c3 2017-2019
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "fa892306bf01eb74f676b79a5ec13b46a6951c3a",
+  "prompts": {},
+  "sessions": {
+    "s_8db11acfdc761b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43df3742-c1f2-4d11-8822-871ffd73decf",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

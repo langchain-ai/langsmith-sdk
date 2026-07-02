@@ -1,0 +1,14 @@
+python/langsmith/client.py
+  h_53e10026eac609 307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "aa4ecb5ac376f15da2fcf2ced380a807a0f30204",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
