@@ -152,7 +152,7 @@ export interface Run {
   /**
    * `extra` is additional runtime JSON attached to the run.
    */
-  extra?: unknown;
+  extra?: { [key: string]: unknown };
 
   /**
    * `feedback_stats` aggregates feedback scores keyed by feedback key.
@@ -168,7 +168,7 @@ export interface Run {
   /**
    * `inputs` is the run input payload (arbitrary JSON object).
    */
-  inputs?: unknown;
+  inputs?: { [key: string]: unknown };
 
   /**
    * `inputs_preview` is a truncated plain-text preview of inputs.
@@ -194,12 +194,12 @@ export interface Run {
    * `manifest` is the serialized configuration of the traced component (for example
    * the model parameters, prompt template, or pipeline definition), when recorded.
    */
-  manifest?: unknown;
+  manifest?: { [key: string]: unknown };
 
   /**
    * `metadata` is arbitrary user-defined JSON metadata.
    */
-  metadata?: unknown;
+  metadata?: { [key: string]: unknown };
 
   /**
    * `name` is a human-readable label for the run (for example the model name,
@@ -210,7 +210,7 @@ export interface Run {
   /**
    * `outputs` is the run output payload (arbitrary JSON object).
    */
-  outputs?: unknown;
+  outputs?: { [key: string]: unknown };
 
   /**
    * `outputs_preview` is a truncated plain-text preview of outputs.
