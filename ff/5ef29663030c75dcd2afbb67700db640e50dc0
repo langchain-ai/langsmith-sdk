@@ -1,0 +1,50 @@
+python/langsmith/integrations/pipecat/processor.py
+  s_cb8956a526b952::t_d2387a7a1d790f 47
+  s_cb8956a526b952::t_fa42ecb1e513b5 306-311
+python/langsmith/_internal/voice/helpers.py
+  s_cb8956a526b952::t_b20d7456cb58f1 1
+  s_cb8956a526b952::t_bd223c42a7c00e 19
+  s_cb8956a526b952::t_49585a3850e8c5 20
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_cb8956a526b952::t_16e4b8f349fc2b 312-326
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_cb8956a526b952::t_d9c7438acf4e7d 243-246
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_cb8956a526b952::t_10d820b8132a43 116-117
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_cb8956a526b952::t_a0afda0610165f 51
+  s_cb8956a526b952::t_cdd7719a337842 52-56,460-461
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_cb8956a526b952::t_3556c67ea87ddf 12
+  s_cb8956a526b952::t_b984ad751188ea 64,67
+  s_cb8956a526b952::t_0b5e230870008a 65-66
+  s_cb8956a526b952::t_67a7b583b0b962 61-63
+python/langsmith/integrations/livekit/processor.py
+  s_cb8956a526b952::t_d2387a7a1d790f 68
+  s_cb8956a526b952::t_25704d50b99bf8 476-481
+python/langsmith/integrations/openai_realtime/_session.py
+  s_cb8956a526b952::t_3097d3ba3fd9ef 39
+  s_cb8956a526b952::t_e594fdc493b52b 505-506
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_cb8956a526b952::t_9ac9dd328202d5 168-170,208-210,233-235,261-263,282-284,298-300,311-313,333-335,414-416
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_cb8956a526b952::t_802c435102ff53 33
+  s_cb8956a526b952::t_df93204e93b553 413
+  s_cb8956a526b952::t_ba231b5045ba10 414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "ff5ef29663030c75dcd2afbb67700db640e50dc0",
+  "prompts": {},
+  "sessions": {
+    "s_cb8956a526b952": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac74114d-e63c-4309-b79d-ddcc34f5342b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
