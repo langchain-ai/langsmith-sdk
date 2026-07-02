@@ -1,0 +1,21 @@
+python/langsmith/__init__.py
+  s_a22a9bc0776d5e::t_e2257c8384feda 32
+python/.bumpversion.cfg
+  s_a22a9bc0776d5e::t_51b772af73be76 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "76c7eb85e697c06b7abe98b69f6fdc2ef4d104f3",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
