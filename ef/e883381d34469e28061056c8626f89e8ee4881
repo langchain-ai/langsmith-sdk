@@ -1,0 +1,48 @@
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_886340ec7bb023::t_ef362fe80d96a7 184,188
+  s_886340ec7bb023::t_2c97c03b0ffa72 1-183,185-187,189-475
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_886340ec7bb023::t_3e44dd45c4ac7c 309
+  s_886340ec7bb023::t_0c33ba7d647afa 199-200
+  s_886340ec7bb023::t_939e7a172d773a 31-32,41-42
+  s_886340ec7bb023::t_35992383fa5ca0 284
+  s_886340ec7bb023::t_92423e02c2e97a 43,196-198
+  s_886340ec7bb023::t_6f70564b8ef9b9 1-6,10-30,33-40,44-159,167-195,311-314,317
+  s_886340ec7bb023::t_bb56f7c3facdcd 160-163
+  s_886340ec7bb023::t_ac8f92efcc3ab7 164-166
+  s_886340ec7bb023::t_ff751e44b4775f 7-9
+  s_886340ec7bb023::t_5ddd51f4e6bf54 324
+  s_886340ec7bb023::t_d1ea6319ecd52c 201-248,250-263,265-283,285-308,310,315-316,318-323,325
+  s_886340ec7bb023::t_07530e307402a2 249
+  s_886340ec7bb023::t_660b56a378b9a4 264
+python/uv.lock
+  s_6703f022e1e3d5::t_ce5547823643e2 14,1653-1655,1769,1808
+python/pyproject.toml
+  s_6703f022e1e3d5::t_5bdebf4c914a5d 98-101
+python/langsmith/integrations/google_adk_live/__init__.py
+  s_6703f022e1e3d5::t_ef5718f364be68 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "efe883381d34469e28061056c8626f89e8ee4881",
+  "prompts": {},
+  "sessions": {
+    "s_6703f022e1e3d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa3dfd83-cd4e-49fb-a393-edf5b3ec1257",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_886340ec7bb023": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7ece0800-1c00-43b8-8b5e-19231a5a21ef",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

@@ -1,0 +1,35 @@
+python/langsmith/sandbox/_ws_execute.py
+  s_b81457ede8cbab::t_615e53cba19fe8 444,526
+  s_b81457ede8cbab::t_c125a0abce749d 38,40
+  s_b81457ede8cbab::t_b2ff7c486351f4 257,356
+  s_b81457ede8cbab::t_02279b1719df8a 317-318,400-401,498-499,566-567
+  s_b81457ede8cbab::t_207956b7210aac 161-162,164-168,182-187,189-190
+  s_b81457ede8cbab::t_371475370133c7 22,25
+python/tests/unit_tests/sandbox/test_async_ws_execute.py
+  s_b81457ede8cbab::t_aa45e787808b53 22-26
+  s_b81457ede8cbab::t_c2359c510cb594 947
+  s_b81457ede8cbab::t_30310e7edf3d27 936
+  s_b81457ede8cbab::t_d42606884b792b 933-935
+  s_b81457ede8cbab::t_3dcb503b4c507e 937-939,944-946
+  s_b81457ede8cbab::t_2a5f1bec202ce4 948-950
+  s_b81457ede8cbab::t_2378ecd853dfe3 916-932,940-943,951-952
+python/tests/unit_tests/sandbox/test_ws_execute.py
+  s_b81457ede8cbab::t_a02d6ff0cacc98 849,853,855,863,873,881,884,892-941
+  s_b81457ede8cbab::t_73b3e0156ea2da 28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "075d740ac79350f1c2e98bdef27de53dd2778f3e",
+  "prompts": {},
+  "sessions": {
+    "s_b81457ede8cbab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "421229a5-ef48-4ef6-b8d2-d449073aedab",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anirudh Sriram <ani@langchain.dev>"
+    }
+  }
+}

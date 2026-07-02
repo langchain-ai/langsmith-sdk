@@ -1,0 +1,21 @@
+python/langsmith/__init__.py
+  s_ff8d9e09cfeb12::t_ca7314a741b5dd 32
+python/.bumpversion.cfg
+  s_ff8d9e09cfeb12::t_501e543604cd7e 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "5d3c126d45aa03f232dd1e5983b207b9f8c31f49",
+  "prompts": {},
+  "sessions": {
+    "s_ff8d9e09cfeb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78e1a42b-7c92-4c2c-9e93-ff61f84c4181",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anirudh Sriram <ani@langchain.dev>"
+    }
+  }
+}

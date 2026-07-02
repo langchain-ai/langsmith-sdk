@@ -1,0 +1,85 @@
+python/langsmith/_internal/voice/audio.py
+  s_e9d10764cf1246::t_4df3bc95415c6b 1,3-8,13,15,35-114
+python/langsmith/_internal/voice/session.py
+  s_e9d10764cf1246::t_deede81c820ba2 1-320,369-465
+  s_f3354ad1a417ca::t_fe540d8184784e 321-368
+python/pyproject.toml
+  s_e9d10764cf1246::t_1e6d4fe7871d87 81-88
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_e9d10764cf1246::t_afe06699824be3 1-17,20-227,229-232,236,240-246,271,277,287,289-410,424-425,427-446
+  s_f3354ad1a417ca::t_023ef9702a8e67 286,411
+  s_f3354ad1a417ca::t_a3fd3a7d3154de 228,233-235,237-239,247-270,272-276,278-279,281-285,288
+  s_f3354ad1a417ca::t_eb287c17693bab 413-423,426
+  s_f3354ad1a417ca::t_e0de8e5ba4e15a 280,412
+  s_e9d10764cf1246::t_4369f0a02f9518 18-19
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_e9d10764cf1246::t_73acd4f1e24452 1-15,18-181
+  s_e9d10764cf1246::t_4369f0a02f9518 16-17
+python/langsmith/_internal/voice/helpers.py
+  s_e9d10764cf1246::t_b7c961b1510451 1-68
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_e9d10764cf1246::t_a102fbf5f3a462 1-11,14-59
+  s_e9d10764cf1246::t_4369f0a02f9518 12-13
+python/langsmith/integrations/openai_realtime/__init__.py
+  s_e9d10764cf1246::t_e6820eec898e2e 1-25
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_e9d10764cf1246::t_4369f0a02f9518 17-18
+  s_e9d10764cf1246::t_0ffd32bd5b5064 1-16,19-104,108,121-122,127-144,150-291
+  s_f3354ad1a417ca::t_dd7b057aaf1522 146-148
+  s_c23fd4d70daba8::t_91a093a45b5bc3 126
+  s_f3354ad1a417ca::t_5c7516e19620c6 105-107,109-120,123-125,145,149
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_e9d10764cf1246::t_84e95a2193a4cb 1-31,36-77,79-95,104-479
+  s_e9d10764cf1246::t_4369f0a02f9518 32-34
+  s_f3354ad1a417ca::t_43dddf32009634 78,96-103
+  s_e9d10764cf1246::t_162ca98ea27fb4 480-482
+  s_f3354ad1a417ca::t_efb55657f07ae3 483-486
+  s_e9d10764cf1246::t_f5ba9d93eda935 35
+python/uv.lock
+  s_e9d10764cf1246::t_39ffa9c63f3af4 14,1666-1669,1769,1771,1804
+python/langsmith/integrations/openai_realtime/_session.py
+  s_e9d10764cf1246::t_ee6157af389b0d 1-15,19-26,28-34,36-37,39,47-253,259-286,296-297,389-391,398-540,582-613
+  s_f3354ad1a417ca::t_1d270161edc28e 287-295,298-388,392-397
+  s_f3354ad1a417ca::t_9ffdadf7f73dc6 16-18,27
+  s_e9d10764cf1246::t_4369f0a02f9518 40-41
+  s_f3354ad1a417ca::t_602f0aff650c21 541-581
+  s_e9d10764cf1246::t_f5ba9d93eda935 42
+  s_f3354ad1a417ca::t_1b339108009d2f 35,38,43-46
+  s_f3354ad1a417ca::t_467638e8d2c034 254-258
+python/langsmith/wrappers/_openai.py
+  s_c23fd4d70daba8::t_6cb8ce33c4a5fb 20-24
+python/langsmith/_internal/_usage.py
+  s_c23fd4d70daba8::t_e1a1cdb0949c2f 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "fedd667c2b54725df9ba665a5af9d7a9d28dea48",
+  "prompts": {},
+  "sessions": {
+    "s_c23fd4d70daba8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4fded526-85d5-47ab-9f20-d2a544552d7c",
+        "model": "unknown"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_e9d10764cf1246": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66ae4bc1-a711-44ef-a4c0-1a84c759680d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_f3354ad1a417ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6c27bd81-fbff-457f-b7a6-0851054d9190",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

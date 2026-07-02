@@ -1,0 +1,59 @@
+python/tests/unit_tests/wrappers/test_openai_realtime.py
+  s_a22a9bc0776d5e::t_37392afb6ad069 243-246
+python/langsmith/integrations/openai_realtime/_session.py
+  s_a22a9bc0776d5e::t_985a6fc23e1c23 39
+  s_a22a9bc0776d5e::t_e8f669db67f5bf 504-505
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  s_a22a9bc0776d5e::t_653ac84a454161 60-66
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_a22a9bc0776d5e::t_4481ccd7d436ff 34
+  s_a22a9bc0776d5e::t_8b66112ea687d1 412-413
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_a22a9bc0776d5e::t_8f0c9ac084f31f 97-105,109-123
+  s_a22a9bc0776d5e::t_5bd4fdd5abced3 47
+  s_a22a9bc0776d5e::t_9774fd88c29ccc 106-108
+python/langsmith/_internal/voice/session.py
+  s_a22a9bc0776d5e::t_01bb2832c11331 433
+  s_a22a9bc0776d5e::t_63637faa2f03d9 457-458,464
+  s_a22a9bc0776d5e::t_d90c9381e15a20 463
+  s_a22a9bc0776d5e::t_723357a6cb7844 434,452-456,462
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_a22a9bc0776d5e::t_da4061056f52cc 444-445
+  s_a22a9bc0776d5e::t_92ddcd27390f9f 51-56
+python/langsmith/_internal/voice/helpers.py
+  s_a22a9bc0776d5e::t_20c2c4630fe56d 1,10-11,17,26-39
+  s_a22a9bc0776d5e::t_f163beccd2e70f 40-41
+python/langsmith/integrations/pipecat/processor.py
+  s_a22a9bc0776d5e::t_fe85ce9bfdd963 307-311
+  s_a22a9bc0776d5e::t_6bca64e9aa5d5f 52
+  s_a22a9bc0776d5e::t_ff2603fc0003f5 306
+python/langsmith/integrations/livekit/processor.py
+  s_a22a9bc0776d5e::t_d7c24a85f4830b 477-481
+  s_a22a9bc0776d5e::t_9a8d06508052ae 72
+  s_a22a9bc0776d5e::t_42544ae90b0735 476
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a22a9bc0776d5e::t_2d22334739bd7f 116-117
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_a22a9bc0776d5e::t_d360dbf1339327 220-221
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_a22a9bc0776d5e::t_54612d79fb01d0 295-309
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_a22a9bc0776d5e::t_0d6980281bb5e9 168-170,208-210,233-235,261-263,282-284,298-300,311-313,333-335
+  s_a22a9bc0776d5e::t_eeabd82639ecd7 414-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "f45bd8cd221a1e26a3a9550742577b7c3207003d",
+  "prompts": {},
+  "sessions": {
+    "s_a22a9bc0776d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8fb85e6-58b0-4f2c-9340-9b7d0d9c6798",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

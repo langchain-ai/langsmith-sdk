@@ -1,0 +1,19 @@
+python/tests/unit_tests/sandbox/test_ws_execute.py
+  s_ff8d9e09cfeb12::t_82531678ace21d 901,926
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "6bbb0984d35dd485023df872567862716268141b",
+  "prompts": {},
+  "sessions": {
+    "s_ff8d9e09cfeb12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78e1a42b-7c92-4c2c-9e93-ff61f84c4181",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anirudh Sriram <ani@langchain.dev>"
+    }
+  }
+}

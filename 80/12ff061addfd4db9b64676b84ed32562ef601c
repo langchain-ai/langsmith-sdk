@@ -1,0 +1,36 @@
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_886340ec7bb023::t_d1ea6319ecd52c 184-220,227-229
+  s_886340ec7bb023::t_939e7a172d773a 38
+  s_886340ec7bb023::t_d3cfc02d918b33 224-226
+  s_886340ec7bb023::t_6f70564b8ef9b9 1-37,39-183,221-223,230-238
+python/langsmith/integrations/google_adk_live/__init__.py
+  s_6703f022e1e3d5::t_ef5718f364be68 1-28
+python/pyproject.toml
+  s_6703f022e1e3d5::t_5bdebf4c914a5d 98-101
+python/uv.lock
+  s_6703f022e1e3d5::t_ce5547823643e2 14,1653-1655,1769,1808
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "8012ff061addfd4db9b64676b84ed32562ef601c",
+  "prompts": {},
+  "sessions": {
+    "s_6703f022e1e3d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa3dfd83-cd4e-49fb-a393-edf5b3ec1257",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    },
+    "s_886340ec7bb023": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7ece0800-1c00-43b8-8b5e-19231a5a21ef",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "open-swe[bot] <open-swe@users.noreply.github.com>"
+    }
+  }
+}
