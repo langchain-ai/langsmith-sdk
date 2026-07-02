@@ -10,7 +10,10 @@ import json
 from unittest.mock import MagicMock
 
 from langsmith._internal.voice import set_thread_id
-from langsmith.integrations.livekit.processor import LiveKitLangSmithSpanProcessor
+from langsmith.integrations.livekit.processor import (
+    LiveKitLangSmithSpanProcessor,
+    _normalize_provider,
+)
 
 
 def _make_span(
@@ -336,3 +339,87 @@ class TestMessageFromEvent:
         )
         assert msg["tool_call_id"] == "call_1"
         assert msg["name"] == "lookup"
+
+
+class TestProviderAttribution:
+    """LiveKit provider → normalized `gen_ai.system` (LangSmith's cost key)."""
+
+    @staticmethod
+    def _exported(proc):
+        return proc.downstream.on_end.call_args.args[0]._attributes
+
+    def test_normalize_provider_substring_and_host(self):
+        assert _normalize_provider("api.openai.com") == "openai"
+        assert _normalize_provider("beta.anthropic.com") == "anthropic"
+        assert _normalize_provider("https://api.deepgram.com/v1") == "deepgram"
+        assert _normalize_provider("cartesia") == "cartesia"
+        # No known slug → host, stripped of scheme/path.
+        assert _normalize_provider("https://my-proxy.internal/x") == "my-proxy.internal"
+        # Empty / placeholder → None (never stamp a non-matching provider).
+        assert _normalize_provider("unknown") is None
+        assert _normalize_provider(None) is None
+
+    def test_stt_provider_from_metrics_metadata(self):
+        proc = _processor()
+        metrics = json.dumps({"metadata": {"model_provider": "deepgram"}})
+        span = _make_span(
+            "user_turn", {"lk.user_transcript": "hi", "lk.stt_metrics": metrics}
+        )
+        proc.on_end(span)
+        assert self._exported(proc)["gen_ai.system"] == "deepgram"
+
+    def test_llm_provider_host_is_normalized(self):
+        # LiveKit's OpenAI plugin reports the api.openai.com host; it must become
+        # the `openai` slug or LangSmith can't match a price.
+        proc = _processor()
+        span = _make_span("llm_request", {"gen_ai.system": "api.openai.com"})
+        proc.on_end(span)
+        assert self._exported(proc)["gen_ai.system"] == "openai"
+
+    def test_stt_provider_host_is_normalized(self):
+        # The demo's STT is OpenAI, so LiveKit reports the api.openai.com host on
+        # the user_turn span; it must resolve to the openai slug.
+        proc = _processor()
+        metrics = json.dumps({"metadata": {"model_provider": "api.openai.com"}})
+        span = _make_span(
+            "user_turn", {"lk.user_transcript": "hi", "lk.stt_metrics": metrics}
+        )
+        proc.on_end(span)
+        assert self._exported(proc)["gen_ai.system"] == "openai"
+
+    def test_export_normalizes_provider_on_any_span(self):
+        # A span that skips the per-stage handlers still gets its provider
+        # normalized at export (the universal _pre_export pass).
+        proc = _processor()
+        span = _make_span("some_other_node", {"gen_ai.system": "api.openai.com"})
+        proc.on_end(span)
+        assert self._exported(proc)["gen_ai.system"] == "openai"
+
+    def test_stt_gen_ai_system_host_normalized_without_metrics(self):
+        # Real trace shape: the user_turn STT span carries
+        # gen_ai.system=api.openai.com and NO lk.stt_metrics; it must still
+        # resolve to the openai slug (ingestion maps gen_ai.system -> ls_provider).
+        proc = _processor()
+        span = _make_span(
+            "user_turn",
+            {"lk.user_transcript": "hi", "gen_ai.system": "api.openai.com"},
+        )
+        proc.on_end(span)
+        assert self._exported(proc)["gen_ai.system"] == "openai"
+
+    def test_stt_gen_ai_provider_name_host_normalized(self):
+        # livekit-agents >=1.5 sets the STT provider as gen_ai.provider.name (the
+        # API host); it must resolve to the openai slug on both provider keys.
+        proc = _processor()
+        span = _make_span(
+            "user_turn",
+            {
+                "lk.user_transcript": "hi",
+                "gen_ai.request.model": "gpt-4o-mini-transcribe",
+                "gen_ai.provider.name": "api.openai.com",
+            },
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.provider.name"] == "openai"
+        assert attrs["gen_ai.system"] == "openai"

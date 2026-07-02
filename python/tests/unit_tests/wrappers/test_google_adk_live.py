@@ -66,6 +66,7 @@ from langsmith.integrations.google_adk_live import _plugin as adk_plugin  # noqa
 from langsmith.integrations.google_adk_live._plugin import (  # noqa: E402
     LangSmithGoogleADKLivePlugin,
     _LiveEventView,
+    _resolve_model,
     _usage_metadata,
 )
 
@@ -118,10 +119,11 @@ def _event(
     )
 
 
-def _ctx(*, session_id=None, invocation_id=None):
-    """A fake ADK ``InvocationContext``."""
+def _ctx(*, session_id=None, invocation_id=None, model=None):
+    """A fake ADK ``InvocationContext`` (optionally with an agent's model)."""
     session = SimpleNamespace(id=session_id) if session_id is not None else None
-    return SimpleNamespace(session=session, invocation_id=invocation_id)
+    agent = SimpleNamespace(model=model) if model is not None else None
+    return SimpleNamespace(session=session, invocation_id=invocation_id, agent=agent)
 
 
 def _run(coro):
@@ -223,6 +225,23 @@ class TestLiveEventView:
 # --------------------------------------------------------------------------- #
 # _usage_metadata — genai usage → LangSmith token usage.
 # --------------------------------------------------------------------------- #
+
+
+class TestResolveModel:
+    def test_string_model(self):
+        assert _resolve_model(_ctx(model="gemini-2.0-flash-live")) == (
+            "gemini-2.0-flash-live"
+        )
+
+    def test_base_llm_object(self):
+        # ADK's LlmAgent.model can be a BaseLlm whose .model holds the name.
+        agent = SimpleNamespace(model=SimpleNamespace(model="gemini-x"))
+        ctx = SimpleNamespace(agent=agent)
+        assert _resolve_model(ctx) == "gemini-x"
+
+    def test_missing_returns_none(self):
+        assert _resolve_model(_ctx()) is None  # no agent
+        assert _resolve_model(_ctx(model="")) is None  # empty string
 
 
 class TestUsageMetadata:
@@ -426,10 +445,10 @@ class TestObserve:
         session.add_message.assert_not_called()
         session.event_span.assert_not_called()
 
-    def test_final_agent_transcript_spans_output_transcription(self, make_plugin):
-        # The agent response is a flat, point-in-time ``output_transcription``
-        # span (anchored at event arrival), carrying token usage — not a
-        # synthetic ``model`` / turn-grouped span.
+    def test_final_agent_transcript_records_llm_output_transcription(self, make_plugin):
+        # The agent response is a flat, point-in-time ``llm`` run named
+        # ``output_transcription`` (so LangSmith prices it), carrying token usage
+        # and ls_provider/ls_model_name — not a chain event span, not turn-grouped.
         plugin, ctx, session = self._start(make_plugin)
         um = SimpleNamespace(
             prompt_token_count=3, candidates_token_count=2, total_token_count=5
@@ -443,16 +462,34 @@ class TestObserve:
         )
         session.add_message.assert_called_once_with("assistant", "sunny")
         session.set_title.assert_not_called()  # title only set from user speech
-        session.record_llm.assert_not_called()
+        session.event_span.assert_not_called()  # llm run, not a chain event span
         session.start_turn.assert_not_called()
-        session.event_span.assert_called_once()
-        kwargs = session.event_span.call_args.kwargs
+        session.record_llm.assert_called_once()
+        kwargs = session.record_llm.call_args.kwargs
         assert kwargs["name"] == "output_transcription"
+        assert kwargs["outputs"] == {"role": "assistant", "content": "sunny"}
         assert kwargs["usage_metadata"] == {
             "input_tokens": 3,
             "output_tokens": 2,
             "total_tokens": 5,
         }
+        assert kwargs["metadata"]["ls_provider"] == "google"
+        assert "ls_model_name" in kwargs["metadata"]
+
+    def test_agent_model_is_resolved_onto_llm_span(self, make_plugin):
+        # The run's agent model becomes ls_model_name for cost lookup.
+        factory, created = make_plugin
+        plugin = factory()
+        ctx = _ctx(session_id="A", model="gemini-2.0-flash-live")
+        _run(plugin.before_run_callback(invocation_context=ctx))
+        _run(
+            plugin.on_event_callback(
+                invocation_context=ctx,
+                event=_event(output_transcription=_txn("hi", finished=True)),
+            )
+        )
+        meta = created[0].record_llm.call_args.kwargs["metadata"]
+        assert meta["ls_model_name"] == "gemini-2.0-flash-live"
 
     def test_tool_call_is_one_span_start_to_end(self, make_plugin):
         # function_call opens a held-open ``tool`` span; the matching

@@ -200,6 +200,9 @@ class TestTracer:
         assert names.count("model") == 1
         model = next(c for n, c in created if n == "model")
         assert model.outputs == {"role": "assistant", "content": "It's sunny."}
+        # Tagged with provider for attribution (the Agents SDK emits no usage,
+        # so there's no token cost, but the run is still provider-identified).
+        assert (model.extra or {}).get("metadata", {}).get("ls_provider") == "openai"
         # Latency was timed onto the turn.
         turn = next(c for n, c in created if n == "turn")
         assert "latency_to_first_audio_ms" in (turn.extra or {}).get("metadata", {})

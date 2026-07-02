@@ -32,7 +32,7 @@ Trace shape — one conversation = one trace::
     realtime_session                       (root; transcript + stereo WAV)
     ├── input_transcription                (curated user_message — user speech)
     ├── get_weather                        (tool — args in / response out; real latency)
-    ├── output_transcription               (agent speech + token usage)
+    ├── output_transcription               (agent speech — llm run: usage + cost)
     ├── turn_complete                      (marker)
     └── interrupted                        (marker — on barge-in)
 """
@@ -142,6 +142,19 @@ class _LiveEventView:
         return self._transcript("output_transcription", final_only=True)
 
 
+def _resolve_model(invocation_context: Any) -> str | None:
+    """Best-effort model name for the run's agent (for ``ls_model_name``).
+
+    ADK's ``LlmAgent.model`` is either a model-name string or a ``BaseLlm``
+    instance (whose ``.model`` holds the name). Returns ``None`` when neither is
+    available so cost simply isn't priced rather than mis-attributed.
+    """
+    model = getattr(getattr(invocation_context, "agent", None), "model", None)
+    if isinstance(model, str):
+        return model or None
+    return getattr(model, "model", None) or None
+
+
 def _usage_metadata(event: Any) -> dict[str, int] | None:
     """Map an ADK event's ``usage_metadata`` to LangSmith token usage, if any.
 
@@ -171,8 +184,10 @@ class _AdkLiveTracer:
     tracer per concurrent conversation — the plugin keys them by ADK session id.
     """
 
-    def __init__(self, session: EventSession) -> None:
+    def __init__(self, session: EventSession, *, model: str | None = None) -> None:
         self._trace = session
+        # Model name for the agent-response ``llm`` span's ls_model_name.
+        self._model = model
         # Open tool spans awaiting their function_response, keyed by
         # FunctionCall.id (falling back to the tool name when ADK omits an id).
         # A FIFO list per key disambiguates repeated/parallel identical calls.
@@ -223,14 +238,20 @@ class _AdkLiveTracer:
         fa = view.final_agent_transcript
         if fa:
             self._trace.add_message("assistant", fa)
-            with self._trace.event_span(
-                event,
-                t,
+            # llm-kind (not chain) so LangSmith prices it; ls_provider +
+            # ls_model_name let it match a Gemini pricing entry. Still flat and
+            # point-in-time at event arrival — no turn grouping. Raw event kept
+            # in metadata so nothing is lost.
+            self._trace.record_llm(
                 name="output_transcription",
-                inbound=False,
+                outputs={"role": "assistant", "content": fa},
                 usage_metadata=_usage_metadata(event),
-            ):
-                pass
+                metadata={
+                    "raw_event": scrub(dump_event(event)),
+                    "ls_provider": "google",
+                    "ls_model_name": self._model,
+                },
+            )
 
         # Barge-in and end-of-turn markers, each a point-in-time span.
         if view.interrupted:
@@ -462,7 +483,9 @@ class LangSmithGoogleADKLivePlugin(BasePlugin):
             )
             key = self._session_key(invocation_context)
             with self._lock:
-                self._sessions[key] = _AdkLiveTracer(session)
+                self._sessions[key] = _AdkLiveTracer(
+                    session, model=_resolve_model(invocation_context)
+                )
         except Exception:
             logger.debug("LangSmith: failed to start live session", exc_info=True)
 

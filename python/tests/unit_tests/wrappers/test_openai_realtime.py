@@ -216,7 +216,7 @@ class TestEndToEnd:
         created = _spy_children(monkeypatch)
         usage = NS(input_tokens=3, output_tokens=4, total_tokens=7)
         events = [
-            NS(type="session.created"),
+            NS(type="session.created", session=NS(model="gpt-realtime")),
             NS(type="input_audio_buffer.speech_started"),
             NS(type="input_audio_buffer.speech_stopped"),
             NS(
@@ -250,10 +250,14 @@ class TestEndToEnd:
         turn_meta = (turns[0].extra or {}).get("metadata") or {}
         assert "latency_to_first_audio_ms" in turn_meta
 
-        # An llm span recorded the assistant message.
+        # An llm span recorded the assistant message, tagged for cost lookup
+        # (provider + the model captured from session.created).
         llms = [child for name, child in created if name == "model"]
         assert len(llms) == 1
         assert llms[0].outputs == {"role": "assistant", "content": "It's sunny."}
+        llm_meta = (llms[0].extra or {}).get("metadata") or {}
+        assert llm_meta["ls_provider"] == "openai"
+        assert llm_meta["ls_model_name"] == "gpt-realtime"
 
     async def test_barge_in_flags_interrupted_turn(self, monkeypatch):
         created = _spy_children(monkeypatch)
