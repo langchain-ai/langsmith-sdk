@@ -312,15 +312,6 @@ function getManagedAgentText(content: unknown): string {
     .join("");
 }
 
-function createManagedAgentUsageMetadata(
-  usage: Record<string, number>,
-): KVMap | undefined {
-  if (Object.values(usage).every((value) => value === 0)) {
-    return undefined;
-  }
-  return createUsageMetadata(usage as Partial<Anthropic.Messages.Usage>);
-}
-
 function managedAgentSessionEventsAggregator(
   chunks: ManagedAgentEvent[],
 ): KVMap {
@@ -525,41 +516,26 @@ function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
         break;
       case "agent.tool_result":
         messages.push({
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: event.tool_use_id,
-              content: contentBlocksToChatContent(event.content),
-              is_error: event.is_error,
-            },
-          ],
+          role: "tool",
+          tool_call_id: event.tool_use_id,
+          content: event.content,
+          ...(event.is_error != null ? { is_error: event.is_error } : {}),
         });
         break;
       case "agent.mcp_tool_result":
         messages.push({
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: event.mcp_tool_use_id,
-              content: contentBlocksToChatContent(event.content),
-              is_error: event.is_error,
-            },
-          ],
+          role: "tool",
+          tool_call_id: event.mcp_tool_use_id,
+          content: event.content,
+          ...(event.is_error != null ? { is_error: event.is_error } : {}),
         });
         break;
       case "user.custom_tool_result":
         messages.push({
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: event.custom_tool_use_id,
-              content: contentBlocksToChatContent(event.content),
-              is_error: event.is_error,
-            },
-          ],
+          role: "tool",
+          tool_call_id: event.custom_tool_use_id,
+          content: event.content,
+          ...(event.is_error != null ? { is_error: event.is_error } : {}),
         });
         break;
     }
@@ -668,7 +644,6 @@ async function createManagedAgentChildRuns(
 ): Promise<void> {
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
-  const inputEvents = getManagedAgentInputEvents(chunks);
   const modelRequestStarts = new Map<string, ManagedAgentEvent>();
   const childSpecs: Array<{
     startTime: number;
@@ -692,6 +667,8 @@ async function createManagedAgentChildRuns(
       const startEvent = startID ? modelRequestStarts.get(startID) : undefined;
       const startIndex = startEvent ? chunks.indexOf(startEvent) : -1;
       const endIndex = chunks.indexOf(event);
+      const eventsBeforeRequest =
+        startIndex >= 0 ? chunks.slice(0, startIndex) : [];
       const eventsInRequest =
         startIndex >= 0 && endIndex >= startIndex
           ? chunks.slice(startIndex, endIndex + 1)
@@ -726,8 +703,8 @@ async function createManagedAgentChildRuns(
             name: "ClaudeManagedAgentModelRequest",
             run_type: "llm",
             inputs: {
-              events: inputEvents,
-              ...getManagedAgentChatPayload(inputEvents as ManagedAgentEvent[]),
+              events: eventsBeforeRequest,
+              ...getManagedAgentChatPayload(eventsBeforeRequest),
               ...(startEvent ? { model_request_start: startEvent } : {}),
             },
             metadata: {
@@ -787,33 +764,44 @@ async function createManagedAgentChildRuns(
     }
   }
 
-  const toolChildren = [...toolUseEvents.entries()].map(
-    ([toolUseID, toolUse]) => {
-      const result = toolResultEvents.get(toolUseID);
-      const toolName =
-        typeof toolUse.name === "string" ? toolUse.name : "ManagedAgentTool";
-      const childRun = parentRun.createChild({
-        name: toolName,
-        run_type: "tool",
-        inputs: {
-          id: toolUseID,
-          name: toolUse.name,
-          input: toolUse.input,
-          event: toolUse,
-        },
-        metadata,
-        start_time: getProcessedAtMillis(toolUse) ?? Date.now(),
-      });
-      return postCompletedChildRun(
-        childRun,
-        result ? { event: result, content: result.content } : {},
-        result?.is_error ? "Tool execution failed" : undefined,
-        result ? getProcessedAtMillis(result) : undefined,
-      );
-    },
-  );
+  for (const [toolUseID, toolUse] of toolUseEvents.entries()) {
+    const result = toolResultEvents.get(toolUseID);
+    const toolName =
+      typeof toolUse.name === "string" ? toolUse.name : "ManagedAgentTool";
+    const startTime = getProcessedAtMillis(toolUse) ?? Date.now();
+    childSpecs.push({
+      startTime,
+      index: chunks.indexOf(toolUse),
+      createAndPost: async () => {
+        const childRun = parentRun.createChild({
+          name: toolName,
+          run_type: "tool",
+          inputs: {
+            id: toolUseID,
+            name: toolUse.name,
+            input: toolUse.input,
+            event: toolUse,
+          },
+          metadata,
+          start_time: startTime,
+        });
+        await postCompletedChildRun(
+          childRun,
+          result ? { event: result, content: result.content } : {},
+          result?.is_error ? "Tool execution failed" : undefined,
+          result ? getProcessedAtMillis(result) : undefined,
+        );
+      },
+    });
+  }
 
-  await Promise.all([...modelRequestChildren, ...toolChildren]);
+  childSpecs.sort(
+    (left, right) =>
+      left.startTime - right.startTime || left.index - right.index,
+  );
+  for (const childSpec of childSpecs) {
+    await childSpec.createAndPost();
+  }
 }
 
 /**

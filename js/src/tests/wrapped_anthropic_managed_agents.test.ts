@@ -63,30 +63,22 @@ describe("wrapAnthropic Claude Managed Agents", () => {
         processed_at: "2026-04-01T00:00:00Z",
       },
       {
+        id: "sevt_user",
+        type: "user.message",
+        content: [{ type: "text", text: "Create fibonacci.txt" }],
+        processed_at: "2026-04-01T00:00:00.250Z",
+      },
+      {
         id: "sevt_span_start",
         type: "span.model_request_start",
         processed_at: "2026-04-01T00:00:00.500Z",
-      },
-      {
-        id: "sevt_msg",
-        type: "agent.message",
-        content: [{ type: "text", text: "Created fibonacci.txt" }],
-        processed_at: "2026-04-01T00:00:01Z",
       },
       {
         id: "sevt_tool",
         type: "agent.tool_use",
         name: "bash",
         input: { command: "python fibonacci.py" },
-        processed_at: "2026-04-01T00:00:02Z",
-      },
-      {
-        id: "sevt_tool_result",
-        type: "agent.tool_result",
-        tool_use_id: "sevt_tool",
-        content: [{ type: "text", text: "ran script" }],
-        is_error: false,
-        processed_at: "2026-04-01T00:00:02.500Z",
+        processed_at: "2026-04-01T00:00:01Z",
       },
       {
         id: "sevt_span_end",
@@ -99,7 +91,39 @@ describe("wrapAnthropic Claude Managed Agents", () => {
           cache_creation_input_tokens: 2,
           cache_read_input_tokens: 3,
         },
+        processed_at: "2026-04-01T00:00:01.500Z",
+      },
+      {
+        id: "sevt_tool_result",
+        type: "agent.tool_result",
+        tool_use_id: "sevt_tool",
+        content: [{ type: "text", text: "ran script" }],
+        is_error: false,
+        processed_at: "2026-04-01T00:00:02Z",
+      },
+      {
+        id: "sevt_span_start_2",
+        type: "span.model_request_start",
+        processed_at: "2026-04-01T00:00:02.500Z",
+      },
+      {
+        id: "sevt_msg",
+        type: "agent.message",
+        content: [{ type: "text", text: "Created fibonacci.txt" }],
         processed_at: "2026-04-01T00:00:03Z",
+      },
+      {
+        id: "sevt_span_end_2",
+        type: "span.model_request_end",
+        is_error: false,
+        model_request_start_id: "sevt_span_start_2",
+        model_usage: {
+          input_tokens: 20,
+          output_tokens: 7,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 3,
+        },
+        processed_at: "2026-04-01T00:00:03.500Z",
       },
       {
         id: "sevt_idle",
@@ -121,7 +145,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     }
     await flushPromises();
 
-    expect(seenEvents).toHaveLength(7);
+    expect(seenEvents).toHaveLength(10);
     expect(fakeAnthropic.beta.sessions.events.stream).toHaveBeenCalledWith(
       "sesn_123",
     );
@@ -129,13 +153,16 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const postBodies = callSpy.mock.calls
       .filter((call: any) => (call[1] as any).method === "POST")
       .map((call: any) => parseRequestBody((call[1] as any).body));
-    expect(postBodies).toHaveLength(3);
+    expect(postBodies).toHaveLength(4);
     const postBody = postBodies.find(
       (body: any) => body.name === "ClaudeManagedAgent",
     );
     expect(postBody).toBeDefined();
     expect(postBody.run_type).toBe("chain");
-    expect(postBody.inputs).toEqual({ session_id: "sesn_123" });
+    expect(postBody.inputs).toMatchObject({
+      session_id: "sesn_123",
+      messages: [{ role: "user", content: "Create fibonacci.txt" }],
+    });
     expect(postBody.extra.metadata).toMatchObject({
       ls_provider: "anthropic",
       ls_model_type: "chat",
@@ -178,7 +205,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               input: { command: "python fibonacci.py" },
             },
           ],
-          processed_at: "2026-04-01T00:00:02Z",
+          processed_at: "2026-04-01T00:00:01Z",
         },
       ]),
     );
@@ -190,9 +217,12 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     expect(patchBody.outputs.usage_metadata).toBeUndefined();
     expect(patchBody.extra.metadata.usage_metadata).toBeUndefined();
 
-    const llmPatchBody = patchBodies.find(
+    const llmPatchBodies = patchBodies.filter(
       (body: any) => body.name === "ClaudeManagedAgentModelRequest",
     );
+    expect(llmPatchBodies).toHaveLength(2);
+    const llmPatchBody = llmPatchBodies[0];
+    const finalLlmPatchBody = llmPatchBodies[1];
     expect(llmPatchBody?.extra.metadata).toMatchObject({
       ls_provider: "anthropic",
       ls_model_name: "claude-opus-4-8",
@@ -218,7 +248,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               input: { command: "python fibonacci.py" },
             },
           ],
-          processed_at: "2026-04-01T00:00:02Z",
+          processed_at: "2026-04-01T00:00:01Z",
         },
       ]),
     );
@@ -231,6 +261,31 @@ describe("wrapAnthropic Claude Managed Agents", () => {
         cache_read: 3,
       },
     });
+    expect(finalLlmPatchBody?.inputs.messages).toEqual(
+      expect.arrayContaining([
+        { role: "user", content: "Create fibonacci.txt" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "sevt_tool",
+              name: "bash",
+              input: { command: "python fibonacci.py" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: "sevt_tool",
+          content: [{ type: "text", text: "ran script" }],
+          is_error: false,
+        },
+      ]),
+    );
+    expect(finalLlmPatchBody?.outputs.messages).toMatchObject([
+      { role: "assistant", content: "Created fibonacci.txt" },
+    ]);
     const toolPatchBody = patchBodies.find((body: any) => body.name === "bash");
     expect(toolPatchBody?.outputs.event).toMatchObject({
       type: "agent.tool_result",
