@@ -160,15 +160,15 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       (body: any) => body.name === "ClaudeManagedAgent",
     );
     expect(patchBody.error).toBeUndefined();
-    expect(patchBody.outputs.text).toBe("Created fibonacci.txt");
-    expect(patchBody.outputs.messages).toHaveLength(1);
-    expect(patchBody.outputs.tool_calls).toMatchObject([
-      { type: "agent.tool_use", name: "bash" },
-    ]);
-    expect(patchBody.outputs.chat.messages).toEqual(
+    expect(patchBody.outputs.text).toBeUndefined();
+    expect(patchBody.outputs.messages).toEqual(
       expect.arrayContaining([
-        { role: "assistant", content: "Created fibonacci.txt" },
+        expect.objectContaining({
+          role: "assistant",
+          content: "Created fibonacci.txt",
+        }),
         {
+          id: "sevt_tool",
           role: "assistant",
           content: [
             {
@@ -178,20 +178,13 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               input: { command: "python fibonacci.py" },
             },
           ],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: "sevt_tool",
-              content: "ran script",
-              is_error: false,
-            },
-          ],
+          processed_at: "2026-04-01T00:00:02Z",
         },
       ]),
     );
+    expect(patchBody.outputs.tool_calls).toMatchObject([
+      { type: "agent.tool_use", name: "bash" },
+    ]);
     expect(patchBody.outputs.status).toBe("session.status_idle");
     expect(patchBody.outputs.stop_reason).toEqual({ type: "end_turn" });
     expect(patchBody.outputs.usage_metadata).toBeUndefined();
@@ -212,10 +205,10 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     expect(llmPatchBody?.outputs.tool_calls).toMatchObject([
       { type: "agent.tool_use", name: "bash" },
     ]);
-    expect(llmPatchBody?.outputs.chat.messages).toEqual(
+    expect(llmPatchBody?.outputs.messages).toEqual(
       expect.arrayContaining([
-        { role: "assistant", content: "Created fibonacci.txt" },
         {
+          id: "sevt_tool",
           role: "assistant",
           content: [
             {
@@ -225,6 +218,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               input: { command: "python fibonacci.py" },
             },
           ],
+          processed_at: "2026-04-01T00:00:02Z",
         },
       ]),
     );
@@ -499,9 +493,9 @@ describe("wrapAnthropic Claude Managed Agents", () => {
         content: [{ type: "text", text: "Create fibonacci.txt" }],
       },
     ]);
-    expect(postBody.inputs.chat).toEqual({
-      messages: [{ role: "user", content: "Create fibonacci.txt" }],
-    });
+    expect(postBody.inputs.messages).toEqual([
+      { role: "user", content: "Create fibonacci.txt" },
+    ]);
     const sendPostCalls = callSpy.mock.calls.filter((call: any) => {
       if ((call[1] as any).method !== "POST") return false;
       const body = parseRequestBody((call[1] as any).body);

@@ -370,8 +370,8 @@ function managedAgentSessionEventsAggregator(
       case "agent.message": {
         messages.push({
           id: event.id,
-          content: event.content,
-          text: getManagedAgentText(event.content),
+          role: "assistant",
+          content: contentBlocksToChatContent(event.content),
           processed_at: event.processed_at,
         });
         if (typeof event.id === "string") previews.delete(event.id);
@@ -430,13 +430,14 @@ function managedAgentSessionEventsAggregator(
         .join(""),
     }),
   );
-  const text = messages.map((message) => message.text).join("");
-
+  const messageEvents = chunks.filter(
+    (event) => event.type === "agent.message",
+  );
   return {
-    content: messages.flatMap((message) => message.content ?? []),
-    text,
-    messages,
-    chat: getManagedAgentChatPayload(chunks),
+    content: messageEvents.flatMap((message) =>
+      Array.isArray(message.content) ? message.content : [],
+    ),
+    messages: getManagedAgentAssistantOutputMessages(chunks),
     tool_calls: toolCalls,
     tool_results: toolResults,
     errors,
@@ -486,6 +487,18 @@ function getManagedAgentSystemText(
   return systemTexts.length > 0 ? systemTexts.join("\n") : undefined;
 }
 
+function managedAgentToolUseToContentBlock(event: ManagedAgentEvent): KVMap {
+  return {
+    type: "tool_use",
+    id: event.id,
+    name: event.name,
+    input: event.input,
+    ...(event.type === "agent.mcp_tool_use"
+      ? { mcp_server_name: event.mcp_server_name }
+      : {}),
+  };
+}
+
 function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
   const messages: KVMap[] = [];
   for (const event of events) {
@@ -507,17 +520,7 @@ function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
       case "agent.custom_tool_use":
         messages.push({
           role: "assistant",
-          content: [
-            {
-              type: "tool_use",
-              id: event.id,
-              name: event.name,
-              input: event.input,
-              ...(event.type === "agent.mcp_tool_use"
-                ? { mcp_server_name: event.mcp_server_name }
-                : {}),
-            },
-          ],
+          content: [managedAgentToolUseToContentBlock(event)],
         });
         break;
       case "agent.tool_result":
@@ -571,6 +574,38 @@ function getManagedAgentChatPayload(events: ManagedAgentEvent[]): KVMap {
       : {}),
     messages: getManagedAgentChatMessages(events),
   };
+}
+
+function getManagedAgentAssistantOutputMessages(
+  events: ManagedAgentEvent[],
+): KVMap[] {
+  return events.flatMap((event) => {
+    if (event.type === "agent.message") {
+      return [
+        {
+          id: event.id,
+          role: "assistant",
+          content: contentBlocksToChatContent(event.content),
+          processed_at: event.processed_at,
+        },
+      ];
+    }
+    if (
+      event.type === "agent.tool_use" ||
+      event.type === "agent.mcp_tool_use" ||
+      event.type === "agent.custom_tool_use"
+    ) {
+      return [
+        {
+          id: event.id,
+          role: "assistant",
+          content: [managedAgentToolUseToContentBlock(event)],
+          processed_at: event.processed_at,
+        },
+      ];
+    }
+    return [];
+  });
 }
 
 function isManagedAgentStreamComplete(chunk: unknown): boolean {
@@ -635,7 +670,11 @@ async function createManagedAgentChildRuns(
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
   const inputEvents = getManagedAgentInputEvents(chunks);
   const modelRequestStarts = new Map<string, ManagedAgentEvent>();
-  const modelRequestChildren: Promise<void>[] = [];
+  const childSpecs: Array<{
+    startTime: number;
+    index: number;
+    createAndPost: () => Promise<void>;
+  }> = [];
   const toolUseEvents = new Map<string, ManagedAgentEvent>();
   const toolResultEvents = new Map<string, ManagedAgentEvent>();
 
@@ -657,70 +696,72 @@ async function createManagedAgentChildRuns(
         startIndex >= 0 && endIndex >= startIndex
           ? chunks.slice(startIndex, endIndex + 1)
           : [event];
-      const messages = eventsInRequest.filter(
+      const messageEvents = eventsInRequest.filter(
         (candidate) => candidate.type === "agent.message",
       );
+      const messages = getManagedAgentAssistantOutputMessages(eventsInRequest);
       const toolCalls = eventsInRequest.filter(
         (candidate) =>
           candidate.type === "agent.tool_use" ||
           candidate.type === "agent.mcp_tool_use" ||
           candidate.type === "agent.custom_tool_use",
       );
-      const content = messages.flatMap((message) =>
+      const content = messageEvents.flatMap((message) =>
         Array.isArray(message.content) ? message.content : [],
       );
-      const text = messages
-        .map((message) => getManagedAgentText(message.content))
-        .join("");
       const modelUsage = event.model_usage as
         | Record<string, number | string | null | undefined>
         | undefined;
       const usageMetadata = modelUsage
         ? createUsageMetadata(modelUsage as Partial<Anthropic.Messages.Usage>)
         : undefined;
-      const childRun = parentRun.createChild({
-        name: "ClaudeManagedAgentModelRequest",
-        run_type: "llm",
-        inputs: {
-          events: inputEvents,
-          chat: getManagedAgentChatPayload(inputEvents as ManagedAgentEvent[]),
-          ...(startEvent ? { model_request_start: startEvent } : {}),
+      const startTime = startEvent
+        ? (getProcessedAtMillis(startEvent) ?? Date.now())
+        : Date.now();
+      childSpecs.push({
+        startTime,
+        index: startIndex >= 0 ? startIndex : endIndex,
+        createAndPost: async () => {
+          const childRun = parentRun.createChild({
+            name: "ClaudeManagedAgentModelRequest",
+            run_type: "llm",
+            inputs: {
+              events: inputEvents,
+              ...getManagedAgentChatPayload(inputEvents as ManagedAgentEvent[]),
+              ...(startEvent ? { model_request_start: startEvent } : {}),
+            },
+            metadata: {
+              ...metadata,
+              ...(modelName ? { ls_model_name: modelName } : {}),
+              ...(modelConfig
+                ? {
+                    ls_invocation_params: {
+                      ...((metadata.ls_invocation_params as
+                        | KVMap
+                        | undefined) ?? {}),
+                      model_config: modelConfig,
+                    },
+                  }
+                : {}),
+              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
+            },
+            start_time: startTime,
+          });
+          await postCompletedChildRun(
+            childRun,
+            {
+              content,
+              messages,
+              tool_calls: toolCalls,
+              model_request_end: event,
+              ...(modelUsage ? { model_usage: modelUsage } : {}),
+              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
+            },
+            event.is_error ? "Model request failed" : undefined,
+            getProcessedAtMillis(event),
+          );
         },
-        metadata: {
-          ...metadata,
-          ...(modelName ? { ls_model_name: modelName } : {}),
-          ...(modelConfig
-            ? {
-                ls_invocation_params: {
-                  ...((metadata.ls_invocation_params as KVMap | undefined) ??
-                    {}),
-                  model_config: modelConfig,
-                },
-              }
-            : {}),
-          ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
-        },
-        start_time: startEvent
-          ? (getProcessedAtMillis(startEvent) ?? Date.now())
-          : Date.now(),
       });
-      modelRequestChildren.push(
-        postCompletedChildRun(
-          childRun,
-          {
-            content,
-            text,
-            messages,
-            tool_calls: toolCalls,
-            chat: getManagedAgentChatPayload(eventsInRequest),
-            model_request_end: event,
-            ...(modelUsage ? { model_usage: modelUsage } : {}),
-            ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
-          },
-          event.is_error ? "Model request failed" : undefined,
-          getProcessedAtMillis(event),
-        ),
-      );
     } else if (
       (event.type === "agent.tool_use" ||
         event.type === "agent.mcp_tool_use" ||
@@ -1120,7 +1161,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
               ...(inputEvents.length > 0
                 ? {
                     events: inputEvents,
-                    chat: getManagedAgentChatPayload(
+                    ...getManagedAgentChatPayload(
                       inputEvents as ManagedAgentEvent[],
                     ),
                   }
