@@ -11,6 +11,7 @@ import {
 import { KVMap } from "../schemas.js";
 import { RunTree } from "../run_trees.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
+import type { BetaManagedAgentsStreamSessionEvents as ManagedAgentEvent } from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
@@ -82,7 +83,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
  * Create usage metadata from Anthropic's token usage format.
  */
 export function createUsageMetadata(
-  anthropicUsage: Partial<Anthropic.Messages.Usage>,
+  anthropicUsage: Partial<Anthropic.Messages.Usage> | undefined,
 ): KVMap | undefined {
   if (!anthropicUsage) {
     return undefined;
@@ -280,7 +281,12 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
   return result;
 };
 
-type ManagedAgentEvent = Record<string, unknown> & { type?: string };
+type OnlyType<TType extends ManagedAgentEvent["type"]> =
+  ManagedAgentEvent extends infer TEvent
+    ? TEvent extends { type: TType }
+      ? TEvent
+      : never
+    : never;
 
 function processManagedAgentStreamInputs(inputs: KVMap): KVMap {
   const args = Array.isArray(inputs.args) ? inputs.args : [];
@@ -332,33 +338,8 @@ function managedAgentSessionEventsAggregator(
 
   for (const event of chunks) {
     switch (event.type) {
-      case "event_start": {
-        const previewEvent = event.event as ManagedAgentEvent | undefined;
-        if (
-          previewEvent?.type === "agent.message" &&
-          typeof previewEvent.id === "string"
-        ) {
-          previews.set(previewEvent.id, new Map());
-        }
-        break;
-      }
-      case "event_delta": {
-        const eventID = event.event_id;
-        const delta = event.delta as ManagedAgentEvent | undefined;
-        const content = delta?.content as ManagedAgentEvent | undefined;
-        if (
-          typeof eventID === "string" &&
-          content?.type === "text" &&
-          typeof content.text === "string"
-        ) {
-          const index = typeof delta?.index === "number" ? delta.index : 0;
-          const byIndex = previews.get(eventID) ?? new Map<number, string>();
-          byIndex.set(index, (byIndex.get(index) ?? "") + content.text);
-          previews.set(eventID, byIndex);
-        }
-        break;
-      }
       case "agent.message": {
+        event.content;
         messages.push({
           id: event.id,
           role: "assistant",
@@ -370,17 +351,17 @@ function managedAgentSessionEventsAggregator(
       }
       case "agent.tool_use":
       case "agent.mcp_tool_use":
-      case "agent.custom_tool_use":
+      case "agent.custom_tool_use": {
         toolCalls.push({ ...event });
         break;
+      }
       case "agent.tool_result":
-      case "agent.mcp_tool_result":
+      case "agent.mcp_tool_result": {
         toolResults.push({ ...event });
         break;
+      }
       case "span.model_request_end": {
-        const modelUsage = event.model_usage as
-          | Record<string, number | string | null | undefined>
-          | undefined;
+        const modelUsage = event.model_usage;
         if (modelUsage) {
           for (const key of Object.keys(usage) as Array<keyof typeof usage>) {
             const value = modelUsage[key];
@@ -408,6 +389,28 @@ function managedAgentSessionEventsAggregator(
         if (event.type === "session.status_idle") {
           stopReason = event.stop_reason;
         }
+        break;
+      case "agent.thinking":
+      case "agent.thread_context_compacted":
+      case "agent.thread_message_received":
+      case "agent.thread_message_sent":
+      case "session.deleted":
+      case "session.thread_created":
+      case "session.thread_status_idle":
+      case "session.thread_status_running":
+      case "session.thread_status_terminated":
+      case "session.thread_status_rescheduled":
+      case "span.model_request_start":
+      case "session.updated":
+      case "span.outcome_evaluation_start":
+      case "span.outcome_evaluation_ongoing":
+      case "span.outcome_evaluation_end":
+      case "user.custom_tool_result":
+      case "user.define_outcome":
+      case "user.interrupt":
+      case "user.message":
+      case "user.tool_confirmation":
+      case "user.tool_result":
         break;
     }
   }
@@ -468,17 +471,11 @@ function contentBlocksToChatContent(content: unknown): unknown {
     : content;
 }
 
-function getManagedAgentSystemText(
-  events: ManagedAgentEvent[],
-): string | undefined {
-  const systemTexts = events
-    .filter((event) => event.type === "system.message")
-    .map((event) => getManagedAgentText(event.content))
-    .filter((text) => text.length > 0);
-  return systemTexts.length > 0 ? systemTexts.join("\n") : undefined;
-}
-
-function managedAgentToolUseToContentBlock(event: ManagedAgentEvent): KVMap {
+function managedAgentToolUseToContentBlock(
+  event: OnlyType<
+    "agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use"
+  >,
+): KVMap {
   return {
     type: "tool_use",
     id: event.id,
@@ -544,12 +541,7 @@ function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
 }
 
 function getManagedAgentChatPayload(events: ManagedAgentEvent[]): KVMap {
-  return {
-    ...(getManagedAgentSystemText(events)
-      ? { system: getManagedAgentSystemText(events) }
-      : {}),
-    messages: getManagedAgentChatMessages(events),
-  };
+  return { messages: getManagedAgentChatMessages(events) };
 }
 
 function getManagedAgentAssistantOutputMessages(
@@ -650,8 +642,17 @@ async function createManagedAgentChildRuns(
     index: number;
     createAndPost: () => Promise<void>;
   }> = [];
-  const toolUseEvents = new Map<string, ManagedAgentEvent>();
-  const toolResultEvents = new Map<string, ManagedAgentEvent>();
+
+  const toolUseEvents = new Map<
+    string,
+    OnlyType<"agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use">
+  >();
+  const toolResultEvents = new Map<
+    string,
+    OnlyType<
+      "agent.tool_result" | "agent.mcp_tool_result" | "user.custom_tool_result"
+    >
+  >();
 
   for (const event of chunks) {
     if (
@@ -664,6 +665,7 @@ async function createManagedAgentChildRuns(
         typeof event.model_request_start_id === "string"
           ? event.model_request_start_id
           : undefined;
+
       const startEvent = startID ? modelRequestStarts.get(startID) : undefined;
       const startIndex = startEvent ? chunks.indexOf(startEvent) : -1;
       const endIndex = chunks.indexOf(event);
@@ -686,12 +688,8 @@ async function createManagedAgentChildRuns(
       const content = messageEvents.flatMap((message) =>
         Array.isArray(message.content) ? message.content : [],
       );
-      const modelUsage = event.model_usage as
-        | Record<string, number | string | null | undefined>
-        | undefined;
-      const usageMetadata = modelUsage
-        ? createUsageMetadata(modelUsage as Partial<Anthropic.Messages.Usage>)
-        : undefined;
+
+      const usageMetadata = createUsageMetadata(event.model_usage);
       const startTime = startEvent
         ? (getProcessedAtMillis(startEvent) ?? Date.now())
         : Date.now();
@@ -731,7 +729,7 @@ async function createManagedAgentChildRuns(
               messages,
               tool_calls: toolCalls,
               model_request_end: event,
-              ...(modelUsage ? { model_usage: modelUsage } : {}),
+              ...(event.model_usage ? { model_usage: event.model_usage } : {}),
               ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
             },
             event.is_error ? "Model request failed" : undefined,
