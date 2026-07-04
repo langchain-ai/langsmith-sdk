@@ -11,7 +11,10 @@ import {
 import { KVMap } from "../schemas.js";
 import { RunTree } from "../run_trees.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
-import type { BetaManagedAgentsStreamSessionEvents as ManagedAgentEvent } from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
+import type {
+  BetaManagedAgentsStreamSessionEvents,
+  BetaManagedAgentsSession,
+} from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
@@ -281,8 +284,8 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
   return result;
 };
 
-type OnlyType<TType extends ManagedAgentEvent["type"]> =
-  ManagedAgentEvent extends infer TEvent
+type OnlyType<TType extends BetaManagedAgentsStreamSessionEvents["type"]> =
+  BetaManagedAgentsStreamSessionEvents extends infer TEvent
     ? TEvent extends { type: TType }
       ? TEvent
       : never
@@ -319,7 +322,7 @@ function getManagedAgentText(content: unknown): string {
 }
 
 function managedAgentSessionEventsAggregator(
-  chunks: ManagedAgentEvent[],
+  chunks: BetaManagedAgentsStreamSessionEvents[],
 ): KVMap {
   const messages: KVMap[] = [];
   const toolCalls: KVMap[] = [];
@@ -327,6 +330,7 @@ function managedAgentSessionEventsAggregator(
   const errors: KVMap[] = [];
   const modelRequests: KVMap[] = [];
   const previews = new Map<string, Map<number, string>>();
+
   let status: string | undefined;
   let stopReason: unknown;
   const usage = {
@@ -445,7 +449,9 @@ function managedAgentSessionEventsAggregator(
   };
 }
 
-function getManagedAgentInputEvents(chunks: ManagedAgentEvent[]): KVMap[] {
+function getManagedAgentInputEvents(
+  chunks: BetaManagedAgentsStreamSessionEvents[],
+): BetaManagedAgentsStreamSessionEvents[] {
   return chunks
     .filter(
       (event) =>
@@ -487,7 +493,9 @@ function managedAgentToolUseToContentBlock(
   };
 }
 
-function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
+function getManagedAgentChatMessages(
+  events: BetaManagedAgentsStreamSessionEvents[],
+): KVMap[] {
   const messages: KVMap[] = [];
   for (const event of events) {
     switch (event.type) {
@@ -540,12 +548,8 @@ function getManagedAgentChatMessages(events: ManagedAgentEvent[]): KVMap[] {
   return messages;
 }
 
-function getManagedAgentChatPayload(events: ManagedAgentEvent[]): KVMap {
-  return { messages: getManagedAgentChatMessages(events) };
-}
-
 function getManagedAgentAssistantOutputMessages(
-  events: ManagedAgentEvent[],
+  events: BetaManagedAgentsStreamSessionEvents[],
 ): KVMap[] {
   return events.flatMap((event) => {
     if (event.type === "agent.message") {
@@ -576,21 +580,8 @@ function getManagedAgentAssistantOutputMessages(
   });
 }
 
-function isManagedAgentStreamComplete(chunk: unknown): boolean {
-  if (typeof chunk !== "object" || chunk == null || !("type" in chunk)) {
-    return false;
-  }
-  const event = chunk as ManagedAgentEvent;
-  return (
-    event.type === "session.status_idle" ||
-    event.type === "session.status_terminated" ||
-    event.type === "session.deleted" ||
-    event.type === "session.error"
-  );
-}
-
 function getManagedAgentStreamError(
-  chunks: ManagedAgentEvent[],
+  chunks: BetaManagedAgentsStreamSessionEvents[],
 ): string | undefined {
   const errorEvent = chunks.find((event) => event.type === "session.error");
   const error = errorEvent?.error;
@@ -612,7 +603,9 @@ function stripLangSmithExtraFromRequestOptions<T>(options: T): T {
   return options;
 }
 
-function getProcessedAtMillis(event: ManagedAgentEvent): number | undefined {
+function getProcessedAtMillis(
+  event: BetaManagedAgentsStreamSessionEvents,
+): number | undefined {
   return typeof event.processed_at === "string"
     ? Date.parse(event.processed_at)
     : undefined;
@@ -630,13 +623,16 @@ async function postCompletedChildRun(
 
 async function createManagedAgentChildRuns(
   parentRun: RunTree,
-  chunks: ManagedAgentEvent[],
+  chunks: BetaManagedAgentsStreamSessionEvents[],
   metadata: KVMap,
   modelConfig?: KVMap,
 ): Promise<void> {
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
-  const modelRequestStarts = new Map<string, ManagedAgentEvent>();
+  const modelRequestStarts = new Map<
+    string,
+    BetaManagedAgentsStreamSessionEvents
+  >();
   const childSpecs: Array<{
     startTime: number;
     index: number;
@@ -702,7 +698,7 @@ async function createManagedAgentChildRuns(
             run_type: "llm",
             inputs: {
               events: eventsBeforeRequest,
-              ...getManagedAgentChatPayload(eventsBeforeRequest),
+              messages: getManagedAgentChatMessages(eventsBeforeRequest),
               ...(startEvent ? { model_request_start: startEvent } : {}),
             },
             metadata: {
@@ -1123,16 +1119,22 @@ export const wrapAnthropic = <T extends AnthropicType>(
             params,
             requestOptions,
           );
-          const sessionPromise = anthropic.beta?.sessions?.retrieve
-            ? anthropic.beta.sessions.retrieve
-                .bind(anthropic.beta.sessions)(sessionID)
-                .catch(() => undefined)
-            : Promise.resolve(undefined);
+
+          const sessionPromise: Promise<BetaManagedAgentsSession | undefined> =
+            anthropic.beta?.sessions?.retrieve
+              ? anthropic.beta.sessions.retrieve
+                  .bind(anthropic.beta.sessions)(sessionID)
+                  .catch(() => undefined)
+              : Promise.resolve(undefined);
+
           const stream = await anthropic.beta?.sessions?.events?.stream.bind(
             anthropic.beta.sessions.events,
           )(...sanitizedArgs);
-          const iterator = stream[Symbol.asyncIterator]();
-          const chunks: ManagedAgentEvent[] = [];
+
+          const iterator: AsyncIterator<BetaManagedAgentsStreamSessionEvents> =
+            stream[Symbol.asyncIterator]();
+
+          const chunks: BetaManagedAgentsStreamSessionEvents[] = [];
           let finalized = false;
 
           const finalize = async (error?: string) => {
@@ -1147,14 +1149,13 @@ export const wrapAnthropic = <T extends AnthropicType>(
               ...(inputEvents.length > 0
                 ? {
                     events: inputEvents,
-                    ...getManagedAgentChatPayload(
-                      inputEvents as ManagedAgentEvent[],
-                    ),
+                    messages: getManagedAgentChatMessages(inputEvents),
                   }
                 : {}),
             };
             const finalError = error ?? getManagedAgentStreamError(chunks);
             const session = await sessionPromise;
+
             const modelConfig =
               typeof session?.agent?.model === "object" &&
               session.agent.model != null
@@ -1178,8 +1179,13 @@ export const wrapAnthropic = <T extends AnthropicType>(
                   await finalize();
                   return result;
                 }
-                chunks.push(result.value as ManagedAgentEvent);
-                if (isManagedAgentStreamComplete(result.value)) {
+                chunks.push(result.value);
+                if (
+                  result.value.type === "session.status_idle" ||
+                  result.value.type === "session.status_terminated" ||
+                  result.value.type === "session.deleted" ||
+                  result.value.type === "session.error"
+                ) {
                   await finalize();
                 }
                 return result;
