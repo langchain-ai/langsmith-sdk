@@ -12,11 +12,11 @@ export class Runs extends APIResource {
    * Fetch examples for a dataset, and fetch the runs for each example if they are
    * associated with the given session_ids.
    */
-  create(
+  query(
     datasetID: string,
-    params: RunCreateParams,
+    params: RunQueryParams,
     options?: RequestOptions,
-  ): APIPromise<RunCreateResponse | null> {
+  ): APIPromise<RunQueryResponse | null> {
     const { format, ...body } = params;
     return this._client.post(path`/api/v1/datasets/${datasetID}/runs`, {
       query: { format },
@@ -174,9 +174,9 @@ export interface SortParamsForRunsComparisonView {
   sort_order?: 'ASC' | 'DESC';
 }
 
-export type RunCreateResponse = Array<ExampleWithRunsCh>;
+export type RunQueryResponse = Array<ExampleWithRunsCh>;
 
-export interface RunCreateParams {
+export interface RunQueryParams {
   /**
    * Body param
    */
@@ -233,7 +233,7 @@ export declare namespace Runs {
     type ExampleWithRunsCh as ExampleWithRunsCh,
     type QueryExampleSchemaWithRuns as QueryExampleSchemaWithRuns,
     type SortParamsForRunsComparisonView as SortParamsForRunsComparisonView,
-    type RunCreateResponse as RunCreateResponse,
-    type RunCreateParams as RunCreateParams,
+    type RunQueryResponse as RunQueryResponse,
+    type RunQueryParams as RunQueryParams,
   };
 }

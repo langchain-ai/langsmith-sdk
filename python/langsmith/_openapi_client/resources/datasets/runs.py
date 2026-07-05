@@ -18,8 +18,8 @@ from ..._response import (
     async_to_streamed_response_wrapper,
 )
 from ..._base_client import make_request_options
-from ...types.datasets import run_create_params
-from ...types.datasets.run_create_response import RunCreateResponse
+from ...types.datasets import run_query_params
+from ...types.datasets.run_query_response import RunQueryResponse
 from ...types.datasets.sort_params_for_runs_comparison_view_param import SortParamsForRunsComparisonViewParam
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
@@ -45,7 +45,7 @@ class RunsResource(SyncAPIResource):
         """
         return RunsResourceWithStreamingResponse(self)
 
-    def create(
+    def query(
         self,
         dataset_id: str,
         *,
@@ -65,7 +65,7 @@ class RunsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> Optional[RunCreateResponse]:
+    ) -> Optional[RunQueryResponse]:
         """
         Fetch examples for a dataset, and fetch the runs for each example if they are
         associated with the given session_ids.
@@ -97,16 +97,16 @@ class RunsResource(SyncAPIResource):
                     "preview": preview,
                     "sort_params": sort_params,
                 },
-                run_create_params.RunCreateParams,
+                run_query_params.RunQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
                 extra_body=extra_body,
                 timeout=timeout,
-                query=maybe_transform({"format": format}, run_create_params.RunCreateParams),
+                query=maybe_transform({"format": format}, run_query_params.RunQueryParams),
             ),
-            cast_to=RunCreateResponse,
+            cast_to=RunQueryResponse,
         )
 
 
@@ -130,7 +130,7 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         return AsyncRunsResourceWithStreamingResponse(self)
 
-    async def create(
+    async def query(
         self,
         dataset_id: str,
         *,
@@ -150,7 +150,7 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> Optional[RunCreateResponse]:
+    ) -> Optional[RunQueryResponse]:
         """
         Fetch examples for a dataset, and fetch the runs for each example if they are
         associated with the given session_ids.
@@ -182,16 +182,16 @@ class AsyncRunsResource(AsyncAPIResource):
                     "preview": preview,
                     "sort_params": sort_params,
                 },
-                run_create_params.RunCreateParams,
+                run_query_params.RunQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
                 extra_body=extra_body,
                 timeout=timeout,
-                query=await async_maybe_transform({"format": format}, run_create_params.RunCreateParams),
+                query=await async_maybe_transform({"format": format}, run_query_params.RunQueryParams),
             ),
-            cast_to=RunCreateResponse,
+            cast_to=RunQueryResponse,
         )
 
 
@@ -199,8 +199,8 @@ class RunsResourceWithRawResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
-        self.create = to_raw_response_wrapper(
-            runs.create,
+        self.query = to_raw_response_wrapper(
+            runs.query,
         )
 
 
@@ -208,8 +208,8 @@ class AsyncRunsResourceWithRawResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
-        self.create = async_to_raw_response_wrapper(
-            runs.create,
+        self.query = async_to_raw_response_wrapper(
+            runs.query,
         )
 
 
@@ -217,8 +217,8 @@ class RunsResourceWithStreamingResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
-        self.create = to_streamed_response_wrapper(
-            runs.create,
+        self.query = to_streamed_response_wrapper(
+            runs.query,
         )
 
 
@@ -226,6 +226,6 @@ class AsyncRunsResourceWithStreamingResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
-        self.create = async_to_streamed_response_wrapper(
-            runs.create,
+        self.query = async_to_streamed_response_wrapper(
+            runs.query,
         )

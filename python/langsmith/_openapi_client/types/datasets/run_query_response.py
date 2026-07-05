@@ -5,6 +5,6 @@ from typing_extensions import TypeAlias
 
 from .example_with_runs_ch import ExampleWithRunsCh
 
-__all__ = ["RunCreateResponse"]
+__all__ = ["RunQueryResponse"]
 
-RunCreateResponse: TypeAlias = List[ExampleWithRunsCh]
+RunQueryResponse: TypeAlias = List[ExampleWithRunsCh]

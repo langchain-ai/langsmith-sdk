@@ -7,10 +7,10 @@ from typing_extensions import Literal, TypedDict
 
 from ..._types import SequenceNotStr
 
-__all__ = ["ExperimentRunCreateParams", "Sort"]
+__all__ = ["ExperimentRunQueryParams", "Sort"]
 
 
-class ExperimentRunCreateParams(TypedDict, total=False):
+class ExperimentRunQueryParams(TypedDict, total=False):
     comparative_experiment_id: str
     """`comparative_experiment_id` scopes pairwise-annotation feedback (optional)."""
 

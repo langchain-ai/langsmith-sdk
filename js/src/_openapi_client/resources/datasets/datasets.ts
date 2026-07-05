@@ -13,17 +13,17 @@ import {
 } from './comparative.js';
 import * as ExperimentRunsAPI from './experiment-runs.js';
 import {
-  ExperimentRunCreateParams,
-  ExperimentRunCreateResponse,
-  ExperimentRunCreateResponsesItemsCursorPostPagination,
+  ExperimentRunQueryParams,
+  ExperimentRunQueryResponse,
+  ExperimentRunQueryResponsesItemsCursorPostPagination,
   ExperimentRuns,
 } from './experiment-runs.js';
 import * as RunsAPI from './runs.js';
 import {
   ExampleWithRunsCh,
   QueryExampleSchemaWithRuns,
-  RunCreateParams,
-  RunCreateResponse,
+  RunQueryParams,
+  RunQueryResponse,
   Runs,
   SortParamsForRunsComparisonView,
 } from './runs.js';
@@ -676,15 +676,15 @@ export declare namespace Datasets {
     type ExampleWithRunsCh as ExampleWithRunsCh,
     type QueryExampleSchemaWithRuns as QueryExampleSchemaWithRuns,
     type SortParamsForRunsComparisonView as SortParamsForRunsComparisonView,
-    type RunCreateResponse as RunCreateResponse,
-    type RunCreateParams as RunCreateParams,
+    type RunQueryResponse as RunQueryResponse,
+    type RunQueryParams as RunQueryParams,
   };
 
   export {
     ExperimentRuns as ExperimentRuns,
-    type ExperimentRunCreateResponse as ExperimentRunCreateResponse,
-    type ExperimentRunCreateResponsesItemsCursorPostPagination as ExperimentRunCreateResponsesItemsCursorPostPagination,
-    type ExperimentRunCreateParams as ExperimentRunCreateParams,
+    type ExperimentRunQueryResponse as ExperimentRunQueryResponse,
+    type ExperimentRunQueryResponsesItemsCursorPostPagination as ExperimentRunQueryResponsesItemsCursorPostPagination,
+    type ExperimentRunQueryParams as ExperimentRunQueryParams,
   };
 
   export {

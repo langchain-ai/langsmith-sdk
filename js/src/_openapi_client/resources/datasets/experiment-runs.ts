@@ -16,23 +16,23 @@ export class ExperimentRuns extends APIResource {
    * Returns a paginated page of dataset examples with runs from the requested
    * experiments. Response uses the canonical `{items, next_cursor}` envelope.
    */
-  create(
+  query(
     datasetID: string,
-    body: ExperimentRunCreateParams,
+    body: ExperimentRunQueryParams,
     options?: RequestOptions,
-  ): PagePromise<ExperimentRunCreateResponsesItemsCursorPostPagination, ExperimentRunCreateResponse> {
+  ): PagePromise<ExperimentRunQueryResponsesItemsCursorPostPagination, ExperimentRunQueryResponse> {
     return this._client.getAPIList(
       path`/v2/datasets/${datasetID}/experiment-runs`,
-      ItemsCursorPostPagination<ExperimentRunCreateResponse>,
+      ItemsCursorPostPagination<ExperimentRunQueryResponse>,
       { body, method: 'post', ...options },
     );
   }
 }
 
-export type ExperimentRunCreateResponsesItemsCursorPostPagination =
-  ItemsCursorPostPagination<ExperimentRunCreateResponse>;
+export type ExperimentRunQueryResponsesItemsCursorPostPagination =
+  ItemsCursorPostPagination<ExperimentRunQueryResponse>;
 
-export interface ExperimentRunCreateResponse {
+export interface ExperimentRunQueryResponse {
   /**
    * `id` is the dataset example UUID.
    */
@@ -89,7 +89,7 @@ export interface ExperimentRunCreateResponse {
   source_run_id?: string;
 }
 
-export interface ExperimentRunCreateParams extends ItemsCursorPostPaginationParams {
+export interface ExperimentRunQueryParams extends ItemsCursorPostPaginationParams {
   /**
    * `comparative_experiment_id` scopes pairwise-annotation feedback (optional).
    */
@@ -167,10 +167,10 @@ export interface ExperimentRunCreateParams extends ItemsCursorPostPaginationPara
   /**
    * `sort` controls feedback-score sorting (single project only).
    */
-  sort?: ExperimentRunCreateParams.Sort;
+  sort?: ExperimentRunQueryParams.Sort;
 }
 
-export namespace ExperimentRunCreateParams {
+export namespace ExperimentRunQueryParams {
   /**
    * `sort` controls feedback-score sorting (single project only).
    */
@@ -190,8 +190,8 @@ export namespace ExperimentRunCreateParams {
 
 export declare namespace ExperimentRuns {
   export {
-    type ExperimentRunCreateResponse as ExperimentRunCreateResponse,
-    type ExperimentRunCreateResponsesItemsCursorPostPagination as ExperimentRunCreateResponsesItemsCursorPostPagination,
-    type ExperimentRunCreateParams as ExperimentRunCreateParams,
+    type ExperimentRunQueryResponse as ExperimentRunQueryResponse,
+    type ExperimentRunQueryResponsesItemsCursorPostPagination as ExperimentRunQueryResponsesItemsCursorPostPagination,
+    type ExperimentRunQueryParams as ExperimentRunQueryParams,
   };
 }

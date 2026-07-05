@@ -6,10 +6,10 @@ from datetime import datetime
 from ..run import Run
 from ..._models import BaseModel
 
-__all__ = ["ExperimentRunCreateResponse"]
+__all__ = ["ExperimentRunQueryResponse"]
 
 
-class ExperimentRunCreateResponse(BaseModel):
+class ExperimentRunQueryResponse(BaseModel):
     id: Optional[str] = None
     """`id` is the dataset example UUID."""
 

@@ -8,10 +8,10 @@ from typing_extensions import Literal, Required, TypedDict
 from ..._types import SequenceNotStr
 from .sort_params_for_runs_comparison_view_param import SortParamsForRunsComparisonViewParam
 
-__all__ = ["RunCreateParams"]
+__all__ = ["RunQueryParams"]
 
 
-class RunCreateParams(TypedDict, total=False):
+class RunQueryParams(TypedDict, total=False):
     session_ids: Required[SequenceNotStr[str]]
 
     format: Optional[Literal["csv"]]

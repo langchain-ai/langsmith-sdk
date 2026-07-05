@@ -41,17 +41,17 @@ export {
 } from './datasets.js';
 export {
   ExperimentRuns,
-  type ExperimentRunCreateResponse,
-  type ExperimentRunCreateParams,
-  type ExperimentRunCreateResponsesItemsCursorPostPagination,
+  type ExperimentRunQueryResponse,
+  type ExperimentRunQueryParams,
+  type ExperimentRunQueryResponsesItemsCursorPostPagination,
 } from './experiment-runs.js';
 export {
   Runs,
   type ExampleWithRunsCh,
   type QueryExampleSchemaWithRuns,
   type SortParamsForRunsComparisonView,
-  type RunCreateResponse,
-  type RunCreateParams,
+  type RunQueryResponse,
+  type RunQueryParams,
 } from './runs.js';
 export { Share, type DatasetShareSchema, type ShareDeleteAllResponse, type ShareCreateParams } from './share.js';
 export {
