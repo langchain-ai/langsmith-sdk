@@ -122,17 +122,17 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-async def test_online_evaluators_generated_client_crud(
+async def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
-    """Exercise the generated OpenAPI online evaluators resource end to end."""
+    """Exercise the generated OpenAPI evaluators resource end to end."""
     evaluator = None
-    name = "__sdk_online_evaluator_integration_" + "".join(
+    name = "__sdk_evaluator_integration_" + "".join(
         random.sample(string.ascii_lowercase, 10)
     )
 
     try:
-        created = await langchain_client.online_evaluators.create(
+        created = await langchain_client.evaluators.create(
             name=name,
             type="code",
             code_evaluator={
@@ -146,12 +146,12 @@ async def test_online_evaluators_generated_client_crud(
         assert evaluator.name == name
         assert evaluator.type == "code"
 
-        retrieved = await langchain_client.online_evaluators.retrieve(evaluator.id)
+        retrieved = await langchain_client.evaluators.retrieve(evaluator.id)
         assert retrieved.id == evaluator.id
         assert retrieved.name == name
 
         updated_name = f"{name}_updated"
-        updated = await langchain_client.online_evaluators.update(
+        updated = await langchain_client.evaluators.update(
             evaluator.id,
             name=updated_name,
         )
@@ -160,14 +160,14 @@ async def test_online_evaluators_generated_client_crud(
 
         evaluators = [
             item
-            async for item in langchain_client.online_evaluators.list(
+            async for item in langchain_client.evaluators.list(
                 name_contains=updated_name, limit=10
             )
         ]
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            await langchain_client.online_evaluators.delete(
+            await langchain_client.evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
 

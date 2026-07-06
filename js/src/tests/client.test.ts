@@ -49,8 +49,8 @@ describe("Client", () => {
     });
   });
 
-  describe("onlineEvaluators", () => {
-    it("creates an online evaluator through the platform endpoint", async () => {
+  describe("evaluators", () => {
+    it("creates an evaluator through the platform endpoint", async () => {
       const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
         new Response(
           JSON.stringify({
@@ -74,7 +74,7 @@ describe("Client", () => {
         fetchImplementation: mockFetch,
       });
 
-      const response = await client.onlineEvaluators.create({
+      const response = await client.evaluators.create({
         name: "SDK smoke test code evaluator",
         type: "code",
         code_evaluator: {

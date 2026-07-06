@@ -75,7 +75,7 @@ import {
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
-import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
 import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
@@ -1468,7 +1468,7 @@ export class Client implements LangSmithTracingClientInterface {
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
   }
 
-  public get onlineEvaluators(): OnlineEvaluators {
+  public get evaluators(): Evaluators {
     return this.openAPIClient.onlineEvaluators;
   }
 

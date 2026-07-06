@@ -227,13 +227,13 @@ test("test create dataset", async () => {
   await langchainClient.deleteDataset({ datasetName });
 }, 180_000);
 
-test("online evaluators generated client CRUD", async () => {
+test("evaluators generated client CRUD", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const evaluatorName = `__test_online_evaluator_${uuidv4().slice(0, 8)}`;
+  const evaluatorName = `__test_evaluator_${uuidv4().slice(0, 8)}`;
   let evaluatorId: string | undefined;
 
   try {
-    const created = await client.onlineEvaluators.create({
+    const created = await client.evaluators.create({
       name: evaluatorName,
       type: "code",
       code_evaluator: {
@@ -247,12 +247,12 @@ test("online evaluators generated client CRUD", async () => {
     expect(created.evaluator?.name).toBe(evaluatorName);
     expect(created.evaluator?.type).toBe("code");
 
-    const retrieved = await client.onlineEvaluators.retrieve(evaluatorId!);
+    const retrieved = await client.evaluators.retrieve(evaluatorId!);
     expect(retrieved.id).toBe(evaluatorId);
     expect(retrieved.name).toBe(evaluatorName);
   } finally {
     if (evaluatorId) {
-      await client.onlineEvaluators.delete(evaluatorId, {
+      await client.evaluators.delete(evaluatorId, {
         delete_run_rules: true,
       });
     }
