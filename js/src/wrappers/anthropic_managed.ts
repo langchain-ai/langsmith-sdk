@@ -507,7 +507,9 @@ async function createManagedAgentChildRuns(
           if (result == null) return undefined;
           return [
             result ? { event: result, content: result.content } : {},
-            result?.is_error ? "Tool execution failed" : undefined,
+            result?.is_error
+              ? (getManagedAgentText(result.content) ?? "Tool execution failed")
+              : undefined,
             result ? getProcessedAtMillis(result) : undefined,
           ] as [
             outputs: KVMap,

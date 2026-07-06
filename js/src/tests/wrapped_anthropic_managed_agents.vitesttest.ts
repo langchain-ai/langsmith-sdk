@@ -4,7 +4,6 @@ import * as fs from "node:fs";
 import { wrapAnthropic } from "../wrappers/anthropic.js";
 import { mockClient } from "./utils/vitest_mock_client.js";
 import { asTree, getAssumedTreeFromCalls } from "./utils/tree.js";
-import { Client } from "../index.js";
 
 function parseRequestBody(body: any) {
   return body instanceof Uint8Array
@@ -1028,6 +1027,132 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
+      );
+    });
+
+    expect(tree.nodes).toEqual(expect.arrayContaining(expected.nodes));
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+  });
+
+  it("mcp tool rejection", async () => {
+    const { client, callSpy } = mockClient();
+    const [anthropic, session] = await createReplayableAnthropic(
+      "./test_data/anthropic_managed_mcp_tools_reject.jsonl",
+    );
+
+    const wrappedClient = wrapAnthropic(anthropic, {
+      client,
+      tracingEnabled: true,
+    });
+
+    const stream = await wrappedClient.beta.sessions.events.stream(session.id);
+    // consume stream
+    for await (const _ of stream) {
+      // noop
+    }
+
+    await client.awaitPendingTraceBatches();
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+
+    const expected = asTree((run) => {
+      run`ClaudeManagedAgent:5`(
+        {
+          run_type: "chain",
+          inputs: {
+            session_id: session.id,
+            messages: [
+              {
+                role: "user",
+                content:
+                  "How many stars does langchain-ai/langsmith-sdk have? Use MCP and Exa",
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: "Let me fetch the GitHub repository page directly.",
+              },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "web_fetch",
+                    input: {
+                      url: "https://github.com/langchain-ai/langsmith-sdk",
+                    },
+                  },
+                ],
+              },
+              { role: "assistant" },
+            ],
+          },
+        },
+        run`ClaudeManagedAgentModelRequest:0`({
+          run_type: "llm",
+          inputs: {
+            system:
+              "Uses Exa's MCP to answer questions about the LangSmith SDK.",
+            messages: [
+              {
+                role: "user",
+                content:
+                  "How many stars does langchain-ai/langsmith-sdk have? Use MCP and Exa",
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: "I'll look that up for you using Exa search.",
+              },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "web_search_exa",
+                    input: {
+                      numResults: 5,
+                      query:
+                        "langchain-ai langsmith-sdk GitHub repository stars",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        run`web_search_exa:1`({
+          run_type: "tool",
+          inputs: {
+            name: "web_search_exa",
+            input: {
+              numResults: 5,
+              query: "langchain-ai langsmith-sdk GitHub repository stars",
+            },
+          },
+          outputs: {
+            content: [
+              {
+                type: "text",
+                text: expect.stringContaining(
+                  "Permission to use mcp__exa__web_search_exa has been rejected",
+                ),
+              },
+            ],
+          },
+          error: expect.stringContaining(
+            "Permission to use mcp__exa__web_search_exa has been rejected",
+          ),
+        }),
+        run`ClaudeManagedAgentModelRequest:2`({ run_type: "llm" }),
+        run`web_fetch:3`({ run_type: "tool" }),
+        run`ClaudeManagedAgentModelRequest:4`({ run_type: "llm" }),
       );
     });
 
