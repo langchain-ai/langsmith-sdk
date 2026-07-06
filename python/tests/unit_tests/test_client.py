@@ -6736,8 +6736,9 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
 
 def test_removed_sdk_methods_absent() -> None:
     """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
-    from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
     from langsmith._openapi_client.resources.datasets.runs import RunsResource
+
+    from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
 
     assert not hasattr(RunsResource, "delta"), (
         "datasets.runs.delta was de-publicized in PR #28358 and should not exist"
