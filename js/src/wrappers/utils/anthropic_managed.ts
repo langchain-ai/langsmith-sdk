@@ -333,9 +333,11 @@ async function createManagedAgentChildRuns(
     modelConfig: KVMap | undefined;
     systemPrompt: string | undefined;
     pendingChildRuns: Map<string, RunTree>;
+    completedChildRunIds: Set<string>;
   },
 ): Promise<void> {
-  const { modelConfig, systemPrompt, pendingChildRuns } = options;
+  const { modelConfig, systemPrompt, pendingChildRuns, completedChildRunIds } =
+    options;
 
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
@@ -480,6 +482,18 @@ async function createManagedAgentChildRuns(
 
   for (const [toolUseID, toolUse] of toolUseEvents.entries()) {
     const result = toolResultEvents.get(toolUseID);
+    const isCurrentTurnTool =
+      chunks.turn.includes(toolUse) ||
+      (result ? chunks.turn.includes(result) : false);
+    const pendingRun = pendingChildRuns.get(toolUseID);
+    if (
+      completedChildRunIds.has(toolUseID) &&
+      pendingRun == null &&
+      !isCurrentTurnTool
+    ) {
+      continue;
+    }
+
     const toolName =
       typeof toolUse.name === "string" ? toolUse.name : "ManagedAgentTool";
     const startTime = getProcessedAtMillis(toolUse) ?? Date.now();
@@ -488,20 +502,6 @@ async function createManagedAgentChildRuns(
       startTime,
       index: chunks.all.indexOf(toolUse),
       createAndPost: async () => {
-        const pendingRun = pendingChildRuns.get(toolUseID);
-        const childRun = parentRun.createChild({
-          name: toolName,
-          run_type: "tool",
-          inputs: {
-            id: toolUseID,
-            name: toolUse.name,
-            input: toolUse.input,
-            event: toolUse,
-          },
-          metadata,
-          start_time: startTime,
-        });
-
         const resultArgs = (() => {
           if (result == null) return undefined;
           return [
@@ -519,13 +519,38 @@ async function createManagedAgentChildRuns(
 
         // Best-case scenario, tool result is present in the current turn, we can post the child run immediately.
         if (pendingRun == null && resultArgs != null) {
+          const childRun = parentRun.createChild({
+            name: toolName,
+            run_type: "tool",
+            inputs: {
+              id: toolUseID,
+              name: toolUse.name,
+              input: toolUse.input,
+              event: toolUse,
+            },
+            metadata,
+            start_time: startTime,
+          });
           await childRun.end(...resultArgs);
           await childRun.postRun();
+          completedChildRunIds.add(toolUseID);
           return;
         }
 
         // Post the partial run instead, wait for the next turn to complete it.
         if (pendingRun == null && resultArgs == null) {
+          const childRun = parentRun.createChild({
+            name: toolName,
+            run_type: "tool",
+            inputs: {
+              id: toolUseID,
+              name: toolUse.name,
+              input: toolUse.input,
+              event: toolUse,
+            },
+            metadata,
+            start_time: startTime,
+          });
           pendingChildRuns.set(toolUseID, childRun);
           await childRun.postRun();
           return;
@@ -536,6 +561,7 @@ async function createManagedAgentChildRuns(
           pendingChildRuns.delete(toolUseID);
           await pendingRun.end(...resultArgs);
           await pendingRun.patchRun();
+          completedChildRunIds.add(toolUseID);
         }
       },
     });
@@ -658,6 +684,7 @@ export function wrapManagedAgentSessionEvents({
         const allChunks: BetaManagedAgentsStreamSessionEvents[] = [];
         const turnChunkLengths: Set<number> = new Set();
         const pendingChildRuns: Map<string, RunTree> = new Map();
+        const completedChildRunIds: Set<string> = new Set();
 
         let flushLength = 0;
         let observedTerminalEvent = false;
@@ -729,7 +756,12 @@ export function wrapManagedAgentSessionEvents({
               runTree,
               { turn: chunks, all: allChunks },
               runTree.extra.metadata ?? {},
-              { modelConfig, systemPrompt, pendingChildRuns },
+              {
+                modelConfig,
+                systemPrompt,
+                pendingChildRuns,
+                completedChildRunIds,
+              },
             );
           }
         };

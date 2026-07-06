@@ -363,6 +363,123 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     });
   });
 
+  test("does not duplicate completed tool child runs across later turns", async () => {
+    const { client, callSpy } = mockClient();
+    const fakeAnthropic = createFakeAnthropic([
+      {
+        id: "sevt_user_1",
+        type: "user.message",
+        content: [{ type: "text", text: "Run first command" }],
+        processed_at: "2026-04-01T00:00:00Z",
+      },
+      {
+        id: "sevt_span_start_1",
+        type: "span.model_request_start",
+        processed_at: "2026-04-01T00:00:00.100Z",
+      },
+      {
+        id: "sevt_tool_a",
+        type: "agent.tool_use",
+        name: "bash",
+        input: { command: "echo a" },
+        processed_at: "2026-04-01T00:00:00.200Z",
+      },
+      {
+        id: "sevt_span_end_1",
+        type: "span.model_request_end",
+        is_error: false,
+        model_request_start_id: "sevt_span_start_1",
+        model_usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+        processed_at: "2026-04-01T00:00:00.300Z",
+      },
+      {
+        id: "sevt_tool_result_a",
+        type: "agent.tool_result",
+        tool_use_id: "sevt_tool_a",
+        content: [{ type: "text", text: "a" }],
+        is_error: false,
+        processed_at: "2026-04-01T00:00:00.400Z",
+      },
+      {
+        id: "sevt_idle_1",
+        type: "session.status_idle",
+        stop_reason: { type: "end_turn" },
+        processed_at: "2026-04-01T00:00:00.500Z",
+      },
+      {
+        id: "sevt_user_2",
+        type: "user.message",
+        content: [{ type: "text", text: "Run second command" }],
+        processed_at: "2026-04-01T00:00:01Z",
+      },
+      {
+        id: "sevt_span_start_2",
+        type: "span.model_request_start",
+        processed_at: "2026-04-01T00:00:01.100Z",
+      },
+      {
+        id: "sevt_tool_b",
+        type: "agent.tool_use",
+        name: "bash",
+        input: { command: "echo b" },
+        processed_at: "2026-04-01T00:00:01.200Z",
+      },
+      {
+        id: "sevt_span_end_2",
+        type: "span.model_request_end",
+        is_error: false,
+        model_request_start_id: "sevt_span_start_2",
+        model_usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+        processed_at: "2026-04-01T00:00:01.300Z",
+      },
+      {
+        id: "sevt_tool_result_b",
+        type: "agent.tool_result",
+        tool_use_id: "sevt_tool_b",
+        content: [{ type: "text", text: "b" }],
+        is_error: false,
+        processed_at: "2026-04-01T00:00:01.400Z",
+      },
+      {
+        id: "sevt_idle_2",
+        type: "session.status_idle",
+        stop_reason: { type: "end_turn" },
+        processed_at: "2026-04-01T00:00:01.500Z",
+      },
+    ]);
+    const anthropic = wrapAnthropic(fakeAnthropic, {
+      client,
+      tracingEnabled: true,
+    });
+
+    const stream =
+      await anthropic.beta.sessions.events.stream("sesn_multi_turn");
+    for await (const _event of stream) {
+      // consume the full stream across multiple idle turn boundaries
+    }
+    await client.awaitPendingTraceBatches();
+
+    const toolPostBodies = callSpy.mock.calls
+      .filter((call: any) => (call[1] as any).method === "POST")
+      .map((call: any) => parseRequestBody((call[1] as any).body))
+      .filter((body: any) => body.name === "bash" && body.run_type === "tool");
+    expect(toolPostBodies).toHaveLength(2);
+    expect(toolPostBodies.map((body: any) => body.inputs.id).sort()).toEqual([
+      "sevt_tool_a",
+      "sevt_tool_b",
+    ]);
+  });
+
   test("traces web search tool use events as LLM tool calls and tool child runs", async () => {
     const { client, callSpy } = mockClient();
     const fakeAnthropic = createFakeAnthropic([
