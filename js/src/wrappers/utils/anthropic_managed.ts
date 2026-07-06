@@ -49,7 +49,6 @@ function getManagedAgentText(content: unknown): string {
 function managedAgentSessionEventsAggregator(
   chunks: BetaManagedAgentsStreamSessionEvents[],
 ): KVMap {
-  const messages: KVMap[] = [];
   const toolCalls: KVMap[] = [];
   const toolResults: KVMap[] = [];
   const errors: KVMap[] = [];
@@ -68,13 +67,6 @@ function managedAgentSessionEventsAggregator(
   for (const event of chunks) {
     switch (event.type) {
       case "agent.message": {
-        event.content;
-        messages.push({
-          id: event.id,
-          role: "assistant",
-          content: contentBlocksToChatContent(event.content),
-          processed_at: event.processed_at,
-        });
         if (typeof event.id === "string") previews.delete(event.id);
         break;
       }
@@ -135,11 +127,13 @@ function managedAgentSessionEventsAggregator(
   const messageEvents = chunks.filter(
     (event) => event.type === "agent.message",
   );
+  const lastMessage =
+    getManagedAgentAssistantOutputMessages(messageEvents).at(-1);
   return {
     content: messageEvents.flatMap((message) =>
       Array.isArray(message.content) ? message.content : [],
     ),
-    messages: getManagedAgentAssistantOutputMessages(chunks),
+    ...(lastMessage ? { messages: [lastMessage] } : {}),
     tool_calls: toolCalls,
     tool_results: toolResults,
     errors,
@@ -301,6 +295,23 @@ function getManagedAgentStreamError(
   return undefined;
 }
 
+function getManagedAgentTurnError(
+  chunks: BetaManagedAgentsStreamSessionEvents[],
+): string | undefined {
+  const idleEvent = [...chunks]
+    .reverse()
+    .find((event) => event.type === "session.status_idle");
+  if (idleEvent?.type === "session.status_idle") {
+    if (idleEvent.stop_reason.type === "requires_action") {
+      return `Interrupted: requires_action (${idleEvent.stop_reason.event_ids.join(", ")})`;
+    }
+    if (idleEvent.stop_reason.type === "retries_exhausted") {
+      return "Interrupted: retries_exhausted";
+    }
+  }
+  return undefined;
+}
+
 function stripLangSmithExtraFromRequestOptions<T>(options: T): T {
   if (
     typeof options === "object" &&
@@ -322,6 +333,26 @@ function getProcessedAtMillis(
     : undefined;
 }
 
+function getFirstProcessedAtMillis(
+  events: BetaManagedAgentsStreamSessionEvents[],
+): number | undefined {
+  for (const event of events) {
+    const processedAt = getProcessedAtMillis(event);
+    if (processedAt !== undefined) return processedAt;
+  }
+  return undefined;
+}
+
+function getLastProcessedAtMillis(
+  events: BetaManagedAgentsStreamSessionEvents[],
+): number | undefined {
+  for (const event of [...events].reverse()) {
+    const processedAt = getProcessedAtMillis(event);
+    if (processedAt !== undefined) return processedAt;
+  }
+  return undefined;
+}
+
 async function createManagedAgentChildRuns(
   parentRun: RunTree,
   chunks: {
@@ -332,12 +363,21 @@ async function createManagedAgentChildRuns(
   options: {
     modelConfig: KVMap | undefined;
     systemPrompt: string | undefined;
-    pendingChildRuns: Map<string, RunTree>;
+    pendingToolUseEvents: Map<
+      string,
+      OnlyType<
+        "agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use"
+      >
+    >;
     completedChildRunIds: Set<string>;
   },
 ): Promise<void> {
-  const { modelConfig, systemPrompt, pendingChildRuns, completedChildRunIds } =
-    options;
+  const {
+    modelConfig,
+    systemPrompt,
+    pendingToolUseEvents,
+    completedChildRunIds,
+  } = options;
 
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
@@ -485,84 +525,79 @@ async function createManagedAgentChildRuns(
     const isCurrentTurnTool =
       chunks.turn.includes(toolUse) ||
       (result ? chunks.turn.includes(result) : false);
-    const pendingRun = pendingChildRuns.get(toolUseID);
+    const pendingToolUse = pendingToolUseEvents.get(toolUseID);
+
     if (
       completedChildRunIds.has(toolUseID) &&
-      pendingRun == null &&
+      pendingToolUse == null &&
       !isCurrentTurnTool
     ) {
       continue;
     }
 
+    // The model requested a tool but execution is blocked on user confirmation
+    // or an external custom-tool result. Do not create a tool child yet; the
+    // execution belongs to the later turn that receives the result.
+    if (result == null) {
+      if (
+        chunks.turn.includes(toolUse) &&
+        !completedChildRunIds.has(toolUseID)
+      ) {
+        pendingToolUseEvents.set(toolUseID, toolUse);
+      }
+      continue;
+    }
+
+    if (!isCurrentTurnTool && pendingToolUse == null) {
+      continue;
+    }
+
+    const toolUseForRun = pendingToolUse ?? toolUse;
     const toolName =
-      typeof toolUse.name === "string" ? toolUse.name : "ManagedAgentTool";
-    const startTime = getProcessedAtMillis(toolUse) ?? Date.now();
+      typeof toolUseForRun.name === "string"
+        ? toolUseForRun.name
+        : "ManagedAgentTool";
+    const startTime =
+      pendingToolUse != null
+        ? (getProcessedAtMillis(result) ?? Date.now())
+        : (getProcessedAtMillis(toolUseForRun) ?? Date.now());
+    const index =
+      pendingToolUse != null
+        ? chunks.all.indexOf(result)
+        : chunks.all.indexOf(toolUseForRun);
 
     childSpecs.push({
       startTime,
-      index: chunks.all.indexOf(toolUse),
+      index,
       createAndPost: async () => {
-        const resultArgs = (() => {
-          if (result == null) return undefined;
-          return [
-            result ? { event: result, content: result.content } : {},
-            result?.is_error
-              ? (getManagedAgentText(result.content) ?? "Tool execution failed")
-              : undefined,
-            result ? getProcessedAtMillis(result) : undefined,
-          ] as [
-            outputs: KVMap,
-            error: string | undefined,
-            endTime: number | undefined,
-          ];
-        })();
+        const resultArgs = [
+          { event: result, content: result.content },
+          result.is_error
+            ? (getManagedAgentText(result.content) ?? "Tool execution failed")
+            : undefined,
+          getProcessedAtMillis(result),
+        ] as [
+          outputs: KVMap,
+          error: string | undefined,
+          endTime: number | undefined,
+        ];
 
-        // Best-case scenario, tool result is present in the current turn, we can post the child run immediately.
-        if (pendingRun == null && resultArgs != null) {
-          const childRun = parentRun.createChild({
-            name: toolName,
-            run_type: "tool",
-            inputs: {
-              id: toolUseID,
-              name: toolUse.name,
-              input: toolUse.input,
-              event: toolUse,
-            },
-            metadata,
-            start_time: startTime,
-          });
-          await childRun.end(...resultArgs);
-          await childRun.postRun();
-          completedChildRunIds.add(toolUseID);
-          return;
-        }
-
-        // Post the partial run instead, wait for the next turn to complete it.
-        if (pendingRun == null && resultArgs == null) {
-          const childRun = parentRun.createChild({
-            name: toolName,
-            run_type: "tool",
-            inputs: {
-              id: toolUseID,
-              name: toolUse.name,
-              input: toolUse.input,
-              event: toolUse,
-            },
-            metadata,
-            start_time: startTime,
-          });
-          pendingChildRuns.set(toolUseID, childRun);
-          await childRun.postRun();
-          return;
-        }
-
-        // We now have the tool result, we can complete the pending child run.
-        if (pendingRun != null && resultArgs != null) {
-          pendingChildRuns.delete(toolUseID);
-          await pendingRun.end(...resultArgs);
-          await pendingRun.patchRun();
-          completedChildRunIds.add(toolUseID);
-        }
+        const childRun = parentRun.createChild({
+          name: toolName,
+          run_type: "tool",
+          inputs: {
+            id: toolUseID,
+            name: toolUseForRun.name,
+            input: toolUseForRun.input,
+            event: toolUseForRun,
+          },
+          metadata,
+          start_time: startTime,
+        });
+        await childRun.end(...resultArgs);
+        await childRun.postRun();
+        pendingToolUseEvents.delete(toolUseID);
+        completedChildRunIds.add(toolUseID);
       },
     });
   }
@@ -591,6 +626,7 @@ export function wrapManagedAgentSessionEvents({
     sessionID: string,
     params?: KVMap,
     requestOptions?: { langsmithExtra?: Partial<RunTreeConfig> },
+    startTime?: number,
   ) => {
     const runtimeConfig = requestOptions?.langsmithExtra ?? {};
     const parentRun = getCurrentRunTree(true);
@@ -600,6 +636,7 @@ export function wrapManagedAgentSessionEvents({
       name: runtimeConfig.name ?? cleanedOptions.name ?? "ClaudeManagedAgent",
       run_type: "chain",
       inputs: { session_id: sessionID },
+      ...(startTime ? { start_time: startTime } : {}),
       tags: [
         ...new Set([
           ...(cleanedOptions.tags ?? []),
@@ -661,12 +698,6 @@ export function wrapManagedAgentSessionEvents({
           sanitizedArgs.pop();
         }
 
-        const runTree = createManagedAgentStreamRun(
-          sessionID,
-          params,
-          requestOptions,
-        );
-
         const sessionPromise: Promise<BetaManagedAgentsSession | undefined> =
           originalBeta.sessions?.retrieve
             ? originalBeta.sessions.retrieve
@@ -683,7 +714,12 @@ export function wrapManagedAgentSessionEvents({
 
         const allChunks: BetaManagedAgentsStreamSessionEvents[] = [];
         const turnChunkLengths: Set<number> = new Set();
-        const pendingChildRuns: Map<string, RunTree> = new Map();
+        const pendingToolUseEvents: Map<
+          string,
+          OnlyType<
+            "agent.tool_use" | "agent.mcp_tool_use" | "agent.custom_tool_use"
+          >
+        > = new Map();
         const completedChildRunIds: Set<string> = new Set();
 
         let flushLength = 0;
@@ -695,51 +731,7 @@ export function wrapManagedAgentSessionEvents({
         ) => {
           const chunks = allChunks.slice(flushLength);
           flushLength = allChunks.length;
-          turnChunkLengths.add(flushLength);
-
-          if (kind === "done" || kind === "throw") {
-            const chunkSlices = [...turnChunkLengths].reduce(
-              (acc, item, idx, lst) => {
-                const prev = idx > 0 ? lst[idx - 1] : 0;
-                acc.push(allChunks.slice(prev, item));
-                return acc;
-              },
-              [] as BetaManagedAgentsStreamSessionEvents[][],
-            );
-
-            const firstTurn = chunkSlices.at(0) ?? [];
-            const lastTurn = chunkSlices.at(-1) ?? [];
-
-            const inputEvents = getManagedAgentInputEvents(firstTurn);
-            runTree.inputs = {
-              ...processManagedAgentStreamInputs({
-                args: [sessionID, params, sanitizedArgs[2]],
-              }),
-              ...(inputEvents.length > 0
-                ? {
-                    events: inputEvents,
-                    messages: getManagedAgentChatMessages(inputEvents),
-                  }
-                : {}),
-            };
-
-            await runTree.end(
-              managedAgentSessionEventsAggregator(lastTurn),
-              userError ?? getManagedAgentStreamError(lastTurn),
-              getProcessedAtMillis(allChunks.at(-1)),
-            );
-
-            // Flush out any pending child runs that have not yet been completed.
-            for (const pendingRun of pendingChildRuns.values()) {
-              await pendingRun.end(
-                undefined,
-                "Tool execution did not complete",
-              );
-              await pendingRun.patchRun();
-            }
-
-            await runTree.postRun();
-          }
+          if (chunks.length > 0) turnChunkLengths.add(flushLength);
 
           // Question: should we re-attempt to fetch when finalizing again?
           // ie if the agent's system prompt has changed mid-stream
@@ -752,6 +744,43 @@ export function wrapManagedAgentSessionEvents({
           const systemPrompt = session?.agent.system ?? undefined;
 
           if (chunks.length > 0) {
+            const turnStartTime =
+              getFirstProcessedAtMillis(chunks) ?? Date.now();
+            const rawTurnEndTime = getLastProcessedAtMillis(chunks);
+            const turnEndTime =
+              rawTurnEndTime !== undefined && rawTurnEndTime >= turnStartTime
+                ? rawTurnEndTime
+                : turnStartTime;
+            const runTree = createManagedAgentStreamRun(
+              sessionID,
+              params,
+              requestOptions,
+              turnStartTime,
+            );
+            const inputEvents = getManagedAgentInputEvents(chunks);
+            runTree.inputs = {
+              ...processManagedAgentStreamInputs({
+                args: [sessionID, params, sanitizedArgs[2]],
+              }),
+              ...(inputEvents.length > 0
+                ? {
+                    events: inputEvents,
+                    messages: getManagedAgentChatMessages(inputEvents),
+                  }
+                : {}),
+            };
+
+            const turnError =
+              userError ??
+              getManagedAgentStreamError(chunks) ??
+              getManagedAgentTurnError(chunks);
+            await runTree.end(
+              managedAgentSessionEventsAggregator(chunks),
+              turnError,
+              turnEndTime,
+            );
+            await runTree.postRun();
+
             await createManagedAgentChildRuns(
               runTree,
               { turn: chunks, all: allChunks },
@@ -759,10 +788,16 @@ export function wrapManagedAgentSessionEvents({
               {
                 modelConfig,
                 systemPrompt,
-                pendingChildRuns,
+                pendingToolUseEvents,
                 completedChildRunIds,
               },
             );
+          }
+
+          if (kind === "done" || kind === "throw") {
+            // Pending tool uses without results were never executed, so no tool
+            // child run was created. Clear them when the stream ends.
+            pendingToolUseEvents.clear();
           }
         };
 

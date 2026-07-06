@@ -1647,7 +1647,7 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
     }
   });
 
-  describe.skip("additional managed agent scenarios", () => {
+  describe.only("additional managed agent scenarios", () => {
     async function createManagedAgentFixture(
       anthropic: any,
       suffix: string,
@@ -1780,19 +1780,19 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
         const eventsById = new Map<string, any>();
         for await (const event of stream) {
           if (event.id) eventsById.set(event.id, event);
-          if (
-            event.type === "session.status_idle" &&
-            event.stop_reason?.type === "requires_action"
-          ) {
-            await anthropic.beta.sessions.events.send(fixture.session.id, {
-              events: event.stop_reason.event_ids.map((eventId: string) => ({
-                type: "user.tool_confirmation",
-                tool_use_id: eventId,
-                result: "allow",
-              })),
-            });
+          if (event.type === "session.status_idle") {
+            if (event.stop_reason?.type === "requires_action") {
+              await anthropic.beta.sessions.events.send(fixture.session.id, {
+                events: event.stop_reason.event_ids.map((eventId: string) => ({
+                  type: "user.tool_confirmation",
+                  tool_use_id: eventId,
+                  result: "allow",
+                })),
+              });
+              continue;
+            }
+            break;
           }
-          if (event.type === "session.status_idle") break;
         }
         expect(
           [...eventsById.values()].some(
@@ -1845,19 +1845,19 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
           if (event.type === "agent.custom_tool_use") {
             customToolUses.set(event.id, event);
           }
-          if (
-            event.type === "session.status_idle" &&
-            event.stop_reason?.type === "requires_action"
-          ) {
-            await anthropic.beta.sessions.events.send(fixture.session.id, {
-              events: event.stop_reason.event_ids.map((eventId: string) => ({
-                type: "user.custom_tool_result",
-                custom_tool_use_id: eventId,
-                content: [{ type: "text", text: "bar" }],
-              })),
-            });
+          if (event.type === "session.status_idle") {
+            if (event.stop_reason?.type === "requires_action") {
+              await anthropic.beta.sessions.events.send(fixture.session.id, {
+                events: event.stop_reason.event_ids.map((eventId: string) => ({
+                  type: "user.custom_tool_result",
+                  custom_tool_use_id: eventId,
+                  content: [{ type: "text", text: "bar" }],
+                })),
+              });
+              continue;
+            }
+            break;
           }
-          if (event.type === "session.status_idle") break;
         }
         expect(customToolUses.size).toBeGreaterThan(0);
       } finally {
