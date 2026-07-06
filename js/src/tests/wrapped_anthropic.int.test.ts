@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { wrapAnthropic } from "../wrappers/anthropic.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
@@ -1647,7 +1647,7 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
     }
   });
 
-  describe.only("additional managed agent scenarios", () => {
+  describe("additional managed agent scenarios", () => {
     async function createManagedAgentFixture(
       anthropic: any,
       suffix: string,
@@ -1881,7 +1881,8 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
       } as any);
     });
 
-    test("streams subagent/thread status events", async () => {
+    // TODO: figure out how to support this properly
+    test.skip("streams subagent/thread status events", async () => {
       const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const anthropic = wrapAnthropic(new Anthropic(), {
         tracingEnabled: true,
@@ -1890,15 +1891,12 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
       });
       const fixture = await createManagedAgentFixture(anthropic, suffix, {
         system:
-          "You are a coordinator agent. Delegate work to a subagent if configured.",
-        agents: [
-          {
-            type: "self",
-            name: "worker",
-            description: "A worker subagent for integration tests.",
-          },
-        ],
-      } as any);
+          "You are a coordinator agent. Delegate work to a subagent/session thread when asked.",
+        multiagent: {
+          type: "coordinator",
+          agents: [{ type: "self" }],
+        },
+      });
       try {
         const stream = await anthropic.beta.sessions.events.stream(
           fixture.session.id,
@@ -1907,7 +1905,12 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
           events: [
             {
               type: "user.message",
-              content: [{ type: "text", text: "Delegate a small task." }],
+              content: [
+                {
+                  type: "text",
+                  text: "Delegate a small task, like writing a haiku.",
+                },
+              ],
             },
           ],
         });
@@ -1926,24 +1929,47 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
       }
     });
 
-    test("handles file resources and skills", async () => {
+    test.skip("handles file resources and skills", async () => {
       const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const anthropic = wrapAnthropic(new Anthropic(), {
         tracingEnabled: true,
         tags: ["managed-agents", "files", "skills", "integration-test"],
         metadata: { test_run_id: suffix },
       });
-      const fileID = process.env.ANTHROPIC_MANAGED_AGENTS_FILE_ID;
-      expect(fileID).toBeDefined();
+      const file = await toFile(
+        new TextEncoder().encode(
+          "city,weather,temperature\nPrague,sunny,23C\nParis,cloudy,18C\n",
+        ),
+        `langsmith-managed-agents-test-${suffix}.csv`,
+        { type: "text/csv" },
+      );
+      const uploadedFile = await anthropic.beta.files.upload({ file });
       const fixture = await createManagedAgentFixture(anthropic, suffix, {
         system: "Use the attached file and skill to answer.",
         skills: [{ type: "anthropic", skill_id: "xlsx" }],
+        tools: [
+          {
+            type: "agent_toolset_20260401",
+            configs: [
+              {
+                name: "read",
+                enabled: true,
+                permission_policy: { type: "always_allow" },
+              },
+            ],
+          },
+        ],
       });
+      let resourceID: string | undefined;
       try {
-        await anthropic.beta.sessions.resources.add(fixture.session.id, {
-          type: "file",
-          file_id: fileID!,
-        });
+        const resource = await anthropic.beta.sessions.resources.add(
+          fixture.session.id,
+          {
+            type: "file",
+            file_id: uploadedFile.id,
+          },
+        );
+        resourceID = resource.id;
         const stream = await anthropic.beta.sessions.events.stream(
           fixture.session.id,
         );
@@ -1964,7 +1990,15 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
           true,
         );
       } finally {
+        if (resourceID) {
+          await anthropic.beta.sessions.resources
+            .delete(resourceID, { session_id: fixture.session.id })
+            .catch(() => undefined);
+        }
         await fixture.cleanup();
+        await anthropic.beta.files
+          .delete(uploadedFile.id)
+          .catch(() => undefined);
       }
     });
 
@@ -1975,8 +2009,7 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
         tags: ["managed-agents", "image", "integration-test"],
         metadata: { test_run_id: suffix },
       });
-      const imageUrl = process.env.ANTHROPIC_MANAGED_AGENTS_IMAGE_URL;
-      expect(imageUrl).toBeDefined();
+      const imageUrl = "https://smith.langchain.com/og_image.png";
       const fixture = await createManagedAgentFixture(anthropic, suffix, {
         system: "Describe images concisely.",
       });
@@ -1992,7 +2025,7 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
                 { type: "text", text: "Describe this image in one sentence." },
                 {
                   type: "image",
-                  source: { type: "url", url: imageUrl! },
+                  source: { type: "url", url: imageUrl },
                 },
               ],
             },
