@@ -122,17 +122,17 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-async def test_online_evaluators_generated_client_crud(
+async def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
-    """Exercise the generated OpenAPI online evaluators resource end to end."""
+    """Exercise the generated OpenAPI evaluators resource end to end."""
     evaluator = None
-    name = "__sdk_online_evaluator_integration_" + "".join(
+    name = "__sdk_evaluator_integration_" + "".join(
         random.sample(string.ascii_lowercase, 10)
     )
 
     try:
-        created = await langchain_client.online_evaluators.create(
+        created = await langchain_client.evaluators.create(
             name=name,
             type="code",
             code_evaluator={
@@ -146,12 +146,12 @@ async def test_online_evaluators_generated_client_crud(
         assert evaluator.name == name
         assert evaluator.type == "code"
 
-        retrieved = await langchain_client.online_evaluators.retrieve(evaluator.id)
+        retrieved = await langchain_client.evaluators.retrieve(evaluator.id)
         assert retrieved.id == evaluator.id
         assert retrieved.name == name
 
         updated_name = f"{name}_updated"
-        updated = await langchain_client.online_evaluators.update(
+        updated = await langchain_client.evaluators.update(
             evaluator.id,
             name=updated_name,
         )
@@ -160,16 +160,41 @@ async def test_online_evaluators_generated_client_crud(
 
         evaluators = [
             item
-            async for item in langchain_client.online_evaluators.list(
+            async for item in langchain_client.evaluators.list(
                 name_contains=updated_name, limit=10
             )
         ]
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            await langchain_client.online_evaluators.delete(
+            await langchain_client.evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
+
+
+async def test_aread_project(langchain_client: Client) -> None:
+    """Exercise the async aread_project method against the LangSmith API."""
+    project_name = "__sdk_aread_project_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+    created = langchain_client.create_project(project_name)
+    try:
+        project = await langchain_client.aread_project(project_name=project_name)
+        assert project.id == created.id
+        assert project.name == project_name
+
+        project_by_id = await langchain_client.aread_project(
+            project_id=str(created.id), include_stats=True
+        )
+        assert project_by_id.id == created.id
+
+        nonexistent_name = "__sdk_aread_project_missing_" + "".join(
+            random.sample(string.ascii_lowercase, 10)
+        )
+        with pytest.raises(LangSmithNotFoundError):
+            await langchain_client.aread_project(project_name=nonexistent_name)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 def test_datasets(parameterized_multipart_client: Client) -> None:
@@ -3887,14 +3912,10 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
                             op, run_info, otel_context_map.get(op.id)
                         )
                         if span:
-                            self.original_otel_exporter._span_info[op.id] = {
-                                "span": span,
-                                "created_at": time.time(),
-                            }
+                            self.original_otel_exporter._span_info.set(op.id, span)
                     else:
-                        future.put(
-                            self.original_otel_exporter._span_info[op.id]["span"]
-                        )
+                        span_info = self.original_otel_exporter._span_info.get(op.id)
+                        future.put(span_info.span)
                         self.original_otel_exporter._update_span_for_run(op, run_info)
                 except Exception as e:
                     logger.exception(f"Error processing operation {op.id}: {e}")

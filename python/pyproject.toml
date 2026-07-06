@@ -83,7 +83,7 @@ livekit = [
 # the Agents SDK session (wrap_realtime_session).
 openai-realtime = [
     "openai>=1.50",
-    "openai-agents>=0.2",
+    "openai-agents>=0.0.3",
 ]
 
 # Enabled via `pip install langsmith[openai-agents]`
@@ -94,6 +94,11 @@ claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
 
 # Enabled via `pip install langsmith[google-adk]`
 google-adk = ["google-adk>=1.0.0", "wrapt>=1.16.0"]
+
+# Enabled via `pip install langsmith[google-adk-live]`
+# ADK Live (Gemini Live voice) tracing via LangSmithGoogleADKLivePlugin. Requires the
+# plugin API (``google.adk.plugins.base_plugin``), first shipped in 1.7.0.
+google-adk-live = ["google-adk>=1.14.0"]
 
 # Enabled via `pip install langsmith[strands-agents]`
 strands-agents = [

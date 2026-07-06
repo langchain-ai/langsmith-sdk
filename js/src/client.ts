@@ -75,11 +75,10 @@ import {
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
-import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
 import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
-import { Sessions } from "./_openapi_client/resources/sessions.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -1469,7 +1468,7 @@ export class Client implements LangSmithTracingClientInterface {
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
   }
 
-  public get onlineEvaluators(): OnlineEvaluators {
+  public get evaluators(): Evaluators {
     return this.openAPIClient.onlineEvaluators;
   }
 
@@ -1480,11 +1479,6 @@ export class Client implements LangSmithTracingClientInterface {
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
     return this.openAPIClient.sandboxes;
-  }
-
-  /** Access the projects resource. */
-  public get projects(): Sessions {
-    return this.openAPIClient.sessions;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */

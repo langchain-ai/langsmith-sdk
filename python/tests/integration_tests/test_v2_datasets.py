@@ -1,8 +1,7 @@
 """Integration tests for the v2 datasets resource (experiment_runs endpoint).
 
 Covers langchainplus#28358:
-  - POST /v2/datasets/{id}/experiment-runs  (new, cursor pagination)
-  - POST /api/v1/datasets/{id}/runs  (unchanged, offset pagination, bare-list response)
+  - POST /v2/datasets/{id}/experiment-runs  (cursor pagination)
 """
 
 import asyncio
@@ -83,33 +82,6 @@ def langchain_client() -> Client:
 # ---------------------------------------------------------------------------
 
 
-async def test_v2_experiment_runs_create(langchain_client: Client) -> None:
-    """v2 endpoint returns {items: [...], next_cursor} — not a bare list."""
-    dataset_name = "__test_v2_exp_runs_" + uuid7().hex
-    dataset, experiment_id = _setup_experiment(langchain_client, dataset_name)
-
-    async def _ready() -> bool:
-        page = await langchain_client.datasets.experiment_runs.create(
-            str(dataset.id), experiment_ids=[experiment_id], page_size=10
-        )
-        return len(page.items) > 0
-
-    await _wait_for_async(_ready, max_sleep_time=30)
-
-    page = await langchain_client.datasets.experiment_runs.create(
-        str(dataset.id), experiment_ids=[experiment_id], page_size=10
-    )
-
-    assert page.items is not None
-    assert len(page.items) == 3
-    assert hasattr(page, "next_cursor")
-    item = page.items[0]
-    assert item.id is not None
-    assert item.inputs is not None
-
-    _safe_delete_dataset(langchain_client, dataset_name)
-
-
 async def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) -> None:
     """page_size=1 + following next_cursor returns all examples without duplicates."""
     dataset_name = "__test_v2_exp_cursor_" + uuid7().hex
@@ -118,7 +90,7 @@ async def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) ->
     )
 
     async def _ready() -> bool:
-        page = await langchain_client.datasets.experiment_runs.create(
+        page = await langchain_client.datasets.experiment_runs.query(
             str(dataset.id), experiment_ids=[experiment_id], page_size=10
         )
         return len(page.items) == 3
@@ -131,7 +103,7 @@ async def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) ->
         kwargs: dict[str, Any] = {"experiment_ids": [experiment_id], "page_size": 1}
         if cursor:
             kwargs["cursor"] = cursor
-        page = await langchain_client.datasets.experiment_runs.create(
+        page = await langchain_client.datasets.experiment_runs.query(
             str(dataset.id), **kwargs
         )
         all_items.extend(page.items)
@@ -141,39 +113,5 @@ async def test_v2_experiment_runs_cursor_pagination(langchain_client: Client) ->
 
     assert len(all_items) == 3
     assert len({item.id for item in all_items}) == 3
-
-    _safe_delete_dataset(langchain_client, dataset_name)
-
-
-# ---------------------------------------------------------------------------
-# v1 backward-compat regression
-# ---------------------------------------------------------------------------
-
-
-async def test_v1_runs_create_backward_compat(langchain_client: Client) -> None:
-    """v1 endpoint still returns a bare list (not {items:...}) after de-publicization."""  # noqa: E501
-    dataset_name = "__test_v1_runs_compat_" + uuid7().hex
-    dataset, experiment_id = _setup_experiment(
-        langchain_client, dataset_name, num_examples=1
-    )
-
-    async def _ready() -> bool:
-        resp = await langchain_client.datasets.runs.create(
-            str(dataset.id),
-            session_ids=[experiment_id],
-            limit=10,
-            offset=0,
-            preview=True,
-        )
-        return isinstance(resp, list) and len(resp) >= 1
-
-    await _wait_for_async(_ready, max_sleep_time=30)
-
-    resp = await langchain_client.datasets.runs.create(
-        str(dataset.id), session_ids=[experiment_id], limit=10, offset=0, preview=True
-    )
-    assert isinstance(resp, list)
-    assert len(resp) >= 1
-    assert resp[0].id is not None
 
     _safe_delete_dataset(langchain_client, dataset_name)

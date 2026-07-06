@@ -44,6 +44,7 @@ def _patch_cached_client(mock_client, monkeypatch):
 
 
 def _session(**kwargs) -> EventSession:
+    kwargs.setdefault("integration", "test-integration")
     return start_session(thread_id="t1", sample_rate=24_000, **kwargs)
 
 
@@ -91,6 +92,33 @@ class TestAudioBound:
         s.finalize()
         meta = (s.run.extra or {}).get("metadata") or {}
         assert meta.get("audio_truncated") is True
+
+
+class TestIntegrationMetadata:
+    """``integration`` / ``integration_version`` → ``ls_integration*`` on root."""
+
+    def test_stamped_on_root(self):
+        s = _session(integration="google-adk-live", integration_version="2.2.0")
+        meta = (s.run.extra or {}).get("metadata") or {}
+        assert meta["ls_integration"] == "google-adk-live"
+        assert meta["ls_integration_version"] == "2.2.0"
+
+    def test_unresolved_version_recorded_as_none(self):
+        # An unresolvable framework version records the integration id anyway,
+        # with a null version (the RunTree metadata path allows null).
+        s = _session(integration="pipecat", integration_version=None)
+        meta = (s.run.extra or {}).get("metadata") or {}
+        assert meta["ls_integration"] == "pipecat"
+        assert meta["ls_integration_version"] is None
+
+    def test_caller_metadata_cannot_shadow_integration(self):
+        s = _session(
+            integration="livekit",
+            integration_version="1.0.0",
+            metadata={"ls_integration": "spoofed"},
+        )
+        meta = (s.run.extra or {}).get("metadata") or {}
+        assert meta["ls_integration"] == "livekit"
 
 
 class TestTranscriptAndTitle:

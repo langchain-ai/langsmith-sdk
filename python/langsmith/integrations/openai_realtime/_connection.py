@@ -30,6 +30,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from langsmith._internal._package_version import get_package_version
 from langsmith._internal._usage import _create_usage_metadata
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import EventSession, start_session
@@ -201,6 +202,7 @@ class _RealtimeTracer:
         # The currently open event span, kept active until the next event:
         # (event_span_cm, tracing_context_cm). None = nothing open.
         self._open: tuple[Any, Any] | None = None
+        self._model: str | None = None
 
     def observe(self, event: Any) -> None:
         """Observe one received event; span it where warranted.
@@ -214,6 +216,13 @@ class _RealtimeTracer:
         etype = getattr(event, "type", None)
         if etype is None:
             return  # not a recognizable Realtime event; nothing to span
+
+        # Capture the session's model (for the llm span's ls_model_name); the
+        # response.done payload has no model field, but the session events do.
+        if etype in ("session.created", "session.updated"):
+            model = getattr(getattr(event, "session", None), "model", None)
+            if model:
+                self._model = str(model)
 
         # No-span events: observed for side-state only.
         if etype == "response.output_audio.delta":
@@ -303,11 +312,16 @@ class _RealtimeTracer:
             self._await_audio_since = None
 
     def _record_response_llm(self, run: RunTree, response: Any) -> None:
+        metadata: dict[str, Any] = {
+            "status": getattr(response, "status", None),
+            "ls_provider": "openai",
+            "ls_model_name": self._model,
+        }
         self._session.record_llm(
             run,
             outputs=response_assistant_output(response),
             usage_metadata=response_usage_metadata(response),
-            metadata={"status": getattr(response, "status", None)},
+            metadata=metadata,
         )
 
 
@@ -409,6 +423,8 @@ class _RealtimeTracingSession:
             max_audio_seconds=self._max_audio_seconds,
             client=self._client,
             replicas=self._replicas,
+            integration="openai-realtime",
+            integration_version=get_package_version("openai"),
         )
         self._ctx = tracing_context(
             metadata={"thread_id": self._thread_id},

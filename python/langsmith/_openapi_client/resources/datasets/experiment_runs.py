@@ -19,8 +19,8 @@ from ..._response import (
 )
 from ...pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from ..._base_client import AsyncPaginator, make_request_options
-from ...types.datasets import experiment_run_create_params
-from ...types.datasets.experiment_run_create_response import ExperimentRunCreateResponse
+from ...types.datasets import experiment_run_query_params
+from ...types.datasets.experiment_run_query_response import ExperimentRunQueryResponse
 
 __all__ = ["ExperimentRunsResource", "AsyncExperimentRunsResource"]
 
@@ -45,7 +45,7 @@ class ExperimentRunsResource(SyncAPIResource):
         """
         return ExperimentRunsResourceWithStreamingResponse(self)
 
-    def create(
+    def query(
         self,
         dataset_id: str,
         *,
@@ -104,14 +104,14 @@ class ExperimentRunsResource(SyncAPIResource):
             ]
         ]
         | Omit = omit,
-        sort: experiment_run_create_params.Sort | Omit = omit,
+        sort: experiment_run_query_params.Sort | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorPostPagination[ExperimentRunCreateResponse]:
+    ) -> SyncItemsCursorPostPagination[ExperimentRunQueryResponse]:
         """
         Returns a paginated page of dataset examples with runs from the requested
         experiments. Response uses the canonical `{items, next_cursor}` envelope.
@@ -151,7 +151,7 @@ class ExperimentRunsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
         return self._get_api_list(
             path_template("/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
-            page=SyncItemsCursorPostPagination[ExperimentRunCreateResponse],
+            page=SyncItemsCursorPostPagination[ExperimentRunQueryResponse],
             body=maybe_transform(
                 {
                     "comparative_experiment_id": comparative_experiment_id,
@@ -163,12 +163,12 @@ class ExperimentRunsResource(SyncAPIResource):
                     "selects": selects,
                     "sort": sort,
                 },
-                experiment_run_create_params.ExperimentRunCreateParams,
+                experiment_run_query_params.ExperimentRunQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ExperimentRunCreateResponse,
+            model=ExperimentRunQueryResponse,
             method="post",
         )
 
@@ -193,7 +193,7 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
         """
         return AsyncExperimentRunsResourceWithStreamingResponse(self)
 
-    def create(
+    def query(
         self,
         dataset_id: str,
         *,
@@ -252,14 +252,14 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
             ]
         ]
         | Omit = omit,
-        sort: experiment_run_create_params.Sort | Omit = omit,
+        sort: experiment_run_query_params.Sort | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[ExperimentRunCreateResponse, AsyncItemsCursorPostPagination[ExperimentRunCreateResponse]]:
+    ) -> AsyncPaginator[ExperimentRunQueryResponse, AsyncItemsCursorPostPagination[ExperimentRunQueryResponse]]:
         """
         Returns a paginated page of dataset examples with runs from the requested
         experiments. Response uses the canonical `{items, next_cursor}` envelope.
@@ -299,7 +299,7 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
         return self._get_api_list(
             path_template("/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
-            page=AsyncItemsCursorPostPagination[ExperimentRunCreateResponse],
+            page=AsyncItemsCursorPostPagination[ExperimentRunQueryResponse],
             body=maybe_transform(
                 {
                     "comparative_experiment_id": comparative_experiment_id,
@@ -311,12 +311,12 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
                     "selects": selects,
                     "sort": sort,
                 },
-                experiment_run_create_params.ExperimentRunCreateParams,
+                experiment_run_query_params.ExperimentRunQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ExperimentRunCreateResponse,
+            model=ExperimentRunQueryResponse,
             method="post",
         )
 
@@ -325,8 +325,8 @@ class ExperimentRunsResourceWithRawResponse:
     def __init__(self, experiment_runs: ExperimentRunsResource) -> None:
         self._experiment_runs = experiment_runs
 
-        self.create = to_raw_response_wrapper(
-            experiment_runs.create,
+        self.query = to_raw_response_wrapper(
+            experiment_runs.query,
         )
 
 
@@ -334,8 +334,8 @@ class AsyncExperimentRunsResourceWithRawResponse:
     def __init__(self, experiment_runs: AsyncExperimentRunsResource) -> None:
         self._experiment_runs = experiment_runs
 
-        self.create = async_to_raw_response_wrapper(
-            experiment_runs.create,
+        self.query = async_to_raw_response_wrapper(
+            experiment_runs.query,
         )
 
 
@@ -343,8 +343,8 @@ class ExperimentRunsResourceWithStreamingResponse:
     def __init__(self, experiment_runs: ExperimentRunsResource) -> None:
         self._experiment_runs = experiment_runs
 
-        self.create = to_streamed_response_wrapper(
-            experiment_runs.create,
+        self.query = to_streamed_response_wrapper(
+            experiment_runs.query,
         )
 
 
@@ -352,6 +352,6 @@ class AsyncExperimentRunsResourceWithStreamingResponse:
     def __init__(self, experiment_runs: AsyncExperimentRunsResource) -> None:
         self._experiment_runs = experiment_runs
 
-        self.create = async_to_streamed_response_wrapper(
-            experiment_runs.create,
+        self.query = async_to_streamed_response_wrapper(
+            experiment_runs.query,
         )

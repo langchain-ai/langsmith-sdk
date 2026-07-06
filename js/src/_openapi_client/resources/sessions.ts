@@ -807,8 +807,7 @@ export type SessionSortableColumns =
   | 'latency_p50'
   | 'latency_p99'
   | 'error_rate'
-  | 'feedback'
-  | 'runs_count';
+  | 'feedback';
 
 /**
  * Timedelta input.

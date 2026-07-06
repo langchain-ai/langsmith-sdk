@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from langsmith import utils as ls_utils
 from langsmith.client import Client
 
+from ._utils import otel_safe_attribute_value, set_langsmith_metadata_attribute
+
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, SpanContext
 
@@ -22,6 +24,8 @@ __all__ = [
     "OtelExporter",
     "langsmith_run_id_from_otel_span_id",
     "get_langsmith_run_url_for_span",
+    "otel_safe_attribute_value",
+    "set_langsmith_metadata_attribute",
 ]
 
 

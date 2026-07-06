@@ -36,9 +36,10 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info, runs, datasets, sessions, sandboxes, online_evaluators
+    from .resources import info, runs, issues, datasets, sessions, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.runs import RunsResource, AsyncRunsResource
+    from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.sessions import SessionsResource, AsyncSessionsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
@@ -153,6 +154,12 @@ class Langsmith(SyncAPIClient):
         from .resources.info import InfoResource
 
         return InfoResource(self)
+
+    @cached_property
+    def issues(self) -> IssuesResource:
+        from .resources.issues import IssuesResource
+
+        return IssuesResource(self)
 
     @cached_property
     def sandboxes(self) -> SandboxesResource:
@@ -399,6 +406,12 @@ class AsyncLangsmith(AsyncAPIClient):
         return AsyncInfoResource(self)
 
     @cached_property
+    def issues(self) -> AsyncIssuesResource:
+        from .resources.issues import AsyncIssuesResource
+
+        return AsyncIssuesResource(self)
+
+    @cached_property
     def sandboxes(self) -> AsyncSandboxesResource:
         from .resources.sandboxes import AsyncSandboxesResource
 
@@ -581,6 +594,12 @@ class LangsmithWithRawResponse:
         return InfoResourceWithRawResponse(self._client.info)
 
     @cached_property
+    def issues(self) -> issues.IssuesResourceWithRawResponse:
+        from .resources.issues import IssuesResourceWithRawResponse
+
+        return IssuesResourceWithRawResponse(self._client.issues)
+
+    @cached_property
     def sandboxes(self) -> sandboxes.SandboxesResourceWithRawResponse:
         from .resources.sandboxes import SandboxesResourceWithRawResponse
 
@@ -622,6 +641,12 @@ class AsyncLangsmithWithRawResponse:
         from .resources.info import AsyncInfoResourceWithRawResponse
 
         return AsyncInfoResourceWithRawResponse(self._client.info)
+
+    @cached_property
+    def issues(self) -> issues.AsyncIssuesResourceWithRawResponse:
+        from .resources.issues import AsyncIssuesResourceWithRawResponse
+
+        return AsyncIssuesResourceWithRawResponse(self._client.issues)
 
     @cached_property
     def sandboxes(self) -> sandboxes.AsyncSandboxesResourceWithRawResponse:
@@ -667,6 +692,12 @@ class LangsmithWithStreamedResponse:
         return InfoResourceWithStreamingResponse(self._client.info)
 
     @cached_property
+    def issues(self) -> issues.IssuesResourceWithStreamingResponse:
+        from .resources.issues import IssuesResourceWithStreamingResponse
+
+        return IssuesResourceWithStreamingResponse(self._client.issues)
+
+    @cached_property
     def sandboxes(self) -> sandboxes.SandboxesResourceWithStreamingResponse:
         from .resources.sandboxes import SandboxesResourceWithStreamingResponse
 
@@ -708,6 +739,12 @@ class AsyncLangsmithWithStreamedResponse:
         from .resources.info import AsyncInfoResourceWithStreamingResponse
 
         return AsyncInfoResourceWithStreamingResponse(self._client.info)
+
+    @cached_property
+    def issues(self) -> issues.AsyncIssuesResourceWithStreamingResponse:
+        from .resources.issues import AsyncIssuesResourceWithStreamingResponse
+
+        return AsyncIssuesResourceWithStreamingResponse(self._client.issues)
 
     @cached_property
     def sandboxes(self) -> sandboxes.AsyncSandboxesResourceWithStreamingResponse:

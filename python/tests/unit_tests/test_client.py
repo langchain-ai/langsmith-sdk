@@ -877,7 +877,7 @@ def test_create_run_unicode() -> None:
     client.update_run(id_, status="completed")
 
 
-def test_online_evaluators_uses_generated_openapi_resource() -> None:
+def test_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
@@ -891,7 +891,7 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
             info=ls_schemas.LangSmithInfo(),
         )
 
-        assert client.online_evaluators is resource
+        assert client.evaluators is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
@@ -902,7 +902,7 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.read == 5.678
 
 
-def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
+def test_async_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
@@ -915,7 +915,7 @@ def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
             timeout_ms=(1234, 5678),
         )
 
-        assert client.online_evaluators is resource
+        assert client.evaluators is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
@@ -2118,6 +2118,31 @@ def test__dumps_json():
     assert '"chars"' in serialized_str
     assert "\\uD800" not in serialized_str
     assert "\\uDC00" not in serialized_str
+
+
+def test__dumps_json_normalizes_unsupported_dict_keys():
+    class TupleKeyedDict:
+        def to_dict(self) -> Dict:
+            return {(1, 2): "custom"}
+
+    serialized_json = _dumps_json(
+        {
+            (1, 2): "value",
+            pathlib.Path("path-key"): "path",
+            frozenset({1}): "frozen",
+            "nested": [{("a", "b"): pathlib.Path("c")}],
+            "custom": TupleKeyedDict(),
+        }
+    )
+
+    assert isinstance(serialized_json, bytes)
+    assert _orjson.loads(serialized_json) == {
+        "(1, 2)": "value",
+        "path-key": "path",
+        "[1]": "frozen",
+        "nested": [{"('a', 'b')": "c"}],
+        "custom": {"(1, 2)": "custom"},
+    }
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -6712,10 +6737,9 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
 def test_removed_sdk_methods_absent() -> None:
     """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
     from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
-    from langsmith._openapi_client.resources.datasets.runs import RunsResource
 
-    assert not hasattr(RunsResource, "delta"), (
-        "datasets.runs.delta was de-publicized in PR #28358 and should not exist"
+    assert not hasattr(DatasetsResource, "runs"), (
+        "datasets.runs was de-publicized and should not exist"
     )
     assert not hasattr(DatasetsResource, "group"), (
         "datasets.group.runs was de-publicized in PR #28358 and should not exist"

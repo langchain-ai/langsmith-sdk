@@ -17,6 +17,7 @@ import base64
 import collections
 import concurrent.futures as cf
 import contextlib
+import contextvars
 import datetime
 import functools
 import importlib
@@ -69,6 +70,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _aiter as aitertools
 from langsmith._internal import _orjson, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
@@ -268,13 +270,12 @@ if TYPE_CHECKING:
         AsyncDatasetsResource,
     )
     from langsmith._openapi_client.resources.online_evaluators import (
-        AsyncOnlineEvaluatorsResource,
+        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
-    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
 
     # OTEL imports for type hints
     try:
@@ -1467,8 +1468,8 @@ class Client:
         return self._get_langsmith_api().runs
 
     @property
-    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access the online evaluator resource."""
+    def evaluators(self) -> AsyncEvaluatorsResource:
+        """Access the evaluator resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().online_evaluators
 
@@ -1477,12 +1478,6 @@ class Client:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().sandboxes
-
-    @property
-    def projects(self) -> AsyncSessionsResource:
-        """Access the projects resource."""
-        _check_backend_version(self.info.version)
-        return self._get_langsmith_api().sessions
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
@@ -4980,6 +4975,34 @@ class Client:
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
+        )
+
+    async def aread_project(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
+    ) -> ls_schemas.TracerSessionResult:
+        """Asynchronously read a project from the LangSmith API.
+
+        Args:
+            project_id (Optional[str]):
+                The ID of the project to read.
+            project_name (Optional[str]): The name of the project to read.
+                Only one of project_id or project_name may be given.
+            include_stats (bool, default=False):
+                Whether to include a project's aggregate statistics in the response.
+
+        Returns:
+            TracerSessionResult: The project.
+        """
+        return await aitertools.aio_to_thread(
+            contextvars.copy_context(),
+            self.read_project,
+            project_id=project_id,
+            project_name=project_name,
+            include_stats=include_stats,
         )
 
     def has_project(

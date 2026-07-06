@@ -28,6 +28,8 @@ import {
   OffsetPaginationCommitsResponse,
   type OffsetPaginationInsightsClusteringJobsParams,
   OffsetPaginationInsightsClusteringJobsResponse,
+  type OffsetPaginationIssuesParams,
+  OffsetPaginationIssuesResponse,
   type OffsetPaginationOnlineEvaluatorsParams,
   OffsetPaginationOnlineEvaluatorsResponse,
   type OffsetPaginationReposParams,
@@ -39,6 +41,7 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
+import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -69,6 +72,21 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
+  ResponseBodyForRunsGenerateQuery,
+  Run,
+  RunIngest,
+  RunQueryParams,
+  RunQueryV2Params,
+  RunRetrieveParams,
+  RunRetrieveV2Params,
+  RunSchema,
+  RunStatsQueryParams,
+  RunTypeEnum,
+  Runs,
+  RunsFilterDataSourceTypeEnum,
+  RunsItemsCursorPostPagination,
+} from './resources/runs.js';
+import {
   CustomChartsSection,
   CustomChartsSectionRequest,
   RunStatsGroupBy,
@@ -87,47 +105,13 @@ import {
 import {
   DataType,
   Dataset,
-  DatasetCloneParams,
-  DatasetCloneResponse,
-  DatasetCreateParams,
-  DatasetDeleteResponse,
-  DatasetListParams,
-  DatasetRetrieveCsvParams,
-  DatasetRetrieveCsvResponse,
-  DatasetRetrieveJSONLParams,
-  DatasetRetrieveJSONLResponse,
-  DatasetRetrieveOpenAIFtParams,
-  DatasetRetrieveOpenAIFtResponse,
-  DatasetRetrieveOpenAIParams,
-  DatasetRetrieveOpenAIResponse,
-  DatasetRetrieveVersionParams,
   DatasetTransformation,
-  DatasetUpdateParams,
-  DatasetUpdateResponse,
-  DatasetUpdateTagsParams,
-  DatasetUploadParams,
   DatasetVersion,
   Datasets,
-  DatasetsOffsetPaginationTopLevelArray,
   FeedbackCreateCoreSchema,
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
-import {
-  ResponseBodyForRunsGenerateQuery,
-  Run,
-  RunIngest,
-  RunQueryParams,
-  RunQueryV2Params,
-  RunRetrieveParams,
-  RunRetrieveV2Params,
-  RunSchema,
-  RunStatsQueryParams,
-  RunTypeEnum,
-  Runs,
-  RunsFilterDataSourceTypeEnum,
-  RunsItemsCursorPostPagination,
-} from './resources/runs/runs.js';
 import {
   SandboxListResponse,
   SandboxResponse,
@@ -910,6 +894,7 @@ export class Langsmith {
   runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
+  issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
@@ -918,6 +903,7 @@ Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
+Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
 
 export declare namespace Langsmith {
@@ -927,6 +913,12 @@ export declare namespace Langsmith {
   export {
     type OffsetPaginationTopLevelArrayParams as OffsetPaginationTopLevelArrayParams,
     type OffsetPaginationTopLevelArrayResponse as OffsetPaginationTopLevelArrayResponse,
+  };
+
+  export import OffsetPaginationIssues = Pagination.OffsetPaginationIssues;
+  export {
+    type OffsetPaginationIssuesParams as OffsetPaginationIssuesParams,
+    type OffsetPaginationIssuesResponse as OffsetPaginationIssuesResponse,
   };
 
   export import OffsetPaginationRepos = Pagination.OffsetPaginationRepos;
@@ -997,25 +989,6 @@ export declare namespace Langsmith {
     type FeedbackCreateCoreSchema as FeedbackCreateCoreSchema,
     type Missing as Missing,
     type SortByDatasetColumn as SortByDatasetColumn,
-    type DatasetUpdateResponse as DatasetUpdateResponse,
-    type DatasetDeleteResponse as DatasetDeleteResponse,
-    type DatasetCloneResponse as DatasetCloneResponse,
-    type DatasetRetrieveCsvResponse as DatasetRetrieveCsvResponse,
-    type DatasetRetrieveJSONLResponse as DatasetRetrieveJSONLResponse,
-    type DatasetRetrieveOpenAIResponse as DatasetRetrieveOpenAIResponse,
-    type DatasetRetrieveOpenAIFtResponse as DatasetRetrieveOpenAIFtResponse,
-    type DatasetsOffsetPaginationTopLevelArray as DatasetsOffsetPaginationTopLevelArray,
-    type DatasetCreateParams as DatasetCreateParams,
-    type DatasetUpdateParams as DatasetUpdateParams,
-    type DatasetListParams as DatasetListParams,
-    type DatasetCloneParams as DatasetCloneParams,
-    type DatasetRetrieveCsvParams as DatasetRetrieveCsvParams,
-    type DatasetRetrieveJSONLParams as DatasetRetrieveJSONLParams,
-    type DatasetRetrieveOpenAIParams as DatasetRetrieveOpenAIParams,
-    type DatasetRetrieveOpenAIFtParams as DatasetRetrieveOpenAIFtParams,
-    type DatasetRetrieveVersionParams as DatasetRetrieveVersionParams,
-    type DatasetUpdateTagsParams as DatasetUpdateTagsParams,
-    type DatasetUploadParams as DatasetUploadParams,
   };
 
   export {
@@ -1065,6 +1038,13 @@ export declare namespace Langsmith {
   };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
+
+  export {
+    Issues as Issues,
+    type Issue as Issue,
+    type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueListParams as IssueListParams,
+  };
 
   export {
     Sandboxes as Sandboxes,
