@@ -12,6 +12,7 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import base64
 import collections
@@ -274,6 +275,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+
     # OTEL imports for type hints
     try:
         from opentelemetry import trace as otel_trace  # type: ignore[import]
@@ -4972,6 +4974,33 @@ class Client:
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
+        )
+
+    async def aread_project(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
+    ) -> ls_schemas.TracerSessionResult:
+        """Asynchronously read a project from the LangSmith API.
+
+        Args:
+            project_id (Optional[str]):
+                The ID of the project to read.
+            project_name (Optional[str]): The name of the project to read.
+                Only one of project_id or project_name may be given.
+            include_stats (bool, default=False):
+                Whether to include a project's aggregate statistics in the response.
+
+        Returns:
+            TracerSessionResult: The project.
+        """
+        return await asyncio.to_thread(
+            self.read_project,
+            project_id=project_id,
+            project_name=project_name,
+            include_stats=include_stats,
         )
 
     def has_project(
