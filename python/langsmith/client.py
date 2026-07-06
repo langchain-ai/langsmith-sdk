@@ -1470,7 +1470,7 @@ class Client:
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
         _check_backend_version(self.info.version)
-        return self._get_langsmith_api().evaluators
+        return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:

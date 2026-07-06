@@ -881,7 +881,7 @@ def test_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
-        openapi_client.return_value.evaluators = resource
+        openapi_client.return_value.online_evaluators = resource
 
         client = Client(
             api_url="http://localhost:8080",
@@ -906,7 +906,7 @@ def test_async_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
-        openapi_client.return_value.evaluators = resource
+        openapi_client.return_value.online_evaluators = resource
 
         client = AsyncClient(
             api_url="http://localhost:8080",

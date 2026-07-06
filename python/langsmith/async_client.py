@@ -316,7 +316,7 @@ class AsyncClient:
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
-        return self._langsmith_api.evaluators
+        return self._langsmith_api.online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:

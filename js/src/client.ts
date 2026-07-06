@@ -1470,7 +1470,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
-    return this.openAPIClient.evaluators;
+    return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
