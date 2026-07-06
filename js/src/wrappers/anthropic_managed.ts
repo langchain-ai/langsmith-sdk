@@ -439,7 +439,6 @@ async function createManagedAgentChildRuns(
             inputs: {
               events: eventsBeforeRequest,
               system: systemPrompt,
-              // TODO: each LLM turn should include all messages preceding the model output
               messages: getManagedAgentChatMessages(eventsBeforeRequest),
               ...(startEvent ? { model_request_start: startEvent } : {}),
             },
