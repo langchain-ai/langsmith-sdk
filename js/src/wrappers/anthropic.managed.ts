@@ -659,6 +659,7 @@ export function wrapManagedAgentSessionEvents({
         const pendingChildRuns: Map<string, RunTree> = new Map();
 
         let flushLength = 0;
+        let observedTerminalEvent = false;
 
         const finalize = async (
           kind: "done" | "throw" | "flush",
@@ -747,6 +748,7 @@ export function wrapManagedAgentSessionEvents({
                 result.value.type === "session.deleted" ||
                 result.value.type === "session.error"
               ) {
+                observedTerminalEvent = true;
                 await finalize("flush");
               }
               return result;
@@ -758,7 +760,11 @@ export function wrapManagedAgentSessionEvents({
           async return(value?: unknown) {
             if (allChunks.length) {
               await iterator.return?.(value);
-              await finalize("throw", "Cancelled");
+              if (observedTerminalEvent) {
+                await finalize("done");
+              } else {
+                await finalize("throw", "Cancelled");
+              }
             } else {
               await iterator.return?.(value);
             }
