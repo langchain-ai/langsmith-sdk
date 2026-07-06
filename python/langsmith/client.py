@@ -268,7 +268,7 @@ if TYPE_CHECKING:
         AsyncDatasetsResource,
     )
     from langsmith._openapi_client.resources.online_evaluators import (
-        AsyncOnlineEvaluatorsResource,
+        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
@@ -1467,10 +1467,10 @@ class Client:
         return self._get_langsmith_api().runs
 
     @property
-    def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
-        """Access the online evaluator resource."""
+    def evaluators(self) -> AsyncEvaluatorsResource:
+        """Access the evaluator resource."""
         _check_backend_version(self.info.version)
-        return self._get_langsmith_api().online_evaluators
+        return self._get_langsmith_api().evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:

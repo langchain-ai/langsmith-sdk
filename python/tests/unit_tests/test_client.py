@@ -877,11 +877,11 @@ def test_create_run_unicode() -> None:
     client.update_run(id_, status="completed")
 
 
-def test_online_evaluators_uses_generated_openapi_resource() -> None:
+def test_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
-        openapi_client.return_value.online_evaluators = resource
+        openapi_client.return_value.evaluators = resource
 
         client = Client(
             api_url="http://localhost:8080",
@@ -891,7 +891,7 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
             info=ls_schemas.LangSmithInfo(),
         )
 
-        assert client.online_evaluators is resource
+        assert client.evaluators is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
@@ -902,11 +902,11 @@ def test_online_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.read == 5.678
 
 
-def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
+def test_async_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
     with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
-        openapi_client.return_value.online_evaluators = resource
+        openapi_client.return_value.evaluators = resource
 
         client = AsyncClient(
             api_url="http://localhost:8080",
@@ -915,7 +915,7 @@ def test_async_online_evaluators_uses_generated_openapi_resource() -> None:
             timeout_ms=(1234, 5678),
         )
 
-        assert client.online_evaluators is resource
+        assert client.evaluators is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
