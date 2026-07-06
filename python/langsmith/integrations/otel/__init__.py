@@ -5,11 +5,18 @@ from typing import Optional, cast
 
 from langsmith import utils as ls_utils
 
+from ._utils import otel_safe_attribute_value, set_langsmith_metadata_attribute
 from .processor import OtelExporter, OtelSpanProcessor
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["configure", "OtelSpanProcessor", "OtelExporter"]
+__all__ = [
+    "configure",
+    "OtelSpanProcessor",
+    "OtelExporter",
+    "otel_safe_attribute_value",
+    "set_langsmith_metadata_attribute",
+]
 
 
 def configure(

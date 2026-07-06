@@ -6,6 +6,7 @@ from typing import Any, Optional
 from urllib.parse import urljoin
 
 from langsmith import utils as ls_utils
+from langsmith.integrations.otel._utils import set_langsmith_metadata_attribute
 
 try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -56,8 +57,6 @@ except ImportError:
             )
 
     OTEL_AVAILABLE = False
-
-LANGSMITH_METADATA_PREFIX = "langsmith.metadata"
 
 
 class OtelExporter(OTLPSpanExporter):
@@ -211,8 +210,7 @@ class OtelSpanProcessor:
         """Forward span start events to the inner processor."""
         if self._metadata:
             for key, value in self._metadata.items():
-                if value is not None:
-                    span.set_attribute(f"{LANGSMITH_METADATA_PREFIX}.{key}", value)
+                set_langsmith_metadata_attribute(span, key, value)
         self._processor.on_start(span, parent_context)
 
     def on_end(self, span):

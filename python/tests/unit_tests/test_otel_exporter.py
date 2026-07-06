@@ -7,6 +7,10 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from langsmith._internal.otel._otel_exporter import OTELExporter
+from langsmith.integrations.otel import (
+    otel_safe_attribute_value,
+    set_langsmith_metadata_attribute,
+)
 from langsmith.integrations.otel.processor import OtelSpanProcessor
 
 
@@ -118,6 +122,40 @@ def test_env_var_ttl(mock_get_env_var):
         mock_get_env_var.assert_any_call("OTEL_SPAN_TTL_SECONDS", default="3600")
 
 
+def test_safe_attribute_value_preserves_primitives():
+    """OTel-safe primitive values are returned unchanged."""
+    for value in (True, b"bytes", 1, 1.5, "text"):
+        safe_value = otel_safe_attribute_value(value)
+        assert safe_value == value
+        assert type(safe_value) is type(value)
+
+
+class _Unserializable:
+    def __repr__(self):
+        return "unserializable"
+
+
+def test_safe_attribute_value_serializes_structured_values():
+    """Structured metadata values are converted to strings."""
+    assert otel_safe_attribute_value(None) is None
+    assert otel_safe_attribute_value({"nested": {"a": 1}}) == '{"nested":{"a":1}}'
+    assert otel_safe_attribute_value(["a", 1]) == '["a",1]'
+    assert (
+        otel_safe_attribute_value({"bad": _Unserializable()})
+        == "{'bad': unserializable}"
+    )
+
+
+def test_set_langsmith_metadata_attribute_sets_safe_values():
+    """Metadata helper sets converted attributes and skips None."""
+    span = MagicMock()
+
+    set_langsmith_metadata_attribute(span, "extra", {"a": 1})
+    set_langsmith_metadata_attribute(span, "empty", None)
+
+    span.set_attribute.assert_called_once_with("langsmith.metadata.extra", '{"a":1}')
+
+
 @patch(
     "langsmith.integrations.otel.processor.OtelExporter",
     return_value=MagicMock(),
@@ -133,13 +171,16 @@ def test_set_metadata_propagates_to_spans(mock_exporter_cls):
         api_key="test", project="test", SpanProcessor=lambda _: mock_inner_processor
     )
 
-    processor.set_metadata({"thread_id": "t-123", "session_id": "s-456"})
+    processor.set_metadata(
+        {"thread_id": "t-123", "session_id": "s-456", "extra": {"a": 1}}
+    )
 
     span = MagicMock()
     processor.on_start(span, parent_context=None)
 
     span.set_attribute.assert_any_call("langsmith.metadata.thread_id", "t-123")
     span.set_attribute.assert_any_call("langsmith.metadata.session_id", "s-456")
+    span.set_attribute.assert_any_call("langsmith.metadata.extra", '{"a":1}')
     mock_inner_processor.on_start.assert_called_once_with(span, None)
 
 
