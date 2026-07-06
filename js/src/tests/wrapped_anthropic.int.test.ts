@@ -1646,6 +1646,371 @@ describe("Claude Managed Agents - requires Anthropic API key", () => {
       }
     }
   });
+
+  describe.skip("additional managed agent scenarios", () => {
+    async function createManagedAgentFixture(
+      anthropic: any,
+      suffix: string,
+      agentParams: any,
+    ) {
+      const agent = await anthropic.beta.agents.create({
+        name: `LangSmith Managed Agents Scenario Test ${suffix}`,
+        model: process.env.ANTHROPIC_MANAGED_AGENTS_MODEL ?? "claude-opus-4-8",
+        metadata: { test: "langsmith-managed-agents-scenario-wrapper" },
+        ...agentParams,
+      });
+      const environment = await anthropic.beta.environments.create({
+        name: `langsmith-managed-agents-scenario-test-${suffix}`,
+        config: {
+          type: "cloud",
+          networking: { type: "unrestricted" },
+        },
+        metadata: { test: "langsmith-managed-agents-scenario-wrapper" },
+      });
+      const session = await anthropic.beta.sessions.create({
+        agent: agent.id,
+        environment_id: environment.id,
+        title: "LangSmith managed agents skipped scenario integration test",
+      });
+      return {
+        agent,
+        environment,
+        session,
+        cleanup: async () => {
+          await anthropic.beta.sessions
+            .delete(session.id)
+            .catch(() => undefined);
+          await anthropic.beta.environments
+            .delete(environment.id)
+            .catch(() => undefined);
+          await anthropic.beta.agents.archive(agent.id).catch(() => undefined);
+        },
+      };
+    }
+
+    test("handles user.interrupt", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "interrupt", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system: "You are a test agent. Use bash for long-running commands.",
+        tools: [
+          {
+            type: "agent_toolset_20260401",
+            configs: [
+              {
+                name: "bash",
+                enabled: true,
+                permission_policy: { type: "always_allow" },
+              },
+            ],
+          },
+        ],
+      });
+      try {
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [
+                {
+                  type: "text",
+                  text: "Run a long bash loop, then report completion.",
+                },
+              ],
+            },
+          ],
+        });
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [{ type: "user.interrupt" }],
+        });
+        const events: any[] = [];
+        for await (const event of stream) {
+          events.push(event);
+          if (event.type === "session.status_idle") break;
+        }
+        expect(events.some((event) => event.type === "user.interrupt")).toBe(
+          true,
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+
+    test("handles tool confirmation with user.tool_confirmation", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "tool-confirmation", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system: "You are a test agent. Use bash when asked.",
+        tools: [
+          {
+            type: "agent_toolset_20260401",
+            configs: [
+              {
+                name: "bash",
+                enabled: true,
+                permission_policy: { type: "always_ask" },
+              },
+            ],
+          },
+        ],
+      });
+      try {
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [{ type: "text", text: "Use bash to echo hello." }],
+            },
+          ],
+        });
+        const eventsById = new Map<string, any>();
+        for await (const event of stream) {
+          if (event.id) eventsById.set(event.id, event);
+          if (
+            event.type === "session.status_idle" &&
+            event.stop_reason?.type === "requires_action"
+          ) {
+            await anthropic.beta.sessions.events.send(fixture.session.id, {
+              events: event.stop_reason.event_ids.map((eventId: string) => ({
+                type: "user.tool_confirmation",
+                tool_use_id: eventId,
+                result: "allow",
+              })),
+            });
+          }
+          if (event.type === "session.status_idle") break;
+        }
+        expect(
+          [...eventsById.values()].some(
+            (event) => event.type === "agent.tool_use",
+          ),
+        ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+
+    test("handles custom tool result via user.custom_tool_result", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "custom-tool-result", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system: "You are a test agent. Use the custom tool when asked.",
+        tools: [
+          {
+            type: "custom",
+            name: "lookup_test_value",
+            description: "Returns a deterministic test value.",
+            input_schema: {
+              type: "object",
+              properties: { key: { type: "string" } },
+              required: ["key"],
+            },
+          },
+        ],
+      });
+      try {
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [
+                { type: "text", text: "Use lookup_test_value for key foo." },
+              ],
+            },
+          ],
+        });
+        const customToolUses = new Map<string, any>();
+        for await (const event of stream) {
+          if (event.type === "agent.custom_tool_use") {
+            customToolUses.set(event.id, event);
+          }
+          if (
+            event.type === "session.status_idle" &&
+            event.stop_reason?.type === "requires_action"
+          ) {
+            await anthropic.beta.sessions.events.send(fixture.session.id, {
+              events: event.stop_reason.event_ids.map((eventId: string) => ({
+                type: "user.custom_tool_result",
+                custom_tool_use_id: eventId,
+                content: [{ type: "text", text: "bar" }],
+              })),
+            });
+          }
+          if (event.type === "session.status_idle") break;
+        }
+        expect(customToolUses.size).toBeGreaterThan(0);
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+
+    test("handles user.define_outcome when supported by the SDK/API", async () => {
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+      });
+      const sessionID = process.env.ANTHROPIC_MANAGED_AGENTS_SESSION_ID;
+      expect(sessionID).toBeDefined();
+      await anthropic.beta.sessions.events.send(sessionID!, {
+        events: [
+          {
+            type: "user.define_outcome",
+            outcome: { type: "success", description: "Test outcome" },
+          } as any,
+        ],
+      } as any);
+    });
+
+    test("streams subagent/thread status events", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "subagents", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system:
+          "You are a coordinator agent. Delegate work to a subagent if configured.",
+        agents: [
+          {
+            type: "self",
+            name: "worker",
+            description: "A worker subagent for integration tests.",
+          },
+        ],
+      } as any);
+      try {
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [{ type: "text", text: "Delegate a small task." }],
+            },
+          ],
+        });
+        const events: any[] = [];
+        for await (const event of stream) {
+          events.push(event);
+          if (event.type === "session.status_idle") break;
+        }
+        expect(
+          events.some((event) =>
+            String(event.type).startsWith("session.thread_status_"),
+          ),
+        ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+
+    test("handles file resources and skills", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "files", "skills", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const fileID = process.env.ANTHROPIC_MANAGED_AGENTS_FILE_ID;
+      expect(fileID).toBeDefined();
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system: "Use the attached file and skill to answer.",
+        skills: [{ type: "anthropic", skill_id: "xlsx" }],
+      });
+      try {
+        await anthropic.beta.sessions.resources.add(fixture.session.id, {
+          type: "file",
+          file_id: fileID!,
+        });
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [{ type: "text", text: "Summarize the attached file." }],
+            },
+          ],
+        });
+        const events: any[] = [];
+        for await (const event of stream) {
+          events.push(event);
+          if (event.type === "session.status_idle") break;
+        }
+        expect(events.some((event) => event.type === "agent.message")).toBe(
+          true,
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+
+    test("handles image attachments in user messages", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const anthropic = wrapAnthropic(new Anthropic(), {
+        tracingEnabled: true,
+        tags: ["managed-agents", "image", "integration-test"],
+        metadata: { test_run_id: suffix },
+      });
+      const imageUrl = process.env.ANTHROPIC_MANAGED_AGENTS_IMAGE_URL;
+      expect(imageUrl).toBeDefined();
+      const fixture = await createManagedAgentFixture(anthropic, suffix, {
+        system: "Describe images concisely.",
+      });
+      try {
+        const stream = await anthropic.beta.sessions.events.stream(
+          fixture.session.id,
+        );
+        await anthropic.beta.sessions.events.send(fixture.session.id, {
+          events: [
+            {
+              type: "user.message",
+              content: [
+                { type: "text", text: "Describe this image in one sentence." },
+                {
+                  type: "image",
+                  source: { type: "url", url: imageUrl! },
+                },
+              ],
+            },
+          ],
+        } as any);
+        const events: any[] = [];
+        for await (const event of stream) {
+          events.push(event);
+          if (event.type === "session.status_idle") break;
+        }
+        expect(events.some((event) => event.type === "agent.message")).toBe(
+          true,
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    });
+  });
 });
 
 test("prepopulated invocation params are merged and runtime params override", async () => {

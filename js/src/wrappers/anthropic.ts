@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Stream } from "@anthropic-ai/sdk/streaming";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { RunTreeConfig } from "../index.js";
-import { wrapManagedAgentSessionEvents } from "./anthropic_managed.js";
+import { wrapManagedAgentSessionEvents } from "./utils/anthropic_managed.js";
 import {
   isTraceableFunction,
   traceable,
