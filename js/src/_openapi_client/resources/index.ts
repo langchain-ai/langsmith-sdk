@@ -10,26 +10,6 @@ export {
   type FeedbackCreateCoreSchema,
   type Missing,
   type SortByDatasetColumn,
-  type DatasetUpdateResponse,
-  type DatasetDeleteResponse,
-  type DatasetCloneResponse,
-  type DatasetRetrieveCsvResponse,
-  type DatasetRetrieveJSONLResponse,
-  type DatasetRetrieveOpenAIResponse,
-  type DatasetRetrieveOpenAIFtResponse,
-  type DatasetCreateParams,
-  type DatasetUpdateParams,
-  type DatasetListParams,
-  type DatasetCloneParams,
-  type DatasetRetrieveCsvParams,
-  type DatasetRetrieveJSONLParams,
-  type DatasetRetrieveOpenAIParams,
-  type DatasetRetrieveOpenAIFtParams,
-  type DatasetRetrieveVersionParams,
-  type DatasetUpdateTagsParams,
-  type DatasetUploadParams,
-  type DatasetVersionsOffsetPaginationTopLevelArray,
-  type DatasetsOffsetPaginationTopLevelArray,
 } from './datasets/datasets.js';
 export { Info, type InfoListResponse } from './info.js';
 export { Issues, type Issue, type IssueListParams, type IssuesOffsetPaginationIssues } from './issues.js';
@@ -76,7 +56,7 @@ export {
   type RunRetrieveParams,
   type RunQueryParams,
   type RunsItemsCursorPostPagination,
-} from './runs/runs.js';
+} from './runs.js';
 export {
   Sandboxes,
   type SandboxListResponse,

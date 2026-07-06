@@ -209,7 +209,7 @@ class Run(BaseModel):
     events: Optional[List[Event]] = None
     """`events` is the ordered list of run events (for example streaming tokens)."""
 
-    extra: Optional[object] = None
+    extra: Optional[Dict[str, object]] = None
     """`extra` is additional runtime JSON attached to the run."""
 
     feedback_stats: Optional[Dict[str, FeedbackStats]] = None
@@ -221,7 +221,7 @@ class Run(BaseModel):
     date-time), when recorded for streamed runs.
     """
 
-    inputs: Optional[object] = None
+    inputs: Optional[Dict[str, object]] = None
     """`inputs` is the run input payload (arbitrary JSON object)."""
 
     inputs_preview: Optional[str] = None
@@ -236,13 +236,13 @@ class Run(BaseModel):
     latency_seconds: Optional[float] = None
     """`latency_seconds` is wall-clock duration from start to end in seconds."""
 
-    manifest: Optional[object] = None
+    manifest: Optional[Dict[str, object]] = None
     """
     `manifest` is the serialized configuration of the traced component (for example
     the model parameters, prompt template, or pipeline definition), when recorded.
     """
 
-    metadata: Optional[object] = None
+    metadata: Optional[Dict[str, object]] = None
     """`metadata` is arbitrary user-defined JSON metadata."""
 
     name: Optional[str] = None
@@ -251,7 +251,7 @@ class Run(BaseModel):
     function name, or step name chosen when the run was traced).
     """
 
-    outputs: Optional[object] = None
+    outputs: Optional[Dict[str, object]] = None
     """`outputs` is the run output payload (arbitrary JSON object)."""
 
     outputs_preview: Optional[str] = None

@@ -1,29 +1,5 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from .runs import (
-    RunsResource,
-    AsyncRunsResource,
-    RunsResourceWithRawResponse,
-    AsyncRunsResourceWithRawResponse,
-    RunsResourceWithStreamingResponse,
-    AsyncRunsResourceWithStreamingResponse,
-)
-from .share import (
-    ShareResource,
-    AsyncShareResource,
-    ShareResourceWithRawResponse,
-    AsyncShareResourceWithRawResponse,
-    ShareResourceWithStreamingResponse,
-    AsyncShareResourceWithStreamingResponse,
-)
-from .splits import (
-    SplitsResource,
-    AsyncSplitsResource,
-    SplitsResourceWithRawResponse,
-    AsyncSplitsResourceWithRawResponse,
-    SplitsResourceWithStreamingResponse,
-    AsyncSplitsResourceWithStreamingResponse,
-)
 from .datasets import (
     DatasetsResource,
     AsyncDatasetsResource,
@@ -31,22 +7,6 @@ from .datasets import (
     AsyncDatasetsResourceWithRawResponse,
     DatasetsResourceWithStreamingResponse,
     AsyncDatasetsResourceWithStreamingResponse,
-)
-from .versions import (
-    VersionsResource,
-    AsyncVersionsResource,
-    VersionsResourceWithRawResponse,
-    AsyncVersionsResourceWithRawResponse,
-    VersionsResourceWithStreamingResponse,
-    AsyncVersionsResourceWithStreamingResponse,
-)
-from .comparative import (
-    ComparativeResource,
-    AsyncComparativeResource,
-    ComparativeResourceWithRawResponse,
-    AsyncComparativeResourceWithRawResponse,
-    ComparativeResourceWithStreamingResponse,
-    AsyncComparativeResourceWithStreamingResponse,
 )
 from .experiment_runs import (
     ExperimentRunsResource,
@@ -58,42 +18,12 @@ from .experiment_runs import (
 )
 
 __all__ = [
-    "VersionsResource",
-    "AsyncVersionsResource",
-    "VersionsResourceWithRawResponse",
-    "AsyncVersionsResourceWithRawResponse",
-    "VersionsResourceWithStreamingResponse",
-    "AsyncVersionsResourceWithStreamingResponse",
-    "RunsResource",
-    "AsyncRunsResource",
-    "RunsResourceWithRawResponse",
-    "AsyncRunsResourceWithRawResponse",
-    "RunsResourceWithStreamingResponse",
-    "AsyncRunsResourceWithStreamingResponse",
     "ExperimentRunsResource",
     "AsyncExperimentRunsResource",
     "ExperimentRunsResourceWithRawResponse",
     "AsyncExperimentRunsResourceWithRawResponse",
     "ExperimentRunsResourceWithStreamingResponse",
     "AsyncExperimentRunsResourceWithStreamingResponse",
-    "ShareResource",
-    "AsyncShareResource",
-    "ShareResourceWithRawResponse",
-    "AsyncShareResourceWithRawResponse",
-    "ShareResourceWithStreamingResponse",
-    "AsyncShareResourceWithStreamingResponse",
-    "ComparativeResource",
-    "AsyncComparativeResource",
-    "ComparativeResourceWithRawResponse",
-    "AsyncComparativeResourceWithRawResponse",
-    "ComparativeResourceWithStreamingResponse",
-    "AsyncComparativeResourceWithStreamingResponse",
-    "SplitsResource",
-    "AsyncSplitsResource",
-    "SplitsResourceWithRawResponse",
-    "AsyncSplitsResourceWithRawResponse",
-    "SplitsResourceWithStreamingResponse",
-    "AsyncSplitsResourceWithStreamingResponse",
     "DatasetsResource",
     "AsyncDatasetsResource",
     "DatasetsResourceWithRawResponse",
