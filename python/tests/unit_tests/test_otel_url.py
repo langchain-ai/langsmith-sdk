@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+from opentelemetry.trace import Span, SpanContext
 
 from langsmith.integrations.otel import (
     get_langsmith_run_url_for_span,
@@ -113,9 +114,9 @@ def _make_client():
 
 def test_url_with_project_id_offline():
     client = _make_client()
-    span_ctx = MagicMock()
+    span_ctx = MagicMock(spec=SpanContext)
     span_ctx.span_id = 1
-    span = MagicMock()
+    span = MagicMock(spec=Span)
     span.get_span_context.return_value = span_ctx
 
     project_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
@@ -131,7 +132,7 @@ def test_url_with_project_id_offline():
 
 def test_url_with_span_context_directly():
     client = _make_client()
-    span_ctx = MagicMock(spec=["span_id"])
+    span_ctx = MagicMock(spec=SpanContext)
     span_ctx.span_id = 0x0102030405060708
 
     project_id = uuid.UUID("22222222-2222-2222-2222-222222222222")

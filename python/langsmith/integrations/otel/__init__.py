@@ -1,5 +1,7 @@
 """OpenTelemetry integration for LangSmith."""
 
+from __future__ import annotations
+
 import logging
 import uuid
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
@@ -71,20 +73,16 @@ def langsmith_run_id_from_otel_span_id(span_id: Union[int, bytes]) -> uuid.UUID:
     return uuid.UUID(bytes=raw)
 
 
-def _extract_span_id(span: "Union[Span, SpanContext]") -> int:
+def _extract_span_id(span: Union[Span, SpanContext]) -> int:
     """Extract the integer span ID from an OTel span or span context."""
-    get_ctx = getattr(span, "get_span_context", None)
-    ctx = get_ctx() if callable(get_ctx) else span
-    span_id = getattr(ctx, "span_id", None)
-    if span_id is None:
-        raise TypeError(
-            f"Expected an OTel span or span context with a span_id; got {type(span)}"
-        )
-    return span_id
+    from opentelemetry.trace import Span
+
+    ctx = span.get_span_context() if isinstance(span, Span) else span
+    return ctx.span_id
 
 
 def get_langsmith_run_url_for_span(
-    span: "Union[Span, SpanContext]",
+    span: Union[Span, SpanContext],
     project_id: uuid.UUID,
     *,
     client: Optional[Client] = None,
