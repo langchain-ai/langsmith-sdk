@@ -172,6 +172,31 @@ async def test_online_evaluators_generated_client_crud(
             )
 
 
+async def test_aread_project(langchain_client: Client) -> None:
+    """Exercise the async aread_project method against the LangSmith API."""
+    project_name = "__sdk_aread_project_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+    created = langchain_client.create_project(project_name)
+    try:
+        project = await langchain_client.aread_project(project_name=project_name)
+        assert project.id == created.id
+        assert project.name == project_name
+
+        project_by_id = await langchain_client.aread_project(
+            project_id=str(created.id), include_stats=True
+        )
+        assert project_by_id.id == created.id
+
+        nonexistent_name = "__sdk_aread_project_missing_" + "".join(
+            random.sample(string.ascii_lowercase, 10)
+        )
+        with pytest.raises(LangSmithNotFoundError):
+            await langchain_client.aread_project(project_name=nonexistent_name)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
+
+
 def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
