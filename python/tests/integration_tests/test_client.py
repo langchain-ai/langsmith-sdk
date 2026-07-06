@@ -37,6 +37,7 @@ from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal._serde import dumps_json
 from langsmith._internal.otel import _otel_exporter
 from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+from langsmith.async_client import AsyncClient
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
@@ -125,7 +126,7 @@ def parameterized_multipart_client(request) -> Client:
 def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
-    """Exercise the generated OpenAPI evaluators resource end to end."""
+    """Exercise sync Client evaluator CRUD end to end."""
     evaluator = None
     name = "__sdk_evaluator_integration_" + "".join(
         random.sample(string.ascii_lowercase, 10)
@@ -167,6 +168,51 @@ def test_evaluators_generated_client_crud(
             langchain_client.evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
+
+
+async def test_async_evaluators_generated_client_crud() -> None:
+    """Exercise async AsyncClient evaluator CRUD end to end."""
+    evaluator = None
+    client = AsyncClient()
+    name = "__sdk_async_evaluator_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+
+    try:
+        created = await client.evaluators.create(
+            name=name,
+            type="code",
+            code_evaluator={
+                "code": "def perform_eval(run, example):\n    return {'score': 1}",
+                "language": "python",
+            },
+        )
+        evaluator = created.evaluator
+        assert evaluator is not None
+        assert evaluator.id is not None
+        assert evaluator.name == name
+        assert evaluator.type == "code"
+
+        retrieved = await client.evaluators.retrieve(evaluator.id)
+        assert retrieved.id == evaluator.id
+        assert retrieved.name == name
+
+        updated_name = f"{name}_updated"
+        updated = await client.evaluators.update(evaluator.id, name=updated_name)
+        assert updated.evaluator is not None
+        assert updated.evaluator.name == updated_name
+
+        evaluators = [
+            item
+            async for item in client.evaluators.list(
+                name_contains=updated_name, limit=10
+            )
+        ]
+        assert evaluator.id in {item.id for item in evaluators}
+    finally:
+        if evaluator is not None and evaluator.id is not None:
+            await client.evaluators.delete(evaluator.id, delete_run_rules=True)
+        await client.aclose()
 
 
 async def test_aread_project(langchain_client: Client) -> None:
