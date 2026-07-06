@@ -1,0 +1,23 @@
+python/tests/unit_tests/test_client.py
+  s_d29bd396624f38::t_96b1e4909afe84 6741-6742
+python/tests/integration_tests/test_v2_datasets.py
+  s_d29bd396624f38::t_5fe7d9211b27ef 93
+  s_d29bd396624f38::t_21407ceb89f82c 4
+  s_d29bd396624f38::t_df9678e9fd2734 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "aea9b26c343434abd346508d8077f082a4e9d722",
+  "prompts": {},
+  "sessions": {
+    "s_d29bd396624f38": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d4afa9d-8022-4985-9bb7-0cf3299c83b7",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": null
+    }
+  }
+}
