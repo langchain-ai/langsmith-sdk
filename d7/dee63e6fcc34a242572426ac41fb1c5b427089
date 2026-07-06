@@ -1,0 +1,21 @@
+python/tests/integration_tests/test_v2_datasets.py
+  s_d29bd396624f38::t_df9678e9fd2734 106
+  s_d29bd396624f38::t_5fe7d9211b27ef 93
+  s_d29bd396624f38::t_21407ceb89f82c 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d7dee63e6fcc34a242572426ac41fb1c5b427089",
+  "prompts": {},
+  "sessions": {
+    "s_d29bd396624f38": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d4afa9d-8022-4985-9bb7-0cf3299c83b7",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
