@@ -12,12 +12,12 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 
 from __future__ import annotations
 
-import asyncio
 import atexit
 import base64
 import collections
 import concurrent.futures as cf
 import contextlib
+import contextvars
 import datetime
 import functools
 import importlib
@@ -70,6 +70,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _aiter as aitertools
 from langsmith._internal import _orjson, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
@@ -4996,7 +4997,8 @@ class Client:
         Returns:
             TracerSessionResult: The project.
         """
-        return await asyncio.to_thread(
+        return await aitertools.aio_to_thread(
+            contextvars.copy_context(),
             self.read_project,
             project_id=project_id,
             project_name=project_name,
