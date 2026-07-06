@@ -1,12 +1,12 @@
+import type {
+  BetaManagedAgentsStreamSessionEvents,
+  BetaManagedAgentsSession,
+} from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
 import type { RunTreeConfig } from "../../index.js";
 import { getCurrentRunTree } from "../../traceable.js";
 import { KVMap } from "../../schemas.js";
 import { RunTree } from "../../run_trees.js";
 import { createUsageMetadata } from "../anthropic.js";
-import type {
-  BetaManagedAgentsStreamSessionEvents,
-  BetaManagedAgentsSession,
-} from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
 import { isRecord } from "../../utils/types.js";
 
 type OnlyType<TType extends BetaManagedAgentsStreamSessionEvents["type"]> =
@@ -244,7 +244,6 @@ function getManagedAgentChatMessages(
       case "user.define_outcome":
       case "user.tool_result":
       case "user.tool_confirmation":
-        // TODO: do we need to convert these to chat messages as well?
         break;
     }
   }
