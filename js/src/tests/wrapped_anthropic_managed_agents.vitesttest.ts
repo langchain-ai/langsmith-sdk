@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jest } from "@jest/globals";
+import { describe, test, expect, vi, it } from "vitest";
+import * as fs from "node:fs";
 import { wrapAnthropic } from "../wrappers/anthropic.js";
-import { mockClient } from "./utils/mock_client.js";
+import { mockClient } from "./utils/vitest_mock_client.js";
+import { asTree, getAssumedTreeFromCalls } from "./utils/tree.js";
 
 function parseRequestBody(body: any) {
   return body instanceof Uint8Array
@@ -19,15 +21,81 @@ function createAsyncIterable<T>(items: T[]): AsyncIterable<T> {
   };
 }
 
-async function flushPromises() {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+async function createReplayableAnthropic(
+  path: string,
+  options?: {
+    replaceTime?: boolean;
+  },
+): Promise<[anthropic: any, session: { id: string }]> {
+  const input = await fs.promises.readFile(
+    new URL(path, import.meta.url),
+    "utf-8",
+  );
+
+  const reviver = (() => {
+    const { replaceTime } = options ?? {};
+    if (!replaceTime) return undefined;
+
+    const testTime = new Date();
+    let firstTime: Date | null = null;
+    return (k: string, v: any) => {
+      if (
+        replaceTime &&
+        ["processed_at", "created_at", "updated_at"].includes(k)
+      ) {
+        const parsedV = new Date(v);
+        firstTime ??= parsedV;
+        return new Date(
+          testTime.getTime() + (parsedV.getTime() - firstTime.getTime()),
+        ).toISOString();
+      }
+      return v;
+    };
+  })();
+
+  const logEvents: [
+    methodName:
+      | "client.beta.sessions.create"
+      | "client.beta.sessions.events.send"
+      | "client.beta.sessions.events.stream",
+    args: any,
+  ][] = input
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line, reviver));
+
+  const streamEvents = logEvents
+    .filter(
+      ([methodName]) => methodName === "client.beta.sessions.events.stream",
+    )
+    .map(([, args]) => args);
+
+  const sessionRetrieve = logEvents.find(
+    ([methodName]) => methodName === "client.beta.sessions.create",
+  )?.[1];
+
+  return [
+    {
+      messages: { create: vi.fn(), stream: vi.fn() },
+      beta: {
+        sessions: {
+          retrieve: vi.fn(async () => sessionRetrieve),
+          events: {
+            stream: vi.fn(async () => createAsyncIterable(streamEvents)),
+            send: vi.fn(async () => ({})),
+          },
+        },
+      },
+    } as any,
+    sessionRetrieve,
+  ];
 }
 
 describe("wrapAnthropic Claude Managed Agents", () => {
   function createFakeAnthropic(events: any[]) {
     const fakeEvents = {
-      stream: jest.fn(async () => createAsyncIterable(events)),
-      send: jest.fn(async (_sessionID: string, params: any) => ({
+      stream: vi.fn(async () => createAsyncIterable(events)),
+      send: vi.fn(async (_sessionID: string, params: any) => ({
         data: params.events.map((event: any, index: number) => ({
           id: `sent_${index}`,
           ...event,
@@ -37,12 +105,12 @@ describe("wrapAnthropic Claude Managed Agents", () => {
 
     return {
       messages: {
-        create: jest.fn(),
-        stream: jest.fn(),
+        create: vi.fn(),
+        stream: vi.fn(),
       },
       beta: {
         sessions: {
-          retrieve: jest.fn(async (sessionID: string) => ({
+          retrieve: vi.fn(async (sessionID: string) => ({
             id: sessionID,
             agent: {
               model: { id: "claude-opus-4-8", speed: "standard" },
@@ -143,7 +211,8 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       seenEvents.push(event);
       if (event.type === "session.status_idle") break;
     }
-    await flushPromises();
+
+    await client.awaitPendingTraceBatches();
 
     expect(seenEvents).toHaveLength(10);
     expect(fakeAnthropic.beta.sessions.events.stream).toHaveBeenCalledWith(
@@ -186,6 +255,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const patchBody = patchBodies.find(
       (body: any) => body.name === "ClaudeManagedAgent",
     );
+
     expect(patchBody.error).toBeUndefined();
     expect(patchBody.outputs.text).toBeUndefined();
     expect(patchBody.outputs.messages).toEqual(
@@ -352,7 +422,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     for await (const event of stream) {
       if (event.type === "session.status_idle") break;
     }
-    await flushPromises();
+    await client.awaitPendingTraceBatches();
 
     const postBodies = callSpy.mock.calls
       .filter((call: any) => (call[1] as any).method === "POST")
@@ -449,7 +519,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     for await (const event of stream) {
       if (event.type === "session.status_idle") break;
     }
-    await flushPromises();
+    await client.awaitPendingTraceBatches();
 
     const postBodies = callSpy.mock.calls
       .filter((call: any) => (call[1] as any).method === "POST")
@@ -528,7 +598,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     for await (const _event of stream) {
       // consume stream to finish the trace
     }
-    await flushPromises();
+    await client.awaitPendingTraceBatches();
 
     expect(
       callSpy.mock.calls.filter(
@@ -557,5 +627,125 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       return body.name === "ClaudeManagedAgentSendEvents";
     });
     expect(sendPostCalls).toHaveLength(0);
+  });
+
+  it("custom tools", async () => {
+    const { client, callSpy } = mockClient();
+    const [anthropic, session] = await createReplayableAnthropic(
+      "./test_data/anthropic_managed_custom_tools.jsonl",
+    );
+
+    const wrappedClient = wrapAnthropic(anthropic, {
+      client,
+      tracingEnabled: true,
+    });
+
+    const stream = await wrappedClient.beta.sessions.events.stream(session.id);
+    // consume stream
+    for await (const _ of stream) {
+      // noop
+    }
+
+    await client.awaitPendingTraceBatches();
+
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    console.dir(tree, { depth: null, colors: true });
+
+    const expected = asTree((run) => {
+      run`ClaudeManagedAgent:3`(
+        {
+          run_type: "chain",
+          inputs: {
+            session_id: session.id,
+            messages: [
+              { role: "user", content: "What's the weather in Prague?" },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content:
+                  "It's currently **23°C and sunny** in Prague — a nice, warm day overall!",
+              },
+            ],
+          },
+        },
+        run`ClaudeManagedAgentModelRequest:0`({
+          run_type: "llm",
+          inputs: {
+            system:
+              "You are a helpful coding assistant. Write clean, well-documented code.",
+            messages: [
+              { role: "user", content: "What's the weather in Prague?" },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "get_weather",
+                    input: { location: "Prague" },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        run`get_weather:1`({
+          run_type: "tool",
+          inputs: {
+            name: "get_weather",
+            input: { location: "Prague" },
+          },
+          outputs: {
+            content: [{ text: "It's 23°C and sunny in Prague.", type: "text" }],
+          },
+        }),
+        run`ClaudeManagedAgentModelRequest:2`({
+          run_type: "llm",
+          inputs: {
+            system:
+              "You are a helpful coding assistant. Write clean, well-documented code.",
+            messages: [
+              { role: "user", content: "What's the weather in Prague?" },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "get_weather",
+                    input: { location: "Prague" },
+                  },
+                ],
+              },
+              {
+                role: "tool",
+                content: [
+                  { text: "It's 23°C and sunny in Prague.", type: "text" },
+                ],
+                is_error: false,
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content:
+                  "It's currently **23°C and sunny** in Prague — a nice, warm day overall!",
+              },
+            ],
+          },
+        }),
+      );
+    });
+
+    expect(tree.nodes).toEqual(expect.arrayContaining(expected.nodes));
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
   });
 });
