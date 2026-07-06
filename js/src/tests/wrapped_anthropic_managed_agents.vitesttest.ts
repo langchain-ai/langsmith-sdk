@@ -647,9 +647,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     }
 
     await client.awaitPendingTraceBatches();
-
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    console.dir(tree, { depth: null, colors: true });
 
     const expected = asTree((run) => {
       run`ClaudeManagedAgent:3`(
@@ -737,6 +735,143 @@ describe("wrapAnthropic Claude Managed Agents", () => {
                 role: "assistant",
                 content:
                   "It's currently **23°C and sunny** in Prague — a nice, warm day overall!",
+              },
+            ],
+          },
+        }),
+      );
+    });
+
+    expect(tree.nodes).toEqual(expect.arrayContaining(expected.nodes));
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+  });
+
+  it("builtin tools", async () => {
+    const { client, callSpy } = mockClient();
+    const [anthropic, session] = await createReplayableAnthropic(
+      "./test_data/anthropic_managed_builtin_tools.jsonl",
+    );
+
+    const wrappedClient = wrapAnthropic(anthropic, {
+      client,
+      tracingEnabled: true,
+    });
+
+    const stream = await wrappedClient.beta.sessions.events.stream(session.id);
+    // consume stream
+    for await (const _ of stream) {
+      // noop
+    }
+
+    await client.awaitPendingTraceBatches();
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+
+    const expected = asTree((run) => {
+      run`ClaudeManagedAgent:3`(
+        {
+          run_type: "chain",
+          inputs: {
+            session_id: session.id,
+            messages: [
+              {
+                role: "user",
+                content: "Call 'date' to get the current date time",
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "bash",
+                    input: { command: "date" },
+                  },
+                ],
+              },
+              {
+                role: "assistant",
+                content:
+                  "The current date and time is:\n\n**Monday, July 6, 2026, 16:26:37 UTC**",
+              },
+            ],
+          },
+        },
+        run`ClaudeManagedAgentModelRequest:0`({
+          run_type: "llm",
+          inputs: {
+            system:
+              "You are a helpful coding assistant. Write clean, well-documented code.",
+            messages: [
+              {
+                role: "user",
+                content: "Call 'date' to get the current date time",
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "bash",
+                    input: { command: "date" },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        run`bash:1`({
+          run_type: "tool",
+          inputs: {
+            name: "bash",
+            input: { command: "date" },
+          },
+          outputs: {
+            content: [{ text: "Mon Jul  6 16:26:37 UTC 2026\n", type: "text" }],
+          },
+        }),
+        run`ClaudeManagedAgentModelRequest:2`({
+          run_type: "llm",
+          inputs: {
+            system:
+              "You are a helpful coding assistant. Write clean, well-documented code.",
+            messages: [
+              {
+                role: "user",
+                content: "Call 'date' to get the current date time",
+              },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    name: "bash",
+                    input: { command: "date" },
+                  },
+                ],
+              },
+              {
+                role: "tool",
+                content: [
+                  { text: "Mon Jul  6 16:26:37 UTC 2026\n", type: "text" },
+                ],
+                is_error: false,
+              },
+            ],
+          },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content:
+                  "The current date and time is:\n\n**Monday, July 6, 2026, 16:26:37 UTC**",
               },
             ],
           },
