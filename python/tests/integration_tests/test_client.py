@@ -165,9 +165,7 @@ def test_evaluators_generated_client_crud(
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            langchain_client.evaluators.delete(
-                evaluator.id, delete_run_rules=True
-            )
+            langchain_client.evaluators.delete(evaluator.id, delete_run_rules=True)
 
 
 async def test_async_evaluators_generated_client_crud() -> None:
