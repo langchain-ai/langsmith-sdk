@@ -85,7 +85,8 @@ function managedAgentSessionEventsAggregator(
         break;
       }
       case "agent.tool_result":
-      case "agent.mcp_tool_result": {
+      case "agent.mcp_tool_result":
+      case "user.custom_tool_result": {
         toolResults.push({ ...event });
         break;
       }
@@ -118,28 +119,6 @@ function managedAgentSessionEventsAggregator(
         if (event.type === "session.status_idle") {
           stopReason = event.stop_reason;
         }
-        break;
-      case "agent.thinking":
-      case "agent.thread_context_compacted":
-      case "agent.thread_message_received":
-      case "agent.thread_message_sent":
-      case "session.deleted":
-      case "session.thread_created":
-      case "session.thread_status_idle":
-      case "session.thread_status_running":
-      case "session.thread_status_terminated":
-      case "session.thread_status_rescheduled":
-      case "span.model_request_start":
-      case "session.updated":
-      case "span.outcome_evaluation_start":
-      case "span.outcome_evaluation_ongoing":
-      case "span.outcome_evaluation_end":
-      case "user.custom_tool_result":
-      case "user.define_outcome":
-      case "user.interrupt":
-      case "user.message":
-      case "user.tool_confirmation":
-      case "user.tool_result":
         break;
     }
   }
@@ -268,6 +247,12 @@ function getManagedAgentChatMessages(
           ...(event.is_error != null ? { is_error: event.is_error } : {}),
         });
         break;
+      case "user.interrupt":
+      case "user.define_outcome":
+      case "user.tool_result":
+      case "user.tool_confirmation":
+        // TODO: do we need to convert these to chat messages as well?
+        break;
     }
   }
   return messages;
@@ -329,39 +314,34 @@ function stripLangSmithExtraFromRequestOptions<T>(options: T): T {
 }
 
 function getProcessedAtMillis(
-  event: BetaManagedAgentsStreamSessionEvents,
+  event: BetaManagedAgentsStreamSessionEvents | undefined,
 ): number | undefined {
+  if (!event) return undefined;
   return typeof event.processed_at === "string"
     ? Date.parse(event.processed_at)
     : undefined;
 }
 
-async function postCompletedChildRun(
-  childRun: RunTree,
-  outputs: KVMap,
-  error?: string,
-  endTime?: number,
-): Promise<void> {
-  await childRun.end(outputs, error, endTime);
-  await childRun.postRun();
-}
-
 async function createManagedAgentChildRuns(
   parentRun: RunTree,
-  chunks: BetaManagedAgentsStreamSessionEvents[],
+  chunks: {
+    turn: BetaManagedAgentsStreamSessionEvents[];
+    all: BetaManagedAgentsStreamSessionEvents[];
+  },
   metadata: KVMap,
   options: {
     modelConfig: KVMap | undefined;
     systemPrompt: string | undefined;
+    pendingChildRuns: Map<string, RunTree>;
   },
 ): Promise<void> {
-  const { modelConfig, systemPrompt } = options;
+  const { modelConfig, systemPrompt, pendingChildRuns } = options;
 
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
   const modelRequestStarts = new Map<
     string,
-    BetaManagedAgentsStreamSessionEvents
+    OnlyType<"span.model_request_start">
   >();
   const childSpecs: Array<{
     startTime: number;
@@ -380,91 +360,10 @@ async function createManagedAgentChildRuns(
     >
   >();
 
-  for (const event of chunks) {
+  // Aggregate tool use and tool results from all events
+  // This is necessary because tool results may arrive after the model request ends (eg custom tools)
+  for (const event of chunks.all) {
     if (
-      event.type === "span.model_request_start" &&
-      typeof event.id === "string"
-    ) {
-      modelRequestStarts.set(event.id, event);
-    } else if (event.type === "span.model_request_end") {
-      const startID =
-        typeof event.model_request_start_id === "string"
-          ? event.model_request_start_id
-          : undefined;
-
-      const startEvent = startID ? modelRequestStarts.get(startID) : undefined;
-      const startIndex = startEvent ? chunks.indexOf(startEvent) : -1;
-      const endIndex = chunks.indexOf(event);
-      const eventsBeforeRequest =
-        startIndex >= 0 ? chunks.slice(0, startIndex) : [];
-      const eventsInRequest =
-        startIndex >= 0 && endIndex >= startIndex
-          ? chunks.slice(startIndex, endIndex + 1)
-          : [event];
-      const messageEvents = eventsInRequest.filter(
-        (candidate) => candidate.type === "agent.message",
-      );
-      const messages = getManagedAgentAssistantOutputMessages(eventsInRequest);
-      const toolCalls = eventsInRequest.filter(
-        (candidate) =>
-          candidate.type === "agent.tool_use" ||
-          candidate.type === "agent.mcp_tool_use" ||
-          candidate.type === "agent.custom_tool_use",
-      );
-      const content = messageEvents.flatMap((message) =>
-        Array.isArray(message.content) ? message.content : [],
-      );
-
-      const usageMetadata = createUsageMetadata(event.model_usage);
-      const startTime = startEvent
-        ? (getProcessedAtMillis(startEvent) ?? Date.now())
-        : Date.now();
-      childSpecs.push({
-        startTime,
-        index: startIndex >= 0 ? startIndex : endIndex,
-        createAndPost: async () => {
-          const childRun = parentRun.createChild({
-            name: "ClaudeManagedAgentModelRequest",
-            run_type: "llm",
-            inputs: {
-              events: eventsBeforeRequest,
-              system: systemPrompt,
-              messages: getManagedAgentChatMessages(eventsBeforeRequest),
-              ...(startEvent ? { model_request_start: startEvent } : {}),
-            },
-            metadata: {
-              ...metadata,
-              ...(modelName ? { ls_model_name: modelName } : {}),
-              ...(modelConfig
-                ? {
-                    ls_invocation_params: {
-                      ...((metadata.ls_invocation_params as
-                        | KVMap
-                        | undefined) ?? {}),
-                      model_config: modelConfig,
-                    },
-                  }
-                : {}),
-              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
-            },
-            start_time: startTime,
-          });
-          await postCompletedChildRun(
-            childRun,
-            {
-              content,
-              messages,
-              tool_calls: toolCalls,
-              model_request_end: event,
-              ...(event.model_usage ? { model_usage: event.model_usage } : {}),
-              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
-            },
-            event.is_error ? "Model request failed" : undefined,
-            getProcessedAtMillis(event),
-          );
-        },
-      });
-    } else if (
       (event.type === "agent.tool_use" ||
         event.type === "agent.mcp_tool_use" ||
         event.type === "agent.custom_tool_use") &&
@@ -489,15 +388,108 @@ async function createManagedAgentChildRuns(
     }
   }
 
+  // Handle turn specific events (model requests, tool calls)
+  for (const event of chunks.turn) {
+    if (
+      event.type === "span.model_request_start" &&
+      typeof event.id === "string"
+    ) {
+      modelRequestStarts.set(event.id, event);
+    } else if (event.type === "span.model_request_end") {
+      const startID = event.model_request_start_id;
+      const startEvent = modelRequestStarts.get(startID);
+
+      const startIndex = startEvent ? chunks.all.indexOf(startEvent) : -1;
+      const endIndex = chunks.all.indexOf(event);
+
+      const eventsBeforeRequest =
+        startIndex >= 0 ? chunks.all.slice(0, startIndex) : [];
+
+      const eventsInRequest =
+        startIndex >= 0 && endIndex >= startIndex
+          ? chunks.all.slice(startIndex, endIndex + 1)
+          : [event];
+
+      const messageEvents = eventsInRequest.filter(
+        (candidate) => candidate.type === "agent.message",
+      );
+      const messages = getManagedAgentAssistantOutputMessages(eventsInRequest);
+      const toolCalls = eventsInRequest.filter(
+        (candidate) =>
+          candidate.type === "agent.tool_use" ||
+          candidate.type === "agent.mcp_tool_use" ||
+          candidate.type === "agent.custom_tool_use",
+      );
+      const content = messageEvents.flatMap((message) =>
+        Array.isArray(message.content) ? message.content : [],
+      );
+
+      const usageMetadata = createUsageMetadata(event.model_usage);
+      const startTime = startEvent
+        ? (getProcessedAtMillis(startEvent) ?? Date.now())
+        : Date.now();
+
+      childSpecs.push({
+        startTime,
+        index: startIndex >= 0 ? startIndex : endIndex,
+        createAndPost: async () => {
+          const childRun = parentRun.createChild({
+            name: "ClaudeManagedAgentModelRequest",
+            run_type: "llm",
+            inputs: {
+              events: eventsBeforeRequest,
+              system: systemPrompt,
+              // TODO: each LLM turn should include all messages preceding the model output
+              messages: getManagedAgentChatMessages(eventsBeforeRequest),
+              ...(startEvent ? { model_request_start: startEvent } : {}),
+            },
+            metadata: {
+              ...metadata,
+              ...(modelName ? { ls_model_name: modelName } : {}),
+              ...(modelConfig
+                ? {
+                    ls_invocation_params: {
+                      ...((metadata.ls_invocation_params as
+                        | KVMap
+                        | undefined) ?? {}),
+                      model_config: modelConfig,
+                    },
+                  }
+                : {}),
+              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
+            },
+            start_time: startTime,
+          });
+
+          await childRun.end(
+            {
+              content,
+              messages,
+              tool_calls: toolCalls,
+              model_request_end: event,
+              ...(event.model_usage ? { model_usage: event.model_usage } : {}),
+              ...(usageMetadata ? { usage_metadata: usageMetadata } : {}),
+            },
+            event.is_error ? "Model request failed" : undefined,
+            getProcessedAtMillis(event),
+          );
+          await childRun.postRun();
+        },
+      });
+    }
+  }
+
   for (const [toolUseID, toolUse] of toolUseEvents.entries()) {
     const result = toolResultEvents.get(toolUseID);
     const toolName =
       typeof toolUse.name === "string" ? toolUse.name : "ManagedAgentTool";
     const startTime = getProcessedAtMillis(toolUse) ?? Date.now();
+
     childSpecs.push({
       startTime,
-      index: chunks.indexOf(toolUse),
+      index: chunks.all.indexOf(toolUse),
       createAndPost: async () => {
+        const pendingRun = pendingChildRuns.get(toolUseID);
         const childRun = parentRun.createChild({
           name: toolName,
           run_type: "tool",
@@ -510,12 +502,40 @@ async function createManagedAgentChildRuns(
           metadata,
           start_time: startTime,
         });
-        await postCompletedChildRun(
-          childRun,
-          result ? { event: result, content: result.content } : {},
-          result?.is_error ? "Tool execution failed" : undefined,
-          result ? getProcessedAtMillis(result) : undefined,
-        );
+
+        const resultArgs = (() => {
+          if (result == null) return undefined;
+          return [
+            result ? { event: result, content: result.content } : {},
+            result?.is_error ? "Tool execution failed" : undefined,
+            result ? getProcessedAtMillis(result) : undefined,
+          ] as [
+            outputs: KVMap,
+            error: string | undefined,
+            endTime: number | undefined,
+          ];
+        })();
+
+        // Best-case scenario, tool result is present in the current turn, we can post the child run immediately.
+        if (pendingRun == null && resultArgs != null) {
+          await childRun.end(...resultArgs);
+          await childRun.postRun();
+          return;
+        }
+
+        // Post the partial run instead, wait for the next turn to complete it.
+        if (pendingRun == null && resultArgs == null) {
+          pendingChildRuns.set(toolUseID, childRun);
+          await childRun.postRun();
+          return;
+        }
+
+        // We now have the tool result, we can complete the pending child run.
+        if (pendingRun != null && resultArgs != null) {
+          pendingChildRuns.delete(toolUseID);
+          await pendingRun.end(...resultArgs);
+          await pendingRun.patchRun();
+        }
       },
     });
   }
@@ -634,26 +654,66 @@ export function wrapManagedAgentSessionEvents({
         const iterator: AsyncIterator<BetaManagedAgentsStreamSessionEvents> =
           stream[Symbol.asyncIterator]();
 
-        const chunks: BetaManagedAgentsStreamSessionEvents[] = [];
-        let finalized = false;
+        const allChunks: BetaManagedAgentsStreamSessionEvents[] = [];
+        const turnChunkLengths: Set<number> = new Set();
+        const pendingChildRuns: Map<string, RunTree> = new Map();
 
-        const finalize = async (error?: string) => {
-          if (finalized) return;
-          finalized = true;
-          const outputs = managedAgentSessionEventsAggregator(chunks);
-          const inputEvents = getManagedAgentInputEvents(chunks);
-          runTree.inputs = {
-            ...processManagedAgentStreamInputs({
-              args: [sessionID, params, sanitizedArgs[2]],
-            }),
-            ...(inputEvents.length > 0
-              ? {
-                  events: inputEvents,
-                  messages: getManagedAgentChatMessages(inputEvents),
-                }
-              : {}),
-          };
-          const finalError = error ?? getManagedAgentStreamError(chunks);
+        let flushLength = 0;
+
+        const finalize = async (
+          kind: "done" | "throw" | "flush",
+          userError?: string,
+        ) => {
+          const chunks = allChunks.slice(flushLength);
+          flushLength = allChunks.length;
+          turnChunkLengths.add(flushLength);
+
+          if (kind === "done" || kind === "throw") {
+            const chunkSlices = [...turnChunkLengths].reduce(
+              (acc, item, idx, lst) => {
+                const prev = idx > 0 ? lst[idx - 1] : 0;
+                acc.push(allChunks.slice(prev, item));
+                return acc;
+              },
+              [] as BetaManagedAgentsStreamSessionEvents[][],
+            );
+
+            const firstTurn = chunkSlices.at(0) ?? [];
+            const lastTurn = chunkSlices.at(-1) ?? [];
+
+            const inputEvents = getManagedAgentInputEvents(firstTurn);
+            runTree.inputs = {
+              ...processManagedAgentStreamInputs({
+                args: [sessionID, params, sanitizedArgs[2]],
+              }),
+              ...(inputEvents.length > 0
+                ? {
+                    events: inputEvents,
+                    messages: getManagedAgentChatMessages(inputEvents),
+                  }
+                : {}),
+            };
+
+            await runTree.end(
+              managedAgentSessionEventsAggregator(lastTurn),
+              userError ?? getManagedAgentStreamError(lastTurn),
+              getProcessedAtMillis(allChunks.at(-1)),
+            );
+
+            // Flush out any pending child runs that have not yet been completed.
+            for (const pendingRun of pendingChildRuns.values()) {
+              await pendingRun.end(
+                undefined,
+                "Tool execution did not complete",
+              );
+              await pendingRun.patchRun();
+            }
+
+            await runTree.postRun();
+          }
+
+          // Question: should we re-attempt to fetch when finalizing again?
+          // ie if the agent's system prompt has changed mid-stream
           const session = await sessionPromise;
 
           const modelConfig = isRecord(session?.agent?.model)
@@ -661,14 +721,15 @@ export function wrapManagedAgentSessionEvents({
             : undefined;
 
           const systemPrompt = session?.agent.system ?? undefined;
-          await runTree.end(outputs, finalError);
-          await runTree.postRun();
-          await createManagedAgentChildRuns(
-            runTree,
-            chunks,
-            runTree.extra.metadata ?? {},
-            { modelConfig, systemPrompt },
-          );
+
+          if (chunks.length > 0) {
+            await createManagedAgentChildRuns(
+              runTree,
+              { turn: chunks, all: allChunks },
+              runTree.extra.metadata ?? {},
+              { modelConfig, systemPrompt, pendingChildRuns },
+            );
+          }
         };
 
         stream[Symbol.asyncIterator] = () => ({
@@ -676,35 +737,35 @@ export function wrapManagedAgentSessionEvents({
             try {
               const result = await iterator.next();
               if (result.done) {
-                await finalize();
+                await finalize("done");
                 return result;
               }
-              chunks.push(result.value);
+              allChunks.push(result.value);
               if (
                 result.value.type === "session.status_idle" ||
                 result.value.type === "session.status_terminated" ||
                 result.value.type === "session.deleted" ||
                 result.value.type === "session.error"
               ) {
-                await finalize();
+                await finalize("flush");
               }
               return result;
             } catch (error) {
-              await finalize(String(error));
+              await finalize("throw", String(error));
               throw error;
             }
           },
           async return(value?: unknown) {
-            if (!finalized) {
+            if (allChunks.length) {
               await iterator.return?.(value);
-              await finalize("Cancelled");
+              await finalize("throw", "Cancelled");
             } else {
               await iterator.return?.(value);
             }
             return { done: true, value };
           },
           async throw(error?: unknown) {
-            await finalize(String(error));
+            await finalize("throw", String(error));
             if (iterator.throw) return iterator.throw(error);
             throw error;
           },
