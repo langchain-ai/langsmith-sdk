@@ -122,7 +122,7 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-async def test_evaluators_generated_client_crud(
+def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
     """Exercise the generated OpenAPI evaluators resource end to end."""
@@ -132,7 +132,7 @@ async def test_evaluators_generated_client_crud(
     )
 
     try:
-        created = await langchain_client.evaluators.create(
+        created = langchain_client.evaluators.create(
             name=name,
             type="code",
             code_evaluator={
@@ -146,28 +146,25 @@ async def test_evaluators_generated_client_crud(
         assert evaluator.name == name
         assert evaluator.type == "code"
 
-        retrieved = await langchain_client.evaluators.retrieve(evaluator.id)
+        retrieved = langchain_client.evaluators.retrieve(evaluator.id)
         assert retrieved.id == evaluator.id
         assert retrieved.name == name
 
         updated_name = f"{name}_updated"
-        updated = await langchain_client.evaluators.update(
+        updated = langchain_client.evaluators.update(
             evaluator.id,
             name=updated_name,
         )
         assert updated.evaluator is not None
         assert updated.evaluator.name == updated_name
 
-        evaluators = [
-            item
-            async for item in langchain_client.evaluators.list(
-                name_contains=updated_name, limit=10
-            )
-        ]
+        evaluators = list(
+            langchain_client.evaluators.list(name_contains=updated_name, limit=10)
+        )
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            await langchain_client.evaluators.delete(
+            langchain_client.evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
 
