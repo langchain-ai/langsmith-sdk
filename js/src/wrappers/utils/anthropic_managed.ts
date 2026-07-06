@@ -295,6 +295,24 @@ function getManagedAgentStreamError(
   return undefined;
 }
 
+function isCustomToolRequiresActionIdle(
+  event: BetaManagedAgentsStreamSessionEvents,
+  chunks: BetaManagedAgentsStreamSessionEvents[],
+): boolean {
+  if (
+    event.type !== "session.status_idle" ||
+    event.stop_reason.type !== "requires_action"
+  ) {
+    return false;
+  }
+  return event.stop_reason.event_ids.every((eventID) =>
+    chunks.some(
+      (candidate) =>
+        candidate.type === "agent.custom_tool_use" && candidate.id === eventID,
+    ),
+  );
+}
+
 function getManagedAgentTurnError(
   chunks: BetaManagedAgentsStreamSessionEvents[],
 ): string | undefined {
@@ -816,8 +834,10 @@ export function wrapManagedAgentSessionEvents({
                 result.value.type === "session.deleted" ||
                 result.value.type === "session.error"
               ) {
-                observedTerminalEvent = true;
-                await finalize("flush");
+                if (!isCustomToolRequiresActionIdle(result.value, allChunks)) {
+                  observedTerminalEvent = true;
+                  await finalize("flush");
+                }
               }
               return result;
             } catch (error) {
