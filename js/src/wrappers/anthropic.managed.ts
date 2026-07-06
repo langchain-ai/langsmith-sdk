@@ -7,6 +7,7 @@ import type {
   BetaManagedAgentsStreamSessionEvents,
   BetaManagedAgentsSession,
 } from "@anthropic-ai/sdk/resources/beta/sessions/index.mjs";
+import { isRecord } from "../utils/types.js";
 
 type OnlyType<TType extends BetaManagedAgentsStreamSessionEvents["type"]> =
   BetaManagedAgentsStreamSessionEvents extends infer TEvent
@@ -349,8 +350,13 @@ async function createManagedAgentChildRuns(
   parentRun: RunTree,
   chunks: BetaManagedAgentsStreamSessionEvents[],
   metadata: KVMap,
-  modelConfig?: KVMap,
+  options: {
+    modelConfig: KVMap | undefined;
+    systemPrompt: string | undefined;
+  },
 ): Promise<void> {
+  const { modelConfig, systemPrompt } = options;
+
   const modelName =
     typeof modelConfig?.id === "string" ? modelConfig.id : undefined;
   const modelRequestStarts = new Map<
@@ -422,6 +428,7 @@ async function createManagedAgentChildRuns(
             run_type: "llm",
             inputs: {
               events: eventsBeforeRequest,
+              system: systemPrompt,
               messages: getManagedAgentChatMessages(eventsBeforeRequest),
               ...(startEvent ? { model_request_start: startEvent } : {}),
             },
@@ -649,18 +656,18 @@ export function wrapManagedAgentSessionEvents({
           const finalError = error ?? getManagedAgentStreamError(chunks);
           const session = await sessionPromise;
 
-          const modelConfig =
-            typeof session?.agent?.model === "object" &&
-            session.agent.model != null
-              ? (session.agent.model as KVMap)
-              : undefined;
+          const modelConfig = isRecord(session?.agent?.model)
+            ? session.agent.model
+            : undefined;
+
+          const systemPrompt = session?.agent.system ?? undefined;
           await runTree.end(outputs, finalError);
           await runTree.postRun();
           await createManagedAgentChildRuns(
             runTree,
             chunks,
             runTree.extra.metadata ?? {},
-            modelConfig,
+            { modelConfig, systemPrompt },
           );
         };
 
