@@ -112,7 +112,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
+from langsmith._openapi_client import Langsmith as LangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -267,14 +267,14 @@ if TYPE_CHECKING:
 
     from langsmith import schemas
     from langsmith._openapi_client.resources.datasets.datasets import (
-        AsyncDatasetsResource,
+        DatasetsResource,
     )
     from langsmith._openapi_client.resources.online_evaluators import (
-        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+        OnlineEvaluatorsResource as EvaluatorsResource,
     )
-    from langsmith._openapi_client.resources.runs import AsyncRunsResource
+    from langsmith._openapi_client.resources.runs import RunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
-        AsyncSandboxesResource,
+        SandboxesResource,
     )
 
     # OTEL imports for type hints
@@ -1462,25 +1462,25 @@ class Client:
         return self._langsmith_api
 
     @property
-    def runs(self) -> AsyncRunsResource:
+    def runs(self) -> RunsResource:
         """Access the runs resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().runs
 
     @property
-    def evaluators(self) -> AsyncEvaluatorsResource:
+    def evaluators(self) -> EvaluatorsResource:
         """Access the evaluator resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().online_evaluators
 
     @property
-    def sandboxes(self) -> AsyncSandboxesResource:
+    def sandboxes(self) -> SandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().sandboxes
 
     @property
-    def datasets(self) -> AsyncDatasetsResource:
+    def datasets(self) -> DatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().datasets

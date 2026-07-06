@@ -878,6 +878,10 @@ def test_create_run_unicode() -> None:
 
 
 def test_evaluators_uses_generated_openapi_resource() -> None:
+    import langsmith._openapi_client as openapi_module
+    from langsmith import client as client_module
+
+    assert client_module.LangsmithOpenAPIClient is openapi_module.Langsmith
     resource = object()
 
     with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
