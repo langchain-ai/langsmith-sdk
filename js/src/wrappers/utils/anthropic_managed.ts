@@ -18,12 +18,11 @@ type OnlyType<TType extends BetaManagedAgentsStreamSessionEvents["type"]> =
 
 function processManagedAgentStreamInputs(inputs: KVMap): KVMap {
   const args = Array.isArray(inputs.args) ? inputs.args : [];
-  const [sessionID, params, requestOptions] =
-    args.length > 0 ? args : [inputs.input, undefined, undefined];
+  const [sessionID, params] =
+    args.length > 0 ? args : [inputs.input, undefined];
   return {
     session_id: sessionID,
     ...(params ? { stream_params: params } : {}),
-    ...(requestOptions ? { request_options: requestOptions } : {}),
   };
 }
 

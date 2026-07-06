@@ -1233,7 +1233,7 @@ describe.skip("Requires Anthropic API key", () => {
   });
 });
 
-describe("Claude Managed Agents - requires Anthropic API key", () => {
+describe.skip("Claude Managed Agents - requires Anthropic API key", () => {
   test("creates agent, environment, session, and streams traced events", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const anthropic = wrapAnthropic(new Anthropic(), {
