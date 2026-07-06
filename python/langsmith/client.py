@@ -274,8 +274,6 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
-    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
-
     # OTEL imports for type hints
     try:
         from opentelemetry import trace as otel_trace  # type: ignore[import]
@@ -1477,12 +1475,6 @@ class Client:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().sandboxes
-
-    @property
-    def projects(self) -> AsyncSessionsResource:
-        """Access the projects resource."""
-        _check_backend_version(self.info.version)
-        return self._get_langsmith_api().sessions
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
