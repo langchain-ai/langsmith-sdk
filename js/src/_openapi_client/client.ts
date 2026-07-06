@@ -912,7 +912,6 @@ export class Langsmith {
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
   evaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
-  onlineEvaluators: API.OnlineEvaluators = this.evaluators;
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
