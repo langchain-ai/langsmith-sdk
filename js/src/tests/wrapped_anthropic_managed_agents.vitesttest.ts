@@ -750,13 +750,19 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
     const expected = asTree((run) => {
-      run`ClaudeManagedAgent:3`(
+      run`ClaudeManagedAgent:0`(
         {
           run_type: "chain",
           inputs: {
             session_id: session.id,
             messages: [
               { role: "user", content: "What's the weather in Prague?" },
+              {
+                role: "tool",
+                content: [
+                  { text: "It's 23°C and sunny in Prague.", type: "text" },
+                ],
+              },
             ],
           },
           outputs: {
@@ -769,7 +775,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         },
-        run`ClaudeManagedAgentModelRequest:0`({
+        run`ClaudeManagedAgentModelRequest:1`({
           run_type: "llm",
           inputs: {
             system:
@@ -793,7 +799,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
-        run`get_weather:1`({
+        run`get_weather:2`({
           run_type: "tool",
           inputs: {
             name: "get_weather",
@@ -803,7 +809,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             content: [{ text: "It's 23°C and sunny in Prague.", type: "text" }],
           },
         }),
-        run`ClaudeManagedAgentModelRequest:2`({
+        run`ClaudeManagedAgentModelRequest:3`({
           run_type: "llm",
           inputs: {
             system:
@@ -842,7 +848,10 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       );
     });
 
-    void expected;
+    expect(tree.nodes).toEqual(expected.nodes);
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+
     const runs = Object.values(tree.data);
     expect(runs.some((run) => run.name === "ClaudeManagedAgent")).toBe(true);
     expect(
@@ -871,7 +880,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
     const expected = asTree((run) => {
-      run`ClaudeManagedAgent:3`(
+      run`ClaudeManagedAgent:0`(
         {
           run_type: "chain",
           inputs: {
@@ -893,7 +902,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         },
-        run`ClaudeManagedAgentModelRequest:0`({
+        run`ClaudeManagedAgentModelRequest:1`({
           run_type: "llm",
           inputs: {
             system:
@@ -920,7 +929,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
-        run`bash:1`({
+        run`bash:2`({
           run_type: "tool",
           inputs: {
             name: "bash",
@@ -930,7 +939,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             content: [{ text: "Mon Jul  6 16:26:37 UTC 2026\n", type: "text" }],
           },
         }),
-        run`ClaudeManagedAgentModelRequest:2`({
+        run`ClaudeManagedAgentModelRequest:3`({
           run_type: "llm",
           inputs: {
             system:
@@ -972,7 +981,10 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       );
     });
 
-    void expected;
+    expect(tree.nodes).toEqual(expected.nodes);
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+
     const runs = Object.values(tree.data);
     expect(runs.some((run) => run.name === "ClaudeManagedAgent")).toBe(true);
     expect(
@@ -1001,7 +1013,8 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
     const expected = asTree((run) => {
-      run`ClaudeManagedAgent:3`(
+      // First turn: interrupted as permission is required to use the MCP tool
+      run`ClaudeManagedAgent:0`(
         {
           run_type: "chain",
           inputs: {
@@ -1014,16 +1027,9 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               },
             ],
           },
-          outputs: {
-            messages: [
-              {
-                role: "assistant",
-                content: expect.stringContaining("langchain-ai/langsmith-sdk"),
-              },
-            ],
-          },
+          error: expect.stringContaining("Interrupted: requires_action"),
         },
-        run`ClaudeManagedAgentModelRequest:0`({
+        run`ClaudeManagedAgentModelRequest:1`({
           run_type: "llm",
           inputs: {
             system:
@@ -1055,7 +1061,22 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
-        run`web_search_exa:1`({
+      );
+
+      run`ClaudeManagedAgent:2`(
+        {
+          run_type: "chain",
+          inputs: { messages: [] },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: expect.stringContaining("langchain-ai/langsmith-sdk"),
+              },
+            ],
+          },
+        },
+        run`web_search_exa:3`({
           run_type: "tool",
           inputs: {
             name: "web_search_exa",
@@ -1075,7 +1096,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
-        run`ClaudeManagedAgentModelRequest:2`({
+        run`ClaudeManagedAgentModelRequest:4`({
           run_type: "llm",
           inputs: {
             system:
@@ -1126,7 +1147,10 @@ describe("wrapAnthropic Claude Managed Agents", () => {
       );
     });
 
-    void expected;
+    expect(tree.nodes).toEqual(expected.nodes);
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+
     const runs = Object.values(tree.data);
     expect(runs.some((run) => run.name === "ClaudeManagedAgent")).toBe(true);
     expect(
@@ -1155,7 +1179,7 @@ describe("wrapAnthropic Claude Managed Agents", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
 
     const expected = asTree((run) => {
-      run`ClaudeManagedAgent:5`(
+      run`ClaudeManagedAgent:0`(
         {
           run_type: "chain",
           inputs: {
@@ -1168,16 +1192,9 @@ describe("wrapAnthropic Claude Managed Agents", () => {
               },
             ],
           },
-          outputs: {
-            messages: [
-              {
-                role: "assistant",
-                content: expect.stringContaining("langsmith-sdk"),
-              },
-            ],
-          },
+          error: expect.stringContaining("Interrupted: requires_action"),
         },
-        run`ClaudeManagedAgentModelRequest:0`({
+        run`ClaudeManagedAgentModelRequest:1`({
           run_type: "llm",
           inputs: {
             system:
@@ -1213,7 +1230,22 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             ],
           },
         }),
-        run`web_search_exa:1`({
+      );
+
+      run`ClaudeManagedAgent:2`(
+        {
+          run_type: "chain",
+          inputs: { messages: [] },
+          outputs: {
+            messages: [
+              {
+                role: "assistant",
+                content: expect.stringContaining("langchain-ai/langsmith-sdk"),
+              },
+            ],
+          },
+        },
+        run`web_search_exa:3`({
           run_type: "tool",
           inputs: {
             name: "web_search_exa",
@@ -1236,13 +1268,16 @@ describe("wrapAnthropic Claude Managed Agents", () => {
             "Permission to use mcp__exa__web_search_exa has been rejected",
           ),
         }),
-        run`ClaudeManagedAgentModelRequest:2`({ run_type: "llm" }),
-        run`web_fetch:3`({ run_type: "tool" }),
         run`ClaudeManagedAgentModelRequest:4`({ run_type: "llm" }),
+        run`web_fetch:5`({ run_type: "tool" }),
+        run`ClaudeManagedAgentModelRequest:6`({ run_type: "llm" }),
       );
     });
 
-    void expected;
+    expect(tree.nodes).toEqual(expected.nodes);
+    expect(tree.edges).toEqual(expected.edges);
+    expect(tree.data).toMatchObject(expected.data);
+
     const runs = Object.values(tree.data);
     expect(runs.some((run) => run.name === "ClaudeManagedAgent")).toBe(true);
     expect(
