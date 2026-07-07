@@ -114,9 +114,6 @@ test("threads.stats returns a well-formed stats response", async () => {
   const { projectName, projectId, threadId } =
     await setUpProjectWithThread(client);
   try {
-    // Stats are computed by an eventually-consistent aggregation job, so this
-    // only smoke-tests that the endpoint responds rather than asserting that
-    // `turns` has been populated yet.
     const stats = await client.threads.stats(threadId, {
       selects: ["TURNS"],
       session_id: projectId,

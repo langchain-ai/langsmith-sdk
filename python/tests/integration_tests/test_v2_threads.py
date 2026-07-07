@@ -148,12 +148,7 @@ async def test_threads_list_traces(
 
 
 async def test_threads_stats(langchain_client: Client, project_with_thread) -> None:
-    """threads.stats() returns an aggregate stats response for the thread.
-
-    Stats are computed by an eventually-consistent aggregation job, so this
-    only smoke-tests that the endpoint responds with a well-formed object
-    rather than asserting on `turns` being populated.
-    """
+    """threads.stats() returns an aggregate stats response for the thread."""
     project_id, thread_id, _, _ = project_with_thread
     stats = await langchain_client.threads.stats(
         thread_id, selects=["TURNS"], session_id=project_id
