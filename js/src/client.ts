@@ -75,7 +75,12 @@ import {
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
-import { OnlineEvaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
+import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
+import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
+import { Threads } from "./_openapi_client/resources/threads.js";
+import { Traces } from "./_openapi_client/resources/traces.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -156,6 +161,14 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  /**
+   * A function applied for masking serialized run inputs and outputs,
+   * before sending to the API. Can be called with raw inputs, raw
+   * outputs, or a nested `{ error: string }` object for errors.
+   *
+   * If a `hideInputs` or `hideOutputs` function is present,
+   * the client will call it instead of the anonymizer as appropriate.
+   */
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
@@ -879,6 +892,8 @@ export class Client implements LangSmithTracingClientInterface {
     | boolean
     | ((metadata: KVMap) => KVMap | Promise<KVMap>);
 
+  private anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
@@ -1264,6 +1279,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
     this.hideMetadata = config.hideMetadata ?? defaultConfig.hideMetadata;
+    this.anonymizer = config.anonymizer;
 
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
@@ -1454,8 +1470,32 @@ export class Client implements LangSmithTracingClientInterface {
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
   }
 
-  public get onlineEvaluators(): OnlineEvaluators {
+  public get evaluators(): Evaluators {
     return this.openAPIClient.onlineEvaluators;
+  }
+
+  public get runs(): OpenAPIRuns {
+    return this.openAPIClient.runs;
+  }
+
+  /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
+  public get sandboxes(): Sandboxes {
+    return this.openAPIClient.sandboxes;
+  }
+
+  /** Access the v2 datasets resource (experimentRuns, etc.). */
+  public get datasets(): Datasets {
+    return this.openAPIClient.datasets;
+  }
+
+  /** Access the threads resource (query, stats, listTraces). */
+  public get threads(): Threads {
+    return this.openAPIClient.threads;
+  }
+
+  /** Access the traces resource (query, listRuns). */
+  public get traces(): Traces {
+    return this.openAPIClient.traces;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
@@ -1498,6 +1538,26 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Apply the configured anonymizer to a run's error string.
+   *
+   * Unlike inputs/outputs, `error` is a plain string (an exception message or
+   * traceback) that can carry credentials the user never explicitly logged --
+   * e.g. an HTTP-client error whose message embeds an `Authorization` header.
+   * The anonymizer is typed `(KVMap) => KVMap`, so the string is wrapped as
+   * `{ error }`, scrubbed, and unwrapped. Mirrors the Python SDK's
+   * `Client._hide_run_error`.
+   *
+   * TODO: Update anonymizer to always nest inputs/outputs/error for consistency
+   */
+  private async processError(error: string): Promise<string> {
+    if (this.anonymizer == null) {
+      return error;
+    }
+    const result = await this.anonymizer({ error });
+    return typeof result?.error === "string" ? result.error : error;
+  }
+
+  /**
    * Filter content from new_token events to prevent streaming LLM output
    * from being uploaded via events.
    */
@@ -1533,6 +1593,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
+    }
+    if (runParams.error !== undefined) {
+      runParams.error = await this.processError(runParams.error);
     }
     if (runParams.extra != null && "metadata" in runParams.extra) {
       runParams.extra = {
@@ -2659,6 +2722,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
+    }
+    if (run.error) {
+      run.error = await this.processError(run.error);
     }
     if (run.extra != null && "metadata" in run.extra) {
       run.extra = {

@@ -27,6 +27,8 @@ from opentelemetry.sdk.trace.export import (
 )
 from strands.telemetry import StrandsTelemetry
 
+from langsmith._internal.otel._span_utils import rebuild_readable_span
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -217,19 +219,8 @@ class LangSmithSpanExporter(SpanExporter):
             new_attrs["langsmith.metadata.ls_provider"] = "amazon_bedrock"
             new_attrs["langsmith.metadata.ls_model_type"] = "chat"
 
-        return ReadableSpan(
-            name=span.name,
-            context=span.context,
-            parent=span.parent,
-            resource=span.resource,
-            attributes=new_attrs,
-            events=remaining_events,
-            links=span.links,
-            kind=span.kind,
-            status=span.status,
-            start_time=span.start_time,
-            end_time=span.end_time,
-            instrumentation_scope=span.instrumentation_scope,
+        return rebuild_readable_span(
+            span, attributes=new_attrs, events=remaining_events
         )
 
     def _event_to_message(

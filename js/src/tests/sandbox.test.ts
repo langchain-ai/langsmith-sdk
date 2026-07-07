@@ -32,7 +32,6 @@ import {
   LangSmithValidationError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxCreationError,
-  LangSmithSandboxNotReadyError,
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
@@ -1286,19 +1285,22 @@ describe("Sandbox - status fields and not-ready guard", () => {
     expect(sandbox.status_message).toBe("Waiting for resources");
   });
 
-  it("should throw LangSmithSandboxNotReadyError when status is not ready", async () => {
+  it("does not gate dataplane ops on status (stopped runs; platform resumes)", async () => {
+    const mockFetch = createMockFetch({
+      ok: true,
+      json: async () => ({ stdout: "ok\n", stderr: "", exit_code: 0 }),
+    });
     const sandbox = new (Sandbox as any)(
       {
         name: "test-sandbox",
         dataplane_url: "https://dp.example.com",
-        status: "provisioning",
+        status: "stopped",
       },
-      createMockClient(),
+      createMockClient({ _fetch: mockFetch }),
     );
 
-    await expect(sandbox.run("echo hello")).rejects.toThrow(
-      LangSmithSandboxNotReadyError,
-    );
+    const result = await sandbox.run("echo ok");
+    expect(result.stdout).toBe("ok\n");
   });
 
   it("should allow operations when status is ready", async () => {
@@ -1959,11 +1961,20 @@ describe("SandboxClient - snapshot operations", () => {
       "my-env",
       "python:3.12-slim",
       4294967296,
+      { registryId: "reg-1" },
     );
 
     expect(snapshot.id).toBe("snap-1");
     expect(snapshot.status).toBe("ready");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string),
+    ).toEqual({
+      name: "my-env",
+      docker_image: "python:3.12-slim",
+      fs_capacity_bytes: 4294967296,
+      registry_id: "reg-1",
+    });
   });
 
   it("createSnapshotFromDockerfile should sync, build, and capture", async () => {
@@ -2429,5 +2440,18 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
       "captured",
       {},
     );
+  });
+});
+
+describe("SandboxClient registries", () => {
+  it("exposes a cached registries accessor backed by the generated client", () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.smith.langchain.com/v2/sandboxes",
+      apiKey: "k",
+    });
+    const first = client.registries;
+    expect(first).toBeDefined();
+    // Lazily built once and reused.
+    expect(client.registries).toBe(first);
   });
 });

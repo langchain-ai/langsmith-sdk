@@ -40,6 +40,7 @@ from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
+from langsmith.run_trees import RunTree
 from langsmith.schemas import (
     AttachmentsOperations,
     Dataset,
@@ -121,15 +122,17 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-def test_online_evaluators_generated_client_crud(langchain_client: Client) -> None:
-    """Exercise the generated OpenAPI online evaluators resource end to end."""
+async def test_evaluators_generated_client_crud(
+    langchain_client: Client,
+) -> None:
+    """Exercise the generated OpenAPI evaluators resource end to end."""
     evaluator = None
-    name = "__sdk_online_evaluator_integration_" + "".join(
+    name = "__sdk_evaluator_integration_" + "".join(
         random.sample(string.ascii_lowercase, 10)
     )
 
     try:
-        created = langchain_client.online_evaluators.create(
+        created = await langchain_client.evaluators.create(
             name=name,
             type="code",
             code_evaluator={
@@ -143,29 +146,55 @@ def test_online_evaluators_generated_client_crud(langchain_client: Client) -> No
         assert evaluator.name == name
         assert evaluator.type == "code"
 
-        retrieved = langchain_client.online_evaluators.retrieve(evaluator.id)
+        retrieved = await langchain_client.evaluators.retrieve(evaluator.id)
         assert retrieved.id == evaluator.id
         assert retrieved.name == name
 
         updated_name = f"{name}_updated"
-        updated = langchain_client.online_evaluators.update(
+        updated = await langchain_client.evaluators.update(
             evaluator.id,
             name=updated_name,
         )
         assert updated.evaluator is not None
         assert updated.evaluator.name == updated_name
 
-        evaluators = list(
-            langchain_client.online_evaluators.list(
+        evaluators = [
+            item
+            async for item in langchain_client.evaluators.list(
                 name_contains=updated_name, limit=10
             )
-        )
+        ]
         assert evaluator.id in {item.id for item in evaluators}
     finally:
         if evaluator is not None and evaluator.id is not None:
-            langchain_client.online_evaluators.delete(
+            await langchain_client.evaluators.delete(
                 evaluator.id, delete_run_rules=True
             )
+
+
+async def test_aread_project(langchain_client: Client) -> None:
+    """Exercise the async aread_project method against the LangSmith API."""
+    project_name = "__sdk_aread_project_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+    created = langchain_client.create_project(project_name)
+    try:
+        project = await langchain_client.aread_project(project_name=project_name)
+        assert project.id == created.id
+        assert project.name == project_name
+
+        project_by_id = await langchain_client.aread_project(
+            project_id=str(created.id), include_stats=True
+        )
+        assert project_by_id.id == created.id
+
+        nonexistent_name = "__sdk_aread_project_missing_" + "".join(
+            random.sample(string.ascii_lowercase, 10)
+        )
+        with pytest.raises(LangSmithNotFoundError):
+            await langchain_client.aread_project(project_name=nonexistent_name)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 def test_datasets(parameterized_multipart_client: Client) -> None:
@@ -3934,14 +3963,10 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
                             op, run_info, otel_context_map.get(op.id)
                         )
                         if span:
-                            self.original_otel_exporter._span_info[op.id] = {
-                                "span": span,
-                                "created_at": time.time(),
-                            }
+                            self.original_otel_exporter._span_info.set(op.id, span)
                     else:
-                        future.put(
-                            self.original_otel_exporter._span_info[op.id]["span"]
-                        )
+                        span_info = self.original_otel_exporter._span_info.get(op.id)
+                        future.put(span_info.span)
                         self.original_otel_exporter._update_span_for_run(op, run_info)
                 except Exception as e:
                     logger.exception(f"Error processing operation {op.id}: {e}")
@@ -4215,3 +4240,124 @@ def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
                 pass
         if dataset is not None:
             safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+
+
+# ---------------------------------------------------------------------------
+# v2 resource tests (runs.retrieve / runs.query via AsyncRunsResource)
+# ---------------------------------------------------------------------------
+
+_V2_DEFAULT_SELECTS = [
+    "ID",
+    "NAME",
+    "RUN_TYPE",
+    "STATUS",
+    "START_TIME",
+    "END_TIME",
+    "INPUTS",
+    "OUTPUTS",
+    "TAGS",
+    "PROJECT_ID",
+    "TRACE_ID",
+    "DOTTED_ORDER",
+]
+
+
+def _v2_create_project_name(suffix: str) -> str:
+    import uuid
+
+    return f"__test_v2_resources_{suffix}_{uuid.uuid4().hex}"
+
+
+def _v2_cleanup_project(client: Client, project_name: str) -> None:
+    try:
+        client.delete_project(project_name=project_name)
+    except Exception:
+        pass
+
+
+def _v2_get_project_id_or_skip(
+    client: Client,
+    project_name: str,
+    max_retries: int = 30,
+    sleep_time: float = 2.0,
+) -> str:
+    for _ in range(max_retries):
+        try:
+            project = client.read_project(project_name=project_name)
+            return str(project.id)
+        except Exception as e:
+            msg = str(e)
+            if "projects:read" in msg or "403" in msg:
+                pytest.skip(
+                    "requires projects:read permission (service key limitation)"
+                )
+        time.sleep(sleep_time)
+    pytest.fail(f"Project {project_name!r} not found after {max_retries} retries")
+
+
+def _v2_post_trace(project_name: str) -> tuple:
+    from datetime import datetime, timezone
+
+    client = Client()
+    start = datetime.now(timezone.utc)
+    root = RunTree(
+        name="root_run",
+        run_type="chain",
+        inputs={"input": "hello"},
+        project_name=project_name,
+    )
+    root.post()
+    child = root.create_child(
+        name="child_run",
+        run_type="llm",
+        inputs={"prompt": "world"},
+    )
+    child.post()
+    child.end(outputs={"text": "done"})
+    child.patch()
+    root.end(outputs={"result": "ok"})
+    root.patch()
+    project_id = _v2_get_project_id_or_skip(client, project_name)
+    return str(root.id), project_id, start
+
+
+@pytest.fixture
+def v2_client() -> Client:
+    return Client()
+
+
+async def test_runs_retrieve(v2_client: Client) -> None:
+    import time as _time
+
+    project_name = _v2_create_project_name("runs_retrieve")
+    run_id, project_id, start = _v2_post_trace(project_name)
+    run = None
+    for _ in range(15):
+        try:
+            run = await v2_client.runs.retrieve(
+                run_id=run_id,
+                project_id=project_id,
+                start_time=start.isoformat(),
+            )
+            break
+        except Exception:
+            _time.sleep(2)
+    assert run is not None
+    assert run.id == run_id
+    _v2_cleanup_project(v2_client, project_name)
+
+
+async def test_runs_query(v2_client: Client) -> None:
+    project_name = _v2_create_project_name("runs_query")
+    trace_id, project_id, _ = _v2_post_trace(project_name)
+    runs = [
+        r
+        async for r in v2_client.runs.query(
+            project_ids=[project_id],
+            selects=_V2_DEFAULT_SELECTS,
+        )
+    ]
+    assert len(runs) >= 1
+    trace_ids = {r.trace_id for r in runs}
+    assert trace_id in trace_ids
+    _v2_cleanup_project(v2_client, project_name)

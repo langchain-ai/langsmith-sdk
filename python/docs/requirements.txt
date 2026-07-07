@@ -2,7 +2,7 @@ autodoc_pydantic
 sphinx
 myst-parser>=4.0.1
 sphinx-autobuild>=2024.10.3
-pydata-sphinx-theme>=0.18.0
+pydata-sphinx-theme>=0.19.0
 toml>=0.10.2
 myst-nb>=1.4.0
 pyyaml

@@ -11,10 +11,7 @@ import type {
   Snapshot,
   StartSandboxOptions,
 } from "./types.js";
-import {
-  LangSmithDataplaneNotConfiguredError,
-  LangSmithSandboxNotReadyError,
-} from "./errors.js";
+import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import { reconnectWsStream, runWsStream } from "./ws_execute.js";
@@ -101,17 +98,16 @@ export class Sandbox {
   }
 
   /**
-   * Validate and return the dataplane URL.
-   * @throws LangSmithSandboxNotReadyError if sandbox status is not "ready".
+   * Return the dataplane URL.
+   *
+   * The client does not gate on lifecycle status: a stopped sandbox is resumed
+   * by the platform when the dataplane request arrives, so only the presence of
+   * a URL is required here. A genuinely not-ready box surfaces the server's
+   * LangSmithSandboxNotReadyError from the request itself.
+   *
    * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    */
   private requireDataplaneUrl(): string {
-    if (this.status && this.status !== "ready") {
-      throw new LangSmithSandboxNotReadyError(
-        `Sandbox '${this.name}' is not ready (status: ${this.status}). ` +
-          "Use waitForSandbox() to wait for the sandbox to become ready.",
-      );
-    }
     if (!this.dataplane_url) {
       throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +

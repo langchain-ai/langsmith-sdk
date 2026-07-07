@@ -17,6 +17,7 @@ import base64
 import collections
 import concurrent.futures as cf
 import contextlib
+import contextvars
 import datetime
 import functools
 import importlib
@@ -53,7 +54,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx
+import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -69,6 +70,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _aiter as aitertools
 from langsmith._internal import _orjson, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
@@ -110,6 +112,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -147,14 +150,6 @@ def _reset_tracing_drop_log() -> None:
     with _tracing_drops_lock:
         _tracing_drops_count = 0
         _tracing_drops_last_log_time = 0.0
-
-
-def _get_openapi_base_url(api_url: str) -> str:
-    """Convert a handwritten client API URL to a generated OpenAPI base URL."""
-    api_url = api_url.rstrip("/")
-    if api_url.endswith("/api/v1"):
-        return api_url[: -len("/api/v1")]
-    return api_url[:-3] if api_url.endswith("/v1") else api_url
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -271,9 +266,18 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
-    from langsmith._openapi_client.resources.online_evaluators import (
-        OnlineEvaluatorsResource,
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
     )
+    from langsmith._openapi_client.resources.online_evaluators import (
+        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
+    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
+    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
     # OTEL imports for type hints
     try:
@@ -911,6 +915,7 @@ class Client:
         "_tracing_mode",
         "_profile_auth",
         "_profile_auth_headers",
+        "_langsmith_api",
     ]
 
     _api_key: Optional[str]
@@ -921,6 +926,7 @@ class Client:
     _manual_cleanup: bool
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
+    _langsmith_api: Optional[LangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1459,6 +1465,67 @@ class Client:
             )
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
+        self._langsmith_api = None
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    def _get_langsmith_api(self) -> LangsmithOpenAPIClient:
+        if self._langsmith_api is None:
+            self._langsmith_api = LangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._langsmith_api
+
+    @property
+    def runs(self) -> AsyncRunsResource:
+        """Access the runs resource."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().runs
+
+    @property
+    def evaluators(self) -> AsyncEvaluatorsResource:
+        """Access the evaluator resource."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().sandboxes
+
+    @property
+    def datasets(self) -> AsyncDatasetsResource:
+        """Access the v2 datasets resource (experiment_runs, etc.)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().datasets
+
+    @property
+    def threads(self) -> AsyncThreadsResource:
+        """Access the threads resource (query, stats, list_traces)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().threads
+
+    @property
+    def traces(self) -> AsyncTracesResource:
+        """Access the traces resource (query, list_runs)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().traces
+
     def _dump_failed_trace(
         self,
         body_fn: Callable[[], bytes],
@@ -1685,25 +1752,6 @@ class Client:
             self._info = ls_schemas.LangSmithInfo()
 
         return self._info
-
-    @property
-    def online_evaluators(self) -> OnlineEvaluatorsResource:
-        """Access generated online evaluator CRUD methods."""
-        from langsmith._openapi_client import Langsmith as OpenAPILangsmith
-
-        _check_backend_version(self.info.version)
-        self._ensure_profile_auth()
-        headers = self._headers
-        if self._profile_auth is not None:
-            headers = self._profile_auth.prepare_request_headers(headers)
-
-        return OpenAPILangsmith(
-            api_key=self.api_key,
-            tenant_id=self.workspace_id,
-            base_url=_get_openapi_base_url(self.api_url),
-            timeout=httpx.Timeout(self._timeout[1], connect=self._timeout[0]),
-            default_headers=headers,
-        ).online_evaluators
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
@@ -2239,6 +2287,8 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if "events" in run_create and run_create["events"] is not None:
             run_create["events"] = self._filter_new_token_events(run_create["events"])
+        if "error" in run_create and run_create["error"] is not None:
+            run_create["error"] = self._hide_run_error(run_create["error"])
         # Hide metadata in extra if present
         if "extra" in run_create and isinstance(run_create["extra"], dict):
             extra = run_create["extra"]
@@ -2663,6 +2713,28 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _hide_run_error(self, error: Any):
+        """Apply the configured anonymizer to a run's error string.
+
+        Unlike inputs/outputs, ``error`` is a plain string (``repr(exc)`` plus a
+        formatted traceback, see ``run_helpers._format_error_with_exceptions_to_handle``)
+        that can capture credentials the user never explicitly logged -- e.g. an
+        HTTP client exception whose request-object repr includes an
+        ``Authorization`` header. Route it through the same anonymizer as
+        inputs/outputs so secrets are scrubbed client-side before upload.
+
+        The value is wrapped as ``{"error": ...}`` so that both
+        ``create_secret_anonymizer`` and a user-supplied anonymizer matching the
+        documented ``Callable[[dict], dict]`` signature receive a dict (a bare
+        string would break a dict-typed anonymizer), then unwrapped.
+        """
+        if not self._anonymizer or error is None:
+            return error
+        scrubbed = self._anonymizer({"error": error})
+        if isinstance(scrubbed, dict) and "error" in scrubbed:
+            return scrubbed["error"]
+        return error
 
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
@@ -3582,7 +3654,7 @@ class Client:
         else:
             data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
-            data["error"] = error
+            data["error"] = self._hide_run_error(error)
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
@@ -4944,6 +5016,34 @@ class Client:
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
+        )
+
+    async def aread_project(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
+    ) -> ls_schemas.TracerSessionResult:
+        """Asynchronously read a project from the LangSmith API.
+
+        Args:
+            project_id (Optional[str]):
+                The ID of the project to read.
+            project_name (Optional[str]): The name of the project to read.
+                Only one of project_id or project_name may be given.
+            include_stats (bool, default=False):
+                Whether to include a project's aggregate statistics in the response.
+
+        Returns:
+            TracerSessionResult: The project.
+        """
+        return await aitertools.aio_to_thread(
+            contextvars.copy_context(),
+            self.read_project,
+            project_id=project_id,
+            project_name=project_name,
+            include_stats=include_stats,
         )
 
     def has_project(
@@ -10948,17 +11048,8 @@ class Client:
             params["status"] = status
         if priority is not None:
             params["priority"] = priority
-        path = _platform_path(self.api_url, "forge-issues")
-        full_url = _construct_url(self.api_url, path)
-        self._ensure_profile_auth()
-        response = self.session.request(
-            "GET",
-            full_url,
-            params=params,
-            headers=self._headers,
-            timeout=self._timeout,
-        )
-        ls_utils.raise_for_status_with_text(response)
+        path = _platform_path(self.api_url, "issues")
+        response = self.request_with_retries("GET", path, params=params)
         return response.json()
 
     def _ensure_insights_api_key(

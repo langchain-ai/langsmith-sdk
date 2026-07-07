@@ -5,10 +5,10 @@ import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
-from functools import cache
 from typing import Any, Optional
 
 from langsmith._internal import _context
+from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree, trace
 
 from ._config import get_tracing_config
@@ -42,16 +42,6 @@ from ._usage import extract_usage_metadata
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "claude.conversation"
-
-
-@cache
-def _get_package_version(package_name: str) -> str | None:
-    try:
-        from importlib.metadata import version
-
-        return version(package_name)
-    except Exception:
-        return None
 
 
 class TurnLifecycle:
@@ -495,7 +485,7 @@ def instrument_claude_client(original_class: Any) -> None:
         trace_inputs: dict[str, Any] = {}
         trace_metadata: dict[str, Any] = {
             "ls_integration": "claude-agent-sdk",
-            "ls_integration_version": _get_package_version("claude_agent_sdk"),
+            "ls_integration_version": get_package_version("claude_agent_sdk"),
         }
 
         awaiting_streamed_input = self._ls_streamed_input is not None
@@ -646,11 +636,13 @@ def instrument_claude_client(original_class: Any) -> None:
                                 )
                         tracker.mark_next_start()
                     elif msg_type == "ResultMessage":
+                        session_id_val = getattr(msg, "session_id", None)
                         meta = {
                             k: v
                             for k, v in {
                                 "num_turns": getattr(msg, "num_turns", None),
-                                "session_id": getattr(msg, "session_id", None),
+                                "session_id": session_id_val,
+                                "thread_id": session_id_val,
                                 "duration_ms": getattr(msg, "duration_ms", None),
                                 "duration_api_ms": getattr(
                                     msg, "duration_api_ms", None

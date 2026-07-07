@@ -512,14 +512,8 @@ export interface CreateSandboxOptions {
  * Options for creating a snapshot from a Docker image.
  */
 export interface CreateSnapshotOptions {
-  /** Private registry ID (alternative to URL/credentials). */
+  /** Private registry ID. */
   registryId?: string;
-  /** Registry URL for private images. */
-  registryUrl?: string;
-  /** Registry username. */
-  registryUsername?: string;
-  /** Registry password. */
-  registryPassword?: string;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */

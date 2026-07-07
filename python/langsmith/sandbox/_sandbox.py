@@ -12,7 +12,6 @@ from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
     SandboxConnectionError,
-    SandboxNotReadyError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
@@ -185,20 +184,19 @@ class Sandbox:
                 pass
 
     def _require_dataplane_url(self) -> str:
-        """Validate and return the dataplane URL.
+        """Return the dataplane URL.
+
+        The client does not gate on lifecycle status: a stopped sandbox is
+        resumed by the platform when the dataplane request arrives, so only the
+        presence of a URL is required here. A genuinely not-ready box surfaces
+        the server's ``SandboxNotReadyError`` from the request itself.
 
         Returns:
             The dataplane URL.
 
         Raises:
-            SandboxNotReadyError: If sandbox status is not "ready".
             DataplaneNotConfiguredError: If dataplane_url is not configured.
         """
-        if self.status != "ready":
-            raise SandboxNotReadyError(
-                f"Sandbox '{self.name}' is not ready (status: {self.status}). "
-                "Wait for status 'ready' before running operations."
-            )
         if not self.dataplane_url:
             raise DataplaneNotConfiguredError(
                 f"Sandbox '{self.name}' does not have a dataplane_url configured. "

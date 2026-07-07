@@ -99,11 +99,16 @@ export class StreamManager {
 
       this.namespaces["root"].extra ??= {};
       this.namespaces["root"].extra.metadata ??= {};
-      this.namespaces["root"].extra.metadata.usage_metadata = usage;
+      // Keep the SDK's final aggregate usage available for inspection, but do not
+      // store it as `usage_metadata` on the parent chain. LangSmith rollups
+      // already aggregate child LLM usage, so parent `usage_metadata` would be
+      // counted again (notably doubling Anthropic cache-read/cache-write tokens).
+      this.namespaces["root"].extra.metadata.ls_aggregated_usage = usage;
 
       this.namespaces["root"].extra.metadata.is_error = message.is_error;
       this.namespaces["root"].extra.metadata.num_turns = message.num_turns;
       this.namespaces["root"].extra.metadata.session_id = message.session_id;
+      this.namespaces["root"].extra.metadata.thread_id = message.session_id;
       this.namespaces["root"].extra.metadata.duration_ms = message.duration_ms;
       this.namespaces["root"].extra.metadata.duration_api_ms =
         message.duration_api_ms;
