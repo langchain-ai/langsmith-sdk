@@ -276,6 +276,8 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
+    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
     # OTEL imports for type hints
     try:
@@ -1484,6 +1486,18 @@ class Client:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().datasets
+
+    @property
+    def threads(self) -> AsyncThreadsResource:
+        """Access the threads resource (query, stats, list_traces)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().threads
+
+    @property
+    def traces(self) -> AsyncTracesResource:
+        """Access the traces resource (query, list_runs)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().traces
 
     def _dump_failed_trace(
         self,
