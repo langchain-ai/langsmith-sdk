@@ -87,6 +87,26 @@ import {
   RunsItemsCursorPostPagination,
 } from './resources/runs.js';
 import {
+  ThreadListItem,
+  ThreadListItemsItemsCursorPostPagination,
+  ThreadListTracesParams,
+  ThreadQueryParams,
+  ThreadStatsParams,
+  ThreadStatsResponse,
+  ThreadTraceListItem,
+  ThreadTraceListItemsItemsCursorGetPagination,
+  Threads,
+} from './resources/threads.js';
+import {
+  Trace,
+  TraceAggregates,
+  TraceListRunsParams,
+  TraceListRunsResponse,
+  TraceQueryParams,
+  Traces,
+  TracesItemsCursorPostPagination,
+} from './resources/traces.js';
+import {
   DataType,
   Dataset,
   DatasetTransformation,
@@ -875,6 +895,8 @@ export class Langsmith {
 
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
+  threads: API.Threads = new API.Threads(this);
+  traces: API.Traces = new API.Traces(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
@@ -883,6 +905,8 @@ export class Langsmith {
 
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
+Langsmith.Threads = Threads;
+Langsmith.Traces = Traces;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Info = Info;
 Langsmith.Issues = Issues;
@@ -970,6 +994,28 @@ export declare namespace Langsmith {
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,
     type RunQueryParams as RunQueryParams,
+  };
+
+  export {
+    Threads as Threads,
+    type ThreadListItem as ThreadListItem,
+    type ThreadTraceListItem as ThreadTraceListItem,
+    type ThreadStatsResponse as ThreadStatsResponse,
+    type ThreadTraceListItemsItemsCursorGetPagination as ThreadTraceListItemsItemsCursorGetPagination,
+    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type ThreadListTracesParams as ThreadListTracesParams,
+    type ThreadQueryParams as ThreadQueryParams,
+    type ThreadStatsParams as ThreadStatsParams,
+  };
+
+  export {
+    Traces as Traces,
+    type Trace as Trace,
+    type TraceAggregates as TraceAggregates,
+    type TraceListRunsResponse as TraceListRunsResponse,
+    type TracesItemsCursorPostPagination as TracesItemsCursorPostPagination,
+    type TraceListRunsParams as TraceListRunsParams,
+    type TraceQueryParams as TraceQueryParams,
   };
 
   export {

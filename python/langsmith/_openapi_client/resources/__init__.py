@@ -24,6 +24,22 @@ from .issues import (
     IssuesResourceWithStreamingResponse,
     AsyncIssuesResourceWithStreamingResponse,
 )
+from .traces import (
+    TracesResource,
+    AsyncTracesResource,
+    TracesResourceWithRawResponse,
+    AsyncTracesResourceWithRawResponse,
+    TracesResourceWithStreamingResponse,
+    AsyncTracesResourceWithStreamingResponse,
+)
+from .threads import (
+    ThreadsResource,
+    AsyncThreadsResource,
+    ThreadsResourceWithRawResponse,
+    AsyncThreadsResourceWithRawResponse,
+    ThreadsResourceWithStreamingResponse,
+    AsyncThreadsResourceWithStreamingResponse,
+)
 from .datasets import (
     DatasetsResource,
     AsyncDatasetsResource,
@@ -62,6 +78,18 @@ __all__ = [
     "AsyncRunsResourceWithRawResponse",
     "RunsResourceWithStreamingResponse",
     "AsyncRunsResourceWithStreamingResponse",
+    "ThreadsResource",
+    "AsyncThreadsResource",
+    "ThreadsResourceWithRawResponse",
+    "AsyncThreadsResourceWithRawResponse",
+    "ThreadsResourceWithStreamingResponse",
+    "AsyncThreadsResourceWithStreamingResponse",
+    "TracesResource",
+    "AsyncTracesResource",
+    "TracesResourceWithRawResponse",
+    "AsyncTracesResourceWithRawResponse",
+    "TracesResourceWithStreamingResponse",
+    "AsyncTracesResourceWithStreamingResponse",
     "OnlineEvaluatorsResource",
     "AsyncOnlineEvaluatorsResource",
     "OnlineEvaluatorsResourceWithRawResponse",

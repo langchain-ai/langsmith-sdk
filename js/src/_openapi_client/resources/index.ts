@@ -66,3 +66,23 @@ export {
   type SnapshotListResponse,
   type SnapshotResponse,
 } from './sandboxes/sandboxes.js';
+export {
+  Threads,
+  type ThreadListItem,
+  type ThreadTraceListItem,
+  type ThreadStatsResponse,
+  type ThreadListTracesParams,
+  type ThreadQueryParams,
+  type ThreadStatsParams,
+  type ThreadTraceListItemsItemsCursorGetPagination,
+  type ThreadListItemsItemsCursorPostPagination,
+} from './threads.js';
+export {
+  Traces,
+  type Trace,
+  type TraceAggregates,
+  type TraceListRunsResponse,
+  type TraceListRunsParams,
+  type TraceQueryParams,
+  type TracesItemsCursorPostPagination,
+} from './traces.js';
