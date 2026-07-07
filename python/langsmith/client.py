@@ -726,7 +726,7 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
 def _serialize_run_to_add_by_key(
     run: ls_schemas.RunToAddByKey, index: int
 ) -> dict[str, str]:
-    """Build the JSON body for one entry of `add_runs_to_annotation_queue_by_key`.
+    """Build the JSON body for one `runs` entry of `add_runs_to_annotation_queue`.
 
     Serializes UUIDs and `start_time` to strings, since the `requests` `json=`
     encoder does not handle `UUID`/`datetime` natively.
@@ -8807,48 +8807,46 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_ids: Optional[list[ID_TYPE]] = None,
+        runs: Optional[Sequence[ls_schemas.RunToAddByKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
+        Provide exactly one of `runs` or `run_ids`:
+
+        - `runs` (preferred): each entry carries the run's full lookup key
+          (`run_id`, `session_id`, `start_time`, and an optional
+          `source_proposed_example_id`). This lets the run be located directly,
+          without a scan, and is required for workspaces served by SmithDB.
+        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
+          future release; prefer `runs`.
+
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
-            run_ids (List[Union[UUID, str]]): The IDs of the runs to be added to the annotation
-                queue.
+            run_ids (Optional[List[Union[UUID, str]]]): The IDs of the runs to be
+                added to the annotation queue.
+            runs (Optional[Sequence[RunToAddByKey]]): The runs to add, each with
+                its full lookup key.
 
         Returns:
             None
         """
-        response = self.request_with_retries(
-            "POST",
-            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
-            json=[str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)],
-        )
-        ls_utils.raise_for_status_with_text(response)
-
-    def add_runs_to_annotation_queue_by_key(
-        self, queue_id: ID_TYPE, *, runs: Sequence[ls_schemas.RunToAddByKey]
-    ) -> None:
-        """Add runs to an annotation queue by their SmithDB lookup key.
-
-        Unlike `add_runs_to_annotation_queue`, which only takes run IDs, this
-        passes the full partition key (`session_id` and `start_time`) for each
-        run so it can be located in SmithDB without a scan.
-
-        Args:
-            queue_id (Union[UUID, str]): The ID of the annotation queue.
-            runs (Sequence[RunToAddByKey]): The runs to add. Each entry must
-                include `run_id`, `session_id`, and `start_time`, and may include
-                an optional `source_proposed_example_id`.
-
-        Returns:
-            None
-        """
-        response = self.request_with_retries(
-            "POST",
-            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key",
-            json=[_serialize_run_to_add_by_key(run, i) for i, run in enumerate(runs)],
-        )
+        if (runs is None) == (run_ids is None):
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        if runs is not None:
+            path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
+            json = [_serialize_run_to_add_by_key(run, i) for i, run in enumerate(runs)]
+        else:
+            path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
+            json = [
+                str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
+            ]
+        response = self.request_with_retries("POST", path, json=json)
         ls_utils.raise_for_status_with_text(response)
 
     def delete_run_from_annotation_queue(

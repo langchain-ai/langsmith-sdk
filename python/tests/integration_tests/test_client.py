@@ -3553,7 +3553,7 @@ def test_annotation_queue_runs_by_key(langchain_client: Client):
 
     # Read the runs back to obtain their SmithDB partition key fields.
     fetched = [langchain_client.read_run(rid) for rid in run_ids]
-    langchain_client.add_runs_to_annotation_queue_by_key(
+    langchain_client.add_runs_to_annotation_queue(
         queue_id=queue.id,
         runs=[
             {

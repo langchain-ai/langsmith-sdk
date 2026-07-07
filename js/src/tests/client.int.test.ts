@@ -1334,13 +1334,15 @@ test("annotationqueue add runs by key", async () => {
     }
 
     // Add the run using its SmithDB partition key.
-    await client.addRunsToAnnotationQueueByKey(queue.id, [
-      {
-        runId: foundRun.id,
-        sessionId: foundRun.session_id as string,
-        startTime: foundRun.start_time as string | number,
-      },
-    ]);
+    await client.addRunsToAnnotationQueue(queue.id, {
+      runs: [
+        {
+          runId: foundRun.id,
+          sessionId: foundRun.session_id as string,
+          startTime: foundRun.start_time as string | number,
+        },
+      ],
+    });
 
     const listed = await toArray(client.listRunsFromAnnotationQueue(queueId));
     expect(listed.length).toBe(1);

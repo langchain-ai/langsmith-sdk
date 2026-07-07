@@ -5715,98 +5715,93 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * Add runs to an annotation queue with the specified queue ID.
+   *
+   * Provide exactly one of `runs` or `runIds`:
+   * - `runs` (preferred): each entry carries the run's full lookup key
+   *   (`runId`, `sessionId`, `startTime`, and an optional
+   *   `sourceProposedExampleId`). This lets the run be located directly, without
+   *   a scan, and is required for workspaces served by SmithDB.
+   * - `runIds`: a plain list of run IDs. This path will be deprecated in a
+   *   future release; prefer `runs`. Passing a bare `string[]` is equivalent to
+   *   `{ runIds }`.
+   *
    * @param queueId - The ID of the annotation queue
-   * @param runIds - The IDs of the runs to be added to the annotation queue
+   * @param runsOrRunIds - Either a list of run IDs (deprecated) or an options
+   * object with `runs` (preferred) and/or `runIds`.
    */
   public async addRunsToAnnotationQueue(
     queueId: string,
-    runIds: string[],
-  ): Promise<void> {
-    const body = JSON.stringify(
-      runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString()),
-    );
-    await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/annotation-queues/${assertUuid(
-          queueId,
-          "queueId",
-        )}/runs`,
-        {
-          method: "POST",
-          headers: {
-            ...this._mergedHeaders,
-            "Content-Type": "application/json",
-          },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
+    runsOrRunIds:
+      | string[]
+      | {
+          runIds?: string[];
+          runs?: Array<{
+            runId: string;
+            sessionId: string;
+            startTime: string | number | Date;
+            sourceProposedExampleId?: string;
+          }>;
         },
-      );
-      await raiseForStatus(res, "add runs to annotation queue", true);
-      return res;
-    });
-  }
+  ): Promise<void> {
+    const options = Array.isArray(runsOrRunIds)
+      ? { runIds: runsOrRunIds }
+      : runsOrRunIds;
+    const { runIds, runs } = options;
+    if (runs !== undefined && runIds !== undefined) {
+      throw new Error("Provide exactly one of `runs` or `runIds`, not both.");
+    }
 
-  /**
-   * Add runs to an annotation queue by their SmithDB lookup key.
-   *
-   * Unlike {@link addRunsToAnnotationQueue}, which only takes run IDs, this
-   * passes the full partition key (`sessionId` and `startTime`) for each run so
-   * it can be located in SmithDB without a scan.
-   *
-   * @param queueId - The ID of the annotation queue
-   * @param runs - The runs to add. Each entry must include `runId`, `sessionId`,
-   * and `startTime`, and may include an optional `sourceProposedExampleId`.
-   */
-  public async addRunsToAnnotationQueueByKey(
-    queueId: string,
-    runs: Array<{
-      runId: string;
-      sessionId: string;
-      startTime: string | number | Date;
-      sourceProposedExampleId?: string;
-    }>,
-  ): Promise<void> {
-    const body = JSON.stringify(
-      runs.map((run, i) => {
-        const serialized: Record<string, string> = {
-          run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
-          session_id: assertUuid(
-            run.sessionId,
-            `runs[${i}].sessionId`,
-          ).toString(),
-          start_time:
-            typeof run.startTime === "string"
-              ? run.startTime
-              : new Date(run.startTime).toISOString(),
-        };
-        if (run.sourceProposedExampleId != null) {
-          serialized.source_proposed_example_id = assertUuid(
-            run.sourceProposedExampleId,
-            `runs[${i}].sourceProposedExampleId`,
-          ).toString();
-        }
-        return serialized;
-      }),
-    );
-    await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/annotation-queues/${assertUuid(
-          queueId,
-          "queueId",
-        )}/runs/by-key`,
-        {
-          method: "POST",
-          headers: {
-            ...this._mergedHeaders,
-            "Content-Type": "application/json",
-          },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        },
+    const base = `${this.apiUrl}/annotation-queues/${assertUuid(
+      queueId,
+      "queueId",
+    )}/runs`;
+    let url: string;
+    let body: string;
+    if (runs !== undefined) {
+      url = `${base}/by-key`;
+      body = JSON.stringify(
+        runs.map((run, i) => {
+          const serialized: Record<string, string> = {
+            run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
+            session_id: assertUuid(
+              run.sessionId,
+              `runs[${i}].sessionId`,
+            ).toString(),
+            start_time:
+              typeof run.startTime === "string"
+                ? run.startTime
+                : new Date(run.startTime).toISOString(),
+          };
+          if (run.sourceProposedExampleId != null) {
+            serialized.source_proposed_example_id = assertUuid(
+              run.sourceProposedExampleId,
+              `runs[${i}].sourceProposedExampleId`,
+            ).toString();
+          }
+          return serialized;
+        }),
       );
-      await raiseForStatus(res, "add runs to annotation queue by key", true);
+    } else if (runIds !== undefined) {
+      url = base;
+      body = JSON.stringify(
+        runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString()),
+      );
+    } else {
+      throw new Error("Provide exactly one of `runs` or `runIds`.");
+    }
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "POST",
+        headers: {
+          ...this._mergedHeaders,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body,
+      });
+      await raiseForStatus(res, "add runs to annotation queue", true);
       return res;
     });
   }
