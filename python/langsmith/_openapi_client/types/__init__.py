@@ -6,7 +6,6 @@ from .run import Run as Run
 from .issue import Issue as Issue
 from .data_type import DataType as DataType
 from .run_type_enum import RunTypeEnum as RunTypeEnum
-from .tracer_session import TracerSession as TracerSession
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
 from .run_query_params import RunQueryParams as RunQueryParams
 from .sandbox_response import SandboxResponse as SandboxResponse
@@ -16,20 +15,15 @@ from .info_list_response import InfoListResponse as InfoListResponse
 from .online_spend_limit import OnlineSpendLimit as OnlineSpendLimit
 from .run_query_v2_params import RunQueryV2Params as RunQueryV2Params
 from .run_retrieve_params import RunRetrieveParams as RunRetrieveParams
-from .session_list_params import SessionListParams as SessionListParams
 from .online_llm_evaluator import OnlineLlmEvaluator as OnlineLlmEvaluator
 from .service_url_response import ServiceURLResponse as ServiceURLResponse
 from .online_code_evaluator import OnlineCodeEvaluator as OnlineCodeEvaluator
 from .online_evaluator_type import OnlineEvaluatorType as OnlineEvaluatorType
 from .sandbox_list_response import SandboxListResponse as SandboxListResponse
-from .session_create_params import SessionCreateParams as SessionCreateParams
-from .session_update_params import SessionUpdateParams as SessionUpdateParams
 from .run_retrieve_v2_params import RunRetrieveV2Params as RunRetrieveV2Params
 from .snapshot_list_response import SnapshotListResponse as SnapshotListResponse
 from .sort_by_dataset_column import SortByDatasetColumn as SortByDatasetColumn
 from .sandbox_status_response import SandboxStatusResponse as SandboxStatusResponse
-from .session_retrieve_params import SessionRetrieveParams as SessionRetrieveParams
-from .session_sortable_columns import SessionSortableColumns as SessionSortableColumns
 from .online_evaluator_run_rule import OnlineEvaluatorRunRule as OnlineEvaluatorRunRule
 from .online_evaluator_spend_day import OnlineEvaluatorSpendDay as OnlineEvaluatorSpendDay
 from .online_evaluator_list_params import OnlineEvaluatorListParams as OnlineEvaluatorListParams
@@ -45,9 +39,6 @@ from .bulk_delete_evaluator_failed_item import BulkDeleteEvaluatorFailedItem as 
 from .runs_filter_data_source_type_enum import RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum
 from .get_online_evaluator_spend_response import GetOnlineEvaluatorSpendResponse as GetOnlineEvaluatorSpendResponse
 from .online_evaluator_bulk_delete_params import OnlineEvaluatorBulkDeleteParams as OnlineEvaluatorBulkDeleteParams
-from .tracer_session_without_virtual_fields import (
-    TracerSessionWithoutVirtualFields as TracerSessionWithoutVirtualFields,
-)
 from .create_online_llm_evaluator_request_param import (
     CreateOnlineLlmEvaluatorRequestParam as CreateOnlineLlmEvaluatorRequestParam,
 )

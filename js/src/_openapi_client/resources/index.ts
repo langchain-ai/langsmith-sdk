@@ -66,19 +66,3 @@ export {
   type SnapshotListResponse,
   type SnapshotResponse,
 } from './sandboxes/sandboxes.js';
-export {
-  Sessions,
-  type CustomChartsSection,
-  type CustomChartsSectionRequest,
-  type RunStatsGroupBy,
-  type SessionSortableColumns,
-  type TimedeltaInput,
-  type TracerSession,
-  type TracerSessionWithoutVirtualFields,
-  type SessionDeleteResponse,
-  type SessionCreateParams,
-  type SessionRetrieveParams,
-  type SessionUpdateParams,
-  type SessionListParams,
-  type TracerSessionsOffsetPaginationTopLevelArray,
-} from './sessions.js';

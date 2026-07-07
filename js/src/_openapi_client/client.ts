@@ -87,22 +87,6 @@ import {
   RunsItemsCursorPostPagination,
 } from './resources/runs.js';
 import {
-  CustomChartsSection,
-  CustomChartsSectionRequest,
-  RunStatsGroupBy,
-  SessionCreateParams,
-  SessionDeleteResponse,
-  SessionListParams,
-  SessionRetrieveParams,
-  SessionSortableColumns,
-  SessionUpdateParams,
-  Sessions,
-  TimedeltaInput,
-  TracerSession,
-  TracerSessionWithoutVirtualFields,
-  TracerSessionsOffsetPaginationTopLevelArray,
-} from './resources/sessions.js';
-import {
   DataType,
   Dataset,
   DatasetTransformation,
@@ -889,7 +873,6 @@ export class Langsmith {
 
   static toFile = Uploads.toFile;
 
-  sessions: API.Sessions = new API.Sessions(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
@@ -898,7 +881,6 @@ export class Langsmith {
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
-Langsmith.Sessions = Sessions;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
@@ -961,23 +943,6 @@ export declare namespace Langsmith {
   export {
     type ItemsCursorGetPaginationParams as ItemsCursorGetPaginationParams,
     type ItemsCursorGetPaginationResponse as ItemsCursorGetPaginationResponse,
-  };
-
-  export {
-    Sessions as Sessions,
-    type CustomChartsSection as CustomChartsSection,
-    type CustomChartsSectionRequest as CustomChartsSectionRequest,
-    type RunStatsGroupBy as RunStatsGroupBy,
-    type SessionSortableColumns as SessionSortableColumns,
-    type TimedeltaInput as TimedeltaInput,
-    type TracerSession as TracerSession,
-    type TracerSessionWithoutVirtualFields as TracerSessionWithoutVirtualFields,
-    type SessionDeleteResponse as SessionDeleteResponse,
-    type TracerSessionsOffsetPaginationTopLevelArray as TracerSessionsOffsetPaginationTopLevelArray,
-    type SessionCreateParams as SessionCreateParams,
-    type SessionRetrieveParams as SessionRetrieveParams,
-    type SessionUpdateParams as SessionUpdateParams,
-    type SessionListParams as SessionListParams,
   };
 
   export {

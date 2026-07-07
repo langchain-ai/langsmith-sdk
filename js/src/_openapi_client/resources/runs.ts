@@ -2,7 +2,6 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../core/resource.js';
-import * as SessionsAPI from './sessions.js';
 import { APIPromise } from '../core/api-promise.js';
 import {
   ItemsCursorPostPagination,
@@ -656,7 +655,7 @@ export interface RunStatsQueryParams {
   /**
    * Group by param for run stats.
    */
-  group_by?: SessionsAPI.RunStatsGroupBy | null;
+  group_by?: RunStatsQueryParams.GroupBy | null;
 
   groups?: Array<string | null> | null;
 
@@ -727,6 +726,19 @@ export interface RunStatsQueryParams {
   tree_filter?: string | null;
 
   use_experimental_search?: boolean;
+}
+
+export namespace RunStatsQueryParams {
+  /**
+   * Group by param for run stats.
+   */
+  export interface GroupBy {
+    attribute: 'name' | 'run_type' | 'tag' | 'metadata';
+
+    max_groups?: number;
+
+    path?: string | null;
+  }
 }
 
 /**

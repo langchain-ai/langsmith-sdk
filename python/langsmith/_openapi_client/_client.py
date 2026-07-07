@@ -36,11 +36,10 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info, runs, issues, datasets, sessions, sandboxes, online_evaluators
+    from .resources import info, runs, issues, datasets, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.runs import RunsResource, AsyncRunsResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
-    from .resources.sessions import SessionsResource, AsyncSessionsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource
@@ -124,12 +123,6 @@ class Langsmith(SyncAPIClient):
             custom_query=default_query,
             _strict_response_validation=_strict_response_validation,
         )
-
-    @cached_property
-    def sessions(self) -> SessionsResource:
-        from .resources.sessions import SessionsResource
-
-        return SessionsResource(self)
 
     @cached_property
     def datasets(self) -> DatasetsResource:
@@ -376,12 +369,6 @@ class AsyncLangsmith(AsyncAPIClient):
         )
 
     @cached_property
-    def sessions(self) -> AsyncSessionsResource:
-        from .resources.sessions import AsyncSessionsResource
-
-        return AsyncSessionsResource(self)
-
-    @cached_property
     def datasets(self) -> AsyncDatasetsResource:
         from .resources.datasets import AsyncDatasetsResource
 
@@ -564,12 +551,6 @@ class LangsmithWithRawResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithRawResponse:
-        from .resources.sessions import SessionsResourceWithRawResponse
-
-        return SessionsResourceWithRawResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithRawResponse:
         from .resources.datasets import DatasetsResourceWithRawResponse
 
@@ -611,12 +592,6 @@ class AsyncLangsmithWithRawResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
-
-    @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithRawResponse:
-        from .resources.sessions import AsyncSessionsResourceWithRawResponse
-
-        return AsyncSessionsResourceWithRawResponse(self._client.sessions)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithRawResponse:
@@ -662,12 +637,6 @@ class LangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithStreamingResponse:
-        from .resources.sessions import SessionsResourceWithStreamingResponse
-
-        return SessionsResourceWithStreamingResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithStreamingResponse:
         from .resources.datasets import DatasetsResourceWithStreamingResponse
 
@@ -709,12 +678,6 @@ class AsyncLangsmithWithStreamedResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
-
-    @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithStreamingResponse:
-        from .resources.sessions import AsyncSessionsResourceWithStreamingResponse
-
-        return AsyncSessionsResourceWithStreamingResponse(self._client.sessions)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithStreamingResponse:
