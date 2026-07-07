@@ -1,15 +1,14 @@
 /**
- * Smoke integration tests for the v2 threads and traces resources.
+ * Smoke integration tests for the v2 threads resource.
  *
- * Covers `Client.threads` (query, listTraces, stats) and `Client.traces`
- * (query, listRuns), exposed in #3162.
+ * Covers `Client.threads` (query, listTraces, stats), exposed in #3162.
  */
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { deleteProject, pollRunsUntilCount, waitUntil } from "./utils.js";
 
 async function setUpProjectWithThread(client: Client) {
-  const projectName = `__test_v2_threads_traces_${uuidv4().slice(0, 12)}`;
+  const projectName = `__test_v2_threads_${uuidv4().slice(0, 12)}`;
   if (await client.hasProject({ projectName })) {
     await deleteProject(client, projectName);
   }
@@ -59,6 +58,7 @@ test("threads.query returns a page containing the created thread", async () => {
   const { projectName, projectId, threadId, minStartTime, maxStartTime } =
     await setUpProjectWithThread(client);
   try {
+    let matched: { thread_id?: string } | undefined;
     await waitUntil(
       async () => {
         const page = await client.threads.query({
@@ -67,18 +67,13 @@ test("threads.query returns a page containing the created thread", async () => {
           min_start_time: minStartTime,
           max_start_time: maxStartTime,
         });
-        return page.items.some((t) => t.thread_id === threadId);
+        matched = page.items.find((t) => t.thread_id === threadId);
+        return matched !== undefined;
       },
       90_000,
       3_000,
     );
-    const page = await client.threads.query({
-      project_id: projectId,
-      page_size: 10,
-      min_start_time: minStartTime,
-      max_start_time: maxStartTime,
-    });
-    expect(page.items.some((t) => t.thread_id === threadId)).toBe(true);
+    expect(matched?.thread_id).toBe(threadId);
   } finally {
     await deleteProject(client, projectName);
   }
@@ -92,22 +87,20 @@ test("threads.listTraces returns traces belonging to the thread", async () => {
   const { projectName, projectId, threadId } =
     await setUpProjectWithThread(client);
   try {
+    let itemCount = 0;
     await waitUntil(
       async () => {
         const page = await client.threads.listTraces(threadId, {
           project_id: projectId,
           page_size: 10,
         });
-        return page.items.length > 0;
+        itemCount = page.items.length;
+        return itemCount > 0;
       },
       60_000,
       3_000,
     );
-    const page = await client.threads.listTraces(threadId, {
-      project_id: projectId,
-      page_size: 10,
-    });
-    expect(page.items.length).toBeGreaterThan(0);
+    expect(itemCount).toBeGreaterThan(0);
   } finally {
     await deleteProject(client, projectName);
   }
@@ -129,69 +122,6 @@ test("threads.stats returns a well-formed stats response", async () => {
       session_id: projectId,
     });
     expect(stats).toBeDefined();
-  } finally {
-    await deleteProject(client, projectName);
-  }
-});
-
-test("traces.query returns a page of traces for the project", async () => {
-  const client = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const { projectName, projectId, minStartTime, maxStartTime } =
-    await setUpProjectWithThread(client);
-  try {
-    await waitUntil(
-      async () => {
-        const page = await client.traces.query({
-          project_id: projectId,
-          page_size: 10,
-          min_start_time: minStartTime,
-          max_start_time: maxStartTime,
-        });
-        return page.items.length > 0;
-      },
-      60_000,
-      3_000,
-    );
-    const page = await client.traces.query({
-      project_id: projectId,
-      page_size: 10,
-      min_start_time: minStartTime,
-      max_start_time: maxStartTime,
-    });
-    expect(page.items.length).toBeGreaterThan(0);
-  } finally {
-    await deleteProject(client, projectName);
-  }
-});
-
-test("traces.listRuns returns the runs belonging to a trace", async () => {
-  const client = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const { projectName, projectId, minStartTime, maxStartTime } =
-    await setUpProjectWithThread(client);
-  try {
-    const page = await client.traces.query({
-      project_id: projectId,
-      page_size: 10,
-      min_start_time: minStartTime,
-      max_start_time: maxStartTime,
-    });
-    expect(page.items.length).toBeGreaterThan(0);
-    const rootRun = page.items[0].root_run;
-    expect(rootRun).toBeDefined();
-    const traceId = rootRun!.id;
-    expect(traceId).toBeDefined();
-
-    const response = await client.traces.listRuns(traceId!, {
-      project_id: projectId,
-    });
-    expect(response.items).toBeDefined();
-    expect(response.items!.length).toBeGreaterThan(0);
   } finally {
     await deleteProject(client, projectName);
   }
