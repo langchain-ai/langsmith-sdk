@@ -661,6 +661,21 @@ export interface AnnotationQueueWithDetails extends AnnotationQueue {
   rubric_items?: AnnotationQueueRubricItem[];
 }
 
+/**
+ * A run to add to an annotation queue, keyed for direct (scan-free) lookup.
+ * Required for workspaces served by SmithDB.
+ */
+export interface RunToAddByKey {
+  /** The ID of the run to add to the queue. */
+  runId: string;
+  /** The ID of the project/session the run belongs to (SmithDB partition key). */
+  sessionId: string;
+  /** The start time of the run (SmithDB partition key): a Date, epoch ms, or ISO string. */
+  startTime: string | number | Date;
+  /** Optional back-pointer to the issues-agent proposed example that seeded this queue item. */
+  sourceProposedExampleId?: string;
+}
+
 export interface FeedbackConfigSchema {
   /** The unique key identifying this feedback configuration. */
   feedback_key: string;

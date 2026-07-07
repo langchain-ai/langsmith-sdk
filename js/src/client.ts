@@ -51,6 +51,7 @@ import {
   DatasetVersion,
   AnnotationQueueWithDetails,
   AnnotationQueueRubricItem,
+  RunToAddByKey,
   FeedbackConfigSchema,
   AgentContext,
   SkillContext,
@@ -5716,51 +5717,36 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * Add runs to an annotation queue with the specified queue ID.
    *
-   * Provide exactly one of `runs` or `runIds`:
-   * - `runs` (preferred): each entry carries the run's full lookup key
-   *   (`runId`, `sessionId`, `startTime`, and an optional
-   *   `sourceProposedExampleId`). This lets the run be located directly, without
-   *   a scan, and is required for workspaces served by SmithDB.
-   * - `runIds`: a plain list of run IDs. This path will be deprecated in a
-   *   future release; prefer `runs`. Passing a bare `string[]` is equivalent to
-   *   `{ runIds }`.
+   * The second argument is either:
+   * - `Array<{ runId, sessionId, startTime, sourceProposedExampleId? }>`
+   *   (preferred): each entry carries the run's full lookup key, so it can be
+   *   located directly without a scan. Required for workspaces served by
+   *   SmithDB; routes to `POST /runs/by-key`.
+   * - `string[]`: a plain list of run IDs. This path will be deprecated in a
+   *   future release; prefer the key form. Routes to `POST /runs`.
+   *
+   * An empty array is treated as the (legacy) run-IDs form and is a no-op.
    *
    * @param queueId - The ID of the annotation queue
-   * @param runsOrRunIds - Either a list of run IDs (deprecated) or an options
-   * object with `runs` (preferred) and/or `runIds`.
+   * @param runs - Either a list of run IDs (deprecated) or a list of run keys.
    */
   public async addRunsToAnnotationQueue(
     queueId: string,
-    runsOrRunIds:
-      | string[]
-      | {
-          runIds?: string[];
-          runs?: Array<{
-            runId: string;
-            sessionId: string;
-            startTime: string | number | Date;
-            sourceProposedExampleId?: string;
-          }>;
-        },
+    runs: string[] | RunToAddByKey[],
   ): Promise<void> {
-    const options = Array.isArray(runsOrRunIds)
-      ? { runIds: runsOrRunIds }
-      : runsOrRunIds;
-    const { runIds, runs } = options;
-    if (runs !== undefined && runIds !== undefined) {
-      throw new Error("Provide exactly one of `runs` or `runIds`, not both.");
-    }
-
     const base = `${this.apiUrl}/annotation-queues/${assertUuid(
       queueId,
       "queueId",
     )}/runs`;
+
+    // Discriminate by element shape: objects → by-key, strings (or empty) → v1.
+    const byKey = runs.length > 0 && typeof runs[0] !== "string";
     let url: string;
     let body: string;
-    if (runs !== undefined) {
+    if (byKey) {
       url = `${base}/by-key`;
       body = JSON.stringify(
-        runs.map((run, i) => {
+        (runs as RunToAddByKey[]).map((run, i) => {
           const serialized: Record<string, string> = {
             run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
             session_id: assertUuid(
@@ -5781,13 +5767,13 @@ export class Client implements LangSmithTracingClientInterface {
           return serialized;
         }),
       );
-    } else if (runIds !== undefined) {
+    } else {
       url = base;
       body = JSON.stringify(
-        runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString()),
+        (runs as string[]).map((id, i) =>
+          assertUuid(id, `runs[${i}]`).toString(),
+        ),
       );
-    } else {
-      throw new Error("Provide exactly one of `runs` or `runIds`.");
     }
 
     await this.caller.call(async () => {
