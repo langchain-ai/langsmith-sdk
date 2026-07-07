@@ -67,18 +67,22 @@ export {
   type SnapshotResponse,
 } from './sandboxes/sandboxes.js';
 export {
-  Sessions,
-  type CustomChartsSection,
-  type CustomChartsSectionRequest,
-  type RunStatsGroupBy,
-  type SessionSortableColumns,
-  type TimedeltaInput,
-  type TracerSession,
-  type TracerSessionWithoutVirtualFields,
-  type SessionDeleteResponse,
-  type SessionCreateParams,
-  type SessionRetrieveParams,
-  type SessionUpdateParams,
-  type SessionListParams,
-  type TracerSessionsOffsetPaginationTopLevelArray,
-} from './sessions.js';
+  Threads,
+  type ThreadListItem,
+  type ThreadTraceListItem,
+  type ThreadStatsResponse,
+  type ThreadListTracesParams,
+  type ThreadQueryParams,
+  type ThreadStatsParams,
+  type ThreadTraceListItemsItemsCursorGetPagination,
+  type ThreadListItemsItemsCursorPostPagination,
+} from './threads.js';
+export {
+  Traces,
+  type Trace,
+  type TraceAggregates,
+  type TraceListRunsResponse,
+  type TraceListRunsParams,
+  type TraceQueryParams,
+  type TracesItemsCursorPostPagination,
+} from './traces.js';

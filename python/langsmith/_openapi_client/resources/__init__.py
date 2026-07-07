@@ -24,6 +24,22 @@ from .issues import (
     IssuesResourceWithStreamingResponse,
     AsyncIssuesResourceWithStreamingResponse,
 )
+from .traces import (
+    TracesResource,
+    AsyncTracesResource,
+    TracesResourceWithRawResponse,
+    AsyncTracesResourceWithRawResponse,
+    TracesResourceWithStreamingResponse,
+    AsyncTracesResourceWithStreamingResponse,
+)
+from .threads import (
+    ThreadsResource,
+    AsyncThreadsResource,
+    ThreadsResourceWithRawResponse,
+    AsyncThreadsResourceWithRawResponse,
+    ThreadsResourceWithStreamingResponse,
+    AsyncThreadsResourceWithStreamingResponse,
+)
 from .datasets import (
     DatasetsResource,
     AsyncDatasetsResource,
@@ -31,14 +47,6 @@ from .datasets import (
     AsyncDatasetsResourceWithRawResponse,
     DatasetsResourceWithStreamingResponse,
     AsyncDatasetsResourceWithStreamingResponse,
-)
-from .sessions import (
-    SessionsResource,
-    AsyncSessionsResource,
-    SessionsResourceWithRawResponse,
-    AsyncSessionsResourceWithRawResponse,
-    SessionsResourceWithStreamingResponse,
-    AsyncSessionsResourceWithStreamingResponse,
 )
 from .sandboxes import (
     SandboxesResource,
@@ -58,12 +66,6 @@ from .online_evaluators import (
 )
 
 __all__ = [
-    "SessionsResource",
-    "AsyncSessionsResource",
-    "SessionsResourceWithRawResponse",
-    "AsyncSessionsResourceWithRawResponse",
-    "SessionsResourceWithStreamingResponse",
-    "AsyncSessionsResourceWithStreamingResponse",
     "DatasetsResource",
     "AsyncDatasetsResource",
     "DatasetsResourceWithRawResponse",
@@ -76,6 +78,18 @@ __all__ = [
     "AsyncRunsResourceWithRawResponse",
     "RunsResourceWithStreamingResponse",
     "AsyncRunsResourceWithStreamingResponse",
+    "ThreadsResource",
+    "AsyncThreadsResource",
+    "ThreadsResourceWithRawResponse",
+    "AsyncThreadsResourceWithRawResponse",
+    "ThreadsResourceWithStreamingResponse",
+    "AsyncThreadsResourceWithStreamingResponse",
+    "TracesResource",
+    "AsyncTracesResource",
+    "TracesResourceWithRawResponse",
+    "AsyncTracesResourceWithRawResponse",
+    "TracesResourceWithStreamingResponse",
+    "AsyncTracesResourceWithStreamingResponse",
     "OnlineEvaluatorsResource",
     "AsyncOnlineEvaluatorsResource",
     "OnlineEvaluatorsResourceWithRawResponse",

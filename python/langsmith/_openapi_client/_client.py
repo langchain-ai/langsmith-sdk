@@ -36,11 +36,12 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info, runs, issues, datasets, sessions, sandboxes, online_evaluators
+    from .resources import info, runs, issues, traces, threads, datasets, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.runs import RunsResource, AsyncRunsResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
-    from .resources.sessions import SessionsResource, AsyncSessionsResource
+    from .resources.traces import TracesResource, AsyncTracesResource
+    from .resources.threads import ThreadsResource, AsyncThreadsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource
@@ -126,12 +127,6 @@ class Langsmith(SyncAPIClient):
         )
 
     @cached_property
-    def sessions(self) -> SessionsResource:
-        from .resources.sessions import SessionsResource
-
-        return SessionsResource(self)
-
-    @cached_property
     def datasets(self) -> DatasetsResource:
         from .resources.datasets import DatasetsResource
 
@@ -142,6 +137,18 @@ class Langsmith(SyncAPIClient):
         from .resources.runs import RunsResource
 
         return RunsResource(self)
+
+    @cached_property
+    def threads(self) -> ThreadsResource:
+        from .resources.threads import ThreadsResource
+
+        return ThreadsResource(self)
+
+    @cached_property
+    def traces(self) -> TracesResource:
+        from .resources.traces import TracesResource
+
+        return TracesResource(self)
 
     @cached_property
     def online_evaluators(self) -> OnlineEvaluatorsResource:
@@ -376,12 +383,6 @@ class AsyncLangsmith(AsyncAPIClient):
         )
 
     @cached_property
-    def sessions(self) -> AsyncSessionsResource:
-        from .resources.sessions import AsyncSessionsResource
-
-        return AsyncSessionsResource(self)
-
-    @cached_property
     def datasets(self) -> AsyncDatasetsResource:
         from .resources.datasets import AsyncDatasetsResource
 
@@ -392,6 +393,18 @@ class AsyncLangsmith(AsyncAPIClient):
         from .resources.runs import AsyncRunsResource
 
         return AsyncRunsResource(self)
+
+    @cached_property
+    def threads(self) -> AsyncThreadsResource:
+        from .resources.threads import AsyncThreadsResource
+
+        return AsyncThreadsResource(self)
+
+    @cached_property
+    def traces(self) -> AsyncTracesResource:
+        from .resources.traces import AsyncTracesResource
+
+        return AsyncTracesResource(self)
 
     @cached_property
     def online_evaluators(self) -> AsyncOnlineEvaluatorsResource:
@@ -564,12 +577,6 @@ class LangsmithWithRawResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithRawResponse:
-        from .resources.sessions import SessionsResourceWithRawResponse
-
-        return SessionsResourceWithRawResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithRawResponse:
         from .resources.datasets import DatasetsResourceWithRawResponse
 
@@ -580,6 +587,18 @@ class LangsmithWithRawResponse:
         from .resources.runs import RunsResourceWithRawResponse
 
         return RunsResourceWithRawResponse(self._client.runs)
+
+    @cached_property
+    def threads(self) -> threads.ThreadsResourceWithRawResponse:
+        from .resources.threads import ThreadsResourceWithRawResponse
+
+        return ThreadsResourceWithRawResponse(self._client.threads)
+
+    @cached_property
+    def traces(self) -> traces.TracesResourceWithRawResponse:
+        from .resources.traces import TracesResourceWithRawResponse
+
+        return TracesResourceWithRawResponse(self._client.traces)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithRawResponse:
@@ -613,12 +632,6 @@ class AsyncLangsmithWithRawResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithRawResponse:
-        from .resources.sessions import AsyncSessionsResourceWithRawResponse
-
-        return AsyncSessionsResourceWithRawResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithRawResponse:
         from .resources.datasets import AsyncDatasetsResourceWithRawResponse
 
@@ -629,6 +642,18 @@ class AsyncLangsmithWithRawResponse:
         from .resources.runs import AsyncRunsResourceWithRawResponse
 
         return AsyncRunsResourceWithRawResponse(self._client.runs)
+
+    @cached_property
+    def threads(self) -> threads.AsyncThreadsResourceWithRawResponse:
+        from .resources.threads import AsyncThreadsResourceWithRawResponse
+
+        return AsyncThreadsResourceWithRawResponse(self._client.threads)
+
+    @cached_property
+    def traces(self) -> traces.AsyncTracesResourceWithRawResponse:
+        from .resources.traces import AsyncTracesResourceWithRawResponse
+
+        return AsyncTracesResourceWithRawResponse(self._client.traces)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithRawResponse:
@@ -662,12 +687,6 @@ class LangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithStreamingResponse:
-        from .resources.sessions import SessionsResourceWithStreamingResponse
-
-        return SessionsResourceWithStreamingResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithStreamingResponse:
         from .resources.datasets import DatasetsResourceWithStreamingResponse
 
@@ -678,6 +697,18 @@ class LangsmithWithStreamedResponse:
         from .resources.runs import RunsResourceWithStreamingResponse
 
         return RunsResourceWithStreamingResponse(self._client.runs)
+
+    @cached_property
+    def threads(self) -> threads.ThreadsResourceWithStreamingResponse:
+        from .resources.threads import ThreadsResourceWithStreamingResponse
+
+        return ThreadsResourceWithStreamingResponse(self._client.threads)
+
+    @cached_property
+    def traces(self) -> traces.TracesResourceWithStreamingResponse:
+        from .resources.traces import TracesResourceWithStreamingResponse
+
+        return TracesResourceWithStreamingResponse(self._client.traces)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.OnlineEvaluatorsResourceWithStreamingResponse:
@@ -711,12 +742,6 @@ class AsyncLangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithStreamingResponse:
-        from .resources.sessions import AsyncSessionsResourceWithStreamingResponse
-
-        return AsyncSessionsResourceWithStreamingResponse(self._client.sessions)
-
-    @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithStreamingResponse:
         from .resources.datasets import AsyncDatasetsResourceWithStreamingResponse
 
@@ -727,6 +752,18 @@ class AsyncLangsmithWithStreamedResponse:
         from .resources.runs import AsyncRunsResourceWithStreamingResponse
 
         return AsyncRunsResourceWithStreamingResponse(self._client.runs)
+
+    @cached_property
+    def threads(self) -> threads.AsyncThreadsResourceWithStreamingResponse:
+        from .resources.threads import AsyncThreadsResourceWithStreamingResponse
+
+        return AsyncThreadsResourceWithStreamingResponse(self._client.threads)
+
+    @cached_property
+    def traces(self) -> traces.AsyncTracesResourceWithStreamingResponse:
+        from .resources.traces import AsyncTracesResourceWithStreamingResponse
+
+        return AsyncTracesResourceWithStreamingResponse(self._client.traces)
 
     @cached_property
     def online_evaluators(self) -> online_evaluators.AsyncOnlineEvaluatorsResourceWithStreamingResponse:
