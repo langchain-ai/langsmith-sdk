@@ -11,8 +11,7 @@ import { path } from '../../internal/utils/path.js';
 export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
-   * `snapshot_name`; if neither is provided, the server uses the default static
-   * blueprint.
+   * `snapshot_name`; if neither is provided, the server uses the default snapshot.
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
     return this._client.post('/v2/sandboxes/boxes', { body, ...options });

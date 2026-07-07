@@ -76,8 +76,7 @@ class BoxesResource(SyncAPIResource):
         """Create a new sandbox from a snapshot.
 
         Provide at most one of `snapshot_id` or
-        `snapshot_name`; if neither is provided, the server uses the default static
-        blueprint.
+        `snapshot_name`; if neither is provided, the server uses the default snapshot.
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -574,8 +573,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         """Create a new sandbox from a snapshot.
 
         Provide at most one of `snapshot_id` or
-        `snapshot_name`; if neither is provided, the server uses the default static
-        blueprint.
+        `snapshot_name`; if neither is provided, the server uses the default snapshot.
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
