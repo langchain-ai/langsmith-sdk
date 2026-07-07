@@ -55,6 +55,8 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
+    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
 
 class AsyncClient:
@@ -326,6 +328,16 @@ class AsyncClient:
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
         return self._langsmith_api.datasets
+
+    @property
+    def threads(self) -> AsyncThreadsResource:
+        """Access the threads resource (query, stats, list_traces)."""
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> AsyncTracesResource:
+        """Access the traces resource (query, list_runs)."""
+        return self._langsmith_api.traces
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
