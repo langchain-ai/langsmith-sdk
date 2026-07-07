@@ -80,3 +80,47 @@ export async function getAssumedTreeFromCalls(
     ),
   };
 }
+
+type MagicRunResult = {
+  name: string;
+  [key: string]: unknown;
+};
+
+type MagicRun = (
+  rawName: TemplateStringsArray,
+) => (props: Record<string, unknown>, ...children: string[]) => string;
+
+export function asTree(cb: (run: MagicRun) => void): {
+  nodes: string[];
+  edges: Array<[string, string]>;
+  data: Record<string, unknown>;
+} {
+  const acc: {
+    nodes: string[];
+    edges: Array<[string, string]>;
+    data: Record<string, MagicRunResult>;
+  } = { nodes: [], edges: [], data: {} };
+
+  function run(rawId: TemplateStringsArray) {
+    const id = rawId.join("");
+    const name = id.split(":")[0];
+
+    acc.nodes.push(id);
+    return (props: Record<string, unknown>, ...children: string[]): string => {
+      for (const childId of children) acc.edges.push([id, childId]);
+      acc.data[id] = { name, ...props };
+      return id;
+    };
+  }
+
+  cb(run);
+  const nodeOrder = new Map(acc.nodes.map((id, idx) => [id, idx]));
+
+  return {
+    ...acc,
+    edges: [...acc.edges].sort(
+      ([, left], [, right]) =>
+        (nodeOrder.get(left) ?? 0) - (nodeOrder.get(right) ?? 0),
+    ),
+  };
+}
