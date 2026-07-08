@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 import uuid
 from collections import defaultdict
@@ -21,6 +22,8 @@ from langsmith.run_helpers import (
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 from tests.integration_tests.conftest import skip_if_rate_limited
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -56,7 +59,7 @@ def poll_runs_until_count(
                 ):
                     return runs
         except ls_utils.LangSmithError:
-            pass
+            logger.debug("Error polling runs", exc_info=True)
         time.sleep(sleep_time)
         retries += 1
     raise AssertionError(f"Failed to get {count} runs after {max_retries} attempts.")
@@ -149,6 +152,7 @@ async def test_list_runs_multi_project(langchain_client: Client):
     assert runs[0].session_id != runs[1].session_id
 
 
+@skip_if_rate_limited
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = (
@@ -206,10 +210,9 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     )
     executor.shutdown(wait=True)
     filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
-    poll_runs_until_count(
+    runs = poll_runs_until_count(
         langchain_client, project_name, 17, filter_=filter_, max_retries=30
     )
-    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     trace_runs = list(
         langchain_client.list_runs(
             trace_id=runs[0].trace_id, project_name=project_name, filter=filter_
