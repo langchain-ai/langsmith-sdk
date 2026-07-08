@@ -43,9 +43,9 @@ def _patch_cached_client(mock_client, monkeypatch):
     )
 
 
-def _session(**kwargs) -> EventSession:
+def _session(sample_rate: int = 24_000, **kwargs) -> EventSession:
     kwargs.setdefault("integration", "test-integration")
-    return start_session(thread_id="t1", sample_rate=24_000, **kwargs)
+    return start_session(thread_id="t1", sample_rate=sample_rate, **kwargs)
 
 
 class TestAudioBound:
@@ -108,6 +108,21 @@ class TestAudioBound:
         monkeypatch.setattr(session_mod, "build_stereo_session_wav", fake_build)
         s.finalize()
         assert calls[0]["max_duration_seconds"] == 1.0
+
+    def test_natural_play_duration_cap_marks_audio_truncated(self, monkeypatch):
+        s = _session(sample_rate=10, max_audio_seconds=600)
+        chunk = b"\x00\x00" * 150
+        s.record_agent(570.0, chunk)
+        s.record_agent(571.0, chunk)
+        s.record_agent(572.0, chunk)
+        monkeypatch.setattr(
+            session_mod, "build_stereo_session_wav", lambda *_, **__: b""
+        )
+
+        s.finalize()
+
+        meta = (s.run.extra or {}).get("metadata") or {}
+        assert meta.get("audio_truncated") is True
 
 
 class TestIntegrationMetadata:

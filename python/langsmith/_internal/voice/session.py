@@ -34,6 +34,7 @@ from langsmith import RunTree
 from langsmith._internal.voice.audio import (
     DEFAULT_MAX_AUDIO_SECONDS,
     build_stereo_session_wav,
+    session_wav_exceeds_duration_cap,
 )
 from langsmith._internal.voice.helpers import dump_event, scrub
 
@@ -388,13 +389,12 @@ class EventSession:
         run.patch()
 
     def _audio_exceeds_duration_cap(self) -> bool:
-        if self.max_audio_seconds is None:
-            return False
-        for t, data in [*self.user_chunks, *self.agent_chunks]:
-            duration = (len(data) // 2) / self.sample_rate
-            if t >= self.max_audio_seconds or t + duration > self.max_audio_seconds:
-                return True
-        return False
+        return session_wav_exceeds_duration_cap(
+            self.user_chunks,
+            self.agent_chunks,
+            self.sample_rate,
+            self.max_audio_seconds,
+        )
 
     def finalize(self) -> None:
         """Roll up stats, attach the stereo WAV, and close the root span.
