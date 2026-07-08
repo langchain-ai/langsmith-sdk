@@ -1,0 +1,28 @@
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_0e48c5ab257349::t_183ae6e061d318 282-288,291-297,326-332,335-341,344-350
+  s_0e48c5ab257349::t_b2a98745fe1bfb 27
+  s_0e48c5ab257349::t_7a5422d21176bc 47-49
+  s_0e48c5ab257349::t_d82e0b8854f69b 254-281,289-290,298-325,333-334,342-343,351-362
+  s_0e48c5ab257349::t_028e4fa5cfa106 494-495
+python/langsmith/integrations/livekit/processor.py
+  s_0e48c5ab257349::t_6c23111268c3b4 490-494,498,502-514,517
+  s_0e48c5ab257349::t_d6a6038d1789cf 207-219
+  s_0e48c5ab257349::t_52ccab271d109d 769-772,774-775,777
+  s_0e48c5ab257349::t_7d69ea2e3b6f59 621-627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c7eb56f8354f44698a59525015b1a6f67bcc59af",
+  "prompts": {},
+  "sessions": {
+    "s_0e48c5ab257349": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b460d8cd-df93-413d-a335-8fb224243e85",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
