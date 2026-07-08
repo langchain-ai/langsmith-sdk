@@ -662,15 +662,16 @@ export interface AnnotationQueueWithDetails extends AnnotationQueue {
 }
 
 /**
- * A run to add to an annotation queue, keyed for direct (scan-free) lookup.
- * Required for workspaces served by SmithDB.
+ * A run identified by its full lookup key, for adding to an annotation queue.
+ * Unlike a bare run ID, this carries the partition key (`sessionId` and
+ * `startTime`) so the run can be located directly, without a scan.
  */
-export interface RunToAddByKey {
+export interface RunKey {
   /** The ID of the run to add to the queue. */
   runId: string;
-  /** The ID of the project/session the run belongs to (SmithDB partition key). */
+  /** The ID of the project/session the run belongs to (partition key). */
   sessionId: string;
-  /** The start time of the run (SmithDB partition key): a Date, epoch ms, or ISO string. */
+  /** The start time of the run (partition key): a Date, epoch ms, or ISO string. */
   startTime: string | number | Date;
   /** Optional back-pointer to the issues-agent proposed example that seeded this queue item. */
   sourceProposedExampleId?: string;

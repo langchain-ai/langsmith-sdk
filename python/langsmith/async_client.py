@@ -1426,7 +1426,7 @@ class AsyncClient:
         queue_id: ID_TYPE,
         *,
         run_ids: Optional[list[ID_TYPE]] = None,
-        runs: Optional[Sequence[ls_schemas.RunToAddByKey]] = None,
+        runs: Optional[Sequence[ls_schemas.RunKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
@@ -1443,7 +1443,7 @@ class AsyncClient:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
             run_ids (Optional[list[Union[UUID, str]]]): The IDs of the runs to be
                 added to the annotation queue.
-            runs (Optional[Sequence[RunToAddByKey]]): The runs to add, each with
+            runs (Optional[Sequence[RunKey]]): The runs to add, each with
                 its full lookup key.
         """
         if (runs is None) == (run_ids is None):
@@ -1453,10 +1453,7 @@ class AsyncClient:
         base = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
         if runs is not None:
             path = f"{base}/by-key"
-            json = [
-                ls_client._serialize_run_to_add_by_key(run, i)
-                for i, run in enumerate(runs)
-            ]
+            json = [ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)]
         else:
             path = base
             json = [

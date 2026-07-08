@@ -723,9 +723,7 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         ) from e
 
 
-def _serialize_run_to_add_by_key(
-    run: ls_schemas.RunToAddByKey, index: int
-) -> dict[str, str]:
+def _serialize_run_key(run: ls_schemas.RunKey, index: int) -> dict[str, str]:
     """Build the JSON body for one `runs` entry of `add_runs_to_annotation_queue`.
 
     Serializes UUIDs and `start_time` to strings, since the `requests` `json=`
@@ -8811,7 +8809,7 @@ class Client:
         queue_id: ID_TYPE,
         *,
         run_ids: Optional[list[ID_TYPE]] = None,
-        runs: Optional[Sequence[ls_schemas.RunToAddByKey]] = None,
+        runs: Optional[Sequence[ls_schemas.RunKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
@@ -8828,7 +8826,7 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
             run_ids (Optional[List[Union[UUID, str]]]): The IDs of the runs to be
                 added to the annotation queue.
-            runs (Optional[Sequence[RunToAddByKey]]): The runs to add, each with
+            runs (Optional[Sequence[RunKey]]): The runs to add, each with
                 its full lookup key.
 
         Returns:
@@ -8840,7 +8838,7 @@ class Client:
             )
         if runs is not None:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
-            json = [_serialize_run_to_add_by_key(run, i) for i, run in enumerate(runs)]
+            json = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
         else:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
             json = [
