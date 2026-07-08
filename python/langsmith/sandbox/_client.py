@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 import io
 import os
 import posixpath
 import shlex
 import tarfile
-from urllib.parse import quote
 import uuid
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
+from urllib.parse import quote
 
 import httpx
 

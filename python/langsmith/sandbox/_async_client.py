@@ -16,9 +16,9 @@ from langsmith._openapi_client import AsyncLangsmith
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
-    _quote_path_segment,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
+    _quote_path_segment,
     _resolve_dockerfile_context,
 )
 from langsmith.sandbox._exceptions import (
