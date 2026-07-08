@@ -5724,8 +5724,8 @@ export class Client implements LangSmithTracingClientInterface {
    * - `string[]`: a plain list of run IDs. This path will be deprecated in a
    *   future release; prefer the key form. Routes to `POST /runs`.
    *
-   * The list must be homogeneous — all run-ID strings or all `RunKey` objects;
-   * a mixed list throws. An empty array is a no-op (treated as the run-IDs form).
+   * If every element is a string (or the list is empty) it is treated as run
+   * IDs; otherwise the list is treated as `RunKey` objects.
    *
    * @param queueId - The ID of the annotation queue
    * @param runs - Either a list of run IDs (deprecated) or a list of run keys.
@@ -5739,22 +5739,11 @@ export class Client implements LangSmithTracingClientInterface {
       "queueId",
     )}/runs`;
 
-    // Route by element shape, validating the whole list is homogeneous:
-    // all run-ID strings -> v1 /runs; all run-key objects -> /runs/by-key.
+    // All strings (including empty) -> legacy /runs; otherwise treat as run keys.
     const allStrings = runs.every((r) => typeof r === "string");
-    const allKeys = runs.every((r) => typeof r === "object" && r !== null);
-    if (!allStrings && !allKeys) {
-      throw new Error(
-        "addRunsToAnnotationQueue: `runs` must be either all run-ID strings " +
-          "or all run-key objects, not a mix.",
-      );
-    }
-
-    // Empty (both vacuously true) falls through to the legacy path as a no-op.
-    const byKey = allKeys && !allStrings;
     let url: string;
     let body: string;
-    if (byKey) {
+    if (!allStrings) {
       url = `${base}/by-key`;
       body = JSON.stringify(
         (runs as RunKey[]).map((run, i) => {
