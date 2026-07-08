@@ -31,7 +31,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Optional, cast
 
 from langsmith import RunTree
-from langsmith._internal.voice.audio import build_stereo_session_wav
+from langsmith._internal.voice.audio import (
+    DEFAULT_MAX_AUDIO_SECONDS,
+    build_stereo_session_wav,
+)
 from langsmith._internal.voice.helpers import dump_event, scrub
 
 if TYPE_CHECKING:
@@ -66,6 +69,7 @@ class EventSession:
     # further chunks on it are dropped (the conversation's start is kept) and the
     # root is flagged ``audio_truncated``. ``None`` disables the cap.
     max_audio_bytes: Optional[int] = None
+    max_audio_seconds: Optional[float] = DEFAULT_MAX_AUDIO_SECONDS
     # Monotonic clock origin. Everything else stores ``now() - t0``.
     t0: float = field(default_factory=time.monotonic)
     # Time-stamped audio chunks for the stereo session WAV. Each entry is
@@ -141,14 +145,11 @@ class EventSession:
         Dropped once the user channel reaches ``max_audio_bytes`` (see that
         field) so a long session can't exhaust memory.
         """
-        if (
-            self.max_audio_bytes is not None
-            and self._user_bytes >= self.max_audio_bytes
-        ):
-            self._note_audio_truncated()
+        chunk = self._bounded_audio_chunk(self._user_bytes, data)
+        if not chunk:
             return
-        self._user_bytes += len(data)
-        self.user_chunks.append((t, data))
+        self._user_bytes += len(chunk)
+        self.user_chunks.append((t, chunk))
 
     def record_agent(self, t: float, data: bytes) -> None:
         """Record a timestamped chunk of agent (playback) PCM16 for the WAV.
@@ -156,24 +157,33 @@ class EventSession:
         Dropped once the agent channel reaches ``max_audio_bytes`` (see that
         field) so a long session can't exhaust memory.
         """
-        if (
-            self.max_audio_bytes is not None
-            and self._agent_bytes >= self.max_audio_bytes
-        ):
-            self._note_audio_truncated()
+        chunk = self._bounded_audio_chunk(self._agent_bytes, data)
+        if not chunk:
             return
-        self._agent_bytes += len(data)
-        self.agent_chunks.append((t, data))
+        self._agent_bytes += len(chunk)
+        self.agent_chunks.append((t, chunk))
+
+    def _bounded_audio_chunk(self, current_bytes: int, data: bytes) -> bytes:
+        if self.max_audio_bytes is None:
+            return data
+        remaining = self.max_audio_bytes - current_bytes
+        remaining -= remaining % 2
+        if remaining <= 0:
+            self._note_audio_truncated()
+            return b""
+        if len(data) <= remaining:
+            return data
+        self._note_audio_truncated()
+        return data[:remaining]
 
     def _note_audio_truncated(self) -> None:
-        """Flag (once) that recorded audio was capped at ``max_audio_bytes``."""
+        """Flag once that recorded audio was capped."""
         if self._audio_truncated:
-            return  # log once per session, not once per dropped chunk
+            return
         self._audio_truncated = True
         logger.warning(
-            "voice tracing: audio capture hit the %d-byte per-channel cap; "
-            "further audio for this conversation is dropped from the WAV",
-            self.max_audio_bytes,
+            "voice tracing: audio capture hit the configured cap; "
+            "further audio for this conversation is dropped from the WAV"
         )
 
     def set_title(self, text: str) -> None:
@@ -377,6 +387,15 @@ class EventSession:
         run.end(outputs=scrub(outputs) if outputs is not None else {})
         run.patch()
 
+    def _audio_exceeds_duration_cap(self) -> bool:
+        if self.max_audio_seconds is None:
+            return False
+        for t, data in [*self.user_chunks, *self.agent_chunks]:
+            duration = (len(data) // 2) / self.sample_rate
+            if t >= self.max_audio_seconds or t + duration > self.max_audio_seconds:
+                return True
+        return False
+
     def finalize(self) -> None:
         """Roll up stats, attach the stereo WAV, and close the root span.
 
@@ -386,6 +405,8 @@ class EventSession:
         """
         # Close the last open turn (if any) before the root.
         self._close_turn()
+        if self._audio_exceeds_duration_cap():
+            self._note_audio_truncated()
         extra: dict[str, Any] = self.run.extra or {}
         metadata: dict[str, Any] = dict(extra.get("metadata") or {})
         metadata["event_count"] = self.event_count
@@ -397,7 +418,10 @@ class EventSession:
 
         try:
             wav = build_stereo_session_wav(
-                self.user_chunks, self.agent_chunks, self.sample_rate
+                self.user_chunks,
+                self.agent_chunks,
+                self.sample_rate,
+                max_duration_seconds=self.max_audio_seconds,
             )
         except Exception:
             # A WAV-build failure (e.g. an oversized buffer) must not lose the
@@ -427,7 +451,7 @@ def start_session(
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     name: str = "realtime_session",
-    max_audio_seconds: Optional[float] = None,
+    max_audio_seconds: Optional[float] = DEFAULT_MAX_AUDIO_SECONDS,
     client: Optional[Client] = None,
     replicas: Optional[Sequence[WriteReplica]] = None,
     integration: str,
@@ -446,9 +470,10 @@ def start_session(
     (see LangSmith's tracing replicas). Set on the root and inherited by child
     spans via ``create_child``; ``None`` disables replication.
 
-    ``max_audio_seconds`` caps how much audio per channel is retained for the
-    stereo WAV, guarding memory on long-running sessions; ``None`` keeps all
-    audio. It is converted to a per-channel byte budget at PCM16 (2 bytes/sample).
+    ``max_audio_seconds`` caps how much audio per channel is retained and how far
+    into the session the stereo WAV can extend, guarding memory on long-running
+    sessions. The default is bounded; pass ``None`` to keep all audio. It is
+    converted to a per-channel byte budget at PCM16 (2 bytes/sample).
 
     ``integration`` / ``integration_version`` stamp ``ls_integration`` and
     ``ls_integration_version`` on the root (the convention the batch integrations
@@ -496,4 +521,5 @@ def start_session(
         project_name=project_name,
         sample_rate=sample_rate,
         max_audio_bytes=max_audio_bytes,
+        max_audio_seconds=max_audio_seconds,
     )

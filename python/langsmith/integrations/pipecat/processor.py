@@ -64,6 +64,8 @@ DEFAULT_STATE_TTL_SECONDS = 3600.0
 # first). The TTL is the governing limit in practice.
 DEFAULT_STATE_MAXSIZE = 100_000
 
+_WAV_HEADER_BYTES = 44
+
 
 class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     """Enriches Pipecat's OTel spans with LangSmith-compatible attributes."""
@@ -113,8 +115,8 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
         )
         # Merged PCM accumulated from a Pipecat AudioBufferProcessor (see
-        # attach_audio_buffer), keyed by conversation id. Each value is
-        # {"pcm": bytearray, "sample_rate": int, "num_channels": int}. Also
+        # attach_audio_buffer), keyed by conversation id. Each value carries the
+        # PCM bytearray, sample rate, channel count, and truncation flag. Also
         # TTL-bounded — these entries hold the raw audio and are the larger leak.
         self._audio_by_conversation: MutableMapping[str, dict[str, Any]] = TTLCache(
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
@@ -145,6 +147,11 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         audio_buffer.event_handler("on_audio_data")(_on_audio_data)
 
+    def _pcm_audio_size_limit_bytes(self) -> Optional[int]:
+        if self.audio_size_limit_bytes is None:
+            return None
+        return max(0, self.audio_size_limit_bytes - _WAV_HEADER_BYTES)
+
     def _accumulate_audio(
         self, conversation_id: str, audio: bytes, sample_rate: int, num_channels: int
     ) -> None:
@@ -154,7 +161,21 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 "pcm": bytearray(),
                 "sample_rate": sample_rate,
                 "num_channels": num_channels,
+                "audio_truncated": False,
             }
+        pcm_limit_bytes = self._pcm_audio_size_limit_bytes()
+        if pcm_limit_bytes is not None:
+            remaining = pcm_limit_bytes - len(rec["pcm"])
+            remaining -= remaining % 2
+            if remaining <= 0:
+                rec["audio_truncated"] = True
+                rec["sample_rate"] = sample_rate
+                rec["num_channels"] = num_channels
+                self._audio_by_conversation[conversation_id] = rec
+                return
+            if len(audio) > remaining:
+                rec["audio_truncated"] = True
+                audio = audio[:remaining]
         rec["pcm"].extend(audio)
         rec["sample_rate"] = sample_rate
         rec["num_channels"] = num_channels
@@ -345,6 +366,14 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 )
             return
         if not rec["pcm"]:
+            return
+        pcm_limit_bytes = self._pcm_audio_size_limit_bytes()
+        if pcm_limit_bytes is not None and len(rec["pcm"]) > pcm_limit_bytes:
+            logger.warning(
+                "langsmith voice: skipped oversize pipecat audio for "
+                "conversation_id=%r",
+                conversation_id,
+            )
             return
         wav = pcm_to_wav(bytes(rec["pcm"]), rec["sample_rate"], rec["num_channels"])
         self._attach_audio(
