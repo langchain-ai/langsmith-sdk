@@ -43,9 +43,9 @@ def _patch_cached_client(mock_client, monkeypatch):
     )
 
 
-def _session(**kwargs) -> EventSession:
+def _session(sample_rate: int = 24_000, **kwargs) -> EventSession:
     kwargs.setdefault("integration", "test-integration")
-    return start_session(thread_id="t1", sample_rate=24_000, **kwargs)
+    return start_session(thread_id="t1", sample_rate=sample_rate, **kwargs)
 
 
 class TestAudioBound:
@@ -56,23 +56,28 @@ class TestAudioBound:
         s = _session(max_audio_seconds=2.0)
         assert s.max_audio_bytes == 2 * 24_000 * 2
 
-    def test_no_cap_by_default(self):
+    def test_bounded_cap_by_default(self):
         s = _session()
-        assert s.max_audio_bytes is None
+        assert s.max_audio_bytes == session_mod.DEFAULT_MAX_AUDIO_SECONDS * 24_000 * 2
         for _ in range(5):
             s.record_user(0.0, b"\x00\x00" * 1000)
         assert len(s.user_chunks) == 5
         assert s._audio_truncated is False
 
+    def test_none_disables_cap(self):
+        s = _session(max_audio_seconds=None)
+        assert s.max_audio_bytes is None
+        assert s.max_audio_seconds is None
+
     def test_user_channel_capped_and_flagged_once(self):
         s = _session()
-        s.max_audio_bytes = 100  # tiny cap for the test
-        s.record_user(0.0, b"\x00" * 80)  # under cap → kept
-        s.record_user(0.1, b"\x00" * 80)  # now at/over cap → kept, pushes over
-        s.record_user(0.2, b"\x00" * 80)  # dropped
-        s.record_user(0.3, b"\x00" * 80)  # dropped
+        s.max_audio_bytes = 100
+        s.record_user(0.0, b"\x00" * 80)
+        s.record_user(0.1, b"\x00" * 80)
+        s.record_user(0.2, b"\x00" * 80)
         assert len(s.user_chunks) == 2
-        assert s._user_bytes == 160
+        assert s.user_chunks[1][1] == b"\x00" * 20
+        assert s._user_bytes == 100
         assert s._audio_truncated is True
 
     def test_cap_is_per_channel(self):
@@ -88,8 +93,34 @@ class TestAudioBound:
         s = _session()
         s.max_audio_bytes = 10
         s.record_user(0.0, b"\x00" * 20)
-        s.record_user(0.1, b"\x00" * 20)  # dropped → truncated
         s.finalize()
+        meta = (s.run.extra or {}).get("metadata") or {}
+        assert meta.get("audio_truncated") is True
+
+    def test_finalize_caps_wav_duration(self, monkeypatch):
+        s = _session(max_audio_seconds=1.0)
+        calls = []
+
+        def fake_build(*args, **kwargs):
+            calls.append(kwargs)
+            return b""
+
+        monkeypatch.setattr(session_mod, "build_stereo_session_wav", fake_build)
+        s.finalize()
+        assert calls[0]["max_duration_seconds"] == 1.0
+
+    def test_natural_play_duration_cap_marks_audio_truncated(self, monkeypatch):
+        s = _session(sample_rate=10, max_audio_seconds=600)
+        chunk = b"\x00\x00" * 150
+        s.record_agent(570.0, chunk)
+        s.record_agent(571.0, chunk)
+        s.record_agent(572.0, chunk)
+        monkeypatch.setattr(
+            session_mod, "build_stereo_session_wav", lambda *_, **__: b""
+        )
+
+        s.finalize()
+
         meta = (s.run.extra or {}).get("metadata") or {}
         assert meta.get("audio_truncated") is True
 

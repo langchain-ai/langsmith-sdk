@@ -298,6 +298,30 @@ class TestPipecatAudio:
 
         assert "langsmith.attachments" not in _exported_attrs(proc)
 
+    def test_accumulate_audio_truncates_before_extend(self):
+        proc = _processor(audio_size_limit_bytes=50)
+        proc._accumulate_audio("c1", b"\x00\x01" * 2, 16000, 1)
+        proc._accumulate_audio("c1", b"\x02\x03" * 2, 16000, 1)
+
+        rec = proc._audio_by_conversation["c1"]
+        assert bytes(rec["pcm"]) == b"\x00\x01" * 2 + b"\x02\x03"
+        assert rec["audio_truncated"] is True
+
+    def test_oversize_audio_skips_conversion(self):
+        proc = _processor(audio_size_limit_bytes=50)
+        proc._audio_by_conversation["c1"] = {
+            "pcm": bytearray(b"\x00\x01" * 4),
+            "sample_rate": 16000,
+            "num_channels": 1,
+        }
+        span = _make_span("conversation", {"conversation.id": "c1"})
+
+        with patch("langsmith.integrations.pipecat.processor.pcm_to_wav") as patched:
+            proc.on_end(span)
+
+        patched.assert_not_called()
+        assert "langsmith.attachments" not in _exported_attrs(proc)
+
 
 class TestBaseProcessorHelpers:
     """Shared helpers in BaseLangSmithSpanProcessor."""
@@ -393,6 +417,16 @@ class TestVoiceAudioUtils:
             assert wf.getnchannels() == 2
             assert wf.getframerate() == 16000
             assert wf.getsampwidth() == 2
+
+    def test_stereo_session_wav_duration_cap_bounds_frames(self):
+        wav = audio_utils.build_stereo_session_wav(
+            [(0.0, b"\x01\x02" * 20), (60.0, b"\x03\x04" * 20)],
+            [],
+            10,
+            max_duration_seconds=1.0,
+        )
+        with wave.open(io.BytesIO(wav), "rb") as wf:
+            assert wf.getnframes() == 10
 
 
 class TestStateLifecycle:
