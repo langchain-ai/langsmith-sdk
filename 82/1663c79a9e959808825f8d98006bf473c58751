@@ -1,0 +1,19 @@
+js/tsconfig.json
+  s_d3d26196c41b67::t_2d8cc1f41c16a0 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "821663c79a9e959808825f8d98006bf473c58751",
+  "prompts": {},
+  "sessions": {
+    "s_d3d26196c41b67": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38cef9e9-50e9-4194-94e2-97f1982e0c5f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
