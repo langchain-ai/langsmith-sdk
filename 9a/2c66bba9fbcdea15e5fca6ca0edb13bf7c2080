@@ -1,0 +1,60 @@
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_0e48c5ab257349::t_34cd9c24152fec 133,163,184,199-200,222,303,356
+  s_0e48c5ab257349::t_0cb96b0ad5890e 633
+  s_0e48c5ab257349::t_ead3919799778b 27,47-49,132,134-162,164-183,185-198,201-221,223-302,304-355,357-499,632
+python/langsmith/integrations/livekit/processor.py
+  s_0e48c5ab257349::t_2151f753449a3a 268-346
+  s_0e48c5ab257349::t_9859515dd87e62 365,367
+  s_0e48c5ab257349::t_abefccffb9b123 625-647
+  s_0e48c5ab257349::t_3e8bd15d07944c 178,188-189
+  s_0e48c5ab257349::t_a427b3c727f22f 564
+  s_0e48c5ab257349::t_3294b4bb0af9b7 103
+  s_0e48c5ab257349::t_68c310ed80225c 568
+  s_0e48c5ab257349::t_1f330cc6673627 648
+  s_0e48c5ab257349::t_7ec2833fc96033 668-670
+  s_0e48c5ab257349::t_2d1c67af8382d3 587-588,590
+  s_0e48c5ab257349::t_c914f43c78379f 266,370,559-560,565-566,579-584,604-610,612-623,663,671-673,747-750,752-753,770-772,775,777-778
+  s_0e48c5ab257349::t_38e5caba359619 649-656,658-659
+  s_0e48c5ab257349::t_0739a25c9199b0 576-578
+  s_0e48c5ab257349::t_8143003405eb49 237-241
+  s_0e48c5ab257349::t_c38f6e36c2ce48 589
+  s_0e48c5ab257349::t_8b56c605d1ec51 259-262
+  h_3a9d271fbf3886 179-180,657
+  s_0e48c5ab257349::t_2699944aa991f1 596-600
+  s_0e48c5ab257349::t_bac9607b08d3e8 624
+  s_0e48c5ab257349::t_719ef5334a52dc 611
+  s_0e48c5ab257349::t_ec375146c32589 755
+  s_0e48c5ab257349::t_15d7aebb30c0cc 552-556
+  s_0e48c5ab257349::t_10fa739670e051 263-265
+  s_0e48c5ab257349::t_0cd7954a28636a 359
+  s_0e48c5ab257349::t_c2657513e03483 569-570,572-575
+  s_0e48c5ab257349::t_d344427cec6693 155-177
+  s_0e48c5ab257349::t_5a468b2f154daf 601-603
+  s_0e48c5ab257349::t_db44488c8e8462 591-595
+  s_0e48c5ab257349::t_d8b962303a1f68 660-662,664-666
+  s_0e48c5ab257349::t_86c2cec56cc06c 667
+  s_0e48c5ab257349::t_2fe9d40e0869f1 364
+  s_0e48c5ab257349::t_249a7dfcaa43b1 585-586
+  s_0e48c5ab257349::t_b71d453998e42a 181-187,267,382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9a2c66bba9fbcdea15e5fca6ca0edb13bf7c2080",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_0e48c5ab257349": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b460d8cd-df93-413d-a335-8fb224243e85",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

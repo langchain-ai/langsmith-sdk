@@ -1,0 +1,54 @@
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_0e48c5ab257349::t_ead3919799778b 27,47-49,132-499,632-633
+python/langsmith/integrations/livekit/processor.py
+  s_0e48c5ab257349::t_c914f43c78379f 231,256,280,480-481,486-487,500-505,526-532,534-546,567-572,588-600,618,626-628,754-757,759-760,762,777-779,782,784-785
+  s_0e48c5ab257349::t_68c310ed80225c 489
+  s_0e48c5ab257349::t_10fa739670e051 253-255
+  s_0e48c5ab257349::t_1f330cc6673627 585-587,601-603
+  s_0e48c5ab257349::t_8b56c605d1ec51 249-252
+  s_0e48c5ab257349::t_0739a25c9199b0 497-499
+  s_0e48c5ab257349::t_2699944aa991f1 518-522
+  s_0e48c5ab257349::t_719ef5334a52dc 533
+  s_0e48c5ab257349::t_db44488c8e8462 513-517
+  s_0e48c5ab257349::t_d344427cec6693 155-178
+  s_0e48c5ab257349::t_86c2cec56cc06c 622
+  s_0e48c5ab257349::t_7ec2833fc96033 623-625
+  s_0e48c5ab257349::t_0cd7954a28636a 269
+  s_0e48c5ab257349::t_bac9607b08d3e8 576-584
+  s_0e48c5ab257349::t_2fe9d40e0869f1 274
+  s_0e48c5ab257349::t_8e744b45e3d82d 564-566,573-575
+  s_0e48c5ab257349::t_d8b962303a1f68 615-617,619-621
+  s_0e48c5ab257349::t_3b28ae09375831 228-230
+  s_0e48c5ab257349::t_249a7dfcaa43b1 506-507
+  s_0e48c5ab257349::t_2d1c67af8382d3 508-512
+  s_0e48c5ab257349::t_15d7aebb30c0cc 473-477
+  h_3a9d271fbf3886 612
+  s_0e48c5ab257349::t_bc848fa2101062 550-563
+  s_0e48c5ab257349::t_c2657513e03483 490-491,493-496
+  s_0e48c5ab257349::t_3294b4bb0af9b7 103
+  s_0e48c5ab257349::t_38e5caba359619 604-611,613-614
+  s_0e48c5ab257349::t_9859515dd87e62 275,277
+  s_0e48c5ab257349::t_a427b3c727f22f 485
+  s_0e48c5ab257349::t_5a468b2f154daf 523-525,547-549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c334c68e28c24ec75ac5766c58dfb517b683b08d",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_0e48c5ab257349": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b460d8cd-df93-413d-a335-8fb224243e85",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
