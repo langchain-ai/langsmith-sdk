@@ -105,6 +105,10 @@
     "sandbox.js",
     "sandbox.d.ts",
     "sandbox.d.cts",
+    "openapi_client/errors.cjs",
+    "openapi_client/errors.js",
+    "openapi_client/errors.d.ts",
+    "openapi_client/errors.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -470,6 +474,15 @@
       },
       "import": "./sandbox.js",
       "require": "./sandbox.cjs"
+    },
+    "./openapi_client/errors": {
+      "types": {
+        "import": "./openapi_client/errors.d.ts",
+        "require": "./openapi_client/errors.d.cts",
+        "default": "./openapi_client/errors.d.ts"
+      },
+      "import": "./openapi_client/errors.js",
+      "require": "./openapi_client/errors.cjs"
     },
     "./package.json": "./package.json"
   },

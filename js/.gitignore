@@ -124,6 +124,10 @@ Chinook_Sqlite.sql
 /sandbox.js
 /sandbox.d.ts
 /sandbox.d.cts
+/openapi_client/errors.cjs
+/openapi_client/errors.js
+/openapi_client/errors.d.ts
+/openapi_client/errors.d.cts
 /index.cjs
 /index.js
 /index.d.ts
