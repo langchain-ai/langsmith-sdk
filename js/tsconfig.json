@@ -64,8 +64,7 @@
       "src/experimental/vercel/index.ts",
       "src/experimental/anthropic/index.ts",
       "src/sandbox/index.ts",
-      "src/sandbox/index.ts",
-      "src/_openapi_client/core/error.ts"
+      "src/sandbox/index.ts"
     ]
   }
 }

@@ -32,7 +32,6 @@ const entrypoints = {
   "experimental/anthropic": "experimental/anthropic/index",
   "experimental/sandbox": "sandbox/index",
   sandbox: "sandbox/index",
-  "openapi_client/errors": "_openapi_client/core/error",
 };
 
 const defaultEntrypoints = ["vitest/reporter"];
