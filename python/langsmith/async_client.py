@@ -1446,21 +1446,28 @@ class AsyncClient:
             runs (Optional[Sequence[RunKey]]): The runs to add, each with
                 its full lookup key.
         """
-        if (runs is None) == (run_ids is None):
+        if runs is not None and run_ids is not None:
             raise ls_utils.LangSmithUserError(
                 "Provide exactly one of `runs` or `run_ids`."
             )
         base = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        json_body: Union[list[str], list[dict[str, str]]]
         if runs is not None:
             path = f"{base}/by-key"
-            json = [ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)]
-        else:
+            json_body = [
+                ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)
+            ]
+        elif run_ids is not None:
             path = base
-            json = [
+            json_body = [
                 str(ls_client._as_uuid(id_, f"run_ids[{i}]"))
                 for i, id_ in enumerate(run_ids)
             ]
-        response = await self._arequest_with_retries("POST", path, json=json)
+        else:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        response = await self._arequest_with_retries("POST", path, json=json_body)
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_run_from_annotation_queue(

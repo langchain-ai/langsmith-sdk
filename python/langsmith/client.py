@@ -8832,19 +8832,24 @@ class Client:
         Returns:
             None
         """
-        if (runs is None) == (run_ids is None):
+        if runs is not None and run_ids is not None:
             raise ls_utils.LangSmithUserError(
                 "Provide exactly one of `runs` or `run_ids`."
             )
+        json_body: Union[list[str], list[dict[str, str]]]
         if runs is not None:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
-            json = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
-        else:
+            json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
+        elif run_ids is not None:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
-            json = [
+            json_body = [
                 str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
             ]
-        response = self.request_with_retries("POST", path, json=json)
+        else:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        response = self.request_with_retries("POST", path, json=json_body)
         ls_utils.raise_for_status_with_text(response)
 
     def delete_run_from_annotation_queue(
