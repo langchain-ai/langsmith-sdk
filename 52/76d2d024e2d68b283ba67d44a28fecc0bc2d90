@@ -1,0 +1,39 @@
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_0e48c5ab257349::t_0cd7954a28636a 77-80,91,102-106,132-135,334-337,339,345-354
+  s_0e48c5ab257349::t_e8f01e3373d2d5 355
+python/langsmith/integrations/livekit/__init__.py
+  s_0e48c5ab257349::t_0cd7954a28636a 10
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_0e48c5ab257349::t_9c9b2e0d61a069 121,164-165
+python/langsmith/integrations/livekit/processor.py
+  s_0e48c5ab257349::t_f9240da704644b 538-542
+  s_0e48c5ab257349::t_bec1dc8a6f2461 321-322,325-326,349,411,630
+  s_0e48c5ab257349::t_0cd7954a28636a 233,241,245,314,328,340,399,402-403,439,448,452,461,537,589,591
+  s_0e48c5ab257349::t_cd37876e14ca7d 9
+python/langsmith/integrations/pipecat/processor.py
+  s_0e48c5ab257349::t_0cd7954a28636a 9,195,200,218-220,223-224,259,272,274,289,293,302,321,333,335
+python/langsmith/_internal/voice/base_span_processor.py
+  s_0e48c5ab257349::t_0cd7954a28636a 7,83-86,88-138,145,202,222,274,288,296
+  s_0e48c5ab257349::t_b82a13d7e7ce5a 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5276d2d024e2d68b283ba67d44a28fecc0bc2d90",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_0e48c5ab257349": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b460d8cd-df93-413d-a335-8fb224243e85",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
