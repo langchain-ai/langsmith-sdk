@@ -100,6 +100,7 @@ _TURN_SPAN = "agent_turn"
 _SESSION_SPAN = "agent_session"
 _TOOL_SPAN = "function_tool"
 _REALTIME_METRICS_SPAN = "realtime_metrics"
+_USER_SPEAKING_SPAN = "user_speaking"  # realtime user turn (no STT span)
 
 # LiveKit records each chat-context item sent to the model as a span event on
 # ``llm_request`` (the event name implies the message role), followed by a
@@ -151,6 +152,41 @@ def _normalize_provider(raw: Any) -> Optional[str]:
     return value.split("://", 1)[-1].split("/", 1)[0] or None
 
 
+def _parse_lk_response_function_calls(raw: Any) -> list[dict]:
+    """Convert ``lk.response.function_calls`` JSON to OpenAI tool calls."""
+    if not isinstance(raw, str):
+        return []
+    try:
+        calls = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(calls, list):
+        return []
+    tool_calls = []
+    for fc in calls:
+        if not isinstance(fc, dict):
+            continue
+        tool_calls.append(
+            {
+                "id": fc.get("call_id") or fc.get("id"),
+                "type": "function",
+                "function": {"name": fc.get("name"), "arguments": fc.get("arguments")},
+            }
+        )
+    return tool_calls
+
+
+def _is_livekit_span(span: Any) -> bool:
+    """Whether a span came from LiveKit's tracer (its instrumentation scope).
+
+    Used to gate root detection: only a parentless span emitted by LiveKit is
+    the conversation root. Named LiveKit spans are matched by name above and
+    don't need this; it guards the broad ``parent is None`` case alone.
+    """
+    scope = getattr(span, "instrumentation_scope", None)
+    return getattr(scope, "name", None) == _LIVEKIT_INSTRUMENTATION_SCOPE
+
+
 class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     """Enriches LiveKit Agents' OTel spans with LangSmith-compatible attributes."""
 
@@ -198,9 +234,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         def _cache() -> Any:
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
 
-        # Whole-conversation transcript, accumulated turn-by-turn from the
-        # ``agent_turn`` spans. trace_id (int) -> flat [{role, content}, ...].
-        self._conversation_by_trace: MutableMapping[int, list[dict]] = _cache()
+        # Whole-conversation transcript the root rolls up. trace_id ->
+        # [(sort_key, message)]
+        self._conversation_by_trace: MutableMapping[int, list[tuple[int, dict]]] = (
+            _cache()
+        )
         # The trace root (job entrypoint) ends before the conversation completes
         # when the agent greets first, so we hold its draft until ``agent_session``
         # ends with the full conversation. trace_id (hex str) -> TranslatedSpan.
@@ -218,6 +256,94 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         # Realtime-model metrics cached from a ``realtime_metrics`` child span and
         # drained onto its parent ``agent_turn``. Keyed by the parent span_id.
         self._realtime_metrics_by_parent: MutableMapping[int, dict] = _cache()
+        # Realtime user transcripts, paired FIFO with their held ``user_speaking``
+        # spans, keyed by thread id. ``_deferred_user_speaking`` holds spans
+        # awaiting a transcript; ``_pending_user_transcripts`` buffers transcripts
+        # that arrived before their span ended.
+        self._deferred_user_speaking: MutableMapping[str, list[TranslatedSpan]] = (
+            _cache()
+        )
+        self._pending_user_transcripts: MutableMapping[str, list[str]] = _cache()
+
+    # -- public host API ------------------------------------------------------
+
+    def instrument_session(self, session: Any, thread_id: str) -> None:
+        """Subscribe this processor to a LiveKit ``AgentSession``'s events.
+
+        The realtime user transcript arrives via ``user_input_transcribed`` — a
+        session event, never on a span — so the processor can't see it alone. Call
+        this once after creating the session to wire it in::
+
+            processor = configure_livekit(...)
+            session = AgentSession(llm=...)
+            set_thread_id(conversation_id)
+            processor.instrument_session(session, conversation_id)
+
+        No-op in the cascade pipeline (the transcript rides the STT ``user_turn``).
+
+        Args:
+            session: the LiveKit ``AgentSession`` to subscribe to.
+            thread_id: the conversation id, matching :func:`set_thread_id`.
+        """
+
+        @session.on("user_input_transcribed")
+        def _on_user_input_transcribed(ev: Any) -> None:
+            # Feed every *final* transcript (including empty ones) so the FIFO
+            # pairing with user_speaking spans stays aligned; skip interim results.
+            if getattr(ev, "is_final", False):
+                self._record_user_transcript(
+                    str(thread_id), getattr(ev, "transcript", "") or ""
+                )
+
+    def expect_recording(self, thread_id: str) -> None:
+        """Hold this conversation's root span until its recording is supplied.
+
+        LiveKit Egress finishes uploading *after* the call ends, so the bytes
+        don't exist when the root span would normally be exported. Call this at
+        the start of a conversation (when you start egress) to defer that export;
+        then call :meth:`complete_recording` once you have the file. Until then
+        the root is held (a worker shutdown flushes it without audio as a
+        fallback), so always pair this with a ``complete_recording`` call —
+        passing ``None`` to release without audio if the recording fails.
+
+        Args:
+            thread_id: the conversation id, matching the one passed to
+                ``set_thread_id``.
+        """
+        self._awaiting_recording[str(thread_id)] = True
+
+    def complete_recording(
+        self,
+        thread_id: str,
+        data: Optional[bytes],
+        *,
+        name: str = "recording.ogg",
+        mime_type: Optional[str] = None,
+    ) -> None:
+        """Attach an egress recording to a conversation and release its root.
+
+        Download the completed egress file from your storage and pass its bytes
+        here; they're embedded as a real LangSmith attachment on the root span.
+        Pass ``data=None`` to release the held root without audio (e.g. egress
+        failed). Safe to call before or after the session ends.
+
+        Args:
+            thread_id: the conversation id, matching :meth:`expect_recording`.
+            data: the recording bytes, or ``None`` to release without audio.
+            name: attachment filename.
+            mime_type: attachment MIME type; defaults to the processor's.
+        """
+        tid = str(thread_id)
+        if data:
+            self._pending_audio[tid] = {
+                "name": name,
+                "data": bytes(data),
+                "mime_type": mime_type or self._audio_mime_type,
+            }
+        self._awaiting_recording.pop(tid, None)
+        trace_id = self._thread_to_trace.get(tid)
+        if trace_id is not None:
+            self._maybe_release(trace_id)
 
     # -- dispatch -------------------------------------------------------------
 
@@ -230,16 +356,18 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         elif name == _LLM_INFERENCE_SPAN:
             self._handle_llm_request(tspan)
         elif name in _LLM_WRAPPER_SPANS:
-            tspan.set_kind("chain")  # wrappers: no fabricated I/O
+            tspan.set_kind("chain")
         elif name == _TTS_INFERENCE_SPAN or name in _TTS_WRAPPER_SPANS:
             self._handle_tts(tspan)
         elif name == _TURN_SPAN:
             self._handle_turn(tspan)
+        elif name == _USER_SPEAKING_SPAN:
+            return self._handle_user_speaking(tspan)
         elif name == _SESSION_SPAN:
-            # Session end: the conversation is complete — release the deferred
-            # root (if any), then export the session span itself.
+            # Session end: release the deferred root and export the session span.
             tspan.set_kind("chain")
             self._ended_sessions[trace_id] = True
+            self._flush_user_speaking(self._trace_to_thread.get(trace_id))
             self._release_root_span(trace_id)
         elif name == "eou_detection":
             tspan.set_kind("chain")  # framework step
@@ -251,7 +379,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             # must not export it; nothing else does either).
             self._cache_realtime_metrics(tspan)
             return False
-        elif tspan.span.parent is None and self._is_livekit_span(tspan.span):
+        elif tspan.span.parent is None and _is_livekit_span(tspan.span):
             # The trace root (LiveKit's job entrypoint). _handle_root owns its
             # export: it renders/attaches and exports immediately, or defers
             # until the session ends and egress audio is ready (via
@@ -271,17 +399,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         # included; _release_root_span above exports only the separate deferred
         # root, never this one).
         return True
-
-    @staticmethod
-    def _is_livekit_span(span: Any) -> bool:
-        """Whether a span came from LiveKit's tracer (its instrumentation scope).
-
-        Used to gate root detection: only a parentless span emitted by LiveKit is
-        the conversation root. Named LiveKit spans are matched by name above and
-        don't need this; it guards the broad ``parent is None`` case alone.
-        """
-        scope = getattr(span, "instrumentation_scope", None)
-        return getattr(scope, "name", None) == _LIVEKIT_INSTRUMENTATION_SCOPE
 
     # -- per-span-type handlers ----------------------------------------------
 
@@ -432,29 +549,128 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Render an ``agent_turn``: one user/assistant exchange.
 
-        Appends the exchange to the running conversation the root rolls up. This
-        is the LiveKit-native turn boundary, so it works for both the cascade and
-        the speech-to-speech backends.
+        Appends the exchange to the conversation the root rolls up (both backends).
+        Kind differs: cascade turns are ``chain`` containers around a child
+        ``llm_request``; realtime turns have no such child — the turn itself carries
+        the model, usage, and response, so they're ``llm`` (detected by the
+        ``lk.realtime_model_metrics`` drained on just above).
         """
-        tspan.set_kind("chain")
         self._drain_realtime_metrics(tspan)
+        is_realtime = "lk.realtime_model_metrics" in tspan.attributes
+        tspan.set_kind("llm" if is_realtime else "chain")
 
         user_input = tspan.attributes.get("lk.user_input")
         response = tspan.attributes.get("lk.response.text")
+        tool_calls = _parse_lk_response_function_calls(
+            tspan.attributes.get("lk.response.function_calls")
+        )
         trace_id = tspan.span.context.trace_id
-        conversation = self._conversation_by_trace.get(trace_id) or []
+        start = tspan.span.start_time
+        # Cascade turns carry the user input; realtime turns don't (it rides the
+        # user_speaking span, appended by _apply_user_transcript).
         if user_input:
-            msg = {"role": "user", "content": str(user_input)}
-            tspan.set_messages(prompt=[msg])
-            conversation.append(msg)
-        if response:
-            msg = {"role": "assistant", "content": str(response)}
-            tspan.set_messages(completion=[msg])
-            conversation.append(msg)
-        # Re-assign (not just mutate) so each turn refreshes the TTL — an active
-        # call longer than the TTL is never evicted mid-conversation.
-        if conversation:
-            self._conversation_by_trace[trace_id] = conversation
+            user_msg = {"role": "user", "content": str(user_input)}
+            tspan.set_messages(prompt=[user_msg])
+            self._append_conversation(trace_id, user_msg, start)
+        # Emit the reply for text and/or tool calls (a tool-only turn has no text).
+        if response or tool_calls:
+            reply: dict[str, Any] = {
+                "role": "assistant",
+                "content": str(response or ""),
+            }
+            if tool_calls:
+                reply["tool_calls"] = tool_calls
+            tspan.set_messages(completion=[reply])
+            self._append_conversation(trace_id, reply, start)
+
+    def _append_conversation(self, trace_id: int, message: dict, sort_key: Any) -> None:
+        """Append a message to the conversation the root rolls up."""
+        conversation = self._conversation_by_trace.get(trace_id) or []
+        conversation.append((sort_key, message))
+        # Re-assign (not just mutate) so each turn refreshes the TTL.
+        self._conversation_by_trace[trace_id] = conversation
+
+    # -- realtime user transcript (speech-to-speech) --------------------------
+
+    def _handle_user_speaking(self, tspan: TranslatedSpan) -> bool:
+        """Handle a ``user_speaking`` span — the realtime user turn.
+
+        Deferred (``False``): stamp+export now if the transcript was already
+        buffered, else hold until it's fed (or flushed untouched at session end).
+        Exported as-is (``True``) when there's no thread id to pair against.
+        """
+        tspan.set_kind("chain")
+        thread = tspan.attributes.get("langsmith.metadata.thread_id")
+        if thread is None:
+            return True  # no conversation id to pair a transcript against
+        thread = str(thread)
+
+        pending = self._pending_user_transcripts.get(thread)
+        if pending:
+            transcript = pending.pop(0)
+            # pop(0) mutates in place: refresh the TTL if any remain, else drop it.
+            if pending:
+                self._pending_user_transcripts[thread] = pending
+            else:
+                self._pending_user_transcripts.pop(thread, None)
+            self._apply_user_transcript(tspan, transcript)
+            self._export(tspan)
+            return False
+
+        held = self._deferred_user_speaking.get(thread) or []
+        held.append(tspan)
+        self._deferred_user_speaking[thread] = held  # re-assign to refresh TTL
+        return False
+
+    def _record_user_transcript(self, thread_id: str, transcript: str) -> None:
+        """Pair a realtime transcript (from ``instrument_session``) with its span.
+
+        Applies it to the held ``user_speaking`` span, or buffers it if the span
+        hasn't ended yet. Keyed by thread id.
+        """
+        tid = str(thread_id)
+        held = self._deferred_user_speaking.get(tid)
+        if held:
+            tspan = held.pop(0)
+            # pop(0) mutates in place: refresh the TTL if any remain, else drop it.
+            if held:
+                self._deferred_user_speaking[tid] = held
+            else:
+                self._deferred_user_speaking.pop(tid, None)
+            self._apply_user_transcript(tspan, transcript)
+            self._export(tspan)
+            return
+        # The span hasn't ended yet — buffer until _handle_user_speaking sees it.
+        pending = self._pending_user_transcripts.get(tid) or []
+        pending.append(transcript)
+        self._pending_user_transcripts[tid] = pending  # re-assign to refresh TTL
+
+    def _apply_user_transcript(self, tspan: TranslatedSpan, transcript: str) -> None:
+        """Render a fed transcript onto a ``user_speaking`` span as the user's turn.
+
+        Unlike the cascade STT ``user_turn`` (which is excluded), this is the only
+        record of the realtime user's words, so it's shown — as a plain ``user``
+        message, attributed to the user, not the assistant. Empty renders no I/O.
+        """
+        tspan.set_kind("llm")
+        if transcript:
+            tspan.attributes["lk.user_transcript"] = transcript
+            tspan.set_messages(prompt=[{"role": "user", "content": transcript}])
+            # Root rollup, keyed by start_time so it sorts before the reply.
+            self._append_conversation(
+                tspan.span.context.trace_id,
+                {"role": "user", "content": transcript},
+                tspan.span.start_time,
+            )
+
+    def _flush_user_speaking(self, thread_id: Optional[str]) -> None:
+        """Export held ``user_speaking`` spans untranscribed (no transcript arrived)."""
+        if thread_id is None:
+            return
+        tid = str(thread_id)
+        for tspan in self._deferred_user_speaking.pop(tid, None) or []:
+            self._export(tspan)
+        self._pending_user_transcripts.pop(tid, None)
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         """``function_tool``: render as a proper ``tool`` run with its I/O."""
@@ -472,58 +688,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes["gen_ai.completion"] = (
                 output if isinstance(output, str) else json.dumps(output)
             )
-
-    # -- production recording (egress) ---------------------------------------
-
-    def expect_recording(self, thread_id: str) -> None:
-        """Hold this conversation's root span until its recording is supplied.
-
-        LiveKit Egress finishes uploading *after* the call ends, so the bytes
-        don't exist when the root span would normally be exported. Call this at
-        the start of a conversation (when you start egress) to defer that export;
-        then call :meth:`complete_recording` once you have the file. Until then
-        the root is held (a worker shutdown flushes it without audio as a
-        fallback), so always pair this with a ``complete_recording`` call —
-        passing ``None`` to release without audio if the recording fails.
-
-        Args:
-            thread_id: the conversation id, matching the one passed to
-                ``set_thread_id``.
-        """
-        self._awaiting_recording[str(thread_id)] = True
-
-    def complete_recording(
-        self,
-        thread_id: str,
-        data: Optional[bytes],
-        *,
-        name: str = "recording.ogg",
-        mime_type: Optional[str] = None,
-    ) -> None:
-        """Attach an egress recording to a conversation and release its root.
-
-        Download the completed egress file from your storage and pass its bytes
-        here; they're embedded as a real LangSmith attachment on the root span.
-        Pass ``data=None`` to release the held root without audio (e.g. egress
-        failed). Safe to call before or after the session ends.
-
-        Args:
-            thread_id: the conversation id, matching :meth:`expect_recording`.
-            data: the recording bytes, or ``None`` to release without audio.
-            name: attachment filename.
-            mime_type: attachment MIME type; defaults to the processor's.
-        """
-        tid = str(thread_id)
-        if data:
-            self._pending_audio[tid] = {
-                "name": name,
-                "data": bytes(data),
-                "mime_type": mime_type or self._audio_mime_type,
-            }
-        self._awaiting_recording.pop(tid, None)
-        trace_id = self._thread_to_trace.get(tid)
-        if trace_id is not None:
-            self._maybe_release(trace_id)
 
     # -- deferred root release ------------------------------------------------
 
@@ -580,12 +744,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _render_conversation(self, tspan: TranslatedSpan) -> bool:
         """Render the accumulated conversation onto a root span.
 
-        Input = the opening message; output = everything after it. Returns
-        whether anything was rendered.
+        Messages are ordered by their source span's start_time (with a monotonic
+        seq tie-break) so a realtime user turn — fed late, out of order — lands in
+        its correct position. Input = the opening message; output = everything
+        after it. Returns whether anything was rendered.
         """
-        messages = self._conversation_by_trace.get(tspan.span.context.trace_id, [])
-        if not messages:
+        entries = self._conversation_by_trace.get(tspan.span.context.trace_id, [])
+        if not entries:
             return False
+        messages = [msg for _, msg in sorted(entries, key=lambda e: e[0])]
         tspan.set_messages(prompt=messages[:1])
         if len(messages) > 1:
             tspan.set_messages(completion=messages[1:])
@@ -600,10 +767,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._thread_to_trace.pop(thread, None)
             self._awaiting_recording.pop(thread, None)
             self._pending_audio.pop(thread, None)
+            # Backstop: normally flushed at session end, but cover a root released
+            # without an agent_session span having flushed first.
+            self._flush_user_speaking(thread)
 
     def shutdown(self) -> None:
-        """Flush any deferred root spans, then shut down the downstream."""
+        """Flush any deferred root and user_speaking spans, then shut down."""
         self._flush_deferred_root_spans()
+        for thread in list(self._deferred_user_speaking.keys()):
+            self._flush_user_speaking(thread)
         super().shutdown()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
