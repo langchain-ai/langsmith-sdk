@@ -4,7 +4,7 @@ The framework integrations that emit their own OpenTelemetry spans (Pipecat,
 LiveKit) translate those spans into the ``gen_ai.*`` / ``langsmith.*`` attribute
 namespaces LangSmith's OTLP ingester understands, then forward them to an
 exporter. This base owns everything that translation shares — the downstream
-wrapping, the LangSmith OTLP exporter default, opt-in ``thread_id`` injection,
+wrapping, the LangSmith OTLP exporter default, opt-in ``thread_id`` stamping,
 the ``gen_ai.*`` message writers, and size-capped audio attachment — so each
 framework subclass implements only
 ``_dispatch`` (classify a span by name and rewrite it); the base exports it.
@@ -80,13 +80,56 @@ class TranslatedSpan:
             self.span, attributes=self.attributes, events=self.events
         )
 
+    def set_kind(self, kind: str) -> None:
+        """Set ``langsmith.span.kind`` (``llm`` / ``chain`` / ``tool`` / …)."""
+        self.attributes["langsmith.span.kind"] = kind
+
+    def set_thread_id(self, thread_id: str) -> None:
+        """Set ``langsmith.metadata.thread_id`` (the conversation/thread id)."""
+        self.attributes["langsmith.metadata.thread_id"] = thread_id
+
+    def exclude_from_message_view(self) -> None:
+        """Drop this span from the conversation Messages view (still in the tree).
+
+        That view reconstructs the chat from ``llm``/``tool`` runs. STT/TTS spans
+        are tagged ``llm``-kind for the tree but would otherwise add fake turns
+        (raw transcripts, "Generated audio for: …"), so they opt out here.
+        """
+        self.attributes["langsmith.metadata.ls_message_view_exclude"] = True
+
+    def set_root_span(self, is_root: bool) -> None:
+        """Mark the span as the trace root (``langsmith.root_span``)."""
+        self.attributes["langsmith.root_span"] = is_root
+
+    def set_metadata(self, key: str, value: Any) -> None:
+        """Set ``langsmith.metadata.<key>`` to the given value.
+
+        LangSmith surfaces everything under ``langsmith.metadata.*`` as run
+        metadata. Note ``langsmith.root_span`` and ``langsmith.span.kind`` are NOT
+        metadata — they live in the top-level ``langsmith.*`` namespace and have
+        their own setters / direct writes.
+        """
+        self.attributes[f"langsmith.metadata.{key}"] = value
+
+    def set_messages(
+        self,
+        *,
+        prompt: Optional[list[dict]] = None,
+        completion: Optional[list[dict]] = None,
+    ) -> None:
+        """Write ``gen_ai.prompt``/``gen_ai.completion`` as ``{"messages": [...]}``."""
+        if prompt is not None:
+            self.attributes["gen_ai.prompt"] = json.dumps({"messages": prompt})
+        if completion is not None:
+            self.attributes["gen_ai.completion"] = json.dumps({"messages": completion})
+
 
 class BaseLangSmithSpanProcessor(SpanProcessor):
     """Shared base for the OTel→LangSmith framework span processors.
 
     Subclasses implement :meth:`_dispatch` to classify each ended span and
     rewrite its attributes via the helpers here; the base exports it. The base
-    handles the downstream/exporter wiring, ``thread_id`` injection, and static
+    handles the downstream/exporter wiring, ``thread_id`` stamping, and static
     metadata stamping.
     """
 
@@ -143,7 +186,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
         # runs synchronously in the task that starts the span; the conversation's
         # root span starts in the task where set_thread_id was called, so the
         # ContextVar is visible now even when later spans END in detached tasks
-        # where it is not. _inject_thread_id then recovers it per trace.
+        # where it is not. _stamp_thread_id then recovers it per trace.
         thread_id = thread_id_from_context()
         context = getattr(span, "context", None)
         if thread_id and context is not None:
@@ -163,7 +206,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
         tspan = TranslatedSpan.of(span)
         export = True
         try:
-            self._inject_thread_id(tspan)
+            self._stamp_thread_id(tspan)
             export = self._dispatch(tspan) is not False
         except Exception:
             logger.warning(
@@ -215,7 +258,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
 
     # -- shared helpers -------------------------------------------------------
 
-    def _inject_thread_id(self, tspan: TranslatedSpan) -> None:
+    def _stamp_thread_id(self, tspan: TranslatedSpan) -> None:
         """Stamp ``langsmith.metadata.thread_id`` from the per-context id (opt-in).
 
         LangSmith needs the thread id on every run for thread-level filtering and
@@ -229,7 +272,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
         3. else the ``ContextVar`` directly (this span IS in context and is the
            first we've seen for the trace), backfilling the cache for its peers.
 
-        Injection is skipped (``None``) when no id was ever set for the trace.
+        Stamping is skipped (``None``) when no id was ever set for the trace.
         """
         if "langsmith.metadata.thread_id" in tspan.attributes:
             return
@@ -237,7 +280,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
         thread_id = self._thread_id_by_trace.get(trace_id) or thread_id_from_context()
         if thread_id:
             thread_id = str(thread_id)
-            tspan.attributes["langsmith.metadata.thread_id"] = thread_id
+            tspan.set_thread_id(thread_id)
             self._remember_thread_id(trace_id, thread_id)
 
     def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
@@ -250,67 +293,6 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
     def _forget_thread_id(self, trace_id: int) -> None:
         """Drop a trace's cached thread id (called from subclass cleanup)."""
         self._thread_id_by_trace.pop(trace_id, None)
-
-    @staticmethod
-    def _set_kind(tspan: TranslatedSpan, kind: str) -> None:
-        tspan.attributes["langsmith.span.kind"] = kind
-
-    @staticmethod
-    def _exclude_from_message_view(tspan: TranslatedSpan) -> None:
-        """Drop a span from the conversation Messages view (still in the tree).
-
-        That view reconstructs the chat from ``llm``/``tool`` runs. STT/TTS spans
-        are tagged ``llm``-kind for the tree but would inject fake turns (raw
-        transcripts, "Generated audio for: …"), so they opt out here.
-        """
-        tspan.attributes["langsmith.metadata.ls_message_view_exclude"] = True
-
-    @staticmethod
-    def _set_messages(
-        tspan: TranslatedSpan,
-        *,
-        prompt: Optional[list[dict]] = None,
-        completion: Optional[list[dict]] = None,
-    ) -> None:
-        """Write simple role/content turns in the indexed + singular forms.
-
-        For plain conversation turns (STT, TTS, an exchange) where messages have
-        only role + content. Writes the indexed ``gen_ai.prompt.{n}.role/content``
-        attributes and the singular ``gen_ai.prompt`` JSON list. For messages
-        that carry structured fields (tool calls), use :meth:`_set_messages_json`
-        instead — the indexed form can't represent them.
-        """
-        attrs = tspan.attributes
-        if prompt is not None:
-            for i, msg in enumerate(prompt):
-                attrs[f"gen_ai.prompt.{i}.role"] = msg.get("role", "user")
-                attrs[f"gen_ai.prompt.{i}.content"] = str(msg.get("content", ""))
-            attrs["gen_ai.prompt"] = json.dumps(prompt)
-        if completion is not None:
-            for i, msg in enumerate(completion):
-                attrs[f"gen_ai.completion.{i}.role"] = msg.get("role", "assistant")
-                attrs[f"gen_ai.completion.{i}.content"] = str(msg.get("content", ""))
-            attrs["gen_ai.completion"] = json.dumps(completion)
-
-    @staticmethod
-    def _set_messages_json(
-        tspan: TranslatedSpan,
-        *,
-        prompt: Optional[list[dict]] = None,
-        completion: Optional[list[dict]] = None,
-    ) -> None:
-        """Write messages in the singular ``{"messages": [...]}`` JSON form only.
-
-        This is the form for LLM calls and the conversation root: it can carry
-        structured ``tool_calls`` / ``tool_call_id`` that the indexed
-        ``gen_ai.prompt.{n}.*`` attributes can't, and it takes precedence at
-        ingest — so the indexed form is deliberately *not* written here (it would
-        win and drop the tool calls).
-        """
-        if prompt is not None:
-            tspan.attributes["gen_ai.prompt"] = json.dumps({"messages": prompt})
-        if completion is not None:
-            tspan.attributes["gen_ai.completion"] = json.dumps({"messages": completion})
 
     def _attach_audio(
         self, tspan: TranslatedSpan, *, name: str, data: bytes, mime_type: str

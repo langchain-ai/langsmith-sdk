@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal.voice import set_thread_id, thread_id_from_context
+from langsmith._internal.voice import set_thread_id
 
 from .processor import LiveKitLangSmithSpanProcessor
 
@@ -17,7 +17,6 @@ __all__ = [
     "LiveKitLangSmithSpanProcessor",
     "configure_livekit",
     "set_thread_id",
-    "thread_id_from_context",
 ]
 
 

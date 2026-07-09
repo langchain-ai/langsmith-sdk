@@ -6,7 +6,7 @@ Pipecat emits OTel spans named ``conversation``, ``turn``, ``stt``, ``llm``, and
 :class:`PipecatLangSmithSpanProcessor` rewrites each span type into the
 ``gen_ai.*`` / ``langsmith.*`` namespaces LangSmith keys off, renders the whole
 conversation onto the root span, and (optionally) attaches the recorded audio
-there. It inherits the downstream wrapping, exporter, ``thread_id`` injection,
+there. It inherits the downstream wrapping, exporter, ``thread_id`` stamping,
 and message helpers from :class:`BaseLangSmithSpanProcessor`.
 
 Trace shape in LangSmith::
@@ -192,12 +192,12 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         if name == "stt":
             self._handle_stt(tspan)
-            self._exclude_from_message_view(tspan)
+            tspan.exclude_from_message_view()
         elif name == "llm":
             self._handle_llm(tspan, trace_id)
         elif name == "tts":
             self._handle_tts(tspan)
-            self._exclude_from_message_view(tspan)
+            tspan.exclude_from_message_view()
         elif name == "turn":
             self._handle_turn(tspan)
         elif name == "conversation":
@@ -215,13 +215,13 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
         """STT span: audio input → transcribed text."""
         transcript = tspan.attributes.get("transcript", "")
-        self._set_kind(tspan, "llm")
-        self._set_messages(
-            tspan, prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
+        tspan.set_kind("llm")
+        tspan.set_messages(
+            prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
         )
         if transcript:
-            self._set_messages(
-                tspan, completion=[{"role": "assistant", "content": str(transcript)}]
+            tspan.set_messages(
+                completion=[{"role": "assistant", "content": str(transcript)}]
             )
 
     @classmethod
@@ -256,7 +256,7 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """
         input_data = tspan.attributes.get("input", "")
         output_data = tspan.attributes.get("output", "")
-        self._set_kind(tspan, self._llm_span_kind)
+        tspan.set_kind(self._llm_span_kind)
 
         try:
             raw_messages = json.loads(input_data)
@@ -269,11 +269,9 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         ]
 
         if messages:
-            self._set_messages_json(tspan, prompt=messages)
+            tspan.set_messages(prompt=messages)
         if output_data:
-            self._set_messages_json(
-                tspan, completion=[self._completion_message(output_data)]
-            )
+            tspan.set_messages(completion=[self._completion_message(output_data)])
 
         # Each request's input carries the full history, so the latest snapshot
         # IS the conversation — kept per trace for the root span to render. Reuse
@@ -288,12 +286,11 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _handle_tts(self, tspan: TranslatedSpan) -> None:
         """TTS span: text → audio. The voice is metadata, not content."""
         text = tspan.attributes.get("text", "")
-        self._set_kind(tspan, "llm")
+        tspan.set_kind("llm")
         voice_id = tspan.attributes.get("voice_id")
         if voice_id:
             tspan.attributes["langsmith.metadata.voice_id"] = str(voice_id)
-        self._set_messages(
-            tspan,
+        tspan.set_messages(
             prompt=[{"role": "user", "content": str(text)}],
             completion=[
                 {"role": "assistant", "content": f'Generated audio for: "{text}"'}
@@ -302,7 +299,7 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Turn span: a framework wrapper around one exchange (a ``chain``)."""
-        self._set_kind(tspan, "chain")
+        tspan.set_kind("chain")
         turn_number = tspan.attributes.get("turn.number")
         if turn_number is not None:
             tspan.attributes["langsmith.metadata.turn_number"] = turn_number
@@ -321,7 +318,7 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         conversation_id = tspan.attributes.get(
             "conversation.id", ""
         ) or tspan.attributes.get("conversation_id", "")
-        self._set_kind(tspan, "chain")
+        tspan.set_kind("chain")
         tspan.attributes["langsmith.root_span"] = True
         tspan.attributes["langsmith.metadata.ls_modality"] = "audio"
         tspan.attributes["langsmith.metadata.ls_integration"] = "pipecat"
@@ -333,9 +330,9 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         messages = self._conversation_by_trace.get(trace_id, [])
         if messages:
-            self._set_messages_json(tspan, prompt=messages[:1])
+            tspan.set_messages(prompt=messages[:1])
             if len(messages) > 1:
-                self._set_messages_json(tspan, completion=messages[1:])
+                tspan.set_messages(completion=messages[1:])
 
         self._attach_conversation_audio(tspan, conversation_id)
         self._cleanup_conversation(trace_id, conversation_id)
