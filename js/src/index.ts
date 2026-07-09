@@ -33,6 +33,22 @@ export {
   promptCacheSingleton,
 } from "./utils/prompt_cache/index.js";
 
+export {
+  LangsmithError,
+  APIError,
+  APIUserAbortError,
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  BadRequestError,
+  AuthenticationError,
+  PermissionDeniedError,
+  NotFoundError,
+  ConflictError,
+  UnprocessableEntityError,
+  RateLimitError,
+  InternalServerError,
+} from "./_openapi_client/core/error.js";
+
 // Update using pnpm bump-version
 export const __version__ = "0.8.0";
 
