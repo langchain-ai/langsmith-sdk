@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from html import escape as _html_escape
 from pathlib import Path
 from typing import (
     Annotated,
@@ -1434,7 +1435,7 @@ class InsightsReport(BaseModel):
         return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.project_id)}?tab=3&clusterJobId={str(self.id)}"
 
     def _repr_html_(self) -> str:
-        return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
+        return f'<a href="{_html_escape(self.link, quote=True)}", target="_blank" rel="noopener">InsightsReport(\'{_html_escape(self.name)}\')</a>'
 
 
 class InsightsHighlightedTrace(BaseModel):

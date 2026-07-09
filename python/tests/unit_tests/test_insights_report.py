@@ -127,6 +127,29 @@ def test_insights_report_link_uses_insights_tab() -> None:
     assert report.link == expected_link
 
 
+def test_insights_report_repr_html_escapes_name_and_link() -> None:
+    report = ls_schemas.InsightsReport(
+        id="job-id",
+        name='bad\');</a><script>alert("x")</script>',
+        status="success",
+        project_id="project-id",
+        host_url='https://smith.langchain.com/" onclick="alert(1)',
+        tenant_id="tenant-id",
+    )
+
+    expected_href = (
+        "https://smith.langchain.com/&quot; onclick=&quot;alert(1)/o/tenant-id/"
+        "projects/p/project-id?tab=3&amp;clusterJobId=job-id"
+    )
+    expected_name = (
+        "bad&#x27;);&lt;/a&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+    )
+    assert report._repr_html_() == (
+        f'<a href="{expected_href}", target="_blank" rel="noopener">'
+        f"InsightsReport('{expected_name}')</a>"
+    )
+
+
 def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     report_payload = _make_report_payload()
     runs_page_1 = _make_runs_page_payload(offset=0, has_next=True)
