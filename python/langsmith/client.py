@@ -723,6 +723,31 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         ) from e
 
 
+def _serialize_run_key(run: ls_schemas.RunKey, index: int) -> dict[str, str]:
+    """Build the JSON body for one `runs` entry of `add_runs_to_annotation_queue`.
+
+    Serializes UUIDs and `start_time` to strings, since the `requests` `json=`
+    encoder does not handle `UUID`/`datetime` natively.
+    """
+    start_time = run["start_time"]
+    if isinstance(start_time, datetime.datetime):
+        start_time = start_time.isoformat()
+    body: dict[str, str] = {
+        "run_id": str(_as_uuid(run["run_id"], f"runs[{index}].run_id")),
+        "session_id": str(_as_uuid(run["session_id"], f"runs[{index}].session_id")),
+        "start_time": start_time,
+    }
+    source_proposed_example_id = run.get("source_proposed_example_id")
+    if source_proposed_example_id is not None:
+        body["source_proposed_example_id"] = str(
+            _as_uuid(
+                source_proposed_example_id,
+                f"runs[{index}].source_proposed_example_id",
+            )
+        )
+    return body
+
+
 @typing.overload
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
 
@@ -8780,23 +8805,51 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_ids: Optional[list[ID_TYPE]] = None,
+        runs: Optional[Sequence[ls_schemas.RunKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
+        Provide exactly one of `runs` or `run_ids`:
+
+        - `runs` (preferred): each entry carries the run's full lookup key
+          (`run_id`, `session_id`, `start_time`, and an optional
+          `source_proposed_example_id`). This lets the run be located directly,
+          without a scan, and is required for workspaces served by SmithDB.
+        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
+          future release; prefer `runs`.
+
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
-            run_ids (List[Union[UUID, str]]): The IDs of the runs to be added to the annotation
-                queue.
+            run_ids (Optional[List[Union[UUID, str]]]): The IDs of the runs to be
+                added to the annotation queue.
+            runs (Optional[Sequence[RunKey]]): The runs to add, each with
+                its full lookup key.
 
         Returns:
             None
         """
-        response = self.request_with_retries(
-            "POST",
-            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
-            json=[str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)],
-        )
+        if runs is not None and run_ids is not None:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        json_body: Union[list[str], list[dict[str, str]]]
+        if runs is not None:
+            path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
+            json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
+        elif run_ids is not None:
+            path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
+            json_body = [
+                str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
+            ]
+        else:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        response = self.request_with_retries("POST", path, json=json_body)
         ls_utils.raise_for_status_with_text(response)
 
     def delete_run_from_annotation_queue(

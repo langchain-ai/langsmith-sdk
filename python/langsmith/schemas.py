@@ -862,6 +862,25 @@ class AnnotationQueueWithDetails(AnnotationQueue):
     """The rubric instructions for the annotation queue."""
 
 
+class RunKey(TypedDict):
+    """A run identified by its full lookup key, for adding to an annotation queue.
+
+    Unlike a bare run ID, this carries the partition key (``session_id`` and
+    ``start_time``) so the run can be located directly, without a scan.
+    """
+
+    run_id: Union[UUID, str]
+    """The ID of the run to add to the queue."""
+    session_id: Union[UUID, str]
+    """The ID of the project/session the run belongs to (partition key)."""
+    start_time: Union[datetime, str]
+    """The start time of the run (partition key). A ``datetime`` or an
+    ISO 8601 string."""
+    source_proposed_example_id: NotRequired[Union[UUID, str]]
+    """Optional back-pointer to the issues-agent proposed example that seeded
+    this queue item. The curation UI uses it to pre-fill suggested assertions."""
+
+
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 

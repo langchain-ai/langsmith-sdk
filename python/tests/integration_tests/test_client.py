@@ -3521,6 +3521,57 @@ def test_annotation_queue_runs(langchain_client: Client):
     langchain_client.delete_annotation_queue(queue.id)
 
 
+@pytest.mark.slow
+def test_annotation_queue_runs_by_key(langchain_client: Client):
+    """Test adding runs to an annotation queue via the SmithDB by-key path."""
+    queue_name = f"test_queue_{uuid7().hex[:8]}"
+    project_name = f"test_project_{uuid7().hex[:8]}"
+    queue = langchain_client.create_annotation_queue(
+        name=queue_name, description="Test by-key queue"
+    )
+
+    run_ids = [uuid7() for _ in range(2)]
+    for i, run_id in enumerate(run_ids):
+        langchain_client.create_run(
+            name=f"test_run_{i}",
+            inputs={"input": f"test_{i}"},
+            run_type="llm",
+            project_name=project_name,
+            start_time=datetime.datetime.now(datetime.timezone.utc),
+            id=run_id,
+        )
+
+    def _get_run(run_id: ID_TYPE) -> bool:
+        try:
+            langchain_client.read_run(run_id)  # type: ignore
+            return True
+        except LangSmithError:
+            return False
+
+    for run_id in run_ids:
+        wait_for(lambda rid=run_id: _get_run(rid))
+
+    # Read the runs back to obtain their SmithDB partition key fields.
+    fetched = [langchain_client.read_run(rid) for rid in run_ids]
+    langchain_client.add_runs_to_annotation_queue(
+        queue_id=queue.id,
+        runs=[
+            {
+                "run_id": run.id,
+                "session_id": run.session_id,
+                "start_time": run.start_time,
+            }
+            for run in fetched
+        ],
+    )
+
+    listed_runs = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in listed_runs]) == sorted(run_ids)
+
+    # Clean up
+    langchain_client.delete_annotation_queue(queue.id)
+
+
 def test_annotation_queue_with_rubric_instructions(langchain_client: Client):
     """Test CRUD operations on annotation queue with rubric instructions."""
     queue_name = f"test-queue-{str(uuid7())[:8]}"

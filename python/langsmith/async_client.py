@@ -1422,23 +1422,52 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_ids: Optional[list[ID_TYPE]] = None,
+        runs: Optional[Sequence[ls_schemas.RunKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
+        Provide exactly one of `runs` or `run_ids`:
+
+        - `runs` (preferred): each entry carries the run's full lookup key
+          (`run_id`, `session_id`, `start_time`, and an optional
+          `source_proposed_example_id`). This lets the run be located directly,
+          without a scan, and is required for workspaces served by SmithDB.
+        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
+          future release; prefer `runs`.
+
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
-            run_ids (list[Union[UUID, str]]): The IDs of the runs to be added to the
-                annotation queue.
+            run_ids (Optional[list[Union[UUID, str]]]): The IDs of the runs to be
+                added to the annotation queue.
+            runs (Optional[Sequence[RunKey]]): The runs to add, each with
+                its full lookup key.
         """
-        response = await self._arequest_with_retries(
-            "POST",
-            f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs",
-            json=[
+        if runs is not None and run_ids is not None:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        base = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        json_body: Union[list[str], list[dict[str, str]]]
+        if runs is not None:
+            path = f"{base}/by-key"
+            json_body = [
+                ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)
+            ]
+        elif run_ids is not None:
+            path = base
+            json_body = [
                 str(ls_client._as_uuid(id_, f"run_ids[{i}]"))
                 for i, id_ in enumerate(run_ids)
-            ],
-        )
+            ]
+        else:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        response = await self._arequest_with_retries("POST", path, json=json_body)
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_run_from_annotation_queue(

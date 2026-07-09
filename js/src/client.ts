@@ -51,6 +51,7 @@ import {
   DatasetVersion,
   AnnotationQueueWithDetails,
   AnnotationQueueRubricItem,
+  RunKey,
   FeedbackConfigSchema,
   AgentContext,
   SkillContext,
@@ -5715,33 +5716,77 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * Add runs to an annotation queue with the specified queue ID.
+   *
+   * The second argument is either:
+   * - `RunKey[]` (preferred): each entry carries the run's full lookup key, so
+   *   it can be located directly without a scan. Required for workspaces served
+   *   by SmithDB; routes to `POST /runs/by-key`.
+   * - `string[]`: a plain list of run IDs. This path will be deprecated in a
+   *   future release; prefer the key form. Routes to `POST /runs`.
+   *
+   * If every element is a string (or the list is empty) it is treated as run
+   * IDs; otherwise the list is treated as `RunKey` objects.
+   *
    * @param queueId - The ID of the annotation queue
-   * @param runIds - The IDs of the runs to be added to the annotation queue
+   * @param runs - Either a list of run IDs (deprecated) or a list of run keys.
    */
   public async addRunsToAnnotationQueue(
     queueId: string,
-    runIds: string[],
+    runs: string[] | RunKey[],
   ): Promise<void> {
-    const body = JSON.stringify(
-      runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString()),
-    );
-    await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/annotation-queues/${assertUuid(
-          queueId,
-          "queueId",
-        )}/runs`,
-        {
-          method: "POST",
-          headers: {
-            ...this._mergedHeaders,
-            "Content-Type": "application/json",
-          },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        },
+    const base = `${this.apiUrl}/annotation-queues/${assertUuid(
+      queueId,
+      "queueId",
+    )}/runs`;
+
+    // All strings (including empty) -> legacy /runs; otherwise treat as run keys.
+    const allStrings = runs.every((r) => typeof r === "string");
+    let url: string;
+    let body: string;
+    if (!allStrings) {
+      url = `${base}/by-key`;
+      body = JSON.stringify(
+        (runs as RunKey[]).map((run, i) => {
+          const serialized: Record<string, string> = {
+            run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
+            session_id: assertUuid(
+              run.sessionId,
+              `runs[${i}].sessionId`,
+            ).toString(),
+            start_time:
+              typeof run.startTime === "string"
+                ? run.startTime
+                : new Date(run.startTime).toISOString(),
+          };
+          if (run.sourceProposedExampleId != null) {
+            serialized.source_proposed_example_id = assertUuid(
+              run.sourceProposedExampleId,
+              `runs[${i}].sourceProposedExampleId`,
+            ).toString();
+          }
+          return serialized;
+        }),
       );
+    } else {
+      url = base;
+      body = JSON.stringify(
+        (runs as string[]).map((id, i) =>
+          assertUuid(id, `runs[${i}]`).toString(),
+        ),
+      );
+    }
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "POST",
+        headers: {
+          ...this._mergedHeaders,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body,
+      });
       await raiseForStatus(res, "add runs to annotation queue", true);
       return res;
     });

@@ -661,6 +661,22 @@ export interface AnnotationQueueWithDetails extends AnnotationQueue {
   rubric_items?: AnnotationQueueRubricItem[];
 }
 
+/**
+ * A run identified by its full lookup key, for adding to an annotation queue.
+ * Unlike a bare run ID, this carries the partition key (`sessionId` and
+ * `startTime`) so the run can be located directly, without a scan.
+ */
+export interface RunKey {
+  /** The ID of the run to add to the queue. */
+  runId: string;
+  /** The ID of the project/session the run belongs to (partition key). */
+  sessionId: string;
+  /** The start time of the run (partition key): a Date, epoch ms, or ISO string. */
+  startTime: string | number | Date;
+  /** Optional back-pointer to the issues-agent proposed example that seeded this queue item. */
+  sourceProposedExampleId?: string;
+}
+
 export interface FeedbackConfigSchema {
   /** The unique key identifying this feedback configuration. */
   feedback_key: string;
