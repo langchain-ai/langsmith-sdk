@@ -70,6 +70,8 @@ RequestHeaders = Optional[Mapping[str, str]]
 
 def _quote_path_segment(value: str) -> str:
     """Quote a user-controlled value for use as a single URL path segment."""
+    if not value:
+        raise ValueError("URL path segment must be a non-empty string")
     return quote(value, safe="")
 
 
