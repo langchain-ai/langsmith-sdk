@@ -54,7 +54,11 @@ from langsmith._internal.voice.helpers import (
     observe_safely,
     scrub,
 )
-from langsmith._internal.voice.session import EventSession, start_session
+from langsmith._internal.voice.session import (
+    DEFAULT_MAX_AUDIO_SECONDS,
+    EventSession,
+    start_session,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -362,7 +366,7 @@ class LangSmithGoogleADKLivePlugin(BasePlugin):
         project_name: Optional[str] = None,
         tags: Optional[list[str]] = None,
         metadata: Optional[dict[str, Any]] = None,
-        max_audio_seconds: Optional[float] = None,
+        max_audio_seconds: Optional[float] = DEFAULT_MAX_AUDIO_SECONDS,
         client: Optional[Client] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
     ) -> None:
@@ -377,8 +381,8 @@ class LangSmithGoogleADKLivePlugin(BasePlugin):
             tags / metadata: attached to the conversation root span.
             max_audio_seconds: per-channel cap on audio retained for the WAV, to
                 bound memory. Since one shared plugin can trace many (and
-                long-running) conversations, set this on a server to keep audio
-                buffers from growing unbounded; ``None`` (default) keeps all audio.
+                long-running) conversations, pass ``None`` only when all audio
+                should be kept.
             client: LangSmith ``Client`` for tracing writes; ``None`` (default)
                 uses the SDK's standard env-based resolution (``LANGSMITH_*``).
             replicas: tracing replicas to mirror the conversation trace to

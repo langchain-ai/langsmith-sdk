@@ -15,6 +15,8 @@ import io
 import math
 import wave
 
+DEFAULT_MAX_AUDIO_SECONDS = 10 * 60
+
 
 def pcm_to_wav(pcm: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
     """Wrap raw PCM16 bytes in a WAV container.
@@ -56,12 +58,34 @@ def _layout_chunks_to_play_time(
     return out
 
 
+def _chunk_end(t: float, data: bytes, sample_rate: int) -> float:
+    return t + (len(data) // 2) / sample_rate
+
+
+def session_wav_exceeds_duration_cap(
+    user_chunks: list[tuple[float, bytes]],
+    agent_chunks: list[tuple[float, bytes]],
+    sample_rate: int,
+    max_duration_seconds: float | None,
+) -> bool:
+    """Return whether natural-play WAV layout exceeds the duration cap."""
+    if max_duration_seconds is None:
+        return False
+    user = _layout_chunks_to_play_time(user_chunks, sample_rate)
+    agent = _layout_chunks_to_play_time(agent_chunks, sample_rate)
+    user_end = max((_chunk_end(t, d, sample_rate) for t, d in user), default=0.0)
+    agent_end = max((_chunk_end(t, d, sample_rate) for t, d in agent), default=0.0)
+    return max(user_end, agent_end) > max_duration_seconds
+
+
 def build_stereo_session_wav(
     user_chunks: list[tuple[float, bytes]],
     agent_chunks: list[tuple[float, bytes]],
     sample_rate: int,
+    *,
+    max_duration_seconds: float | None = DEFAULT_MAX_AUDIO_SECONDS,
 ) -> bytes:
-    """Reconstruct a stereo WAV from timestamped PCM16 chunks.
+    """Reconstruct a duration-capped stereo WAV from timestamped PCM16 chunks.
 
     Left channel = user, right channel = agent. Both channels are laid out at
     natural play time (see ``_layout_chunks_to_play_time``). Gaps between bursts
@@ -74,12 +98,12 @@ def build_stereo_session_wav(
     user = _layout_chunks_to_play_time(user_chunks, sample_rate)
     agent = _layout_chunks_to_play_time(agent_chunks, sample_rate)
 
-    def chunk_end(t: float, data: bytes) -> float:
-        return t + (len(data) // 2) / sample_rate
-
-    user_end = max((chunk_end(t, d) for t, d in user), default=0.0)
-    agent_end = max((chunk_end(t, d) for t, d in agent), default=0.0)
+    user_end = max((_chunk_end(t, d, sample_rate) for t, d in user), default=0.0)
+    agent_end = max((_chunk_end(t, d, sample_rate) for t, d in agent), default=0.0)
     total_samples = int(math.ceil(max(user_end, agent_end) * sample_rate))
+    if max_duration_seconds is not None:
+        max_samples = int(math.ceil(max_duration_seconds * sample_rate))
+        total_samples = min(total_samples, max_samples)
     if total_samples <= 0:
         return b""
 

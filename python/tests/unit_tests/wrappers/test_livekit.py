@@ -118,7 +118,7 @@ class TestDeferredRootRelease:
         assert root._attributes["langsmith.metadata.ls_modality"] == "audio"
         # The root is attributed to this integration so usage is trackable.
         assert root._attributes["langsmith.metadata.ls_integration"] == "livekit"
-        completion = json.loads(root._attributes["gen_ai.completion"])
+        completion = json.loads(root._attributes["gen_ai.completion"])["messages"]
         assert completion[0]["content"] == "sunny"
         # Per-conversation state freed after release.
         assert len(proc._deferred_root_spans) == 0
@@ -161,7 +161,8 @@ class TestForceFlush:
             if c.args[0]._attributes.get("langsmith.root_span")
         )
         assert (
-            json.loads(root._attributes["gen_ai.completion"])[0]["content"] == "sunny"
+            json.loads(root._attributes["gen_ai.completion"])["messages"][0]["content"]
+            == "sunny"
         )
 
     def test_shutdown_flushes_held_root(self):

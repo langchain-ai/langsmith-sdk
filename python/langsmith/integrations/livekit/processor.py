@@ -6,7 +6,7 @@ recognize — so without translation, transcripts, TTS metrics, EOU
 probabilities, latency numbers, etc. all evaporate at ingest. This
 :class:`LiveKitLangSmithSpanProcessor` rewrites ``lk.*`` into the keys LangSmith
 understands before each span is exported. It inherits the downstream wrapping,
-exporter, ``thread_id`` injection, and message helpers from
+exporter, ``thread_id`` stamping, and message helpers from
 :class:`BaseLangSmithSpanProcessor`.
 
 Generic to any LiveKit agent
@@ -230,7 +230,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         elif name == _LLM_INFERENCE_SPAN:
             self._handle_llm_request(tspan)
         elif name in _LLM_WRAPPER_SPANS:
-            self._set_kind(tspan, "chain")  # wrappers: no fabricated I/O
+            tspan.set_kind("chain")  # wrappers: no fabricated I/O
         elif name == _TTS_INFERENCE_SPAN or name in _TTS_WRAPPER_SPANS:
             self._handle_tts(tspan)
         elif name == _TURN_SPAN:
@@ -238,11 +238,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         elif name == _SESSION_SPAN:
             # Session end: the conversation is complete — release the deferred
             # root (if any), then export the session span itself.
-            self._set_kind(tspan, "chain")
+            tspan.set_kind("chain")
             self._ended_sessions[trace_id] = True
             self._release_root_span(trace_id)
         elif name == "eou_detection":
-            self._set_kind(tspan, "chain")  # framework step
+            tspan.set_kind("chain")  # framework step
         elif name == _TOOL_SPAN:
             self._handle_tool(tspan)
         elif name == _REALTIME_METRICS_SPAN:
@@ -311,21 +311,21 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
         """STT (``user_turn``): audio input → transcribed text."""
-        self._set_kind(tspan, "llm")
+        tspan.set_kind("llm")
         model = tspan.attributes.get("gen_ai.request.model")
         if model:
             tspan.attributes["langsmith.metadata.model_name"] = str(model)
         self._stamp_provider(tspan, "lk.stt_metrics")
 
         transcript = tspan.attributes.get("lk.user_transcript")
-        self._set_messages(
-            tspan, prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
+        tspan.set_messages(
+            prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
         )
         if transcript:
-            self._set_messages(
-                tspan, completion=[{"role": "assistant", "content": str(transcript)}]
+            tspan.set_messages(
+                completion=[{"role": "assistant", "content": str(transcript)}]
             )
-        self._exclude_from_message_view(tspan)
+        tspan.exclude_from_message_view()
 
     def _handle_llm_request(self, tspan: TranslatedSpan) -> None:
         """``llm_request``: the chat-completion call.
@@ -337,7 +337,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         survive) and strip the translated events so the ingester doesn't render
         them twice.
         """
-        self._set_kind(tspan, "llm")
+        tspan.set_kind("llm")
 
         prompt: list[dict] = []
         completion: list[dict] = []
@@ -346,9 +346,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 completion.append(self._message_from_event("assistant", event))
             elif (role := _LLM_EVENT_ROLES.get(event.name)) is not None:
                 prompt.append(self._message_from_event(role, event))
-        self._set_messages_json(
-            tspan, prompt=prompt or None, completion=completion or None
-        )
+        tspan.set_messages(prompt=prompt or None, completion=completion or None)
         # Normalize the provider (LiveKit's OpenAI plugin reports the
         # ``api.openai.com`` host, which won't match a LangSmith price).
         self._stamp_provider(tspan, "lk.llm_metrics")
@@ -398,11 +396,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         ``tts_request_run`` wrappers are ``chain``s.
         """
         if tspan.span.name != _TTS_INFERENCE_SPAN:
-            self._set_kind(tspan, "chain")
+            tspan.set_kind("chain")
             return
 
-        self._set_kind(tspan, "llm")
-        self._exclude_from_message_view(tspan)
+        tspan.set_kind("llm")
+        tspan.exclude_from_message_view()
 
         text = (
             tspan.attributes.get("lk.input_text")
@@ -410,8 +408,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             or tspan.attributes.get("lk.text")
             or ""
         )
-        self._set_messages(
-            tspan,
+        tspan.set_messages(
             prompt=[{"role": "user", "content": str(text)}],
             completion=[
                 {"role": "assistant", "content": f'Generated audio for: "{text}"'}
@@ -439,7 +436,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         is the LiveKit-native turn boundary, so it works for both the cascade and
         the speech-to-speech backends.
         """
-        self._set_kind(tspan, "chain")
+        tspan.set_kind("chain")
         self._drain_realtime_metrics(tspan)
 
         user_input = tspan.attributes.get("lk.user_input")
@@ -448,11 +445,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         conversation = self._conversation_by_trace.get(trace_id) or []
         if user_input:
             msg = {"role": "user", "content": str(user_input)}
-            self._set_messages(tspan, prompt=[msg])
+            tspan.set_messages(prompt=[msg])
             conversation.append(msg)
         if response:
             msg = {"role": "assistant", "content": str(response)}
-            self._set_messages(tspan, completion=[msg])
+            tspan.set_messages(completion=[msg])
             conversation.append(msg)
         # Re-assign (not just mutate) so each turn refreshes the TTL — an active
         # call longer than the TTL is never evicted mid-conversation.
@@ -461,7 +458,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         """``function_tool``: render as a proper ``tool`` run with its I/O."""
-        self._set_kind(tspan, "tool")
+        tspan.set_kind("tool")
         tool_name = tspan.attributes.get("lk.function_tool.name")
         if tool_name:
             tspan.attributes["langsmith.metadata.tool_name"] = str(tool_name)
@@ -537,14 +534,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         so we always defer it and release it — complete, with audio — once the
         session has ended and any awaited recording has arrived.
         """
-        self._set_kind(tspan, "chain")
-        tspan.attributes["langsmith.root_span"] = True
-        tspan.attributes["langsmith.metadata.ls_modality"] = "audio"
-        tspan.attributes["langsmith.metadata.ls_integration"] = "livekit"
-        # "" not None: OTel span attributes reject a null value (unlike the
-        # RunTree metadata path); livekit-agents is a hard dep, so ~always set.
-        tspan.attributes["langsmith.metadata.ls_integration_version"] = (
-            get_package_version("livekit-agents") or ""
+        tspan.set_kind("chain")
+        tspan.set_root_span(True)
+        tspan.set_metadata("ls_modality", "audio")
+        tspan.set_metadata("ls_integration", "livekit")
+        tspan.set_metadata(
+            "ls_integration_version", (get_package_version("livekit-agents") or "")
         )
 
         thread = tspan.attributes.get("langsmith.metadata.thread_id")
@@ -591,9 +586,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         messages = self._conversation_by_trace.get(tspan.span.context.trace_id, [])
         if not messages:
             return False
-        self._set_messages(tspan, prompt=messages[:1])
+        tspan.set_messages(prompt=messages[:1])
         if len(messages) > 1:
-            self._set_messages(tspan, completion=messages[1:])
+            tspan.set_messages(completion=messages[1:])
         return True
 
     def _cleanup_trace(self, trace_id: str) -> None:
@@ -632,8 +627,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """
         for trace_id, tspan in list(self._deferred_root_spans.items()):
             if not self._render_conversation(tspan):
-                self._set_messages(
-                    tspan,
+                tspan.set_messages(
                     prompt=[{"role": "system", "content": "Conversation not captured"}],
                     completion=[
                         {

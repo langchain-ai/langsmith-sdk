@@ -29,7 +29,7 @@ def _wait_for_sync(
             if condition():
                 return
         except Exception:
-            pass
+            logger.debug("Error checking sync condition", exc_info=True)
         time.sleep(sleep_time)
     raise ValueError(f"Condition not met within {max_sleep_time}s")
 
@@ -47,7 +47,7 @@ async def _wait_for_async(
             if result:
                 return result
         except Exception:
-            pass
+            logger.debug("Error checking async condition", exc_info=True)
         time.sleep(sleep_time)
     raise ValueError(f"Condition not met within {max_sleep_time}s")
 
@@ -102,7 +102,7 @@ def project_with_thread(langchain_client: Client):
             is not None
         )
 
-    _wait_for_sync(_runs_indexed, max_sleep_time=30, sleep_time=2)
+    _wait_for_sync(_runs_indexed, max_sleep_time=90, sleep_time=2)
 
     project = langchain_client.read_project(project_name=project_name)
     min_start_time = now - timedelta(hours=1)

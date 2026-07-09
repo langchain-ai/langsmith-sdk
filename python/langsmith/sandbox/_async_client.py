@@ -18,6 +18,7 @@ from langsmith.sandbox._client import (
     SandboxClient,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
+    _quote_path_segment,
     _resolve_dockerfile_context,
 )
 from langsmith.sandbox._exceptions import (
@@ -479,7 +480,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -556,7 +557,7 @@ class AsyncSandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
@@ -598,7 +599,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
             response = await self._http.delete(
@@ -631,7 +632,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/status"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -676,7 +677,7 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
-        url = f"{self._base_url}/boxes/{name}/service-url"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/service-url"
         payload = {"port": port, "expires_in_seconds": expires_in_seconds}
 
         async def _refresher() -> AsyncServiceURL:
@@ -771,7 +772,7 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/start"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
 
         try:
             response = await self._http.post(
@@ -797,7 +798,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/stop"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
 
         try:
             response = await self._http.post(
@@ -989,7 +990,7 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
         if docker_image is not None:
@@ -1030,7 +1031,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{snapshot_id}"
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -1114,7 +1115,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{snapshot_id}"
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
             response = await self._http.delete(

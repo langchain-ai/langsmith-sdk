@@ -33,7 +33,11 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal._usage import _create_usage_metadata
 from langsmith._internal.voice.helpers import observe_safely
-from langsmith._internal.voice.session import EventSession, start_session
+from langsmith._internal.voice.session import (
+    DEFAULT_MAX_AUDIO_SECONDS,
+    EventSession,
+    start_session,
+)
 from langsmith.run_helpers import tracing_context
 
 if TYPE_CHECKING:
@@ -466,7 +470,7 @@ def wrap_realtime(
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     is_agent_speaking: Optional[Callable[[], bool]] = None,
-    max_audio_seconds: Optional[float] = None,
+    max_audio_seconds: Optional[float] = DEFAULT_MAX_AUDIO_SECONDS,
     client: Optional[Client] = None,
     replicas: Optional[Sequence[WriteReplica]] = None,
 ) -> _RealtimeTracingSession:
@@ -493,7 +497,7 @@ def wrap_realtime(
         is_agent_speaking: zero-arg callable returning whether the agent is still
             audible, used to flag a barge-in; ``None`` disables that flag.
         max_audio_seconds: per-channel cap on audio retained for the WAV, to
-            bound memory on long sessions; ``None`` (default) keeps all audio.
+            bound memory on long sessions; pass ``None`` to keep all audio.
         client: LangSmith ``Client`` for tracing writes; ``None`` (default) uses
             the SDK's standard env-based resolution (``LANGSMITH_*``).
         replicas: tracing replicas to mirror the conversation trace to additional

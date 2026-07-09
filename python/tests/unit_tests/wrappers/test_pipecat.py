@@ -74,8 +74,10 @@ class TestPipecatDispatch:
 
         attrs = _exported_attrs(proc)
         assert attrs["langsmith.span.kind"] == "llm"
-        assert attrs["gen_ai.prompt.0.content"] == 'Audio for: "hello there"'
-        assert attrs["gen_ai.completion.0.content"] == "hello there"
+        prompt = json.loads(attrs["gen_ai.prompt"])["messages"]
+        completion = json.loads(attrs["gen_ai.completion"])["messages"]
+        assert prompt[0]["content"] == 'Audio for: "hello there"'
+        assert completion[0]["content"] == "hello there"
         # STT/TTS spans stay in the tree but are dropped from the Messages view.
         assert attrs["langsmith.metadata.ls_message_view_exclude"] is True
         proc.downstream.on_end.assert_called_once()
@@ -86,7 +88,7 @@ class TestPipecatDispatch:
 
         proc.on_end(span)
 
-        assert "gen_ai.completion.0.content" not in _exported_attrs(proc)
+        assert "gen_ai.completion" not in _exported_attrs(proc)
 
     def test_tts_span(self):
         proc = _processor()
@@ -97,8 +99,11 @@ class TestPipecatDispatch:
         attrs = _exported_attrs(proc)
         assert attrs["langsmith.span.kind"] == "llm"
         assert attrs["langsmith.metadata.voice_id"] == "voice-1"
-        assert attrs["gen_ai.prompt.0.content"] == "hi"
-        assert attrs["gen_ai.completion.0.content"] == 'Generated audio for: "hi"'
+        assert json.loads(attrs["gen_ai.prompt"])["messages"][0]["content"] == "hi"
+        assert (
+            json.loads(attrs["gen_ai.completion"])["messages"][0]["content"]
+            == 'Generated audio for: "hi"'
+        )
         assert attrs["langsmith.metadata.ls_message_view_exclude"] is True
 
     def test_turn_span(self):
@@ -124,13 +129,10 @@ class TestPipecatDispatch:
 
         attrs = _exported_attrs(proc)
         assert attrs["langsmith.span.kind"] == "llm"
-        prompt = json.loads(attrs["gen_ai.prompt"])
-        assert prompt["messages"][-1]["content"] == "what is 2+2?"
-        completion = json.loads(attrs["gen_ai.completion"])
-        assert completion["messages"][0]["content"] == "4"
-        # _set_messages_json must NOT write the indexed form (it would win at
-        # ingest and drop structured tool calls).
-        assert "gen_ai.prompt.0.role" not in attrs
+        assert json.loads(attrs["gen_ai.prompt"])["messages"][-1]["content"] == (
+            "what is 2+2?"
+        )
+        assert json.loads(attrs["gen_ai.completion"])["messages"][0]["content"] == "4"
 
     def test_llm_input_messages_passed_through_verbatim(self):
         # The request history is forwarded in the LLM provider's own message
@@ -298,6 +300,30 @@ class TestPipecatAudio:
 
         assert "langsmith.attachments" not in _exported_attrs(proc)
 
+    def test_accumulate_audio_truncates_before_extend(self):
+        proc = _processor(audio_size_limit_bytes=50)
+        proc._accumulate_audio("c1", b"\x00\x01" * 2, 16000, 1)
+        proc._accumulate_audio("c1", b"\x02\x03" * 2, 16000, 1)
+
+        rec = proc._audio_by_conversation["c1"]
+        assert bytes(rec["pcm"]) == b"\x00\x01" * 2 + b"\x02\x03"
+        assert rec["audio_truncated"] is True
+
+    def test_oversize_audio_skips_conversion(self):
+        proc = _processor(audio_size_limit_bytes=50)
+        proc._audio_by_conversation["c1"] = {
+            "pcm": bytearray(b"\x00\x01" * 4),
+            "sample_rate": 16000,
+            "num_channels": 1,
+        }
+        span = _make_span("conversation", {"conversation.id": "c1"})
+
+        with patch("langsmith.integrations.pipecat.processor.pcm_to_wav") as patched:
+            proc.on_end(span)
+
+        patched.assert_not_called()
+        assert "langsmith.attachments" not in _exported_attrs(proc)
+
 
 class TestBaseProcessorHelpers:
     """Shared helpers in BaseLangSmithSpanProcessor."""
@@ -305,25 +331,27 @@ class TestBaseProcessorHelpers:
     def _base(self, **kwargs) -> BaseLangSmithSpanProcessor:
         return BaseLangSmithSpanProcessor(downstream_processor=MagicMock(), **kwargs)
 
-    def test_set_messages_writes_indexed_and_singular(self):
+    def test_set_messages_writes_json_messages_form(self):
+        # One form for everything: the singular {"messages": [...]} JSON, and NOT
+        # the indexed gen_ai.prompt.{n}.* attributes (which win at ingest and can
+        # only express plain role/string-content).
         ls = TranslatedSpan.of(_make_span("x"))
-        BaseLangSmithSpanProcessor._set_messages(
-            ls, prompt=[{"role": "user", "content": "hi"}]
-        )
-        assert ls.attributes["gen_ai.prompt.0.role"] == "user"
-        assert json.loads(ls.attributes["gen_ai.prompt"]) == [
-            {"role": "user", "content": "hi"}
-        ]
-
-    def test_set_messages_json_writes_singular_only(self):
-        ls = TranslatedSpan.of(_make_span("x"))
-        BaseLangSmithSpanProcessor._set_messages_json(
-            ls, prompt=[{"role": "user", "content": "hi"}]
-        )
+        ls.set_messages(prompt=[{"role": "user", "content": "hi"}])
         assert json.loads(ls.attributes["gen_ai.prompt"]) == {
             "messages": [{"role": "user", "content": "hi"}]
         }
         assert "gen_ai.prompt.0.role" not in ls.attributes
+
+    def test_set_messages_preserves_structured_fields(self):
+        # tool_calls survive verbatim in the {"messages": [...]} form.
+        ls = TranslatedSpan.of(_make_span("x"))
+        tool_call = {"id": "c1", "function": {"name": "f", "arguments": "{}"}}
+        ls.set_messages(
+            completion=[{"role": "assistant", "content": "", "tool_calls": [tool_call]}]
+        )
+        payload = json.loads(ls.attributes["gen_ai.completion"])
+        assert payload["messages"][0]["tool_calls"] == [tool_call]
+        assert "gen_ai.completion.0.role" not in ls.attributes
 
     def test_attach_audio_encodes_and_returns_true(self):
         base = self._base()
@@ -393,6 +421,16 @@ class TestVoiceAudioUtils:
             assert wf.getnchannels() == 2
             assert wf.getframerate() == 16000
             assert wf.getsampwidth() == 2
+
+    def test_stereo_session_wav_duration_cap_bounds_frames(self):
+        wav = audio_utils.build_stereo_session_wav(
+            [(0.0, b"\x01\x02" * 20), (60.0, b"\x03\x04" * 20)],
+            [],
+            10,
+            max_duration_seconds=1.0,
+        )
+        with wave.open(io.BytesIO(wav), "rb") as wf:
+            assert wf.getnframes() == 10
 
 
 class TestStateLifecycle:

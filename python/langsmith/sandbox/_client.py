@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
+from urllib.parse import quote
 
 import httpx
 
@@ -65,6 +66,13 @@ def _get_default_api_key() -> Optional[str]:
 
 
 RequestHeaders = Optional[Mapping[str, str]]
+
+
+def _quote_path_segment(value: str) -> str:
+    """Quote a user-controlled value for use as a single URL path segment."""
+    if not value:
+        raise ValueError("URL path segment must be a non-empty string")
+    return quote(value, safe="")
 
 
 def _make_docker_context_tar(context_path: Path) -> bytes:
@@ -571,7 +579,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -644,7 +652,7 @@ class SandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
@@ -682,7 +690,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
             response = self._http.delete(url, headers=self._request_headers(headers))
@@ -713,7 +721,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/status"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -757,7 +765,7 @@ class SandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
-        url = f"{self._base_url}/boxes/{name}/service-url"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/service-url"
         payload = {"port": port, "expires_in_seconds": expires_in_seconds}
 
         def _refresher() -> ServiceURL:
@@ -852,7 +860,7 @@ class SandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/start"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
 
         try:
             response = self._http.post(
@@ -878,7 +886,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/stop"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
 
         try:
             response = self._http.post(
@@ -1071,7 +1079,7 @@ class SandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{sandbox_name}/snapshot"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot"
 
         payload: dict[str, Any] = {"name": name}
         if docker_image is not None:
@@ -1110,7 +1118,7 @@ class SandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{snapshot_id}"
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -1194,7 +1202,7 @@ class SandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{snapshot_id}"
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
             response = self._http.delete(url, headers=self._request_headers(headers))
