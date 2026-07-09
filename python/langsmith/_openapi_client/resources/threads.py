@@ -245,6 +245,7 @@ class ThreadsResource(SyncAPIResource):
             ]
         ],
         session_id: str,
+        filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -263,6 +264,12 @@ class ThreadsResource(SyncAPIResource):
               `SingleThreadStatsSelectField`.
 
           session_id: `session_id` is the tracing project (session) UUID (required).
+
+          filter: `filter` narrows which of the thread's traces are aggregated, using a LangSmith
+              filter expression. For example: lt(start_time, "2025-01-01T00:00:00Z") or
+              eq(trace_id, "0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328"). See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -285,6 +292,7 @@ class ThreadsResource(SyncAPIResource):
                     {
                         "selects": selects,
                         "session_id": session_id,
+                        "filter": filter,
                     },
                     thread_stats_params.ThreadStatsParams,
                 ),
@@ -505,6 +513,7 @@ class AsyncThreadsResource(AsyncAPIResource):
             ]
         ],
         session_id: str,
+        filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -523,6 +532,12 @@ class AsyncThreadsResource(AsyncAPIResource):
               `SingleThreadStatsSelectField`.
 
           session_id: `session_id` is the tracing project (session) UUID (required).
+
+          filter: `filter` narrows which of the thread's traces are aggregated, using a LangSmith
+              filter expression. For example: lt(start_time, "2025-01-01T00:00:00Z") or
+              eq(trace_id, "0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328"). See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -545,6 +560,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                     {
                         "selects": selects,
                         "session_id": session_id,
+                        "filter": filter,
                     },
                     thread_stats_params.ThreadStatsParams,
                 ),
