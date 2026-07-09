@@ -588,6 +588,7 @@ type AutoBatchQueueItem = {
   otelContext?: OTELContext;
   apiKey?: string;
   apiUrl?: string;
+  workspaceId?: string;
   size?: number;
 };
 
@@ -1818,9 +1819,14 @@ export class Client implements LangSmithTracingClientInterface {
         (acc, item) => {
           const apiUrl = item.apiUrl ?? this.apiUrl;
           const apiKey = item.apiKey ?? this.apiKey;
+          const workspaceId = item.workspaceId ?? this.workspaceId;
           const isDefault =
-            item.apiKey === this.apiKey && item.apiUrl === this.apiUrl;
-          const batchKey = isDefault ? "default" : `${apiUrl}|${apiKey}`;
+            item.apiKey === this.apiKey &&
+            item.apiUrl === this.apiUrl &&
+            item.workspaceId === this.workspaceId;
+          const batchKey = isDefault
+            ? "default"
+            : `${apiUrl}|${apiKey}|${workspaceId ?? ""}`;
           if (!acc[batchKey]) {
             acc[batchKey] = [];
           }
@@ -1832,9 +1838,14 @@ export class Client implements LangSmithTracingClientInterface {
 
       const batchPromises = [];
       for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
+        const isDefault = batchKey === "default";
+        const parts = isDefault ? [] : batchKey.split("|");
+        const workspaceIdPart = parts[2];
         const batchPromise = this._processBatch(batch, {
-          apiUrl: batchKey === "default" ? undefined : batchKey.split("|")[0],
-          apiKey: batchKey === "default" ? undefined : batchKey.split("|")[1],
+          apiUrl: isDefault ? undefined : parts[0],
+          apiKey: isDefault ? undefined : parts[1],
+          workspaceId:
+            isDefault || !workspaceIdPart ? undefined : workspaceIdPart,
         });
         batchPromises.push(batchPromise);
       }
@@ -1922,7 +1933,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _processBatch(
     batch: AutoBatchQueueItem[],
-    options?: { apiKey?: string; apiUrl?: string },
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ) {
     if (!batch.length) {
       return;
@@ -2166,6 +2177,7 @@ export class Client implements LangSmithTracingClientInterface {
         otelContext,
         apiKey: options?.apiKey,
         apiUrl: options?.apiUrl,
+        workspaceId: options?.workspaceId,
       }).catch(console.error);
       return;
     }
@@ -2209,7 +2221,12 @@ export class Client implements LangSmithTracingClientInterface {
       runCreates?: RunCreate[];
       runUpdates?: RunUpdate[];
     },
-    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
@@ -2288,7 +2305,12 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _postBatchIngestRuns(
     body: Uint8Array<ArrayBuffer>,
-    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
   ) {
     const headers: Record<string, string> = {
       ...this._mergedHeaders,
@@ -2297,6 +2319,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     await this.batchIngestCaller.callWithOptions(
       { sizeBytes: options?.sizeBytes },
@@ -2332,6 +2357,7 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       apiKey?: string;
       apiUrl?: string;
+      workspaceId?: string;
       useGzip?: boolean;
       sizeBytes?: number;
     },
@@ -2590,6 +2616,7 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       apiKey?: string;
       apiUrl?: string;
+      workspaceId?: string;
       useGzip?: boolean;
       sizeBytes?: number;
     },
@@ -2614,6 +2641,9 @@ export class Client implements LangSmithTracingClientInterface {
           };
           if (options?.apiKey !== undefined) {
             headers["x-api-key"] = options.apiKey;
+          }
+          if (options?.workspaceId !== undefined) {
+            headers["x-tenant-id"] = options.workspaceId;
           }
 
           let transformedBody = body;
@@ -2761,6 +2791,7 @@ export class Client implements LangSmithTracingClientInterface {
           otelContext,
           apiKey: options?.apiKey,
           apiUrl: options?.apiUrl,
+          workspaceId: options?.workspaceId,
         }).catch(console.error);
         return;
       } else {
@@ -2770,6 +2801,7 @@ export class Client implements LangSmithTracingClientInterface {
           otelContext,
           apiKey: options?.apiKey,
           apiUrl: options?.apiUrl,
+          workspaceId: options?.workspaceId,
         }).catch(console.error);
       }
       return;
