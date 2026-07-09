@@ -2389,428 +2389,144 @@ def test_batch_ingest_run_splits_large_batches(
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
+SAMPLED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+FILTERED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+
+def _sampling_run(run_id: uuid.UUID, trace_id: Optional[uuid.UUID] = None) -> dict:
+    return {
+        "id": run_id,
+        "trace_id": trace_id or run_id,
+        "name": f"run-{run_id}",
+        "run_type": "llm",
+        "inputs": {"text": str(run_id)},
+        "dotted_order": f"20210101T000000000000Z{trace_id or run_id}",
+        "start_time": "2021-01-01T00:00:00Z",
+    }
+
+
 def test_sampling_and_batching():
-    """Test that sampling and batching work correctly."""
-    # Setup mock client
+    """Test that sampling and batching filter runs by stable run ID."""
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_session.request.return_value = mock_response
 
-    counter = 0
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_sampling_rate=0.5,
+        session=mock_session,
+    )
 
-    def mock_should_sample():
-        nonlocal counter
-        counter += 1
-        return counter % 2 != 0
+    client.create_run(**_sampling_run(SAMPLED_RUN_ID, trace_id=SAMPLED_RUN_ID))
+    client.create_run(**_sampling_run(FILTERED_RUN_ID, trace_id=FILTERED_RUN_ID))
+    client.flush()
 
-    with patch(
-        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
-    ):
-        client = Client(
-            api_key="test-api-key",
-            auto_batch_tracing=True,
-            tracing_sampling_rate=0.5,
-            session=mock_session,
+    post_calls = [
+        call
+        for call in mock_session.request.mock_calls
+        if call.args
+        and call.args[0] == "POST"
+        and call.args[1].endswith("/runs/multipart")
+    ]
+    assert len(post_calls) == 1
+    data = post_calls[0].kwargs["data"]
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+    batch_data = parse_request_data(data)
+    assert [post["id"] for post in batch_data.get("post", [])] == [str(SAMPLED_RUN_ID)]
+
+
+def test_run_sampling_is_consistent_for_create_and_update():
+    client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
+
+    sampled_create = _sampling_run(SAMPLED_RUN_ID)
+    filtered_create = _sampling_run(FILTERED_RUN_ID)
+    sampled_update = {**sampled_create, "outputs": {"result": "sampled"}}
+    filtered_update = {**filtered_create, "outputs": {"result": "filtered"}}
+
+    assert client._filter_for_sampling([sampled_create, filtered_create]) == [
+        sampled_create
+    ]
+    assert client._filter_for_sampling(
+        [sampled_update, filtered_update], patch=True
+    ) == [sampled_update]
+    assert client._should_sample(SAMPLED_RUN_ID)
+    assert not client._should_sample(FILTERED_RUN_ID)
+
+
+def test_sampling_uses_run_id_not_trace_id():
+    client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
+
+    sampled_child = _sampling_run(SAMPLED_RUN_ID, trace_id=FILTERED_RUN_ID)
+    filtered_child = _sampling_run(FILTERED_RUN_ID, trace_id=SAMPLED_RUN_ID)
+
+    assert client._filter_for_sampling([sampled_child, filtered_child]) == [
+        sampled_child
+    ]
+
+
+def test_feedback_sampling_follows_run_id():
+    client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
+    client._info = ls_schemas.LangSmithInfo()
+
+    with patch.object(Client, "request_with_retries") as mock_request:
+        sampled_feedback = client.create_feedback(
+            run_id=SAMPLED_RUN_ID,
+            key="correctness",
+            score=1,
         )
+        assert sampled_feedback.run_id == SAMPLED_RUN_ID
+        mock_request.assert_called_once()
 
-        project_name = "__test_batch"
-
-        # Create parent runs
-        run_params = []
-        for i in range(4):
-            run_id = uuid.uuid4()
-            params = {
-                "id": run_id,
-                "project_name": project_name,
-                "name": f"test_run {i}",
-                "run_type": "llm",
-                "inputs": {"text": f"hello world {i}"},
-                "dotted_order": "foo",
-                "trace_id": run_id,
-            }
-            client.create_run(**params)
-            run_params.append(params)
-
-
-def test_patch_sampling_follows_trace_logic():
-    """Test that patch runs correctly follow post logic by checking trace_id instead of run.id."""
-    mock_session = MagicMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_session.request.return_value = mock_response
-
-    # Mock sampling to reject first trace, accept second trace
-    counter = 0
-
-    def mock_should_sample():
-        nonlocal counter
-        counter += 1
-        return counter % 2 == 0  # Accept even-numbered calls (2nd, 4th, etc.)
-
-    with patch(
-        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
-    ):
-        client = Client(
-            api_key="test-api-key",
-            tracing_sampling_rate=0.5,
-            session=mock_session,
+    with patch.object(Client, "request_with_retries") as mock_request:
+        filtered_feedback = client.create_feedback(
+            run_id=FILTERED_RUN_ID,
+            key="correctness",
+            score=0,
         )
-
-        # Create two traces
-        trace_id_1 = uuid.uuid4()
-        trace_id_2 = uuid.uuid4()
-        child_run_id_1 = uuid.uuid4()
-        child_run_id_2 = uuid.uuid4()
-
-        # Create root runs (these will be sampled)
-        root_run_1 = {
-            "id": trace_id_1,
-            "trace_id": trace_id_1,
-            "name": "root_run_1",
-            "run_type": "llm",
-            "inputs": {"text": "hello"},
-        }
-        root_run_2 = {
-            "id": trace_id_2,
-            "trace_id": trace_id_2,
-            "name": "root_run_2",
-            "run_type": "llm",
-            "inputs": {"text": "world"},
-        }
-
-        # Create child runs
-        child_run_1 = {
-            "id": child_run_id_1,
-            "trace_id": trace_id_1,
-            "name": "child_run_1",
-            "run_type": "tool",
-            "inputs": {"text": "child hello"},
-        }
-        child_run_2 = {
-            "id": child_run_id_2,
-            "trace_id": trace_id_2,
-            "name": "child_run_2",
-            "run_type": "tool",
-            "inputs": {"text": "child world"},
-        }
-
-        # Test POST filtering (initial sampling)
-        post_filtered = client._filter_for_sampling(
-            [root_run_1, root_run_2], patch=False
-        )
-
-        # Based on our mock, first call returns False, second returns True
-        # So only root_run_2 should be sampled
-        assert len(post_filtered) == 1
-        assert post_filtered[0]["id"] == trace_id_2
-
-        # Verify that trace_id_1 is in filtered set, trace_id_2 is not
-        assert trace_id_1 in client._filtered_post_uuids
-        assert trace_id_2 not in client._filtered_post_uuids
-
-        # Test PATCH filtering - child runs should follow their trace's sampling decision
-        patch_runs = [
-            {**child_run_1, "outputs": {"result": "child result 1"}},
-            {**child_run_2, "outputs": {"result": "child result 2"}},
-        ]
-
-        patch_filtered = client._filter_for_sampling(patch_runs, patch=True)
-
-        # Only child_run_2 should be included (its trace was sampled)
-        # child_run_1 should be filtered out (its trace was not sampled)
-        assert len(patch_filtered) == 1
-        assert patch_filtered[0]["id"] == child_run_id_2
-        assert patch_filtered[0]["trace_id"] == trace_id_2
-
-        # Test PATCH filtering for root runs (updates to the root runs themselves)
-        root_patch_runs = [
-            {**root_run_1, "outputs": {"result": "root result 1"}},
-            {**root_run_2, "outputs": {"result": "root result 2"}},
-        ]
-
-        root_patch_filtered = client._filter_for_sampling(root_patch_runs, patch=True)
-
-        # Only root_run_2 should be included, and trace_id_1 should be removed from filtered set
-        # since we're updating the root run that was originally filtered
-        assert len(root_patch_filtered) == 1
-        assert root_patch_filtered[0]["id"] == trace_id_2
-
-        # trace_id_1 should be removed from filtered set since we processed its root run
-        assert trace_id_1 not in client._filtered_post_uuids
-        assert (
-            trace_id_2 not in client._filtered_post_uuids
-        )  # Still not in filtered set
-
-
-def test_patch_sampling_mixed_traces():
-    """Test patch sampling with a mix of sampled and unsampled traces."""
-    mock_session = MagicMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_session.request.return_value = mock_response
-
-    # Mock sampling to accept every other trace
-    counter = 0
-
-    def mock_should_sample():
-        nonlocal counter
-        counter += 1
-        return counter % 2 == 1  # Accept odd-numbered calls (1st, 3rd, etc.)
-
-    with patch(
-        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
-    ):
-        client = Client(
-            api_key="test-api-key",
-            tracing_sampling_rate=0.5,
-            session=mock_session,
-        )
-
-        # Create multiple traces
-        trace_ids = [uuid.uuid4() for _ in range(4)]
-        child_run_ids = [uuid.uuid4() for _ in range(4)]
-
-        # Create root runs
-        root_runs = []
-        for i, trace_id in enumerate(trace_ids):
-            root_runs.append(
-                {
-                    "id": trace_id,
-                    "trace_id": trace_id,
-                    "name": f"root_run_{i}",
-                    "run_type": "llm",
-                    "inputs": {"text": f"hello {i}"},
-                }
-            )
-
-        # Sample the root runs
-        post_filtered = client._filter_for_sampling(root_runs, patch=False)
-
-        # Based on our mock: 1st and 3rd calls return True (indices 0, 2)
-        assert len(post_filtered) == 2
-        sampled_trace_ids = {run["id"] for run in post_filtered}
-        assert trace_ids[0] in sampled_trace_ids
-        assert trace_ids[2] in sampled_trace_ids
-
-        # Create child runs for all traces
-        child_runs = []
-        for i, (trace_id, child_id) in enumerate(zip(trace_ids, child_run_ids)):
-            child_runs.append(
-                {
-                    "id": child_id,
-                    "trace_id": trace_id,
-                    "name": f"child_run_{i}",
-                    "run_type": "tool",
-                    "inputs": {"text": f"child {i}"},
-                    "outputs": {"result": f"child result {i}"},
-                }
-            )
-
-        # Test patch filtering for child runs
-        patch_filtered = client._filter_for_sampling(child_runs, patch=True)
-
-        # Only children of sampled traces should be included
-        assert len(patch_filtered) == 2
-        patch_trace_ids = {run["trace_id"] for run in patch_filtered}
-        assert trace_ids[0] in patch_trace_ids
-        assert trace_ids[2] in patch_trace_ids
-        assert trace_ids[1] not in patch_trace_ids
-        assert trace_ids[3] not in patch_trace_ids
-
-
-def test_original_sampling_and_batching():
-    """Test that sampling and batching work correctly (continuation of original test)."""
-    # Setup mock client
-    mock_session = MagicMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_session.request.return_value = mock_response
-
-    counter = 0
-
-    def mock_should_sample():
-        nonlocal counter
-        counter += 1
-        return counter % 2 != 0
-
-    with patch(
-        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
-    ):
-        client = Client(
-            api_key="test-api-key",
-            auto_batch_tracing=True,
-            tracing_sampling_rate=0.5,
-            session=mock_session,
-        )
-
-        project_name = "__test_batch"
-
-        # Create parent runs
-        run_params = []
-        for i in range(4):
-            run_id = uuid.uuid4()
-            params = {
-                "id": run_id,
-                "project_name": project_name,
-                "name": f"test_run {i}",
-                "run_type": "llm",
-                "inputs": {"text": f"hello world {i}"},
-                "dotted_order": "foo",
-                "trace_id": run_id,
-            }
-            client.create_run(**params)
-            run_params.append(params)
-
-        client.flush()
-
-        # Create child runs and update parent runs
-        child_run_params = []
-        for i, run_param in enumerate(run_params):
-            child_run_id = uuid.uuid4()
-            child_params = {
-                "id": child_run_id,
-                "project_name": project_name,
-                "name": f"test_child_run {i}",
-                "run_type": "llm",
-                "inputs": {"text": f"child world {i}"},
-                "dotted_order": "foo",
-                "trace_id": run_param["id"],
-            }
-            client.create_run(**child_params)
-            child_run_params.append(child_params)
-
-        client.flush()
-
-        # Verify all requests
-        post_calls = [
-            call
-            for call in mock_session.request.mock_calls
-            if call.args and call.args[0] == "POST"
-        ]
-        assert len(post_calls) >= 2
-
-        # Verify that only odd-numbered runs were sampled (due to our counter logic)
-        assert post_calls[0].args[1].endswith("/runs/multipart")
-        assert post_calls[1].args[1].endswith("/runs/multipart")
-
-        data = post_calls[0].kwargs["data"]
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        batch_data = parse_request_data(data)
-
-        # Verify posts only contain odd-numbered runs
-        assert len(batch_data.get("post", [])) == 2
-        for post in batch_data.get("post", []):
-            assert "text" in post["inputs"]
-            if "hello world" in post["inputs"]["text"]:
-                i = int(post["inputs"]["text"].split()[-1])
-                assert i % 2 == 0
-            elif "child world" in post["inputs"]["text"]:
-                i = int(post["inputs"]["text"].split()[-1])
-                assert i % 2 == 0
-
-        data = post_calls[1].kwargs["data"]
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        batch_data = parse_request_data(data)
-        assert len(batch_data.get("post", [])) == 2
-        for p in batch_data.get("post", []):
-            run_id = p["id"]
-            original_run = next((r for r in run_params if str(r["id"]) == run_id), None)
-            if original_run:
-                i = int(original_run["name"].split()[-1])
-                assert i % 2 == 0
+        assert filtered_feedback.run_id == FILTERED_RUN_ID
+        mock_request.assert_not_called()
 
 
 @pytest.mark.parametrize("method", ["batch_ingest_runs", "multipart_ingest"])
 def test_sampling_before_transform_in_batch_and_multipart(method: str):
-    """Verify that _run_transform is only called for runs that survive sampling.
-
-    When sampling is enabled, runs filtered out should never be transformed
-    (i.e., _run_transform should not be called for them).
-    """
+    """Verify that _run_transform is only called for runs that survive sampling."""
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_session.request.return_value = mock_response
 
-    sample_count = 0
+    client = Client(
+        api_key="test-api-key",
+        tracing_sampling_rate=0.5,
+        session=mock_session,
+    )
 
-    def mock_should_sample():
-        nonlocal sample_count
-        sample_count += 1
-        return sample_count % 2 == 1  # Accept 1st, reject 2nd
+    creates = [_sampling_run(SAMPLED_RUN_ID), _sampling_run(FILTERED_RUN_ID)]
+    updates = [
+        {**_sampling_run(SAMPLED_RUN_ID), "outputs": {"result": "sampled output"}},
+        {**_sampling_run(FILTERED_RUN_ID), "outputs": {"result": "filtered output"}},
+    ]
 
-    with patch(
-        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
-    ):
-        client = Client(
-            api_key="test-api-key",
-            tracing_sampling_rate=0.5,
-            session=mock_session,
-        )
+    original_run_transform = Client._run_transform
+    transformed_ids: list[uuid.UUID] = []
 
-        sampled_trace_id = uuid.uuid4()
-        filtered_trace_id = uuid.uuid4()
+    def tracking_transform(self, run, **kwargs):
+        result = original_run_transform(self, run, **kwargs)
+        transformed_ids.append(result["id"])
+        return result
 
-        creates = [
-            {
-                "id": sampled_trace_id,
-                "trace_id": sampled_trace_id,
-                "dotted_order": f"20210101T000000000000Z{sampled_trace_id}",
-                "name": "sampled_root",
-                "run_type": "llm",
-                "inputs": {"text": "sampled"},
-                "start_time": "2021-01-01T00:00:00Z",
-            },
-            {
-                "id": filtered_trace_id,
-                "trace_id": filtered_trace_id,
-                "dotted_order": f"20210101T000000000000Z{filtered_trace_id}",
-                "name": "filtered_root",
-                "run_type": "llm",
-                "inputs": {"text": "filtered"},
-                "start_time": "2021-01-01T00:00:00Z",
-            },
-        ]
+    with patch.object(Client, "_run_transform", tracking_transform):
+        fn = getattr(client, method)
+        fn(create=creates, update=updates)
 
-        updates = [
-            {
-                "id": sampled_trace_id,
-                "trace_id": sampled_trace_id,
-                "dotted_order": f"20210101T000000000000Z{sampled_trace_id}",
-                "outputs": {"result": "sampled output"},
-                "end_time": "2021-01-01T00:00:01Z",
-            },
-            {
-                "id": filtered_trace_id,
-                "trace_id": filtered_trace_id,
-                "dotted_order": f"20210101T000000000000Z{filtered_trace_id}",
-                "outputs": {"result": "filtered output"},
-                "end_time": "2021-01-01T00:00:01Z",
-            },
-        ]
-
-        original_run_transform = Client._run_transform
-        transformed_ids: list[uuid.UUID] = []
-
-        def tracking_transform(self, run, **kwargs):
-            result = original_run_transform(self, run, **kwargs)
-            transformed_ids.append(result["id"])
-            return result
-
-        with patch.object(Client, "_run_transform", tracking_transform):
-            fn = getattr(client, method)
-            fn(create=creates, update=updates)
-
-        # Only the sampled trace should have been transformed
-        assert sampled_trace_id in transformed_ids
-        assert filtered_trace_id not in transformed_ids, (
-            f"{method} called _run_transform on a filtered-out run"
-        )
-        # The sampled trace should appear twice (once for create, once for update)
-        assert transformed_ids.count(sampled_trace_id) == 2
+    assert SAMPLED_RUN_ID in transformed_ids
+    assert FILTERED_RUN_ID not in transformed_ids, (
+        f"{method} called _run_transform on a filtered-out run"
+    )
+    assert transformed_ids.count(SAMPLED_RUN_ID) == 2
 
 
 @mock.patch("langsmith.client.requests.Session")

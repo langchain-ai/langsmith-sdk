@@ -795,6 +795,7 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         *iterables: Iterable[Any],
         timeout: Optional[float] = None,
         chunksize: int = 1,
+        buffersize: Optional[int] = None,
     ) -> Iterator[T]:
         """Return an iterator equivalent to stdlib map.
 
@@ -809,6 +810,8 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
                 before being passed to a child process. This argument is only
                 used by ProcessPoolExecutor; it is ignored by
                 ThreadPoolExecutor.
+            buffersize: The number of submitted tasks whose results have not
+                yet been yielded.
 
         Returns:
             An iterator equivalent to: map(func, *iterables) but the calls may
@@ -824,11 +827,13 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         def _wrapped_fn(*args: Any) -> T:
             return contexts.pop().run(fn, *args)
 
+        kwargs: dict[str, Any] = {"timeout": timeout, "chunksize": chunksize}
+        if sys.version_info >= (3, 14):
+            kwargs["buffersize"] = buffersize
         return super().map(
             _wrapped_fn,
             *iterables,
-            timeout=timeout,
-            chunksize=chunksize,
+            **kwargs,
         )
 
 
