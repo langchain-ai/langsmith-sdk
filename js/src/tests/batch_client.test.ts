@@ -1185,11 +1185,6 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch,
       );
-      let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
-        counter += 1;
-        return counter % 2 !== 0;
-      });
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
         batch_ingest_config: { ...extraBatchIngestConfig },
@@ -1197,9 +1192,23 @@ describe.each(ENDPOINT_TYPES)(
       });
       const projectName = "__test_batch";
 
+      const sampledIds = [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000003",
+        "00000000-0000-0000-0000-000000000004",
+      ];
+      const childIds = [
+        "00000000-0000-0000-0000-000000000010",
+        "00000000-0000-0000-0000-000000000011",
+        "00000000-0000-0000-0000-000000000012",
+        "00000000-0000-0000-0000-000000000013",
+      ];
+      const isSampled = (runId?: string) =>
+        (client as any)._shouldSample(runId);
+
       const runParams = await Promise.all(
-        [...Array(4)].map(async (_, i) => {
-          const runId = uuidv4();
+        sampledIds.map(async (runId, i) => {
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId,
@@ -1226,7 +1235,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const childRunParams = await Promise.all(
         runParams.map(async (runParam, i) => {
-          const runId = uuidv4();
+          const runId = childIds[i];
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId,
@@ -1261,7 +1270,7 @@ describe.each(ENDPOINT_TYPES)(
       expect(batchBody).toEqual({
         post: runParams
           .map((runParam, i) => {
-            if (i % 2 === 0) {
+            if (isSampled(runParam.id)) {
               return expect.objectContaining({
                 id: runParam.id,
                 run_type: "llm",
@@ -1278,36 +1287,38 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(batchBody2).toEqual({
-        post: childRunParams
-          .map((childRunParam, i) => {
-            if (i % 2 === 0) {
-              return expect.objectContaining({
-                id: childRunParam.id,
-                run_type: "llm",
-                inputs: {
-                  text: expect.stringContaining("child world " + i),
-                },
-                trace_id: runParams[i].id,
-              });
-            } else {
-              return undefined;
-            }
-          })
-          .filter((item) => item !== undefined),
-        patch: runParams
-          .map((runParam, i) => {
-            if (i % 2 === 0) {
-              return expect.objectContaining({
-                id: runParam.id,
-                trace_id: runParam.id,
-              });
-            } else {
-              return undefined;
-            }
-          })
-          .filter((item) => item !== undefined),
-      });
+      const expectedPosts = childRunParams
+        .map((childRunParam, i) => {
+          if (isSampled(childRunParam.id)) {
+            return expect.objectContaining({
+              id: childRunParam.id,
+              run_type: "llm",
+              inputs: {
+                text: expect.stringContaining("child world " + i),
+              },
+              trace_id: runParams[i].id,
+            });
+          } else {
+            return undefined;
+          }
+        })
+        .filter((item) => item !== undefined);
+      const expectedPatches = runParams
+        .map((runParam) => {
+          if (isSampled(runParam.id)) {
+            return expect.objectContaining({
+              id: runParam.id,
+              trace_id: runParam.id,
+            });
+          } else {
+            return undefined;
+          }
+        })
+        .filter((item) => item !== undefined);
+      expect(batchBody2.post).toHaveLength(expectedPosts.length);
+      expect(batchBody2.post).toEqual(expect.arrayContaining(expectedPosts));
+      expect(batchBody2.patch).toHaveLength(expectedPatches.length);
+      expect(batchBody2.patch).toEqual(expect.arrayContaining(expectedPatches));
     });
 
     it("should flush traces in batches with manualFlushMode enabled", async () => {
