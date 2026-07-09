@@ -43,6 +43,7 @@ from collections.abc import MutableMapping
 from typing import Any, Optional
 
 from cachetools import TTLCache
+from opentelemetry.sdk.trace import SpanProcessor
 
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.audio import pcm_to_wav
@@ -72,7 +73,7 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def __init__(
         self,
-        downstream_processor: Optional[Any] = None,
+        downstream_processor: Optional[SpanProcessor] = None,
         *,
         llm_span_kind: str = "llm",
         api_key: Optional[str] = None,

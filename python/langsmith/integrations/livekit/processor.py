@@ -1,69 +1,21 @@
 """OTel → LangSmith bridge for LiveKit Agents.
 
-LangSmith's OTel ingester reads the ``gen_ai.*`` / ``langsmith.*`` namespaces;
-LiveKit emits its data under a ``lk.*`` vendor prefix the ingester doesn't
-recognize — so without translation, transcripts, TTS metrics, EOU
-probabilities, latency numbers, etc. all evaporate at ingest. This
-:class:`LiveKitLangSmithSpanProcessor` rewrites ``lk.*`` into the keys LangSmith
-understands before each span is exported. It inherits the downstream wrapping,
-exporter, ``thread_id`` stamping, and message helpers from
-:class:`BaseLangSmithSpanProcessor`.
-
-Generic to any LiveKit agent
-----------------------------
-The processor only reads LiveKit's own ``lk.*`` attributes and the span's
-name/position — it carries no knowledge of what the LLM stage is. Two rules:
-
-1. **Translate LiveKit spans from their own data.** Each known LiveKit span
-   (``user_turn``, ``llm_request``, ``tts_*``, ``agent_turn``,
-   ``function_tool``, …) is classified and rendered from the ``lk.*`` attributes
-   and ``gen_ai.*`` span events LiveKit sets on it.
-2. **Leave everything else untouched.** Any span that isn't a LiveKit span —
-   e.g. a LangChain/LangGraph run riding the same OTel provider when
-   ``LANGSMITH_TRACING_MODE=otel`` — already arrives in LangSmith's native
-   shape, so it's exported verbatim.
-
-Two translation layers for LiveKit spans
-----------------------------------------
-1. **Per-span classification** — set ``langsmith.span.kind`` and pull the
-   conversation into ``gen_ai.prompt`` / ``gen_ai.completion``. The genuine
-   inference nodes (STT ``user_turn``, ``llm_request``, ``tts_request``) are
-   ``llm``-kind; the framework wrappers (``llm_node``, ``tts_node``, retry
-   spans) are ``chain``.
-2. **Blanket ``lk.*`` pass-through** — every ``lk.*`` scalar lands as
-   ``langsmith.metadata.lk_<name>``, and JSON-object blobs are flattened so each
-   metric is its own field. Per-stage latencies surface this way too.
-
-The whole-conversation transcript on the root span is accumulated from the
-per-turn ``agent_turn`` spans, and the call recording is attached to the root.
-
-The per-context ``set_thread_id`` (opt-in) stamps ``langsmith.metadata.thread_id``
-on every span. The call recording is embedded on the root as a LangSmith
-attachment one of two ways:
-
-* ``audio_path_provider`` — a local file whose bytes are read and embedded. This
-  suits console/dev, where LiveKit writes ``audio.ogg`` under
-  ``ctx.session_directory``. That directory is ephemeral in a deployed worker, so
-  it is not a production path.
-* :meth:`~LiveKitLangSmithSpanProcessor.expect_recording` /
-  :meth:`~LiveKitLangSmithSpanProcessor.complete_recording` — the production
-  path. `LiveKit Egress <https://docs.livekit.io/home/egress/overview/>`_ records
-  the room to your own storage, but only finishes uploading *after* the call. So
-  the host calls ``expect_recording`` at the start (we hold the root span open),
-  then downloads the finished file and calls ``complete_recording`` with the
-  bytes — embedded as a real attachment, just like the dev path.
-
-With neither set, the processor needs nothing from the host app.
+Rewrites LiveKit's ``lk.*`` span data into the ``gen_ai.*`` / ``langsmith.*``
+namespaces LangSmith ingests; non-LiveKit spans on the same provider pass
+through untouched. The call recording is attached to the root span, either from
+a local file (``audio_path_provider``, dev) or via :meth:`expect_recording` /
+:meth:`complete_recording` (LiveKit Egress, production). Shared export /
+``thread_id`` / message plumbing lives in :class:`BaseLangSmithSpanProcessor`.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from cachetools import TTLCache
+from opentelemetry.sdk.trace import SpanProcessor
 
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.base_span_processor import (
@@ -71,26 +23,23 @@ from langsmith._internal.voice.base_span_processor import (
     TranslatedSpan,
 )
 
-# Default lifetime (seconds) for the per-conversation state held between a
-# trace's first and last span. The normal path frees it when the session ends
-# (and shutdown/force_flush flushes any still-held root); the TTL bounds it for
-# conversations that never end (crash, dropped connection) on a long-running
-# worker. Generous enough to outlast a slow Egress upload.
-DEFAULT_STATE_TTL_SECONDS = 3600.0
+from ._helpers import (
+    build_assistant_message,
+    build_message_from_event,
+    build_user_message,
+    extract_model_from_lk_metrics,
+    extract_provider_from_lk_metrics,
+    flatten_lk_attributes_to_ls_metadata,
+    is_livekit_span,
+    normalize_provider,
+    try_parse_json_object,
+)
 
-# Hard ceiling on tracked conversations, independent of the TTL — a backstop
-# against a flood of new conversations within one TTL window (oldest evicted
-# first). The TTL is the governing limit in practice.
+# Lifetime / cap for per-conversation state; bounds memory for calls that never end.
+DEFAULT_STATE_TTL_SECONDS = 3600.0
 DEFAULT_STATE_MAXSIZE = 100_000
 
-# The instrumentation scope LiveKit's tracer is created under
-# (``get_tracer("livekit-agents")``). Every span LiveKit emits carries it, so it
-# is how we tell a LiveKit span apart from a non-LiveKit run riding the same OTel
-# provider (e.g. a LangChain/LangGraph trace under ``LANGSMITH_TRACING_MODE=otel``).
-_LIVEKIT_INSTRUMENTATION_SCOPE = "livekit-agents"
-
-# LiveKit's span names, grouped by how we treat them. The genuine inference
-# calls are ``llm``-kind; the framework wrappers around them are ``chain``.
+# LiveKit span names. Inference calls are ``llm``-kind; framework wrappers ``chain``.
 _STT_SPAN = "user_turn"  # audio → transcript (inference)
 _LLM_INFERENCE_SPAN = "llm_request"  # chat completion (inference)
 _LLM_WRAPPER_SPANS = {"llm_node", "llm_request_run"}
@@ -101,9 +50,8 @@ _SESSION_SPAN = "agent_session"
 _TOOL_SPAN = "function_tool"
 _REALTIME_METRICS_SPAN = "realtime_metrics"
 
-# LiveKit records each chat-context item sent to the model as a span event on
-# ``llm_request`` (the event name implies the message role), followed by a
-# ``gen_ai.choice`` event carrying the generated message.
+# ``llm_request`` emits one ``gen_ai.<role>.message`` event per chat item, plus a
+# ``gen_ai.choice`` for the reply.
 _LLM_EVENT_ROLES = {
     "gen_ai.system.message": "system",
     "gen_ai.user.message": "user",
@@ -112,51 +60,13 @@ _LLM_EVENT_ROLES = {
 }
 _LLM_CHOICE_EVENT = "gen_ai.choice"
 
-# LiveKit reports some providers as the API base-URL host (e.g. its OpenAI
-# plugin → ``api.openai.com``), but LangSmith's cost engine keys on provider
-# *slugs* (``openai`` / ``deepgram`` / …), so a hostname never matches a price.
-# We recover the slug by substring — so ``beta.anthropic.com`` still → ``anthropic``
-# — mirroring how LangSmith itself infers the provider from a model name.
-_PROVIDER_ALIASES = (
-    "openai",
-    "anthropic",
-    "gemini",
-    "google",
-    "deepgram",
-    "cartesia",
-    "elevenlabs",
-    "cohere",
-    "mistral",
-    "groq",
-)
-
-
-def _normalize_provider(raw: Any) -> Optional[str]:
-    """Map a LiveKit provider (often an API host) to a LangSmith provider slug.
-
-    Matches a known provider slug as a substring (so ``api.openai.com`` and
-    ``beta.anthropic.com`` resolve to ``openai`` / ``anthropic``); otherwise
-    returns the value's host, stripped of scheme/path. Returns ``None`` for
-    empty input or LiveKit's ``"unknown"`` placeholder, so we never stamp a
-    non-matching provider.
-    """
-    if not raw:
-        return None
-    value = str(raw).strip().lower()
-    if not value or value == "unknown":
-        return None
-    for alias in _PROVIDER_ALIASES:
-        if alias in value:
-            return alias
-    return value.split("://", 1)[-1].split("/", 1)[0] or None
-
 
 class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     """Enriches LiveKit Agents' OTel spans with LangSmith-compatible attributes."""
 
     def __init__(
         self,
-        downstream_processor: Optional[Any] = None,
+        downstream_processor: Optional[SpanProcessor] = None,
         *,
         api_key: Optional[str] = None,
         project: Optional[str] = None,
@@ -169,15 +79,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """Create the processor.
 
         Args:
-            audio_path_provider: zero-arg callable returning a local recording
-                path whose bytes are embedded in the root span; ``None`` disables.
-                Console/dev only — see the module docstring. For production, use
-                :meth:`expect_recording` / :meth:`complete_recording` to attach a
-                LiveKit Egress recording.
+            audio_path_provider: returns a local recording path to embed on the
+                root (dev only); for production use :meth:`expect_recording` /
+                :meth:`complete_recording`.
             audio_mime_type: default MIME type for embedded recordings.
-            state_ttl_seconds: lifetime for the per-conversation state held
-                between a trace's first and last span; the backstop that frees
-                state for conversations that never end (no ``agent_session`` span).
+            state_ttl_seconds: lifetime for per-conversation state.
         """
         super().__init__(
             downstream_processor,
@@ -189,40 +95,68 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self.audio_path_provider = audio_path_provider
         self._audio_mime_type = audio_mime_type
 
-        # All per-conversation state is TTL-bounded so a conversation that never
-        # ends (crash, dropped connection) can't leak it on a long-running
-        # worker — the held root span and pending egress audio are the largest.
-        # NB: ``TTLCache`` is not thread-safe; every cache here is mutated only
-        # from the single LiveKit/asyncio event loop (``on_end`` and the host's
-        # ``expect_recording`` / ``complete_recording`` calls all run there).
         def _cache() -> Any:
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
 
-        # Whole-conversation transcript, accumulated turn-by-turn from the
-        # ``agent_turn`` spans. trace_id (int) -> flat [{role, content}, ...].
-        self._conversation_by_trace: MutableMapping[int, list[dict]] = _cache()
-        # The trace root (job entrypoint) ends before the conversation completes
-        # when the agent greets first, so we hold its draft until ``agent_session``
-        # ends with the full conversation. trace_id (hex str) -> TranslatedSpan.
-        self._deferred_root_spans: MutableMapping[str, TranslatedSpan] = _cache()
-        # Used as a set (trace_id -> True): sessions whose end span has arrived.
-        self._ended_sessions: MutableMapping[str, bool] = _cache()
-        # Production egress audio arrives *after* the call, so a conversation can
-        # ask us to hold its root until ``complete_recording`` supplies the bytes.
-        # Keyed by thread id (the conversation id the host controls);
-        # ``_awaiting_recording`` is used as a set (thread_id -> True).
-        self._awaiting_recording: MutableMapping[str, bool] = _cache()
-        self._pending_audio: MutableMapping[str, dict] = _cache()
-        self._thread_to_trace: MutableMapping[str, str] = _cache()
-        self._trace_to_thread: MutableMapping[str, str] = _cache()
-        # Realtime-model metrics cached from a ``realtime_metrics`` child span and
-        # drained onto its parent ``agent_turn``. Keyed by the parent span_id.
-        self._realtime_metrics_by_parent: MutableMapping[int, dict] = _cache()
+        # trace_id -> running transcript, rolled up onto the root at session end.
+        self._transcript_by_trace: MutableMapping[int, list[dict]] = _cache()
+        # trace_id -> root span held open until the session (and any egress) ends.
+        self._deferred_root_by_trace: MutableMapping[int, TranslatedSpan] = _cache()
+        # trace_ids whose ``agent_session`` end span has arrived (used as a set).
+        self._ended_session_traces: MutableMapping[int, bool] = _cache()
+        # thread ids awaiting an egress recording (used as a set).
+        self._threads_awaiting_recording: MutableMapping[str, bool] = _cache()
+        # thread id -> pending egress audio bytes.
+        self._pending_audio_by_thread: MutableMapping[str, dict] = _cache()
+        # thread id -> trace_id, so ``complete_recording`` can find the trace.
+        self._trace_by_thread: MutableMapping[str, int] = _cache()
+        # parent span_id -> realtime metrics to drain onto its ``agent_turn``.
+        self._realtime_metrics_by_parent_span: MutableMapping[int, dict] = _cache()
+
+    def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
+        """Also index thread→trace (so ``complete_recording`` can find the trace)."""
+        super()._remember_thread_id(trace_id, thread_id)
+        self._trace_by_thread[thread_id] = trace_id
+
+    # -- production recording (egress) ---------------------------------------
+
+    def expect_recording(self, thread_id: str) -> None:
+        """Hold the root span open until :meth:`complete_recording` supplies the audio.
+
+        Call at conversation start (with egress); always pair with a
+        ``complete_recording`` call. ``thread_id`` must match ``set_thread_id``.
+        """
+        self._threads_awaiting_recording[str(thread_id)] = True
+
+    def complete_recording(
+        self,
+        thread_id: str,
+        data: Optional[bytes],
+        *,
+        name: str = "recording.ogg",
+        mime_type: Optional[str] = None,
+    ) -> None:
+        """Attach an egress recording and release the held root.
+
+        ``data`` is the recording bytes (embedded as an attachment), or ``None``
+        to release without audio. ``thread_id`` must match :meth:`expect_recording`.
+        Safe to call before or after the session ends.
+        """
+        if data:
+            self._pending_audio_by_thread[str(thread_id)] = {
+                "name": name,
+                "data": bytes(data),
+                "mime_type": mime_type or self._audio_mime_type,
+            }
+        self._threads_awaiting_recording.pop(str(thread_id), None)
+        trace_id = self._trace_by_thread.get(str(thread_id))
+        if trace_id is not None:
+            self._maybe_release(trace_id)
 
     # -- dispatch -------------------------------------------------------------
 
     def _dispatch(self, tspan: TranslatedSpan) -> bool:
-        trace_id = format(tspan.span.context.trace_id, "032x")
+        trace_id = tspan.span.context.trace_id
         name = tspan.span.name
 
         if name == _STT_SPAN:
@@ -231,110 +165,58 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._handle_llm_request(tspan)
         elif name in _LLM_WRAPPER_SPANS:
             tspan.set_kind("chain")  # wrappers: no fabricated I/O
-        elif name == _TTS_INFERENCE_SPAN or name in _TTS_WRAPPER_SPANS:
+        elif name == _TTS_INFERENCE_SPAN:
             self._handle_tts(tspan)
+        elif name in _TTS_WRAPPER_SPANS:
+            tspan.set_kind("chain")  # wrappers: no fabricated I/O
         elif name == _TURN_SPAN:
             self._handle_turn(tspan)
         elif name == _SESSION_SPAN:
-            # Session end: the conversation is complete — release the deferred
-            # root (if any), then export the session span itself.
+            # Session end: release the deferred root, then export this span.
             tspan.set_kind("chain")
-            self._ended_sessions[trace_id] = True
-            self._release_root_span(trace_id)
+            self._ended_session_traces[trace_id] = True
+            self._maybe_release(trace_id)
         elif name == "eou_detection":
             tspan.set_kind("chain")  # framework step
         elif name == _TOOL_SPAN:
             self._handle_tool(tspan)
         elif name == _REALTIME_METRICS_SPAN:
-            # These belong ON the turn, not as their own span: cache for the
-            # parent agent_turn and suppress this span entirely (False = the base
-            # must not export it; nothing else does either).
+            # Drained onto the parent agent_turn; suppress this span (False).
             self._cache_realtime_metrics(tspan)
             return False
-        elif tspan.span.parent is None and self._is_livekit_span(tspan.span):
-            # The trace root (LiveKit's job entrypoint). _handle_root owns its
-            # export: it renders/attaches and exports immediately, or defers
-            # until the session ends and egress audio is ready (via
-            # _maybe_release). Either way the base must not export it (False).
-            #
-            # Gated on the LiveKit scope so a *non-LiveKit* parentless span —
-            # e.g. a LangChain/LangGraph root riding the same OTel provider — is
-            # not mistaken for the conversation root, deferred, and mislabeled
-            # ``langsmith.root_span``/``ls_modality=audio``; it falls through and
-            # is exported untouched below.
+        elif tspan.span.parent is None and is_livekit_span(tspan.span):
+            # Conversation root — _handle_root owns its export (False). Gated on
+            # the LiveKit scope so a non-LiveKit parentless span isn't hijacked.
             self._handle_root(tspan, trace_id)
             return False
-        # Any other span isn't a LiveKit span (e.g. a LangChain/LangGraph run);
-        # it already arrives in LangSmith's native shape — export untouched.
-        #
-        # Return True so the base exports this span once (the session span
-        # included; _release_root_span above exports only the separate deferred
-        # root, never this one).
-        return True
-
-    @staticmethod
-    def _is_livekit_span(span: Any) -> bool:
-        """Whether a span came from LiveKit's tracer (its instrumentation scope).
-
-        Used to gate root detection: only a parentless span emitted by LiveKit is
-        the conversation root. Named LiveKit spans are matched by name above and
-        don't need this; it guards the broad ``parent is None`` case alone.
-        """
-        scope = getattr(span, "instrumentation_scope", None)
-        return getattr(scope, "name", None) == _LIVEKIT_INSTRUMENTATION_SCOPE
+        return True  # non-LiveKit span: export untouched
 
     # -- per-span-type handlers ----------------------------------------------
-
-    def _stamp_provider(self, tspan: TranslatedSpan, metrics_attr: str) -> None:
-        """Normalize the provider to a LangSmith slug for a LiveKit span.
-
-        LiveKit reports the provider as the API-base-URL host (its OpenAI plugin
-        → ``api.openai.com``) and, depending on version, under either
-        ``gen_ai.provider.name`` (livekit-agents ≥1.5) or ``gen_ai.system``.
-        LangSmith ingestion maps either to ``ls_provider``, so we resolve a slug
-        from the metric blob's ``metadata.model_provider`` or whichever key the
-        span carries, then write it back to *both* keys. No-ops when no usable
-        provider is available, rather than stamp ``"unknown"``.
-        """
-        provider = None
-        metrics = self._try_parse_json_object(tspan.attributes.get(metrics_attr))
-        if isinstance(metrics, dict):
-            provider = (metrics.get("metadata") or {}).get("model_provider")
-        provider = (
-            _normalize_provider(provider)
-            or _normalize_provider(tspan.attributes.get("gen_ai.provider.name"))
-            or _normalize_provider(tspan.attributes.get("gen_ai.system"))
-        )
-        if provider:
-            tspan.attributes["gen_ai.provider.name"] = provider
-            tspan.attributes["gen_ai.system"] = provider
 
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
         """STT (``user_turn``): audio input → transcribed text."""
         tspan.set_kind("llm")
-        model = tspan.attributes.get("gen_ai.request.model")
-        if model:
-            tspan.attributes["langsmith.metadata.model_name"] = str(model)
-        self._stamp_provider(tspan, "lk.stt_metrics")
+        tspan.set_model(
+            tspan.attributes.get("gen_ai.request.model")
+            or extract_model_from_lk_metrics(tspan.attributes.get("lk.stt_metrics"))
+        )
+        provider = extract_provider_from_lk_metrics(
+            tspan.attributes.get("lk.stt_metrics")
+        )
+        tspan.set_provider(normalize_provider(provider))
 
         transcript = tspan.attributes.get("lk.user_transcript")
-        tspan.set_messages(
-            prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
-        )
         if transcript:
             tspan.set_messages(
-                completion=[{"role": "assistant", "content": str(transcript)}]
+                prompt=[build_user_message(f'Audio for: "{transcript}"')]
             )
+            tspan.set_messages(completion=[build_assistant_message(str(transcript))])
         tspan.exclude_from_message_view()
 
     def _handle_llm_request(self, tspan: TranslatedSpan) -> None:
-        """``llm_request``: the chat-completion call.
+        """``llm_request``: rebuild prompt/completion from the gen_ai.* events.
 
-        LiveKit records the request's I/O as span events: one
-        ``gen_ai.{system,user,assistant,tool}.message`` event per chat-context
-        item, then a ``gen_ai.choice`` with the generated message. We rebuild
-        ``gen_ai.prompt``/``gen_ai.completion`` (singular JSON, so tool calls
-        survive) and strip the translated events so the ingester doesn't render
+        The translated events are then stripped so the ingester doesn't render
         them twice.
         """
         tspan.set_kind("llm")
@@ -343,62 +225,24 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         completion: list[dict] = []
         for event in tspan.events:
             if event.name == _LLM_CHOICE_EVENT:
-                completion.append(self._message_from_event("assistant", event))
+                completion.append(build_message_from_event("assistant", event))
             elif (role := _LLM_EVENT_ROLES.get(event.name)) is not None:
-                prompt.append(self._message_from_event(role, event))
+                prompt.append(build_message_from_event(role, event))
         tspan.set_messages(prompt=prompt or None, completion=completion or None)
-        # Normalize the provider (LiveKit's OpenAI plugin reports the
-        # ``api.openai.com`` host, which won't match a LangSmith price).
-        self._stamp_provider(tspan, "lk.llm_metrics")
 
-        # Drop the translated events (keep others, e.g. exceptions) on the
-        # draft — finalize rebuilds the span from it, so span._events is left
-        # untouched.
+        provider = extract_provider_from_lk_metrics(
+            tspan.attributes.get("lk.llm_metrics")
+        )
+        tspan.set_provider(normalize_provider(provider))
+
         tspan.events[:] = [
             e
             for e in tspan.events
             if e.name != _LLM_CHOICE_EVENT and e.name not in _LLM_EVENT_ROLES
         ]
 
-    def _message_from_event(self, role: str, event: Any) -> dict:
-        """Build a message dict from a LiveKit gen_ai event.
-
-        Tool calls are forwarded in their OpenAI shape (parsing any JSON-string
-        entries to objects) — LangSmith's ingester renders them directly.
-        """
-        attrs = event.attributes or {}
-        msg: dict = {
-            "role": str(attrs.get("role") or role),
-            "content": str(attrs.get("content") or ""),
-        }
-        tool_calls = []
-        for raw in attrs.get("tool_calls") or ():
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-            if isinstance(raw, dict):
-                tool_calls.append(raw)
-        if tool_calls:
-            msg["tool_calls"] = tool_calls
-        if role == "tool":
-            if attrs.get("id"):
-                msg["tool_call_id"] = str(attrs["id"])
-            if attrs.get("name"):
-                msg["name"] = str(attrs["name"])
-        return msg
-
     def _handle_tts(self, tspan: TranslatedSpan) -> None:
-        """Render the TTS spans.
-
-        ``tts_request`` is the synthesis call (``llm``); the ``tts_node`` /
-        ``tts_request_run`` wrappers are ``chain``s.
-        """
-        if tspan.span.name != _TTS_INFERENCE_SPAN:
-            tspan.set_kind("chain")
-            return
-
+        """``tts_request``: synthesize text → audio (an ``llm`` inference)."""
         tspan.set_kind("llm")
         tspan.exclude_from_message_view()
 
@@ -409,131 +253,57 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             or ""
         )
         tspan.set_messages(
-            prompt=[{"role": "user", "content": str(text)}],
-            completion=[
-                {"role": "assistant", "content": f'Generated audio for: "{text}"'}
-            ],
+            prompt=[build_user_message(str(text))],
+            completion=[build_assistant_message(f'Generated audio for: "{text}"')],
         )
 
-        model = tspan.attributes.get("gen_ai.request.model")
-        if not model:
-            metrics = self._try_parse_json_object(
-                tspan.attributes.get("lk.tts_metrics")
-            )
-            if isinstance(metrics, dict):
-                model = (metrics.get("metadata") or {}).get(
-                    "model_name"
-                ) or metrics.get("model_name")
-        if model:
-            tspan.attributes["gen_ai.request.model"] = str(model)
-            tspan.attributes["langsmith.metadata.model_name"] = str(model)
-        self._stamp_provider(tspan, "lk.tts_metrics")
+        tspan.set_model(
+            tspan.attributes.get("gen_ai.request.model")
+            or extract_model_from_lk_metrics(tspan.attributes.get("lk.tts_metrics"))
+        )
+        provider = extract_provider_from_lk_metrics(
+            tspan.attributes.get("lk.tts_metrics")
+        )
+        tspan.set_provider(normalize_provider(provider))
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
-        """Render an ``agent_turn``: one user/assistant exchange.
-
-        Appends the exchange to the running conversation the root rolls up. This
-        is the LiveKit-native turn boundary, so it works for both the cascade and
-        the speech-to-speech backends.
-        """
+        """Render an ``agent_turn`` and append it to the running transcript."""
         tspan.set_kind("chain")
         self._drain_realtime_metrics(tspan)
 
         user_input = tspan.attributes.get("lk.user_input")
         response = tspan.attributes.get("lk.response.text")
         trace_id = tspan.span.context.trace_id
-        conversation = self._conversation_by_trace.get(trace_id) or []
+        conversation = self._transcript_by_trace.get(trace_id) or []
         if user_input:
-            msg = {"role": "user", "content": str(user_input)}
+            msg = build_user_message(str(user_input))
             tspan.set_messages(prompt=[msg])
             conversation.append(msg)
         if response:
-            msg = {"role": "assistant", "content": str(response)}
+            msg = build_assistant_message(str(response))
             tspan.set_messages(completion=[msg])
             conversation.append(msg)
-        # Re-assign (not just mutate) so each turn refreshes the TTL — an active
-        # call longer than the TTL is never evicted mid-conversation.
+        # Re-assign (not just mutate) so each turn refreshes the cache TTL.
         if conversation:
-            self._conversation_by_trace[trace_id] = conversation
+            self._transcript_by_trace[trace_id] = conversation
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         """``function_tool``: render as a proper ``tool`` run with its I/O."""
         tspan.set_kind("tool")
         tool_name = tspan.attributes.get("lk.function_tool.name")
         if tool_name:
-            tspan.attributes["langsmith.metadata.tool_name"] = str(tool_name)
+            tspan.set_metadata("tool_name", str(tool_name))
         args = tspan.attributes.get("lk.function_tool.arguments")
         if args is not None:
-            tspan.attributes["gen_ai.prompt"] = (
-                args if isinstance(args, str) else json.dumps(args)
-            )
+            tspan.set_tool_input(args)
         output = tspan.attributes.get("lk.function_tool.output")
         if output is not None:
-            tspan.attributes["gen_ai.completion"] = (
-                output if isinstance(output, str) else json.dumps(output)
-            )
-
-    # -- production recording (egress) ---------------------------------------
-
-    def expect_recording(self, thread_id: str) -> None:
-        """Hold this conversation's root span until its recording is supplied.
-
-        LiveKit Egress finishes uploading *after* the call ends, so the bytes
-        don't exist when the root span would normally be exported. Call this at
-        the start of a conversation (when you start egress) to defer that export;
-        then call :meth:`complete_recording` once you have the file. Until then
-        the root is held (a worker shutdown flushes it without audio as a
-        fallback), so always pair this with a ``complete_recording`` call —
-        passing ``None`` to release without audio if the recording fails.
-
-        Args:
-            thread_id: the conversation id, matching the one passed to
-                ``set_thread_id``.
-        """
-        self._awaiting_recording[str(thread_id)] = True
-
-    def complete_recording(
-        self,
-        thread_id: str,
-        data: Optional[bytes],
-        *,
-        name: str = "recording.ogg",
-        mime_type: Optional[str] = None,
-    ) -> None:
-        """Attach an egress recording to a conversation and release its root.
-
-        Download the completed egress file from your storage and pass its bytes
-        here; they're embedded as a real LangSmith attachment on the root span.
-        Pass ``data=None`` to release the held root without audio (e.g. egress
-        failed). Safe to call before or after the session ends.
-
-        Args:
-            thread_id: the conversation id, matching :meth:`expect_recording`.
-            data: the recording bytes, or ``None`` to release without audio.
-            name: attachment filename.
-            mime_type: attachment MIME type; defaults to the processor's.
-        """
-        tid = str(thread_id)
-        if data:
-            self._pending_audio[tid] = {
-                "name": name,
-                "data": bytes(data),
-                "mime_type": mime_type or self._audio_mime_type,
-            }
-        self._awaiting_recording.pop(tid, None)
-        trace_id = self._thread_to_trace.get(tid)
-        if trace_id is not None:
-            self._maybe_release(trace_id)
+            tspan.set_tool_output(output)
 
     # -- deferred root release ------------------------------------------------
 
-    def _handle_root(self, tspan: TranslatedSpan, trace_id: str) -> None:
-        """Handle the trace root (job entrypoint), the conversation root.
-
-        The root ends before the conversation completes (the agent greets first),
-        so we always defer it and release it — complete, with audio — once the
-        session has ended and any awaited recording has arrived.
-        """
+    def _handle_root(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """Mark the conversation root and defer it until the session ends."""
         tspan.set_kind("chain")
         tspan.set_root_span(True)
         tspan.set_metadata("ls_modality", "audio")
@@ -542,34 +312,27 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             "ls_integration_version", (get_package_version("livekit-agents") or "")
         )
 
-        thread = tspan.attributes.get("langsmith.metadata.thread_id")
-        if thread is not None:
-            self._thread_to_trace[str(thread)] = trace_id
-            self._trace_to_thread[trace_id] = str(thread)
-
-        self._deferred_root_spans[trace_id] = tspan
+        self._deferred_root_by_trace[trace_id] = tspan
         self._maybe_release(trace_id)
 
-    def _release_root_span(self, trace_id: str) -> None:
-        """Session ended: release the root if ready (see :meth:`_maybe_release`)."""
-        self._maybe_release(trace_id)
-
-    def _maybe_release(self, trace_id: str) -> None:
+    def _maybe_release(self, trace_id: int, *, force: bool = False) -> None:
         """Export the deferred root once the session ended and audio is ready.
 
-        Three conditions must hold: the root span has been seen, the
-        ``agent_session`` has ended, and the conversation isn't still awaiting an
-        egress recording. Any of the three call sites (root seen, session end,
-        ``complete_recording``) can be the one that satisfies the last condition.
+        Requires the root seen, the session ended, and no awaited recording.
+        ``force`` skips the last two gates — the last-resort path at
+        :meth:`shutdown` for a root that never completed.
         """
-        tspan = self._deferred_root_spans.get(trace_id)
-        if tspan is None or trace_id not in self._ended_sessions:
+        tspan = self._deferred_root_by_trace.get(trace_id)
+        if tspan is None:
             return
-        thread = self._trace_to_thread.get(trace_id)
-        if thread is not None and thread in self._awaiting_recording:
-            return  # still waiting for complete_recording()
+        thread = self._thread_id_by_trace.get(trace_id)
+        if not force:
+            if trace_id not in self._ended_session_traces:
+                return
+            if thread is not None and thread in self._threads_awaiting_recording:
+                return  # still waiting for complete_recording()
 
-        self._deferred_root_spans.pop(trace_id, None)
+        self._deferred_root_by_trace.pop(trace_id, None)
         self._render_conversation(tspan)
         self._attach_audio_recording(tspan)
         if thread is not None:
@@ -578,82 +341,48 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._cleanup_trace(trace_id)
 
     def _render_conversation(self, tspan: TranslatedSpan) -> bool:
-        """Render the accumulated conversation onto a root span.
-
-        Input = the opening message; output = everything after it. Returns
-        whether anything was rendered.
-        """
-        messages = self._conversation_by_trace.get(tspan.span.context.trace_id, [])
+        """Set the whole transcript as the root's input messages; return if any."""
+        messages = self._transcript_by_trace.get(tspan.span.context.trace_id, [])
         if not messages:
             return False
-        tspan.set_messages(prompt=messages[:1])
-        if len(messages) > 1:
-            tspan.set_messages(completion=messages[1:])
+        tspan.set_messages(prompt=messages)
         return True
 
-    def _cleanup_trace(self, trace_id: str) -> None:
-        self._conversation_by_trace.pop(int(trace_id, 16), None)
-        self._forget_thread_id(int(trace_id, 16))
-        self._ended_sessions.pop(trace_id, None)
-        thread = self._trace_to_thread.pop(trace_id, None)
+    def _cleanup_trace(self, trace_id: int) -> None:
+        # Read the thread id before ``_forget_thread_id`` drops it from the base map.
+        thread = self._thread_id_by_trace.get(trace_id)
+        self._transcript_by_trace.pop(trace_id, None)
+        self._forget_thread_id(trace_id)
+        self._ended_session_traces.pop(trace_id, None)
         if thread is not None:
-            self._thread_to_trace.pop(thread, None)
-            self._awaiting_recording.pop(thread, None)
-            self._pending_audio.pop(thread, None)
+            self._trace_by_thread.pop(thread, None)
+            self._threads_awaiting_recording.pop(thread, None)
+            self._pending_audio_by_thread.pop(thread, None)
 
     def shutdown(self) -> None:
-        """Flush any deferred root spans, then shut down the downstream."""
-        self._flush_deferred_root_spans()
+        """Force-export any still-held roots (last resort), then shut down.
+
+        ``force_flush`` deliberately does not — a still-held root there is
+        legitimately in progress, not a buffered export waiting to drain.
+        """
+        for trace_id in list(self._deferred_root_by_trace):
+            self._maybe_release(trace_id, force=True)
         super().shutdown()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
-        """Force-flush the downstream — deferred root spans are NOT finalized.
-
-        Unlike ``shutdown``, ``force_flush`` can fire *mid-conversation* (a
-        periodic flush, or any ``provider.force_flush()`` caller). A deferred root
-        is still being assembled — its ``agent_session`` hasn't ended — so
-        finalizing and exporting it here would emit a partial root and drop it,
-        losing the real root when the session later ends. So in-progress roots are
-        left held; only ``shutdown`` (terminal) flushes them as a last resort.
-        """
+        """Force-flush the downstream — deferred root spans are NOT finalized."""
         return super().force_flush(timeout_millis)
-
-    def _flush_deferred_root_spans(self) -> None:
-        """Export any root spans still held — last resort, ``shutdown`` only.
-
-        Covers a session that ended abnormally, or an awaited recording that
-        never arrived before shutdown. Not called from ``force_flush``: a still-held
-        root is legitimately in progress, not a buffered export waiting to drain.
-        """
-        for trace_id, tspan in list(self._deferred_root_spans.items()):
-            if not self._render_conversation(tspan):
-                tspan.set_messages(
-                    prompt=[{"role": "system", "content": "Conversation not captured"}],
-                    completion=[
-                        {
-                            "role": "assistant",
-                            "content": "No conversation turns recorded.",
-                        }
-                    ],
-                )
-            self._attach_audio_recording(tspan)
-            thread = self._trace_to_thread.get(trace_id)
-            if thread is not None:
-                self._attach_pending_audio(tspan, thread)
-            self._export(tspan)
-            del self._deferred_root_spans[trace_id]
 
     # -- audio attachment -----------------------------------------------------
 
     def _attach_audio_recording(self, tspan: TranslatedSpan) -> None:
+        """Embed audio from the local ``audio_path_provider`` file (dev)."""
         if self.audio_path_provider is None:
             return
         audio_path = self.audio_path_provider()
-        if audio_path is None:
+        if audio_path is None or not audio_path.exists():
             return
         try:
-            if not audio_path.exists():
-                return
             audio_bytes = audio_path.read_bytes()
         except Exception:  # pragma: no cover
             return
@@ -666,7 +395,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _attach_pending_audio(self, tspan: TranslatedSpan, thread: str) -> None:
         """Embed a recording supplied via :meth:`complete_recording` (egress)."""
-        pending = self._pending_audio.pop(thread, None)
+        pending = self._pending_audio_by_thread.pop(thread, None)
         if not pending or not pending.get("data"):
             return
         self._attach_audio(
@@ -680,104 +409,62 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _cache_realtime_metrics(self, tspan: TranslatedSpan) -> None:
         """Stash a ``realtime_metrics`` span's data for its parent ``agent_turn``."""
-        parent_id = tspan.span.parent.span_id if tspan.span.parent else None
-        if parent_id is None:
+        parent = tspan.span.parent
+        if parent is None:
             return
-        cached = {
-            k: v
-            for k, v in tspan.attributes.items()
-            if k.startswith("lk.") or k.startswith("gen_ai.usage")
+        carried_metrics = {
+            key: value
+            for key, value in tspan.attributes.items()
+            if key.startswith("lk.") or key.startswith("gen_ai.usage")
         }
         # Lift token counts into gen_ai.usage.* for cost tracking.
-        metrics = self._try_parse_json_object(
+        model_metrics = try_parse_json_object(
             tspan.attributes.get("lk.realtime_model_metrics")
         )
-        if isinstance(metrics, dict):
-            for src, dst in (
-                ("input_tokens", "gen_ai.usage.input_tokens"),
-                ("output_tokens", "gen_ai.usage.output_tokens"),
-                ("total_tokens", "gen_ai.usage.total_tokens"),
-            ):
-                v = metrics.get(src)
-                if isinstance(v, (int, float)):
-                    cached[dst] = v
-        if cached:
-            self._realtime_metrics_by_parent[parent_id] = cached
+        if isinstance(model_metrics, dict):
+            for token_key in ("input_tokens", "output_tokens", "total_tokens"):
+                count = model_metrics.get(token_key)
+                if isinstance(count, (int, float)):
+                    carried_metrics[f"gen_ai.usage.{token_key}"] = count
+        if carried_metrics:
+            self._realtime_metrics_by_parent_span[parent.span_id] = carried_metrics
 
     def _drain_realtime_metrics(self, tspan: TranslatedSpan) -> None:
-        """Copy cached realtime metrics onto this (agent_turn) span (if absent)."""
-        cached = self._realtime_metrics_by_parent.pop(tspan.span.context.span_id, None)
-        if not cached:
+        """Copy cached realtime metrics onto this ``agent_turn`` (never clobbering)."""
+        carried_metrics = self._realtime_metrics_by_parent_span.pop(
+            tspan.span.context.span_id, None
+        )
+        if not carried_metrics:
             return
-        for k, v in cached.items():
-            if k not in tspan.attributes:
-                tspan.attributes[k] = v
-
-    # -- blanket lk.* pass-through (runs just before export) ------------------
+        for key, value in carried_metrics.items():
+            if key not in tspan.attributes:
+                tspan.attributes[key] = value
 
     def _pre_export(self, tspan: TranslatedSpan) -> None:
-        """Forward every ``lk.*`` attribute to ``langsmith.metadata.lk_<name>``.
+        """Forward ``lk.*`` to ``langsmith.metadata.lk_*`` and normalize the provider.
 
-        Scalars and sequences of scalars are forwarded directly; JSON-object
-        blobs are flattened so each metric is its own field.
+        Scalars pass through; JSON-object blobs are flattened per field. Runs on
+        every exported span, so it also covers spans no handler classified.
         """
         for key in list(tspan.attributes.keys()):
             if not key.startswith("lk."):
                 continue
-            v = tspan.attributes[key]
-            if v is None or isinstance(v, dict):
-                continue
-            ms_key = f"langsmith.metadata.{key.replace('.', '_')}"
-            parsed = self._try_parse_json_object(v)
+            value = tspan.attributes[key]
+            flat_key = f"langsmith.metadata.{key.replace('.', '_')}"
+            parsed = try_parse_json_object(value)
             if parsed is not None:
-                self._flatten_into_metadata(tspan, ms_key, parsed)
+                for name, val in flatten_lk_attributes_to_ls_metadata(
+                    parsed, flat_key
+                ).items():
+                    if name not in tspan.attributes:  # don't clobber what a branch set
+                        tspan.attributes[name] = val
                 continue
-            if ms_key in tspan.attributes:  # don't clobber what a branch set
+            if flat_key in tspan.attributes:  # don't clobber what a branch set
                 continue
-            tspan.attributes[ms_key] = v
+            tspan.attributes[flat_key] = value
 
-        # Normalize the provider to a LangSmith slug on EVERY exported span,
-        # under both keys LiveKit/LangSmith use across versions —
-        # ``gen_ai.provider.name`` (livekit-agents ≥1.5) and the legacy
-        # ``gen_ai.system`` — so ``api.openai.com`` → ``openai`` regardless of
-        # which one carries it. Done at the single export chokepoint so it also
-        # catches spans that never reach the per-stage handlers.
-        for key in ("gen_ai.provider.name", "gen_ai.system"):
-            normalized = _normalize_provider(tspan.attributes.get(key))
-            if normalized:
-                tspan.attributes[key] = normalized
-
-    @staticmethod
-    def _try_parse_json_object(value: Any) -> Optional[dict]:
-        """Return ``value`` parsed as a dict if it's a JSON-object string, else None."""
-        if not isinstance(value, str):
-            return None
-        s = value.strip()
-        if not (s.startswith("{") and s.endswith("}")):
-            return None
-        try:
-            obj = json.loads(s)
-        except (json.JSONDecodeError, ValueError):
-            return None
-        return obj if isinstance(obj, dict) else None
-
-    def _flatten_into_metadata(
-        self, tspan: TranslatedSpan, prefix: str, obj: dict, _depth: int = 0
-    ) -> None:
-        """Flatten a dict's scalar leaves to ``langsmith.metadata.<prefix>_<key>``."""
-        if _depth > 4:
-            return
-        for k, v in obj.items():
-            name = f"{prefix}_{k}"
-            if isinstance(v, dict):
-                self._flatten_into_metadata(tspan, name, v, _depth + 1)
-            elif isinstance(v, (str, int, float, bool)):
-                if name not in tspan.attributes:
-                    tspan.attributes[name] = v
-            elif (
-                isinstance(v, (list, tuple))
-                and v
-                and all(isinstance(item, (str, int, float, bool)) for item in v)
-            ):
-                if name not in tspan.attributes:
-                    tspan.attributes[name] = list(v)
+        # Normalize + cross-fill both provider keys from whichever LiveKit set.
+        provider = normalize_provider(
+            tspan.attributes.get("gen_ai.provider.name")
+        ) or normalize_provider(tspan.attributes.get("gen_ai.system"))
+        tspan.set_provider(provider)

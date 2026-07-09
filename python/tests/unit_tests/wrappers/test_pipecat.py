@@ -380,11 +380,26 @@ class TestBaseProcessorHelpers:
             is False
         )
 
-    def test_on_start_stamps_static_metadata(self):
+    def test_stamp_static_metadata(self):
+        # Static metadata lands on the draft; None values are skipped.
         base = self._base(metadata={"env": "test", "skip": None})
-        span = MagicMock()
-        base.on_start(span)
-        span.set_attribute.assert_any_call("langsmith.metadata.env", "test")
+        tspan = TranslatedSpan.of(_make_span("x"))
+        base._stamp_static_metadata(tspan)
+        assert tspan.attributes["langsmith.metadata.env"] == "test"
+        assert "langsmith.metadata.skip" not in tspan.attributes
+
+    def test_stamp_static_metadata_never_clobbers(self):
+        # An attribute already on the span wins over the static default.
+        base = self._base(metadata={"env": "static"})
+        tspan = TranslatedSpan.of(
+            _make_span("x", {"langsmith.metadata.env": "explicit"})
+        )
+        base._stamp_static_metadata(tspan)
+        assert tspan.attributes["langsmith.metadata.env"] == "explicit"
+
+    def test_on_start_delegates_downstream(self):
+        base = self._base()
+        base.on_start(MagicMock())
         base.downstream.on_start.assert_called_once()
 
     def test_shutdown_delegates(self):
@@ -509,9 +524,8 @@ class TestContextVarThreadId:
     def test_set_thread_id_is_injected(self):
         proc = _processor()
         set_thread_id("conv-42")
-        span = _make_span("turn", {})
-
-        proc.on_end(span)
+        proc.on_start(_make_span("turn", {}))
+        proc.on_end(_make_span("turn", {}))
 
         assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-42"
 
@@ -547,24 +561,11 @@ class TestContextVarThreadId:
 
         assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-7"
 
-    def test_in_context_end_backfills_for_trace_peers(self):
-        # No on_start capture: the first span seen in context resolves via the
-        # ContextVar and backfills the trace cache, so a later peer that ends
-        # out of context still resolves.
-        proc = _processor()
-        tid = 0xABC
-        set_thread_id("conv-8")
-        proc.on_end(_make_span("turn", {}, trace_id=tid))
-        set_thread_id(None)
-        proc.on_end(_make_span("stt", {"transcript": "hi"}, trace_id=tid))
-
-        assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-8"
-
     def test_cleanup_forgets_cached_thread_id(self):
         proc = _processor()
         tid = 0xABC
         set_thread_id("conv-9")
-        proc.on_end(_make_span("turn", {}, trace_id=tid))
+        proc.on_start(_make_span("turn", {}, trace_id=tid))
         assert tid in proc._thread_id_by_trace
         # Conversation end frees the per-trace state, the thread id included.
         proc.on_end(_make_span("conversation", {"conversation.id": "c1"}, trace_id=tid))

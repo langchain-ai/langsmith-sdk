@@ -10,9 +10,12 @@ import json
 from unittest.mock import MagicMock
 
 from langsmith._internal.voice import set_thread_id
+from langsmith.integrations.livekit._helpers import (
+    build_message_from_event,
+    normalize_provider,
+)
 from langsmith.integrations.livekit.processor import (
     LiveKitLangSmithSpanProcessor,
-    _normalize_provider,
 )
 
 
@@ -85,7 +88,7 @@ class TestDispatchDisposition:
         exported = proc.downstream.on_end.call_args.args[0]
         assert "langsmith.root_span" not in exported._attributes
         assert "langsmith.metadata.ls_modality" not in exported._attributes
-        assert len(proc._deferred_root_spans) == 0
+        assert len(proc._deferred_root_by_trace) == 0
 
 
 class TestDeferredRootRelease:
@@ -118,11 +121,13 @@ class TestDeferredRootRelease:
         assert root._attributes["langsmith.metadata.ls_modality"] == "audio"
         # The root is attributed to this integration so usage is trackable.
         assert root._attributes["langsmith.metadata.ls_integration"] == "livekit"
-        completion = json.loads(root._attributes["gen_ai.completion"])["messages"]
-        assert completion[0]["content"] == "sunny"
+        # The whole transcript lands on the root's input.
+        prompt = json.loads(root._attributes["gen_ai.prompt"])["messages"]
+        assert [m["content"] for m in prompt] == ["weather?", "sunny"]
+        assert "gen_ai.completion" not in root._attributes
         # Per-conversation state freed after release.
-        assert len(proc._deferred_root_spans) == 0
-        assert len(proc._conversation_by_trace) == 0
+        assert len(proc._deferred_root_by_trace) == 0
+        assert len(proc._transcript_by_trace) == 0
 
 
 class TestForceFlush:
@@ -151,7 +156,7 @@ class TestForceFlush:
             c.args[0]._attributes.get("langsmith.root_span")
             for c in proc.downstream.on_end.call_args_list
         )
-        assert format(tid, "032x") in proc._deferred_root_spans
+        assert tid in proc._deferred_root_by_trace
 
         # When the session finally ends, the complete root is exported once.
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
@@ -160,10 +165,8 @@ class TestForceFlush:
             for c in proc.downstream.on_end.call_args_list
             if c.args[0]._attributes.get("langsmith.root_span")
         )
-        assert (
-            json.loads(root._attributes["gen_ai.completion"])["messages"][0]["content"]
-            == "sunny"
-        )
+        prompt = json.loads(root._attributes["gen_ai.prompt"])["messages"]
+        assert prompt[-1]["content"] == "sunny"
 
     def test_shutdown_flushes_held_root(self):
         # shutdown IS terminal: a still-held root is flushed as a last resort.
@@ -180,18 +183,22 @@ class TestForceFlush:
 class TestEgressRecording:
     """expect_recording / complete_recording hold the root for late egress audio."""
 
+    def teardown_method(self):
+        set_thread_id(None)
+
+    def _start_conversation(self, proc, tid):
+        # The root's thread id comes from set_thread_id (captured at on_start),
+        # exactly as in production; clearing it after simulates the detached end.
+        set_thread_id("call-1")
+        proc.on_start(_make_span("job_entrypoint", parent=None, trace_id=tid))
+        set_thread_id(None)
+        proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=tid))
+
     def test_expect_holds_until_complete_with_audio(self):
         proc = _processor()
         tid = 0xABC
         proc.expect_recording("call-1")
-        proc.on_end(
-            _make_span(
-                "job_entrypoint",
-                {"langsmith.metadata.thread_id": "call-1"},
-                parent=None,
-                trace_id=tid,
-            )
-        )
+        self._start_conversation(proc, tid)
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
         # Session ended but recording still awaited → root NOT exported.
         assert not any(
@@ -213,14 +220,7 @@ class TestEgressRecording:
         proc = _processor()
         tid = 0xABC
         proc.expect_recording("call-1")
-        proc.on_end(
-            _make_span(
-                "job_entrypoint",
-                {"langsmith.metadata.thread_id": "call-1"},
-                parent=None,
-                trace_id=tid,
-            )
-        )
+        self._start_conversation(proc, tid)
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
         proc.complete_recording("call-1", None)
 
@@ -242,7 +242,7 @@ class TestStateTTL:
         proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=0xAAA))
         # A later, different conversation's root triggers eviction of the first.
         proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=0xBBB))
-        assert format(0xAAA, "032x") not in proc._deferred_root_spans
+        assert 0xAAA not in proc._deferred_root_by_trace
 
     def test_active_call_refreshes_transcript_ttl(self):
         proc = _processor(state_ttl_seconds=60)
@@ -257,7 +257,7 @@ class TestStateTTL:
                 "agent_turn", {"lk.response.text": "two"}, trace_id=tid, span_id=0x3
             )
         )
-        assert [m["content"] for m in proc._conversation_by_trace[tid]] == [
+        assert [m["content"] for m in proc._transcript_by_trace[tid]] == [
             "one",
             "two",
         ]
@@ -272,6 +272,7 @@ class TestThreadId:
     def test_set_thread_id_injected(self):
         proc = _processor()
         set_thread_id("conv-9")
+        proc.on_start(_make_span("job_entrypoint", parent=None))
         span = _make_span("agent_turn", {"lk.user_input": "x"}, span_id=0x2)
         proc.on_end(span)
         exported = proc.downstream.on_end.call_args.args[0]
@@ -303,39 +304,35 @@ class TestMessageFromEvent:
         return event
 
     def test_tool_calls_forwarded_unchanged(self):
-        proc = _processor()
         call = {
             "id": "call_1",
             "type": "function",
             "function": {"name": "lookup", "arguments": '{"q": "x"}'},
         }
-        msg = proc._message_from_event(
+        msg = build_message_from_event(
             "assistant", self._event(role="assistant", tool_calls=[call])
         )
         assert msg["tool_calls"] == [call]
 
     def test_tool_calls_json_string_parsed_to_object(self):
-        proc = _processor()
         call = {
             "id": "call_1",
             "type": "function",
             "function": {"name": "lookup", "arguments": "{}"},
         }
-        msg = proc._message_from_event(
+        msg = build_message_from_event(
             "assistant", self._event(tool_calls=[json.dumps(call)])
         )
         assert msg["tool_calls"] == [call]
 
     def test_unparseable_tool_call_dropped(self):
-        proc = _processor()
-        msg = proc._message_from_event(
+        msg = build_message_from_event(
             "assistant", self._event(tool_calls=["not json"])
         )
         assert "tool_calls" not in msg
 
     def test_tool_result_carries_id_and_name(self):
-        proc = _processor()
-        msg = proc._message_from_event(
+        msg = build_message_from_event(
             "tool", self._event(content="done", id="call_1", name="lookup")
         )
         assert msg["tool_call_id"] == "call_1"
@@ -350,15 +347,15 @@ class TestProviderAttribution:
         return proc.downstream.on_end.call_args.args[0]._attributes
 
     def test_normalize_provider_substring_and_host(self):
-        assert _normalize_provider("api.openai.com") == "openai"
-        assert _normalize_provider("beta.anthropic.com") == "anthropic"
-        assert _normalize_provider("https://api.deepgram.com/v1") == "deepgram"
-        assert _normalize_provider("cartesia") == "cartesia"
+        assert normalize_provider("api.openai.com") == "openai"
+        assert normalize_provider("beta.anthropic.com") == "anthropic"
+        assert normalize_provider("https://api.deepgram.com/v1") == "deepgram"
+        assert normalize_provider("cartesia") == "cartesia"
         # No known slug → host, stripped of scheme/path.
-        assert _normalize_provider("https://my-proxy.internal/x") == "my-proxy.internal"
+        assert normalize_provider("https://my-proxy.internal/x") == "my-proxy.internal"
         # Empty / placeholder → None (never stamp a non-matching provider).
-        assert _normalize_provider("unknown") is None
-        assert _normalize_provider(None) is None
+        assert normalize_provider("unknown") is None
+        assert normalize_provider(None) is None
 
     def test_stt_provider_from_metrics_metadata(self):
         proc = _processor()
