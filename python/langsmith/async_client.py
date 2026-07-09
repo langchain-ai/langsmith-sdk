@@ -233,16 +233,18 @@ class AsyncClient:
             self._oauth_access_token = self._profile_auth.oauth_access_token
         self._api_key = api_key
         _headers = self._compute_headers()
-        ls_client._validate_api_key_if_hosted(
-            api_url,
+        auth_value = (
             api_key
             or self._oauth_access_token
             or (
                 "profile-auth"
                 if self._profile_auth is not None and self._profile_auth.has_auth
                 else None
-            ),
+            )
+            or (self._workspace_id if self._workspace_id else None)
         )
+        ls_client._validate_api_key_if_hosted(api_url, auth_value)
+        ls_utils._validate_insecure_transport(api_url, auth_value)
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)

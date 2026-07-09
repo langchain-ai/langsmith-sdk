@@ -69,6 +69,24 @@ def test_is_localhost() -> None:
     assert not ls_utils._is_localhost("http://example.com:1984")
 
 
+def test_client_rejects_credentials_over_remote_http() -> None:
+    with pytest.raises(LangSmithUserError, match="Insecure API URL"):
+        Client(
+            api_url="HTTP://example.com:1984",
+            api_key="123",
+            auto_batch_tracing=False,
+        )
+
+
+def test_client_allows_credentials_over_local_http() -> None:
+    client = Client(
+        api_url="HTTP://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+    )
+    client.close()
+
+
 @pytest.mark.parametrize(
     "version,expect_warning",
     [

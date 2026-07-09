@@ -13,12 +13,21 @@ from unittest.mock import MagicMock, patch
 
 import attr
 import dataclasses_json
+import httpx
 import pytest
 from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
 from langsmith.run_helpers import get_current_run_tree, tracing_context
+
+
+def test_validate_insecure_transport_rejects_httpx_url() -> None:
+    with pytest.raises(ls_utils.LangSmithUserError, match="Insecure API URL"):
+        ls_utils._validate_insecure_transport(
+            httpx.URL("http://example.com:1984"),
+            "test-api-key",
+        )
 
 
 class LangSmithProjectNameTest(unittest.TestCase):

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from pytest_httpx import HTTPXMock
 
+from langsmith import utils as ls_utils
 from langsmith.sandbox import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -89,6 +90,14 @@ class TestSandboxClientInit:
         )
         assert client._http.headers.get("X-Api-Key") == "test-key"
         client.close()
+
+    def test_rejects_api_key_over_remote_http(self):
+        """Test remote HTTP endpoints cannot use API keys."""
+        with pytest.raises(ls_utils.LangSmithUserError, match="Insecure API URL"):
+            SandboxClient(
+                api_endpoint="HTTP://example.com:8080",
+                api_key="test-key",
+            )
 
     def test_api_key_from_environment(self):
         """Test API key from environment variable."""
@@ -1596,12 +1605,12 @@ class TestRegistries:
         client.close()
 
     def test_api_root_without_suffix(self):
-        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
-        assert client._api_root() == "http://test-server:8080"
+        client = SandboxClient(api_endpoint="http://localhost:8080", api_key="k")
+        assert client._api_root() == "http://localhost:8080"
         client.close()
 
     def test_registries_resource_is_cached(self):
-        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
+        client = SandboxClient(api_endpoint="http://localhost:8080", api_key="k")
         first = client.registries
         second = client.registries
         assert client._registries_client is not None
@@ -1611,10 +1620,10 @@ class TestRegistries:
     def test_registries_create(self, httpx_mock: HTTPXMock):
         httpx_mock.add_response(
             method="POST",
-            url="http://test-server:8080/v2/sandboxes/registries",
+            url="http://localhost:8080/v2/sandboxes/registries",
             json={"id": "reg-1", "name": "internal", "url": "registry.example.com"},
         )
-        client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
+        client = SandboxClient(api_endpoint="http://localhost:8080", api_key="k")
         registry = client.registries.create(
             name="internal",
             url="registry.example.com",

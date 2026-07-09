@@ -708,6 +708,7 @@ def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, 
         processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
         processed_api_key = api_key.strip().strip('"').strip("'")
         _validate_api_key_if_hosted(processed_url, processed_api_key)
+        ls_utils._validate_insecure_transport(processed_url, processed_api_key)
         processed_write_api_urls[processed_url] = processed_api_key
 
     return processed_write_api_urls
@@ -1180,17 +1181,22 @@ class Client:
                 self._profile_auth_headers = self._profile_auth.current_auth_headers()
                 self._oauth_access_token = self._profile_auth.oauth_access_token
             self.api_key = ls_utils.get_api_key(api_key_)
-            _validate_api_key_if_hosted(
-                self.api_url,
+            auth_value = (
                 self.api_key
                 or self._oauth_access_token
                 or (
                     "profile-auth"
                     if self._profile_auth is not None and self._profile_auth.has_auth
                     else None
-                ),
+                )
+                or (str(self._workspace_id) if self._workspace_id else None)
+            )
+            _validate_api_key_if_hosted(
+                self.api_url,
+                auth_value,
                 tracing_mode=resolved_mode,
             )
+            ls_utils._validate_insecure_transport(self.api_url, auth_value)
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (

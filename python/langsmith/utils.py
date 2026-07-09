@@ -795,6 +795,7 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         *iterables: Iterable[Any],
         timeout: Optional[float] = None,
         chunksize: int = 1,
+        buffersize: Optional[int] = None,
     ) -> Iterator[T]:
         """Return an iterator equivalent to stdlib map.
 
@@ -893,6 +894,21 @@ def _is_localhost(url: str) -> bool:
     except (socket.gaierror, RuntimeError):
         # RuntimeError catches pytest-socket's SocketBlockedError in test environments
         return False
+
+
+def _validate_insecure_transport(
+    api_url: str | httpx.URL, credential: Optional[str]
+) -> None:
+    """Prevent credentials from being sent to remote HTTP endpoints."""
+    if not credential:
+        return
+    url = str(api_url)
+    if urllib_parse.urlsplit(url).scheme.lower() == "http" and not _is_localhost(url):
+        raise LangSmithUserError(
+            "Insecure API URL ('http://') is not allowed when API credentials "
+            "are present. Use 'https://' for remote endpoints or localhost for "
+            "local development."
+        )
 
 
 @functools.lru_cache(maxsize=2)

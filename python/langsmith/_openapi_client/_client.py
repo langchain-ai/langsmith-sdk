@@ -106,12 +106,6 @@ class Langsmith(SyncAPIClient):
         if base_url is None:
             base_url = f"https://api.smith.langchain.com/"
 
-        if isinstance(base_url, str) and base_url.startswith("http://") and (api_key or tenant_id):
-            raise ValueError(
-                "Insecure base_url ('http://') is not allowed when API credentials are present. "
-                "Use 'https://' or remove the API key for local/dev use."
-            )
-
         custom_headers_env = os.environ.get("LANGCHAIN_CUSTOM_HEADERS")
         if custom_headers_env is not None:
             parsed: dict[str, str] = {}
@@ -367,12 +361,6 @@ class AsyncLangsmith(AsyncAPIClient):
             base_url = os.environ.get("LANGCHAIN_BASE_URL")
         if base_url is None:
             base_url = f"https://api.smith.langchain.com/"
-
-        if isinstance(base_url, str) and base_url.startswith("http://") and (api_key or tenant_id):
-            raise ValueError(
-                "Insecure base_url ('http://') is not allowed when API credentials are present. "
-                "Use 'https://' or remove the API key for local/dev use."
-            )
 
         custom_headers_env = os.environ.get("LANGCHAIN_CUSTOM_HEADERS")
         if custom_headers_env is not None:

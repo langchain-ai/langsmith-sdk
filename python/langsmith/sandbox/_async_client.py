@@ -111,6 +111,7 @@ class AsyncSandboxClient:
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
+        ls_utils._validate_insecure_transport(self._base_url, resolved_api_key)
         self._api_key = resolved_api_key
         self._timeout = timeout
         self._max_retries = max_retries
