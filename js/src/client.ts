@@ -767,6 +767,7 @@ export class AutoBatchQueue {
     size: number;
     apiKey?: string;
     apiUrl?: string;
+    workspaceId?: string;
   }[] = [];
 
   sizeBytes = 0;
@@ -812,6 +813,7 @@ export class AutoBatchQueue {
       otelContext: item.otelContext,
       apiKey: item.apiKey,
       apiUrl: item.apiUrl,
+      workspaceId: item.workspaceId,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -861,6 +863,7 @@ export class AutoBatchQueue {
         otelContext: it.otelContext,
         apiKey: it.apiKey,
         apiUrl: it.apiUrl,
+        workspaceId: it.workspaceId,
         size: it.size,
       })),
       () => popped.forEach((it) => it.itemPromiseResolve()),

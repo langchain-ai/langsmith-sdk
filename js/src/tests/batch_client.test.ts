@@ -495,6 +495,85 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
+    it("should preserve workspace override for auto-batched create and update", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch,
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+
+      const projectName = "__test_batch";
+      const workspaceId = "override-workspace-id";
+      const createRunId = uuidv4();
+      const updateRunId = uuidv4();
+      const { dottedOrder: createDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        createRunId,
+      );
+      const { dottedOrder: updateDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        updateRunId,
+      );
+
+      await client.createRun(
+        {
+          id: createRunId,
+          project_name: projectName,
+          name: "test_create_run",
+          run_type: "llm",
+          inputs: { text: "hello world" },
+          trace_id: createRunId,
+          dotted_order: createDottedOrder,
+        },
+        { workspaceId },
+      );
+
+      await client.updateRun(
+        updateRunId,
+        {
+          outputs: { output: ["Hi"] },
+          dotted_order: updateDottedOrder,
+          trace_id: updateRunId,
+        },
+        { workspaceId },
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calledRequestParam.headers["x-tenant-id"]).toBe(workspaceId);
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+        post: [
+          expect.objectContaining({
+            id: createRunId,
+            trace_id: createRunId,
+            dotted_order: createDottedOrder,
+          }),
+        ],
+        patch: [
+          expect.objectContaining({
+            id: updateRunId,
+            outputs: {
+              output: ["Hi"],
+            },
+            trace_id: updateRunId,
+            dotted_order: updateDottedOrder,
+          }),
+        ],
+      });
+    });
+
     it("server info fetch should retry even if initial call fails", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
