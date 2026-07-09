@@ -233,18 +233,16 @@ class AsyncClient:
             self._oauth_access_token = self._profile_auth.oauth_access_token
         self._api_key = api_key
         _headers = self._compute_headers()
-        auth_value = (
+        ls_client._validate_api_key_if_hosted(
+            api_url,
             api_key
             or self._oauth_access_token
             or (
                 "profile-auth"
                 if self._profile_auth is not None and self._profile_auth.has_auth
                 else None
-            )
-            or (self._workspace_id if self._workspace_id else None)
+            ),
         )
-        ls_client._validate_api_key_if_hosted(api_url, auth_value)
-        ls_utils._validate_insecure_transport(api_url, auth_value)
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
@@ -296,13 +294,7 @@ class AsyncClient:
         else:
             self._cache = None
 
-        self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
-            api_key=self._api_key,
-            tenant_id=self._workspace_id,
-            base_url=str(self._client.base_url),
-            timeout=self._client.timeout,
-            default_headers=_headers or None,
-        )
+        self._langsmith_api: Optional[_langsmith_api_module.AsyncLangsmith] = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -311,35 +303,59 @@ class AsyncClient:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _get_langsmith_api(self) -> _langsmith_api_module.AsyncLangsmith:
+        if self._langsmith_api is None:
+            auth_value = (
+                self._api_key
+                or self._oauth_access_token
+                or (
+                    "profile-auth"
+                    if self._profile_auth is not None and self._profile_auth.has_auth
+                    else None
+                )
+                or (self._workspace_id if self._workspace_id else None)
+            )
+            ls_utils._validate_insecure_transport(
+                str(self._client.base_url), auth_value
+            )
+            self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
+                api_key=self._api_key,
+                tenant_id=self._workspace_id,
+                base_url=str(self._client.base_url),
+                timeout=self._client.timeout,
+                default_headers=self._compute_headers() or None,
+            )
+        return self._langsmith_api
+
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
-        return self._langsmith_api.runs
+        return self._get_langsmith_api().runs
 
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
-        return self._langsmith_api.online_evaluators
+        return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
-        return self._langsmith_api.sandboxes
+        return self._get_langsmith_api().sandboxes
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
-        return self._langsmith_api.datasets
+        return self._get_langsmith_api().datasets
 
     @property
     def threads(self) -> AsyncThreadsResource:
         """Access the threads resource (query, stats, list_traces)."""
-        return self._langsmith_api.threads
+        return self._get_langsmith_api().threads
 
     @property
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
-        return self._langsmith_api.traces
+        return self._get_langsmith_api().traces
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
@@ -358,6 +374,8 @@ class AsyncClient:
         if self._cache is not None:
             await self._cache.stop()
         await self._client.aclose()
+        if self._langsmith_api is not None:
+            await self._langsmith_api.close()
 
     def __repr__(self) -> str:
         """Return a string representation of the instance.

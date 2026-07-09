@@ -902,8 +902,9 @@ def _validate_insecure_transport(
     """Prevent credentials from being sent to remote HTTP endpoints."""
     if not credential:
         return
-    url = str(api_url)
-    if urllib_parse.urlsplit(url).scheme.lower() == "http" and not _is_localhost(url):
+    parsed_url = urllib_parse.urlsplit(str(api_url))
+    host = (parsed_url.hostname or "").lower()
+    if parsed_url.scheme.lower() == "http" and host not in _LOCALHOST_NAMES:
         raise LangSmithUserError(
             "Insecure API URL ('http://') is not allowed when API credentials "
             "are present. Use 'https://' for remote endpoints or localhost for "

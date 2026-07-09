@@ -1181,22 +1181,17 @@ class Client:
                 self._profile_auth_headers = self._profile_auth.current_auth_headers()
                 self._oauth_access_token = self._profile_auth.oauth_access_token
             self.api_key = ls_utils.get_api_key(api_key_)
-            auth_value = (
+            _validate_api_key_if_hosted(
+                self.api_url,
                 self.api_key
                 or self._oauth_access_token
                 or (
                     "profile-auth"
                     if self._profile_auth is not None and self._profile_auth.has_auth
                     else None
-                )
-                or (str(self._workspace_id) if self._workspace_id else None)
-            )
-            _validate_api_key_if_hosted(
-                self.api_url,
-                auth_value,
+                ),
                 tracing_mode=resolved_mode,
             )
-            ls_utils._validate_insecure_transport(self.api_url, auth_value)
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
@@ -1455,6 +1450,17 @@ class Client:
 
     def _get_langsmith_api(self) -> LangsmithOpenAPIClient:
         if self._langsmith_api is None:
+            auth_value = (
+                self.api_key
+                or self._oauth_access_token
+                or (
+                    "profile-auth"
+                    if self._profile_auth is not None and self._profile_auth.has_auth
+                    else None
+                )
+                or (str(self._workspace_id) if self._workspace_id else None)
+            )
+            ls_utils._validate_insecure_transport(self.api_url, auth_value)
             self._langsmith_api = LangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
