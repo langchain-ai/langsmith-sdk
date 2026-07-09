@@ -1,0 +1,49 @@
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_3bf959a348e45d::t_11d772a7c75a8e 27-30
+  s_3bf959a348e45d::t_19a0f88c411222 227,229-230
+  s_3bf959a348e45d::t_ceaee9d3369a3d 492
+  s_3bf959a348e45d::t_3a31d0571df54f 232,269-271,312-313,465,472
+  s_3bf959a348e45d::t_3a3405d597db88 317-319
+python/langsmith/integrations/livekit/processor.py
+  s_3bf959a348e45d::t_e9dca9e8443cc8 21-25
+python/langsmith/_internal/voice/_helpers.py
+  s_3bf959a348e45d::t_a3ee5f99175f1d 1-45
+python/langsmith/integrations/livekit/_helpers.py
+  s_3bf959a348e45d::t_027f48ee2f8741 13-14
+python/langsmith/integrations/pipecat/processor.py
+  s_3bf959a348e45d::t_4786997b9652bc 64-65,70-92
+  h_3a9d271fbf3886 279-280
+  s_3bf959a348e45d::t_0f2958f0aab4db 168-171
+  s_3bf959a348e45d::t_f555f8248e377f 290,293,300-302
+  s_3bf959a348e45d::t_bd44aa3339e98b 138-140
+  s_3bf959a348e45d::t_746e6ac0eb4f03 31-32,49-50
+  s_3bf959a348e45d::t_9589faf76f5132 128
+  s_3bf959a348e45d::t_23a1577cb4f771 3-24,38-41,48,57,66-69,93-94,113,115,126-127,131-132,143-147,172,178,199,201-202,204-205,207-208,214,218,222,232,234-235,237,244,247,249-250,255-259,264,272,274,276-277,284-285,307,310
+  s_3bf959a348e45d::t_70ec85c333a348 151-154
+  s_3bf959a348e45d::t_82dc67a52a8cdb 224,262,308
+  s_3bf959a348e45d::t_34f888e675b6f7 51-53
+  s_3bf959a348e45d::t_d42bf956e973c7 54
+python/langsmith/integrations/pipecat/_helpers.py
+  s_3bf959a348e45d::t_4f14392bd6ae4e 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "b0b8a61e296a63a26f78985d931e4c7dd5eb1f50",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3bf959a348e45d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65b603b3-da84-497d-95fc-f4ba582ebc9b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
