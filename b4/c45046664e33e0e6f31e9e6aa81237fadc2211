@@ -1,0 +1,26 @@
+js/scripts/create-entrypoints.js
+  s_c2c100963ad30a::t_77d3d879c090a9 35
+js/.gitignore
+  s_c2c100963ad30a::t_cde6b323169b7e 127-130
+js/package.json
+  s_c2c100963ad30a::t_cde6b323169b7e 108-111,478-485
+  s_c2c100963ad30a::t_4c2b70def658b7 486
+js/tsconfig.json
+  s_c2c100963ad30a::t_cde6b323169b7e 24-27,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "b4c45046664e33e0e6f31e9e6aa81237fadc2211",
+  "prompts": {},
+  "sessions": {
+    "s_c2c100963ad30a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6c09f9a0-69ad-4a29-aae7-dafa5f1d6579",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
