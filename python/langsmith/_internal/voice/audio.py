@@ -1,8 +1,7 @@
 """WAV reconstruction for the voice integrations.
 
-* ``pcm_to_wav`` — wrap already-merged PCM16 bytes (e.g. the output of Pipecat's
-  ``AudioBufferProcessor``) in a WAV container. Used by the Track-A span
-  processors.
+* ``pcm_to_wav`` — wrap already-merged PCM16 bytes in a WAV container. Used by the
+  Pipecat processor (whose ``AudioBufferProcessor`` emits merged stereo audio).
 * ``build_stereo_session_wav`` — reconstruct one stereo conversation WAV from the
   timestamped PCM16 chunks each side recorded (L=user, R=agent), laid out at
   natural play time so bursts don't overlap. Used by the Track-B ``EventSession``.

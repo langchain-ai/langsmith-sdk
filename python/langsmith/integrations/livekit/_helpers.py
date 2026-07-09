@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
+from langsmith._internal.voice._helpers import try_parse_json_object
+
 # The instrumentation scope LiveKit's tracer is created under
 # (``get_tracer("livekit-agents")``). Every span LiveKit emits carries it, so it
 # is how we tell a LiveKit span apart from a non-LiveKit run riding the same OTel
@@ -66,31 +68,6 @@ def is_livekit_span(span: Any) -> bool:
     return getattr(scope, "name", None) == _LIVEKIT_INSTRUMENTATION_SCOPE
 
 
-def build_user_message(content: str) -> dict:
-    """Build a ``user`` chat message for the ``gen_ai.*`` message keys."""
-    return {"role": "user", "content": content}
-
-
-def build_assistant_message(content: str) -> dict:
-    """Build an ``assistant`` chat message for the ``gen_ai.*`` message keys."""
-    return {"role": "assistant", "content": content}
-
-
-def build_tool_message(
-    content: str,
-    *,
-    tool_call_id: Optional[str] = None,
-    name: Optional[str] = None,
-) -> dict:
-    """Build a ``tool`` result message, with its call id / name when present."""
-    msg: dict = {"role": "tool", "content": content}
-    if tool_call_id:
-        msg["tool_call_id"] = str(tool_call_id)
-    if name:
-        msg["name"] = str(name)
-    return msg
-
-
 def parse_tool_calls(raw_tool_calls: Any) -> list[dict]:
     """Parse an event's ``tool_calls`` to OpenAI-shape dicts (JSON strings decoded).
 
@@ -106,20 +83,6 @@ def parse_tool_calls(raw_tool_calls: Any) -> list[dict]:
         if isinstance(raw, dict):
             tool_calls.append(raw)
     return tool_calls
-
-
-def try_parse_json_object(value: Any) -> Optional[dict]:
-    """Return ``value`` parsed as a dict if it's a JSON-object string, else None."""
-    if not isinstance(value, str):
-        return None
-    s = value.strip()
-    if not (s.startswith("{") and s.endswith("}")):
-        return None
-    try:
-        obj = json.loads(s)
-    except (json.JSONDecodeError, ValueError):
-        return None
-    return obj if isinstance(obj, dict) else None
 
 
 def extract_provider_from_lk_metrics(metrics: Any) -> Optional[str]:
@@ -173,6 +136,21 @@ def flatten_lk_attributes_to_ls_metadata(
         ):
             flat[name] = list(v)
     return flat
+
+
+def build_tool_message(
+    content: str,
+    *,
+    tool_call_id: Optional[str] = None,
+    name: Optional[str] = None,
+) -> dict:
+    """Build a ``tool`` result message, with its call id / name when present."""
+    msg: dict = {"role": "tool", "content": content}
+    if tool_call_id:
+        msg["tool_call_id"] = str(tool_call_id)
+    if name:
+        msg["name"] = str(name)
+    return msg
 
 
 def build_message_from_event(role: str, event: Any) -> dict:

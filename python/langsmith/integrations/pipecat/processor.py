@@ -1,71 +1,101 @@
 """OTel → LangSmith bridge for Pipecat.
 
-Pipecat emits OTel spans named ``conversation``, ``turn``, ``stt``, ``llm``, and
-``tts`` with attributes (``transcript``, ``input``/``output``, ``text``,
-``turn.number``, …) that LangSmith's OTLP ingester doesn't recognize. This
-:class:`PipecatLangSmithSpanProcessor` rewrites each span type into the
-``gen_ai.*`` / ``langsmith.*`` namespaces LangSmith keys off, renders the whole
-conversation onto the root span, and (optionally) attaches the recorded audio
-there. It inherits the downstream wrapping, exporter, ``thread_id`` stamping,
-and message helpers from :class:`BaseLangSmithSpanProcessor`.
+Rewrites Pipecat's ``conversation`` / ``turn`` / ``stt`` / ``llm`` / ``tts`` OTel
+spans into the ``gen_ai.*`` / ``langsmith.*`` namespaces LangSmith ingests, rolls
+the whole conversation onto the root ``conversation`` span, and optionally
+attaches the recorded audio there; non-Pipecat spans pass through untouched.
+Shared export / ``thread_id`` / message plumbing lives in
+:class:`BaseLangSmithSpanProcessor`.
 
-Trace shape in LangSmith::
+Trace shape::
 
-    conversation                      (root; whole transcript + conversation WAV)
-    └── turn × N                      (per exchange; carries was_interrupted)
-        ├── stt                       (audio → transcript)
-        ├── llm                       (the LLM stage; kind set by llm_span_kind)
-        └── tts                       (response text → audio)
+    conversation                 (root; whole transcript + conversation WAV)
+    └── turn × N
+        ├── stt                  (audio → transcript)
+        ├── llm                  (the LLM stage; kind set by llm_span_kind)
+        └── tts                  (response text → audio)
 
-Audio recording uses Pipecat's own
-:class:`~pipecat.processors.audio.audio_buffer_processor.AudioBufferProcessor`:
-call :meth:`attach_audio_buffer` to wire its ``on_audio_data`` event, and the
-processor accumulates the merged PCM and attaches it (as a WAV) to the root span
-when the conversation ends. Place the ``AudioBufferProcessor`` *after*
-``transport.output()`` so it captures the bot audio as actually played
-(post-barge-in-truncation) plus the user audio.
+Audio uses Pipecat's ``AudioBufferProcessor``: wire it with
+:meth:`attach_audio_buffer` (placed after ``transport.output()``, constructed
+with ``num_channels=2``); the merged stereo (user-left / bot-right) it emits is
+attached as a WAV when the conversation ends.
 
-``llm_span_kind`` controls the kind of the span Pipecat names ``llm``. Keep the
-default ``"llm"`` when that stage does its own inference (stock services such as
-``OpenAILLMService``). Pass ``"chain"`` when it only orchestrates nested runs
-that are exported to LangSmith themselves (an in-process LangGraph/LangChain
-brain): the nested ``model`` runs are then the real ``llm`` inference, and
-tagging the wrapper ``llm`` too would double-count the conversation in the
-Messages view. This can't be auto-detected at span-end time (the nested runs are
-exported later, from a background queue), so the caller states it explicitly.
+``llm_span_kind`` sets the kind for Pipecat's ``llm`` span — keep ``"llm"`` for a
+service that does its own inference; pass ``"chain"`` when it only orchestrates
+nested runs exported separately (else the conversation double-counts).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import MutableMapping
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Optional
 
 from cachetools import TTLCache
 from opentelemetry.sdk.trace import SpanProcessor
 
 from langsmith._internal._package_version import get_package_version
+from langsmith._internal.voice._helpers import (
+    build_assistant_message,
+    build_user_message,
+)
 from langsmith._internal.voice.audio import pcm_to_wav
 from langsmith._internal.voice.base_span_processor import (
     BaseLangSmithSpanProcessor,
     TranslatedSpan,
 )
 
+from ._helpers import build_completion_message, parse_llm_messages
+
+if TYPE_CHECKING:
+    from pipecat.processors.audio.audio_buffer_processor import (  # type: ignore[import-not-found]
+        AudioBufferProcessor,
+    )
+
 logger = logging.getLogger(__name__)
 
-# Default lifetime (seconds) for the per-conversation state held between a
-# trace's first and last span. The normal path frees it when the conversation
-# span ends; the TTL bounds it for conversations that never emit that span
-# (crash, cancelled task, dropped connection).
+# Lifetime / cap for per-conversation state; bounds memory for calls that never end.
 DEFAULT_STATE_TTL_SECONDS = 3600.0
-
-# Hard ceiling on tracked conversations, independent of the TTL — a backstop
-# against a flood of new conversations within one TTL window (oldest evicted
-# first). The TTL is the governing limit in practice.
 DEFAULT_STATE_MAXSIZE = 100_000
 
 _WAV_HEADER_BYTES = 44
+
+
+@dataclass
+class _AudioRecord:
+    """Merged PCM accumulated for one conversation, plus its WAV parameters.
+
+    Pipecat's ``AudioBufferProcessor`` emits already-merged audio — stereo
+    (user-left / bot-right) when constructed with ``num_channels=2`` — so we just
+    accumulate and wrap it.
+    """
+
+    sample_rate: int
+    num_channels: int
+    pcm: bytearray = field(default_factory=bytearray)
+    audio_truncated: bool = False
+
+    def extend(
+        self,
+        audio: bytes,
+        sample_rate: int,
+        num_channels: int,
+        limit_bytes: Optional[int],
+    ) -> None:
+        """Append PCM (truncating at ``limit_bytes``) and refresh the WAV params."""
+        self.sample_rate = sample_rate
+        self.num_channels = num_channels
+        if limit_bytes is not None:
+            remaining = limit_bytes - len(self.pcm)
+            remaining -= remaining % (2 * num_channels)  # keep whole frames
+            if remaining <= 0:
+                self.audio_truncated = True
+                return
+            if len(audio) > remaining:
+                self.audio_truncated = True
+                audio = audio[:remaining]
+        self.pcm.extend(audio)
 
 
 class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
@@ -86,14 +116,9 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """Create the processor.
 
         Args:
-            downstream_processor: where rewritten spans are forwarded; defaults
-                to a LangSmith OTLP exporter (see the base class).
-            llm_span_kind: LangSmith run kind for Pipecat's ``llm`` span (see the
-                module docstring).
+            llm_span_kind: LangSmith run kind for Pipecat's ``llm`` span.
             audio_mime_type: MIME type for the attached conversation recording.
-            state_ttl_seconds: lifetime for the per-conversation state held
-                between a trace's first and last span; the backstop that frees
-                state for conversations that never emit their end span.
+            state_ttl_seconds: lifetime for per-conversation state.
         """
         super().__init__(
             downstream_processor,
@@ -104,45 +129,37 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
         self._llm_span_kind = llm_span_kind
         self._audio_mime_type = audio_mime_type
-        # NB: ``TTLCache`` is not thread-safe. Both caches are mutated only from
-        # the single Pipecat asyncio event loop (``on_end`` and
-        # ``_accumulate_audio`` both run there); ending spans off that loop would
-        # need external synchronization.
-        # The latest llm request's full context per trace — each request carries
-        # the whole history, so the last snapshot IS the conversation. Rendered
-        # onto the root ``conversation`` span, which ends last. TTL-bounded so an
-        # abandoned conversation (no end span) can't leak it.
-        self._conversation_by_trace: MutableMapping[str, list] = TTLCache(
+        # trace_id -> latest llm context (the full history == the conversation),
+        # rendered onto the root ``conversation`` span, which ends last.
+        self._transcript_by_trace: MutableMapping[int, list[dict[str, Any]]] = TTLCache(
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
         )
-        # Merged PCM accumulated from a Pipecat AudioBufferProcessor (see
-        # attach_audio_buffer), keyed by conversation id. Each value carries the
-        # PCM bytearray, sample rate, channel count, and truncation flag. Also
-        # TTL-bounded — these entries hold the raw audio and are the larger leak.
-        self._audio_by_conversation: MutableMapping[str, dict[str, Any]] = TTLCache(
+        # conversation id -> merged PCM from an AudioBufferProcessor.
+        self._audio_by_conversation: MutableMapping[str, _AudioRecord] = TTLCache(
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
         )
 
     # -- audio buffer registration -------------------------------------------
 
-    def attach_audio_buffer(self, audio_buffer: Any, conversation_id: str) -> None:
+    def attach_audio_buffer(
+        self, audio_buffer: AudioBufferProcessor, conversation_id: str
+    ) -> None:
         """Record this conversation's audio from a Pipecat ``AudioBufferProcessor``.
 
-        Registers an ``on_audio_data`` handler on ``audio_buffer`` that
-        accumulates the merged PCM for ``conversation_id``; it's encoded to a WAV
-        and attached to the root span when the ``conversation`` span ends. The
-        ``conversation_id`` must match the one set on ``PipelineTask`` (so it
-        appears on the ``conversation`` span).
-
-        Place the ``AudioBufferProcessor`` after ``transport.output()`` and start
-        it with ``await audio_buffer.start_recording()`` once the session is
-        running. Construct it with a non-zero ``buffer_size`` so audio streams in
-        periodically — with the default single-shot emission, the final chunk can
-        arrive after the conversation span has already been exported.
+        Registers an ``on_audio_data`` handler that accumulates the merged PCM
+        Pipecat emits — construct the buffer with ``num_channels=2`` for a stereo
+        (user-left / bot-right) recording that preserves barge-in overlap — and
+        attaches it as a WAV when the ``conversation`` span ends.
+        ``conversation_id`` must match the ``PipelineTask`` id. Place the buffer
+        after ``transport.output()`` and give it a non-zero ``buffer_size`` so the
+        final chunk arrives before the span is exported.
         """
 
         async def _on_audio_data(
-            buffer: Any, audio: bytes, sample_rate: int, num_channels: int
+            _buffer: AudioBufferProcessor,
+            audio: bytes,
+            sample_rate: int,
+            num_channels: int,
         ) -> None:
             self._accumulate_audio(conversation_id, audio, sample_rate, num_channels)
 
@@ -154,61 +171,42 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         return max(0, self.audio_size_limit_bytes - _WAV_HEADER_BYTES)
 
     def _accumulate_audio(
-        self, conversation_id: str, audio: bytes, sample_rate: int, num_channels: int
+        self,
+        conversation_id: str,
+        audio: bytes,
+        sample_rate: int,
+        num_channels: int,
     ) -> None:
         rec = self._audio_by_conversation.get(conversation_id)
         if rec is None:
-            rec = {
-                "pcm": bytearray(),
-                "sample_rate": sample_rate,
-                "num_channels": num_channels,
-                "audio_truncated": False,
-            }
-        pcm_limit_bytes = self._pcm_audio_size_limit_bytes()
-        if pcm_limit_bytes is not None:
-            remaining = pcm_limit_bytes - len(rec["pcm"])
-            remaining -= remaining % 2
-            if remaining <= 0:
-                rec["audio_truncated"] = True
-                rec["sample_rate"] = sample_rate
-                rec["num_channels"] = num_channels
-                self._audio_by_conversation[conversation_id] = rec
-                return
-            if len(audio) > remaining:
-                rec["audio_truncated"] = True
-                audio = audio[:remaining]
-        rec["pcm"].extend(audio)
-        rec["sample_rate"] = sample_rate
-        rec["num_channels"] = num_channels
-        # Re-assign (not just mutate) so the TTL timestamp is refreshed — an
-        # active call streaming audio for longer than the TTL must not be
-        # evicted mid-conversation.
+            if num_channels != 2:
+                logger.warning(
+                    "langsmith voice: AudioBufferProcessor num_channels=%d; use "
+                    "num_channels=2 for a stereo (user-left/bot-right) recording "
+                    "that preserves barge-in overlap.",
+                    num_channels,
+                )
+            rec = _AudioRecord(sample_rate=sample_rate, num_channels=num_channels)
+        rec.extend(audio, sample_rate, num_channels, self._pcm_audio_size_limit_bytes())
+        # Re-assign (not just mutate) so each chunk refreshes the cache TTL.
         self._audio_by_conversation[conversation_id] = rec
 
     # -- dispatch -------------------------------------------------------------
 
     def _dispatch(self, tspan: TranslatedSpan) -> bool:
-        trace_id = format(tspan.span.context.trace_id, "032x")
+        trace_id = tspan.span.context.trace_id
         name = tspan.span.name
 
         if name == "stt":
             self._handle_stt(tspan)
-            tspan.exclude_from_message_view()
         elif name == "llm":
             self._handle_llm(tspan, trace_id)
         elif name == "tts":
             self._handle_tts(tspan)
-            tspan.exclude_from_message_view()
         elif name == "turn":
             self._handle_turn(tspan)
         elif name == "conversation":
             self._handle_conversation(tspan, trace_id)
-        # Any other span (e.g. nested LangChain/LangGraph runs riding the same
-        # OTel provider) already arrives in LangSmith's native shape, so it's
-        # exported untouched.
-        #
-        # Pipecat's ``conversation`` span genuinely ends last, so nothing is
-        # deferred: return True to have the base export every span once.
         return True
 
     # -- per-span-type handlers ----------------------------------------------
@@ -217,72 +215,32 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """STT span: audio input → transcribed text."""
         transcript = tspan.attributes.get("transcript", "")
         tspan.set_kind("llm")
-        tspan.set_messages(
-            prompt=[{"role": "user", "content": f'Audio for: "{transcript}"'}]
-        )
+        tspan.set_messages(prompt=[build_user_message(f'Audio for: "{transcript}"')])
         if transcript:
-            tspan.set_messages(
-                completion=[{"role": "assistant", "content": str(transcript)}]
-            )
+            tspan.set_messages(completion=[build_assistant_message(str(transcript))])
+        tspan.exclude_from_message_view()
 
-    @classmethod
-    def _completion_message(cls, output_data: Any) -> dict:
-        """Build the assistant completion message for the ``llm`` span.
+    def _handle_llm(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """``llm`` span: forward the request history and reply verbatim.
 
-        Pipecat's ``output`` attribute is normally the assistant's text. But if a
-        service emits the structured response instead (a dict carrying
-        ``tool_calls``), forward it unchanged in its OpenAI shape so LangSmith
-        renders the tool calls rather than flattening them to a string. Anything
-        else — plain text, or JSON that isn't a tool-call message — stays as text
-        content, preserving the existing behavior.
-        """
-        parsed: Any = output_data
-        if isinstance(output_data, str):
-            try:
-                parsed = json.loads(output_data)
-            except json.JSONDecodeError:
-                parsed = None
-        if isinstance(parsed, dict) and parsed.get("tool_calls"):
-            return {"role": "assistant", **parsed}
-        content = output_data if isinstance(output_data, str) else str(output_data)
-        return {"role": "assistant", "content": content}
-
-    def _handle_llm(self, tspan: TranslatedSpan, trace_id: str) -> None:
-        """Framework ``llm`` span: the LLM stage of the pipeline.
-
-        Pipecat logs the request history in the LLM provider's own message format
-        (via the service's logging adapter). We forward it unchanged — LangSmith
-        reads the messages directly from ``gen_ai.prompt`` — so the trace mirrors
-        exactly what the model was sent.
+        Each request's ``input`` carries the whole history, so the latest snapshot
+        is kept per trace as the conversation the root renders.
         """
         input_data = tspan.attributes.get("input", "")
         output_data = tspan.attributes.get("output", "")
         tspan.set_kind(self._llm_span_kind)
 
-        try:
-            raw_messages = json.loads(input_data)
-        except (json.JSONDecodeError, TypeError):
-            raw_messages = []
-        messages = [
-            m
-            for m in (raw_messages if isinstance(raw_messages, list) else [])
-            if isinstance(m, dict)
-        ]
-
+        messages = parse_llm_messages(input_data)
         if messages:
             tspan.set_messages(prompt=messages)
         if output_data:
-            tspan.set_messages(completion=[self._completion_message(output_data)])
+            tspan.set_messages(completion=[build_completion_message(output_data)])
 
-        # Each request's input carries the full history, so the latest snapshot
-        # IS the conversation — kept per trace for the root span to render. Reuse
-        # _completion_message so the root transcript and this span's completion
-        # render the assistant turn identically (tool calls included).
         transcript = [m for m in messages if m.get("role") != "system"]
         if output_data:
-            transcript.append(self._completion_message(output_data))
+            transcript.append(build_completion_message(output_data))
         if transcript:
-            self._conversation_by_trace[trace_id] = transcript
+            self._transcript_by_trace[trace_id] = transcript
 
     def _handle_tts(self, tspan: TranslatedSpan) -> None:
         """TTS span: text → audio. The voice is metadata, not content."""
@@ -290,50 +248,39 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("llm")
         voice_id = tspan.attributes.get("voice_id")
         if voice_id:
-            tspan.attributes["langsmith.metadata.voice_id"] = str(voice_id)
+            tspan.set_metadata("voice_id", str(voice_id))
         tspan.set_messages(
-            prompt=[{"role": "user", "content": str(text)}],
-            completion=[
-                {"role": "assistant", "content": f'Generated audio for: "{text}"'}
-            ],
+            prompt=[build_user_message(str(text))],
+            completion=[build_assistant_message(f'Generated audio for: "{text}"')],
         )
+        tspan.exclude_from_message_view()
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Turn span: a framework wrapper around one exchange (a ``chain``)."""
         tspan.set_kind("chain")
         turn_number = tspan.attributes.get("turn.number")
         if turn_number is not None:
-            tspan.attributes["langsmith.metadata.turn_number"] = turn_number
+            tspan.set_metadata("turn_number", turn_number)
         was_interrupted = tspan.attributes.get("turn.was_interrupted")
         if was_interrupted is not None:
-            tspan.attributes["langsmith.metadata.turn_was_interrupted"] = (
-                was_interrupted
-            )
+            tspan.set_metadata("turn_was_interrupted", was_interrupted)
 
-    def _handle_conversation(self, tspan: TranslatedSpan, trace_id: str) -> None:
-        """Conversation span: the whole session; the LangSmith root.
-
-        Input = the opening message; output = everything after it. Pipecat's
-        conversation span genuinely ends last, so no deferral is needed.
-        """
+    def _handle_conversation(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """Conversation span: the whole session; the LangSmith root."""
         conversation_id = tspan.attributes.get(
             "conversation.id", ""
         ) or tspan.attributes.get("conversation_id", "")
         tspan.set_kind("chain")
-        tspan.attributes["langsmith.root_span"] = True
-        tspan.attributes["langsmith.metadata.ls_modality"] = "audio"
-        tspan.attributes["langsmith.metadata.ls_integration"] = "pipecat"
-        # "" not None: OTel span attributes reject a null value (unlike the
-        # RunTree metadata path); pipecat-ai is a hard dep, so this is ~always set.
-        tspan.attributes["langsmith.metadata.ls_integration_version"] = (
-            get_package_version("pipecat-ai") or ""
+        tspan.set_root_span(True)
+        tspan.set_metadata("ls_modality", "audio")
+        tspan.set_metadata("ls_integration", "pipecat")
+        tspan.set_metadata(
+            "ls_integration_version", get_package_version("pipecat-ai") or ""
         )
 
-        messages = self._conversation_by_trace.get(trace_id, [])
+        messages = self._transcript_by_trace.get(trace_id, [])
         if messages:
-            tspan.set_messages(prompt=messages[:1])
-            if len(messages) > 1:
-                tspan.set_messages(completion=messages[1:])
+            tspan.set_messages(prompt=messages)
 
         self._attach_conversation_audio(tspan, conversation_id)
         self._cleanup_conversation(trace_id, conversation_id)
@@ -341,44 +288,42 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     # -- audio attachment -----------------------------------------------------
 
     def _attach_conversation_audio(
-        self, tspan: TranslatedSpan, conversation_id: Any
+        self, tspan: TranslatedSpan, conversation_id: str
     ) -> None:
-        """Encode the accumulated PCM (from the AudioBufferProcessor) and attach it.
+        """Encode the accumulated PCM and attach it, keyed strictly by id.
 
-        Looked up strictly by ``conversation_id`` — never by "the only recording
-        in flight": a heuristic match could attach a different caller's audio to
-        this trace (a privacy leak on a multi-tenant server). The id passed to
-        :meth:`attach_audio_buffer` must match the ``PipelineTask``
-        ``conversation_id``; a mismatch attaches nothing (logged below).
+        Never falls back to "the only recording in flight" — a heuristic match
+        could attach another caller's audio to this trace (a privacy leak).
         """
-        rec = self._audio_by_conversation.get(conversation_id)
-        if rec is None:
+        recording = self._audio_by_conversation.get(conversation_id)
+        if recording is None:
             if len(self._audio_by_conversation) > 0:
                 logger.debug(
                     "langsmith voice: no recording for conversation_id=%r "
-                    "(%d recording(s) in flight under other ids); audio not "
-                    "attached. Ensure the id passed to attach_audio_buffer "
-                    "matches the PipelineTask conversation_id.",
+                    "(%d in flight under other ids); audio not attached. Ensure "
+                    "attach_audio_buffer's id matches the PipelineTask id.",
                     conversation_id,
                     len(self._audio_by_conversation),
                 )
             return
-        if not rec["pcm"]:
+        if not recording.pcm:
             return
         pcm_limit_bytes = self._pcm_audio_size_limit_bytes()
-        if pcm_limit_bytes is not None and len(rec["pcm"]) > pcm_limit_bytes:
+        if pcm_limit_bytes is not None and len(recording.pcm) > pcm_limit_bytes:
             logger.warning(
                 "langsmith voice: skipped oversize pipecat audio for "
                 "conversation_id=%r",
                 conversation_id,
             )
             return
-        wav = pcm_to_wav(bytes(rec["pcm"]), rec["sample_rate"], rec["num_channels"])
+        wav = pcm_to_wav(
+            bytes(recording.pcm), recording.sample_rate, recording.num_channels
+        )
         self._attach_audio(
             tspan, name="conversation.wav", data=wav, mime_type=self._audio_mime_type
         )
 
-    def _cleanup_conversation(self, trace_id: str, conversation_id: Any) -> None:
-        self._conversation_by_trace.pop(trace_id, None)
+    def _cleanup_conversation(self, trace_id: int, conversation_id: str) -> None:
+        self._transcript_by_trace.pop(trace_id, None)
         self._audio_by_conversation.pop(conversation_id, None)
-        self._forget_thread_id(int(trace_id, 16))
+        self._forget_thread_id(trace_id)
