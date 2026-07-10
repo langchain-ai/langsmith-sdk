@@ -1,0 +1,63 @@
+python/langsmith/_internal/voice/_helpers.py
+  s_3bf959a348e45d::t_a3ee5f99175f1d 1-30
+python/langsmith/integrations/livekit/_helpers.py
+  s_3bf959a348e45d::t_6997dbbf5fd3bf 141-155
+  s_3bf959a348e45d::t_aabcce0c720cab 13
+  s_3bf959a348e45d::t_027f48ee2f8741 14
+python/langsmith/integrations/pipecat/_helpers.py
+  s_3bf959a348e45d::t_4f14392bd6ae4e 1-35
+python/langsmith/_internal/voice/audio.py
+  s_3bf959a348e45d::t_7c3aa99baab7a7 3-4
+python/langsmith/integrations/livekit/processor.py
+  s_3bf959a348e45d::t_e9dca9e8443cc8 21-25
+python/langsmith/integrations/pipecat/processor.py
+  s_3bf959a348e45d::t_ffde55e0c49c50 19-21
+  s_3bf959a348e45d::t_23a1577cb4f771 3-18,22-25,39-42,49,58,74,99-100,119,121,132-133,137-138,191,197,218,220-221,223-224,226-227,233,237,241,251,253-254,256,263,266,268-269,274-278,283,291,293,295-296,303-304,326,329
+  s_3bf959a348e45d::t_34f888e675b6f7 52-54
+  s_3bf959a348e45d::t_d42bf956e973c7 55
+  h_3a9d271fbf3886 298-299
+  s_3bf959a348e45d::t_4786997b9652bc 65-66,77-80,82,84-85,87,89,92-94,96
+  s_3bf959a348e45d::t_9589faf76f5132 134
+  s_3bf959a348e45d::t_4bf659e3d1eb10 174-175,177
+  s_3bf959a348e45d::t_bd44aa3339e98b 144-146
+  s_3bf959a348e45d::t_c883c2c56f3022 153-155
+  s_3bf959a348e45d::t_f555f8248e377f 321
+  s_3bf959a348e45d::t_70ec85c333a348 159,161-162
+  s_3bf959a348e45d::t_5d30e8b1a6a769 309,312,319-320
+  s_3bf959a348e45d::t_f93ce7dda14a06 149-152,160
+  s_3bf959a348e45d::t_82dc67a52a8cdb 243,281,327
+  s_3bf959a348e45d::t_746e6ac0eb4f03 32-33,50-51
+  s_3bf959a348e45d::t_f269038d8cc41a 67-71,75-76,81,83,86,88,90-91,95,97-98
+  s_3bf959a348e45d::t_36c67763280f0d 72-73
+  s_3bf959a348e45d::t_4b341adc2147c9 176,178,182-190
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_3bf959a348e45d::t_78d6cda7181013 273,285-286,320
+  s_3bf959a348e45d::t_3a3405d597db88 319,323
+  s_3bf959a348e45d::t_3a31d0571df54f 232,270,314,469,476
+  s_3bf959a348e45d::t_900140416ed3d6 468,483,486,494-495
+  s_3bf959a348e45d::t_11d772a7c75a8e 27-30
+  s_3bf959a348e45d::t_19a0f88c411222 227,229-230
+  s_3bf959a348e45d::t_280fd7ef143a33 496-499
+  s_3bf959a348e45d::t_246fe9e3430957 262,265-266,269,271,275,293,309,311,315,321-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8961d48553f32831d9db9caf2b9c9de85ede1708",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3bf959a348e45d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65b603b3-da84-497d-95fc-f4ba582ebc9b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
