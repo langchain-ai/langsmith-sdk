@@ -574,6 +574,103 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
+    it("should split runs with different workspaces into separate batches", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          workspaceId: "default-workspace-id",
+          autoBatchTracing: true,
+        },
+        mockFetch,
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+
+      const projectName = "__test_batch";
+      const overrideWorkspaceId = "override-workspace-id";
+      const defaultRunId = uuidv4();
+      const overrideRunId = uuidv4();
+      const { dottedOrder: defaultDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        defaultRunId,
+      );
+      const { dottedOrder: overrideDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        overrideRunId,
+      );
+
+      // Uses the client's default workspace (no override).
+      await client.createRun({
+        id: defaultRunId,
+        project_name: projectName,
+        name: "default_workspace_run",
+        run_type: "llm",
+        inputs: { text: "default" },
+        trace_id: defaultRunId,
+        dotted_order: defaultDottedOrder,
+      });
+
+      // Overrides the workspace for this run only.
+      await client.createRun(
+        {
+          id: overrideRunId,
+          project_name: projectName,
+          name: "override_workspace_run",
+          run_type: "llm",
+          inputs: { text: "override" },
+          trace_id: overrideRunId,
+          dotted_order: overrideDottedOrder,
+        },
+        { workspaceId: overrideWorkspaceId },
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      // The two runs must land in two separate destination batches keyed by
+      // workspace, each carrying the correct x-tenant-id header.
+      expect(calls.length).toBe(2);
+
+      const callsByTenant: Record<string, any> = {};
+      for (const [url, requestParam] of calls) {
+        expect(url).toBe(expectedTraceURL);
+        callsByTenant[requestParam.headers["x-tenant-id"]] = requestParam;
+      }
+
+      expect(Object.keys(callsByTenant).sort()).toEqual(
+        ["default-workspace-id", overrideWorkspaceId].sort(),
+      );
+      expect(
+        await parseMockRequestBody(callsByTenant["default-workspace-id"].body),
+      ).toEqual({
+        post: [
+          expect.objectContaining({
+            id: defaultRunId,
+            trace_id: defaultRunId,
+            dotted_order: defaultDottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+      expect(
+        await parseMockRequestBody(callsByTenant[overrideWorkspaceId].body),
+      ).toEqual({
+        post: [
+          expect.objectContaining({
+            id: overrideRunId,
+            trace_id: overrideRunId,
+            dotted_order: overrideDottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+    });
+
     it("server info fetch should retry even if initial call fails", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
