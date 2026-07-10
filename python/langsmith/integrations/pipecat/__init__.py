@@ -7,8 +7,7 @@ from typing import Any, Optional
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal.voice import set_thread_id, thread_id_from_context
-
-from .processor import PipecatLangSmithSpanProcessor
+from langsmith.integrations.pipecat.processor import PipecatLangSmithSpanProcessor
 
 logger = logging.getLogger(__name__)
 

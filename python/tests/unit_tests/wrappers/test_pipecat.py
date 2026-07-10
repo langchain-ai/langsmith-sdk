@@ -634,3 +634,85 @@ class TestConfigureAndWarning:
         # Force the lazy ``import pipecat`` to fail regardless of environment.
         with patch.dict(sys.modules, {"pipecat": None}):
             assert configure_pipecat() is None
+
+
+class TestPipecatUsageCapture:
+    """Token/usage capture for cost: LLM usage + detail, realtime spans."""
+
+    def test_llm_usage_and_detail_lifted(self):
+        proc = _processor()
+        span = _make_span(
+            "llm",
+            {
+                "input": json.dumps([{"role": "user", "content": "hi"}]),
+                "output": "hello",
+                "gen_ai.usage.input_tokens": 100,
+                "gen_ai.usage.output_tokens": 50,
+                "gen_ai.usage.cache_read.input_tokens": 20,
+                "gen_ai.usage.reasoning_tokens": 8,
+            },
+        )
+        proc.on_end(span)
+        usage = json.loads(_exported_attrs(proc)["langsmith.usage_metadata"])
+        assert usage["input_tokens"] == 100
+        assert usage["output_tokens"] == 50
+        assert usage["input_token_details"] == {"cache_read": 20}
+        assert usage["output_token_details"] == {"reasoning": 8}
+
+    def test_realtime_llm_response_priced_and_transcribed(self):
+        # Speech-to-speech services emit `llm_response` (not `llm`); it carries
+        # aggregate usage (Pipecat drops the audio split) and the reply.
+        proc = _processor()
+        trace_id = 0x55
+        span = _make_span(
+            "llm_response",
+            {
+                "text_output": "the weather is sunny",
+                "gen_ai.usage.input_tokens": 300,
+                "gen_ai.usage.output_tokens": 120,
+            },
+            trace_id=trace_id,
+        )
+        proc.on_end(span)
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "llm"
+        usage = json.loads(attrs["langsmith.usage_metadata"])
+        assert usage["input_tokens"] == 300
+        assert usage["output_tokens"] == 120
+        completion = json.loads(attrs["gen_ai.completion"])["messages"]
+        assert completion[0]["content"] == "the weather is sunny"
+        # Reply folds into the conversation the root renders.
+        assert (
+            proc._transcript_by_trace[trace_id][-1]["content"] == "the weather is sunny"
+        )
+
+    def test_realtime_rollup_has_user_and_agent_turns(self):
+        # Realtime has no cascade `llm` span carrying history: the user turn
+        # arrives on a standard `stt` span, the agent reply on `llm_response`.
+        # Both must fold into the conversation rollup the root renders.
+        proc = _processor()
+        trace_id = 0x56
+        proc.on_end(_make_span("stt", {"transcript": "what's the weather?"}, trace_id))
+        proc.on_end(
+            _make_span("llm_response", {"output": "it's sunny"}, trace_id=trace_id)
+        )
+        rollup = proc._transcript_by_trace[trace_id]
+        assert [(m["role"], m["content"]) for m in rollup] == [
+            ("user", "what's the weather?"),
+            ("assistant", "it's sunny"),
+        ]
+
+    def test_stt_interim_transcript_not_folded(self):
+        # Non-final STT results must not pollute the rollup with partials.
+        proc = _processor()
+        trace_id = 0x57
+        proc.on_end(
+            _make_span("stt", {"transcript": "what's", "is_final": False}, trace_id)
+        )
+        assert trace_id not in proc._transcript_by_trace
+
+    def test_realtime_wrapper_spans_are_chain(self):
+        proc = _processor()
+        for name in ("llm_setup", "llm_request"):
+            proc.on_end(_make_span(name, {}))
+            assert _exported_attrs(proc)["langsmith.span.kind"] == "chain"
