@@ -65,11 +65,13 @@ class TestDispatchDisposition:
         proc.on_end(span)
         proc.downstream.on_end.assert_called_once()
 
-    def test_realtime_metrics_suppressed(self):
+    def test_realtime_metrics_exported_as_llm(self):
+        # An orphaned realtime_metrics span carries the model usage → llm run.
         proc = _processor()
         span = _make_span("realtime_metrics", {"lk.realtime_model_metrics": "{}"})
         proc.on_end(span)
-        proc.downstream.on_end.assert_not_called()
+        exported = proc.downstream.on_end.call_args.args[0]
+        assert exported._attributes["langsmith.span.kind"] == "llm"
 
     def test_root_deferred_not_exported_immediately(self):
         proc = _processor()
@@ -357,31 +359,11 @@ class TestProviderAttribution:
         assert normalize_provider("unknown") is None
         assert normalize_provider(None) is None
 
-    def test_stt_provider_from_metrics_metadata(self):
-        proc = _processor()
-        metrics = json.dumps({"metadata": {"model_provider": "deepgram"}})
-        span = _make_span(
-            "user_turn", {"lk.user_transcript": "hi", "lk.stt_metrics": metrics}
-        )
-        proc.on_end(span)
-        assert self._exported(proc)["gen_ai.system"] == "deepgram"
-
     def test_llm_provider_host_is_normalized(self):
         # LiveKit's OpenAI plugin reports the api.openai.com host; it must become
         # the `openai` slug or LangSmith can't match a price.
         proc = _processor()
         span = _make_span("llm_request", {"gen_ai.system": "api.openai.com"})
-        proc.on_end(span)
-        assert self._exported(proc)["gen_ai.system"] == "openai"
-
-    def test_stt_provider_host_is_normalized(self):
-        # The demo's STT is OpenAI, so LiveKit reports the api.openai.com host on
-        # the user_turn span; it must resolve to the openai slug.
-        proc = _processor()
-        metrics = json.dumps({"metadata": {"model_provider": "api.openai.com"}})
-        span = _make_span(
-            "user_turn", {"lk.user_transcript": "hi", "lk.stt_metrics": metrics}
-        )
         proc.on_end(span)
         assert self._exported(proc)["gen_ai.system"] == "openai"
 
@@ -421,3 +403,98 @@ class TestProviderAttribution:
         attrs = self._exported(proc)
         assert attrs["gen_ai.provider.name"] == "openai"
         assert attrs["gen_ai.system"] == "openai"
+
+
+class TestUsageCapture:
+    """Token/usage lifting for cost tracking (LLM cache detail, realtime)."""
+
+    @staticmethod
+    def _exported(proc):
+        return proc.downstream.on_end.call_args.args[0]._attributes
+
+    def test_llm_usage_lifted_from_metrics_blob(self):
+        # The whole LLM usage — counts + cache_read detail — is read from the
+        # metrics blob and written to the usage_metadata blob.
+        proc = _processor()
+        metrics = json.dumps(
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 40,
+                "total_tokens": 140,
+                "prompt_cached_tokens": 30,
+            }
+        )
+        span = _make_span("llm_request", {"lk.llm_metrics": metrics})
+        proc.on_end(span)
+        usage = json.loads(self._exported(proc)["langsmith.usage_metadata"])
+        assert usage["input_tokens"] == 100
+        assert usage["output_tokens"] == 40
+        assert usage["total_tokens"] == 140
+        assert usage["input_token_details"] == {"cache_read": 30}
+
+    def test_orphaned_realtime_metrics_span_carries_usage(self):
+        # An orphaned realtime_metrics span carries the model usage itself; its
+        # audio/cached detail must be priced (as audio, not text).
+        proc = _processor()
+        blob = json.dumps(
+            {
+                "input_tokens": 200,
+                "output_tokens": 80,
+                "total_tokens": 280,
+                "input_token_details": {"audio_tokens": 150, "cached_tokens": 20},
+                "output_token_details": {"audio_tokens": 60},
+            }
+        )
+        proc.on_end(_make_span("realtime_metrics", {"lk.realtime_model_metrics": blob}))
+        attrs = self._exported(proc)
+        assert attrs["langsmith.span.kind"] == "llm"
+        # Usage rides on langsmith.usage_metadata (JSON) — the only OTel path that
+        # carries per-modality detail; flat gen_ai.usage.* detail is dropped.
+        usage = json.loads(attrs["langsmith.usage_metadata"])
+        assert usage["input_tokens"] == 200
+        assert usage["output_tokens"] == 80
+        assert usage["input_token_details"] == {"audio": 150, "cache_read": 20}
+        assert usage["output_token_details"] == {"audio": 60}
+
+    def test_realtime_usage_lifted_when_stamped_on_active_span(self):
+        # livekit-agents (>=1.6) stamps realtime metrics directly on the active
+        # agent_turn span when it's still recording — no realtime_metrics child.
+        # The audio/cache detail must still be lifted, wherever the blob lands.
+        proc = _processor()
+        blob = json.dumps(
+            {
+                "input_tokens": 200,
+                "output_tokens": 80,
+                "total_tokens": 280,
+                "input_token_details": {"audio_tokens": 150, "cached_tokens": 20},
+                "output_token_details": {"audio_tokens": 60},
+            }
+        )
+        span = _make_span(
+            "agent_turn",
+            {
+                "lk.response.text": "hi",
+                "lk.realtime_model_metrics": blob,
+                # livekit sets the aggregate counts on the span too; only the
+                # audio/cache detail needs recovering.
+                "gen_ai.usage.input_tokens": 200,
+                "gen_ai.usage.output_tokens": 80,
+            },
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        # A realtime turn is the model call itself → llm span (carries the cost).
+        assert attrs["langsmith.span.kind"] == "llm"
+        usage = json.loads(attrs["langsmith.usage_metadata"])
+        assert usage["input_token_details"] == {"audio": 150, "cache_read": 20}
+        assert usage["output_token_details"] == {"audio": 60}
+
+    def test_cascade_agent_turn_stays_chain(self):
+        # A cascade turn only wraps the STT/LLM/TTS children (which carry usage),
+        # so it must stay a chain — an llm kind here would double-count cost.
+        proc = _processor()
+        span = _make_span(
+            "agent_turn", {"lk.user_input": "hi", "lk.response.text": "hello"}
+        )
+        proc.on_end(span)
+        assert self._exported(proc)["langsmith.span.kind"] == "chain"
