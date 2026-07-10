@@ -24,7 +24,10 @@ from langsmith._internal.voice.base_span_processor import (
     BaseLangSmithSpanProcessor,
     TranslatedSpan,
 )
-from langsmith.integrations.pipecat.processor import PipecatLangSmithSpanProcessor
+from langsmith.integrations.pipecat.processor import (
+    PipecatLangSmithSpanProcessor,
+    _AudioRecord,
+)
 
 
 def _make_span(name: str, attributes: dict | None = None, trace_id: int = 0x1):
@@ -221,12 +224,12 @@ class TestPipecatDispatch:
         assert attrs["langsmith.metadata.ls_modality"] == "audio"
         # The root is attributed to this integration so usage is trackable.
         assert attrs["langsmith.metadata.ls_integration"] == "pipecat"
+        # The whole transcript lands on the root's input (like the livekit root).
         prompt = json.loads(attrs["gen_ai.prompt"])
-        assert prompt["messages"][0]["content"] == "hi"
-        completion = json.loads(attrs["gen_ai.completion"])
-        assert completion["messages"][0]["content"] == "hello"
+        assert [m["content"] for m in prompt["messages"]] == ["hi", "hello"]
+        assert "gen_ai.completion" not in attrs
         # Per-trace state is cleaned up once the root is rendered.
-        assert trace_id not in proc._conversation_by_trace
+        assert trace_id not in proc._transcript_by_trace
 
     def test_unknown_span_passed_through_untouched_but_exported(self):
         proc = _processor()
@@ -256,20 +259,20 @@ class TestPipecatAudio:
         proc.attach_audio_buffer(FakeBuffer(), "conv-1")
         handler = captured["on_audio_data"]
 
-        # The Pipecat AudioBufferProcessor emits raw PCM in chunks.
+        # The AudioBufferProcessor emits already-merged (stereo) PCM in chunks.
         import asyncio
 
-        asyncio.run(handler(None, b"\x01\x02", 16000, 2))
-        asyncio.run(handler(None, b"\x03\x04", 16000, 2))
+        asyncio.run(handler(None, b"\x01\x02\x0a\x0b", 16000, 2))
+        asyncio.run(handler(None, b"\x03\x04\x0c\x0d", 16000, 2))
 
         rec = proc._audio_by_conversation["conv-1"]
-        assert bytes(rec["pcm"]) == b"\x01\x02\x03\x04"
-        assert rec["sample_rate"] == 16000
-        assert rec["num_channels"] == 2
+        assert bytes(rec.pcm) == b"\x01\x02\x0a\x0b\x03\x04\x0c\x0d"
+        assert rec.sample_rate == 16000
+        assert rec.num_channels == 2
 
-    def test_conversation_span_attaches_wav(self):
+    def test_conversation_span_attaches_stereo_wav(self):
         proc = _processor()
-        proc._accumulate_audio("c1", b"\x00\x01" * 8, 16000, 1)
+        proc._accumulate_audio("c1", b"\x00\x01\x02\x03" * 8, 16000, 2)
         span = _make_span("conversation", {"conversation.id": "c1"})
 
         proc.on_end(span)
@@ -279,13 +282,15 @@ class TestPipecatAudio:
         assert payload[0]["mime_type"] == "audio/wav"
         decoded = base64.b64decode(payload[0]["content"])
         assert decoded[:4] == b"RIFF"
+        with wave.open(io.BytesIO(decoded)) as wf:
+            assert wf.getnchannels() == 2  # user left, bot right
 
     def test_mismatched_conversation_id_attaches_nothing(self):
         # A recording exists under a different id than the span carries. The
         # lookup is strictly keyed (no "only one in flight" fallback), so no
         # audio is attached — never another caller's recording.
         proc = _processor()
-        proc._accumulate_audio("other-call", b"\x00\x01" * 8, 16000, 1)
+        proc._accumulate_audio("other-call", b"\x00\x01\x02\x03" * 8, 16000, 2)
         span = _make_span("conversation", {"conversation.id": "this-call"})
 
         proc.on_end(span)
@@ -301,21 +306,21 @@ class TestPipecatAudio:
         assert "langsmith.attachments" not in _exported_attrs(proc)
 
     def test_accumulate_audio_truncates_before_extend(self):
+        # pcm budget = 50 - 44 header = 6, rounded down to a whole stereo frame (4).
         proc = _processor(audio_size_limit_bytes=50)
-        proc._accumulate_audio("c1", b"\x00\x01" * 2, 16000, 1)
-        proc._accumulate_audio("c1", b"\x02\x03" * 2, 16000, 1)
+        proc._accumulate_audio("c1", b"\x00\x01\x02\x03" * 8, 16000, 2)
 
         rec = proc._audio_by_conversation["c1"]
-        assert bytes(rec["pcm"]) == b"\x00\x01" * 2 + b"\x02\x03"
-        assert rec["audio_truncated"] is True
+        assert rec.audio_truncated is True
+        assert bytes(rec.pcm) == b"\x00\x01\x02\x03"
 
     def test_oversize_audio_skips_conversion(self):
         proc = _processor(audio_size_limit_bytes=50)
-        proc._audio_by_conversation["c1"] = {
-            "pcm": bytearray(b"\x00\x01" * 4),
-            "sample_rate": 16000,
-            "num_channels": 1,
-        }
+        proc._audio_by_conversation["c1"] = _AudioRecord(
+            sample_rate=16000,
+            num_channels=2,
+            pcm=bytearray(b"\x00\x01\x02\x03" * 4),
+        )
         span = _make_span("conversation", {"conversation.id": "c1"})
 
         with patch("langsmith.integrations.pipecat.processor.pcm_to_wav") as patched:
@@ -380,11 +385,26 @@ class TestBaseProcessorHelpers:
             is False
         )
 
-    def test_on_start_stamps_static_metadata(self):
+    def test_stamp_static_metadata(self):
+        # Static metadata lands on the draft; None values are skipped.
         base = self._base(metadata={"env": "test", "skip": None})
-        span = MagicMock()
-        base.on_start(span)
-        span.set_attribute.assert_any_call("langsmith.metadata.env", "test")
+        tspan = TranslatedSpan.of(_make_span("x"))
+        base._stamp_static_metadata(tspan)
+        assert tspan.attributes["langsmith.metadata.env"] == "test"
+        assert "langsmith.metadata.skip" not in tspan.attributes
+
+    def test_stamp_static_metadata_never_clobbers(self):
+        # An attribute already on the span wins over the static default.
+        base = self._base(metadata={"env": "static"})
+        tspan = TranslatedSpan.of(
+            _make_span("x", {"langsmith.metadata.env": "explicit"})
+        )
+        base._stamp_static_metadata(tspan)
+        assert tspan.attributes["langsmith.metadata.env"] == "explicit"
+
+    def test_on_start_delegates_downstream(self):
+        base = self._base()
+        base.on_start(MagicMock())
         base.downstream.on_start.assert_called_once()
 
     def test_shutdown_delegates(self):
@@ -445,25 +465,25 @@ class TestStateLifecycle:
             trace_id=trace_id,
         )
         proc.on_end(llm)
-        proc._accumulate_audio("c1", b"\x00\x01" * 8, 16000, 1)
-        assert len(proc._conversation_by_trace) == 1
+        proc._accumulate_audio("c1", b"\x00\x01\x02\x03" * 8, 16000, 2)
+        assert len(proc._transcript_by_trace) == 1
         assert len(proc._audio_by_conversation) == 1
 
         convo = _make_span("conversation", {"conversation.id": "c1"}, trace_id=trace_id)
         proc.on_end(convo)
 
         # Both per-conversation stores are freed once the root renders.
-        assert len(proc._conversation_by_trace) == 0
+        assert len(proc._transcript_by_trace) == 0
         assert len(proc._audio_by_conversation) == 0
 
     def test_abandoned_state_expires_via_ttl(self):
         # A conversation whose end span never arrives must not leak: the TTL
         # store drops it. Use a zero TTL so the next write evicts it.
         proc = _processor(state_ttl_seconds=0)
-        proc._accumulate_audio("c1", b"\x00\x01", 16000, 1)
+        proc._accumulate_audio("c1", b"\x00\x01\x02\x03", 16000, 2)
         # A later write to the (separate) store of a *different* conversation
         # triggers eviction of the expired one.
-        proc._accumulate_audio("c2", b"\x00\x01", 16000, 1)
+        proc._accumulate_audio("c2", b"\x00\x01\x02\x03", 16000, 2)
 
         assert "c1" not in proc._audio_by_conversation
 
@@ -471,9 +491,12 @@ class TestStateLifecycle:
         # Re-writing a key (each audio chunk) refreshes its TTL, so a long call
         # streaming audio is never dropped mid-conversation.
         proc = _processor(state_ttl_seconds=60)
-        proc._accumulate_audio("c1", b"\x00\x01", 16000, 1)
-        proc._accumulate_audio("c1", b"\x02\x03", 16000, 1)
-        assert bytes(proc._audio_by_conversation["c1"]["pcm"]) == b"\x00\x01\x02\x03"
+        proc._accumulate_audio("c1", b"\x00\x01\x02\x03", 16000, 2)
+        proc._accumulate_audio("c1", b"\x04\x05\x06\x07", 16000, 2)
+        assert (
+            bytes(proc._audio_by_conversation["c1"].pcm)
+            == b"\x00\x01\x02\x03\x04\x05\x06\x07"
+        )
 
 
 class TestExceptionIsolation:
@@ -509,9 +532,8 @@ class TestContextVarThreadId:
     def test_set_thread_id_is_injected(self):
         proc = _processor()
         set_thread_id("conv-42")
-        span = _make_span("turn", {})
-
-        proc.on_end(span)
+        proc.on_start(_make_span("turn", {}))
+        proc.on_end(_make_span("turn", {}))
 
         assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-42"
 
@@ -547,24 +569,11 @@ class TestContextVarThreadId:
 
         assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-7"
 
-    def test_in_context_end_backfills_for_trace_peers(self):
-        # No on_start capture: the first span seen in context resolves via the
-        # ContextVar and backfills the trace cache, so a later peer that ends
-        # out of context still resolves.
-        proc = _processor()
-        tid = 0xABC
-        set_thread_id("conv-8")
-        proc.on_end(_make_span("turn", {}, trace_id=tid))
-        set_thread_id(None)
-        proc.on_end(_make_span("stt", {"transcript": "hi"}, trace_id=tid))
-
-        assert _exported_attrs(proc)["langsmith.metadata.thread_id"] == "conv-8"
-
     def test_cleanup_forgets_cached_thread_id(self):
         proc = _processor()
         tid = 0xABC
         set_thread_id("conv-9")
-        proc.on_end(_make_span("turn", {}, trace_id=tid))
+        proc.on_start(_make_span("turn", {}, trace_id=tid))
         assert tid in proc._thread_id_by_trace
         # Conversation end frees the per-trace state, the thread id included.
         proc.on_end(_make_span("conversation", {"conversation.id": "c1"}, trace_id=tid))

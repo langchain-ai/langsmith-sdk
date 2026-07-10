@@ -23,15 +23,16 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from dataclasses import dataclass
 from typing import Any, Optional
 
-from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor
+from opentelemetry.context import Context
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from langsmith._internal.otel._span_utils import rebuild_readable_span
-
 from . import thread_id_from_context
+from .translated_span import TranslatedSpan
+
+__all__ = ["BaseLangSmithSpanProcessor", "TranslatedSpan"]
 
 logger = logging.getLogger(__name__)
 
@@ -46,82 +47,6 @@ DEFAULT_AUDIO_SIZE_LIMIT = 150_000_000
 # ``_forget_thread_id``; this bounds memory for conversations that never reach
 # cleanup (crash, dropped connection), evicting oldest-first.
 _THREAD_ID_CACHE_MAXSIZE = 100_000
-
-
-@dataclass
-class TranslatedSpan:
-    """A span being translated into LangSmith's namespaces before export.
-
-    Wraps the original read-only OTel ``ReadableSpan`` with mutable
-    ``attributes`` and ``events`` seeded from it. Handlers rewrite the copies
-    while translating; :meth:`finalize` builds a fresh ``ReadableSpan`` from them
-    — so OpenTelemetry's private ``span._attributes`` / ``span._events`` are
-    never mutated.
-
-    Created per span in :meth:`BaseLangSmithSpanProcessor.on_end` and threaded
-    through dispatch — no global state. A processor that defers a span (see
-    :meth:`BaseLangSmithSpanProcessor._dispatch`) simply holds the
-    ``TranslatedSpan`` itself until it exports it later, so the in-progress
-    translation outlives the originating ``on_end`` call.
-    """
-
-    span: ReadableSpan
-    attributes: dict[str, Any]
-    events: list[Event]
-
-    @classmethod
-    def of(cls, span: ReadableSpan) -> TranslatedSpan:
-        """Seed a draft from a span's own (read-only) attributes and events."""
-        return cls(span, dict(span.attributes or {}), list(span.events or []))
-
-    def finalize(self) -> ReadableSpan:
-        """Build the export span: the original's fields + our rewritten attrs/events."""
-        return rebuild_readable_span(
-            self.span, attributes=self.attributes, events=self.events
-        )
-
-    def set_kind(self, kind: str) -> None:
-        """Set ``langsmith.span.kind`` (``llm`` / ``chain`` / ``tool`` / …)."""
-        self.attributes["langsmith.span.kind"] = kind
-
-    def set_thread_id(self, thread_id: str) -> None:
-        """Set ``langsmith.metadata.thread_id`` (the conversation/thread id)."""
-        self.attributes["langsmith.metadata.thread_id"] = thread_id
-
-    def exclude_from_message_view(self) -> None:
-        """Drop this span from the conversation Messages view (still in the tree).
-
-        That view reconstructs the chat from ``llm``/``tool`` runs. STT/TTS spans
-        are tagged ``llm``-kind for the tree but would otherwise add fake turns
-        (raw transcripts, "Generated audio for: …"), so they opt out here.
-        """
-        self.attributes["langsmith.metadata.ls_message_view_exclude"] = True
-
-    def set_root_span(self, is_root: bool) -> None:
-        """Mark the span as the trace root (``langsmith.root_span``)."""
-        self.attributes["langsmith.root_span"] = is_root
-
-    def set_metadata(self, key: str, value: Any) -> None:
-        """Set ``langsmith.metadata.<key>`` to the given value.
-
-        LangSmith surfaces everything under ``langsmith.metadata.*`` as run
-        metadata. Note ``langsmith.root_span`` and ``langsmith.span.kind`` are NOT
-        metadata — they live in the top-level ``langsmith.*`` namespace and have
-        their own setters / direct writes.
-        """
-        self.attributes[f"langsmith.metadata.{key}"] = value
-
-    def set_messages(
-        self,
-        *,
-        prompt: Optional[list[dict]] = None,
-        completion: Optional[list[dict]] = None,
-    ) -> None:
-        """Write ``gen_ai.prompt``/``gen_ai.completion`` as ``{"messages": [...]}``."""
-        if prompt is not None:
-            self.attributes["gen_ai.prompt"] = json.dumps({"messages": prompt})
-        if completion is not None:
-            self.attributes["gen_ai.completion"] = json.dumps({"messages": completion})
 
 
 class BaseLangSmithSpanProcessor(SpanProcessor):
@@ -178,34 +103,18 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
 
     # -- span lifecycle -------------------------------------------------------
 
-    def on_start(self, span: Any, parent_context: Any = None) -> None:
-        for key, value in self._static_metadata.items():
-            if value is not None:
-                span.set_attribute(f"langsmith.metadata.{key}", value)
-        # Capture the thread id here, at the earliest in-context moment. on_start
-        # runs synchronously in the task that starts the span; the conversation's
-        # root span starts in the task where set_thread_id was called, so the
-        # ContextVar is visible now even when later spans END in detached tasks
-        # where it is not. _stamp_thread_id then recovers it per trace.
+    def on_start(self, span: Span, parent_context: Optional[Context] = None) -> None:
         thread_id = thread_id_from_context()
-        context = getattr(span, "context", None)
-        if thread_id and context is not None:
-            self._remember_thread_id(context.trace_id, str(thread_id))
+        if thread_id:
+            self._remember_thread_id(span.context.trace_id, str(thread_id))
         self.downstream.on_start(span, parent_context)
 
     def on_end(self, span: ReadableSpan) -> None:
-        # Isolate translation from export: a failure rewriting one span must
-        # never drop it or propagate into the OTel provider's span-ending path
-        # (which would disrupt other processors and the traced app). On error we
-        # log and still export the span untranslated — degraded, not lost.
-        #
-        # _dispatch returns whether the base should export the span now. A
-        # subclass that defers (returns False) owns its own later _export call;
-        # any other return value — including a dispatch failure — leaves
-        # export=True so the span is still forwarded exactly once.
         tspan = TranslatedSpan.of(span)
+
         export = True
         try:
+            self._stamp_static_metadata(tspan)
             self._stamp_thread_id(tspan)
             export = self._dispatch(tspan) is not False
         except Exception:
@@ -228,12 +137,8 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
     def _dispatch(self, tspan: TranslatedSpan) -> bool:
         """Classify the span and rewrite its attributes on the draft.
 
-        Returns whether :meth:`on_end` should export the span. Return ``True``
-        (the common case) to have the base export it exactly once. Return
-        ``False`` to take ownership of the export — e.g. to defer the span until
-        a later event — in which case the subclass MUST hold ``tspan`` and call
-        :meth:`_export` with it itself, exactly once. Subclasses that return
-        ``True`` MUST NOT call :meth:`_export`. The default raises.
+        Returns True if ``on_end`` should export the span, or False to take
+        ownership of the export.
         """
         raise NotImplementedError
 
@@ -241,8 +146,7 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
         """Forward the translated span downstream.
 
         Builds a fresh ``ReadableSpan`` from the draft (rewritten attributes/
-        events) rather than mutating the original — so we never poke
-        OpenTelemetry's private span internals.
+        events) rather than mutating the original.
         """
         self._pre_export(tspan)
         self.downstream.on_end(tspan.finalize())
@@ -258,30 +162,25 @@ class BaseLangSmithSpanProcessor(SpanProcessor):
 
     # -- shared helpers -------------------------------------------------------
 
+    def _stamp_static_metadata(self, tspan: TranslatedSpan) -> None:
+        """Stamp the processor's static ``langsmith.metadata.*`` (never clobbering)."""
+        for key, value in self._static_metadata.items():
+            attr = f"langsmith.metadata.{key}"
+            if value is not None and attr not in tspan.attributes:
+                tspan.attributes[attr] = value
+
     def _stamp_thread_id(self, tspan: TranslatedSpan) -> None:
-        """Stamp ``langsmith.metadata.thread_id`` from the per-context id (opt-in).
+        """Stamp ``langsmith.metadata.thread_id`` from the id captured at ``on_start``.
 
-        LangSmith needs the thread id on every run for thread-level filtering and
-        token/cost aggregation. The id is set via
-        :func:`~langsmith._internal.voice.set_thread_id`, a ``ContextVar``, so
-        concurrent conversations each see their own value. Resolves it as:
-
-        1. leave any id already on the span untouched (never clobber upstream);
-        2. else the value captured for this trace at :meth:`on_start` — robust to
-           spans that end in a detached task where the ``ContextVar`` is unset;
-        3. else the ``ContextVar`` directly (this span IS in context and is the
-           first we've seen for the trace), backfilling the cache for its peers.
-
-        Stamping is skipped (``None``) when no id was ever set for the trace.
+        Reads the per-trace id captured at :meth:`on_start` — so spans that end in
+        a detached task (where the ``ContextVar`` is unset) still get it. Leaves
+        any id already on the span untouched, and skips when none was set.
         """
         if "langsmith.metadata.thread_id" in tspan.attributes:
             return
-        trace_id = tspan.span.context.trace_id
-        thread_id = self._thread_id_by_trace.get(trace_id) or thread_id_from_context()
+        thread_id = self._thread_id_by_trace.get(tspan.span.context.trace_id)
         if thread_id:
-            thread_id = str(thread_id)
             tspan.set_thread_id(thread_id)
-            self._remember_thread_id(trace_id, thread_id)
 
     def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
         """Cache a trace's thread id, evicting oldest-first when at capacity."""
