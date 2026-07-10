@@ -1,0 +1,23 @@
+python/langsmith/integrations/pipecat/_helpers.py
+  s_f4b0bb452ca17d::t_107066d92fc11b 25-65
+python/langsmith/integrations/pipecat/processor.py
+  s_f4b0bb452ca17d::t_bb316e894ec745 26-31,55-60,221-229,235-241,265-273,291-295,298-322
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_f4b0bb452ca17d::t_690a5f58030b3e 637-704
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "c39d6bb7570a1113d3609355dad520b8a897386b",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
