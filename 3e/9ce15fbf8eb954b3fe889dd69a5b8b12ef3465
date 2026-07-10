@@ -1,0 +1,26 @@
+python/langsmith/_internal/voice/translated_span.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 21-27,109-138
+  s_f4b0bb452ca17d::t_1f85ff468390e1 139
+python/langsmith/integrations/livekit/_helpers.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 114-183
+python/langsmith/integrations/livekit/processor.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 33,36-37,202-211,252-259,291-296,448-452
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 424-506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "3e9ce15fbf8eb954b3fe889dd69a5b8b12ef3465",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
