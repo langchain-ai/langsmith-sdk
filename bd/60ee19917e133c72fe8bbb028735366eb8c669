@@ -1,0 +1,33 @@
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 424-506
+python/langsmith/integrations/livekit/processor.py
+  s_f4b0bb452ca17d::t_db52f59e968d52 202-204
+  s_f4b0bb452ca17d::t_d76985bfbba802 33,36-37,205
+  s_f4b0bb452ca17d::t_7bef715e9ba949 206-208
+  s_f4b0bb452ca17d::t_9ee44da1ccfb08 209-211,252-259,291-296,448-452
+python/langsmith/integrations/livekit/_helpers.py
+  s_f4b0bb452ca17d::t_b5766ffdff6464 120,128,136-140,145,148,158,163-164
+  s_f4b0bb452ca17d::t_d76985bfbba802 114-119,121-127,129-135,141-144,146-147,149-157,159-162,165-166,175
+  s_f4b0bb452ca17d::t_2816ba9853ccb4 167-169,172-174
+  s_f4b0bb452ca17d::t_130c19a3998e68 176-178
+  s_f4b0bb452ca17d::t_8cd6c810557677 170-171,179-183
+python/langsmith/_internal/voice/translated_span.py
+  s_f4b0bb452ca17d::t_1f85ff468390e1 139
+  s_f4b0bb452ca17d::t_d76985bfbba802 21-27,109-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "bd60ee19917e133c72fe8bbb028735366eb8c669",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
