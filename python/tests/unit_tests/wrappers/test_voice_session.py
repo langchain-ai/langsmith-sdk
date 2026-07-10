@@ -223,6 +223,37 @@ class TestRecordLlm:
         assert len(captured) == 1
         assert captured[0].inputs == {"messages": [{"role": "user", "content": "hi"}]}
 
+    def test_usage_lands_on_the_run_before_it_is_finalized(self):
+        # Cost is derived when the run is finalized, so usage must be set on the
+        # run's extra.metadata before end/patch — never on a later patch.
+        s = _session()
+        captured: list = []
+        real_create = session_mod.RunTree.create_child
+
+        def spy(self, **kwargs):
+            child = real_create(self, **kwargs)
+            if kwargs.get("run_type") == "llm":
+                captured.append(child)
+            return child
+
+        with mock.patch.object(session_mod.RunTree, "create_child", spy):
+            s.record_llm(
+                outputs={"role": "assistant", "content": "hi"},
+                usage_metadata={
+                    "input_tokens": 3,
+                    "output_tokens": 2,
+                    "total_tokens": 5,
+                },
+            )
+        assert len(captured) == 1
+        run = captured[0]
+        assert run.end_time is not None  # finalized
+        assert run.extra["metadata"]["usage_metadata"] == {
+            "input_tokens": 3,
+            "output_tokens": 2,
+            "total_tokens": 5,
+        }
+
 
 class TestFinalizeFailOpen:
     def test_wav_build_failure_does_not_break_finalize(self, monkeypatch):

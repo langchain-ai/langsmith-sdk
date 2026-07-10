@@ -96,9 +96,12 @@ claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
 google-adk = ["google-adk>=1.0.0", "wrapt>=1.16.0"]
 
 # Enabled via `pip install langsmith[google-adk-live]`
-# ADK Live (Gemini Live voice) tracing via LangSmithGoogleADKLivePlugin. Requires the
-# plugin API (``google.adk.plugins.base_plugin``), first shipped in 1.7.0.
-google-adk-live = ["google-adk>=1.14.0"]
+# ADK Live (Gemini Live voice) tracing via LangSmithGoogleADKLivePlugin. Needs the
+# plugin API (``google.adk.plugins.base_plugin``, first shipped in 1.7.0); the
+# >=2.3.0 floor is for model-cost capture — earlier releases pass Gemini's live
+# usage through under `response_token_count`, which is dropped when coerced to
+# the response type, silently losing output-token counts. 2.3.0 remaps it.
+google-adk-live = ["google-adk>=2.3.0"]
 
 # Enabled via `pip install langsmith[strands-agents]`
 strands-agents = [
