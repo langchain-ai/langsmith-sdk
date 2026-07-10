@@ -4,6 +4,22 @@ from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
+    from langsmith._openapi_client._exceptions import (
+        APIConnectionError,
+        APIError,
+        APIResponseValidationError,
+        APIStatusError,
+        APITimeoutError,
+        AuthenticationError,
+        BadRequestError,
+        ConflictError,
+        InternalServerError,
+        LangsmithError,
+        NotFoundError,
+        PermissionDeniedError,
+        RateLimitError,
+        UnprocessableEntityError,
+    )
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
@@ -167,6 +183,28 @@ def __getattr__(name: str) -> Any:
 
         return set_runtime_overrides
 
+    elif name in (
+        "LangsmithError",
+        "APIError",
+        "APIResponseValidationError",
+        "APIStatusError",
+        "APIConnectionError",
+        "APITimeoutError",
+        "BadRequestError",
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "NotFoundError",
+        "ConflictError",
+        "UnprocessableEntityError",
+        "RateLimitError",
+        "InternalServerError",
+    ):
+        import langsmith._openapi_client._exceptions as _exceptions
+
+        exception = getattr(_exceptions, name)
+        exception.__module__ = __name__
+        return exception
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -204,4 +242,18 @@ __all__ = [
     "uuid7_from_datetime",
     "set_runtime_overrides",
     "LS_MESSAGE_VIEW_EXCLUDE",
+    "LangsmithError",
+    "APIError",
+    "APIResponseValidationError",
+    "APIStatusError",
+    "APIConnectionError",
+    "APITimeoutError",
+    "BadRequestError",
+    "AuthenticationError",
+    "PermissionDeniedError",
+    "NotFoundError",
+    "ConflictError",
+    "UnprocessableEntityError",
+    "RateLimitError",
+    "InternalServerError",
 ]
