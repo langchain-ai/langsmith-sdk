@@ -30,8 +30,11 @@ from langsmith._internal.voice.base_span_processor import (
 
 from ._helpers import (
     build_message_from_event,
+    extract_llm_cached_tokens,
     extract_model_from_lk_metrics,
     extract_provider_from_lk_metrics,
+    extract_realtime_usage,
+    extract_tts_characters,
     flatten_lk_attributes_to_ls_metadata,
     is_livekit_span,
     normalize_provider,
@@ -196,7 +199,16 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     # -- per-span-type handlers ----------------------------------------------
 
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
-        """STT (``user_turn``): audio input → transcribed text."""
+        """STT (``user_turn``): audio input → transcribed text.
+
+        No token usage is set: LiveKit reports the billable STT unit
+        (``STTMetrics.audio_duration``) only on its ``metrics_collected`` event,
+        never on the ``user_turn`` span this processor sees — so cascade STT cost
+        can't be priced from spans alone.
+        TODO(voice-cost): subscribe to the ``AgentSession`` metrics stream, and
+        correlate ``STTMetrics.audio_duration`` back to this span by request id
+        (``lk.provider_request_ids``) to price cascade STT per audio-second.
+        """
         tspan.set_kind("llm")
         tspan.set_model(
             tspan.attributes.get("gen_ai.request.model")
@@ -237,6 +249,14 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
         tspan.set_provider(normalize_provider(provider))
 
+        # LiveKit puts prompt/completion tokens on the span (gen_ai.usage.*,
+        # passed through untouched) but reports cache-read tokens only in the
+        # metrics blob — lift them into the cache_read detail so cached input is
+        # priced at its lower rate.
+        cached = extract_llm_cached_tokens(tspan.attributes.get("lk.llm_metrics"))
+        if cached is not None:
+            tspan.set_usage(input_token_details={"cache_read": cached})
+
         tspan.events[:] = [
             e
             for e in tspan.events
@@ -267,6 +287,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes.get("lk.tts_metrics")
         )
         tspan.set_provider(normalize_provider(provider))
+
+        # Characters synthesized are the billable TTS unit; lift them onto the
+        # span as the token count a per-character price entry multiplies.
+        characters = extract_tts_characters(tspan.attributes.get("lk.tts_metrics"))
+        if characters is not None:
+            tspan.set_usage(input_tokens=characters, total_tokens=characters)
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Render an ``agent_turn`` and append it to the running transcript."""
@@ -419,15 +445,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             for key, value in tspan.attributes.items()
             if key.startswith("lk.") or key.startswith("gen_ai.usage")
         }
-        # Lift token counts into gen_ai.usage.* for cost tracking.
-        model_metrics = try_parse_json_object(
-            tspan.attributes.get("lk.realtime_model_metrics")
+        # Lift token counts AND the audio/cached-token detail into gen_ai.usage.*
+        # so the cost engine prices realtime audio tokens at their own rate
+        # rather than as plain text (audio dominates a voice turn).
+        carried_metrics.update(
+            extract_realtime_usage(tspan.attributes.get("lk.realtime_model_metrics"))
         )
-        if isinstance(model_metrics, dict):
-            for token_key in ("input_tokens", "output_tokens", "total_tokens"):
-                count = model_metrics.get(token_key)
-                if isinstance(count, (int, float)):
-                    carried_metrics[f"gen_ai.usage.{token_key}"] = count
         if carried_metrics:
             self._realtime_metrics_by_parent_span[parent.span_id] = carried_metrics
 

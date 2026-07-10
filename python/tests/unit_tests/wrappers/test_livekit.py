@@ -421,3 +421,86 @@ class TestProviderAttribution:
         attrs = self._exported(proc)
         assert attrs["gen_ai.provider.name"] == "openai"
         assert attrs["gen_ai.system"] == "openai"
+
+
+class TestUsageCapture:
+    """Token/usage lifting for cost tracking (TTS characters, LLM cache, realtime)."""
+
+    @staticmethod
+    def _exported(proc):
+        return proc.downstream.on_end.call_args.args[0]._attributes
+
+    def test_tts_characters_lifted_to_input_tokens(self):
+        # Characters synthesized are the billable TTS unit → gen_ai.usage.input_tokens.
+        proc = _processor()
+        metrics = json.dumps(
+            {"characters_count": 42, "audio_duration": 1.5, "metadata": {}}
+        )
+        span = _make_span(
+            "tts_request", {"lk.input_text": "hi", "lk.tts_metrics": metrics}
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.usage.input_tokens"] == 42
+        assert attrs["gen_ai.usage.total_tokens"] == 42
+
+    def test_tts_without_characters_sets_no_usage(self):
+        proc = _processor()
+        span = _make_span(
+            "tts_request",
+            {"lk.input_text": "hi", "lk.tts_metrics": json.dumps({"metadata": {}})},
+        )
+        proc.on_end(span)
+        assert "gen_ai.usage.input_tokens" not in self._exported(proc)
+
+    def test_llm_cached_tokens_lifted_to_detail(self):
+        # LiveKit puts input/output tokens on the span itself; cache-read tokens
+        # live only in the blob and must land in the cache_read input detail.
+        proc = _processor()
+        metrics = json.dumps({"prompt_tokens": 100, "prompt_cached_tokens": 30})
+        span = _make_span(
+            "llm_request",
+            {"gen_ai.usage.input_tokens": 100, "lk.llm_metrics": metrics},
+        )
+        proc.on_end(span)
+        attrs = self._exported(proc)
+        assert attrs["gen_ai.usage.input_token_details"] == str({"cache_read": 30})
+
+    def test_realtime_metrics_lift_audio_and_cache_detail(self):
+        # The realtime blob's audio/cached detail must reach the agent_turn so
+        # audio tokens are priced as audio, not text.
+        proc = _processor()
+        tid = 0xF00
+        blob = json.dumps(
+            {
+                "input_tokens": 200,
+                "output_tokens": 80,
+                "total_tokens": 280,
+                "input_token_details": {"audio_tokens": 150, "cached_tokens": 20},
+                "output_token_details": {"audio_tokens": 60},
+            }
+        )
+        rt = _make_span(
+            "realtime_metrics",
+            {"lk.realtime_model_metrics": blob},
+            trace_id=tid,
+            span_id=0x2,
+        )
+        rt.parent = MagicMock()
+        rt.parent.span_id = 0x9
+        proc.on_end(rt)  # suppressed; metrics cached for the parent agent_turn
+
+        turn = _make_span(
+            "agent_turn", {"lk.response.text": "hi"}, trace_id=tid, span_id=0x9
+        )
+        proc.on_end(turn)
+        exported = [
+            c.args[0]._attributes for c in proc.downstream.on_end.call_args_list
+        ]
+        agent_turn = next(a for a in exported if a.get("lk.response.text") == "hi")
+        assert agent_turn["gen_ai.usage.input_tokens"] == 200
+        assert agent_turn["gen_ai.usage.output_tokens"] == 80
+        assert agent_turn["gen_ai.usage.input_token_details"] == str(
+            {"audio": 150, "cache_read": 20}
+        )
+        assert agent_turn["gen_ai.usage.output_token_details"] == str({"audio": 60})

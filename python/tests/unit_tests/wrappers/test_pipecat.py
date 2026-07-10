@@ -634,3 +634,71 @@ class TestConfigureAndWarning:
         # Force the lazy ``import pipecat`` to fail regardless of environment.
         with patch.dict(sys.modules, {"pipecat": None}):
             assert configure_pipecat() is None
+
+
+class TestPipecatUsageCapture:
+    """Token/usage capture for cost: TTS characters, LLM detail, realtime spans."""
+
+    def test_tts_character_count_lifted_to_input_tokens(self):
+        proc = _processor()
+        span = _make_span("tts", {"text": "hi", "metrics.character_count": 12})
+        proc.on_end(span)
+        attrs = _exported_attrs(proc)
+        assert attrs["gen_ai.usage.input_tokens"] == 12
+        assert attrs["gen_ai.usage.total_tokens"] == 12
+
+    def test_tts_without_character_count_sets_no_usage(self):
+        proc = _processor()
+        proc.on_end(_make_span("tts", {"text": "hi"}))
+        assert "gen_ai.usage.input_tokens" not in _exported_attrs(proc)
+
+    def test_llm_cache_and_reasoning_lifted_to_detail(self):
+        proc = _processor()
+        span = _make_span(
+            "llm",
+            {
+                "input": json.dumps([{"role": "user", "content": "hi"}]),
+                "output": "hello",
+                "gen_ai.usage.input_tokens": 100,
+                "gen_ai.usage.output_tokens": 50,
+                "gen_ai.usage.cache_read.input_tokens": 20,
+                "gen_ai.usage.reasoning_tokens": 8,
+            },
+        )
+        proc.on_end(span)
+        attrs = _exported_attrs(proc)
+        # Plain counts pass through untouched; cache/reasoning become detail.
+        assert attrs["gen_ai.usage.input_token_details"] == str({"cache_read": 20})
+        assert attrs["gen_ai.usage.output_token_details"] == str({"reasoning": 8})
+
+    def test_realtime_llm_response_priced_and_transcribed(self):
+        # Speech-to-speech services emit `llm_response` (not `llm`); it carries
+        # usage (audio tokens included) and the reply.
+        proc = _processor()
+        trace_id = 0x55
+        span = _make_span(
+            "llm_response",
+            {
+                "text_output": "the weather is sunny",
+                "gen_ai.usage.input_tokens": 300,
+                "gen_ai.usage.output_tokens": 120,
+            },
+            trace_id=trace_id,
+        )
+        proc.on_end(span)
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "llm"
+        # Usage passes through untouched for the cost engine.
+        assert attrs["gen_ai.usage.input_tokens"] == 300
+        completion = json.loads(attrs["gen_ai.completion"])["messages"]
+        assert completion[0]["content"] == "the weather is sunny"
+        # Reply folds into the conversation the root renders.
+        assert (
+            proc._transcript_by_trace[trace_id][-1]["content"] == "the weather is sunny"
+        )
+
+    def test_realtime_wrapper_spans_are_chain(self):
+        proc = _processor()
+        for name in ("llm_setup", "llm_request"):
+            proc.on_end(_make_span(name, {}))
+            assert _exported_attrs(proc)["langsmith.span.kind"] == "chain"

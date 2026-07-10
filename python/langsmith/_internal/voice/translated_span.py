@@ -18,6 +18,13 @@ from opentelemetry.sdk.trace import Event, ReadableSpan
 from langsmith._internal.otel._span_utils import rebuild_readable_span
 
 
+def _clean_token_details(details: Optional[dict[str, Any]]) -> dict[str, int]:
+    """Keep only the int-valued detail keys, dropping ``None`` / non-numeric."""
+    if not details:
+        return {}
+    return {k: int(v) for k, v in details.items() if isinstance(v, (int, float))}
+
+
 @dataclass
 class TranslatedSpan:
     """A span being translated into LangSmith's namespaces before export.
@@ -98,6 +105,37 @@ class TranslatedSpan:
         their own setters / direct writes.
         """
         self.attributes[f"langsmith.metadata.{key}"] = value
+
+    def set_usage(
+        self,
+        *,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        total_tokens: Optional[int] = None,
+        input_token_details: Optional[dict[str, int]] = None,
+        output_token_details: Optional[dict[str, int]] = None,
+    ) -> None:
+        """Write token usage onto the span so the cost engine can price it.
+
+        Sets ``gen_ai.usage.input_tokens`` / ``output_tokens`` / ``total_tokens``
+        (ints) and the per-modality ``gen_ai.usage.input_token_details`` /
+        ``output_token_details`` breakdowns. The detail blocks are written as
+        ``str(dict)`` — the exact form LangSmith's OTLP exporter/ingester round
+        trips (see ``_otel_exporter``), where ``audio`` / ``cache_read`` /
+        ``reasoning`` keys drive the modality-specific price multipliers that
+        dominate voice cost. Only non-``None`` values are written, and empty
+        detail blocks are dropped so a span never carries an empty breakdown.
+        """
+        if input_tokens is not None:
+            self.attributes["gen_ai.usage.input_tokens"] = int(input_tokens)
+        if output_tokens is not None:
+            self.attributes["gen_ai.usage.output_tokens"] = int(output_tokens)
+        if total_tokens is not None:
+            self.attributes["gen_ai.usage.total_tokens"] = int(total_tokens)
+        if details := _clean_token_details(input_token_details):
+            self.attributes["gen_ai.usage.input_token_details"] = str(details)
+        if details := _clean_token_details(output_token_details):
+            self.attributes["gen_ai.usage.output_token_details"] = str(details)
 
     def set_messages(
         self,

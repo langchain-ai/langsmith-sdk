@@ -159,23 +159,69 @@ def _resolve_model(invocation_context: Any) -> str | None:
     return getattr(model, "model", None) or None
 
 
-def _usage_metadata(event: Any) -> dict[str, int] | None:
+def _audio_tokens(details: Any) -> int | None:
+    """Sum the ``AUDIO`` modality token count from a ``ModalityTokenCount`` list.
+
+    Gemini reports per-modality breakdowns as a list of ``{modality, token_count}``
+    entries; the audio bucket is what the cost engine prices at the (much higher)
+    audio rate. Returns ``None`` when no audio modality is present.
+    """
+    if not isinstance(details, (list, tuple)):
+        return None
+    total = 0
+    found = False
+    for entry in details:
+        modality = getattr(entry, "modality", None)
+        modality = getattr(modality, "value", modality)
+        count = getattr(entry, "token_count", None)
+        if str(modality).upper().endswith("AUDIO") and isinstance(count, int):
+            total += count
+            found = True
+    return total if found else None
+
+
+def _usage_metadata(event: Any) -> dict[str, Any] | None:
     """Map an ADK event's ``usage_metadata`` to LangSmith token usage, if any.
 
-    ADK inherits genai's ``GenerateContentResponseUsageMetadata`` (prompt /
-    candidates / total token counts). Live events may carry no usage at all, in
-    which case the ``llm`` span is still recorded without token counts. Only
+    ADK inherits genai's ``GenerateContentResponseUsageMetadata``. Beyond the
+    aggregate prompt / candidates / total counts, the ``audio`` modality split
+    (from ``prompt_tokens_details`` / ``candidates_tokens_details``), the
+    ``cache_read`` count, and the ``reasoning`` count are captured — for Gemini
+    Live the audio tokens dominate and are priced very differently from text, so
+    dropping the split would mis-price the turn. Live events may carry no usage
+    at all, in which case the ``llm`` span is recorded without token counts. Only
     the fields ADK actually reports are included.
     """
     um = getattr(event, "usage_metadata", None)
     if um is None:
         return None
-    mapping = {
-        "input_tokens": getattr(um, "prompt_token_count", None),
-        "output_tokens": getattr(um, "candidates_token_count", None),
-        "total_tokens": getattr(um, "total_token_count", None),
-    }
-    usage = {k: v for k, v in mapping.items() if isinstance(v, int)}
+    usage: dict[str, Any] = {}
+    for key, attr in (
+        ("input_tokens", "prompt_token_count"),
+        ("output_tokens", "candidates_token_count"),
+        ("total_tokens", "total_token_count"),
+    ):
+        if isinstance(v := getattr(um, attr, None), int):
+            usage[key] = v
+
+    input_details: dict[str, int] = {}
+    if (audio := _audio_tokens(getattr(um, "prompt_tokens_details", None))) is not None:
+        input_details["audio"] = audio
+    if isinstance(cached := getattr(um, "cached_content_token_count", None), int):
+        input_details["cache_read"] = cached
+    if input_details:
+        usage["input_token_details"] = input_details
+
+    output_details: dict[str, int] = {}
+    if (
+        audio := _audio_tokens(getattr(um, "candidates_tokens_details", None))
+    ) is not None:
+        output_details["audio"] = audio
+    if isinstance(reasoning := getattr(um, "thoughts_token_count", None), int):
+        output_details["reasoning"] = reasoning
+    if output_details:
+        usage["output_token_details"] = output_details
+
     return usage or None
 
 

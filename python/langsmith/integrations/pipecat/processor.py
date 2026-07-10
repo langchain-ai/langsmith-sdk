@@ -23,6 +23,12 @@ attached as a WAV when the conversation ends.
 ``llm_span_kind`` sets the kind for Pipecat's ``llm`` span — keep ``"llm"`` for a
 service that does its own inference; pass ``"chain"`` when it only orchestrates
 nested runs exported separately (else the conversation double-counts).
+
+Speech-to-speech (realtime) services (OpenAI Realtime, Gemini Live) don't emit a
+cascade ``stt``/``llm``/``tts`` split — they emit operation-named spans
+(``llm_setup`` / ``llm_request`` / ``llm_response``). ``llm_response`` carries the
+token usage (audio tokens included) and the model reply, so it's translated to an
+``llm`` run for cost; the wrappers become ``chain`` runs.
 """
 
 from __future__ import annotations
@@ -46,7 +52,12 @@ from langsmith._internal.voice.base_span_processor import (
     TranslatedSpan,
 )
 
-from ._helpers import build_completion_message, parse_llm_messages
+from ._helpers import (
+    build_completion_message,
+    extract_llm_token_details,
+    extract_tts_characters,
+    parse_llm_messages,
+)
 
 if TYPE_CHECKING:
     from pipecat.processors.audio.audio_buffer_processor import (  # type: ignore[import-not-found]
@@ -207,12 +218,27 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._handle_turn(tspan)
         elif name == "conversation":
             self._handle_conversation(tspan, trace_id)
+        elif name == "llm_response":
+            # Speech-to-speech (realtime) services emit operation-named spans
+            # instead of a single `llm` span; `llm_response` is the one carrying
+            # usage + the model reply.
+            self._handle_realtime_response(tspan, trace_id)
+        elif name in ("llm_setup", "llm_request"):
+            # Realtime framework wrappers around the response — no fabricated
+            # I/O, and chain-kind so they don't double-count as model calls.
+            tspan.set_kind("chain")
         return True
 
     # -- per-span-type handlers ----------------------------------------------
 
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
-        """STT span: audio input → transcribed text."""
+        """STT span: audio input → transcribed text.
+
+        No token usage is set: Pipecat's ``stt`` span carries neither an audio
+        duration nor a word/character count, so there is no billable unit to
+        price cascade STT by. TODO(voice-cost): revisit if Pipecat adds an STT
+        usage metric (it emits none today).
+        """
         transcript = tspan.attributes.get("transcript", "")
         tspan.set_kind("llm")
         tspan.set_messages(prompt=[build_user_message(f'Audio for: "{transcript}"')])
@@ -236,6 +262,15 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if output_data:
             tspan.set_messages(completion=[build_completion_message(output_data)])
 
+        # Plain input/output token counts are already on the span
+        # (gen_ai.usage.*, passed through); recover Pipecat's vendor-keyed cache
+        # and reasoning tokens into the canonical detail so they're priced right.
+        in_detail, out_detail = extract_llm_token_details(tspan.attributes)
+        if in_detail or out_detail:
+            tspan.set_usage(
+                input_token_details=in_detail, output_token_details=out_detail
+            )
+
         transcript = [m for m in messages if m.get("role") != "system"]
         if output_data:
             transcript.append(build_completion_message(output_data))
@@ -253,7 +288,37 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             prompt=[build_user_message(str(text))],
             completion=[build_assistant_message(f'Generated audio for: "{text}"')],
         )
+        # Characters synthesized are the billable TTS unit; lift them onto the
+        # span as the token count a per-character price entry multiplies.
+        characters = extract_tts_characters(tspan.attributes)
+        if characters is not None:
+            tspan.set_usage(input_tokens=characters, total_tokens=characters)
         tspan.exclude_from_message_view()
+
+    def _handle_realtime_response(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """``llm_response`` span from a realtime (speech-to-speech) service.
+
+        The realtime services (OpenAI Realtime, Gemini Live under Pipecat) don't
+        emit a cascade ``llm`` span — this is the one carrying token usage and
+        the model reply. Usage rides on the span as ``gen_ai.usage.*`` already
+        (audio tokens included), so cost flows once the span is ``llm``-kind; we
+        add the reply text and fold it into the conversation rollup. Cache /
+        reasoning detail is recovered the same way as the cascade ``llm`` span.
+        """
+        tspan.set_kind(self._llm_span_kind)
+        output_data = tspan.attributes.get("output") or tspan.attributes.get(
+            "text_output", ""
+        )
+        if output_data:
+            completion = build_completion_message(output_data)
+            tspan.set_messages(completion=[completion])
+            self._transcript_by_trace.setdefault(trace_id, []).append(completion)
+
+        in_detail, out_detail = extract_llm_token_details(tspan.attributes)
+        if in_detail or out_detail:
+            tspan.set_usage(
+                input_token_details=in_detail, output_token_details=out_detail
+            )
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Turn span: a framework wrapper around one exchange (a ``chain``)."""

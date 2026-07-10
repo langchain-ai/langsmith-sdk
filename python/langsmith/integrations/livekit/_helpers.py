@@ -111,6 +111,76 @@ def extract_model_from_lk_metrics(metrics: Any) -> Optional[str]:
     return None
 
 
+def _as_int(value: Any) -> Optional[int]:
+    """Coerce a numeric metrics value to ``int``, or ``None`` if not numeric."""
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def extract_tts_characters(metrics: Any) -> Optional[int]:
+    """Read ``characters_count`` from a LiveKit ``lk.tts_metrics`` blob.
+
+    That character count is the billable unit for cascade TTS (providers price
+    synthesis per character), so it is lifted onto the span as the token count a
+    per-character price entry multiplies. ``None`` when the blob is absent or
+    carries no count.
+    """
+    parsed = try_parse_json_object(metrics)
+    if isinstance(parsed, dict):
+        return _as_int(parsed.get("characters_count"))
+    return None
+
+
+def extract_llm_cached_tokens(metrics: Any) -> Optional[int]:
+    """Read ``prompt_cached_tokens`` from a LiveKit ``lk.llm_metrics`` blob.
+
+    LiveKit sets the plain input/output token counts directly on the
+    ``llm_request`` span (``gen_ai.usage.*``) but reports cache-read tokens only
+    inside the metrics blob, so it is recovered here for the ``cache_read`` input
+    detail (cached tokens are priced lower than fresh input).
+    """
+    parsed = try_parse_json_object(metrics)
+    if isinstance(parsed, dict):
+        return _as_int(parsed.get("prompt_cached_tokens"))
+    return None
+
+
+def extract_realtime_usage(metrics: Any) -> dict[str, Any]:
+    """Map a LiveKit ``lk.realtime_model_metrics`` blob to ``gen_ai.usage.*`` attrs.
+
+    RealtimeModel usage (OpenAI Realtime, Gemini Live, … under LiveKit) breaks
+    down into audio vs text vs cached tokens, and audio tokens are priced very
+    differently from text — so capturing only the aggregate counts (as before)
+    mis-prices the audio that dominates a voice turn. This lifts the aggregate
+    counts plus the ``audio`` / ``cache_read`` detail into the ``gen_ai.usage.*``
+    attributes (detail as ``str(dict)``, the form the ingester reads) so the cost
+    engine applies the right per-modality rates. Returns an empty dict when the
+    blob is absent or carries no usable counts.
+    """
+    parsed = try_parse_json_object(metrics)
+    if not isinstance(parsed, dict):
+        return {}
+    attrs: dict[str, Any] = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        if (count := _as_int(parsed.get(key))) is not None:
+            attrs[f"gen_ai.usage.{key}"] = count
+
+    in_details = parsed.get("input_token_details")
+    input_detail: dict[str, int] = {}
+    if isinstance(in_details, dict):
+        if (audio := _as_int(in_details.get("audio_tokens"))) is not None:
+            input_detail["audio"] = audio
+        if (cached := _as_int(in_details.get("cached_tokens"))) is not None:
+            input_detail["cache_read"] = cached
+    if input_detail:
+        attrs["gen_ai.usage.input_token_details"] = str(input_detail)
+
+    out_details = parsed.get("output_token_details")
+    if isinstance(out_details, dict):
+        if (audio := _as_int(out_details.get("audio_tokens"))) is not None:
+            attrs["gen_ai.usage.output_token_details"] = str({"audio": audio})
+    return attrs
+
+
 def flatten_lk_attributes_to_ls_metadata(
     obj: dict, prefix: str, _depth: int = 0
 ) -> dict:

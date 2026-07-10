@@ -264,6 +264,45 @@ class TestUsageMetadata:
         )
         assert _usage_metadata(_event(usage_metadata=um)) == {"input_tokens": 10}
 
+    def test_captures_audio_cache_and_reasoning_detail(self):
+        # Gemini Live's dominant cost is audio tokens, split out by modality; the
+        # audio bucket, cache_read, and reasoning must all be captured or the
+        # audio gets mis-priced as text.
+        def _mtc(modality, count):
+            return SimpleNamespace(
+                modality=SimpleNamespace(value=modality), token_count=count
+            )
+
+        um = SimpleNamespace(
+            prompt_token_count=100,
+            candidates_token_count=40,
+            total_token_count=140,
+            cached_content_token_count=15,
+            thoughts_token_count=8,
+            prompt_tokens_details=[_mtc("AUDIO", 90), _mtc("TEXT", 10)],
+            candidates_tokens_details=[_mtc("AUDIO", 35)],
+        )
+        assert _usage_metadata(_event(usage_metadata=um)) == {
+            "input_tokens": 100,
+            "output_tokens": 40,
+            "total_tokens": 140,
+            "input_token_details": {"audio": 90, "cache_read": 15},
+            "output_token_details": {"audio": 35, "reasoning": 8},
+        }
+
+    def test_audio_modality_as_plain_string(self):
+        # The modality can arrive as a bare string rather than an enum.
+        um = SimpleNamespace(
+            prompt_token_count=50,
+            prompt_tokens_details=[
+                SimpleNamespace(modality="AUDIO", token_count=50),
+            ],
+        )
+        assert _usage_metadata(_event(usage_metadata=um)) == {
+            "input_tokens": 50,
+            "input_token_details": {"audio": 50},
+        }
+
 
 # --------------------------------------------------------------------------- #
 # _session_key — per-conversation key precedence.
