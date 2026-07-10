@@ -199,6 +199,8 @@ def __getattr__(name: str) -> Any:
         "RateLimitError",
         "InternalServerError",
     ):
+        import langsmith._openapi_client._exceptions as _exceptions
+
         exception = getattr(_exceptions, name)
         exception.__module__ = __name__
         return exception
