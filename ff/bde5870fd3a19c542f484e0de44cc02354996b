@@ -1,0 +1,52 @@
+python/langsmith/integrations/livekit/_helpers.py
+  s_f4b0bb452ca17d::t_8cd6c810557677 145-146,154-158
+  s_f4b0bb452ca17d::t_130c19a3998e68 151-153
+  s_f4b0bb452ca17d::t_2816ba9853ccb4 142-144,147-149
+  s_f4b0bb452ca17d::t_b5766ffdff6464 125,128-133,138-139
+  s_f4b0bb452ca17d::t_d76985bfbba802 114-124,126-127,134-137,140-141,150
+python/langsmith/_internal/voice/translated_span.py
+  s_f4b0bb452ca17d::t_04c08063360a0b 118,120-127,129-142,144,146-148
+  s_f4b0bb452ca17d::t_1f85ff468390e1 149
+  s_f4b0bb452ca17d::t_d76985bfbba802 21-27,109-117,119,128,143,145
+python/langsmith/integrations/livekit/processor.py
+  s_f4b0bb452ca17d::t_89917d0e125a82 464-466
+  s_f4b0bb452ca17d::t_a02afaf1b02df9 205
+  s_f4b0bb452ca17d::t_4a426728f5cddf 245-246
+  s_f4b0bb452ca17d::t_e74adf079e3d17 462
+  s_f4b0bb452ca17d::t_9ee44da1ccfb08 206,247-250
+  s_f4b0bb452ca17d::t_a222f437bf15b3 208-212
+  s_f4b0bb452ca17d::t_16d569459e7c32 186-190
+  s_f4b0bb452ca17d::t_db52f59e968d52 201-203
+  s_f4b0bb452ca17d::t_95868f8beaeb6a 285-288
+  s_f4b0bb452ca17d::t_d14fdc5942b9e8 456,460-461,463,467-468
+  s_f4b0bb452ca17d::t_d76985bfbba802 33,36,204
+  s_f4b0bb452ca17d::t_893fe8f6671625 283-284,289-292
+  s_f4b0bb452ca17d::t_d797deed495679 457-459
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_f4b0bb452ca17d::t_8ca95322213059 426-430
+  s_f4b0bb452ca17d::t_5b932debeb397d 409
+  s_f4b0bb452ca17d::t_85168f23056079 448-449,451-454
+  s_f4b0bb452ca17d::t_a40becf39065b1 483-484,488-497
+  s_f4b0bb452ca17d::t_8a3b21bc8c1d4d 485-487
+  s_f4b0bb452ca17d::t_a7f45a9f737b49 68-69,73-74
+  s_f4b0bb452ca17d::t_4045a298879570 455-482
+  s_f4b0bb452ca17d::t_1b1931b46e640f 432-434,445-447,450
+  s_f4b0bb452ca17d::t_d76985bfbba802 406-408,410-425,435-444
+  s_f4b0bb452ca17d::t_9f4e6c7ecea710 431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "ffbde5870fd3a19c542f484e0de44cc02354996b",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
