@@ -1,0 +1,57 @@
+python/langsmith/integrations/livekit/processor.py
+  s_f4b0bb452ca17d::t_d76985bfbba802 36
+  s_f4b0bb452ca17d::t_893fe8f6671625 271-272,275-278
+  s_f4b0bb452ca17d::t_e74adf079e3d17 447
+  s_f4b0bb452ca17d::t_a222f437bf15b3 199-201
+  s_f4b0bb452ca17d::t_b0a990c49852dd 273-274
+  s_f4b0bb452ca17d::t_9ee44da1ccfb08 238
+  s_f4b0bb452ca17d::t_89917d0e125a82 449-451
+  s_f4b0bb452ca17d::t_4a20b4867ef1bb 33
+  s_f4b0bb452ca17d::t_ce77a5e0316d3b 443-444
+  s_f4b0bb452ca17d::t_1d58686f954e82 234-237
+  s_f4b0bb452ca17d::t_d14fdc5942b9e8 442,445-446,448,452-453
+  s_f4b0bb452ca17d::t_16d569459e7c32 186
+python/langsmith/_internal/voice/translated_span.py
+  s_f4b0bb452ca17d::t_f87549a0c83628 124-129
+  s_f4b0bb452ca17d::t_d76985bfbba802 21-27,109-117,119,122,130,132
+  s_f4b0bb452ca17d::t_04c08063360a0b 123,131,133-135
+  s_f4b0bb452ca17d::t_4221a3593b9b4f 118,120-121
+  s_f4b0bb452ca17d::t_1f85ff468390e1 136
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_f4b0bb452ca17d::t_85168f23056079 451-452,454-457
+  s_f4b0bb452ca17d::t_a40becf39065b1 486-487,491-500
+  s_f4b0bb452ca17d::t_5b932debeb397d 409
+  s_f4b0bb452ca17d::t_1712e07496d1e2 415-417,419-425,427,429,431-432
+  s_f4b0bb452ca17d::t_a7f45a9f737b49 68-69,73-74
+  s_f4b0bb452ca17d::t_8a3b21bc8c1d4d 488-490
+  s_f4b0bb452ca17d::t_d76985bfbba802 406-408,410-414,418,426,428,438-447
+  s_f4b0bb452ca17d::t_9f4e6c7ecea710 434
+  s_f4b0bb452ca17d::t_8ca95322213059 430,433
+  s_f4b0bb452ca17d::t_1b1931b46e640f 435-437,448-450,453
+  s_f4b0bb452ca17d::t_4045a298879570 458-485
+python/langsmith/integrations/livekit/_helpers.py
+  s_f4b0bb452ca17d::t_130c19a3998e68 155-157
+  s_f4b0bb452ca17d::t_e589281471ac65 137
+  s_f4b0bb452ca17d::t_d95daafc77f76b 120
+  s_f4b0bb452ca17d::t_93cd3d16810c61 119,122-133
+  s_f4b0bb452ca17d::t_d76985bfbba802 114-118,121,135-136,138-141,144-145,154
+  s_f4b0bb452ca17d::t_b5766ffdff6464 134,142-143
+  s_f4b0bb452ca17d::t_2816ba9853ccb4 146-148,151-153
+  s_f4b0bb452ca17d::t_8cd6c810557677 149-150,158-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "8dbb3938d99a40b0e4ec1af3039089cd2a5d07a8",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
