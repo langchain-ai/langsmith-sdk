@@ -164,6 +164,31 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
 
+def test_get_current_workspace() -> None:
+    client = Client(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+        auto_batch_tracing=False,
+    )
+    response = mock.Mock()
+    response.json.return_value = {
+        "id": "expected-workspace",
+        "display_name": "Expected Workspace",
+        "created_at": "2026-07-11T00:00:00Z",
+    }
+
+    with mock.patch.object(
+        Client, "request_with_retries", return_value=response
+    ) as request:
+        workspace = client.get_current_workspace()
+        cached_workspace = client.get_current_workspace()
+
+    assert workspace.id == "expected-workspace"
+    assert cached_workspace is workspace
+    request.assert_called_once_with("GET", "/settings")
+
+
 def test_client_init_does_not_eagerly_initialize_openapi_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

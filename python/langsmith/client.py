@@ -1751,18 +1751,18 @@ class Client:
 
         return self._info
 
-    def _get_settings(self) -> ls_schemas.LangSmithSettings:
-        """Get the settings for the current tenant.
-
-        Returns:
-            The settings for the current tenant.
-        """
+    def get_current_workspace(self) -> ls_schemas.LangSmithSettings:
+        """Get the workspace selected by the client's endpoint and credentials."""
         if self._settings is None:
             response = self.request_with_retries("GET", "/settings")
             ls_utils.raise_for_status_with_text(response)
             self._settings = ls_schemas.LangSmithSettings(**response.json())
 
         return self._settings
+
+    def _get_settings(self) -> ls_schemas.LangSmithSettings:
+        """Get the settings for the current tenant."""
+        return self.get_current_workspace()
 
     def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
         if content_length is None or self._info is None:

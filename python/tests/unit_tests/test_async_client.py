@@ -31,6 +31,33 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+@pytest.mark.asyncio
+async def test_get_current_workspace() -> None:
+    client = AsyncClient(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+    )
+    response = mock.Mock()
+    response.json.return_value = {
+        "id": "expected-workspace",
+        "display_name": "Expected Workspace",
+        "created_at": "2026-07-11T00:00:00Z",
+    }
+
+    with mock.patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as request:
+        request.return_value = response
+        workspace = await client.get_current_workspace()
+        cached_workspace = await client.get_current_workspace()
+
+    assert workspace.id == "expected-workspace"
+    assert cached_workspace is workspace
+    request.assert_awaited_once_with("GET", "/settings")
+    await client.aclose()
+
+
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 def test_async_client_custom_headers(mock_client_cls: mock.Mock) -> None:
     mock_httpx_client = mock.Mock()
