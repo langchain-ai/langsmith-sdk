@@ -1,0 +1,41 @@
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_f4b0bb452ca17d::t_93bd25d5d47cb3 637-639
+  s_f4b0bb452ca17d::t_1c0e8c6fe52650 640-681
+  s_f4b0bb452ca17d::t_2bfca0a4fb1b52 685-718
+  s_f4b0bb452ca17d::t_d3c420e14d5868 682-684
+python/langsmith/integrations/pipecat/_helpers.py
+  s_f4b0bb452ca17d::t_181cece3eb5a0e 25-29,37,41,43,45,51-52
+  s_f4b0bb452ca17d::t_b306cfb7e5126c 30,32-36,46-50
+  s_f4b0bb452ca17d::t_f78366ca98c43a 31
+  s_f4b0bb452ca17d::t_5732dfd424b30a 38-40,42,44
+python/langsmith/integrations/pipecat/processor.py
+  s_f4b0bb452ca17d::t_3be190c5180749 26,208,218-219,225,234-237
+  s_f4b0bb452ca17d::t_98c59bbcc85d6f 281-292
+  s_f4b0bb452ca17d::t_6aa1fac4067d95 232-233
+  s_f4b0bb452ca17d::t_2826a343152955 280
+  s_f4b0bb452ca17d::t_a2a2b6ec0e3e27 55-56
+  s_f4b0bb452ca17d::t_0d2079e61f15e0 52-53
+  s_f4b0bb452ca17d::t_61a906856b9ab4 54
+  s_f4b0bb452ca17d::t_b98744728a73c2 256-258
+  s_f4b0bb452ca17d::t_31a4923c2b6c15 279
+  s_f4b0bb452ca17d::t_7b4e8769cf9b88 27-28
+  s_f4b0bb452ca17d::t_5153efd8f5ceb2 293
+  s_f4b0bb452ca17d::t_a9ae8b885db889 217,220
+  s_f4b0bb452ca17d::t_8b028e6dbcff23 259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "8ec0c4f33e2744be2245e8ac43302ee28f8e5138",
+  "prompts": {},
+  "sessions": {
+    "s_f4b0bb452ca17d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "257ef9a7-5f1a-410c-9b63-2e20965516ad",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
