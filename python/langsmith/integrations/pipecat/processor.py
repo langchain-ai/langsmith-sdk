@@ -23,6 +23,9 @@ attached as a WAV when the conversation ends.
 ``llm_span_kind`` sets the kind for Pipecat's ``llm`` span — keep ``"llm"`` for a
 service that does its own inference; pass ``"chain"`` when it only orchestrates
 nested runs exported separately (else the conversation double-counts).
+
+Speech-to-speech (realtime) services emit operation-named spans: ``llm_response``
+(→ ``llm`` run, usage + reply) and the ``llm_setup`` / ``llm_request`` wrappers.
 """
 
 from __future__ import annotations
@@ -45,8 +48,11 @@ from langsmith._internal.voice.base_span_processor import (
     BaseLangSmithSpanProcessor,
     TranslatedSpan,
 )
-
-from ._helpers import build_completion_message, parse_llm_messages
+from langsmith.integrations.pipecat._helpers import (
+    build_completion_message,
+    extract_llm_usage,
+    parse_llm_messages,
+)
 
 if TYPE_CHECKING:
     from pipecat.processors.audio.audio_buffer_processor import (  # type: ignore[import-not-found]
@@ -198,7 +204,7 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         name = tspan.span.name
 
         if name == "stt":
-            self._handle_stt(tspan)
+            self._handle_stt(tspan, trace_id)
         elif name == "llm":
             self._handle_llm(tspan, trace_id)
         elif name == "tts":
@@ -207,17 +213,27 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._handle_turn(tspan)
         elif name == "conversation":
             self._handle_conversation(tspan, trace_id)
+        elif name == "llm_response":  # realtime: usage + reply
+            self._handle_realtime_response(tspan, trace_id)
+        elif name in ("llm_setup", "llm_request"):
+            tspan.set_kind("chain")  # realtime wrappers
         return True
 
     # -- per-span-type handlers ----------------------------------------------
 
-    def _handle_stt(self, tspan: TranslatedSpan) -> None:
+    def _handle_stt(self, tspan: TranslatedSpan, trace_id: int) -> None:
         """STT span: audio input → transcribed text."""
         transcript = tspan.attributes.get("transcript", "")
         tspan.set_kind("llm")
         tspan.set_messages(prompt=[build_user_message(f'Audio for: "{transcript}"')])
         if transcript:
             tspan.set_messages(completion=[build_assistant_message(str(transcript))])
+            # Fold the user turn into the rollup (realtime has no cascade llm
+            # span to carry it; cascade's llm span replaces it with full history).
+            if tspan.attributes.get("is_final", True):
+                self._transcript_by_trace.setdefault(trace_id, []).append(
+                    build_user_message(str(transcript))
+                )
         tspan.exclude_from_message_view()
 
     def _handle_llm(self, tspan: TranslatedSpan, trace_id: int) -> None:
@@ -235,6 +251,10 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.set_messages(prompt=messages)
         if output_data:
             tspan.set_messages(completion=[build_completion_message(output_data)])
+
+        usage = extract_llm_usage(tspan.attributes)
+        if usage:
+            tspan.set_usage(**usage)
 
         transcript = [m for m in messages if m.get("role") != "system"]
         if output_data:
@@ -254,6 +274,21 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             completion=[build_assistant_message(f'Generated audio for: "{text}"')],
         )
         tspan.exclude_from_message_view()
+
+    def _handle_realtime_response(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """``llm_response`` span from a realtime (speech-to-speech) service."""
+        tspan.set_kind(self._llm_span_kind)
+        output_data = tspan.attributes.get("output") or tspan.attributes.get(
+            "text_output", ""
+        )
+        if output_data:
+            completion = build_completion_message(output_data)
+            tspan.set_messages(completion=[completion])
+            self._transcript_by_trace.setdefault(trace_id, []).append(completion)
+
+        usage = extract_llm_usage(tspan.attributes)
+        if usage:
+            tspan.set_usage(**usage)
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Turn span: a framework wrapper around one exchange (a ``chain``)."""
