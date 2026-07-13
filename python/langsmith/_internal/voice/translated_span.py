@@ -18,6 +18,13 @@ from opentelemetry.sdk.trace import Event, ReadableSpan
 from langsmith._internal.otel._span_utils import rebuild_readable_span
 
 
+def _clean_token_details(details: Optional[dict[str, Any]]) -> dict[str, int]:
+    """Keep only the int-valued detail keys, dropping ``None`` / non-numeric."""
+    if not details:
+        return {}
+    return {k: int(v) for k, v in details.items() if isinstance(v, (int, float))}
+
+
 @dataclass
 class TranslatedSpan:
     """A span being translated into LangSmith's namespaces before export.
@@ -98,6 +105,34 @@ class TranslatedSpan:
         their own setters / direct writes.
         """
         self.attributes[f"langsmith.metadata.{key}"] = value
+
+    def set_usage(
+        self,
+        *,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        total_tokens: Optional[int] = None,
+        input_token_details: Optional[dict[str, int]] = None,
+        output_token_details: Optional[dict[str, int]] = None,
+    ) -> None:
+        """Write the given token usage as ``langsmith.usage_metadata`` (JSON).
+
+        Callers pass the complete usage — it replaces the flat ``gen_ai.usage.*``
+        at ingest. No-op when nothing is given.
+        """
+        usage: dict[str, Any] = {}
+        if input_tokens is not None:
+            usage["input_tokens"] = int(input_tokens)
+        if output_tokens is not None:
+            usage["output_tokens"] = int(output_tokens)
+        if total_tokens is not None:
+            usage["total_tokens"] = int(total_tokens)
+        if details := _clean_token_details(input_token_details):
+            usage["input_token_details"] = details
+        if details := _clean_token_details(output_token_details):
+            usage["output_token_details"] = details
+        if usage:
+            self.attributes["langsmith.usage_metadata"] = json.dumps(usage)
 
     def set_messages(
         self,

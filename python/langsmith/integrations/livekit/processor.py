@@ -30,8 +30,10 @@ from langsmith._internal.voice.base_span_processor import (
 
 from ._helpers import (
     build_message_from_event,
+    extract_llm_usage,
     extract_model_from_lk_metrics,
     extract_provider_from_lk_metrics,
+    extract_realtime_usage,
     flatten_lk_attributes_to_ls_metadata,
     is_livekit_span,
     normalize_provider,
@@ -112,8 +114,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._pending_audio_by_thread: MutableMapping[str, dict] = _cache()
         # thread id -> trace_id, so ``complete_recording`` can find the trace.
         self._trace_by_thread: MutableMapping[str, int] = _cache()
-        # parent span_id -> realtime metrics to drain onto its ``agent_turn``.
-        self._realtime_metrics_by_parent_span: MutableMapping[int, dict] = _cache()
 
     def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
         """Also index thread→trace (so ``complete_recording`` can find the trace)."""
@@ -183,9 +183,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         elif name == _TOOL_SPAN:
             self._handle_tool(tspan)
         elif name == _REALTIME_METRICS_SPAN:
-            # Drained onto the parent agent_turn; suppress this span (False).
-            self._cache_realtime_metrics(tspan)
-            return False
+            tspan.set_kind("llm")
         elif tspan.span.parent is None and is_livekit_span(tspan.span):
             # Conversation root — _handle_root owns its export (False). Gated on
             # the LiveKit scope so a non-LiveKit parentless span isn't hijacked.
@@ -198,14 +196,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _handle_stt(self, tspan: TranslatedSpan) -> None:
         """STT (``user_turn``): audio input → transcribed text."""
         tspan.set_kind("llm")
-        tspan.set_model(
-            tspan.attributes.get("gen_ai.request.model")
-            or extract_model_from_lk_metrics(tspan.attributes.get("lk.stt_metrics"))
+        tspan.set_model(tspan.attributes.get("gen_ai.request.model"))
+        tspan.set_provider(
+            normalize_provider(tspan.attributes.get("gen_ai.provider.name"))
         )
-        provider = extract_provider_from_lk_metrics(
-            tspan.attributes.get("lk.stt_metrics")
-        )
-        tspan.set_provider(normalize_provider(provider))
 
         transcript = tspan.attributes.get("lk.user_transcript")
         if transcript:
@@ -236,6 +230,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes.get("lk.llm_metrics")
         )
         tspan.set_provider(normalize_provider(provider))
+
+        # Lift the token usage (counts + cache_read detail) from the metrics blob.
+        usage = extract_llm_usage(tspan.attributes.get("lk.llm_metrics"))
+        if usage:
+            tspan.set_usage(**usage)
 
         tspan.events[:] = [
             e
@@ -269,9 +268,14 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_provider(normalize_provider(provider))
 
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
-        """Render an ``agent_turn`` and append it to the running transcript."""
-        tspan.set_kind("chain")
-        self._drain_realtime_metrics(tspan)
+        """Render an ``agent_turn`` and append it to the running transcript.
+
+        ``llm`` for a realtime model (the turn is the model call, usage stamped
+        here); ``chain`` for cascade (the STT/LLM/TTS children carry their usage).
+        """
+        tspan.set_kind(
+            "llm" if "lk.realtime_model_metrics" in tspan.attributes else "chain"
+        )
 
         user_input = tspan.attributes.get("lk.user_input")
         response = tspan.attributes.get("lk.response.text")
@@ -407,41 +411,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             mime_type=pending["mime_type"],
         )
 
-    # -- realtime-model metrics ----------------------------------------------
-
-    def _cache_realtime_metrics(self, tspan: TranslatedSpan) -> None:
-        """Stash a ``realtime_metrics`` span's data for its parent ``agent_turn``."""
-        parent = tspan.span.parent
-        if parent is None:
-            return
-        carried_metrics = {
-            key: value
-            for key, value in tspan.attributes.items()
-            if key.startswith("lk.") or key.startswith("gen_ai.usage")
-        }
-        # Lift token counts into gen_ai.usage.* for cost tracking.
-        model_metrics = try_parse_json_object(
-            tspan.attributes.get("lk.realtime_model_metrics")
-        )
-        if isinstance(model_metrics, dict):
-            for token_key in ("input_tokens", "output_tokens", "total_tokens"):
-                count = model_metrics.get(token_key)
-                if isinstance(count, (int, float)):
-                    carried_metrics[f"gen_ai.usage.{token_key}"] = count
-        if carried_metrics:
-            self._realtime_metrics_by_parent_span[parent.span_id] = carried_metrics
-
-    def _drain_realtime_metrics(self, tspan: TranslatedSpan) -> None:
-        """Copy cached realtime metrics onto this ``agent_turn`` (never clobbering)."""
-        carried_metrics = self._realtime_metrics_by_parent_span.pop(
-            tspan.span.context.span_id, None
-        )
-        if not carried_metrics:
-            return
-        for key, value in carried_metrics.items():
-            if key not in tspan.attributes:
-                tspan.attributes[key] = value
-
     def _pre_export(self, tspan: TranslatedSpan) -> None:
         """Forward ``lk.*`` to ``langsmith.metadata.lk_*`` and normalize the provider.
 
@@ -470,3 +439,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes.get("gen_ai.provider.name")
         ) or normalize_provider(tspan.attributes.get("gen_ai.system"))
         tspan.set_provider(provider)
+
+        # Lift realtime usage wherever LiveKit stamps the blob (agent_turn, or an
+        # orphaned realtime_metrics span). Idempotent: skipped once usage is set.
+        if (
+            "lk.realtime_model_metrics" in tspan.attributes
+            and "langsmith.usage_metadata" not in tspan.attributes
+        ):
+            usage = extract_realtime_usage(
+                tspan.attributes["lk.realtime_model_metrics"]
+            )
+            if usage:
+                tspan.set_usage(**usage)
