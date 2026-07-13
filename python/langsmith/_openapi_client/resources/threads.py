@@ -178,10 +178,10 @@ class ThreadsResource(SyncAPIResource):
               for syntax.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to now (UTC) when omitted.
 
           min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to 1 day before now (UTC) when omitted.
 
           page_size: `page_size` is the maximum number of threads to return in this response.
               Defaults to 20 when omitted; must be between 1 and 100 inclusive when set. The
@@ -446,10 +446,10 @@ class AsyncThreadsResource(AsyncAPIResource):
               for syntax.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to now (UTC) when omitted.
 
           min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to 1 day before now (UTC) when omitted.
 
           page_size: `page_size` is the maximum number of threads to return in this response.
               Defaults to 20 when omitted; must be between 1 and 100 inclusive when set. The
