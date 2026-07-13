@@ -395,12 +395,14 @@ class LangSmithSpanExporter(SpanExporter):
         Bedrock uses implicit typing (the key name *is* the type)::
 
             {"text": "hello"}
+            {"reasoningContent": {"reasoningText": {"text": "...", "signature": "..."}}}
             {"toolUse": {"toolUseId": "x", "name": "f", "input": {...}}}
             {"toolResult": {"toolUseId": "x", "status": "success", "content": [...]}}
 
         LangSmith expects explicit ``type`` fields::
 
             {"type": "text", "text": "hello"}
+            {"type": "thinking", "thinking": "...", "signature": "..."}
             {"type": "tool_use", "id": "x", "name": "f", "input": {...}}
             {
                 "type": "tool_result",
@@ -416,6 +418,15 @@ class LangSmithSpanExporter(SpanExporter):
 
         if "text" in block and len(block) == 1:
             return {"type": "text", "text": block["text"]}
+
+        if "reasoningContent" in block:
+            rc = block["reasoningContent"]
+            reasoning_text = rc.get("reasoningText", {})
+            return {
+                "type": "thinking",
+                "thinking": reasoning_text.get("text", ""),
+                "signature": reasoning_text.get("signature", ""),
+            }
 
         if "toolUse" in block:
             tu = block["toolUse"]

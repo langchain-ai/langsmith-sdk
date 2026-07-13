@@ -267,6 +267,52 @@ class TestLangSmithSpanExporter:
         assert result["status"] == "success"
         assert result["content"] == [{"type": "text", "text": "result"}]
 
+    def test_convert_content_block_reasoning(self):
+        """Test conversion of reasoningContent content blocks."""
+        block = {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "Let me break down the problem step by step.",
+                    "signature": "Ev4Q_signature_data",
+                }
+            }
+        }
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "Let me break down the problem step by step.",
+            "signature": "Ev4Q_signature_data",
+        }
+
+    def test_convert_content_block_reasoning_missing_signature(self):
+        """Test conversion of reasoningContent blocks without signature."""
+        block = {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "Thinking about this...",
+                }
+            }
+        }
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "Thinking about this...",
+            "signature": "",
+        }
+
+    def test_convert_content_block_reasoning_empty(self):
+        """Test conversion of reasoningContent blocks with missing reasoningText."""
+        block = {"reasoningContent": {}}
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "",
+            "signature": "",
+        }
+
     def test_flatten_tool_result_message(self):
         """Test flattening of Bedrock tool result messages."""
         content_blocks = [
