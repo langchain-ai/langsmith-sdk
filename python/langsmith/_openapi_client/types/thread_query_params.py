@@ -30,13 +30,13 @@ class ThreadQueryParams(TypedDict, total=False):
     max_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
     """
     `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-    date-time).
+    date-time). Defaults to now (UTC) when omitted.
     """
 
     min_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
     """
     `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-    date-time).
+    date-time). Defaults to 1 day before now (UTC) when omitted.
     """
 
     page_size: int

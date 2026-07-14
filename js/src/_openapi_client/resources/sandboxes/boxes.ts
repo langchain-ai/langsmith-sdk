@@ -11,8 +11,7 @@ import { path } from '../../internal/utils/path.js';
 export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
-   * `snapshot_name`; if neither is provided, the server uses the default static
-   * blueprint.
+   * `snapshot_name`; if neither is provided, the server uses the default snapshot.
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
     return this._client.post('/v2/sandboxes/boxes', { body, ...options });
@@ -162,6 +161,7 @@ export namespace BoxCreateParams {
       | MountConfig.SandboxapiS3BucketMountSpec
       | MountConfig.SandboxapiGcsBucketMountSpec
       | MountConfig.SandboxapiGitRepoMountSpec
+      | MountConfig.SandboxapiContextHubRepoMountSpec
     >;
   }
 
@@ -219,9 +219,11 @@ export namespace BoxCreateParams {
 
       s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      contexthub?: SandboxapiS3BucketMountSpec.Contexthub;
 
       gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
@@ -247,6 +249,21 @@ export namespace BoxCreateParams {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Gcs {
@@ -279,9 +296,11 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      contexthub?: SandboxapiGcsBucketMountSpec.Contexthub;
 
       git?: SandboxapiGcsBucketMountSpec.Git;
 
@@ -301,6 +320,21 @@ export namespace BoxCreateParams {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Git {
@@ -339,9 +373,11 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      contexthub?: SandboxapiGitRepoMountSpec.Contexthub;
 
       gcs?: SandboxapiGitRepoMountSpec.Gcs;
 
@@ -373,10 +409,102 @@ export namespace BoxCreateParams {
         writeback_seconds?: number;
       }
 
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
       export interface Gcs {
         bucket: string;
 
         prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        region: string;
+
+        endpoint_url?: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiContextHubRepoMountSpec {
+      id: string;
+
+      contexthub: SandboxapiContextHubRepoMountSpec.Contexthub;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
+
+      cache?: SandboxapiContextHubRepoMountSpec.Cache;
+
+      gcs?: SandboxapiContextHubRepoMountSpec.Gcs;
+
+      git?: SandboxapiContextHubRepoMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiContextHubRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiContextHubRepoMountSpec {
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
       }
 
       export interface S3 {

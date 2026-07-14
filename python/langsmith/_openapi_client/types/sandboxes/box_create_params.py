@@ -20,12 +20,14 @@ __all__ = [
     "MountConfigMountSandboxapiS3BucketMountSpec",
     "MountConfigMountSandboxapiS3BucketMountSpecS3",
     "MountConfigMountSandboxapiS3BucketMountSpecCache",
+    "MountConfigMountSandboxapiS3BucketMountSpecContexthub",
     "MountConfigMountSandboxapiS3BucketMountSpecGcs",
     "MountConfigMountSandboxapiS3BucketMountSpecGit",
     "MountConfigMountSandboxapiS3BucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpec",
     "MountConfigMountSandboxapiGcsBucketMountSpecGcs",
     "MountConfigMountSandboxapiGcsBucketMountSpecCache",
+    "MountConfigMountSandboxapiGcsBucketMountSpecContexthub",
     "MountConfigMountSandboxapiGcsBucketMountSpecGit",
     "MountConfigMountSandboxapiGcsBucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpecS3",
@@ -33,8 +35,16 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpecGit",
     "MountConfigMountSandboxapiGitRepoMountSpecGitRef",
     "MountConfigMountSandboxapiGitRepoMountSpecCache",
+    "MountConfigMountSandboxapiGitRepoMountSpecContexthub",
     "MountConfigMountSandboxapiGitRepoMountSpecGcs",
     "MountConfigMountSandboxapiGitRepoMountSpecS3",
+    "MountConfigMountSandboxapiContextHubRepoMountSpec",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecContexthub",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecCache",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGcs",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGit",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGitRef",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecS3",
     "ProxyConfig",
     "ProxyConfigAccessControl",
     "ProxyConfigCallback",
@@ -150,6 +160,21 @@ class MountConfigMountSandboxapiS3BucketMountSpecCache(TypedDict, total=False):
     writeback_seconds: int
 
 
+class MountConfigMountSandboxapiS3BucketMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiS3BucketMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -177,9 +202,11 @@ class MountConfigMountSandboxapiS3BucketMountSpec(TypedDict, total=False):
 
     s3: Required[MountConfigMountSandboxapiS3BucketMountSpecS3]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiS3BucketMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiS3BucketMountSpecContexthub
 
     gcs: MountConfigMountSandboxapiS3BucketMountSpecGcs
 
@@ -198,6 +225,21 @@ class MountConfigMountSandboxapiGcsBucketMountSpecCache(TypedDict, total=False):
     max_size_bytes: int
 
     writeback_seconds: int
+
+
+class MountConfigMountSandboxapiGcsBucketMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
 
 
 class MountConfigMountSandboxapiGcsBucketMountSpecGitRef(TypedDict, total=False):
@@ -233,9 +275,11 @@ class MountConfigMountSandboxapiGcsBucketMountSpec(TypedDict, total=False):
 
     mount_path: Required[str]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiGcsBucketMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiGcsBucketMountSpecContexthub
 
     git: MountConfigMountSandboxapiGcsBucketMountSpecGit
 
@@ -264,6 +308,21 @@ class MountConfigMountSandboxapiGitRepoMountSpecCache(TypedDict, total=False):
     writeback_seconds: int
 
 
+class MountConfigMountSandboxapiGitRepoMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiGitRepoMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -289,9 +348,11 @@ class MountConfigMountSandboxapiGitRepoMountSpec(TypedDict, total=False):
 
     mount_path: Required[str]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiGitRepoMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiGitRepoMountSpecContexthub
 
     gcs: MountConfigMountSandboxapiGitRepoMountSpecGcs
 
@@ -300,10 +361,84 @@ class MountConfigMountSandboxapiGitRepoMountSpec(TypedDict, total=False):
     s3: MountConfigMountSandboxapiGitRepoMountSpecS3
 
 
+class MountConfigMountSandboxapiContextHubRepoMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecCache(TypedDict, total=False):
+    max_size_bytes: int
+
+    writeback_seconds: int
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGcs(TypedDict, total=False):
+    bucket: Required[str]
+
+    prefix: str
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGitRef(TypedDict, total=False):
+    name: Required[str]
+
+    type: Required[Literal["branch", "tag"]]
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGit(TypedDict, total=False):
+    remote_url: Required[str]
+
+    ref: MountConfigMountSandboxapiContextHubRepoMountSpecGitRef
+
+    refresh_interval_seconds: int
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecS3(TypedDict, total=False):
+    bucket: Required[str]
+
+    region: Required[str]
+
+    endpoint_url: str
+
+    path_style: bool
+
+    prefix: str
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpec(TypedDict, total=False):
+    id: Required[str]
+
+    contexthub: Required[MountConfigMountSandboxapiContextHubRepoMountSpecContexthub]
+
+    mount_path: Required[str]
+
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
+
+    cache: MountConfigMountSandboxapiContextHubRepoMountSpecCache
+
+    gcs: MountConfigMountSandboxapiContextHubRepoMountSpecGcs
+
+    git: MountConfigMountSandboxapiContextHubRepoMountSpecGit
+
+    read_only: bool
+
+    s3: MountConfigMountSandboxapiContextHubRepoMountSpecS3
+
+
 MountConfigMount: TypeAlias = Union[
     MountConfigMountSandboxapiS3BucketMountSpec,
     MountConfigMountSandboxapiGcsBucketMountSpec,
     MountConfigMountSandboxapiGitRepoMountSpec,
+    MountConfigMountSandboxapiContextHubRepoMountSpec,
 ]
 
 

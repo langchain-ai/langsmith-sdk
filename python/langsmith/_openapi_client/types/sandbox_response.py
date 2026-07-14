@@ -18,12 +18,14 @@ __all__ = [
     "MountConfigMountSandboxapiS3BucketMountSpec",
     "MountConfigMountSandboxapiS3BucketMountSpecS3",
     "MountConfigMountSandboxapiS3BucketMountSpecCache",
+    "MountConfigMountSandboxapiS3BucketMountSpecContexthub",
     "MountConfigMountSandboxapiS3BucketMountSpecGcs",
     "MountConfigMountSandboxapiS3BucketMountSpecGit",
     "MountConfigMountSandboxapiS3BucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpec",
     "MountConfigMountSandboxapiGcsBucketMountSpecGcs",
     "MountConfigMountSandboxapiGcsBucketMountSpecCache",
+    "MountConfigMountSandboxapiGcsBucketMountSpecContexthub",
     "MountConfigMountSandboxapiGcsBucketMountSpecGit",
     "MountConfigMountSandboxapiGcsBucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpecS3",
@@ -31,8 +33,16 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpecGit",
     "MountConfigMountSandboxapiGitRepoMountSpecGitRef",
     "MountConfigMountSandboxapiGitRepoMountSpecCache",
+    "MountConfigMountSandboxapiGitRepoMountSpecContexthub",
     "MountConfigMountSandboxapiGitRepoMountSpecGcs",
     "MountConfigMountSandboxapiGitRepoMountSpecS3",
+    "MountConfigMountSandboxapiContextHubRepoMountSpec",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecContexthub",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecCache",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGcs",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGit",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGitRef",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecS3",
     "ProxyConfig",
     "ProxyConfigAccessControl",
     "ProxyConfigCallback",
@@ -105,6 +115,21 @@ class MountConfigMountSandboxapiS3BucketMountSpecCache(BaseModel):
     writeback_seconds: Optional[int] = None
 
 
+class MountConfigMountSandboxapiS3BucketMountSpecContexthub(BaseModel):
+    repo: str
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: Optional[bool] = None
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiS3BucketMountSpecGcs(BaseModel):
     bucket: str
 
@@ -132,9 +157,11 @@ class MountConfigMountSandboxapiS3BucketMountSpec(BaseModel):
 
     s3: MountConfigMountSandboxapiS3BucketMountSpecS3
 
-    type: Literal["s3", "gcs", "git"]
+    type: Literal["s3", "gcs", "git", "contexthub"]
 
     cache: Optional[MountConfigMountSandboxapiS3BucketMountSpecCache] = None
+
+    contexthub: Optional[MountConfigMountSandboxapiS3BucketMountSpecContexthub] = None
 
     gcs: Optional[MountConfigMountSandboxapiS3BucketMountSpecGcs] = None
 
@@ -153,6 +180,21 @@ class MountConfigMountSandboxapiGcsBucketMountSpecCache(BaseModel):
     max_size_bytes: Optional[int] = None
 
     writeback_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiGcsBucketMountSpecContexthub(BaseModel):
+    repo: str
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: Optional[bool] = None
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
 
 
 class MountConfigMountSandboxapiGcsBucketMountSpecGitRef(BaseModel):
@@ -188,9 +230,11 @@ class MountConfigMountSandboxapiGcsBucketMountSpec(BaseModel):
 
     mount_path: str
 
-    type: Literal["s3", "gcs", "git"]
+    type: Literal["s3", "gcs", "git", "contexthub"]
 
     cache: Optional[MountConfigMountSandboxapiGcsBucketMountSpecCache] = None
+
+    contexthub: Optional[MountConfigMountSandboxapiGcsBucketMountSpecContexthub] = None
 
     git: Optional[MountConfigMountSandboxapiGcsBucketMountSpecGit] = None
 
@@ -219,6 +263,21 @@ class MountConfigMountSandboxapiGitRepoMountSpecCache(BaseModel):
     writeback_seconds: Optional[int] = None
 
 
+class MountConfigMountSandboxapiGitRepoMountSpecContexthub(BaseModel):
+    repo: str
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: Optional[bool] = None
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiGitRepoMountSpecGcs(BaseModel):
     bucket: str
 
@@ -244,9 +303,11 @@ class MountConfigMountSandboxapiGitRepoMountSpec(BaseModel):
 
     mount_path: str
 
-    type: Literal["s3", "gcs", "git"]
+    type: Literal["s3", "gcs", "git", "contexthub"]
 
     cache: Optional[MountConfigMountSandboxapiGitRepoMountSpecCache] = None
+
+    contexthub: Optional[MountConfigMountSandboxapiGitRepoMountSpecContexthub] = None
 
     gcs: Optional[MountConfigMountSandboxapiGitRepoMountSpecGcs] = None
 
@@ -255,10 +316,84 @@ class MountConfigMountSandboxapiGitRepoMountSpec(BaseModel):
     s3: Optional[MountConfigMountSandboxapiGitRepoMountSpecS3] = None
 
 
+class MountConfigMountSandboxapiContextHubRepoMountSpecContexthub(BaseModel):
+    repo: str
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: Optional[bool] = None
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecCache(BaseModel):
+    max_size_bytes: Optional[int] = None
+
+    writeback_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGcs(BaseModel):
+    bucket: str
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGitRef(BaseModel):
+    name: str
+
+    type: Literal["branch", "tag"]
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGit(BaseModel):
+    remote_url: str
+
+    ref: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecGitRef] = None
+
+    refresh_interval_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecS3(BaseModel):
+    bucket: str
+
+    region: str
+
+    endpoint_url: Optional[str] = None
+
+    path_style: Optional[bool] = None
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpec(BaseModel):
+    id: str
+
+    contexthub: MountConfigMountSandboxapiContextHubRepoMountSpecContexthub
+
+    mount_path: str
+
+    type: Literal["s3", "gcs", "git", "contexthub"]
+
+    cache: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecCache] = None
+
+    gcs: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecGcs] = None
+
+    git: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecGit] = None
+
+    read_only: Optional[bool] = None
+
+    s3: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecS3] = None
+
+
 MountConfigMount: TypeAlias = Union[
     MountConfigMountSandboxapiS3BucketMountSpec,
     MountConfigMountSandboxapiGcsBucketMountSpec,
     MountConfigMountSandboxapiGitRepoMountSpec,
+    MountConfigMountSandboxapiContextHubRepoMountSpec,
 ]
 
 

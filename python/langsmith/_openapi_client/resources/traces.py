@@ -33,8 +33,6 @@ class TracesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return TracesResourceWithRawResponse(self)
 
@@ -42,8 +40,6 @@ class TracesResource(SyncAPIResource):
     def with_streaming_response(self) -> TracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return TracesResourceWithStreamingResponse(self)
 
@@ -320,8 +316,6 @@ class AsyncTracesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncTracesResourceWithRawResponse(self)
 
@@ -329,8 +323,6 @@ class AsyncTracesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncTracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncTracesResourceWithStreamingResponse(self)
 
