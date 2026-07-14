@@ -719,6 +719,10 @@ export interface RunStatsQueryParams {
 
   start_time?: string | null;
 
+  /**
+   * Filter runs by trace ID. When set, limit and cursor-based pagination are not
+   * applied — all runs in the trace are returned in a single response.
+   */
   trace?: string | null;
 
   trace_filter?: string | null;

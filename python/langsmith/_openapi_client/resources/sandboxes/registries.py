@@ -28,8 +28,6 @@ class RegistriesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return RegistriesResourceWithRawResponse(self)
 
@@ -37,8 +35,6 @@ class RegistriesResource(SyncAPIResource):
     def with_streaming_response(self) -> RegistriesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return RegistriesResourceWithStreamingResponse(self)
 
@@ -255,8 +251,6 @@ class AsyncRegistriesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncRegistriesResourceWithRawResponse(self)
 
@@ -264,8 +258,6 @@ class AsyncRegistriesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncRegistriesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncRegistriesResourceWithStreamingResponse(self)
 

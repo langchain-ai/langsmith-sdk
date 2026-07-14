@@ -5,13 +5,7 @@ from datetime import datetime
 
 from .._models import BaseModel
 
-__all__ = [
-    "ThreadTraceListItem",
-    "CompletionCostDetails",
-    "CompletionTokenDetails",
-    "PromptCostDetails",
-    "PromptTokenDetails",
-]
+__all__ = ["ThreadTrace", "CompletionCostDetails", "CompletionTokenDetails", "PromptCostDetails", "PromptTokenDetails"]
 
 
 class CompletionCostDetails(BaseModel):
@@ -50,7 +44,7 @@ class PromptTokenDetails(BaseModel):
     """`raw` maps each category name to its prompt-token count."""
 
 
-class ThreadTraceListItem(BaseModel):
+class ThreadTrace(BaseModel):
     completion_cost: Optional[float] = None
     """`completion_cost` is the estimated USD cost for the completion.
 

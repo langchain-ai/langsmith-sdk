@@ -27,6 +27,7 @@ def _make_span(
     span_id=0x1,
     parent=True,
     scope="livekit-agents",
+    start_time=None,
 ):
     """Build a mock LiveKit span.
 
@@ -46,6 +47,9 @@ def _make_span(
     span.context = MagicMock()
     span.context.trace_id = trace_id
     span.context.span_id = span_id
+    # start_time (ns) is the root's conversation-ordering key; default to span_id
+    # so spans sort in a stable, explicit order without every test setting it.
+    span.start_time = span_id if start_time is None else start_time
     span.parent = MagicMock() if parent else None
     span.instrumentation_scope = MagicMock()
     span.instrumentation_scope.name = scope
@@ -130,6 +134,296 @@ class TestDeferredRootRelease:
         # Per-conversation state freed after release.
         assert len(proc._deferred_root_by_trace) == 0
         assert len(proc._transcript_by_trace) == 0
+
+
+class TestRealtimeUserTranscript:
+    """Realtime (speech-to-speech) user transcripts fed via instrument_session.
+
+    In the realtime pipeline there is no STT ``user_turn`` span; LiveKit emits a
+    bare ``user_speaking`` span and delivers the transcript out of band via the
+    ``user_input_transcribed`` event. The host forwards it to the processor, which
+    holds the span until the transcript arrives, then stamps it on.
+    """
+
+    def teardown_method(self):
+        set_thread_id(None)
+
+    def _speaking(self, *, thread="call-1", trace_id=0xABC, span_id=0x2):
+        return _make_span(
+            "user_speaking",
+            {"langsmith.metadata.thread_id": thread},
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+
+    def _exported(self, proc, name):
+        return [
+            c.args[0]
+            for c in proc.downstream.on_end.call_args_list
+            if c.args[0].name == name
+        ]
+
+    def test_transcript_after_span_stamps_and_exports(self):
+        # Span ends empty first (held), then the transcript arrives.
+        proc = _processor()
+        proc.on_end(self._speaking())
+        # Held — nothing exported yet.
+        assert self._exported(proc, "user_speaking") == []
+
+        proc._record_user_transcript("call-1", "what's the weather?")
+
+        exported = self._exported(proc, "user_speaking")
+        assert len(exported) == 1
+        span = exported[0]
+        assert span._attributes["lk.user_transcript"] == "what's the weather?"
+        assert span._attributes["langsmith.span.kind"] == "llm"
+        # Rendered as the user's turn (not excluded, not attributed to assistant).
+        assert "langsmith.metadata.ls_message_view_exclude" not in span._attributes
+        assert json.loads(span._attributes["gen_ai.prompt"])["messages"][0] == {
+            "role": "user",
+            "content": "what's the weather?",
+        }
+        assert "gen_ai.completion" not in span._attributes
+        # No state left behind.
+        assert len(proc._deferred_user_speaking) == 0
+        assert len(proc._pending_user_transcripts) == 0
+
+    def test_transcript_before_span_is_buffered(self):
+        # Transcript can race ahead of the span's on_end — buffer, then apply.
+        proc = _processor()
+        proc._record_user_transcript("call-1", "hello there")
+        assert self._exported(proc, "user_speaking") == []
+
+        proc.on_end(self._speaking())
+
+        exported = self._exported(proc, "user_speaking")
+        assert len(exported) == 1
+        assert exported[0]._attributes["lk.user_transcript"] == "hello there"
+        assert len(proc._pending_user_transcripts) == 0
+
+    def test_fifo_pairing_within_conversation(self):
+        # Two utterances, two transcripts — paired in order.
+        proc = _processor()
+        proc.on_end(self._speaking(span_id=0x2))
+        proc.on_end(self._speaking(span_id=0x3))
+        proc._record_user_transcript("call-1", "first")
+        proc._record_user_transcript("call-1", "second")
+
+        transcripts = [
+            s._attributes["lk.user_transcript"]
+            for s in self._exported(proc, "user_speaking")
+        ]
+        assert transcripts == ["first", "second"]
+
+    def test_no_thread_id_exports_untouched(self):
+        # Without a thread id there is nothing to pair against — export as-is.
+        proc = _processor()
+        proc.on_end(_make_span("user_speaking", trace_id=0xABC, span_id=0x2))
+        exported = self._exported(proc, "user_speaking")
+        assert len(exported) == 1
+        assert exported[0]._attributes["langsmith.span.kind"] == "chain"
+        assert "lk.user_transcript" not in exported[0]._attributes
+
+    def test_empty_transcript_consumes_slot_without_fake_io(self):
+        # A final-but-empty transcript still pairs (keeping FIFO aligned) but
+        # renders no fabricated I/O.
+        proc = _processor()
+        proc.on_end(self._speaking())
+        proc._record_user_transcript("call-1", "")
+
+        exported = self._exported(proc, "user_speaking")
+        assert len(exported) == 1
+        assert "gen_ai.completion" not in exported[0]._attributes
+        assert "lk.user_transcript" not in exported[0]._attributes
+
+    def test_session_end_flushes_untranscribed_span(self):
+        # Realtime input transcription disabled: no transcript ever arrives, so
+        # the held span must still be exported (untouched) at session end.
+        proc = _processor()
+        tid = 0xABC
+        # Production flow: set_thread_id + on_start caches the trace's thread id,
+        # so the session-end flush can resolve which held spans to release.
+        set_thread_id("call-1")
+        proc.on_start(_make_span("job_entrypoint", parent=None, trace_id=tid))
+        set_thread_id(None)
+        proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=tid))
+        proc.on_end(self._speaking(trace_id=tid))
+        assert self._exported(proc, "user_speaking") == []  # held
+
+        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
+
+        assert len(self._exported(proc, "user_speaking")) == 1
+        assert len(proc._deferred_user_speaking) == 0
+
+    def test_shutdown_flushes_untranscribed_span(self):
+        proc = _processor()
+        proc.on_end(self._speaking())
+        proc.shutdown()
+        assert len(self._exported(proc, "user_speaking")) == 1
+
+
+class TestRealtimeRootRollup:
+    """A late realtime user transcript sorts into its place in the root rollup.
+
+    The transcript arrives after its turn's ``agent_turn`` reply is already
+    recorded, so ordering keys off each message's source-span start_time — the
+    ``user_speaking`` span (earlier) before the ``agent_turn`` reply (later).
+    """
+
+    def _root(self, proc):
+        return next(
+            c.args[0]
+            for c in proc.downstream.on_end.call_args_list
+            if c.args[0]._attributes.get("langsmith.root_span")
+        )
+
+    def test_user_sorts_before_reply_despite_late_arrival(self):
+        proc = _processor()
+        tid = 0xABC
+        proc.on_end(
+            _make_span(
+                "job_entrypoint",
+                {"langsmith.metadata.thread_id": "call-1"},
+                parent=None,
+                trace_id=tid,
+            )
+        )
+        # User speaks (early span), then the reply turn lands and is recorded...
+        proc.on_end(
+            _make_span(
+                "user_speaking",
+                {"langsmith.metadata.thread_id": "call-1"},
+                trace_id=tid,
+                span_id=0x2,
+                start_time=10,
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "agent_turn",
+                {"lk.response.text": "sunny"},
+                trace_id=tid,
+                span_id=0x3,
+                start_time=20,
+            )
+        )
+        # ...only *then* does the transcript arrive (out of order).
+        proc._record_user_transcript("call-1", "weather?")
+        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x4))
+
+        root = self._root(proc)
+        prompt = json.loads(root._attributes["gen_ai.prompt"])["messages"]
+        assert [m["content"] for m in prompt] == ["weather?", "sunny"]
+        assert "gen_ai.completion" not in root._attributes
+
+    def test_greeting_then_user_turn_ordered(self):
+        # Agent greets first (agent_turn, no user_speaking), then a user turn.
+        # The greeting must not steal the user's transcript, and order holds.
+        proc = _processor()
+        tid = 0xABC
+        proc.on_end(
+            _make_span(
+                "job_entrypoint",
+                {"langsmith.metadata.thread_id": "call-1"},
+                parent=None,
+                trace_id=tid,
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "agent_turn",
+                {"lk.response.text": "hi there!"},
+                trace_id=tid,
+                span_id=0x2,
+                start_time=5,
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "user_speaking",
+                {"langsmith.metadata.thread_id": "call-1"},
+                trace_id=tid,
+                span_id=0x3,
+                start_time=10,
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "agent_turn",
+                {"lk.response.text": "sunny"},
+                trace_id=tid,
+                span_id=0x4,
+                start_time=20,
+            )
+        )
+        proc._record_user_transcript("call-1", "weather?")
+        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x5))
+
+        root = self._root(proc)
+        contents = [
+            m["content"]
+            for m in json.loads(root._attributes["gen_ai.prompt"])["messages"]
+        ]
+        assert contents == ["hi there!", "weather?", "sunny"]
+
+
+class TestInstrumentSession:
+    """instrument_session subscribes the processor to a session's events itself."""
+
+    class _FakeSession:
+        """Minimal stand-in for a LiveKit AgentSession's event emitter."""
+
+        def __init__(self):
+            self.handlers = {}
+
+        def on(self, name):
+            def _register(fn):
+                self.handlers[name] = fn
+                return fn
+
+            return _register
+
+    @staticmethod
+    def _event(*, is_final, transcript):
+        ev = MagicMock()
+        ev.is_final = is_final
+        ev.transcript = transcript
+        return ev
+
+    def test_final_transcript_wired_to_processor(self):
+        proc = _processor()
+        session = self._FakeSession()
+        proc.instrument_session(session, "call-1")
+
+        proc.on_end(
+            _make_span(
+                "user_speaking",
+                {"langsmith.metadata.thread_id": "call-1"},
+                span_id=0x2,
+            )
+        )
+        session.handlers["user_input_transcribed"](
+            self._event(is_final=True, transcript="hello there")
+        )
+
+        exported = [
+            c.args[0]
+            for c in proc.downstream.on_end.call_args_list
+            if c.args[0].name == "user_speaking"
+        ]
+        assert len(exported) == 1
+        assert exported[0]._attributes["lk.user_transcript"] == "hello there"
+
+    def test_interim_transcript_ignored(self):
+        proc = _processor()
+        session = self._FakeSession()
+        proc.instrument_session(session, "call-1")
+
+        session.handlers["user_input_transcribed"](
+            self._event(is_final=False, transcript="partial")
+        )
+        # Interim result buffered nothing; a later span has no transcript to pair.
+        assert len(proc._pending_user_transcripts) == 0
 
 
 class TestForceFlush:
@@ -259,7 +553,8 @@ class TestStateTTL:
                 "agent_turn", {"lk.response.text": "two"}, trace_id=tid, span_id=0x3
             )
         )
-        assert [m["content"] for m in proc._transcript_by_trace[tid]] == [
+        # The store holds (sort_key, message) tuples.
+        assert [m["content"] for _, m in proc._transcript_by_trace[tid]] == [
             "one",
             "two",
         ]

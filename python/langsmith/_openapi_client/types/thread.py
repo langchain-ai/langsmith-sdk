@@ -5,7 +5,7 @@ from datetime import datetime
 
 from .._models import BaseModel
 
-__all__ = ["ThreadListItem", "FeedbackStats"]
+__all__ = ["Thread", "FeedbackStats"]
 
 
 class FeedbackStats(BaseModel):
@@ -80,7 +80,7 @@ class FeedbackStats(BaseModel):
     """
 
 
-class ThreadListItem(BaseModel):
+class Thread(BaseModel):
     count: Optional[int] = None
     """
     `count` is how many root traces (conversation turns) fall in this thread for the
