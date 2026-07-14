@@ -1,0 +1,19 @@
+js/package.json
+  s_add565e074cf1e::t_8c0fa821ac71b5 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "17ee1b9549a984aead36ad225a090d4adec8da6c",
+  "prompts": {},
+  "sessions": {
+    "s_add565e074cf1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bf615093-c036-4ea9-bc89-c0b24ebcc7de",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
