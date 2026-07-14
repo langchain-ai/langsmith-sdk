@@ -1,0 +1,47 @@
+python/langsmith/_internal/voice/session.py
+  s_f2f749125261ec::t_b8b9ec864be16a 313-316
+  s_f2f749125261ec::t_006933304bc3a8 312
+python/pyproject.toml
+  s_f2f749125261ec::t_5dbac3403be615 99-104
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_f2f749125261ec::t_b68a080de4fedc 229,232,251-256
+  s_f2f749125261ec::t_86349e89ff1a7c 242-246
+  s_f2f749125261ec::t_e44835589d3565 226-228,230-231,233-241,247-250
+python/uv.lock
+  s_f2f749125261ec::t_75cc97a53d6e8b 1778
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_f2f749125261ec::t_ef7e509fb9c25e 431,433-437,439
+  s_f2f749125261ec::t_cfb43f96e6978e 256
+  s_f2f749125261ec::t_8ce2587575e344 294-301,306-317,319-322,333-336,338-366
+  s_f2f749125261ec::t_0100903a676ca2 167-168,178
+  s_f2f749125261ec::t_8f854fe5485603 246-255
+  s_f2f749125261ec::t_57f013e45bdb29 162-166,169-177,179-184,187-193,199-225
+  s_f2f749125261ec::t_a14aa71c94d49f 302,318,323-324,337
+python/tests/unit_tests/wrappers/test_google_adk_live.py
+  s_f2f749125261ec::t_2cf8775ee6d97a 292-294
+  s_f2f749125261ec::t_76cc368f4ae03f 487-492,495,497,502-507,520-539,546-548,552-554,560-564,570,580-582,587,589-600,606-607
+  s_f2f749125261ec::t_967109c9146d44 296-299
+  s_f2f749125261ec::t_ad5eaff3e77499 267-272,280
+  s_f2f749125261ec::t_4af4d87fde8590 285-290
+  s_f2f749125261ec::t_2a959a26ad3282 276,284,291,295,300,304,565-569,571-579,583-586,588,601-605,608
+  s_f2f749125261ec::t_397b13177df905 273-275
+  s_f2f749125261ec::t_cdfb1d4ca5cf25 277-279,281-283
+  s_f2f749125261ec::t_22743c90f4e3f5 305
+  s_f2f749125261ec::t_1d2ca3f3b8fedc 301-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "d12eae67886e1b76739cd676fc7cb19cb38c886d",
+  "prompts": {},
+  "sessions": {
+    "s_f2f749125261ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d96c0bf5-6055-45c7-b442-8f58d3f1d31e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
