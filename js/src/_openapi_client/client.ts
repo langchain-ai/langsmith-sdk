@@ -87,15 +87,15 @@ import {
   RunsItemsCursorPostPagination,
 } from './resources/runs.js';
 import {
-  ThreadListItem,
-  ThreadListItemsItemsCursorPostPagination,
+  Thread,
   ThreadListTracesParams,
   ThreadQueryParams,
+  ThreadStats,
   ThreadStatsParams,
-  ThreadStatsResponse,
-  ThreadTraceListItem,
-  ThreadTraceListItemsItemsCursorGetPagination,
+  ThreadTrace,
+  ThreadTracesItemsCursorGetPagination,
   Threads,
+  ThreadsItemsCursorPostPagination,
 } from './resources/threads.js';
 import {
   Trace,
@@ -998,11 +998,11 @@ export declare namespace Langsmith {
 
   export {
     Threads as Threads,
-    type ThreadListItem as ThreadListItem,
-    type ThreadTraceListItem as ThreadTraceListItem,
-    type ThreadStatsResponse as ThreadStatsResponse,
-    type ThreadTraceListItemsItemsCursorGetPagination as ThreadTraceListItemsItemsCursorGetPagination,
-    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type Thread as Thread,
+    type ThreadStats as ThreadStats,
+    type ThreadTrace as ThreadTrace,
+    type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
+    type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,

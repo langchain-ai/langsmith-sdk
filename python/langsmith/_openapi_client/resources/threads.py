@@ -26,9 +26,9 @@ from ..pagination import (
     AsyncItemsCursorPostPagination,
 )
 from .._base_client import AsyncPaginator, make_request_options
-from ..types.thread_list_item import ThreadListItem
-from ..types.thread_stats_response import ThreadStatsResponse
-from ..types.thread_trace_list_item import ThreadTraceListItem
+from ..types.thread import Thread
+from ..types.thread_stats import ThreadStats
+from ..types.thread_trace import ThreadTrace
 
 __all__ = ["ThreadsResource", "AsyncThreadsResource"]
 
@@ -89,7 +89,7 @@ class ThreadsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorGetPagination[ThreadTraceListItem]:
+    ) -> SyncItemsCursorGetPagination[ThreadTrace]:
         """
         **Alpha:** The request and response contract may change; Retrieve all traces
         belonging to a specific thread within a project.
@@ -126,7 +126,7 @@ class ThreadsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
             path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
-            page=SyncItemsCursorGetPagination[ThreadTraceListItem],
+            page=SyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -143,7 +143,7 @@ class ThreadsResource(SyncAPIResource):
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
             ),
-            model=ThreadTraceListItem,
+            model=ThreadTrace,
         )
 
     def query(
@@ -161,7 +161,7 @@ class ThreadsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorPostPagination[ThreadListItem]:
+    ) -> SyncItemsCursorPostPagination[Thread]:
         """
         **Alpha:** The request and response contract may change; Query threads within a
         project (session), with cursor-based pagination. Returns threads matching the
@@ -200,7 +200,7 @@ class ThreadsResource(SyncAPIResource):
         """
         return self._get_api_list(
             "/v2/threads/query",
-            page=SyncItemsCursorPostPagination[ThreadListItem],
+            page=SyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -215,7 +215,7 @@ class ThreadsResource(SyncAPIResource):
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ThreadListItem,
+            model=Thread,
             method="post",
         )
 
@@ -252,7 +252,7 @@ class ThreadsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> ThreadStatsResponse:
+    ) -> ThreadStats:
         """
         **Alpha:** The request and response contract may change; Compute aggregate stats
         for a single thread (turn count, latency percentiles, token/cost sums, and
@@ -297,7 +297,7 @@ class ThreadsResource(SyncAPIResource):
                     thread_stats_params.ThreadStatsParams,
                 ),
             ),
-            cast_to=ThreadStatsResponse,
+            cast_to=ThreadStats,
         )
 
 
@@ -357,7 +357,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[ThreadTraceListItem, AsyncItemsCursorGetPagination[ThreadTraceListItem]]:
+    ) -> AsyncPaginator[ThreadTrace, AsyncItemsCursorGetPagination[ThreadTrace]]:
         """
         **Alpha:** The request and response contract may change; Retrieve all traces
         belonging to a specific thread within a project.
@@ -394,7 +394,7 @@ class AsyncThreadsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
             path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
-            page=AsyncItemsCursorGetPagination[ThreadTraceListItem],
+            page=AsyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -411,7 +411,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
             ),
-            model=ThreadTraceListItem,
+            model=ThreadTrace,
         )
 
     def query(
@@ -429,7 +429,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[ThreadListItem, AsyncItemsCursorPostPagination[ThreadListItem]]:
+    ) -> AsyncPaginator[Thread, AsyncItemsCursorPostPagination[Thread]]:
         """
         **Alpha:** The request and response contract may change; Query threads within a
         project (session), with cursor-based pagination. Returns threads matching the
@@ -468,7 +468,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         """
         return self._get_api_list(
             "/v2/threads/query",
-            page=AsyncItemsCursorPostPagination[ThreadListItem],
+            page=AsyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -483,7 +483,7 @@ class AsyncThreadsResource(AsyncAPIResource):
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ThreadListItem,
+            model=Thread,
             method="post",
         )
 
@@ -520,7 +520,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> ThreadStatsResponse:
+    ) -> ThreadStats:
         """
         **Alpha:** The request and response contract may change; Compute aggregate stats
         for a single thread (turn count, latency percentiles, token/cost sums, and
@@ -565,7 +565,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                     thread_stats_params.ThreadStatsParams,
                 ),
             ),
-            cast_to=ThreadStatsResponse,
+            cast_to=ThreadStats,
         )
 
 

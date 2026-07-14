@@ -21,7 +21,7 @@ export class Threads extends APIResource {
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
-   * for await (const threadTraceListItem of client.threads.listTraces(
+   * for await (const threadTrace of client.threads.listTraces(
    *   'thread_id',
    *   { project_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e' },
    * )) {
@@ -33,10 +33,10 @@ export class Threads extends APIResource {
     threadID: string,
     query: ThreadListTracesParams,
     options?: RequestOptions,
-  ): PagePromise<ThreadTraceListItemsItemsCursorGetPagination, ThreadTraceListItem> {
+  ): PagePromise<ThreadTracesItemsCursorGetPagination, ThreadTrace> {
     return this._client.getAPIList(
       path`/v2/threads/${threadID}/traces`,
-      ItemsCursorGetPagination<ThreadTraceListItem>,
+      ItemsCursorGetPagination<ThreadTrace>,
       { query, ...options },
     );
   }
@@ -49,7 +49,7 @@ export class Threads extends APIResource {
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
-   * for await (const threadListItem of client.threads.query()) {
+   * for await (const thread of client.threads.query()) {
    *   // ...
    * }
    * ```
@@ -57,8 +57,8 @@ export class Threads extends APIResource {
   query(
     body: ThreadQueryParams,
     options?: RequestOptions,
-  ): PagePromise<ThreadListItemsItemsCursorPostPagination, ThreadListItem> {
-    return this._client.getAPIList('/v2/threads/query', ItemsCursorPostPagination<ThreadListItem>, {
+  ): PagePromise<ThreadsItemsCursorPostPagination, Thread> {
+    return this._client.getAPIList('/v2/threads/query', ItemsCursorPostPagination<Thread>, {
       body,
       method: 'post',
       ...options,
@@ -72,26 +72,25 @@ export class Threads extends APIResource {
    *
    * @example
    * ```ts
-   * const response = await client.threads.stats('thread_id', {
-   *   selects: ['TURNS'],
-   *   session_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
-   * });
+   * const threadStats = await client.threads.stats(
+   *   'thread_id',
+   *   {
+   *     selects: ['TURNS'],
+   *     session_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
+   *   },
+   * );
    * ```
    */
-  stats(
-    threadID: string,
-    query: ThreadStatsParams,
-    options?: RequestOptions,
-  ): APIPromise<ThreadStatsResponse> {
+  stats(threadID: string, query: ThreadStatsParams, options?: RequestOptions): APIPromise<ThreadStats> {
     return this._client.get(path`/v2/threads/${threadID}/stats`, { query, ...options });
   }
 }
 
-export type ThreadTraceListItemsItemsCursorGetPagination = ItemsCursorGetPagination<ThreadTraceListItem>;
+export type ThreadTracesItemsCursorGetPagination = ItemsCursorGetPagination<ThreadTrace>;
 
-export type ThreadListItemsItemsCursorPostPagination = ItemsCursorPostPagination<ThreadListItem>;
+export type ThreadsItemsCursorPostPagination = ItemsCursorPostPagination<Thread>;
 
-export interface ThreadListItem {
+export interface Thread {
   /**
    * `count` is how many root traces (conversation turns) fall in this thread for the
    * query time range.
@@ -102,7 +101,7 @@ export interface ThreadListItem {
    * `feedback_stats` is the aggregated feedback across traces in the thread, keyed
    * by feedback key; shape matches `feedback_stats` on a single run.
    */
-  feedback_stats?: { [key: string]: ThreadListItem.FeedbackStats };
+  feedback_stats?: { [key: string]: Thread.FeedbackStats };
 
   /**
    * `first_inputs` is a truncated preview of inputs from the earliest trace in the
@@ -210,7 +209,7 @@ export interface ThreadListItem {
   trace_id?: string;
 }
 
-export namespace ThreadListItem {
+export namespace Thread {
   export interface FeedbackStats {
     /**
      * `avg` is the arithmetic mean of numeric feedback scores for this key on the run,
@@ -284,7 +283,231 @@ export namespace ThreadListItem {
   }
 }
 
-export interface ThreadTraceListItem {
+export interface ThreadStats {
+  /**
+   * `completion_cost` is the sum of per-trace completion costs across the thread, in
+   * USD. Populated when `COMPLETION_COST` is selected.
+   */
+  completion_cost?: number;
+
+  /**
+   * `completion_cost_details` is the per-sub-category sum of completion cost details
+   * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
+   */
+  completion_cost_details?: ThreadStats.CompletionCostDetails;
+
+  /**
+   * `completion_token_details` is the per-sub-category sum of completion token
+   * details across the thread. Populated when `COMPLETION_TOKEN_DETAILS` is
+   * selected.
+   */
+  completion_token_details?: ThreadStats.CompletionTokenDetails;
+
+  /**
+   * `completion_tokens` is the sum of per-trace completion token counts across the
+   * thread. Populated when `COMPLETION_TOKENS` is selected.
+   */
+  completion_tokens?: number;
+
+  /**
+   * `feedback_stats` aggregates run-level feedback across the thread's traces, keyed
+   * by feedback key. Populated when `FEEDBACK_STATS` is selected.
+   */
+  feedback_stats?: { [key: string]: ThreadStats.FeedbackStats };
+
+  /**
+   * `first_start_time` is the earliest trace start time in the thread (RFC3339).
+   * Populated when `FIRST_START_TIME` is selected.
+   */
+  first_start_time?: string;
+
+  /**
+   * `last_end_time` is the latest trace end time in the thread (RFC3339). Populated
+   * when `LAST_END_TIME` is selected.
+   */
+  last_end_time?: string;
+
+  /**
+   * `last_start_time` is the latest trace start time in the thread (RFC3339).
+   * Populated when `LAST_START_TIME` is selected.
+   */
+  last_start_time?: string;
+
+  /**
+   * `latency_p50_seconds` is the approximate p50 of trace latency across the thread,
+   * in seconds. Populated when `LATENCY_P50` is selected.
+   */
+  latency_p50_seconds?: number;
+
+  /**
+   * `latency_p99_seconds` is the approximate p99 of trace latency across the thread,
+   * in seconds. Populated when `LATENCY_P99` is selected.
+   */
+  latency_p99_seconds?: number;
+
+  /**
+   * `prompt_cost` is the sum of per-trace prompt costs across the thread, in USD.
+   * Populated when `PROMPT_COST` is selected.
+   */
+  prompt_cost?: number;
+
+  /**
+   * `prompt_cost_details` is the per-sub-category sum of prompt cost details across
+   * the thread. Populated when `PROMPT_COST_DETAILS` is selected.
+   */
+  prompt_cost_details?: ThreadStats.PromptCostDetails;
+
+  /**
+   * `prompt_token_details` is the per-sub-category sum of prompt token details
+   * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
+   */
+  prompt_token_details?: ThreadStats.PromptTokenDetails;
+
+  /**
+   * `prompt_tokens` is the sum of per-trace prompt token counts across the thread.
+   * Populated when `PROMPT_TOKENS` is selected.
+   */
+  prompt_tokens?: number;
+
+  /**
+   * `total_cost` is the sum of per-trace total costs across the thread, in USD.
+   * Populated when `TOTAL_COST` is selected.
+   */
+  total_cost?: number;
+
+  /**
+   * `total_tokens` is the sum of per-trace total token counts across the thread.
+   * Populated when `TOTAL_TOKENS` is selected.
+   */
+  total_tokens?: number;
+
+  /**
+   * `turns` is the number of distinct traces (turns) in the thread. Populated when
+   * `TURNS` is selected.
+   */
+  turns?: number;
+}
+
+export namespace ThreadStats {
+  /**
+   * `completion_cost_details` is the per-sub-category sum of completion cost details
+   * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
+   */
+  export interface CompletionCostDetails {
+    /**
+     * `raw` maps each category name to its estimated USD cost.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  /**
+   * `completion_token_details` is the per-sub-category sum of completion token
+   * details across the thread. Populated when `COMPLETION_TOKEN_DETAILS` is
+   * selected.
+   */
+  export interface CompletionTokenDetails {
+    /**
+     * `raw` maps each category name to its completion-token count.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  export interface FeedbackStats {
+    /**
+     * `avg` is the arithmetic mean of numeric feedback scores for this key on the run,
+     * or `null` when no numeric score has been recorded (for example purely
+     * categorical feedback).
+     */
+    avg?: number;
+
+    /**
+     * `comments` is a sample of human-readable comments attached to feedback points
+     * for this key, in no particular order. May be empty; is not exhaustive when many
+     * comments exist.
+     */
+    comments?: Array<string>;
+
+    /**
+     * `contains_thread_feedback` is true when at least one feedback point for this key
+     * was submitted at the thread level (rather than at an individual run). Always
+     * false on responses that already describe a single run in isolation.
+     */
+    contains_thread_feedback?: boolean;
+
+    /**
+     * `errors` is the number of feedback points recorded as errors rather than
+     * successful scores (for example an automated evaluator that raised an exception).
+     * Defaults to 0 when no errors occurred.
+     */
+    errors?: number;
+
+    /**
+     * `max` is the largest numeric feedback score recorded for this key on the run, or
+     * `null` when no numeric score has been recorded.
+     */
+    max?: number;
+
+    /**
+     * `min` is the smallest numeric feedback score recorded for this key on the run,
+     * or `null` when no numeric score has been recorded.
+     */
+    min?: number;
+
+    /**
+     * `n` is the number of feedback points recorded for this key on the run. For
+     * numeric feedback this is the sample size behind `avg`, `min`, `max`, and
+     * `stdev`; for categorical feedback it is the sum of the `values` counts.
+     */
+    n?: number;
+
+    /**
+     * `sources` is a sample of feedback sources for this key. Each entry is either a
+     * plain string identifier (for example `"api"`, `"app"`, `"model"`) or a JSON
+     * object describing a synthetic source (for example
+     * `{"type": "__ls_composite_feedback"}` for a computed aggregate). Clients must
+     * tolerate both shapes.
+     */
+    sources?: Array<unknown>;
+
+    /**
+     * `stdev` is the sample standard deviation of numeric feedback scores for this key
+     * on the run, or `null` when it cannot be computed (for example fewer than two
+     * numeric scores, or purely categorical feedback).
+     */
+    stdev?: number;
+
+    /**
+     * `values` is the distribution of categorical feedback labels for this key,
+     * mapping each label to its occurrence count. Empty (`{}`) for purely numeric
+     * feedback.
+     */
+    values?: { [key: string]: number };
+  }
+
+  /**
+   * `prompt_cost_details` is the per-sub-category sum of prompt cost details across
+   * the thread. Populated when `PROMPT_COST_DETAILS` is selected.
+   */
+  export interface PromptCostDetails {
+    /**
+     * `raw` maps each category name to its estimated USD cost.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  /**
+   * `prompt_token_details` is the per-sub-category sum of prompt token details
+   * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
+   */
+  export interface PromptTokenDetails {
+    /**
+     * `raw` maps each category name to its prompt-token count.
+     */
+    raw?: { [key: string]: number };
+  }
+}
+
+export interface ThreadTrace {
   /**
    * `completion_cost` is the estimated USD cost for the completion. Omitted unless
    * included in `selects`.
@@ -296,13 +519,13 @@ export interface ThreadTraceListItem {
    * categories; per-category values are under `raw`. Omitted unless included in
    * `selects`.
    */
-  completion_cost_details?: ThreadTraceListItem.CompletionCostDetails;
+  completion_cost_details?: ThreadTrace.CompletionCostDetails;
 
   /**
    * `completion_token_details` is the completion-side token breakdown by category;
    * per-category counts are under `raw`. Omitted unless included in `selects`.
    */
-  completion_token_details?: ThreadTraceListItem.CompletionTokenDetails;
+  completion_token_details?: ThreadTrace.CompletionTokenDetails;
 
   /**
    * `completion_tokens` is the completion-side token count. Omitted unless included
@@ -372,14 +595,14 @@ export interface ThreadTraceListItem {
    * `prompt_cost_details` is the USD cost breakdown for prompt-side categories;
    * per-category values are under `raw`. Omitted unless included in `selects`.
    */
-  prompt_cost_details?: ThreadTraceListItem.PromptCostDetails;
+  prompt_cost_details?: ThreadTrace.PromptCostDetails;
 
   /**
    * `prompt_token_details` is the prompt-side token breakdown by category;
    * per-category counts are under nested `raw`. Omitted unless included in
    * `selects`.
    */
-  prompt_token_details?: ThreadTraceListItem.PromptTokenDetails;
+  prompt_token_details?: ThreadTrace.PromptTokenDetails;
 
   /**
    * `prompt_tokens` is the prompt-side token count. Omitted unless included in
@@ -418,7 +641,7 @@ export interface ThreadTraceListItem {
   trace_id?: string;
 }
 
-export namespace ThreadTraceListItem {
+export namespace ThreadTrace {
   /**
    * `completion_cost_details` is the USD cost breakdown for completion-side
    * categories; per-category values are under `raw`. Omitted unless included in
@@ -457,230 +680,6 @@ export namespace ThreadTraceListItem {
    * `prompt_token_details` is the prompt-side token breakdown by category;
    * per-category counts are under nested `raw`. Omitted unless included in
    * `selects`.
-   */
-  export interface PromptTokenDetails {
-    /**
-     * `raw` maps each category name to its prompt-token count.
-     */
-    raw?: { [key: string]: number };
-  }
-}
-
-export interface ThreadStatsResponse {
-  /**
-   * `completion_cost` is the sum of per-trace completion costs across the thread, in
-   * USD. Populated when `COMPLETION_COST` is selected.
-   */
-  completion_cost?: number;
-
-  /**
-   * `completion_cost_details` is the per-sub-category sum of completion cost details
-   * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
-   */
-  completion_cost_details?: ThreadStatsResponse.CompletionCostDetails;
-
-  /**
-   * `completion_token_details` is the per-sub-category sum of completion token
-   * details across the thread. Populated when `COMPLETION_TOKEN_DETAILS` is
-   * selected.
-   */
-  completion_token_details?: ThreadStatsResponse.CompletionTokenDetails;
-
-  /**
-   * `completion_tokens` is the sum of per-trace completion token counts across the
-   * thread. Populated when `COMPLETION_TOKENS` is selected.
-   */
-  completion_tokens?: number;
-
-  /**
-   * `feedback_stats` aggregates run-level feedback across the thread's traces, keyed
-   * by feedback key. Populated when `FEEDBACK_STATS` is selected.
-   */
-  feedback_stats?: { [key: string]: ThreadStatsResponse.FeedbackStats };
-
-  /**
-   * `first_start_time` is the earliest trace start time in the thread (RFC3339).
-   * Populated when `FIRST_START_TIME` is selected.
-   */
-  first_start_time?: string;
-
-  /**
-   * `last_end_time` is the latest trace end time in the thread (RFC3339). Populated
-   * when `LAST_END_TIME` is selected.
-   */
-  last_end_time?: string;
-
-  /**
-   * `last_start_time` is the latest trace start time in the thread (RFC3339).
-   * Populated when `LAST_START_TIME` is selected.
-   */
-  last_start_time?: string;
-
-  /**
-   * `latency_p50_seconds` is the approximate p50 of trace latency across the thread,
-   * in seconds. Populated when `LATENCY_P50` is selected.
-   */
-  latency_p50_seconds?: number;
-
-  /**
-   * `latency_p99_seconds` is the approximate p99 of trace latency across the thread,
-   * in seconds. Populated when `LATENCY_P99` is selected.
-   */
-  latency_p99_seconds?: number;
-
-  /**
-   * `prompt_cost` is the sum of per-trace prompt costs across the thread, in USD.
-   * Populated when `PROMPT_COST` is selected.
-   */
-  prompt_cost?: number;
-
-  /**
-   * `prompt_cost_details` is the per-sub-category sum of prompt cost details across
-   * the thread. Populated when `PROMPT_COST_DETAILS` is selected.
-   */
-  prompt_cost_details?: ThreadStatsResponse.PromptCostDetails;
-
-  /**
-   * `prompt_token_details` is the per-sub-category sum of prompt token details
-   * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
-   */
-  prompt_token_details?: ThreadStatsResponse.PromptTokenDetails;
-
-  /**
-   * `prompt_tokens` is the sum of per-trace prompt token counts across the thread.
-   * Populated when `PROMPT_TOKENS` is selected.
-   */
-  prompt_tokens?: number;
-
-  /**
-   * `total_cost` is the sum of per-trace total costs across the thread, in USD.
-   * Populated when `TOTAL_COST` is selected.
-   */
-  total_cost?: number;
-
-  /**
-   * `total_tokens` is the sum of per-trace total token counts across the thread.
-   * Populated when `TOTAL_TOKENS` is selected.
-   */
-  total_tokens?: number;
-
-  /**
-   * `turns` is the number of distinct traces (turns) in the thread. Populated when
-   * `TURNS` is selected.
-   */
-  turns?: number;
-}
-
-export namespace ThreadStatsResponse {
-  /**
-   * `completion_cost_details` is the per-sub-category sum of completion cost details
-   * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
-   */
-  export interface CompletionCostDetails {
-    /**
-     * `raw` maps each category name to its estimated USD cost.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  /**
-   * `completion_token_details` is the per-sub-category sum of completion token
-   * details across the thread. Populated when `COMPLETION_TOKEN_DETAILS` is
-   * selected.
-   */
-  export interface CompletionTokenDetails {
-    /**
-     * `raw` maps each category name to its completion-token count.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  export interface FeedbackStats {
-    /**
-     * `avg` is the arithmetic mean of numeric feedback scores for this key on the run,
-     * or `null` when no numeric score has been recorded (for example purely
-     * categorical feedback).
-     */
-    avg?: number;
-
-    /**
-     * `comments` is a sample of human-readable comments attached to feedback points
-     * for this key, in no particular order. May be empty; is not exhaustive when many
-     * comments exist.
-     */
-    comments?: Array<string>;
-
-    /**
-     * `contains_thread_feedback` is true when at least one feedback point for this key
-     * was submitted at the thread level (rather than at an individual run). Always
-     * false on responses that already describe a single run in isolation.
-     */
-    contains_thread_feedback?: boolean;
-
-    /**
-     * `errors` is the number of feedback points recorded as errors rather than
-     * successful scores (for example an automated evaluator that raised an exception).
-     * Defaults to 0 when no errors occurred.
-     */
-    errors?: number;
-
-    /**
-     * `max` is the largest numeric feedback score recorded for this key on the run, or
-     * `null` when no numeric score has been recorded.
-     */
-    max?: number;
-
-    /**
-     * `min` is the smallest numeric feedback score recorded for this key on the run,
-     * or `null` when no numeric score has been recorded.
-     */
-    min?: number;
-
-    /**
-     * `n` is the number of feedback points recorded for this key on the run. For
-     * numeric feedback this is the sample size behind `avg`, `min`, `max`, and
-     * `stdev`; for categorical feedback it is the sum of the `values` counts.
-     */
-    n?: number;
-
-    /**
-     * `sources` is a sample of feedback sources for this key. Each entry is either a
-     * plain string identifier (for example `"api"`, `"app"`, `"model"`) or a JSON
-     * object describing a synthetic source (for example
-     * `{"type": "__ls_composite_feedback"}` for a computed aggregate). Clients must
-     * tolerate both shapes.
-     */
-    sources?: Array<unknown>;
-
-    /**
-     * `stdev` is the sample standard deviation of numeric feedback scores for this key
-     * on the run, or `null` when it cannot be computed (for example fewer than two
-     * numeric scores, or purely categorical feedback).
-     */
-    stdev?: number;
-
-    /**
-     * `values` is the distribution of categorical feedback labels for this key,
-     * mapping each label to its occurrence count. Empty (`{}`) for purely numeric
-     * feedback.
-     */
-    values?: { [key: string]: number };
-  }
-
-  /**
-   * `prompt_cost_details` is the per-sub-category sum of prompt cost details across
-   * the thread. Populated when `PROMPT_COST_DETAILS` is selected.
-   */
-  export interface PromptCostDetails {
-    /**
-     * `raw` maps each category name to its estimated USD cost.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  /**
-   * `prompt_token_details` is the per-sub-category sum of prompt token details
-   * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
    */
   export interface PromptTokenDetails {
     /**
@@ -807,11 +806,11 @@ export interface ThreadStatsParams {
 
 export declare namespace Threads {
   export {
-    type ThreadListItem as ThreadListItem,
-    type ThreadTraceListItem as ThreadTraceListItem,
-    type ThreadStatsResponse as ThreadStatsResponse,
-    type ThreadTraceListItemsItemsCursorGetPagination as ThreadTraceListItemsItemsCursorGetPagination,
-    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type Thread as Thread,
+    type ThreadStats as ThreadStats,
+    type ThreadTrace as ThreadTrace,
+    type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
+    type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,
