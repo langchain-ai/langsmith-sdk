@@ -53,6 +53,7 @@ _TURN_SPAN = "agent_turn"
 _SESSION_SPAN = "agent_session"
 _TOOL_SPAN = "function_tool"
 _REALTIME_METRICS_SPAN = "realtime_metrics"
+_USER_SPEAKING_SPAN = "user_speaking"
 
 # ``llm_request`` emits one ``gen_ai.<role>.message`` event per chat item, plus a
 # ``gen_ai.choice`` for the reply.
@@ -103,7 +104,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
 
         # trace_id -> running transcript, rolled up onto the root at session end.
-        self._transcript_by_trace: MutableMapping[int, list[dict]] = _cache()
+        self._transcript_by_trace: MutableMapping[int, list[tuple[Any, dict]]] = (
+            _cache()
+        )
         # trace_id -> root span held open until the session (and any egress) ends.
         self._deferred_root_by_trace: MutableMapping[int, TranslatedSpan] = _cache()
         # trace_ids whose ``agent_session`` end span has arrived (used as a set).
@@ -114,11 +117,48 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._pending_audio_by_thread: MutableMapping[str, dict] = _cache()
         # thread id -> trace_id, so ``complete_recording`` can find the trace.
         self._trace_by_thread: MutableMapping[str, int] = _cache()
+        self._deferred_user_speaking: MutableMapping[str, list[TranslatedSpan]] = (
+            _cache()
+        )
+        self._pending_user_transcripts: MutableMapping[str, list[str]] = _cache()
 
     def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
         """Also index thread→trace (so ``complete_recording`` can find the trace)."""
         super()._remember_thread_id(trace_id, thread_id)
         self._trace_by_thread[thread_id] = trace_id
+
+    # -- realtime session instrumentation ------------------------------------
+
+    def instrument_session(self, session: Any, thread_id: str) -> None:
+        """Subscribe this processor to a LiveKit ``AgentSession``'s events.
+
+        A realtime (speech-to-speech) model's user transcript arrives via the
+        ``user_input_transcribed`` session event — never on a span — so the
+        processor can't see it from spans alone, and the trace ends up with only
+        the agent's turns. Call this once after creating the session to wire the
+        transcript in::
+
+            processor = configure_livekit(...)
+            session = AgentSession(llm=...)
+            set_thread_id(conversation_id)
+            processor.instrument_session(session, conversation_id)
+
+        Each final transcript is paired FIFO with the next ``user_speaking`` span
+        that has no transcript yet (we have no id to match a transcript to its
+        exact span). No-op for the cascade pipeline, where the transcript already
+        rides the STT ``user_turn`` span.
+
+        Args:
+            session: the LiveKit ``AgentSession`` to subscribe to.
+            thread_id: the conversation id, matching :func:`set_thread_id`.
+        """
+
+        @session.on("user_input_transcribed")
+        def _on_user_input_transcribed(ev: Any) -> None:
+            if getattr(ev, "is_final", False):
+                self._record_user_transcript(
+                    str(thread_id), getattr(ev, "transcript", "") or ""
+                )
 
     # -- production recording (egress) ---------------------------------------
 
@@ -173,10 +213,13 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.set_kind("chain")  # wrappers: no fabricated I/O
         elif name == _TURN_SPAN:
             self._handle_turn(tspan)
+        elif name == _USER_SPEAKING_SPAN:
+            return self._handle_user_speaking(tspan)
         elif name == _SESSION_SPAN:
             # Session end: release the deferred root, then export this span.
             tspan.set_kind("chain")
             self._ended_session_traces[trace_id] = True
+            self._flush_user_speaking(self._thread_id_by_trace.get(trace_id))
             self._maybe_release(trace_id)
         elif name == "eou_detection":
             tspan.set_kind("chain")  # framework step
@@ -280,18 +323,99 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         user_input = tspan.attributes.get("lk.user_input")
         response = tspan.attributes.get("lk.response.text")
         trace_id = tspan.span.context.trace_id
-        conversation = self._transcript_by_trace.get(trace_id) or []
+        start = tspan.span.start_time
         if user_input:
             msg = build_user_message(str(user_input))
             tspan.set_messages(prompt=[msg])
-            conversation.append(msg)
+            self._append_transcript(trace_id, msg, start)
         if response:
             msg = build_assistant_message(str(response))
             tspan.set_messages(completion=[msg])
-            conversation.append(msg)
+            self._append_transcript(trace_id, msg, start)
+
+    def _append_transcript(self, trace_id: int, message: dict, sort_key: Any) -> None:
+        """Append a message to the transcript the root rolls up, keyed for ordering."""
+        conversation = self._transcript_by_trace.get(trace_id) or []
+        conversation.append((sort_key, message))
         # Re-assign (not just mutate) so each turn refreshes the cache TTL.
-        if conversation:
-            self._transcript_by_trace[trace_id] = conversation
+        self._transcript_by_trace[trace_id] = conversation
+
+    # -- realtime user transcript (speech-to-speech) --------------------------
+
+    def _handle_user_speaking(self, tspan: TranslatedSpan) -> bool:
+        """Handle a ``user_speaking`` span — the realtime user turn.
+
+        Deferred (``False``): stamp+export now if the transcript was already
+        buffered, else hold it until one is fed (or flushed untouched at session
+        end). Exported as-is (``True``) when there's no thread id to pair against.
+        """
+        tspan.set_kind("chain")
+        thread = tspan.attributes.get("langsmith.metadata.thread_id")
+        if thread is None:
+            return True
+        thread = str(thread)
+
+        pending = self._pending_user_transcripts.get(thread)
+        if pending:
+            transcript = pending.pop(0)
+            if pending:
+                self._pending_user_transcripts[thread] = pending
+            else:
+                self._pending_user_transcripts.pop(thread, None)
+            self._apply_user_transcript(tspan, transcript)
+            self._export(tspan)
+            return False
+
+        held = self._deferred_user_speaking.get(thread) or []
+        held.append(tspan)
+        self._deferred_user_speaking[thread] = held
+        return False
+
+    def _record_user_transcript(self, thread_id: str, transcript: str) -> None:
+        """Pair a realtime transcript (from ``instrument_session``) with its span.
+
+        Applies it to the oldest held ``user_speaking`` span for the thread, or
+        buffers it if that span hasn't ended yet.
+        """
+        tid = str(thread_id)
+        held = self._deferred_user_speaking.get(tid)
+        if held:
+            tspan = held.pop(0)
+            if held:
+                self._deferred_user_speaking[tid] = held
+            else:
+                self._deferred_user_speaking.pop(tid, None)
+            self._apply_user_transcript(tspan, transcript)
+            self._export(tspan)
+            return
+        pending = self._pending_user_transcripts.get(tid) or []
+        pending.append(transcript)
+        self._pending_user_transcripts[tid] = pending
+
+    def _apply_user_transcript(self, tspan: TranslatedSpan, transcript: str) -> None:
+        """Render a fed transcript onto a ``user_speaking`` span as the user's turn.
+
+        Unlike the cascade STT ``user_turn`` (which is excluded), this is the only
+        record of the realtime user's words, so it's shown — as a plain ``user``
+        message. An empty transcript renders no fabricated I/O.
+        """
+        tspan.set_kind("llm")
+        if transcript:
+            tspan.attributes["lk.user_transcript"] = transcript
+            msg = build_user_message(transcript)
+            tspan.set_messages(prompt=[msg])
+            self._append_transcript(
+                tspan.span.context.trace_id, msg, tspan.span.start_time
+            )
+
+    def _flush_user_speaking(self, thread_id: Optional[str]) -> None:
+        """Export held ``user_speaking`` spans untranscribed (no transcript arrived)."""
+        if thread_id is None:
+            return
+        tid = str(thread_id)
+        for tspan in self._deferred_user_speaking.pop(tid, None) or []:
+            self._export(tspan)
+        self._pending_user_transcripts.pop(tid, None)
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         """``function_tool``: render as a proper ``tool`` run with its I/O."""
@@ -347,10 +471,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._cleanup_trace(trace_id)
 
     def _render_conversation(self, tspan: TranslatedSpan) -> bool:
-        """Set the whole transcript as the root's input messages; return if any."""
-        messages = self._transcript_by_trace.get(tspan.span.context.trace_id, [])
-        if not messages:
+        """Set the whole transcript (ordered by span start_time) as the root's input."""
+        entries = self._transcript_by_trace.get(tspan.span.context.trace_id, [])
+        if not entries:
             return False
+        messages = [msg for _, msg in sorted(entries, key=lambda e: e[0])]
         tspan.set_messages(prompt=messages)
         return True
 
@@ -364,15 +489,18 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._trace_by_thread.pop(thread, None)
             self._threads_awaiting_recording.pop(thread, None)
             self._pending_audio_by_thread.pop(thread, None)
+            self._flush_user_speaking(thread)
 
     def shutdown(self) -> None:
-        """Force-export any still-held roots (last resort), then shut down.
+        """Force-export any still-held roots and user_speaking spans, then shut down.
 
         ``force_flush`` deliberately does not — a still-held root there is
         legitimately in progress, not a buffered export waiting to drain.
         """
         for trace_id in list(self._deferred_root_by_trace):
             self._maybe_release(trace_id, force=True)
+        for thread in list(self._deferred_user_speaking.keys()):
+            self._flush_user_speaking(thread)
         super().shutdown()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
