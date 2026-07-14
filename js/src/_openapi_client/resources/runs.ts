@@ -667,6 +667,8 @@ export interface RunStatsQueryParams {
 
   query?: string | null;
 
+  reference_dataset_id?: string | null;
+
   reference_example?: Array<string> | null;
 
   /**
