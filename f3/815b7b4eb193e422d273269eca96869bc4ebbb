@@ -1,0 +1,23 @@
+python/langsmith/integrations/openai_realtime/_connection.py
+  s_7bc41b87a651eb::t_5b7c0df218c4af 159-160,164-165,178-182
+python/tests/unit_tests/wrappers/test_openai_realtime_agents.py
+  s_7bc41b87a651eb::t_3fba88c98f495a 28,134-162,365-448
+python/langsmith/integrations/openai_realtime/_session.py
+  s_7bc41b87a651eb::t_388bfa875d6f23 18-22,49-51,184-202,306-308,326-327,497,500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "f3815b7b4eb193e422d273269eca96869bc4ebbb",
+  "prompts": {},
+  "sessions": {
+    "s_7bc41b87a651eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "248e34fd-ba17-45ce-871c-620cc70cea8f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
