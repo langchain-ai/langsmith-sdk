@@ -540,6 +540,12 @@ export interface ThreadTrace {
   end_time?: string;
 
   /**
+   * `error` is the full root run error message when the run failed. Omitted unless
+   * included in `selects`.
+   */
+  error?: string;
+
+  /**
    * `error_preview` is a short error summary when the run failed. Omitted unless
    * included in `selects`.
    */
@@ -551,6 +557,12 @@ export interface ThreadTrace {
    * in `selects`.
    */
   first_token_time?: string;
+
+  /**
+   * `inputs` is the full root run input payload. Omitted unless included in
+   * `selects`.
+   */
+  inputs?: unknown;
 
   /**
    * `inputs_preview` is a truncated text preview of inputs. Omitted unless included
@@ -578,6 +590,12 @@ export interface ThreadTrace {
    * included in `selects`.
    */
   op?: number;
+
+  /**
+   * `outputs` is the full root run output payload. Omitted unless included in
+   * `selects`.
+   */
+  outputs?: unknown;
 
   /**
    * `outputs_preview` is a truncated text preview of outputs. Omitted unless
@@ -723,6 +741,9 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
     | 'FIRST_TOKEN_TIME'
     | 'INPUTS_PREVIEW'
     | 'OUTPUTS_PREVIEW'
+    | 'INPUTS'
+    | 'OUTPUTS'
+    | 'ERROR'
     | 'PROMPT_COST'
     | 'COMPLETION_COST'
     | 'TOTAL_COST'
