@@ -53,9 +53,6 @@ _TURN_SPAN = "agent_turn"
 _SESSION_SPAN = "agent_session"
 _TOOL_SPAN = "function_tool"
 _REALTIME_METRICS_SPAN = "realtime_metrics"
-# Realtime (speech-to-speech) user turn. Unlike the cascade STT ``user_turn``, it
-# carries no transcript on the span — the words arrive out of band on the
-# session's ``user_input_transcribed`` event (see :meth:`instrument_session`).
 _USER_SPEAKING_SPAN = "user_speaking"
 
 # ``llm_request`` emits one ``gen_ai.<role>.message`` event per chat item, plus a
@@ -107,9 +104,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
 
         # trace_id -> running transcript, rolled up onto the root at session end.
-        # Each entry is ``(sort_key, message)``; the root renders them ordered by
-        # ``sort_key`` (the source span's start_time) so a realtime user turn —
-        # fed late, after its reply is already recorded — lands in its place.
         self._transcript_by_trace: MutableMapping[int, list[tuple[Any, dict]]] = (
             _cache()
         )
@@ -123,10 +117,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._pending_audio_by_thread: MutableMapping[str, dict] = _cache()
         # thread id -> trace_id, so ``complete_recording`` can find the trace.
         self._trace_by_thread: MutableMapping[str, int] = _cache()
-        # Realtime user transcripts paired FIFO with their ``user_speaking`` spans,
-        # keyed by thread id. ``_deferred_user_speaking`` holds ended spans awaiting
-        # a transcript; ``_pending_user_transcripts`` buffers transcripts that
-        # arrived before their span ended.
         self._deferred_user_speaking: MutableMapping[str, list[TranslatedSpan]] = (
             _cache()
         )
@@ -165,8 +155,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         @session.on("user_input_transcribed")
         def _on_user_input_transcribed(ev: Any) -> None:
-            # Feed every *final* transcript (including empty ones) so the FIFO
-            # pairing with user_speaking spans stays aligned; skip interim results.
             if getattr(ev, "is_final", False):
                 self._record_user_transcript(
                     str(thread_id), getattr(ev, "transcript", "") or ""
@@ -336,8 +324,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         response = tspan.attributes.get("lk.response.text")
         trace_id = tspan.span.context.trace_id
         start = tspan.span.start_time
-        # Cascade turns carry the user input; realtime turns don't (it rides the
-        # user_speaking span, appended by _apply_user_transcript).
         if user_input:
             msg = build_user_message(str(user_input))
             tspan.set_messages(prompt=[msg])
@@ -366,13 +352,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("chain")
         thread = tspan.attributes.get("langsmith.metadata.thread_id")
         if thread is None:
-            return True  # no conversation id to pair a transcript against
+            return True
         thread = str(thread)
 
         pending = self._pending_user_transcripts.get(thread)
         if pending:
             transcript = pending.pop(0)
-            # pop(0) mutates in place: refresh the TTL if any remain, else drop it.
             if pending:
                 self._pending_user_transcripts[thread] = pending
             else:
@@ -383,7 +368,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         held = self._deferred_user_speaking.get(thread) or []
         held.append(tspan)
-        self._deferred_user_speaking[thread] = held  # re-assign to refresh TTL
+        self._deferred_user_speaking[thread] = held
         return False
 
     def _record_user_transcript(self, thread_id: str, transcript: str) -> None:
@@ -396,7 +381,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         held = self._deferred_user_speaking.get(tid)
         if held:
             tspan = held.pop(0)
-            # pop(0) mutates in place: refresh the TTL if any remain, else drop it.
             if held:
                 self._deferred_user_speaking[tid] = held
             else:
@@ -404,10 +388,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._apply_user_transcript(tspan, transcript)
             self._export(tspan)
             return
-        # The span hasn't ended yet — buffer until _handle_user_speaking sees it.
         pending = self._pending_user_transcripts.get(tid) or []
         pending.append(transcript)
-        self._pending_user_transcripts[tid] = pending  # re-assign to refresh TTL
+        self._pending_user_transcripts[tid] = pending
 
     def _apply_user_transcript(self, tspan: TranslatedSpan, transcript: str) -> None:
         """Render a fed transcript onto a ``user_speaking`` span as the user's turn.
@@ -421,7 +404,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes["lk.user_transcript"] = transcript
             msg = build_user_message(transcript)
             tspan.set_messages(prompt=[msg])
-            # Root rollup, keyed by start_time so it sorts before the reply.
             self._append_transcript(
                 tspan.span.context.trace_id, msg, tspan.span.start_time
             )
@@ -489,12 +471,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._cleanup_trace(trace_id)
 
     def _render_conversation(self, tspan: TranslatedSpan) -> bool:
-        """Set the whole transcript as the root's input messages; return if any.
-
-        Messages are ordered by their source span's start_time (a stable sort, so
-        same-turn ties keep insertion order) — a realtime user turn fed late, out
-        of order, still lands in its correct position.
-        """
+        """Set the whole transcript (ordered by span start_time) as the root's input."""
         entries = self._transcript_by_trace.get(tspan.span.context.trace_id, [])
         if not entries:
             return False
@@ -512,8 +489,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._trace_by_thread.pop(thread, None)
             self._threads_awaiting_recording.pop(thread, None)
             self._pending_audio_by_thread.pop(thread, None)
-            # Backstop: normally flushed at session end, but cover a root released
-            # without an agent_session span having flushed first (e.g. egress).
             self._flush_user_speaking(thread)
 
     def shutdown(self) -> None:
