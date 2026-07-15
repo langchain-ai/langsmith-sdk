@@ -26,6 +26,9 @@ nested runs exported separately (else the conversation double-counts).
 
 Speech-to-speech (realtime) services emit operation-named spans: ``llm_response``
 (→ ``llm`` run, usage + reply) and the ``llm_setup`` / ``llm_request`` wrappers.
+They carry only the agent's turns — the user transcript arrives on a session
+event instead — so wire it in with
+:meth:`PipecatLangSmithSpanProcessor.instrument_user_aggregator`.
 """
 
 from __future__ import annotations
@@ -144,6 +147,76 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._audio_by_conversation: MutableMapping[str, _AudioRecord] = TTLCache(
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
         )
+        # thread id -> trace_id, so a realtime user transcript (delivered via a
+        # session event, not a span) can find the trace whose rollup it belongs to.
+        self._trace_by_thread: MutableMapping[str, int] = TTLCache(
+            maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
+        )
+        # thread id -> user messages that arrived before their trace was known.
+        self._pending_user_transcripts: MutableMapping[str, list[dict[str, Any]]] = (
+            TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
+        )
+
+    def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
+        """Also index thread→trace, draining any user transcript buffered early."""
+        super()._remember_thread_id(trace_id, thread_id)
+        self._trace_by_thread[thread_id] = trace_id
+        pending = self._pending_user_transcripts.pop(thread_id, None)
+        if pending:
+            conversation = self._transcript_by_trace.get(trace_id) or []
+            conversation[:0] = pending  # earliest turns sort first
+            self._transcript_by_trace[trace_id] = conversation
+
+    # -- realtime user transcript (speech-to-speech) -------------------------
+
+    def instrument_user_aggregator(self, aggregator: Any, thread_id: str) -> None:
+        """Fold a realtime session's user transcript into the trace.
+
+        A realtime (speech-to-speech) service — OpenAI Realtime, Gemini Live —
+        emits no ``stt`` span, so the user's words never reach the processor from
+        spans; only the assistant turns do. Instead the finalized user transcript
+        arrives on the user context aggregator's ``on_user_turn_message_added``
+        event. Call this once after building the aggregator to wire it in::
+
+            processor = configure_pipecat(...)
+            aggregators = LLMContextAggregatorPair(context)
+            set_thread_id(conversation_id)
+            processor.instrument_user_aggregator(aggregators, conversation_id)
+
+        No-op benefit for the cascade pipeline, where the user turn already rides
+        the ``stt`` span — but harmless to call there too.
+
+        Args:
+            aggregator: the ``LLMContextAggregatorPair`` or its user aggregator.
+            thread_id: the conversation id, matching :func:`set_thread_id`.
+        """
+        if callable(getattr(aggregator, "user", None)):
+            aggregator = aggregator.user()
+        tid = str(thread_id)
+
+        @aggregator.event_handler("on_user_turn_message_added")
+        async def _on_user_turn_message_added(_aggregator: Any, message: Any) -> None:
+            content = getattr(message, "content", "") or ""
+            if content:
+                self._record_user_transcript(tid, str(content))
+
+    def _record_user_transcript(self, thread_id: str, text: str) -> None:
+        """Append a realtime user turn to the conversation rollup.
+
+        Rendered onto the root ``conversation`` span alongside the agent turns.
+        Buffered by thread id if the trace isn't known yet (drained once its first
+        span starts); re-assigns the cache entry so each turn refreshes the TTL.
+        """
+        message = build_user_message(text)
+        trace_id = self._trace_by_thread.get(thread_id)
+        if trace_id is None:
+            pending = self._pending_user_transcripts.get(thread_id) or []
+            pending.append(message)
+            self._pending_user_transcripts[thread_id] = pending
+            return
+        conversation = self._transcript_by_trace.get(trace_id) or []
+        conversation.append(message)
+        self._transcript_by_trace[trace_id] = conversation
 
     # -- audio buffer registration -------------------------------------------
 
@@ -359,6 +432,10 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
 
     def _cleanup_conversation(self, trace_id: int, conversation_id: str) -> None:
+        thread_id = self._thread_id_by_trace.get(trace_id)
         self._transcript_by_trace.pop(trace_id, None)
         self._audio_by_conversation.pop(conversation_id, None)
+        if thread_id is not None:
+            self._trace_by_thread.pop(thread_id, None)
+            self._pending_user_transcripts.pop(thread_id, None)
         self._forget_thread_id(trace_id)

@@ -7,11 +7,13 @@ span rewriting, the shared ``BaseLangSmithSpanProcessor`` helpers, and the
 required (only ``opentelemetry-sdk``, a dev dependency).
 """
 
+import asyncio
 import base64
 import io
 import json
 import sys
 import wave
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -716,3 +718,120 @@ class TestPipecatUsageCapture:
         for name in ("llm_setup", "llm_request"):
             proc.on_end(_make_span(name, {}))
             assert _exported_attrs(proc)["langsmith.span.kind"] == "chain"
+
+
+class _FakeAggregator:
+    """Minimal stand-in for a Pipecat user context aggregator.
+
+    Records the handler registered via ``event_handler`` so tests can fire the
+    event, mirroring Pipecat's ``(aggregator, message)`` call convention.
+    """
+
+    def __init__(self):
+        self._handlers = {}
+
+    def event_handler(self, event_name):
+        def decorator(handler):
+            self._handlers[event_name] = handler
+            return handler
+
+        return decorator
+
+    def emit(self, event_name, content):
+        message = SimpleNamespace(content=content, timestamp="t0")
+        asyncio.run(self._handlers[event_name](self, message))
+
+
+class TestRealtimeUserTranscript:
+    """Realtime user transcript folded in via ``instrument_user_aggregator``."""
+
+    def test_user_turn_folds_into_rollup(self):
+        proc = _processor()
+        trace_id = 0x71
+        proc._remember_thread_id(trace_id, "conv-1")
+        agg = _FakeAggregator()
+        proc.instrument_user_aggregator(agg, "conv-1")
+
+        agg.emit("on_user_turn_message_added", "what's the weather?")
+
+        rollup = proc._transcript_by_trace[trace_id]
+        assert [(m["role"], m["content"]) for m in rollup] == [
+            ("user", "what's the weather?"),
+        ]
+
+    def test_user_turn_precedes_agent_reply_on_root(self):
+        # The realtime user turn (event) and agent reply (`llm_response` span)
+        # both land on the root, user first.
+        proc = _processor()
+        trace_id = 0x72
+        proc._remember_thread_id(trace_id, "conv-2")
+        agg = _FakeAggregator()
+        proc.instrument_user_aggregator(agg, "conv-2")
+
+        agg.emit("on_user_turn_message_added", "hi there")
+        proc.on_end(_make_span("llm_response", {"output": "hello!"}, trace_id=trace_id))
+        proc.on_end(
+            _make_span("conversation", {"conversation.id": "c2"}, trace_id=trace_id)
+        )
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])
+        assert [(m["role"], m["content"]) for m in prompt["messages"]] == [
+            ("user", "hi there"),
+            ("assistant", "hello!"),
+        ]
+
+    def test_transcript_before_trace_is_buffered_then_drained(self):
+        # A transcript that races ahead of the trace's first span is buffered by
+        # thread id, then drained (earliest-first) once the trace is known.
+        proc = _processor()
+        agg = _FakeAggregator()
+        proc.instrument_user_aggregator(agg, "conv-3")
+
+        agg.emit("on_user_turn_message_added", "early words")
+        assert "conv-3" in proc._pending_user_transcripts
+
+        trace_id = 0x73
+        proc._remember_thread_id(trace_id, "conv-3")
+        assert "conv-3" not in proc._pending_user_transcripts
+        assert proc._transcript_by_trace[trace_id][0]["content"] == "early words"
+
+    def test_accepts_aggregator_pair(self):
+        # A LLMContextAggregatorPair (exposing `.user()`) is unwrapped.
+        proc = _processor()
+        trace_id = 0x74
+        proc._remember_thread_id(trace_id, "conv-4")
+        user_agg = _FakeAggregator()
+        pair = SimpleNamespace(user=lambda: user_agg)
+        proc.instrument_user_aggregator(pair, "conv-4")
+
+        user_agg.emit("on_user_turn_message_added", "via the pair")
+
+        assert proc._transcript_by_trace[trace_id][0]["content"] == "via the pair"
+
+    def test_empty_transcript_ignored(self):
+        proc = _processor()
+        trace_id = 0x75
+        proc._remember_thread_id(trace_id, "conv-5")
+        agg = _FakeAggregator()
+        proc.instrument_user_aggregator(agg, "conv-5")
+
+        agg.emit("on_user_turn_message_added", "")
+
+        assert trace_id not in proc._transcript_by_trace
+        assert "conv-5" not in proc._pending_user_transcripts
+
+    def test_cleanup_frees_thread_state(self):
+        proc = _processor()
+        trace_id = 0x76
+        proc._remember_thread_id(trace_id, "conv-6")
+        agg = _FakeAggregator()
+        proc.instrument_user_aggregator(agg, "conv-6")
+        agg.emit("on_user_turn_message_added", "some words")
+
+        proc.on_end(
+            _make_span("conversation", {"conversation.id": "c6"}, trace_id=trace_id)
+        )
+
+        assert "conv-6" not in proc._trace_by_thread
+        assert "conv-6" not in proc._pending_user_transcripts
+        assert trace_id not in proc._transcript_by_trace
