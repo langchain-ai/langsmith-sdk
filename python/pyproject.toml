@@ -191,6 +191,9 @@ langsmith_plugin = "langsmith.pytest_plugin"
 
 [tool.uv]
 exclude-newer = "P1D"
+override-dependencies = [
+    { package = { name = "livekit-agents" }, dependencies = ["json-repair>=0.60.1"] },
+]
 
 [tool.hatch.version]
 path = "langsmith/__init__.py"
