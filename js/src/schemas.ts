@@ -216,6 +216,7 @@ export interface Run extends BaseRun {
 export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
+  session_id?: string;
   session_name?: string;
 }
 

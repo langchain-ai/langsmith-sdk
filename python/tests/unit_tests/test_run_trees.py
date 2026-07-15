@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import urllib.parse
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
@@ -76,6 +77,54 @@ def _get_mock_client(**kwargs):
     mock_session = MagicMock()
     client = Client(session=mock_session, api_key="test", **kwargs)
     return client
+
+
+def test_run_tree_uses_project_id_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = UUID("12345678-1234-5678-1234-567812345678")
+    monkeypatch.setenv("LANGSMITH_PROJECT_ID", str(project_id))
+    run_trees.utils.get_env_var.cache_clear()
+    run_trees.utils.get_tracer_project_id.cache_clear()
+
+    root = RunTree(name="root")
+    child = root.create_child("child", run_type="chain", inputs={})
+
+    assert root.session_id == project_id
+    assert child.session_id == project_id
+    assert root._get_dicts_safe()["session_id"] == project_id
+
+    propagated = RunTree.from_headers(root.to_headers())
+    assert propagated is not None
+    assert propagated.session_id == project_id
+
+    # When both a project name and a project id are configured, the id wins
+    # (here the id comes from the environment) and a warning is emitted.
+    with pytest.warns(UserWarning, match="Only one is needed"):
+        named_run = RunTree(name="named", project_name="explicit-project")
+    assert named_run.session_id == project_id
+
+
+def test_run_tree_project_name_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LANGSMITH_PROJECT_ID", raising=False)
+    run_trees.utils.get_env_var.cache_clear()
+    run_trees.utils.get_tracer_project_id.cache_clear()
+
+    # Only a project name is set, so no project id is used and no warning fires.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        named_run = RunTree(name="named", project_name="explicit-project")
+    assert named_run.session_name == "explicit-project"
+    assert named_run.session_id is None
+
+
+def test_run_tree_explicit_project_id_overrides_name() -> None:
+    project_id = UUID("87654321-4321-8765-4321-876543218765")
+    with pytest.warns(UserWarning, match="Only one is needed"):
+        run = RunTree(
+            name="named", project_name="explicit-project", project_id=project_id
+        )
+    assert run.session_id == project_id
 
 
 def test_run_tree_accepts_tpe() -> None:

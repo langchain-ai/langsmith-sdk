@@ -1584,11 +1584,11 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async prepareRunCreateOrUpdateInputs(
-    run: RunUpdate,
-  ): Promise<RunUpdate>;
-  private async prepareRunCreateOrUpdateInputs(
     run: RunCreate,
   ): Promise<RunCreate>;
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunUpdate,
+  ): Promise<RunUpdate>;
   private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate,
   ): Promise<RunCreate | RunUpdate> {

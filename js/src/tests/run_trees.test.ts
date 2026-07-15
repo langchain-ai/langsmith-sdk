@@ -41,6 +41,78 @@ test("Should work with manually set API key", async () => {
   }
 }, 180_000);
 
+test("uses LANGSMITH_PROJECT_ID for run trees", () => {
+  const previousProjectId = process.env.LANGSMITH_PROJECT_ID;
+  const projectId = "3a36ffc6-4b76-4b81-94d4-b3d9e339d4ae";
+  process.env.LANGSMITH_PROJECT_ID = projectId;
+  try {
+    const root = new RunTree({ name: "root" });
+    const child = root.createChild({ name: "child" });
+
+    expect(root.project_id).toBe(projectId);
+    expect(child.project_id).toBe(projectId);
+    expect(root.toHeaders().baggage).toContain(
+      `langsmith-project-id=${projectId}`,
+    );
+    expect(RunTree.fromHeaders(root.toHeaders())?.project_id).toBe(projectId);
+    // When both a project name and a project id are configured, the id wins
+    // (here the id comes from the environment).
+    expect(
+      new RunTree({ name: "named", project_name: "explicit-project" })
+        .project_id,
+    ).toBe(projectId);
+  } finally {
+    if (previousProjectId === undefined) {
+      delete process.env.LANGSMITH_PROJECT_ID;
+    } else {
+      process.env.LANGSMITH_PROJECT_ID = previousProjectId;
+    }
+  }
+});
+
+test("uses project_name when no project id is set", () => {
+  const previousProjectId = process.env.LANGSMITH_PROJECT_ID;
+  delete process.env.LANGSMITH_PROJECT_ID;
+  try {
+    const run = new RunTree({
+      name: "named",
+      project_name: "explicit-project",
+    });
+    expect(run.project_name).toBe("explicit-project");
+    expect(run.project_id).toBeUndefined();
+  } finally {
+    if (previousProjectId !== undefined) {
+      process.env.LANGSMITH_PROJECT_ID = previousProjectId;
+    }
+  }
+});
+
+test("explicit project_id overrides project_name", () => {
+  const projectId = "c6b76f63-62c8-4783-8ac4-ab83134ebc73";
+  const run = new RunTree({
+    name: "named",
+    project_name: "explicit-project",
+    project_id: projectId,
+  });
+  expect(run.project_id).toBe(projectId);
+});
+
+test("rejects an invalid LANGSMITH_PROJECT_ID", () => {
+  const previousProjectId = process.env.LANGSMITH_PROJECT_ID;
+  process.env.LANGSMITH_PROJECT_ID = "not-a-uuid";
+  try {
+    expect(() => new RunTree({ name: "root" })).toThrow(
+      "Invalid UUID for LANGSMITH_PROJECT_ID",
+    );
+  } finally {
+    if (previousProjectId === undefined) {
+      delete process.env.LANGSMITH_PROJECT_ID;
+    } else {
+      process.env.LANGSMITH_PROJECT_ID = previousProjectId;
+    }
+  }
+});
+
 test("nested", () => {
   const id = "00000000-0000-0000-0000-00000000000";
   const date = "20210503T00000000000";

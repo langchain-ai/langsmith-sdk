@@ -21,6 +21,24 @@ from langsmith import Client, traceable
 from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 
+def test_get_tracer_project_id() -> None:
+    project_id = uuid.uuid4()
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project_id.cache_clear()
+    with patch.dict(
+        "os.environ", {"LANGSMITH_PROJECT_ID": str(project_id)}, clear=True
+    ):
+        assert ls_utils.get_tracer_project_id() == project_id
+
+
+def test_get_tracer_project_id_rejects_invalid_uuid() -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project_id.cache_clear()
+    with patch.dict("os.environ", {"LANGSMITH_PROJECT_ID": "not-a-uuid"}, clear=True):
+        with pytest.raises(ValueError, match="badly formed hexadecimal UUID string"):
+            ls_utils.get_tracer_project_id()
+
+
 class LangSmithProjectNameTest(unittest.TestCase):
     class GetTracerProjectTestCase:
         def __init__(

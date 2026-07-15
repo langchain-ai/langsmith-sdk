@@ -9,6 +9,7 @@ import logging
 import sys
 import threading
 import urllib.parse
+import warnings
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, NamedTuple, Optional, Union, cast
@@ -137,6 +138,7 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+LANGSMITH_PROJECT_ID = sys.intern(f"{LANGSMITH_PREFIX}project-id")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -313,7 +315,9 @@ class RunTree(ls_schemas.RunBase):
         default_factory=lambda: utils.get_tracer_project() or "default",
         alias="project_name",
     )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
+    session_id: Optional[UUID] = Field(
+        default_factory=utils.get_tracer_project_id, alias="project_id"
+    )
     extra: dict = Field(default_factory=dict)
     tags: Optional[list[str]] = Field(default_factory=list)
     events: list[dict] = Field(default_factory=list)
@@ -341,6 +345,31 @@ class RunTree(ls_schemas.RunBase):
     @model_validator(mode="before")
     def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
         """Assign name to the run."""
+        # Resolve the project name/id precedence (explicit values over env vars).
+        # If a project name is set, use it; if a project id is set, use it; if
+        # both are set, warn and use the project id. Skip propagated runs
+        # (children via ``create_child``, distributed continuations via
+        # ``from_headers``) since they carry both values by design.
+        is_propagated = "parent_run" in values or "dotted_order" in values
+        if not is_propagated:
+            explicit_name = values.get("session_name", values.get("project_name"))
+            explicit_id = values.get("session_id", values.get("project_id"))
+            resolved_name = (
+                explicit_name
+                if explicit_name is not None
+                else utils.get_tracer_project(False)
+            )
+            resolved_id = (
+                explicit_id
+                if explicit_id is not None
+                else utils.get_tracer_project_id()
+            )
+            if resolved_name is not None and resolved_id is not None:
+                warnings.warn(
+                    "Both a project name and a project id are configured. Only one "
+                    "is needed; using the project id and ignoring the project name.",
+                    stacklevel=2,
+                )
         if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
                 values["name"] = values["serialized"]["name"]
@@ -640,6 +669,7 @@ class RunTree(ls_schemas.RunBase):
             extra=child_extra,
             parent_run=self,
             project_name=self.session_name,
+            project_id=self.session_id,
             replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
@@ -748,6 +778,7 @@ class RunTree(ls_schemas.RunBase):
                 "parent_run_id": new_parent,
                 "dotted_order": dotted,
                 "session_name": project_name,
+                "session_id": None,
             }
         )
         if updates:
@@ -849,6 +880,7 @@ class RunTree(ls_schemas.RunBase):
                     error=run_dict.get("error"),
                     parent_run_id=run_dict.get("parent_run_id"),
                     session_name=run_dict.get("session_name"),
+                    session_id=run_dict.get("session_id"),
                     reference_example_id=run_dict.get("reference_example_id"),
                     end_time=run_dict.get("end_time"),
                     dotted_order=run_dict.get("dotted_order"),
@@ -879,6 +911,7 @@ class RunTree(ls_schemas.RunBase):
                 error=self.error,
                 parent_run_id=self.parent_run_id,
                 session_name=self.session_name,
+                session_id=self.session_id,
                 reference_example_id=self.reference_example_id,
                 end_time=self.end_time,
                 dotted_order=self.dotted_order,
@@ -1032,6 +1065,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["tags"] = tags
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
+        if baggage.project_id:
+            init_args["project_id"] = baggage.project_id
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
@@ -1051,6 +1086,7 @@ class RunTree(ls_schemas.RunBase):
             metadata=self.extra.get("metadata", {}),
             tags=self.tags,
             project_name=self.session_name,
+            project_id=self.session_id,
             replicas=self.replicas,
         )
         headers["baggage"] = baggage.to_header()
@@ -1072,12 +1108,14 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
+        project_id: Optional[UUID] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
         self.project_name = project_name
+        self.project_id = project_id
         self.replicas = replicas or []
 
     @classmethod
@@ -1088,6 +1126,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
+        project_id = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1098,6 +1137,8 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
+                elif key == LANGSMITH_PROJECT_ID:
+                    project_id = UUID(urllib.parse.unquote(value))
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1130,7 +1171,11 @@ class _Baggage:
             logger.warning(f"Error parsing baggage header: {e}")
 
         return cls(
-            metadata=metadata, tags=tags, project_name=project_name, replicas=replicas
+            metadata=metadata,
+            tags=tags,
+            project_name=project_name,
+            project_id=project_id,
+            replicas=replicas,
         )
 
     @classmethod
@@ -1159,6 +1204,8 @@ class _Baggage:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
+        if self.project_id:
+            items.append(f"{LANGSMITH_PROJECT_ID}={self.project_id}")
         return ",".join(items)
 
 

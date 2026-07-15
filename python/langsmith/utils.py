@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import uuid
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
@@ -440,6 +441,13 @@ def get_env_var(
         if value is not None and value.strip() != "":
             return value
     return default
+
+
+@functools.lru_cache(maxsize=1)
+def get_tracer_project_id() -> Optional[uuid.UUID]:
+    """Get the project ID for a LangSmith tracer."""
+    project_id = get_env_var("PROJECT_ID", namespaces=("LANGSMITH",))
+    return uuid.UUID(project_id) if project_id else None
 
 
 @functools.lru_cache(maxsize=1)

@@ -21,10 +21,11 @@ import {
   getEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { getDefaultProjectName } from "./utils/project.js";
+import { getDefaultProjectId, getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import {
+  assertUuid,
   uuid7FromTime,
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
@@ -84,6 +85,7 @@ export interface RunTreeConfig {
   run_type?: string;
   id?: string;
   project_name?: string;
+  project_id?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -198,16 +200,19 @@ class Baggage {
   metadata: KVMap | undefined;
   tags: string[] | undefined;
   project_name: string | undefined;
+  project_id: string | undefined;
   replicas: Replica[] | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
+    project_id: string | undefined,
     replicas: Replica[] | undefined,
   ) {
     this.metadata = metadata;
     this.tags = tags;
     this.project_name = project_name;
+    this.project_id = project_id;
     this.replicas = replicas;
   }
 
@@ -216,6 +221,7 @@ class Baggage {
     let metadata: KVMap = {};
     let tags: string[] = [];
     let project_name: string | undefined;
+    let project_id: string | undefined;
     let replicas: Replica[] | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
@@ -226,6 +232,8 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
+      } else if (key === "langsmith-project-id") {
+        project_id = assertUuid(value, "langsmith-project-id baggage");
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as Replica[];
         replicas = parsed.map((replica) => {
@@ -237,7 +245,7 @@ class Baggage {
       }
     }
 
-    return new Baggage(metadata, tags, project_name, replicas);
+    return new Baggage(metadata, tags, project_name, project_id, replicas);
   }
 
   toHeader(): string {
@@ -255,6 +263,9 @@ class Baggage {
     if (this.project_name) {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
+    if (this.project_id) {
+      items.push(`langsmith-project-id=${this.project_id}`);
+    }
 
     return items.join(",");
   }
@@ -267,6 +278,7 @@ export class RunTree implements BaseRun {
   name: RunTreeConfig["name"];
   run_type: string;
   project_name: string;
+  project_id?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -327,6 +339,26 @@ export class RunTree implements BaseRun {
       delete config.id;
     }
     Object.assign(this, { ...defaultConfig, ...config, client });
+    // Resolve the project name/id precedence (explicit values over env vars).
+    // If a project name is set, use it; if a project id is set, use it; if both
+    // are set, warn and use the project id. Skip propagated runs (children via
+    // `createChild`, distributed continuations via `fromHeaders`) since they
+    // carry both values by design.
+    const isPropagated =
+      config.parent_run !== undefined || config.dotted_order !== undefined;
+    if (!isPropagated) {
+      const resolvedName =
+        config.project_name ??
+        getLangSmithEnvironmentVariable("PROJECT") ??
+        getEnvironmentVariable("LANGCHAIN_SESSION");
+      const resolvedId = config.project_id ?? getDefaultProjectId();
+      if (resolvedName != null && resolvedId != null) {
+        warnOnce(
+          "Both a project name and a project id are configured. Only one is " +
+            "needed; using the project id and ignoring the project name.",
+        );
+      }
+    }
 
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
@@ -388,6 +420,7 @@ export class RunTree implements BaseRun {
     return {
       run_type: "chain",
       project_name: getDefaultProjectName(),
+      project_id: getDefaultProjectId(),
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
@@ -423,6 +456,7 @@ export class RunTree implements BaseRun {
       ...config,
       parent_run: this,
       project_name: this.project_name,
+      project_id: this.project_id,
       replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
@@ -552,6 +586,7 @@ export class RunTree implements BaseRun {
       inputs: run.inputs,
       outputs: run.outputs,
       session_name: run.project_name,
+      session_id: run.project_id,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
       trace_id: run.trace_id,
@@ -779,6 +814,7 @@ export class RunTree implements BaseRun {
       parent_run_id: newParentId,
       dotted_order: newDottedOrder,
       session_name: projectName,
+      session_id: undefined,
     };
   }
 
@@ -869,6 +905,7 @@ export class RunTree implements BaseRun {
           error: runData.error,
           parent_run_id: runData.parent_run_id,
           session_name: runData.session_name,
+          session_id: runData.session_id,
           reference_example_id: runData.reference_example_id,
           end_time: runData.end_time,
           dotted_order: runData.dotted_order,
@@ -910,6 +947,7 @@ export class RunTree implements BaseRun {
           tags: this.tags,
           attachments: this.attachments,
           session_name: this.project_name,
+          session_id: this.project_id,
         };
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
@@ -1052,6 +1090,7 @@ export class RunTree implements BaseRun {
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
       config.project_name = baggage.project_name;
+      config.project_id = baggage.project_id;
       config.replicas = baggage.replicas;
     }
 
@@ -1068,6 +1107,7 @@ export class RunTree implements BaseRun {
         this.extra?.metadata,
         this.tags,
         this.project_name,
+        this.project_id,
         this.replicas,
       ).toHeader(),
     };

@@ -274,6 +274,7 @@ process.env.LANGSMITH_ENDPOINT = "https://api.smith.langchain.com";
 // process.env.LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com"; // If signed up in the EU region
 process.env.LANGSMITH_API_KEY = "<YOUR-LANGSMITH-API-KEY>";
 // process.env.LANGSMITH_PROJECT = "My Project Name"; // Optional: "default" is used if not set
+// process.env.LANGSMITH_PROJECT_ID = "My Project UUID"; // Optional: stable alternative to the project name
 // process.env.LANGSMITH_WORKSPACE_ID = "<YOUR-WORKSPACE-ID>"; // Required for org-scoped API keys
 ```
 
@@ -304,7 +305,8 @@ or by directly specifying the connection information in the RunTree.
 ```shell
 export LANGSMITH_TRACING="true";
 export LANGSMITH_API_KEY=<YOUR-LANGSMITH-API-KEY>
-# export LANGSMITH_PROJECT="My Project Name" #  Optional: "default" is used if not set
+# export LANGSMITH_PROJECT="My Project Name" # Optional: "default" is used if not set
+# export LANGSMITH_PROJECT_ID="My Project UUID" # Optional: stable alternative to the project name
 # export LANGSMITH_ENDPOINT=https://api.smith.langchain.com # or your own server
 ```
 
