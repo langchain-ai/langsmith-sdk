@@ -1,0 +1,19 @@
+js/src/index.ts
+  s_5f4f9b2550d447::t_2bfaf736755275 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "679b8fe525c0ab5abdeb7f978addf18c310c84ab",
+  "prompts": {},
+  "sessions": {
+    "s_5f4f9b2550d447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "146d83e5-9ba5-42a2-8aba-824cb0b9184c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
