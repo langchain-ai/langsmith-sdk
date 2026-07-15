@@ -12,5 +12,10 @@
   },
   "devDependencies": {
     "wrangler": "^3.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "ws": "8.21.0"
+    }
   }
 }
