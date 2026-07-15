@@ -5806,7 +5806,8 @@ export class Client implements LangSmithTracingClientInterface {
       warnOnce(
         "Passing an array of run-ID strings to addRunsToAnnotationQueue is " +
           "deprecated and will be removed in a future version. Pass an array of " +
-          "RunKey objects instead, each with runId, sessionId, and startTime.",
+          "RunKey objects instead, each with runId, sessionId, and startTime. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration for details.",
       );
       url = base;
       body = JSON.stringify(

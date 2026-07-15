@@ -8846,7 +8846,9 @@ class Client:
                 "The `run_ids` parameter of `add_runs_to_annotation_queue` is "
                 "deprecated and will be removed in a future release. Pass `runs` "
                 "instead, with each run's full lookup key (`run_id`, `session_id`, "
-                "`start_time`).",
+                "`start_time`). See "
+                "https://docs.langchain.com/langsmith/smithdb-sdk-migration "
+                "for details.",
                 DeprecationWarning,
                 stacklevel=2,
             )
