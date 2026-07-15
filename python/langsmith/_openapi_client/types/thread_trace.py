@@ -76,6 +76,12 @@ class ThreadTrace(BaseModel):
     JSON null if the run is still in progress. Omitted unless included in `selects`.
     """
 
+    error: Optional[str] = None
+    """`error` is the full root run error message when the run failed.
+
+    Omitted unless included in `selects`.
+    """
+
     error_preview: Optional[str] = None
     """`error_preview` is a short error summary when the run failed.
 
@@ -87,6 +93,12 @@ class ThreadTrace(BaseModel):
     `first_token_time` is when the first output token was produced (RFC3339
     date-time), for streamed runs when that metadata exists. Omitted unless included
     in `selects`.
+    """
+
+    inputs: Optional[object] = None
+    """`inputs` is the full root run input payload.
+
+    Omitted unless included in `selects`.
     """
 
     inputs_preview: Optional[str] = None
@@ -115,6 +127,12 @@ class ThreadTrace(BaseModel):
     tool vs. chain). Encoded as a number for compatibility with legacy clients;
     prefer the string `run_type` on `RunResponse` when available. Omitted unless
     included in `selects`.
+    """
+
+    outputs: Optional[object] = None
+    """`outputs` is the full root run output payload.
+
+    Omitted unless included in `selects`.
     """
 
     outputs_preview: Optional[str] = None
