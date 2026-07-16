@@ -45,17 +45,41 @@ class TranslatedSpan:
     span: ReadableSpan
     attributes: dict[str, Any]
     events: list[Event]
+    name: str
+    end_time: Optional[int]
 
     @classmethod
     def of(cls, span: ReadableSpan) -> TranslatedSpan:
-        """Seed a draft from a span's own (read-only) attributes and events."""
-        return cls(span, dict(span.attributes or {}), list(span.events or []))
+        """Seed a draft from a span's own (read-only) fields, attributes, and events."""
+        return cls(
+            span,
+            dict(span.attributes or {}),
+            list(span.events or []),
+            span.name,
+            span.end_time,
+        )
 
     def finalize(self) -> ReadableSpan:
-        """Build the export span: the original's fields + our rewritten attrs/events."""
+        """Build the export span: the original's fields + our rewritten ones."""
         return rebuild_readable_span(
-            self.span, attributes=self.attributes, events=self.events
+            self.span,
+            attributes=self.attributes,
+            events=self.events,
+            name=self.name,
+            end_time=self.end_time,
         )
+
+    def set_name(self, name: str) -> None:
+        """Set the exported span's name (the LangSmith run name)."""
+        self.name = name
+
+    def set_end_time(self, end_time_ns: int) -> None:
+        """Set the exported span's end time (epoch ns).
+
+        Lets a span merged from two sources report a duration that runs past its
+        own end — e.g. a tool span spanning from the call to the result.
+        """
+        self.end_time = end_time_ns
 
     def set_kind(self, kind: str) -> None:
         """Set ``langsmith.span.kind`` (``llm`` / ``chain`` / ``tool`` / …)."""
