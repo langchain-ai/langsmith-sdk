@@ -220,7 +220,11 @@ class LangSmithSpanExporter(SpanExporter):
             new_attrs["langsmith.metadata.ls_model_type"] = "chat"
 
         return rebuild_readable_span(
-            span, attributes=new_attrs, events=remaining_events
+            span,
+            attributes=new_attrs,
+            name=span.name,
+            end_time=span.end_time,
+            events=remaining_events,
         )
 
     def _event_to_message(

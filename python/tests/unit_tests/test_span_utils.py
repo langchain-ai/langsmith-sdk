@@ -19,7 +19,11 @@ def _span() -> ReadableSpan:
 def test_rebuild_overrides_attributes_and_events():
     span = _span()
     rebuilt = rebuild_readable_span(
-        span, attributes={"b": 2}, events=[Event(name="e1")]
+        span,
+        attributes={"b": 2},
+        name=span.name,
+        end_time=span.end_time,
+        events=[Event(name="e1")],
     )
 
     # Overridden fields.
@@ -36,5 +40,16 @@ def test_rebuild_overrides_attributes_and_events():
 
 def test_rebuild_defaults_events_to_original():
     span = _span()
-    rebuilt = rebuild_readable_span(span, attributes={"b": 2})
+    rebuilt = rebuild_readable_span(
+        span, attributes={"b": 2}, name=span.name, end_time=span.end_time
+    )
     assert [e.name for e in rebuilt.events] == ["e0"]
+
+
+def test_rebuild_applies_name_and_end_time():
+    span = _span()
+    rebuilt = rebuild_readable_span(
+        span, attributes={"b": 2}, name="renamed", end_time=99
+    )
+    assert rebuilt.name == "renamed"
+    assert rebuilt.end_time == 99
