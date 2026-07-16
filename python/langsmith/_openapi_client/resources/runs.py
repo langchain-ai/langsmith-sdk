@@ -8,7 +8,7 @@ from typing_extensions import Literal
 
 import httpx
 
-from ..types import run_query_v2_params, run_retrieve_v2_params
+from ..types import RunType, run_query_v2_params, run_retrieve_v2_params
 from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from .._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
 from .._compat import cached_property
@@ -22,6 +22,8 @@ from .._response import (
 from ..types.run import Run
 from ..pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from .._base_client import AsyncPaginator, make_request_options
+from ..types.run_type import RunType
+from ..types.run_select_field import RunSelectField
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
 
@@ -56,56 +58,8 @@ class RunsResource(SyncAPIResource):
         project_ids: SequenceNotStr[str] | Omit = omit,
         reference_dataset_id: str | Omit = omit,
         reference_examples: SequenceNotStr[str] | Omit = omit,
-        run_type: Literal["TOOL", "CHAIN", "LLM", "RETRIEVER", "EMBEDDING", "PROMPT", "PARSER"] | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        run_type: RunType | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_id: str | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -366,56 +320,8 @@ class AsyncRunsResource(AsyncAPIResource):
         project_ids: SequenceNotStr[str] | Omit = omit,
         reference_dataset_id: str | Omit = omit,
         reference_examples: SequenceNotStr[str] | Omit = omit,
-        run_type: Literal["TOOL", "CHAIN", "LLM", "RETRIEVER", "EMBEDDING", "PROMPT", "PARSER"] | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        run_type: RunType | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_id: str | Omit = omit,
         tree_filter: str | Omit = omit,

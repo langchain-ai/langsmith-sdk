@@ -117,52 +117,7 @@ export interface ExperimentRunQueryParams extends ItemsCursorPostPaginationParam
    * `selects` lists which run properties to include. Omitted => only `id`. Tokens
    * mirror /v2/runs/query.
    */
-  selects?: Array<
-    | 'ID'
-    | 'NAME'
-    | 'RUN_TYPE'
-    | 'STATUS'
-    | 'START_TIME'
-    | 'END_TIME'
-    | 'LATENCY_SECONDS'
-    | 'FIRST_TOKEN_TIME'
-    | 'ERROR'
-    | 'ERROR_PREVIEW'
-    | 'EXTRA'
-    | 'METADATA'
-    | 'EVENTS'
-    | 'INPUTS'
-    | 'INPUTS_PREVIEW'
-    | 'OUTPUTS'
-    | 'OUTPUTS_PREVIEW'
-    | 'MANIFEST'
-    | 'PARENT_RUN_IDS'
-    | 'PROJECT_ID'
-    | 'TRACE_ID'
-    | 'THREAD_ID'
-    | 'DOTTED_ORDER'
-    | 'IS_ROOT'
-    | 'REFERENCE_EXAMPLE_ID'
-    | 'REFERENCE_DATASET_ID'
-    | 'TOTAL_TOKENS'
-    | 'PROMPT_TOKENS'
-    | 'COMPLETION_TOKENS'
-    | 'TOTAL_COST'
-    | 'PROMPT_COST'
-    | 'COMPLETION_COST'
-    | 'PROMPT_TOKEN_DETAILS'
-    | 'COMPLETION_TOKEN_DETAILS'
-    | 'PROMPT_COST_DETAILS'
-    | 'COMPLETION_COST_DETAILS'
-    | 'PRICE_MODEL_ID'
-    | 'TAGS'
-    | 'APP_PATH'
-    | 'ATTACHMENTS'
-    | 'THREAD_EVALUATION_TIME'
-    | 'IS_IN_DATASET'
-    | 'SHARE_URL'
-    | 'FEEDBACK_STATS'
-  >;
+  selects?: Array<RunsAPI.RunSelectField>;
 
   /**
    * `sort` controls feedback-score sorting (single project only).

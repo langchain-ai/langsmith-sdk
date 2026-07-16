@@ -42,13 +42,16 @@ export {
   type OnlineEvaluatorSpendParams,
   type OnlineEvaluatorsOffsetPaginationOnlineEvaluators,
 } from './online-evaluators.js';
+export { Public } from './public/public.js';
 export {
   Runs,
   type ResponseBodyForRunsGenerateQuery,
   type Run,
   type RunIngest,
   type RunSchema,
+  type RunSelectField,
   type RunStatsQueryParams,
+  type RunType,
   type RunTypeEnum,
   type RunsFilterDataSourceTypeEnum,
   type RunQueryV2Params,

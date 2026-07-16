@@ -36,12 +36,13 @@ from ._base_client import (
 )
 
 if TYPE_CHECKING:
-    from .resources import info, runs, issues, traces, threads, datasets, sandboxes, online_evaluators
+    from .resources import info, runs, issues, public, traces, threads, datasets, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.runs import RunsResource, AsyncRunsResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.traces import TracesResource, AsyncTracesResource
     from .resources.threads import ThreadsResource, AsyncThreadsResource
+    from .resources.public.public import PublicResource, AsyncPublicResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource
@@ -155,6 +156,12 @@ class Langsmith(SyncAPIClient):
         from .resources.online_evaluators import OnlineEvaluatorsResource
 
         return OnlineEvaluatorsResource(self)
+
+    @cached_property
+    def public(self) -> PublicResource:
+        from .resources.public import PublicResource
+
+        return PublicResource(self)
 
     @cached_property
     def info(self) -> InfoResource:
@@ -413,6 +420,12 @@ class AsyncLangsmith(AsyncAPIClient):
         return AsyncOnlineEvaluatorsResource(self)
 
     @cached_property
+    def public(self) -> AsyncPublicResource:
+        from .resources.public import AsyncPublicResource
+
+        return AsyncPublicResource(self)
+
+    @cached_property
     def info(self) -> AsyncInfoResource:
         from .resources.info import AsyncInfoResource
 
@@ -607,6 +620,12 @@ class LangsmithWithRawResponse:
         return OnlineEvaluatorsResourceWithRawResponse(self._client.online_evaluators)
 
     @cached_property
+    def public(self) -> public.PublicResourceWithRawResponse:
+        from .resources.public import PublicResourceWithRawResponse
+
+        return PublicResourceWithRawResponse(self._client.public)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithRawResponse:
         from .resources.info import InfoResourceWithRawResponse
 
@@ -660,6 +679,12 @@ class AsyncLangsmithWithRawResponse:
         from .resources.online_evaluators import AsyncOnlineEvaluatorsResourceWithRawResponse
 
         return AsyncOnlineEvaluatorsResourceWithRawResponse(self._client.online_evaluators)
+
+    @cached_property
+    def public(self) -> public.AsyncPublicResourceWithRawResponse:
+        from .resources.public import AsyncPublicResourceWithRawResponse
+
+        return AsyncPublicResourceWithRawResponse(self._client.public)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithRawResponse:
@@ -717,6 +742,12 @@ class LangsmithWithStreamedResponse:
         return OnlineEvaluatorsResourceWithStreamingResponse(self._client.online_evaluators)
 
     @cached_property
+    def public(self) -> public.PublicResourceWithStreamingResponse:
+        from .resources.public import PublicResourceWithStreamingResponse
+
+        return PublicResourceWithStreamingResponse(self._client.public)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithStreamingResponse:
         from .resources.info import InfoResourceWithStreamingResponse
 
@@ -770,6 +801,12 @@ class AsyncLangsmithWithStreamedResponse:
         from .resources.online_evaluators import AsyncOnlineEvaluatorsResourceWithStreamingResponse
 
         return AsyncOnlineEvaluatorsResourceWithStreamingResponse(self._client.online_evaluators)
+
+    @cached_property
+    def public(self) -> public.AsyncPublicResourceWithStreamingResponse:
+        from .resources.public import AsyncPublicResourceWithStreamingResponse
+
+        return AsyncPublicResourceWithStreamingResponse(self._client.public)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithStreamingResponse:

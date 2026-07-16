@@ -80,7 +80,9 @@ import {
   RunRetrieveParams,
   RunRetrieveV2Params,
   RunSchema,
+  RunSelectField,
   RunStatsQueryParams,
+  RunType,
   RunTypeEnum,
   Runs,
   RunsFilterDataSourceTypeEnum,
@@ -116,6 +118,7 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import { Public } from './resources/public/public.js';
 import {
   SandboxListResponse,
   SandboxResponse,
@@ -898,6 +901,7 @@ export class Langsmith {
   threads: API.Threads = new API.Threads(this);
   traces: API.Traces = new API.Traces(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
+  public: API.Public = new API.Public(this);
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
@@ -908,6 +912,7 @@ Langsmith.Runs = Runs;
 Langsmith.Threads = Threads;
 Langsmith.Traces = Traces;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
+Langsmith.Public = Public;
 Langsmith.Info = Info;
 Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
@@ -986,7 +991,9 @@ export declare namespace Langsmith {
     type Run as Run,
     type RunIngest as RunIngest,
     type RunSchema as RunSchema,
+    type RunSelectField as RunSelectField,
     type RunStatsQueryParams as RunStatsQueryParams,
+    type RunType as RunType,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
     type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
@@ -1047,6 +1054,8 @@ export declare namespace Langsmith {
     type OnlineEvaluatorBulkDeleteParams as OnlineEvaluatorBulkDeleteParams,
     type OnlineEvaluatorSpendParams as OnlineEvaluatorSpendParams,
   };
+
+  export { Public as Public };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
 

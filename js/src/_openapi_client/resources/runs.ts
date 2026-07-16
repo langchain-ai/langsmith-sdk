@@ -269,7 +269,7 @@ export interface Run {
    * LLM call, a tool invocation, or a chain step). See the `RunType` enum for
    * allowed values.
    */
-  run_type?: 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
+  run_type?: RunType;
 
   /**
    * `share_url` is the fully-qualified URL of this run's public view, rooted at the
@@ -633,6 +633,52 @@ export interface RunSchema {
   ttl_seconds?: number | null;
 }
 
+export type RunSelectField =
+  | 'ID'
+  | 'NAME'
+  | 'RUN_TYPE'
+  | 'STATUS'
+  | 'START_TIME'
+  | 'END_TIME'
+  | 'LATENCY_SECONDS'
+  | 'FIRST_TOKEN_TIME'
+  | 'ERROR'
+  | 'ERROR_PREVIEW'
+  | 'EXTRA'
+  | 'METADATA'
+  | 'EVENTS'
+  | 'INPUTS'
+  | 'INPUTS_PREVIEW'
+  | 'OUTPUTS'
+  | 'OUTPUTS_PREVIEW'
+  | 'MANIFEST'
+  | 'PARENT_RUN_IDS'
+  | 'PROJECT_ID'
+  | 'TRACE_ID'
+  | 'THREAD_ID'
+  | 'DOTTED_ORDER'
+  | 'IS_ROOT'
+  | 'REFERENCE_EXAMPLE_ID'
+  | 'REFERENCE_DATASET_ID'
+  | 'TOTAL_TOKENS'
+  | 'PROMPT_TOKENS'
+  | 'COMPLETION_TOKENS'
+  | 'TOTAL_COST'
+  | 'PROMPT_COST'
+  | 'COMPLETION_COST'
+  | 'PROMPT_TOKEN_DETAILS'
+  | 'COMPLETION_TOKEN_DETAILS'
+  | 'PROMPT_COST_DETAILS'
+  | 'COMPLETION_COST_DETAILS'
+  | 'PRICE_MODEL_ID'
+  | 'TAGS'
+  | 'APP_PATH'
+  | 'ATTACHMENTS'
+  | 'THREAD_EVALUATION_TIME'
+  | 'IS_IN_DATASET'
+  | 'SHARE_URL'
+  | 'FEEDBACK_STATS';
+
 /**
  * Query params for run stats.
  */
@@ -747,6 +793,8 @@ export namespace RunStatsQueryParams {
   }
 }
 
+export type RunType = 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
+
 /**
  * Enum for run types.
  */
@@ -826,59 +874,14 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
    * Body param: `run_type`, when set, restricts results to runs whose `run_type`
    * equals this value.
    */
-  run_type?: 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
+  run_type?: RunType;
 
   /**
    * Body param: `selects` lists which properties to include on each returned run. If
    * omitted, only `id` is returned. Properties not listed are omitted from each run
    * object.
    */
-  selects?: Array<
-    | 'ID'
-    | 'NAME'
-    | 'RUN_TYPE'
-    | 'STATUS'
-    | 'START_TIME'
-    | 'END_TIME'
-    | 'LATENCY_SECONDS'
-    | 'FIRST_TOKEN_TIME'
-    | 'ERROR'
-    | 'ERROR_PREVIEW'
-    | 'EXTRA'
-    | 'METADATA'
-    | 'EVENTS'
-    | 'INPUTS'
-    | 'INPUTS_PREVIEW'
-    | 'OUTPUTS'
-    | 'OUTPUTS_PREVIEW'
-    | 'MANIFEST'
-    | 'PARENT_RUN_IDS'
-    | 'PROJECT_ID'
-    | 'TRACE_ID'
-    | 'THREAD_ID'
-    | 'DOTTED_ORDER'
-    | 'IS_ROOT'
-    | 'REFERENCE_EXAMPLE_ID'
-    | 'REFERENCE_DATASET_ID'
-    | 'TOTAL_TOKENS'
-    | 'PROMPT_TOKENS'
-    | 'COMPLETION_TOKENS'
-    | 'TOTAL_COST'
-    | 'PROMPT_COST'
-    | 'COMPLETION_COST'
-    | 'PROMPT_TOKEN_DETAILS'
-    | 'COMPLETION_TOKEN_DETAILS'
-    | 'PROMPT_COST_DETAILS'
-    | 'COMPLETION_COST_DETAILS'
-    | 'PRICE_MODEL_ID'
-    | 'TAGS'
-    | 'APP_PATH'
-    | 'ATTACHMENTS'
-    | 'THREAD_EVALUATION_TIME'
-    | 'IS_IN_DATASET'
-    | 'SHARE_URL'
-    | 'FEEDBACK_STATS'
-  >;
+  selects?: Array<RunSelectField>;
 
   /**
    * Body param: `trace_filter` narrows results to runs whose root trace matches this
@@ -1117,59 +1120,14 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
    * Body param: `run_type`, when set, restricts results to runs whose `run_type`
    * equals this value.
    */
-  run_type?: 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
+  run_type?: RunType;
 
   /**
    * Body param: `selects` lists which properties to include on each returned run. If
    * omitted, only `id` is returned. Properties not listed are omitted from each run
    * object.
    */
-  selects?: Array<
-    | 'ID'
-    | 'NAME'
-    | 'RUN_TYPE'
-    | 'STATUS'
-    | 'START_TIME'
-    | 'END_TIME'
-    | 'LATENCY_SECONDS'
-    | 'FIRST_TOKEN_TIME'
-    | 'ERROR'
-    | 'ERROR_PREVIEW'
-    | 'EXTRA'
-    | 'METADATA'
-    | 'EVENTS'
-    | 'INPUTS'
-    | 'INPUTS_PREVIEW'
-    | 'OUTPUTS'
-    | 'OUTPUTS_PREVIEW'
-    | 'MANIFEST'
-    | 'PARENT_RUN_IDS'
-    | 'PROJECT_ID'
-    | 'TRACE_ID'
-    | 'THREAD_ID'
-    | 'DOTTED_ORDER'
-    | 'IS_ROOT'
-    | 'REFERENCE_EXAMPLE_ID'
-    | 'REFERENCE_DATASET_ID'
-    | 'TOTAL_TOKENS'
-    | 'PROMPT_TOKENS'
-    | 'COMPLETION_TOKENS'
-    | 'TOTAL_COST'
-    | 'PROMPT_COST'
-    | 'COMPLETION_COST'
-    | 'PROMPT_TOKEN_DETAILS'
-    | 'COMPLETION_TOKEN_DETAILS'
-    | 'PROMPT_COST_DETAILS'
-    | 'COMPLETION_COST_DETAILS'
-    | 'PRICE_MODEL_ID'
-    | 'TAGS'
-    | 'APP_PATH'
-    | 'ATTACHMENTS'
-    | 'THREAD_EVALUATION_TIME'
-    | 'IS_IN_DATASET'
-    | 'SHARE_URL'
-    | 'FEEDBACK_STATS'
-  >;
+  selects?: Array<RunSelectField>;
 
   /**
    * Body param: `trace_filter` narrows results to runs whose root trace matches this
@@ -1210,7 +1168,9 @@ export declare namespace Runs {
     type Run as Run,
     type RunIngest as RunIngest,
     type RunSchema as RunSchema,
+    type RunSelectField as RunSelectField,
     type RunStatsQueryParams as RunStatsQueryParams,
+    type RunType as RunType,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
     type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
