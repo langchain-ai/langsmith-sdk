@@ -191,8 +191,12 @@ langsmith_plugin = "langsmith.pytest_plugin"
 
 [tool.uv]
 exclude-newer = "P1D"
+# Force `json-repair` past the patched 0.60.1 floor everywhere. `livekit-agents`
+# pins the vulnerable `json-repair==0.59.10`; uv's `override-dependencies` takes a
+# flat list of PEP 508 requirements (not a per-package map), so a global override
+# is the supported way to force the patched version over that pin.
 override-dependencies = [
-    { package = { name = "livekit-agents" }, dependencies = ["json-repair>=0.60.1"] },
+    "json-repair>=0.60.1",
 ]
 
 [tool.hatch.version]
