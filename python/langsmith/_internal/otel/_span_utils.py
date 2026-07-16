@@ -19,21 +19,16 @@ def rebuild_readable_span(
     span: ReadableSpan,
     *,
     attributes: dict,
-    name: str,
-    end_time: Optional[int],
     events: Optional[list[Event]] = None,
 ) -> ReadableSpan:
-    """Return a copy of ``span`` built from the given fields.
+    """Return a copy of ``span`` with rewritten ``attributes`` (and ``events``).
 
-    Uses the caller-supplied ``name``, ``end_time``, and ``attributes`` (and
-    ``events``), copying every other field from ``span`` unchanged. The caller
-    passes ``name`` and ``end_time`` directly (typically the source span's own
-    values, or a rewritten name/end for a renamed or merged span). ``events``
-    defaults to the original span's events when not overridden. The original span
-    is never mutated.
+    Copies every other field from ``span`` unchanged. ``events`` defaults to the
+    original span's events when not overridden. The original span is never
+    mutated.
     """
     return ReadableSpan(
-        name=name,
+        name=span.name,
         context=span.context,
         parent=span.parent,
         resource=span.resource,
@@ -43,6 +38,6 @@ def rebuild_readable_span(
         kind=span.kind,
         status=span.status,
         start_time=span.start_time,
-        end_time=end_time,
+        end_time=span.end_time,
         instrumentation_scope=span.instrumentation_scope,
     )

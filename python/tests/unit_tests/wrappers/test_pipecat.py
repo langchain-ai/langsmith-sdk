@@ -33,19 +33,21 @@ from langsmith.integrations.pipecat.processor import (
 def _make_span(name: str, attributes: dict | None = None, trace_id: int = 0x1):
     """Build a mock span for the processor.
 
-    The processor only *reads* ``span.attributes`` (and a few read-only fields);
-    it never mutates the span. Translation accumulates on a ``TranslatedSpan``
-    draft, and a fresh span is built for export — so the rewritten attributes are
-    read off the exported span (see :func:`_exported_attrs`), not this input. The
-    remaining ``ReadableSpan`` fields are auto-mocked, which is all
-    ``TranslatedSpan.finalize`` needs to construct the export span.
+    The processor copies the span into a ``TranslatedSpan`` draft and builds a
+    fresh span for export, leaving this input unchanged. The remaining
+    ``ReadableSpan`` fields are auto-mocked, which is all ``finalize`` needs.
     """
     span = MagicMock()
     span.name = name
+    span._name = name
     span.attributes = dict(attributes or {})
     span.context = MagicMock()
     span.context.trace_id = trace_id
     span.events = []
+    span.end_time = None
+    span._end_time = None
+    type(span).name = property(lambda value: value._name)
+    type(span).end_time = property(lambda value: value._end_time)
     return span
 
 
@@ -356,7 +358,7 @@ class TestPipecatToolCalls:
             {"tool.result": '{"temp": 68}', "tool.result_status": "completed"},
             trace_id=trace_id,
         )
-        result.end_time = 999
+        result._end_time = 999
 
         proc.on_end(result)
 
