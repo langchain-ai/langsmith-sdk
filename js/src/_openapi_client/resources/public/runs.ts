@@ -2,11 +2,11 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
-import * as RunsAPI from '../runs.js';
 import { APIPromise } from '../../core/api-promise.js';
 import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
+import * as RunsAPI_ from '../runs/runs.js';
 
 export class Runs extends APIResource {
   /**
@@ -26,7 +26,7 @@ export class Runs extends APIResource {
    * );
    * ```
    */
-  retrieve(runID: string, params: RunRetrieveParams, options?: RequestOptions): APIPromise<RunsAPI.Run> {
+  retrieve(runID: string, params: RunRetrieveParams, options?: RequestOptions): APIPromise<RunsAPI_.Run> {
     const { share_token, Accept, ...query } = params;
     return this._client.get(path`/v2/public/${share_token}/run/${runID}`, {
       query,
@@ -62,7 +62,7 @@ export interface RunQueryResponse {
    * `items` lists runs in the trace for the requested time window, in `start_time`
    * order.
    */
-  items?: Array<RunsAPI.Run>;
+  items?: Array<RunsAPI_.Run>;
 }
 
 export interface RunRetrieveParams {

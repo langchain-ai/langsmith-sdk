@@ -8,27 +8,39 @@ from typing_extensions import Literal
 
 import httpx
 
-from ..types import RunType, run_query_v2_params, run_retrieve_v2_params
-from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
-from .._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
-from .._compat import cached_property
-from .._resource import SyncAPIResource, AsyncAPIResource
-from .._response import (
+from .share import (
+    ShareResource,
+    AsyncShareResource,
+    ShareResourceWithRawResponse,
+    AsyncShareResourceWithRawResponse,
+    ShareResourceWithStreamingResponse,
+    AsyncShareResourceWithStreamingResponse,
+)
+from ...types import RunType, run_query_v2_params, run_retrieve_v2_params
+from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
+from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
+from ..._compat import cached_property
+from ..._resource import SyncAPIResource, AsyncAPIResource
+from ..._response import (
     to_raw_response_wrapper,
     to_streamed_response_wrapper,
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ..types.run import Run
-from ..pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
-from .._base_client import AsyncPaginator, make_request_options
-from ..types.run_type import RunType
-from ..types.run_select_field import RunSelectField
+from ...types.run import Run
+from ...pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
+from ..._base_client import AsyncPaginator, make_request_options
+from ...types.run_type import RunType
+from ...types.run_select_field import RunSelectField
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
 
 
 class RunsResource(SyncAPIResource):
+    @cached_property
+    def share(self) -> ShareResource:
+        return ShareResource(self._client)
+
     @cached_property
     def with_raw_response(self) -> RunsResourceWithRawResponse:
         """
@@ -291,6 +303,10 @@ class RunsResource(SyncAPIResource):
 
 
 class AsyncRunsResource(AsyncAPIResource):
+    @cached_property
+    def share(self) -> AsyncShareResource:
+        return AsyncShareResource(self._client)
+
     @cached_property
     def with_raw_response(self) -> AsyncRunsResourceWithRawResponse:
         """
@@ -569,6 +585,10 @@ class RunsResourceWithRawResponse:
             runs.query,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithRawResponse:
+        return ShareResourceWithRawResponse(self._runs.share)
+
 
 class AsyncRunsResourceWithRawResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
@@ -586,6 +606,10 @@ class AsyncRunsResourceWithRawResponse:
         self.query = async_to_raw_response_wrapper(
             runs.query,
         )
+
+    @cached_property
+    def share(self) -> AsyncShareResourceWithRawResponse:
+        return AsyncShareResourceWithRawResponse(self._runs.share)
 
 
 class RunsResourceWithStreamingResponse:
@@ -605,6 +629,10 @@ class RunsResourceWithStreamingResponse:
             runs.query,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithStreamingResponse:
+        return ShareResourceWithStreamingResponse(self._runs.share)
+
 
 class AsyncRunsResourceWithStreamingResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
@@ -622,3 +650,7 @@ class AsyncRunsResourceWithStreamingResponse:
         self.query = async_to_streamed_response_wrapper(
             runs.query,
         )
+
+    @cached_property
+    def share(self) -> AsyncShareResourceWithStreamingResponse:
+        return AsyncShareResourceWithStreamingResponse(self._runs.share)

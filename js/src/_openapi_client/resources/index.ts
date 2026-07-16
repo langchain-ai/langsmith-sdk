@@ -59,7 +59,7 @@ export {
   type RunRetrieveParams,
   type RunQueryParams,
   type RunsItemsCursorPostPagination,
-} from './runs.js';
+} from './runs/runs.js';
 export {
   Sandboxes,
   type SandboxListResponse,

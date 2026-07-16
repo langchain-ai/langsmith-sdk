@@ -38,10 +38,10 @@ from ._base_client import (
 if TYPE_CHECKING:
     from .resources import info, runs, issues, public, traces, threads, datasets, sandboxes, online_evaluators
     from .resources.info import InfoResource, AsyncInfoResource
-    from .resources.runs import RunsResource, AsyncRunsResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.traces import TracesResource, AsyncTracesResource
     from .resources.threads import ThreadsResource, AsyncThreadsResource
+    from .resources.runs.runs import RunsResource, AsyncRunsResource
     from .resources.public.public import PublicResource, AsyncPublicResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource

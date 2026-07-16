@@ -2,7 +2,7 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../core/resource.js';
-import * as RunsAPI from './runs.js';
+import * as RunsAPI from './runs/runs.js';
 import { APIPromise } from '../core/api-promise.js';
 import {
   ItemsCursorPostPagination,
