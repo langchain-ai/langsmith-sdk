@@ -1,0 +1,54 @@
+python/langsmith/integrations/pipecat/processor.py
+  s_6e67ff8e91c665::t_d3f177886fa2f8 309-313,322,324,331,334-339,342,351,359-360,364
+  s_6e67ff8e91c665::t_9eb28dc6a291e2 227,229,231,234
+  s_6e67ff8e91c665::t_577feab87abad9 330,358,361-363,365-367
+  s_6e67ff8e91c665::t_c3750bc8aa88df 451-452
+  s_6e67ff8e91c665::t_bd4943d13befde 321,323,325,327-329,332-333,340-341,343-350,352-353,356-357,368
+  s_6e67ff8e91c665::t_a81983598deece 228,230
+  s_6e67ff8e91c665::t_85b6e4f14b8610 448-450
+  s_6e67ff8e91c665::t_47750acdc29176 232-233
+  s_6e67ff8e91c665::t_82e7ab24478ee1 308,314-320
+  s_6e67ff8e91c665::t_9807e025256053 153-154
+  s_6e67ff8e91c665::t_20ebea485f18fe 326
+  s_6e67ff8e91c665::t_d78517ac055cfe 16
+  s_6e67ff8e91c665::t_907165f048f087 151-152
+  s_6e67ff8e91c665::t_a7e48394bc8bec 441-447,453-458
+  s_6e67ff8e91c665::t_a94ff313bc6a5e 354-355
+  s_6e67ff8e91c665::t_e4f3f23e4b62af 30-32
+  s_6e67ff8e91c665::t_73449d35be4e85 155
+python/langsmith/_internal/voice/translated_span.py
+  s_6e67ff8e91c665::t_e869b9f3aaa1c7 65-67,75-76,78-81
+  s_6e67ff8e91c665::t_65d24a4d2eb7c3 83
+  s_6e67ff8e91c665::t_bf231c4a1d1562 48-49,53-60,63,68-69,72-74,77,82
+python/langsmith/_internal/otel/_span_utils.py
+  s_6e67ff8e91c665::t_6ae12a71b33063 23-24,29-31,35,45
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_6e67ff8e91c665::t_ef0e5e2f5a3d2b 391-392,404,406-412
+  s_6e67ff8e91c665::t_a03c5cc92172bf 341,346,356
+  s_6e67ff8e91c665::t_7a73784f0ce189 332,334-340,342-345,347-355,357-362,364-369,372,375-376,378,380-387,405,413-420,422-432,434-437,439-446,448-450
+  s_6e67ff8e91c665::t_4f08ca3d35909e 333
+  s_6e67ff8e91c665::t_8e09e8a6633419 377,379
+  s_6e67ff8e91c665::t_45713291d671a9 433,447
+  s_6e67ff8e91c665::t_3ff3285fc11bd4 272-274,296-298,303-305,319-322
+  s_6e67ff8e91c665::t_268e0c54c32c25 421,438
+  s_6e67ff8e91c665::t_794e6d86802dd9 363,370-371,373
+  s_6e67ff8e91c665::t_960e7ba12dad0e 374
+  s_6e67ff8e91c665::t_fe77bea3659930 388-390,393-403
+  s_6e67ff8e91c665::t_757ded409e436c 244-271,275-295,299-302,306-318,323-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "cebb1d6c57429911f80f990cfb53bd82c49c198b",
+  "prompts": {},
+  "sessions": {
+    "s_6e67ff8e91c665": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7a47bdf-841b-44ac-a265-e3c3752083c7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
