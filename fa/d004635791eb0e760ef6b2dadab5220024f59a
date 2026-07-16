@@ -1,0 +1,21 @@
+python/langsmith/integrations/pipecat/processor.py
+  s_1d9c66e2caf3bc::t_01ba6303d9d4bf 30-32,42,64-70,72-76,157-161,171-264,336-339,351-352,357-364,388-390,395-398,414,416-419,426-428,435,437-441,445-478,551,597,600-603
+python/tests/unit_tests/wrappers/test_pipecat.py
+  s_1d9c66e2caf3bc::t_7dc2382d299937 10,16-17,36-46,52-53,64,67,264-271,294-297,303-308,315-323,326-339,341-346,349-354,359,896-1190,1237,1240-1241,1245-1258,1260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "fad004635791eb0e760ef6b2dadab5220024f59a",
+  "prompts": {},
+  "sessions": {
+    "s_1d9c66e2caf3bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b188209a-ea3b-47fe-a82d-52838920201b",
+        "model": "unknown"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
