@@ -33,19 +33,21 @@ from langsmith.integrations.pipecat.processor import (
 def _make_span(name: str, attributes: dict | None = None, trace_id: int = 0x1):
     """Build a mock span for the processor.
 
-    The processor only *reads* ``span.attributes`` (and a few read-only fields);
-    it never mutates the span. Translation accumulates on a ``TranslatedSpan``
-    draft, and a fresh span is built for export — so the rewritten attributes are
-    read off the exported span (see :func:`_exported_attrs`), not this input. The
-    remaining ``ReadableSpan`` fields are auto-mocked, which is all
-    ``TranslatedSpan.finalize`` needs to construct the export span.
+    The processor copies the span into a ``TranslatedSpan`` draft and builds a
+    fresh span for export, leaving this input unchanged. The remaining
+    ``ReadableSpan`` fields are auto-mocked, which is all ``finalize`` needs.
     """
     span = MagicMock()
     span.name = name
+    span._name = name
     span.attributes = dict(attributes or {})
     span.context = MagicMock()
     span.context.trace_id = trace_id
     span.events = []
+    span.end_time = None
+    span._end_time = None
+    type(span).name = property(lambda value: value._name)
+    type(span).end_time = property(lambda value: value._end_time)
     return span
 
 
@@ -239,6 +241,213 @@ class TestPipecatDispatch:
 
         assert "langsmith.span.kind" not in _exported_attrs(proc)
         proc.downstream.on_end.assert_called_once()
+
+
+class TestPipecatRealtimeHistory:
+    """OpenAI realtime ``llm_request`` carries the authoritative history snapshot."""
+
+    def test_llm_request_snapshots_history_including_tools(self):
+        # The llm_request span's `input` is the full context — including the
+        # assistant tool call and the tool result — so the conversation root
+        # renders them. The spoken reply arrives on llm_response and is appended.
+        proc = _processor()
+        trace_id = 0xDEF
+        history = [
+            {"role": "system", "content": "be nice"},
+            {"role": "user", "content": "weather?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city":"SF"}',
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": '{"temp": 68}'},
+        ]
+        req = _make_span(
+            "llm_request", {"input": json.dumps(history)}, trace_id=trace_id
+        )
+        proc.on_end(req)
+        # The llm_request span itself stays a chain wrapper (usage is on response).
+        assert _exported_attrs(proc)["langsmith.span.kind"] == "chain"
+
+        resp = _make_span("llm_response", {"output": "it's 68"}, trace_id=trace_id)
+        proc.on_end(resp)
+
+        convo = _make_span("conversation", {"conversation.id": "c"}, trace_id=trace_id)
+        proc.on_end(convo)
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["role"] for m in prompt] == ["user", "assistant", "tool", "assistant"]
+        assert prompt[1]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert prompt[2]["content"] == '{"temp": 68}'  # tool result rendered
+        assert prompt[3]["content"] == "it's 68"  # spoken reply appended
+
+    def test_llm_request_replaces_accumulated_transcript(self):
+        # A stray STT-fold is overwritten by the authoritative snapshot — no
+        # duplicated user turn.
+        proc = _processor()
+        tid = 0x1
+        proc.on_end(
+            _make_span("stt", {"transcript": "hi", "is_final": True}, trace_id=tid)
+        )
+        snapshot = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        proc.on_end(
+            _make_span("llm_request", {"input": json.dumps(snapshot)}, trace_id=tid)
+        )
+        proc.on_end(_make_span("conversation", {"conversation.id": "c"}, trace_id=tid))
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["content"] for m in prompt] == ["hi", "hello"]
+
+    def test_cascade_llm_handling_unchanged(self):
+        # Cascade emits `llm`, never `llm_request`; its snapshot+append behavior
+        # is untouched by the realtime path.
+        proc = _processor()
+        tid = 0x1
+        proc.on_end(
+            _make_span(
+                "llm",
+                {
+                    "input": json.dumps([{"role": "user", "content": "q"}]),
+                    "output": "a",
+                },
+                trace_id=tid,
+            )
+        )
+        proc.on_end(_make_span("conversation", {"conversation.id": "c"}, trace_id=tid))
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["content"] for m in prompt] == ["q", "a"]
+
+
+class TestPipecatToolCalls:
+    """Realtime tool spans: ``llm_tool_call`` + ``llm_tool_result`` merge to one run."""
+
+    @staticmethod
+    def _exported_spans(proc) -> list:
+        """Every finalized span forwarded downstream, in order."""
+        return [c.args[0] for c in proc.downstream.on_end.call_args_list]
+
+    def test_call_and_result_merge_into_one_span(self):
+        # Pipecat puts no usable id on the result span, so pairing is by order.
+        proc = _processor()
+        trace_id = 0xABC
+        call = _make_span(
+            "llm_tool_call",
+            {"tool.function_name": "get_weather", "tool.arguments": '{"city": "SF"}'},
+            trace_id=trace_id,
+        )
+
+        # The call span is held (deferred) until its result arrives.
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        result = _make_span(
+            "llm_tool_result",
+            {"tool.result": '{"temp": 68}', "tool.result_status": "completed"},
+            trace_id=trace_id,
+        )
+        result._end_time = 999
+
+        proc.on_end(result)
+
+        # One span exported: the merged call span; the result span is dropped.
+        exported = self._exported_spans(proc)
+        assert len(exported) == 1
+        span = exported[0]
+        attrs = dict(span.attributes)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert span.name == "get_weather"
+        assert attrs["gen_ai.prompt"] == '{"city": "SF"}'
+        assert attrs["gen_ai.completion"] == '{"temp": 68}'
+        assert attrs["langsmith.metadata.tool_result_status"] == "completed"
+        assert span.end_time == 999  # stretched to the result's end
+        assert not proc._tool_calls_by_trace
+
+    def test_result_without_call_exported_standalone(self):
+        # A result with no deferred call still surfaces as a tool run (output only).
+        proc = _processor()
+        result = _make_span("llm_tool_result", {"tool.result": '{"ok": true}'})
+
+        proc.on_end(result)
+
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert attrs["gen_ai.completion"] == '{"ok": true}'
+        assert "gen_ai.prompt" not in attrs  # no args were ever seen
+
+    def test_multiple_calls_pair_in_order(self):
+        # Two sequential calls, two results: each result pairs with the oldest
+        # deferred call (FIFO).
+        proc = _processor()
+        trace_id = 0xABC
+        for name, args in (("a", '{"x": 1}'), ("b", '{"y": 2}')):
+            proc.on_end(
+                _make_span(
+                    "llm_tool_call",
+                    {"tool.function_name": name, "tool.arguments": args},
+                    trace_id=trace_id,
+                )
+            )
+        for res in ('"A"', '"B"'):
+            proc.on_end(
+                _make_span("llm_tool_result", {"tool.result": res}, trace_id=trace_id)
+            )
+
+        exported = self._exported_spans(proc)
+        by_name = {s.name: dict(s.attributes) for s in exported}
+        assert by_name["a"]["gen_ai.prompt"] == '{"x": 1}'
+        assert by_name["a"]["gen_ai.completion"] == '"A"'
+        assert by_name["b"]["gen_ai.prompt"] == '{"y": 2}'
+        assert by_name["b"]["gen_ai.completion"] == '"B"'
+        assert not proc._tool_calls_by_trace
+
+    def test_orphaned_call_flushed_on_conversation_end(self):
+        # A call whose result never arrives is flushed (args only) when the
+        # conversation ends, not held indefinitely.
+        proc = _processor()
+        trace_id = 0xABC
+        call = _make_span(
+            "llm_tool_call",
+            {"tool.function_name": "hang", "tool.arguments": "{}"},
+            trace_id=trace_id,
+        )
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        convo = _make_span("conversation", {"conversation.id": "x"}, trace_id=trace_id)
+        proc.on_end(convo)
+
+        exported = self._exported_spans(proc)
+        kinds = [dict(s.attributes).get("langsmith.span.kind") for s in exported]
+        assert "tool" in kinds  # the orphaned call was flushed
+        assert not proc._tool_calls_by_trace
+
+    def test_orphaned_call_flushed_on_shutdown(self):
+        proc = _processor()
+        call = _make_span(
+            "llm_tool_call", {"tool.function_name": "hang", "tool.arguments": "{}"}
+        )
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        proc.shutdown()
+
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert not proc._tool_calls_by_trace
+        proc.downstream.shutdown.assert_called_once()
 
 
 class TestPipecatAudio:

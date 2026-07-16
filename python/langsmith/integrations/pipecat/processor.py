@@ -13,6 +13,7 @@ Trace shape::
     └── turn × N
         ├── stt                  (audio → transcript)
         ├── llm                  (the LLM stage; kind set by llm_span_kind)
+        ├── tool × N             (realtime: one per tool call, args → result)
         └── tts                  (response text → audio)
 
 Audio uses Pipecat's ``AudioBufferProcessor``: wire it with
@@ -26,6 +27,9 @@ nested runs exported separately (else the conversation double-counts).
 
 Speech-to-speech (realtime) services emit operation-named spans: ``llm_response``
 (→ ``llm`` run, usage + reply) and the ``llm_setup`` / ``llm_request`` wrappers.
+A realtime tool call arrives as two sibling spans, ``llm_tool_call`` (args) then
+``llm_tool_result`` (output); the processor defers the call and merges the result
+onto it, so each call renders as one ``tool`` run spanning call → result.
 """
 
 from __future__ import annotations
@@ -144,6 +148,11 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._audio_by_conversation: MutableMapping[str, _AudioRecord] = TTLCache(
             maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
         )
+        # trace_id -> FIFO of deferred ``llm_tool_call`` spans, each held until
+        # its ``llm_tool_result`` arrives so the two merge into one tool span.
+        self._tool_calls_by_trace: MutableMapping[int, list[TranslatedSpan]] = TTLCache(
+            maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds
+        )
 
     # -- audio buffer registration -------------------------------------------
 
@@ -215,8 +224,14 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._handle_conversation(tspan, trace_id)
         elif name == "llm_response":  # realtime: usage + reply
             self._handle_realtime_response(tspan, trace_id)
-        elif name in ("llm_setup", "llm_request"):
-            tspan.set_kind("chain")  # realtime wrappers
+        elif name == "llm_tool_call":  # realtime: defer, merge with its result
+            return self._handle_tool_call(tspan, trace_id)
+        elif name == "llm_tool_result":
+            return self._handle_tool_result(tspan, trace_id)
+        elif name == "llm_request":  # OpenAI realtime: history snapshot
+            self._handle_llm_request(tspan, trace_id)
+        elif name == "llm_setup":
+            tspan.set_kind("chain")
         return True
 
     # -- per-span-type handlers ----------------------------------------------
@@ -290,6 +305,67 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if usage:
             tspan.set_usage(**usage)
 
+    def _handle_llm_request(self, tspan: TranslatedSpan, trace_id: int) -> None:
+        """``llm_request`` span (OpenAI realtime): snapshot the full history.
+
+        Realtime emits no cascade ``llm`` span, but OpenAI realtime puts the whole
+        context (tool calls and results included) on this wrapper's ``input``. The
+        reply arrives on ``llm_response`` and is appended there.
+        """
+        tspan.set_kind("chain")
+        messages = parse_llm_messages(tspan.attributes.get("input", ""))
+        transcript = [m for m in messages if m.get("role") != "system"]
+        if transcript:
+            self._transcript_by_trace[trace_id] = transcript
+
+    def _handle_tool_call(self, tspan: TranslatedSpan, trace_id: int) -> bool:
+        """``llm_tool_call`` span: defer the call (args) until its result arrives."""
+        tspan.set_kind("tool")
+        function_name = tspan.attributes.get("tool.function_name")
+        if function_name:
+            tspan.set_name(str(function_name))
+        arguments = tspan.attributes.get("tool.arguments")
+        if arguments is not None:
+            tspan.set_tool_input(arguments)
+        self._tool_calls_by_trace.setdefault(trace_id, []).append(tspan)
+        return False  # deferred; exported when its result arrives
+
+    def _handle_tool_result(self, tspan: TranslatedSpan, trace_id: int) -> bool:
+        """``llm_tool_result`` span: merge the result onto its deferred call span.
+
+        Pairs with the oldest deferred call for the trace (Gemini Live puts no
+        usable id on the result span, so pairing is by order). The result becomes
+        the tool run's output and stretches the span to end at the result, so it
+        spans call → result.
+        """
+        result = tspan.attributes.get("tool.result")
+        call_tspan = self._take_pending_call(trace_id)
+        if call_tspan is None:
+            tspan.set_kind("tool")
+            if result is not None:
+                tspan.set_tool_output(result)
+            return True
+
+        if result is not None:
+            call_tspan.set_tool_output(result)
+        status = tspan.attributes.get("tool.result_status")
+        if status is not None:
+            call_tspan.set_metadata("tool_result_status", str(status))
+        if tspan.span.end_time is not None:
+            call_tspan.set_end_time(tspan.span.end_time)
+        self._export(call_tspan)
+        return False  # merged into the call span; drop this result span
+
+    def _take_pending_call(self, trace_id: int) -> Optional[TranslatedSpan]:
+        """Pop the oldest deferred call span for the trace, or ``None``."""
+        queue = self._tool_calls_by_trace.get(trace_id)
+        if not queue:
+            return None
+        call_tspan = queue.pop(0)
+        if not queue:
+            self._tool_calls_by_trace.pop(trace_id, None)
+        return call_tspan
+
     def _handle_turn(self, tspan: TranslatedSpan) -> None:
         """Turn span: a framework wrapper around one exchange (a ``chain``)."""
         tspan.set_kind("chain")
@@ -362,3 +438,21 @@ class PipecatLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._transcript_by_trace.pop(trace_id, None)
         self._audio_by_conversation.pop(conversation_id, None)
         self._forget_thread_id(trace_id)
+        self._flush_tool_calls(trace_id)
+
+    def _flush_tool_calls(self, trace_id: Optional[int] = None) -> None:
+        """Export held tool-call spans whose result never arrived (args only).
+
+        Scoped to one trace at conversation end, or all held spans at shutdown.
+        """
+        trace_ids = (
+            [trace_id] if trace_id is not None else list(self._tool_calls_by_trace)
+        )
+        for tid in trace_ids:
+            for tspan in self._tool_calls_by_trace.pop(tid, None) or []:
+                self._export(tspan)
+
+    def shutdown(self) -> None:
+        """Flush any still-held tool-call spans, then shut down downstream."""
+        self._flush_tool_calls()
+        super().shutdown()
