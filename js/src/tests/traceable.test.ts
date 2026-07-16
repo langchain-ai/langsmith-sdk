@@ -1521,6 +1521,439 @@ test("traceable with processInputs", async () => {
   });
 });
 
+test("traceable with processFinalRun customizes only the final PATCH", async () => {
+  const { client, callSpy } = mockClient();
+  const events: string[] = [];
+  const originalInput = { accountId: "account-123", secret: "secret" };
+
+  const func = traceable(
+    async function func(input: typeof originalInput) {
+      events.push("invoke");
+      expect(input).toBe(originalInput);
+      return `Hello, ${input.accountId}`;
+    },
+    {
+      client,
+      tracingEnabled: true,
+      tags: ["static"],
+      metadata: { configured: true },
+      processInputs: (inputs) => {
+        events.push("processInputs");
+        return { ...inputs, secret: "****" };
+      },
+      getInvocationParams: (...args) => {
+        events.push("getInvocationParams");
+        expect(args).toEqual([originalInput]);
+        return {
+          ls_provider: "test-provider",
+          ls_model_name: "test-model",
+          ls_model_type: "chat",
+        };
+      },
+      processOutputs: (outputs) => {
+        events.push("processOutputs");
+        return { greeting: outputs.outputs };
+      },
+      processFinalRun: (runTree) => {
+        events.push("processFinalRun");
+        expect("processFinalRun" in runTree).toBe(false);
+        expect(runTree.inputs).toEqual({
+          accountId: "account-123",
+          secret: "****",
+        });
+        expect(runTree.outputs).toEqual({
+          greeting: "Hello, account-123",
+        });
+        expect(runTree.error).toBeUndefined();
+        expect(runTree.end_time).toEqual(expect.any(Number));
+        expect(runTree.extra.metadata).toMatchObject({
+          configured: true,
+          ls_provider: "test-provider",
+          ls_model_name: "test-model",
+        });
+        runTree.tags = [
+          ...(runTree.tags ?? []),
+          `account:${runTree.inputs.accountId}`,
+        ];
+        runTree.extra.metadata = {
+          ...runTree.extra.metadata,
+          dynamicAccount: runTree.inputs.accountId,
+        };
+        runTree.outputs = { ...runTree.outputs, finalized: true };
+        return runTree;
+      },
+      on_start: (runTree) => {
+        events.push("on_start");
+        expect(runTree?.tags).toEqual(["static"]);
+      },
+    },
+  );
+
+  await expect(func(originalInput)).resolves.toBe("Hello, account-123");
+  await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+
+  expect(events).toEqual([
+    "processInputs",
+    "getInvocationParams",
+    "on_start",
+    "invoke",
+    "processOutputs",
+    "processFinalRun",
+  ]);
+
+  const parseRequestBody = (call: unknown[]) => {
+    const [, request] = call.slice(-2) as [string, RequestInit];
+    const body = request.body;
+    return JSON.parse(
+      typeof body === "string"
+        ? body
+        : new TextDecoder().decode(body as Uint8Array),
+    );
+  };
+  const initialPost = parseRequestBody(callSpy.mock.calls[0]);
+  const finalPatch = parseRequestBody(callSpy.mock.calls[1]);
+
+  expect(initialPost).toMatchObject({
+    tags: ["static"],
+    inputs: { accountId: "account-123", secret: "****" },
+    extra: {
+      metadata: {
+        configured: true,
+        ls_provider: "test-provider",
+        ls_model_name: "test-model",
+      },
+    },
+  });
+  expect(initialPost.tags).not.toContain("account:account-123");
+  expect(initialPost.extra.metadata).not.toHaveProperty("dynamicAccount");
+  expect(initialPost).not.toHaveProperty("outputs");
+  expect(initialPost).not.toHaveProperty("end_time");
+
+  expect(finalPatch).toMatchObject({
+    tags: ["static", "account:account-123"],
+    outputs: {
+      greeting: "Hello, account-123",
+      finalized: true,
+    },
+    extra: {
+      metadata: {
+        dynamicAccount: "account-123",
+      },
+    },
+    end_time: expect.any(Number),
+  });
+});
+
+test("traceable orders async processOutputs before processFinalRun", async () => {
+  const { client, callSpy } = mockClient();
+  const events: string[] = [];
+
+  const func = traceable(
+    async function func(input: string) {
+      events.push("invoke");
+      return input.toUpperCase();
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs: async (outputs) => {
+        events.push("processOutputs:start");
+        await Promise.resolve();
+        events.push("processOutputs:end");
+        return { processed: outputs.outputs };
+      },
+      processFinalRun: (runTree) => {
+        events.push("processFinalRun");
+        expect(runTree.outputs).toEqual({ processed: "HELLO" });
+        expect(runTree.end_time).toEqual(expect.any(Number));
+      },
+    },
+  );
+
+  await expect(func("hello")).resolves.toBe("HELLO");
+  await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(events).toEqual([
+    "invoke",
+    "processOutputs:start",
+    "processOutputs:end",
+    "processFinalRun",
+  ]);
+});
+
+test("traceable processFinalRun receives raw outputs after async processing errors", async () => {
+  const { client, callSpy } = mockClient();
+  const error = new Error("expected async processOutputs error");
+  const consoleErrorSpy = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const processFinalRun = jest.fn((runTree: RunTree) => {
+    expect(runTree.outputs).toEqual({ outputs: "result" });
+    expect(runTree.error).toBeUndefined();
+    expect(runTree.end_time).toEqual(expect.any(Number));
+  });
+  const func = traceable(async () => "result", {
+    client,
+    tracingEnabled: true,
+    processOutputs: async () => {
+      throw error;
+    },
+    processFinalRun,
+  });
+
+  try {
+    await expect(func()).resolves.toBe("result");
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(processFinalRun).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Error occurred during processOutputs. Sending unprocessed outputs:",
+      error,
+    );
+  } finally {
+    consoleErrorSpy.mockRestore();
+  }
+});
+
+test("traceable threads processFinalRun through generators and streams", async () => {
+  const { client: asyncGeneratorClient, callSpy: asyncGeneratorCallSpy } =
+    mockClient();
+  const asyncGeneratorFinalRun = jest.fn((runTree: RunTree) => {
+    expect(runTree.outputs).toEqual({ outputs: [1, 2] });
+    expect(runTree.end_time).toEqual(expect.any(Number));
+  });
+  const asyncGenerator = traceable(
+    async function* asyncGenerator() {
+      yield 1;
+      yield 2;
+    },
+    {
+      client: asyncGeneratorClient,
+      tracingEnabled: true,
+      processFinalRun: asyncGeneratorFinalRun,
+    },
+  );
+  const generated: number[] = [];
+  for await (const chunk of asyncGenerator()) {
+    generated.push(chunk);
+  }
+  expect(generated).toEqual([1, 2]);
+  await getAssumedTreeFromCalls(
+    asyncGeneratorCallSpy.mock.calls,
+    asyncGeneratorClient,
+  );
+  expect(asyncGeneratorFinalRun).toHaveBeenCalledTimes(1);
+
+  const { client: streamClient, callSpy: streamCallSpy } = mockClient();
+  const streamFinalRun = jest.fn((runTree: RunTree) => {
+    expect(runTree.outputs).toEqual({ outputs: ["a", "b"] });
+    expect(runTree.end_time).toEqual(expect.any(Number));
+  });
+  const stream = traceable(
+    () =>
+      new ReadableStream<string>({
+        start(controller) {
+          controller.enqueue("a");
+          controller.enqueue("b");
+          controller.close();
+        },
+      }),
+    {
+      client: streamClient,
+      tracingEnabled: true,
+      processFinalRun: streamFinalRun,
+    },
+  );
+  const streamed: string[] = [];
+  for await (const chunk of stream()) {
+    streamed.push(chunk);
+  }
+  expect(streamed).toEqual(["a", "b"]);
+  await getAssumedTreeFromCalls(streamCallSpy.mock.calls, streamClient);
+  expect(streamFinalRun).toHaveBeenCalledTimes(1);
+});
+
+test("traceable invokes processFinalRun before a deferred final POST", async () => {
+  const { client, callSpy } = mockClient();
+  const events: string[] = [];
+  const input = (async function* () {
+    yield "a";
+    yield "b";
+  })();
+
+  const func = traceable(
+    async function func(values: AsyncIterable<string>) {
+      const collected: string[] = [];
+      for await (const value of values) collected.push(value);
+      events.push("invoke");
+      return collected.join("");
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processFinalRun: (runTree) => {
+        events.push("processFinalRun");
+        expect(JSON.parse(JSON.stringify(runTree.inputs))).toEqual({
+          input: ["a", "b"],
+        });
+        expect(runTree.outputs).toEqual({ outputs: "ab" });
+        expect(runTree.end_time).toEqual(expect.any(Number));
+        runTree.tags = ["deferred-finalized"];
+      },
+    },
+  );
+
+  await expect(func(input)).resolves.toBe("ab");
+  await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(events).toEqual(["invoke", "processFinalRun"]);
+  expect(callSpy.mock.calls).toHaveLength(1);
+  const [, request] = callSpy.mock.calls[0].slice(-2) as [string, RequestInit];
+  const body = request.body;
+  const finalPost = JSON.parse(
+    typeof body === "string"
+      ? body
+      : new TextDecoder().decode(body as Uint8Array),
+  );
+  expect(finalPost).toMatchObject({
+    inputs: { input: ["a", "b"] },
+    outputs: { outputs: "ab" },
+    tags: ["deferred-finalized"],
+    end_time: expect.any(Number),
+  });
+});
+
+test("traceable processFinalRun can inspect failed runs", async () => {
+  const { client, callSpy } = mockClient();
+  const error = new Error("expected invocation error");
+  const processFinalRun = jest.fn((runTree: RunTree) => {
+    expect(runTree.inputs).toEqual({ input: "hello" });
+    expect(runTree.outputs).toBeUndefined();
+    expect(runTree.error).toBe(String(error));
+    expect(runTree.end_time).toEqual(expect.any(Number));
+    runTree.tags = ["failed-finalized"];
+  });
+  const func = traceable(
+    async function func(_input: string): Promise<string> {
+      throw error;
+    },
+    { client, tracingEnabled: true, processFinalRun },
+  );
+
+  await expect(func("hello")).rejects.toBe(error);
+  await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(processFinalRun).toHaveBeenCalledTimes(1);
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    data: {
+      "func:0": {
+        error: String(error),
+        tags: ["failed-finalized"],
+      },
+    },
+  });
+});
+
+test("traceable with processFinalRun throwing is non-fatal and logged", async () => {
+  const { client, callSpy } = mockClient();
+  const error = new Error("expected processFinalRun error");
+  const consoleErrorSpy = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const wrapped = jest.fn(async (input: { value: number }) => input.value * 2);
+  const processFinalRun = jest.fn((_runTree: RunTree) => {
+    throw error;
+  });
+
+  try {
+    const func = traceable(wrapped, {
+      client,
+      tracingEnabled: true,
+      processFinalRun,
+    });
+
+    await expect(func({ value: 2 })).resolves.toBe(4);
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(wrapped).toHaveBeenCalledWith({ value: 2 });
+    expect(processFinalRun).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Error occurred during processFinalRun:",
+      error,
+    );
+  } finally {
+    consoleErrorSpy.mockRestore();
+  }
+});
+
+test("traceable processFinalRun runs for nested runs but not disabled tracing", async () => {
+  const { client, callSpy } = mockClient();
+  const events: string[] = [];
+  const disabledProcessFinalRun = jest.fn((_runTree: RunTree) => undefined);
+
+  const inner = traceable(
+    async function inner(value: string) {
+      events.push("inner:invoke");
+      return value.toUpperCase();
+    },
+    {
+      processFinalRun: (runTree) => {
+        events.push("inner:processFinalRun");
+        expect(runTree.outputs).toEqual({ outputs: "HELLO" });
+        runTree.tags = ["inner-dynamic"];
+      },
+    },
+  );
+  const outer = traceable(
+    async function outer(value: string) {
+      events.push("outer:invoke");
+      return inner(value);
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processFinalRun: (runTree) => {
+        events.push("outer:processFinalRun");
+        expect(runTree.outputs).toEqual({ outputs: "HELLO" });
+        runTree.tags = ["outer-dynamic"];
+      },
+    },
+  );
+  const disabled = traceable(async (value: string) => value, {
+    client,
+    tracingEnabled: false,
+    processFinalRun: disabledProcessFinalRun,
+  });
+
+  await expect(outer("hello")).resolves.toBe("HELLO");
+  await expect(disabled("still runs")).resolves.toBe("still runs");
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+
+  expect(events).toEqual([
+    "outer:invoke",
+    "inner:invoke",
+    "outer:processFinalRun",
+    "inner:processFinalRun",
+  ]);
+  expect(disabledProcessFinalRun).not.toHaveBeenCalled();
+  expect(tree).toMatchObject({
+    nodes: ["outer:0", "inner:1"],
+    edges: [["outer:0", "inner:1"]],
+    data: {
+      "outer:0": { tags: ["outer-dynamic"] },
+      "inner:1": { tags: ["inner-dynamic"] },
+    },
+  });
+});
+
+test("traceable processFinalRun type rejects asynchronous callbacks and processRun", () => {
+  traceable(async (input: string) => input, {
+    // @ts-expect-error processFinalRun must be synchronous
+    processFinalRun: async (_runTree) => undefined,
+  });
+  traceable(async (input: string) => input, {
+    // @ts-expect-error processRun is not a public traceable option
+    processRun: (_runTree: RunTree) => undefined,
+  });
+});
+
 test("traceable with processOutputs", async () => {
   const { client, callSpy } = mockClient();
 

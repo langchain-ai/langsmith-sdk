@@ -234,8 +234,19 @@ def ensure_traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
+    process_final_run: Optional[
+        Callable[[run_trees.RunTree], Optional[run_trees.RunTree]]
+    ] = None,
 ) -> SupportsLangsmithExtra[P, R]:
-    """Ensure that a function is traceable."""
+    """Ensure that a function is traceable.
+
+    Args:
+        process_final_run: Synchronous callback for customizing each completed run
+            after its final outputs or error have been set, immediately before the final
+            patch. The callback should mutate the provided run in place and return
+            either `None` or that same run. Returning a different run does not replace
+            the completed run. Callback errors are logged and are non-fatal.
+    """
     if is_traceable_function(func):
         return func
     return traceable(
@@ -248,6 +259,7 @@ def ensure_traceable(
         process_inputs=process_inputs,
         process_outputs=process_outputs,
         process_chunk=process_chunk,
+        process_final_run=process_final_run,
     )(func)
 
 
@@ -345,6 +357,9 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
+    process_final_run: Optional[
+        Callable[[run_trees.RunTree], Optional[run_trees.RunTree]]
+    ] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
     enabled: Optional[bool] = None,
@@ -383,6 +398,15 @@ def traceable(
 
             Defaults to `None`, which will use the default project.
         process_inputs: Custom serialization / processing function for inputs.
+
+            Defaults to `None`.
+        process_final_run: Synchronous callback for customizing the completed run.
+
+            It is called after the run's final outputs or error have been set and
+            immediately before the final patch. Mutate the run in place and return
+            either `None` or the same run. Returning a different `RunTree` is not
+            supported and will not replace the completed run. Callback errors are
+            logged and do not interrupt the wrapped function.
 
             Defaults to `None`.
         process_outputs: Custom serialization / processing function for outputs.
@@ -572,6 +596,7 @@ def traceable(
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         process_chunk=kwargs.pop("process_chunk", None),
+        process_final_run=kwargs.pop("process_final_run", None),
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
         enabled=enabled,
@@ -932,6 +957,7 @@ def traceable(
             {
                 "process_inputs": container_input.get("process_inputs"),
                 "process_outputs": outputs_processor,
+                "process_final_run": container_input.get("process_final_run"),
                 "enabled": enabled,
                 "tags": container_input.get("tags"),
                 "metadata": container_input.get("metadata"),
@@ -1408,6 +1434,9 @@ class _TraceableContainer(TypedDict, total=False):
     context: contextvars.Context
     _token_event_logged: Optional[bool]
     enabled: Optional[bool]
+    process_final_run: Optional[
+        Callable[[run_trees.RunTree], Optional[run_trees.RunTree]]
+    ]
     exceptions_to_handle: Optional[tuple[type[BaseException], ...]]
 
 
@@ -1424,6 +1453,9 @@ class _ContainerInput(TypedDict, total=False):
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     process_chunk: Optional[Callable]
+    process_final_run: Optional[
+        Callable[[run_trees.RunTree], Optional[run_trees.RunTree]]
+    ]
     invocation_params_fn: Optional[Callable[[dict], dict]]
     dangerously_allow_filesystem: Optional[bool]
     enabled: Optional[bool]
@@ -1487,6 +1519,16 @@ def _container_end(
     # Patch run if enabled=True (force) or if tracing is enabled globally
     enabled = container.get("enabled")
     if enabled is True or utils.tracing_is_enabled() is True:
+        if process_final_run := container.get("process_final_run"):
+            try:
+                processed_run = process_final_run(run_tree)
+                if processed_run is not None and processed_run is not run_tree:
+                    LOGGER.error(
+                        "process_final_run must mutate the provided RunTree in place; "
+                        "returning a different run is not supported."
+                    )
+            except BaseException as e:
+                LOGGER.error(f"Failed to process final run {run_tree.id}: {e}")
         run_tree.patch()
     if (on_end := container.get("on_end")) and callable(on_end):
         try:
@@ -1703,6 +1745,7 @@ def _setup_run(
         context=context,
         _token_event_logged=False,
         enabled=enabled,
+        process_final_run=container_input.get("process_final_run"),
         exceptions_to_handle=container_input.get("exceptions_to_handle"),
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])

@@ -167,13 +167,22 @@ async function handleEnd(params: {
   on_end: (runTree?: RunTree) => void;
   postRunPromise?: Promise<void>;
   deferredInputs?: boolean;
+  processFinalRun?: (runTree: RunTree) => void | RunTree;
 }) {
-  const { runTree, on_end, postRunPromise, deferredInputs } = params;
+  const { runTree, on_end, postRunPromise, deferredInputs, processFinalRun } =
+    params;
   const onEnd = on_end;
   if (onEnd) {
     onEnd(runTree);
   }
   await postRunPromise;
+  if (runTree && processFinalRun) {
+    try {
+      processFinalRun(runTree);
+    } catch (e) {
+      console.error("Error occurred during processFinalRun:", e);
+    }
+  }
   if (deferredInputs) {
     await runTree?.postRun();
   } else {
@@ -227,6 +236,7 @@ async function handleRunOutputs<Return>(params: {
   postRunPromise?: Promise<void>;
   deferredInputs?: boolean;
   skipChildPromiseDelay?: boolean;
+  processFinalRun?: (runTree: RunTree) => void | RunTree;
 }): Promise<void> {
   const {
     runTree,
@@ -236,6 +246,7 @@ async function handleRunOutputs<Return>(params: {
     postRunPromise,
     deferredInputs,
     skipChildPromiseDelay,
+    processFinalRun,
   } = params;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let outputs: any;
@@ -245,6 +256,7 @@ async function handleRunOutputs<Return>(params: {
   } else {
     outputs = { outputs: rawOutputs };
   }
+  const unprocessedOutputs = outputs;
 
   const childRunEndPromises =
     !skipChildPromiseDelay &&
@@ -271,8 +283,9 @@ async function handleRunOutputs<Return>(params: {
             e,
           );
           try {
+            _populateUsageMetadataAndOutputs(unprocessedOutputs, runTree);
             await childRunEndPromises;
-            await runTree?.end(outputs);
+            await runTree?.end(unprocessedOutputs);
           } catch (e) {
             console.error("Error occurred during runTree?.end.", e);
           }
@@ -284,6 +297,7 @@ async function handleRunOutputs<Return>(params: {
               postRunPromise,
               on_end,
               deferredInputs,
+              processFinalRun,
             });
           } catch (e) {
             console.error("Error occurred during handleEnd.", e);
@@ -302,7 +316,13 @@ async function handleRunOutputs<Return>(params: {
     .then(async () => {
       try {
         await runTree?.end(outputs);
-        await handleEnd({ runTree, postRunPromise, on_end, deferredInputs });
+        await handleEnd({
+          runTree,
+          postRunPromise,
+          on_end,
+          deferredInputs,
+          processFinalRun,
+        });
       } catch (e) {
         console.error(e);
       }
@@ -680,6 +700,18 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
   ) => KVMap | Promise<KVMap>;
 
   /**
+   * Customize the completed run before its final update is sent.
+   * This callback runs synchronously after outputs or errors and the end time
+   * are populated. Mutate the provided run in place; any return value is
+   * ignored. Mutations are excluded from the initial POST and included in the
+   * final PATCH (or the final POST when inputs are deferred).
+   * `processFinalRun` is not inherited by nested traceable functions.
+   *
+   * @param runTree Completed run tree
+   */
+  processFinalRun?: (runTree: RunTree) => void | RunTree;
+
+  /**
    * Apply transformations to the outputs before logging.
    * This function should NOT mutate the outputs.
    * `processOutputs` is not inherited by nested traceable functions.
@@ -722,6 +754,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     argsConfigPath,
     __finalTracedIteratorKey,
     processInputs,
+    processFinalRun,
     processOutputs,
     extractAttachments,
     on_start,
@@ -988,6 +1021,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   on_end,
                   postRunPromise,
                   deferredInputs,
+                  processFinalRun,
                 });
                 controller.close();
                 break;
@@ -1012,6 +1046,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               on_end,
               postRunPromise,
               deferredInputs,
+              processFinalRun,
             });
             return reader.cancel(reason);
           },
@@ -1069,6 +1104,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             postRunPromise,
             deferredInputs,
             skipChildPromiseDelay: hasError || !finished,
+            processFinalRun,
           });
         }
       }
@@ -1184,6 +1220,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                     on_end,
                     postRunPromise,
                     deferredInputs,
+                    processFinalRun,
                   });
                 } catch (e) {
                   console.error(
@@ -1208,6 +1245,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   on_end,
                   postRunPromise,
                   deferredInputs,
+                  processFinalRun,
                 });
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
@@ -1222,6 +1260,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 postRunPromise,
                 on_end,
                 deferredInputs,
+                processFinalRun,
               });
               throw error;
             },

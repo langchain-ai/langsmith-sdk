@@ -38,6 +38,7 @@ from langsmith.run_helpers import (
     _get_inputs,
     _get_inputs_and_attachments_safe,
     as_runnable,
+    ensure_traceable,
     get_current_run_tree,
     is_traceable_function,
     trace,
@@ -78,6 +79,18 @@ def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
                 datas.append((verb, payload))
 
     return datas
+
+
+def _get_direct_data(mock_client: Any) -> List[Tuple[str, dict]]:
+    calls = _get_calls(
+        mock_client,
+        minimum=1,
+        verbs={"POST", "PATCH"},
+    )
+    return [
+        (call.args[0].lower(), parse_request_data(call.kwargs["data"]))
+        for call in calls
+    ]
 
 
 def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
@@ -1611,6 +1624,190 @@ async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
         assert not mock_calls
 
 
+def test_process_final_run_customizes_final_patch_after_function() -> None:
+    mock_client = _get_mock_client(auto_batch_tracing=False)
+    events = []
+
+    def process_inputs(inputs: dict) -> dict:
+        return {"processed_value": inputs["value"] * 2}
+
+    def process_outputs(output: int) -> dict:
+        return {"processed_output": output + 1}
+
+    def invocation_params(inputs: dict) -> dict:
+        return {"invocation_value": inputs["value"]}
+
+    def process_final_run(run: RunTree) -> RunTree:
+        events.append("process_final_run")
+        assert run.inputs == {"processed_value": 6}
+        assert run.outputs == {"processed_output": 4}
+        assert run.error is None
+        assert run.end_time is not None
+        assert run.metadata["invocation_value"] == 3
+        run.add_tags([f"value:{run.inputs['processed_value']}"])
+        run.add_metadata({"dynamic_value": run.outputs["processed_output"]})
+        return run
+
+    @traceable(
+        client=mock_client,
+        enabled=True,
+        process_inputs=process_inputs,
+        process_outputs=process_outputs,
+        process_final_run=process_final_run,
+        _invocation_params_fn=invocation_params,
+    )
+    def my_function(value: int) -> int:
+        events.append("function")
+        return value
+
+    assert my_function(3) == 3
+    assert events == ["function", "process_final_run"]
+
+    payloads = _get_direct_data(mock_client)
+    create_payload = next(payload for verb, payload in payloads if verb == "post")
+    patch_payload = next(payload for verb, payload in payloads if verb == "patch")
+    assert create_payload["inputs"] == {"processed_value": 6}
+    assert "value:6" not in create_payload.get("tags", [])
+    assert "dynamic_value" not in create_payload["extra"]["metadata"]
+    assert patch_payload["outputs"] == {"processed_output": 4}
+    assert "value:6" in patch_payload["tags"]
+    assert patch_payload["extra"]["metadata"]["dynamic_value"] == 4
+
+
+def test_process_final_run_sees_final_error() -> None:
+    mock_client = _get_mock_client(auto_batch_tracing=False)
+    processed_run: Optional[RunTree] = None
+
+    def process_final_run(run: RunTree) -> None:
+        nonlocal processed_run
+        processed_run = run
+        assert run.inputs == {"processed_value": 6}
+        assert run.outputs == {"output": None}
+        assert "ValueError('wrapped function failed')" in (run.error or "")
+        assert run.end_time is not None
+        run.add_tags(["error-processed"])
+
+    @traceable(
+        client=mock_client,
+        enabled=True,
+        process_inputs=lambda inputs: {"processed_value": inputs["value"] * 2},
+        process_final_run=process_final_run,
+    )
+    def my_function(value: int) -> None:
+        raise ValueError("wrapped function failed")
+
+    with pytest.raises(ValueError, match="wrapped function failed"):
+        my_function(3)
+
+    assert processed_run is not None
+    payloads = _get_direct_data(mock_client)
+    patch_payload = next(payload for verb, payload in payloads if verb == "patch")
+    assert "wrapped function failed" in patch_payload["error"]
+    assert "error-processed" in patch_payload["tags"]
+
+
+def test_process_final_run_errors_are_non_fatal(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_client = _get_mock_client(auto_batch_tracing=False)
+    function_called = False
+
+    def process_final_run(_: RunTree) -> None:
+        raise ValueError("customization failed")
+
+    @traceable(client=mock_client, enabled=True, process_final_run=process_final_run)
+    def my_function() -> str:
+        nonlocal function_called
+        function_called = True
+        return "ok"
+
+    assert my_function() == "ok"
+    assert function_called
+    assert any(
+        record.name == "langsmith.run_helpers"
+        and "Failed to process final run" in record.message
+        and "customization failed" in record.message
+        for record in caplog.records
+    )
+    payloads = _get_direct_data(mock_client)
+    assert any(verb == "post" for verb, _ in payloads)
+    patch_payload = next(payload for verb, payload in payloads if verb == "patch")
+    assert patch_payload["outputs"] == {"output": "ok"}
+
+
+def test_process_final_run_cannot_replace_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_client = _get_mock_client(auto_batch_tracing=False)
+    replacement = RunTree(name="replacement", inputs={})
+    original_run: Optional[RunTree] = None
+
+    def process_final_run(run: RunTree) -> RunTree:
+        nonlocal original_run
+        original_run = run
+        return replacement
+
+    @traceable(
+        name="original",
+        client=mock_client,
+        enabled=True,
+        process_final_run=process_final_run,
+    )
+    def my_function() -> str:
+        return "ok"
+
+    assert my_function() == "ok"
+    payloads = _get_direct_data(mock_client)
+    create_payload = next(payload for verb, payload in payloads if verb == "post")
+    patch_payload = next(payload for verb, payload in payloads if verb == "patch")
+    assert original_run is not None
+    assert create_payload["name"] == "original"
+    assert patch_payload["id"] == str(original_run.id)
+    assert patch_payload["id"] != str(replacement.id)
+    assert patch_payload["outputs"] == {"output": "ok"}
+    assert any(
+        record.name == "langsmith.run_helpers"
+        and "returning a different run is not supported" in record.message
+        for record in caplog.records
+    )
+
+
+def test_process_final_run_is_not_called_when_tracing_is_disabled(
+    mock_client: Client,
+) -> None:
+    process_final_run = MagicMock()
+
+    @traceable(client=mock_client, enabled=False, process_final_run=process_final_run)
+    def my_function() -> str:
+        return "ok"
+
+    with tracing_context(enabled=True):
+        assert my_function() == "ok"
+
+    process_final_run.assert_not_called()
+    assert not _get_calls(mock_client)
+
+
+def test_ensure_traceable_forwards_process_final_run(mock_client: Client) -> None:
+    process_final_run = MagicMock(return_value=None)
+
+    def my_function(value: int) -> int:
+        return value
+
+    traced_function = ensure_traceable(
+        my_function,
+        client=mock_client,
+        process_final_run=process_final_run,
+    )
+
+    assert (
+        traced_function.__traceable_config__["process_final_run"] is process_final_run
+    )
+    with tracing_context(enabled=True):
+        assert traced_function(3) == 3
+    process_final_run.assert_called_once()
+
+
 async def test_process_inputs_outputs():
     mock_client = _get_mock_client()
     in_s = "what's life's meaning"
@@ -2088,11 +2285,15 @@ def test_traceable_config_attribute(mock_client: Client) -> None:
     def my_process_outputs(outputs: Any) -> dict:
         return {"output": outputs}
 
+    def my_process_final_run(run: RunTree) -> None:
+        run.add_tags(["dynamic"])
+
     @traceable(
         client=mock_client,
         enabled=False,
         process_inputs=my_process_inputs,
         process_outputs=my_process_outputs,
+        process_final_run=my_process_final_run,
         tags=["tag1", "tag2"],
         metadata={"key": "value"},
     )
@@ -2104,6 +2305,7 @@ def test_traceable_config_attribute(mock_client: Client) -> None:
     assert config["enabled"] is False
     assert config["process_inputs"] is my_process_inputs
     assert config["process_outputs"] is my_process_outputs
+    assert config["process_final_run"] is my_process_final_run
     assert config["tags"] == ["tag1", "tag2"]
     assert config["metadata"] == {"key": "value"}
 
@@ -2120,6 +2322,7 @@ def test_traceable_config_defaults(mock_client: Client) -> None:
     assert config["enabled"] is None  # Should default to None
     assert config["process_inputs"] is None
     assert config["process_outputs"] is None
+    assert config["process_final_run"] is None
     assert config["tags"] is None
     assert config["metadata"] is None
 
@@ -2360,6 +2563,7 @@ def test_traceable_triple_decorated(mock_client: Client) -> None:
     assert config["enabled"] is True  # Should default to None
     assert config["process_inputs"] is None
     assert config["process_outputs"] is None
+    assert config["process_final_run"] is None
     assert config["tags"] is None
     assert config["metadata"] is None
     assert config["wrapped"] is original_function
