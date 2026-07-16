@@ -1,0 +1,38 @@
+python/langsmith/integrations/pipecat/processor.py
+  s_c5d850ce557ffc::t_a58c840c66dd30 62
+  s_c5d850ce557ffc::t_ed551d0d0d76ba 340-344
+  h_3a9d271fbf3886 232
+  s_c5d850ce557ffc::t_df49c1b37acdd6 226-231,238
+  s_c5d850ce557ffc::t_f64fddb206cef0 432,437
+  s_c5d850ce557ffc::t_2901068466b6d3 30-32,65-71,73-77,158-162,172-225,233-237,239-248,320-323,335,345-348,372-374,379-382,398,400-403,410-412,419,421-425,429-430,433-436,438-447,520,566,569-571
+  s_c5d850ce557ffc::t_fa61a618c9e603 431
+  s_c5d850ce557ffc::t_921b476652d1ad 60
+python/langsmith/integrations/pipecat/_helpers.py
+  s_c5d850ce557ffc::t_3a65943f122645 66
+  s_c5d850ce557ffc::t_9fc5b86963a1de 74
+  s_c5d850ce557ffc::t_b043fccd6012cf 6
+  s_c5d850ce557ffc::t_88a669cb538384 75
+  h_3a9d271fbf3886 65,67-73,76-87
+  s_c5d850ce557ffc::t_3400dc0e8a5121 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "b208afdbe80f0601e57f7aa53a01c259d8b202d1",
+  "prompts": {},
+  "humans": {
+    "h_3a9d271fbf3886": {
+      "author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_c5d850ce557ffc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8490f0d-600d-444a-9c99-ab22d89de40c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
