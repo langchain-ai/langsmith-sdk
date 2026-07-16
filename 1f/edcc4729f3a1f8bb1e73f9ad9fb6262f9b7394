@@ -1,0 +1,19 @@
+python/langsmith/integrations/pipecat/processor.py
+  s_1d9c66e2caf3bc::t_981021fd70765d 303-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "1fedcc4729f3a1f8bb1e73f9ad9fb6262f9b7394",
+  "prompts": {},
+  "sessions": {
+    "s_1d9c66e2caf3bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b188209a-ea3b-47fe-a82d-52838920201b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
