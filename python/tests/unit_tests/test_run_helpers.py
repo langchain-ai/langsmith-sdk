@@ -1746,7 +1746,9 @@ def test_traceable_stop_iteration():
 
 
 @pytest.mark.flaky(retries=3)
-def test_traceable_input_attachments():
+def test_traceable_input_attachments(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LANGSMITH_DISABLE_RUN_COMPRESSION", "true")
+    ls_utils.get_env_var.cache_clear()
     with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
         mock_get_env.return_value = {
             "LANGSMITH_test_traceable_input_attachments": "aval"
