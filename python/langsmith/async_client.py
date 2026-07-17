@@ -1843,6 +1843,7 @@ class AsyncClient:
         sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
+        application_tag: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List prompts with pagination.
 
@@ -1856,6 +1857,7 @@ class AsyncClient:
                 Defaults to `'updated_at'`.
             sort_direction: The order to sort by.
             query: Filter prompts by a search query.
+            application_tag: Filter prompts by application tag name.
 
         Returns:
             A response object containing the list of prompts.
@@ -1875,6 +1877,7 @@ class AsyncClient:
             "sort_direction": sort_direction,
             "query": query,
             "match_prefix": "true" if query else None,
+            "application_tag": application_tag,
         }
 
         response = await self._arequest_with_retries(
@@ -1916,6 +1919,7 @@ class AsyncClient:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         is_public: bool = False,
+        application_tag: Optional[str] = None,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
 
@@ -1930,6 +1934,7 @@ class AsyncClient:
             readme: A readme for the prompt.
             tags: A list of tags for the prompt.
             is_public: Whether the prompt should be public.
+            application_tag: Application tag name to assign.
 
         Returns:
             The created `Prompt` object.
@@ -1958,6 +1963,9 @@ class AsyncClient:
             "tags": tags or [],
             "is_public": is_public,
         }
+
+        if application_tag is not None:
+            json["application_tag"] = application_tag
 
         response = await self._arequest_with_retries("POST", "/repos/", json=json)
         response.raise_for_status()
@@ -2049,6 +2057,7 @@ class AsyncClient:
         tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
+        application_tag: Optional[str] = None,
     ) -> dict[str, Any]:
         """Update a prompt's metadata.
 
@@ -2061,6 +2070,7 @@ class AsyncClient:
             tags: New list of tags for the prompt.
             is_public: New public status for the prompt.
             is_archived: New archived status for the prompt.
+            application_tag: Application tag name to assign.
 
         Returns:
             The updated prompt data as returned by the server.
@@ -2090,6 +2100,8 @@ class AsyncClient:
             json["is_archived"] = is_archived
         if tags is not None:
             json["tags"] = tags
+        if application_tag is not None:
+            json["application_tag"] = application_tag
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = await self._arequest_with_retries(
@@ -2378,6 +2390,7 @@ class AsyncClient:
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
         commit_description: Optional[str] = None,
+        application_tag: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -2413,6 +2426,7 @@ class AsyncClient:
                 Defaults to an empty list.
             commit_description: Optional human-readable description for the commit
                 (max 1000 chars). Defaults to `None`.
+            application_tag: Application tag name to assign.
 
         Returns:
             The URL of the prompt.
@@ -2420,7 +2434,8 @@ class AsyncClient:
         # Create or update prompt metadata
         if await self._prompt_exists(prompt_identifier):
             if any(
-                param is not None for param in [is_public, description, readme, tags]
+                param is not None
+                for param in [is_public, description, readme, tags, application_tag]
             ):
                 await self.update_prompt(
                     prompt_identifier,
@@ -2428,6 +2443,7 @@ class AsyncClient:
                     readme=readme,
                     tags=tags,
                     is_public=is_public,
+                    application_tag=application_tag,
                 )
         else:
             await self.create_prompt(
@@ -2436,6 +2452,7 @@ class AsyncClient:
                 description=description,
                 readme=readme,
                 tags=tags,
+                application_tag=application_tag,
             )
 
         if object is None:
