@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import functools
+import inspect
 import logging
 from collections.abc import Mapping
 from typing import (
@@ -26,6 +27,27 @@ if TYPE_CHECKING:
 
 C = TypeVar("C", bound=Union["genai.Client", Any])
 logger = logging.getLogger(__name__)
+
+
+def _is_async_or_wraps_async(func: Callable) -> bool:
+    """Walk the __wrapped__ chain to detect if func or any ancestor is async.
+
+    Needed for OTel compatibility: opentelemetry-instrumentation-google-genai may
+    replace async SDK methods with a sync closure (via wrapt.wrap_function_wrapper)
+    that internally returns a coroutine. inspect.iscoroutinefunction returns False
+    for the outer closure, so a single-level check misclassifies it as sync. Walking
+    the full __wrapped__ chain catches this pattern.
+    """
+    seen: set[int] = set()
+    current: Optional[Callable] = func
+    while current is not None:
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        if inspect.iscoroutinefunction(current):
+            return True
+        current = getattr(current, "__wrapped__", None)
+    return False
 
 
 def _strip_none(d: dict) -> dict:
@@ -505,9 +527,16 @@ def _get_wrapper(
             **textra,
         )
 
-        return await decorator(original_generate)(*args, **kwargs)
+        if run_helpers.is_async(original_generate):
+            return await decorator(original_generate)(*args, **kwargs)
+        # OTel-style sync wrapper that returns a coroutine: wrap in a true async
+        # function so traceable selects its async path and awaits the result.
+        async def _async_proxy(*a: Any, **kw: Any) -> Any:
+            return await original_generate(*a, **kw)
 
-    return agenerate if run_helpers.is_async(original_generate) else generate
+        return await decorator(_async_proxy)(*args, **kwargs)
+
+    return agenerate if _is_async_or_wraps_async(original_generate) else generate
 
 
 class TracingExtra(TypedDict, total=False):
