@@ -1,10 +1,18 @@
 """Unit tests for Anthropic wrapper processing functions."""
 
+import asyncio
+import functools
+import inspect
 import warnings
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from langsmith._internal._orjson import loads as _loads
-from langsmith.wrappers._anthropic import _create_usage_metadata, _message_to_outputs
+from langsmith.wrappers._anthropic import (
+    _create_usage_metadata,
+    _get_wrapper,
+    _is_async_or_wraps_async,
+    _message_to_outputs,
+)
 
 
 class TestCreateUsageMetadata:
@@ -247,3 +255,107 @@ class TestMessageToOutputsParsedMessage:
 
         assert len(caught) == 1
         assert "some other warning" in str(caught[0].message)
+
+
+class TestOtelInterop:
+    """Tests for correct behaviour when OpenTelemetry instruments before LangSmith.
+
+    OpenTelemetry's ``AnthropicInstrumentor`` uses *wrapt* to patch
+    ``AsyncMessages.create`` at the *class* level with a sync wrapper that
+    internally calls the original coroutine function and returns the resulting
+    coroutine object.  LangSmith then patches at the *instance* level.  The
+    sync wrapper hides the async nature from a naive ``iscoroutinefunction``
+    check, which causes LangSmith to select the sync code path and record the
+    raw coroutine object as the trace output.
+
+    The fix: ``_is_async_or_wraps_async`` walks the ``__wrapped__`` chain, and
+    ``acreate`` creates an async proxy when the detected callable is sync but
+    its wrapped original is async.
+    """
+
+    def test_is_async_or_wraps_async_direct_async(self):
+        async def afunc():
+            return 42
+
+        assert _is_async_or_wraps_async(afunc) is True
+
+    def test_is_async_or_wraps_async_plain_sync(self):
+        def func():
+            return 42
+
+        assert _is_async_or_wraps_async(func) is False
+
+    def test_is_async_or_wraps_async_sync_wrapping_async(self):
+        """Sync wrapper whose __wrapped__ points to an async function is detected."""
+        async def original_async():
+            return 42
+
+        @functools.wraps(original_async)
+        def sync_wrapper(*args, **kwargs):
+            return original_async(*args, **kwargs)
+
+        assert _is_async_or_wraps_async(sync_wrapper) is True
+
+    def test_is_async_or_wraps_async_multi_level_chain(self):
+        """Async function nested two __wrapped__ levels deep is still detected."""
+        async def original_async():
+            return 42
+
+        @functools.wraps(original_async)
+        def inner_wrapper(*args, **kwargs):
+            return original_async(*args, **kwargs)
+
+        @functools.wraps(inner_wrapper)
+        def outer_wrapper(*args, **kwargs):
+            return inner_wrapper(*args, **kwargs)
+
+        assert _is_async_or_wraps_async(outer_wrapper) is True
+
+    def test_get_wrapper_returns_async_for_otel_style_sync_wrapper(self):
+        """_get_wrapper must select acreate when the original has __wrapped__ async."""
+        async def real_create(**kwargs):
+            return {"id": "msg_123"}
+
+        @functools.wraps(real_create)
+        def otel_sync_wrapper(**kwargs):
+            # OTel pattern: sync closure that returns a coroutine object
+            return real_create(**kwargs)
+
+        wrapper = _get_wrapper(
+            otel_sync_wrapper,
+            name="test",
+            reduce_fn=lambda x: x,
+            prepopulated_invocation_params={},
+            tracing_extra={},
+        )
+
+        assert inspect.iscoroutinefunction(wrapper), (
+            "_get_wrapper should return an async wrapper when the original function "
+            "wraps an async method (OTel instrumentation pattern)"
+        )
+
+    def test_acreate_returns_real_result_not_coroutine(self):
+        """acreate must return the awaited result, not a coroutine object."""
+        expected = {"id": "msg_123", "content": "hi"}
+
+        async def real_create(**kwargs):
+            return expected
+
+        @functools.wraps(real_create)
+        def otel_sync_wrapper(**kwargs):
+            return real_create(**kwargs)
+
+        with patch("langsmith.utils.tracing_is_enabled", return_value=False):
+            wrapper = _get_wrapper(
+                otel_sync_wrapper,
+                name="test",
+                reduce_fn=lambda x: x,
+                prepopulated_invocation_params={},
+                tracing_extra={},
+            )
+            result = asyncio.run(wrapper(model="claude-3-5-haiku", max_tokens=10, messages=[]))
+
+        assert not inspect.iscoroutine(result), (
+            "Result must be the awaited message dict, not a coroutine object"
+        )
+        assert result == expected
