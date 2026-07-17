@@ -15,12 +15,6 @@ class RunRetrieveParams(TypedDict, total=False):
     project_id: Required[str]
     """`project_id` is the UUID of the tracing project that owns the run."""
 
-    start_time: Required[Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]]
-    """
-    `start_time` is the run's `start_time` (RFC3339 date-time), used together with
-    `project_id` to locate the run.
-    """
-
     selects: List[
         Literal[
             "ID",
@@ -73,6 +67,12 @@ class RunRetrieveParams(TypedDict, total=False):
     `selects` lists which properties to include on the returned run (repeatable
     query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
     only `id` is returned.
+    """
+
+    start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """`start_time` is the run's `start_time` (RFC3339 date-time).
+
+    Providing it speeds up retrieval.
     """
 
     accept: Annotated[str, PropertyInfo(alias="Accept")]

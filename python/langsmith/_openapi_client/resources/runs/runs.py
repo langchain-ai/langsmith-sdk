@@ -194,7 +194,6 @@ class RunsResource(SyncAPIResource):
         run_id: str,
         *,
         project_id: str,
-        start_time: Union[str, datetime],
         selects: List[
             Literal[
                 "ID",
@@ -244,6 +243,7 @@ class RunsResource(SyncAPIResource):
             ]
         ]
         | Omit = omit,
+        start_time: Union[str, datetime] | Omit = omit,
         accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -254,18 +254,18 @@ class RunsResource(SyncAPIResource):
     ) -> Run:
         """
         **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session and start_time. Use the `selects` query parameter
-        (repeatable) to select fields to return.
+        for the given session. Use the `selects` query parameter (repeatable) to select
+        fields to return.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the run.
 
-          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
-              `project_id` to locate the run.
-
           selects: `selects` lists which properties to include on the returned run (repeatable
               query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
               only `id` is returned.
+
+          start_time: `start_time` is the run's `start_time` (RFC3339 date-time). Providing it speeds
+              up retrieval.
 
           extra_headers: Send extra headers
 
@@ -288,8 +288,8 @@ class RunsResource(SyncAPIResource):
                 query=maybe_transform(
                     {
                         "project_id": project_id,
-                        "start_time": start_time,
                         "selects": selects,
+                        "start_time": start_time,
                     },
                     run_retrieve_v2_params.RunRetrieveV2Params,
                 ),
@@ -460,7 +460,6 @@ class AsyncRunsResource(AsyncAPIResource):
         run_id: str,
         *,
         project_id: str,
-        start_time: Union[str, datetime],
         selects: List[
             Literal[
                 "ID",
@@ -510,6 +509,7 @@ class AsyncRunsResource(AsyncAPIResource):
             ]
         ]
         | Omit = omit,
+        start_time: Union[str, datetime] | Omit = omit,
         accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -520,18 +520,18 @@ class AsyncRunsResource(AsyncAPIResource):
     ) -> Run:
         """
         **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session and start_time. Use the `selects` query parameter
-        (repeatable) to select fields to return.
+        for the given session. Use the `selects` query parameter (repeatable) to select
+        fields to return.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the run.
 
-          start_time: `start_time` is the run's `start_time` (RFC3339 date-time), used together with
-              `project_id` to locate the run.
-
           selects: `selects` lists which properties to include on the returned run (repeatable
               query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
               only `id` is returned.
+
+          start_time: `start_time` is the run's `start_time` (RFC3339 date-time). Providing it speeds
+              up retrieval.
 
           extra_headers: Send extra headers
 
@@ -554,8 +554,8 @@ class AsyncRunsResource(AsyncAPIResource):
                 query=await async_maybe_transform(
                     {
                         "project_id": project_id,
-                        "start_time": start_time,
                         "selects": selects,
+                        "start_time": start_time,
                     },
                     run_retrieve_v2_params.RunRetrieveV2Params,
                 ),

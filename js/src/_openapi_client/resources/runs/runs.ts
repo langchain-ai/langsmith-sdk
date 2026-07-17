@@ -45,17 +45,14 @@ export class Runs extends APIResource {
 
   /**
    * **Alpha:** The request and response contract may change; Returns one run by ID
-   * for the given session and start_time. Use the `selects` query parameter
-   * (repeatable) to select fields to return.
+   * for the given session. Use the `selects` query parameter (repeatable) to select
+   * fields to return.
    *
    * @example
    * ```ts
    * const run = await client.runs.retrieveV2(
    *   '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
-   *   {
-   *     project_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
-   *     start_time: '2019-12-27T18:11:19.117Z',
-   *   },
+   *   { project_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e' },
    * );
    * ```
    */
@@ -927,12 +924,6 @@ export interface RunRetrieveV2Params {
   project_id: string;
 
   /**
-   * Query param: `start_time` is the run's `start_time` (RFC3339 date-time), used
-   * together with `project_id` to locate the run.
-   */
-  start_time: string;
-
-  /**
    * Query param: `selects` lists which properties to include on the returned run
    * (repeatable query parameter). Accepts any value of the `RunSelectField` enum. If
    * omitted, only `id` is returned.
@@ -983,6 +974,12 @@ export interface RunRetrieveV2Params {
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
+
+  /**
+   * Query param: `start_time` is the run's `start_time` (RFC3339 date-time).
+   * Providing it speeds up retrieval.
+   */
+  start_time?: string;
 
   /**
    * Header param: application/json
@@ -997,12 +994,6 @@ export interface RunRetrieveParams {
   project_id: string;
 
   /**
-   * Query param: `start_time` is the run's `start_time` (RFC3339 date-time), used
-   * together with `project_id` to locate the run.
-   */
-  start_time: string;
-
-  /**
    * Query param: `selects` lists which properties to include on the returned run
    * (repeatable query parameter). Accepts any value of the `RunSelectField` enum. If
    * omitted, only `id` is returned.
@@ -1053,6 +1044,12 @@ export interface RunRetrieveParams {
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
+
+  /**
+   * Query param: `start_time` is the run's `start_time` (RFC3339 date-time).
+   * Providing it speeds up retrieval.
+   */
+  start_time?: string;
 
   /**
    * Header param: application/json
