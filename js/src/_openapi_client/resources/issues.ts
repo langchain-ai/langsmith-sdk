@@ -69,11 +69,17 @@ export interface Issue {
 
   proposed_prompt_fixes?: Array<unknown>;
 
+  /**
+   * RecurrencesSinceWatching counts linked traces whose run start_time is after
+   * watching_since — i.e. recurrences observed during the current watch period.
+   */
+  recurrences_since_watching?: number;
+
   session_id?: string;
 
   severity?: 0 | 1 | 2 | 3;
 
-  status?: 'open' | 'completed' | 'ignored';
+  status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
 
   tags?: Array<string>;
 
@@ -82,6 +88,8 @@ export interface Issue {
   traces?: unknown;
 
   updated_at?: string;
+
+  watching_since?: string;
 }
 
 export interface IssueListParams extends OffsetPaginationIssuesParams {

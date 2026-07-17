@@ -1,4 +1,4 @@
 // @ts-nocheck
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-export * from './runs/index.js';
+export * from './public/index.js';

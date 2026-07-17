@@ -6,12 +6,14 @@ from .run import Run as Run
 from .issue import Issue as Issue
 from .trace import Trace as Trace
 from .thread import Thread as Thread
+from .run_type import RunType as RunType
 from .data_type import DataType as DataType
 from .thread_stats import ThreadStats as ThreadStats
 from .thread_trace import ThreadTrace as ThreadTrace
 from .run_type_enum import RunTypeEnum as RunTypeEnum
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
 from .run_query_params import RunQueryParams as RunQueryParams
+from .run_select_field import RunSelectField as RunSelectField
 from .sandbox_response import SandboxResponse as SandboxResponse
 from .trace_aggregates import TraceAggregates as TraceAggregates
 from .issue_list_params import IssueListParams as IssueListParams

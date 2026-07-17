@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from typing import List, Union
-from datetime import datetime
-from typing_extensions import Literal, Required, Annotated, TypedDict
+from typing import List
+from typing_extensions import Literal, Annotated, TypedDict
 
-from .._utils import PropertyInfo
+from ..._utils import PropertyInfo
 
-__all__ = ["RunRetrieveV2Params"]
+__all__ = ["RunQueryParams"]
 
 
-class RunRetrieveV2Params(TypedDict, total=False):
-    project_id: Required[str]
-    """`project_id` is the UUID of the tracing project that owns the run."""
-
+class RunQueryParams(TypedDict, total=False):
     selects: List[
         Literal[
             "ID",
@@ -29,19 +25,15 @@ class RunRetrieveV2Params(TypedDict, total=False):
             "ERROR_PREVIEW",
             "EXTRA",
             "METADATA",
-            "EVENTS",
-            "INPUTS",
             "INPUTS_PREVIEW",
-            "OUTPUTS",
             "OUTPUTS_PREVIEW",
-            "MANIFEST",
+            "PARENT_RUN_ID",
             "PARENT_RUN_IDS",
             "PROJECT_ID",
             "TRACE_ID",
             "THREAD_ID",
             "DOTTED_ORDER",
             "IS_ROOT",
-            "REFERENCE_EXAMPLE_ID",
             "REFERENCE_DATASET_ID",
             "TOTAL_TOKENS",
             "PROMPT_TOKENS",
@@ -55,24 +47,9 @@ class RunRetrieveV2Params(TypedDict, total=False):
             "COMPLETION_COST_DETAILS",
             "PRICE_MODEL_ID",
             "TAGS",
-            "APP_PATH",
-            "ATTACHMENTS",
             "THREAD_EVALUATION_TIME",
-            "IS_IN_DATASET",
-            "SHARE_URL",
-            "FEEDBACK_STATS",
         ]
     ]
-    """
-    `selects` lists which properties to include on the returned run (repeatable
-    query parameter). Accepts any value of the `RunSelectField` enum. If omitted,
-    only `id` is returned.
-    """
-
-    start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
-    """`start_time` is the run's `start_time` (RFC3339 date-time).
-
-    Providing it speeds up retrieval.
-    """
+    """`selects` lists which public run properties to include on each returned run."""
 
     accept: Annotated[str, PropertyInfo(alias="Accept")]
