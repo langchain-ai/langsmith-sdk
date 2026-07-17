@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import { v4 as uuidv4, v7 as uuidv7 } from "../utils/uuid/src/index.js";
+import { computeRunIdForReplica } from "../index.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -120,6 +121,15 @@ test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
   expect(getUuidVersion(derivedV4)).toBe(7);
   expect(uuidV7Ms(derivedV4)).toBeGreaterThanOrEqual(beforeMs);
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
+});
+
+test("computeRunIdForReplica returns the replica run ID", () => {
+  const remapped = computeRunIdForReplica(
+    "019c0711-e1aa-7223-bf21-12119afe80f7",
+    "replica-project",
+  );
+
+  expect(remapped).toBe("019c0711-e1aa-7817-8301-943c0df9a3cd");
 });
 
 test("nonCryptographicUuid7Deterministic produces expected values", () => {

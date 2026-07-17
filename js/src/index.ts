@@ -20,7 +20,7 @@ export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 export { getDefaultProjectName } from "./utils/project.js";
 
-export { uuid7, uuid7FromTime } from "./uuid.js";
+export { computeRunIdForReplica, uuid7, uuid7FromTime } from "./uuid.js";
 
 export { isTracingEnabled } from "./utils/guard.js";
 

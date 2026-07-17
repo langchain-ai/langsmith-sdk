@@ -24,10 +24,8 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import {
-  uuid7FromTime,
-  nonCryptographicUuid7Deterministic,
-} from "./utils/_uuid.js";
+import { uuid7FromTime } from "./utils/_uuid.js";
+import { computeRunIdForReplica } from "./uuid.js";
 import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 
 const TIMESTAMP_LENGTH = 36;
@@ -729,19 +727,16 @@ export class RunTree implements BaseRun {
       }
     }
 
-    // Remap IDs for the replica using nonCryptographicUuid7Deterministic
+    // Remap IDs for the replica using the public replica ID helper
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
+    const newId = computeRunIdForReplica(oldId, projectName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = nonCryptographicUuid7Deterministic(
-        baseRun.trace_id,
-        projectName,
-      );
+      newTraceId = computeRunIdForReplica(baseRun.trace_id, projectName);
     } else {
       newTraceId = newId;
     }
@@ -749,10 +744,7 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = nonCryptographicUuid7Deterministic(
-        baseRun.parent_run_id,
-        projectName,
-      );
+      newParentId = computeRunIdForReplica(baseRun.parent_run_id, projectName);
     }
 
     // Remap dotted_order segments
@@ -762,10 +754,7 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = nonCryptographicUuid7Deterministic(
-          segId,
-          projectName,
-        );
+        const remappedId = computeRunIdForReplica(segId, projectName);
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
