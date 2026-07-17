@@ -809,6 +809,7 @@ class _TestCase:
         pytest_nodeid: Any = None,
         inputs: Optional[dict] = None,
         reference_outputs: Optional[dict] = None,
+        test_name: Optional[str] = None,
     ) -> None:
         self.test_suite = test_suite
         self.example_id = example_id
@@ -819,6 +820,7 @@ class _TestCase:
         self.pytest_nodeid = pytest_nodeid
         self.inputs = inputs
         self.reference_outputs = reference_outputs
+        self.test_name = test_name
         self._logged_reference_outputs: Optional[dict] = None
         self._logged_outputs: Optional[dict] = None
 
@@ -897,12 +899,15 @@ class _TestCase:
             inputs=self.inputs or {},
             outputs=outputs,
         )
+        metadata = {**(self.metadata or {})}
+        if self.test_name:
+            metadata["test_name"] = self.test_name
         self.test_suite.end_run(
             run_tree,
             example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
-            metadata=self.metadata,
+            metadata=metadata or None,
             split=self.split,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
@@ -981,6 +986,7 @@ def _create_test_case(
         else None
     )
     pytest_nodeid = pytest_request.node.nodeid if pytest_request else None
+    test_name = pytest_nodeid or getattr(func, "__qualname__", None) or func.__name__
     if pytest_plugin:
         pytest_plugin.test_suite_urls[test_suite._dataset.name] = (
             cast(str, test_suite._dataset.url)
@@ -997,6 +1003,7 @@ def _create_test_case(
         reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
         pytest_nodeid=pytest_nodeid,
+        test_name=test_name,
     )
     return test_case
 
