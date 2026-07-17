@@ -1171,9 +1171,22 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
           continue;
         }
 
+        if (
+          item.project_name !== undefined &&
+          item.project_name !== null &&
+          typeof item.project_name !== "string"
+        ) {
+          console.warn(
+            `Invalid project_name type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected string, got ${typeof item.project_name}`,
+          );
+          continue;
+        }
+
         replicas.push({
           apiUrl: item.api_url.replace(/\/$/, ""),
           apiKey: item.api_key,
+          projectName: item.project_name ?? undefined,
         });
       }
       return replicas;
