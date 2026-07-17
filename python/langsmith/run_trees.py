@@ -1187,6 +1187,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
 
                 api_url = item.get("api_url")
                 api_key = item.get("api_key")
+                project_name = item.get("project_name")
 
                 if not isinstance(api_url, str):
                     logger.warning(
@@ -1202,11 +1203,18 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                     )
                     continue
 
+                if project_name is not None and not isinstance(project_name, str):
+                    logger.warning(
+                        f"Invalid project_name type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected string, got {type(project_name).__name__}"
+                    )
+                    continue
+
                 replicas.append(
                     WriteReplica(
                         api_url=api_url.rstrip("/"),
                         auth=AuthHeaders(api_key=api_key),
-                        project_name=None,
+                        project_name=project_name,
                         updates=None,
                     )
                 )
