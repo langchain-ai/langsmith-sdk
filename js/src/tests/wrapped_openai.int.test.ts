@@ -189,6 +189,11 @@ test("prepopulated invocation params are merged and runtime params override", as
     messages: [{ role: "user", content: "Say 'hello'" }],
     model: "gpt-4.1-nano",
     seed: 42, // Should override prepopulated seed=100
+    store: true,
+    metadata: {
+      request_key: "request_value",
+      ls_model_name: "should-not-override",
+    },
   });
 
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -215,6 +220,11 @@ test("prepopulated invocation params are merged and runtime params override", as
   // Check that other metadata keys are preserved
   expect(metadata?.custom_key).toBe("custom_value");
   expect(metadata?.version).toBe("1.0.0");
+
+  // OpenAI request metadata is copied to LangSmith run metadata
+  expect(metadata?.request_key).toBe("request_value");
+  expect(metadata?.ls_model_name).toBe("gpt-4.1-nano");
+  expect(lsInvocationParams?.metadata).toBeUndefined();
 
   callSpy.mockClear();
 });
@@ -690,6 +700,9 @@ test("responses.create and retrieve workflow", async () => {
     reasoning: {
       effort: "low",
     },
+    metadata: {
+      request_key: "request_value",
+    },
     input: [
       {
         role: "user",
@@ -722,6 +735,7 @@ test("responses.create and retrieve workflow", async () => {
   for (const call of createCalls) {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
+      request_key: "request_value",
       ls_model_name: "gpt-5-nano",
       ls_model_type: "chat",
       ls_provider: "openai",

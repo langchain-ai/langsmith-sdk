@@ -5,12 +5,14 @@ from __future__ import annotations
 from .run import Run as Run
 from .issue import Issue as Issue
 from .trace import Trace as Trace
+from .thread import Thread as Thread
 from .data_type import DataType as DataType
+from .thread_stats import ThreadStats as ThreadStats
+from .thread_trace import ThreadTrace as ThreadTrace
 from .run_type_enum import RunTypeEnum as RunTypeEnum
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
 from .run_query_params import RunQueryParams as RunQueryParams
 from .sandbox_response import SandboxResponse as SandboxResponse
-from .thread_list_item import ThreadListItem as ThreadListItem
 from .trace_aggregates import TraceAggregates as TraceAggregates
 from .issue_list_params import IssueListParams as IssueListParams
 from .snapshot_response import SnapshotResponse as SnapshotResponse
@@ -26,11 +28,9 @@ from .service_url_response import ServiceURLResponse as ServiceURLResponse
 from .online_code_evaluator import OnlineCodeEvaluator as OnlineCodeEvaluator
 from .online_evaluator_type import OnlineEvaluatorType as OnlineEvaluatorType
 from .sandbox_list_response import SandboxListResponse as SandboxListResponse
-from .thread_stats_response import ThreadStatsResponse as ThreadStatsResponse
 from .run_retrieve_v2_params import RunRetrieveV2Params as RunRetrieveV2Params
 from .snapshot_list_response import SnapshotListResponse as SnapshotListResponse
 from .sort_by_dataset_column import SortByDatasetColumn as SortByDatasetColumn
-from .thread_trace_list_item import ThreadTraceListItem as ThreadTraceListItem
 from .trace_list_runs_params import TraceListRunsParams as TraceListRunsParams
 from .sandbox_status_response import SandboxStatusResponse as SandboxStatusResponse
 from .trace_list_runs_response import TraceListRunsResponse as TraceListRunsResponse

@@ -68,14 +68,14 @@ export {
 } from './sandboxes/sandboxes.js';
 export {
   Threads,
-  type ThreadListItem,
-  type ThreadTraceListItem,
-  type ThreadStatsResponse,
+  type Thread,
+  type ThreadStats,
+  type ThreadTrace,
   type ThreadListTracesParams,
   type ThreadQueryParams,
   type ThreadStatsParams,
-  type ThreadTraceListItemsItemsCursorGetPagination,
-  type ThreadListItemsItemsCursorPostPagination,
+  type ThreadTracesItemsCursorGetPagination,
+  type ThreadsItemsCursorPostPagination,
 } from './threads.js';
 export {
   Traces,

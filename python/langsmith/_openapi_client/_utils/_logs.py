@@ -1,12 +1,12 @@
 import os
 import logging
 
-logger: logging.Logger = logging.getLogger("langsmith_api")
+logger: logging.Logger = logging.getLogger("langsmith._openapi_client")
 httpx_logger: logging.Logger = logging.getLogger("httpx")
 
 
 def _basic_config() -> None:
-    # e.g. [2023-10-05 14:12:26 - langsmith_api._base_client:818 - DEBUG] HTTP Request: POST http://127.0.0.1:4010/foo/bar "200 OK"
+    # e.g. [2023-10-05 14:12:26 - langsmith._openapi_client._base_client:818 - DEBUG] HTTP Request: POST http://127.0.0.1:4010/foo/bar "200 OK"
     logging.basicConfig(
         format="[%(asctime)s - %(name)s:%(lineno)d - %(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",

@@ -333,6 +333,44 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       expect(callSpy).toHaveBeenCalled();
     });
 
+    it("should preserve project names from array format", async () => {
+      const endpointsConfig = [
+        {
+          api_url: "https://workspace1.example.com",
+          api_key: "workspace1-key",
+          project_name: "project-prod",
+        },
+        {
+          api_url: "https://workspace2.example.com",
+          api_key: "workspace2-key",
+          project_name: "project-staging",
+        },
+      ];
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const client = new Client({ autoBatchTracing: false });
+
+      const createRunSpy = jest
+        .spyOn(client, "createRun")
+        .mockResolvedValue(undefined);
+
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "fallback-project",
+      });
+
+      await runTree.postRun();
+
+      const sessionNames = createRunSpy.mock.calls.map(
+        ([runCreate]: any) => runCreate.session_name,
+      );
+
+      expect(sessionNames.sort()).toEqual(["project-prod", "project-staging"]);
+    });
+
     it("should handle object format", async () => {
       const endpointsConfig = {
         "https://workspace1.example.com": "workspace1-key",

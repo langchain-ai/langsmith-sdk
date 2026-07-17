@@ -667,6 +667,8 @@ export interface RunStatsQueryParams {
 
   query?: string | null;
 
+  reference_dataset_id?: string | null;
+
   reference_example?: Array<string> | null;
 
   /**
@@ -719,6 +721,10 @@ export interface RunStatsQueryParams {
 
   start_time?: string | null;
 
+  /**
+   * Filter runs by trace ID. When set, limit and cursor-based pagination are not
+   * applied — all runs in the trace are returned in a single response.
+   */
   trace?: string | null;
 
   trace_filter?: string | null;

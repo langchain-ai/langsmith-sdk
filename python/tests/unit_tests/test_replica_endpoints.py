@@ -353,8 +353,16 @@ class TestParseWriteReplicasFromEnvVar:
         """Test parsing new array format."""
         env_var = json.dumps(
             [
-                {"api_url": "https://api.example.com", "api_key": "key1"},
-                {"api_url": "https://api.example.com", "api_key": "key2"},
+                {
+                    "api_url": "https://api.example.com",
+                    "api_key": "key1",
+                    "project_name": "project-prod",
+                },
+                {
+                    "api_url": "https://api.example.com",
+                    "api_key": "key2",
+                    "project_name": "project-staging",
+                },
                 {"api_url": "https://api.example.com", "api_key": "key3"},
             ]
         )
@@ -372,8 +380,11 @@ class TestParseWriteReplicasFromEnvVar:
         assert "key2" in keys
         assert "key3" in keys
 
-        # All should have None for project_name and updates
-        assert all(r["project_name"] is None for r in result)
+        assert [r["project_name"] for r in result] == [
+            "project-prod",
+            "project-staging",
+            None,
+        ]
         assert all(r["updates"] is None for r in result)
 
     def test_parse_object_format(self):
@@ -814,6 +825,38 @@ class TestRunTreeReplicas:
         call_args = client.update_run.call_args
         assert call_args[1]["api_key"] == "replica-key"
         assert call_args[1]["api_url"] == "https://replica.example.com"
+
+    def test_run_tree_preserves_env_replica_project_names(self):
+        client = Mock()
+        env_var = json.dumps(
+            [
+                {
+                    "api_url": "https://replica1.example.com",
+                    "api_key": "replica1-key",
+                    "project_name": "project-prod",
+                },
+                {
+                    "api_url": "https://replica2.example.com",
+                    "api_key": "replica2-key",
+                    "project_name": "project-staging",
+                },
+            ]
+        )
+
+        with patch.dict(os.environ, {"LANGSMITH_RUNS_ENDPOINTS": env_var}, clear=True):
+            _parse_write_replicas_from_env_var.cache_clear()
+            run_tree = RunTree(
+                name="test_run",
+                inputs={"input": "test"},
+                client=client,
+                project_name="fallback-project",
+            )
+            run_tree.post()
+
+        session_names = [
+            call.kwargs["session_name"] for call in client.create_run.call_args_list
+        ]
+        assert session_names == ["project-prod", "project-staging"]
 
 
 class TestBaggageReplicaParsing:
