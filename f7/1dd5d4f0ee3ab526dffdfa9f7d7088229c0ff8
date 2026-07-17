@@ -1,0 +1,40 @@
+js/src/client.ts
+  s_1d8a6c8a6de6ae::t_aa7fe0ff32282e 1590-1591
+  s_1d8a6c8a6de6ae::t_010a9b6adde1ae 1592
+js/src/run_trees.ts
+  s_1d8a6c8a6de6ae::t_057ba3db6c0495 342-343
+  s_1d8a6c8a6de6ae::t_d970e28f6ffabf 24,28,88,203,209,215,224,235-236,248,266-268,281,361,423,459,589,817,908,950,1093,1110
+  s_1d8a6c8a6de6ae::t_797407a7f1e4d9 344-360
+python/tests/unit_tests/test_run_trees.py
+  s_1d8a6c8a6de6ae::t_ca2b19bb7feffb 82-86,89-100,128-129
+  s_1d8a6c8a6de6ae::t_c4518f4589b269 87-88,101-127
+  s_1d8a6c8a6de6ae::t_50b858ec748610 6
+python/langsmith/run_trees.py
+  s_1d8a6c8a6de6ae::t_04542e731976f7 141,318-320,672,781,883,914,1068-1069,1089,1111,1118,1129,1140-1141,1174-1178,1207-1208
+  s_1d8a6c8a6de6ae::t_ff2a8f8418cad9 350-360,362-372
+  s_1d8a6c8a6de6ae::t_81688b4b8939fb 348-349,361
+  s_1d8a6c8a6de6ae::t_037da80c0f44b4 12
+js/src/tests/run_trees.test.ts
+  s_1d8a6c8a6de6ae::t_d6f31e9a27a8b4 44,47,49-57,96-97,99,101-103,105-107,112
+  s_1d8a6c8a6de6ae::t_bbd50d1a08dc26 45,48,58-87,89-95,98,100,104,108-111
+  s_1d8a6c8a6de6ae::t_21c42ff71ea308 46
+  s_1d8a6c8a6de6ae::t_334a941b52cbee 88
+js/src/schemas.ts
+  s_1d8a6c8a6de6ae::t_6a198b3408fda4 219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f71dd5d4f0ee3ab526dffdfa9f7d7088229c0ff8",
+  "prompts": {},
+  "sessions": {
+    "s_1d8a6c8a6de6ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7e8db6e5-1a64-4e8b-9350-3f6a05e2ed53",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
