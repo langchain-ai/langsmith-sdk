@@ -23,6 +23,7 @@ from typing import (
 import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
+from langsmith.client import _get_openapi_base_url
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -297,7 +298,7 @@ class AsyncClient:
         self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
             api_key=self._api_key,
             tenant_id=self._workspace_id,
-            base_url=str(self._client.base_url),
+            base_url=_get_openapi_base_url(str(self._client.base_url)),
             timeout=self._client.timeout,
             default_headers=_headers or None,
         )
