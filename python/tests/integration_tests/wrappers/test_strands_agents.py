@@ -185,6 +185,19 @@ def test_exporter_transforms_live_strands_agent_spans(tmp_path, monkeypatch):
     assert "user" in roles
     assert "system" in roles
 
+    tool_spans = [
+        span for span in recorder.spans if span.name.startswith("execute_tool")
+    ]
+    assert tool_spans, [span.name for span in recorder.spans]
+    for tool_span in tool_spans:
+        assert tool_span.attributes["langsmith.span.kind"] == "tool"
+        assert _span_has_completion(tool_span)
+        completion = json.loads(tool_span.attributes["gen_ai.completion"])
+        assert completion["role"] == "tool"
+        assert "content" in completion
+        assert "name" in completion
+        assert "tool_call_id" in completion
+
 
 @pytest.mark.skipif(
     not (
