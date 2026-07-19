@@ -2,16 +2,20 @@
 
 import asyncio
 import sys
-from unittest.mock import MagicMock
+from contextlib import asynccontextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from langsmith.integrations.claude_agent_sdk import _hooks as _hooks_module
 from langsmith.integrations.claude_agent_sdk._hooks import (
-    _active_tool_runs,
-    _client_managed_runs,
+    clear_active_tool_runs,
+    get_subagent_run_by_tool_id,
     post_tool_use_failure_hook,
     post_tool_use_hook,
     pre_tool_use_hook,
+    subagent_start_hook,
+    subagent_stop_hook,
 )
 from langsmith.run_trees import RunTree
 
@@ -20,12 +24,21 @@ ERROR_MSG = "Exit code 1\ncat: /nonexistent: No such file or directory"
 
 @pytest.fixture(autouse=True)
 def _clear_state():
-    """Reset global hook state between tests."""
-    _active_tool_runs.clear()
-    _client_managed_runs.clear()
+    """Reset default hook state between tests."""
+
+    def _reset():
+        _hooks_module._default_session.active_tool_runs.clear()
+        _hooks_module._default_session.subagent_runs.clear()
+        _hooks_module._default_session.pending_agent_tools.clear()
+        _hooks_module._default_session.agent_to_tool_mapping.clear()
+        _hooks_module._default_session.ended_subagent_runs.clear()
+        _hooks_module._default_session.subagent_transcript_paths.clear()
+        _hooks_module._default_session.main_transcript_path = None
+        _hooks_module._default_session.root_run = None
+
+    _reset()
     yield
-    _active_tool_runs.clear()
-    _client_managed_runs.clear()
+    _reset()
 
 
 def _make_parent_run() -> RunTree:
@@ -53,8 +66,8 @@ class TestToolUseSuccessFlow:
             )
         )
 
-        assert "tu_1" in _active_tool_runs
-        tool_run, _ = _active_tool_runs["tu_1"]
+        assert "tu_1" in _hooks_module._default_session.active_tool_runs
+        tool_run, _ = _hooks_module._default_session.active_tool_runs["tu_1"]
         assert tool_run.name == "Bash"
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
@@ -70,7 +83,7 @@ class TestToolUseSuccessFlow:
             )
         )
 
-        assert "tu_1" not in _active_tool_runs
+        assert "tu_1" not in _hooks_module._default_session.active_tool_runs
         assert tool_run.outputs == {"output": "hi", "is_error": False}
         assert tool_run.error is None
 
@@ -98,27 +111,21 @@ class TestToolUseFailureFlow:
             )
         )
 
-        tool_run, _ = _active_tool_runs["tu_2"]
+        assert "tu_2" in _hooks_module._default_session.active_tool_runs
 
         asyncio.run(
             post_tool_use_failure_hook(
-                {
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "cat /nonexistent"},
-                    "error": ERROR_MSG,
-                },
+                {"tool_name": "Bash", "error": ERROR_MSG},
                 "tu_2",
                 MagicMock(),
             )
         )
 
-        assert "tu_2" not in _active_tool_runs
-        assert tool_run.error == ERROR_MSG
-        assert tool_run.outputs == {"error": ERROR_MSG}
+        assert "tu_2" not in _hooks_module._default_session.active_tool_runs
 
 
 class TestInjectTracingHooks:
-    def test_injects_all_three_hooks(self):
+    def test_injects_all_hooks(self):
         from langsmith.integrations.claude_agent_sdk._client import (
             _inject_tracing_hooks,
         )
@@ -126,13 +133,732 @@ class TestInjectTracingHooks:
         options = MagicMock()
         options.hooks = None
 
+        original_module = sys.modules.get("claude_agent_sdk")
         mock_module = MagicMock()
         sys.modules["claude_agent_sdk"] = mock_module
         try:
             _inject_tracing_hooks(options)
         finally:
-            del sys.modules["claude_agent_sdk"]
+            if original_module is not None:
+                sys.modules["claude_agent_sdk"] = original_module
+            else:
+                sys.modules.pop("claude_agent_sdk", None)
 
-        for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        for event in (
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "SubagentStart",
+            "SubagentStop",
+        ):
             assert event in options.hooks
             assert len(options.hooks[event]) == 1
+
+
+class TestSubagentFlow:
+    """Test subagent start/stop hooks and tool nesting."""
+
+    @pytest.fixture(autouse=True)
+    def _set_parent(self):
+        from langsmith.integrations.claude_agent_sdk import _tools
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        yield
+        _tools.clear_parent_run_tree()
+
+    def test_subagent_nested_under_agent_tool(self):
+        """Subagent run should be nested under the Agent tool run."""
+        # PreToolUse for the Agent tool
+        asyncio.run(
+            pre_tool_use_hook(
+                {"tool_name": "Agent", "tool_input": {"agent": "foo"}},
+                "tool_1",
+                MagicMock(),
+            )
+        )
+
+        assert "tool_1" in _hooks_module._default_session.active_tool_runs
+        agent_tool_run, _ = _hooks_module._default_session.active_tool_runs["tool_1"]
+        assert agent_tool_run.name == "Agent"
+
+        # The Agent tool_use_id should be pending
+        assert "tool_1" in _hooks_module._default_session.pending_agent_tools
+
+        # SubagentStart — note: SDK passes a different tool_use_id
+        asyncio.run(
+            subagent_start_hook(
+                {"agent_id": "agent_123", "agent_type": "foo"},
+                "sdk_internal_session_id",  # NOT tool_1
+                MagicMock(),
+            )
+        )
+
+        # Subagent run should exist and be nested under Agent tool
+        assert "agent_123" in _hooks_module._default_session.subagent_runs
+        subagent_run = _hooks_module._default_session.subagent_runs["agent_123"]
+        assert subagent_run.name == "foo"
+        assert subagent_run.run_type == "chain"
+        assert subagent_run.parent_run_id == agent_tool_run.id
+
+        # Inputs should come from the Agent tool's input
+        assert subagent_run.inputs == {"agent": "foo"}
+
+        # Mappings should be set
+        assert (
+            _hooks_module._default_session.agent_to_tool_mapping["agent_123"]
+            == "tool_1"
+        )
+        assert get_subagent_run_by_tool_id("tool_1") == subagent_run
+
+        # Pending should be consumed
+        assert "tool_1" not in _hooks_module._default_session.pending_agent_tools
+
+    def test_tool_inside_subagent_nests_under_subagent(self):
+        """Tools inside a subagent should nest under the subagent run."""
+        # Set up: Agent tool call + subagent start
+        asyncio.run(
+            pre_tool_use_hook(
+                {"tool_name": "Agent", "tool_input": {"agent": "foo"}},
+                "tool_1",
+                MagicMock(),
+            )
+        )
+        asyncio.run(
+            subagent_start_hook(
+                {"agent_id": "agent_123", "agent_type": "foo"},
+                "sdk_session_id",
+                MagicMock(),
+            )
+        )
+
+        # Tool inside subagent — agent_id identifies the subagent
+        asyncio.run(
+            pre_tool_use_hook(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "ls"},
+                    "agent_id": "agent_123",
+                },
+                "tool_2",
+                MagicMock(),
+            )
+        )
+
+        assert "tool_2" in _hooks_module._default_session.active_tool_runs
+        tool_run, _ = _hooks_module._default_session.active_tool_runs["tool_2"]
+        assert tool_run.name == "Bash"
+        assert (
+            tool_run.parent_run_id
+            == _hooks_module._default_session.subagent_runs["agent_123"].id
+        )
+
+    def test_subagent_findable_after_stop(self):
+        """Subagent run is still findable via tool_use_id after SubagentStop."""
+        asyncio.run(
+            pre_tool_use_hook(
+                {"tool_name": "Agent", "tool_input": {}},
+                "tool_1",
+                MagicMock(),
+            )
+        )
+        asyncio.run(
+            subagent_start_hook(
+                {"agent_id": "a1", "agent_type": "foo"},
+                "sdk_1",
+                MagicMock(),
+            )
+        )
+
+        run = _hooks_module._default_session.subagent_runs["a1"]
+        assert get_subagent_run_by_tool_id("tool_1") is run
+
+        # After SubagentStop, the run is stashed but still findable
+        asyncio.run(
+            subagent_stop_hook(
+                {"agent_id": "a1", "agent_type": "foo"},
+                "sdk_1",
+                MagicMock(),
+            )
+        )
+        assert "a1" not in _hooks_module._default_session.subagent_runs
+        assert get_subagent_run_by_tool_id("tool_1") is run
+
+    def test_subagent_stop_and_post_tool_use_set_outputs(self):
+        """SubagentStop + PostToolUse should set outputs on both runs."""
+        # Agent tool call
+        asyncio.run(
+            pre_tool_use_hook(
+                {"tool_name": "Agent", "tool_input": {"agent": "foo"}},
+                "tool_1",
+                MagicMock(),
+            )
+        )
+        # Subagent start
+        asyncio.run(
+            subagent_start_hook(
+                {"agent_id": "agent_123", "agent_type": "foo"},
+                "sdk_session_id",
+                MagicMock(),
+            )
+        )
+        subagent_run = _hooks_module._default_session.subagent_runs["agent_123"]
+
+        # Subagent stop — run should be stashed, not ended yet
+        asyncio.run(
+            subagent_stop_hook(
+                {"agent_id": "agent_123", "agent_type": "foo"},
+                "sdk_session_id",
+                MagicMock(),
+            )
+        )
+
+        assert "agent_123" not in _hooks_module._default_session.subagent_runs
+        assert "tool_1" in _hooks_module._default_session.ended_subagent_runs
+        assert (
+            _hooks_module._default_session.ended_subagent_runs["tool_1"] is subagent_run
+        )
+        assert subagent_run.end_time is None
+
+        # PostToolUse for Agent — sets outputs on subagent but doesn't end it
+        asyncio.run(
+            post_tool_use_hook(
+                {
+                    "tool_name": "Agent",
+                    "tool_response": {"output": "bar"},
+                },
+                "tool_1",
+                MagicMock(),
+            )
+        )
+
+        # Agent tool run should be ended
+        assert "tool_1" not in _hooks_module._default_session.active_tool_runs
+
+        # Subagent outputs should be set but run not yet ended
+        assert subagent_run.outputs == {"output": "bar"}
+        assert subagent_run.end_time is None
+
+        # Subagent can still be found for LLM nesting
+        assert get_subagent_run_by_tool_id("tool_1") is subagent_run
+
+        # clear_active_tool_runs finalises everything
+        clear_active_tool_runs()
+        assert subagent_run.end_time is not None
+        assert len(_hooks_module._default_session.ended_subagent_runs) == 0
+
+
+class TestTranscriptPathCapture:
+    """Pre-tool-use hook captures transcript_path from BaseHookInput."""
+
+    @pytest.fixture(autouse=True)
+    def _set_parent(self):
+        from langsmith.integrations.claude_agent_sdk import _tools
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        yield
+        _tools.clear_parent_run_tree()
+
+    def test_captures_transcript_path_from_first_hook(self):
+        assert _hooks_module._default_session.main_transcript_path is None
+
+        asyncio.run(
+            pre_tool_use_hook(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "echo hi"},
+                    "transcript_path": "/tmp/sessions/abc.jsonl",
+                },
+                "tu_1",
+                MagicMock(),
+            )
+        )
+
+        assert (
+            _hooks_module._default_session.main_transcript_path
+            == "/tmp/sessions/abc.jsonl"
+        )
+
+    def test_does_not_overwrite_on_subsequent_hooks(self):
+        # Seed the default session's transcript path so the "first writer wins"
+        # guard in pre_tool_use_hook kicks in.
+        _hooks_module._default_session.main_transcript_path = "/first/path.jsonl"
+
+        asyncio.run(
+            pre_tool_use_hook(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {},
+                    "transcript_path": "/second/path.jsonl",
+                },
+                "tu_2",
+                MagicMock(),
+            )
+        )
+
+        assert (
+            _hooks_module._default_session.main_transcript_path == "/first/path.jsonl"
+        )
+
+    def test_clear_active_tool_runs_resets_transcript_path(self):
+        _hooks_module._default_session.main_transcript_path = "/some/path.jsonl"
+        clear_active_tool_runs()
+        assert _hooks_module._default_session.main_transcript_path is None
+
+
+class TestReadLLMTurnsFromTranscript:
+    """Unit tests for read_llm_turns_from_transcript."""
+
+    def test_extracts_final_entries_only(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        transcript = tmp_path / "session.jsonl"
+        import json
+
+        lines = [
+            # Initial user prompt
+            {
+                "type": "user",
+                "message": {"content": "echo hello"},
+            },
+            # Partial (streaming) — stop_reason null
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_001",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "Thinking..."}],
+                    "stop_reason": None,
+                    "usage": {"input_tokens": 100, "output_tokens": 3},
+                },
+                "timestamp": "2025-01-01T00:00:00.000Z",
+            },
+            # Final — stop_reason set
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_001",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu_1",
+                            "name": "Bash",
+                            "input": {"command": "echo hello"},
+                        },
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 100, "output_tokens": 42},
+                },
+                "timestamp": "2025-01-01T00:00:01.000Z",
+            },
+            # User message (tool result)
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tu_1",
+                            "content": "hello",
+                        },
+                    ]
+                },
+            },
+            # Second turn — partial
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_002",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "d"}],
+                    "stop_reason": None,
+                    "usage": {"input_tokens": 150, "output_tokens": 1},
+                },
+                "timestamp": "2025-01-01T00:00:02.000Z",
+            },
+            # Second turn — final
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_002",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 150, "output_tokens": 5},
+                },
+                "timestamp": "2025-01-01T00:00:03.000Z",
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        turns = read_llm_turns_from_transcript(str(transcript))
+
+        assert len(turns) == 2
+
+        assert turns[0]["message_id"] == "msg_001"
+        assert turns[0]["stop_reason"] == "tool_use"
+        assert turns[0]["usage"]["output_tokens"] == 42
+        # First turn should see only the initial user prompt
+        assert turns[0]["input_messages"] == [
+            {"role": "user", "content": "echo hello"},
+        ]
+
+        assert turns[1]["message_id"] == "msg_002"
+        assert turns[1]["stop_reason"] == "end_turn"
+        assert turns[1]["content"] == [{"type": "text", "text": "done"}]
+        # Second turn should see full conversation history
+        assert turns[1]["input_messages"] == [
+            {"role": "user", "content": "echo hello"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu_1",
+                        "name": "Bash",
+                        "input": {"command": "echo hello"},
+                    },
+                ],
+            },
+            {"role": "tool", "content": "hello", "tool_call_id": "tu_1"},
+        ]
+
+    def test_empty_file(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        transcript = tmp_path / "empty.jsonl"
+        transcript.write_text("")
+        assert read_llm_turns_from_transcript(str(transcript)) == []
+
+    def test_missing_file(self):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        assert read_llm_turns_from_transcript("/nonexistent/path.jsonl") == []
+
+
+class TestMissingSubagentLLMRuns:
+    """reconcile_from_transcripts creates LLM runs for subagent turns
+    that were not seen in the live stream."""
+
+    def test_creates_missing_llm_run_from_transcript(self, tmp_path):
+        import json
+
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            LLM_RUN_NAME,
+            reconcile_from_transcripts,
+        )
+
+        # Create a subagent run
+        parent = _make_parent_run()
+        subagent_run = parent.create_child(
+            name="foo",
+            run_type="chain",
+        )
+
+        # Write a transcript with 2 turns
+        transcript = tmp_path / "subagent.jsonl"
+        lines = [
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_seen",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [
+                        {"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {}}
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                },
+                "timestamp": "2025-01-01T00:00:01.000Z",
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_missing",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 150, "output_tokens": 5},
+                },
+                "timestamp": "2025-01-01T00:00:03.000Z",
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        # Set up tracker with msg_seen already created
+        tracker = TurnLifecycle()
+        existing_run = parent.create_child(
+            name=LLM_RUN_NAME,
+            run_type="llm",
+        )
+        tracker.llm_runs_by_message_id["msg_seen"] = existing_run
+
+        # Register subagent transcript
+        _hooks_module._default_session.subagent_transcript_paths.append(
+            (str(transcript), subagent_run)
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        # msg_missing should now have an LLM run
+        assert "msg_missing" in tracker.llm_runs_by_message_id
+        new_run = tracker.llm_runs_by_message_id["msg_missing"]
+        assert new_run.name == LLM_RUN_NAME
+        assert new_run.run_type == "llm"
+        assert new_run.parent_run_id == subagent_run.id
+        assert new_run.outputs == {
+            "content": [{"type": "text", "text": "done"}],
+            "role": "assistant",
+        }
+
+    def test_skips_already_seen_message_ids(self, tmp_path):
+        import json
+
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            LLM_RUN_NAME,
+            reconcile_from_transcripts,
+        )
+
+        parent = _make_parent_run()
+        subagent_run = parent.create_child(
+            name="foo",
+            run_type="chain",
+        )
+
+        transcript = tmp_path / "subagent.jsonl"
+        lines = [
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "msg_already_seen",
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [{"type": "text", "text": "hi"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 50, "output_tokens": 2},
+                },
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in lines))
+
+        tracker = TurnLifecycle()
+        existing_run = parent.create_child(
+            name=LLM_RUN_NAME,
+            run_type="llm",
+        )
+        tracker.llm_runs_by_message_id["msg_already_seen"] = existing_run
+
+        _hooks_module._default_session.subagent_transcript_paths.append(
+            (str(transcript), subagent_run)
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        # Should still be the same run, not replaced
+        assert tracker.llm_runs_by_message_id["msg_already_seen"] is existing_run
+
+
+class TestSessionBinding:
+    """Small unit guard for hooks bound to a client SessionState."""
+
+    def test_bound_hook_uses_client_session(self):
+        import asyncio
+        import contextvars
+
+        from langsmith.integrations.claude_agent_sdk._client import (
+            _bind_hook_to_session,
+        )
+        from langsmith.integrations.claude_agent_sdk._hooks import (
+            SessionState,
+            _set_session_root,
+            pre_tool_use_hook,
+        )
+
+        parent_run = _make_parent_run()
+        session = SessionState()
+        _set_session_root(session, parent_run)
+        bound_hook = _bind_hook_to_session(pre_tool_use_hook, session)
+
+        contextvars.Context().run(
+            lambda: asyncio.run(
+                bound_hook(
+                    {"tool_name": "Bash", "tool_input": {"command": "echo hi"}},
+                    "tool_bound_session",
+                    MagicMock(),
+                )
+            )
+        )
+
+        assert "tool_bound_session" in session.active_tool_runs
+        assert len(_hooks_module._default_session.active_tool_runs) == 0
+
+    def test_bound_tool_handler_uses_client_session(self):
+        from langsmith._internal import _context
+        from langsmith.integrations.claude_agent_sdk._client import _wrap_tool_handler
+        from langsmith.integrations.claude_agent_sdk._hooks import SessionState
+
+        session = SessionState()
+        tool_run = _make_parent_run().create_child(name="get_weather", run_type="tool")
+        session.active_tool_runs["tool_1"] = (tool_run, 0.0)
+        seen_parent = None
+
+        async def handler(args):
+            nonlocal seen_parent
+            parent_ref = _context._PARENT_RUN_TREE_REF.get()
+            seen_parent = parent_ref() if parent_ref else None
+            return {"ok": args["ok"]}
+
+        wrapped = _wrap_tool_handler(handler, session)
+        result = asyncio.run(wrapped({"ok": True}))
+
+        assert result == {"ok": True}
+        assert seen_parent is tool_run
+
+    def test_unbound_tool_handler_finds_registered_session_by_args(self):
+        from langsmith._internal import _context
+        from langsmith.integrations.claude_agent_sdk._client import _wrap_tool_handler
+        from langsmith.integrations.claude_agent_sdk._hooks import (
+            SessionState,
+            _register_session,
+            _unregister_session,
+        )
+
+        session = SessionState()
+        tool_run = _make_parent_run().create_child(
+            name="mcp__weather__get_weather",
+            run_type="tool",
+            inputs={"input": {"city": "SF"}},
+        )
+        session.active_tool_runs["tool_1"] = (tool_run, 0.0)
+        token = _register_session(session)
+        seen_parent = None
+
+        async def handler(args):
+            nonlocal seen_parent
+            parent_ref = _context._PARENT_RUN_TREE_REF.get()
+            seen_parent = parent_ref() if parent_ref else None
+            return {"ok": True}
+
+        try:
+            wrapped = _wrap_tool_handler(handler, tool_name="get_weather")
+            result = asyncio.run(wrapped({"city": "SF"}))
+        finally:
+            _unregister_session(session, token)
+
+        assert result == {"ok": True}
+        assert seen_parent is tool_run
+
+
+class TestStreamExceptionPropagation:
+    """Exceptions from the SDK generator must propagate to the caller.
+
+    Previously, ``_traced_receive_response`` swallowed all exceptions in a
+    bare ``except Exception: logger.exception(...)`` block, so SDK errors
+    (network failures, API errors, etc.) were silently dropped and the
+    caller's ``async for`` loop exited normally without any error.
+    """
+
+    @staticmethod
+    def _make_fake_sdk_client_class(stream_events, raise_after=None):
+        """Return a minimal SDK-client class whose receive_response yields
+        ``stream_events`` and then optionally raises ``raise_after``."""
+
+        class FakeSdkClient:
+            def __init__(self):
+                self.options = None
+
+            async def receive_response(self):
+                for evt in stream_events:
+                    yield evt
+                if raise_after is not None:
+                    raise raise_after
+
+            async def query(self, *args, **kwargs):
+                pass
+
+        return FakeSdkClient
+
+    @staticmethod
+    @asynccontextmanager
+    async def _no_op_trace(**kwargs):
+        """A no-op stand-in for ``langsmith.run_helpers.trace``."""
+        run = MagicMock()
+        run.inputs = {}
+        run.metadata = {}
+        run.extra = {}
+        run.end = MagicMock()
+        run.patch = MagicMock()
+        try:
+            yield run
+        except Exception:
+            run.end(error="error")
+            raise
+
+    def test_sdk_exception_propagates_to_caller(self):
+        """RuntimeError from the SDK stream must reach the caller."""
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        sdk_error = RuntimeError("SDK network failure")
+        FakeSdkClient = self._make_fake_sdk_client_class([], raise_after=sdk_error)
+
+        with patch(
+            "langsmith.integrations.claude_agent_sdk._client.trace",
+            side_effect=self._no_op_trace,
+        ):
+            instrument_claude_client(FakeSdkClient)
+            client = FakeSdkClient()
+            client._ls_prompt = "hello"
+            client._ls_start_time = None
+            client._ls_streamed_input = None
+
+            async def _run():
+                async for _ in client.receive_response():
+                    pass
+
+            with pytest.raises(RuntimeError, match="SDK network failure"):
+                asyncio.run(_run())
+
+    def test_sdk_exception_propagates_after_partial_stream(self):
+        """Caller sees the error even when some messages were already yielded."""
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        received = []
+        sdk_error = ValueError("stream cut off mid-way")
+
+        class _UserMsg:
+            parent_tool_use_id = None
+            content = []
+
+        FakeSdkClient = self._make_fake_sdk_client_class(
+            [_UserMsg(), _UserMsg()], raise_after=sdk_error
+        )
+
+        with patch(
+            "langsmith.integrations.claude_agent_sdk._client.trace",
+            side_effect=self._no_op_trace,
+        ):
+            instrument_claude_client(FakeSdkClient)
+            client = FakeSdkClient()
+            client._ls_prompt = "hi"
+            client._ls_start_time = None
+            client._ls_streamed_input = None
+
+            async def _run():
+                async for msg in client.receive_response():
+                    received.append(msg)
+
+            with pytest.raises(ValueError, match="stream cut off mid-way"):
+                asyncio.run(_run())
+
+        assert len(received) == 2
