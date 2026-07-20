@@ -105,6 +105,8 @@ import { Public } from './resources/public/public.js';
 import {
   ResponseBodyForRunsGenerateQuery,
   Run,
+  RunGetURLParams,
+  RunGetURLResponse,
   RunIngest,
   RunQueryParams,
   RunQueryV2Params,
@@ -996,7 +998,9 @@ export declare namespace Langsmith {
     type RunType as RunType,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
+    type RunGetURLResponse as RunGetURLResponse,
     type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
+    type RunGetURLParams as RunGetURLParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,

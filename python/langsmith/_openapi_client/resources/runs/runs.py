@@ -16,7 +16,12 @@ from .share import (
     ShareResourceWithStreamingResponse,
     AsyncShareResourceWithStreamingResponse,
 )
-from ...types import RunType, run_query_v2_params, run_retrieve_v2_params
+from ...types import (
+    RunType,
+    run_get_url_params,
+    run_query_v2_params,
+    run_retrieve_v2_params,
+)
 from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
 from ..._compat import cached_property
@@ -32,6 +37,7 @@ from ...pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPag
 from ..._base_client import AsyncPaginator, make_request_options
 from ...types.run_type import RunType
 from ...types.run_select_field import RunSelectField
+from ...types.run_get_url_response import RunGetURLResponse
 
 __all__ = ["RunsResource", "AsyncRunsResource"]
 
@@ -55,6 +61,62 @@ class RunsResource(SyncAPIResource):
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
         """
         return RunsResourceWithStreamingResponse(self)
+
+    def get_url(
+        self,
+        run_id: str,
+        *,
+        project_id: str,
+        trace_id: str,
+        start_time: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> RunGetURLResponse:
+        """Returns the URL to view a specific run in the LangSmith UI.
+
+        The caller must
+        supply the run's project_id and trace_id as query parameters; start_time is
+        optional.
+
+        Args:
+          project_id: Project (session) UUID
+
+          trace_id: Trace UUID
+
+          start_time: Run start time in RFC3339 format; omit if unknown
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not run_id:
+            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
+        return self._get(
+            path_template("/v2/runs/{run_id}/url", run_id=run_id),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "project_id": project_id,
+                        "trace_id": trace_id,
+                        "start_time": start_time,
+                    },
+                    run_get_url_params.RunGetURLParams,
+                ),
+            ),
+            cast_to=RunGetURLResponse,
+        )
 
     def query_v2(
         self,
@@ -322,6 +384,62 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         return AsyncRunsResourceWithStreamingResponse(self)
 
+    async def get_url(
+        self,
+        run_id: str,
+        *,
+        project_id: str,
+        trace_id: str,
+        start_time: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> RunGetURLResponse:
+        """Returns the URL to view a specific run in the LangSmith UI.
+
+        The caller must
+        supply the run's project_id and trace_id as query parameters; start_time is
+        optional.
+
+        Args:
+          project_id: Project (session) UUID
+
+          trace_id: Trace UUID
+
+          start_time: Run start time in RFC3339 format; omit if unknown
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not run_id:
+            raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
+        return await self._get(
+            path_template("/v2/runs/{run_id}/url", run_id=run_id),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=await async_maybe_transform(
+                    {
+                        "project_id": project_id,
+                        "trace_id": trace_id,
+                        "start_time": start_time,
+                    },
+                    run_get_url_params.RunGetURLParams,
+                ),
+            ),
+            cast_to=RunGetURLResponse,
+        )
+
     def query_v2(
         self,
         *,
@@ -572,6 +690,9 @@ class RunsResourceWithRawResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
+        self.get_url = to_raw_response_wrapper(
+            runs.get_url,
+        )
         self.query_v2 = to_raw_response_wrapper(
             runs.query_v2,
         )
@@ -594,6 +715,9 @@ class AsyncRunsResourceWithRawResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
+        self.get_url = async_to_raw_response_wrapper(
+            runs.get_url,
+        )
         self.query_v2 = async_to_raw_response_wrapper(
             runs.query_v2,
         )
@@ -616,6 +740,9 @@ class RunsResourceWithStreamingResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
+        self.get_url = to_streamed_response_wrapper(
+            runs.get_url,
+        )
         self.query_v2 = to_streamed_response_wrapper(
             runs.query_v2,
         )
@@ -638,6 +765,9 @@ class AsyncRunsResourceWithStreamingResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
+        self.get_url = async_to_streamed_response_wrapper(
+            runs.get_url,
+        )
         self.query_v2 = async_to_streamed_response_wrapper(
             runs.query_v2,
         )
