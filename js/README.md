@@ -414,6 +414,59 @@ await nestedTrace("Why is the sky blue?");
 [Click here](https://smith.langchain.com/public/4af46ef6-b065-46dc-9cf0-70f1274edb01/r) to see an example LangSmith trace of the above.
 :::
 
+### Streaming
+
+`traceable()` supports functions that return an async generator or other async iterable, such as a streaming LLM call. By default, every yielded chunk is collected into an array and logged as the run's output:
+
+```ts
+import { traceable } from "langsmith/traceable";
+import { OpenAI } from "openai";
+
+const openai = new OpenAI();
+
+const streamChat = traceable(
+  async function* (messages: { role: string; content: string }[]) {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages,
+      stream: true,
+    });
+    for await (const chunk of stream) {
+      yield chunk.choices[0]?.delta?.content ?? "";
+    }
+  },
+  { name: "Streaming Chat", run_type: "llm" }
+);
+
+for await (const token of streamChat([{ role: "user", content: "Hi there!" }])) {
+  process.stdout.write(token);
+}
+```
+
+The run's logged output will be the raw array of yielded chunks (`{ outputs: [...] }`), which usually isn't what you want to see in the LangSmith UI. Pass an `aggregator` function to combine the chunks into a single, final output instead:
+
+```ts
+const streamChat = traceable(
+  async function* (messages: { role: string; content: string }[]) {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages,
+      stream: true,
+    });
+    for await (const chunk of stream) {
+      yield chunk.choices[0]?.delta?.content ?? "";
+    }
+  },
+  {
+    name: "Streaming Chat",
+    run_type: "llm",
+    aggregator: (chunks: string[]) => ({ content: chunks.join("") }),
+  }
+);
+```
+
+Now the run's output will be `{ "content": "..." }` — the full assembled response — while the caller still receives the stream chunk-by-chunk as it's produced. `aggregator` only affects what gets logged; it does not change what your code receives from the generator.
+
 ## Next.js
 
 You can use the `traceable` wrapper function in Next.js apps to wrap arbitrary functions much like in the example above.
