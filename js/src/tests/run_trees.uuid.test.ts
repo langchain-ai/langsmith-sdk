@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import { v4 as uuidv4, v7 as uuidv7 } from "../utils/uuid/src/index.js";
+import { computeRunIdForSecondaryReplica } from "../index.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -120,6 +121,41 @@ test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
   expect(getUuidVersion(derivedV4)).toBe(7);
   expect(uuidV7Ms(derivedV4)).toBeGreaterThanOrEqual(beforeMs);
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
+});
+
+test("computeRunIdForSecondaryReplica returns the replica run ID", () => {
+  const original = "019c0711-e1aa-7223-bf21-12119afe80f7";
+
+  const remapped = computeRunIdForSecondaryReplica(original, "replica-project");
+
+  expect(remapped).toBe("019c0711-e1aa-7817-8301-943c0df9a3cd");
+  expect(
+    computeRunIdForSecondaryReplica(original.toUpperCase(), "replica-project"),
+  ).toBe(remapped);
+  expect(() => computeRunIdForSecondaryReplica(original, "")).toThrow(
+    "projectName",
+  );
+  expect(() =>
+    computeRunIdForSecondaryReplica(uuidv4(), "replica-project"),
+  ).toThrow("UUID v7");
+});
+
+test("internal replica remapping accepts non-UUIDv7 run IDs", () => {
+  const { client } = mockClient();
+  const run = new RunTree({
+    id: uuidv4(),
+    name: "test",
+    inputs: {},
+    client,
+    project_name: "original-project",
+  });
+
+  const remapped = (run as any)._remapForProject({
+    projectName: "replica-project",
+    primary: false,
+  });
+
+  expect(getUuidVersion(remapped.id)).toBe(7);
 });
 
 test("nonCryptographicUuid7Deterministic produces expected values", () => {

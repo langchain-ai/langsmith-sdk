@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from langsmith import Client
+from langsmith import Client, compute_run_id_for_secondary_replica
 from langsmith import utils as ls_utils
 from langsmith.run_trees import (
     ApiKeyAuth,
@@ -76,6 +76,15 @@ class TestWriteReplicaTypes:
         assert result[1]["api_url"] == "https://replica2.example.com"
         assert result[1]["auth"]["api_key"] == "key2"
         assert result[1].get("project_name") is None
+
+    def test_ensure_write_replicas_rejects_multiple_primary_replicas(self):
+        replicas = [
+            WriteReplica(project_name="primary-1", primary=True),
+            WriteReplica(project_name="primary-2", primary=True),
+        ]
+
+        with pytest.raises(ValueError, match="Only one replica"):
+            _ensure_write_replicas(replicas)
 
 
 class TestEnvironmentVariableParsing:
@@ -357,11 +366,13 @@ class TestParseWriteReplicasFromEnvVar:
                     "api_url": "https://api.example.com",
                     "api_key": "key1",
                     "project_name": "project-prod",
+                    "primary": True,
                 },
                 {
                     "api_url": "https://api.example.com",
                     "api_key": "key2",
                     "project_name": "project-staging",
+                    "primary": False,
                 },
                 {"api_url": "https://api.example.com", "api_key": "key3"},
             ]
@@ -386,6 +397,30 @@ class TestParseWriteReplicasFromEnvVar:
             None,
         ]
         assert all(r["updates"] is None for r in result)
+        assert [r.get("primary") for r in result] == [True, False, None]
+
+    @pytest.mark.parametrize("primary", ["true", 1, None])
+    def test_parse_new_array_format_rejects_invalid_primary(self, primary):
+        env_var = json.dumps(
+            [
+                {
+                    "api_url": "https://invalid.example.com",
+                    "api_key": "invalid-key",
+                    "primary": primary,
+                },
+                {
+                    "api_url": "https://valid.example.com",
+                    "api_key": "valid-key",
+                    "primary": False,
+                },
+            ]
+        )
+
+        result = _parse_write_replicas_from_env_var(env_var)
+
+        assert len(result) == 1
+        assert result[0]["api_url"] == "https://valid.example.com"
+        assert result[0]["primary"] is False
 
     def test_parse_object_format(self):
         """Test parsing object format."""
@@ -740,6 +775,7 @@ class TestRunTreeReplicas:
                 api_url="https://replica1.example.com",
                 auth=ApiKeyAuth(api_key="replica1-key"),
                 project_name="replica1-project",
+                primary=True,
             ),
             WriteReplica(
                 api_url="https://replica2.example.com",
@@ -766,6 +802,10 @@ class TestRunTreeReplicas:
         assert calls[0][1]["api_url"] == "https://replica1.example.com"
         assert calls[1][1]["api_key"] == "replica2-key"
         assert calls[1][1]["api_url"] == "https://replica2.example.com"
+        assert calls[0][1]["id"] == run_tree.id
+        assert calls[1][1]["id"] == compute_run_id_for_secondary_replica(
+            run_tree.id, "replica2-project"
+        )
 
     def test_run_tree_with_service_auth_replicas(self):
         """Test RunTree with ServiceAuth replicas."""
@@ -825,6 +865,9 @@ class TestRunTreeReplicas:
         call_args = client.update_run.call_args
         assert call_args[1]["api_key"] == "replica-key"
         assert call_args[1]["api_url"] == "https://replica.example.com"
+        assert call_args[1]["run_id"] == compute_run_id_for_secondary_replica(
+            run_tree.id, "replica-project"
+        )
 
     def test_run_tree_preserves_env_replica_project_names(self):
         client = Mock()

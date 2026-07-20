@@ -14,13 +14,17 @@ export type {
   RetrieverOutput,
 } from "./schemas.js";
 
-export { RunTree, type RunTreeConfig } from "./run_trees.js";
+export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
 
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 export { getDefaultProjectName } from "./utils/project.js";
 
-export { uuid7, uuid7FromTime } from "./uuid.js";
+export {
+  computeRunIdForSecondaryReplica,
+  uuid7,
+  uuid7FromTime,
+} from "./uuid.js";
 
 export { isTracingEnabled } from "./utils/guard.js";
 
