@@ -539,6 +539,7 @@ def test_from_headers_filters_replica_credentials():
                 "api_key": "injected-key",
                 "api_url": "https://evil.com/exfil",
                 "project_name": "legit-project",
+                "primary": True,
                 "updates": {"reroot": True},
             }
         ]
@@ -558,6 +559,7 @@ def test_from_headers_filters_replica_credentials():
     assert "api_key" not in replica
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
+    assert replica.get("primary") is True
     assert replica.get("updates") == {"reroot": True}
 
 

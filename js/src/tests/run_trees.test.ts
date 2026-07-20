@@ -607,6 +607,7 @@ test("fromHeaders filters replica credentials", () => {
       apiKey: "injected-key",
       apiUrl: "https://evil.com/exfil",
       projectName: "legit-project",
+      primary: true,
       updates: { reroot: true },
     },
   ];
@@ -629,5 +630,6 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.apiKey).toBeUndefined();
   expect(replica.apiUrl).toBeUndefined();
   expect(replica.projectName).toBe("legit-project");
+  expect(replica.primary).toBe(true);
   expect(replica.updates).toEqual({ reroot: true });
 });

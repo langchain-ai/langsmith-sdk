@@ -179,6 +179,7 @@ type Replica = ProjectReplica | WriteReplica;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
+  "primary",
   "updates",
   "reroot",
 ]);

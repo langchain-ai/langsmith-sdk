@@ -77,7 +77,9 @@ class WriteReplica(TypedDict, total=False):
     """
 
 
-_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
+_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
+    {"project_name", "primary", "updates"}
+)
 
 # Untrusted header-supplied replica `updates` is merged into the run, so restrict it
 # to a fail-closed allow-list. `reroot` (re-parenting control) is always kept;
