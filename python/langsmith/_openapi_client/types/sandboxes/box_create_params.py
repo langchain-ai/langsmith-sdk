@@ -81,6 +81,15 @@ class BoxCreateParams(TypedDict, total=False):
 
     name: str
 
+    preserve_memory_on_stop: bool
+    """
+    PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
+    stop (idle timeout or explicit stop) so the next start resumes from where it
+    left off. Default false discards memory and keeps only the filesystem, so the
+    next start is a cold boot. Restarts triggered by infrastructure maintenance
+    always preserve memory regardless of this setting.
+    """
+
     proxy_config: ProxyConfig
 
     restore_memory: bool

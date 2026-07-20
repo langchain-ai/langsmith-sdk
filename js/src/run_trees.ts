@@ -159,11 +159,13 @@ interface HeadersLike {
 }
 
 type ProjectReplica = [string, KVMap | undefined];
-type WriteReplica = {
+export type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
+  /** Whether this replica keeps the original run IDs. */
+  primary?: boolean;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
   reroot?: boolean;
@@ -179,6 +181,7 @@ type Replica = ProjectReplica | WriteReplica;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
+  "primary",
   "updates",
   "reroot",
 ]);
@@ -186,6 +189,9 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
   const filtered: WriteReplica = {};
   for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
+    if (key === "primary" && typeof replica[key] !== "boolean") {
+      continue;
+    }
     if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
       (filtered as Record<string, unknown>)[key] = replica[key];
     }
@@ -659,6 +665,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName: string;
+    primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
     reroot?: boolean;
@@ -669,6 +676,7 @@ export class RunTree implements BaseRun {
   }): RunCreate & { id: string } {
     const {
       projectName,
+      primary,
       runtimeEnv,
       excludeChildRuns = true,
       reroot = false,
@@ -679,8 +687,8 @@ export class RunTree implements BaseRun {
     } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
-    // Skip remapping if project name is the same
-    if (projectName === this.project_name) {
+    // Preserve legacy behavior when `primary` is omitted.
+    if (primary === undefined && projectName === this.project_name) {
       return {
         ...baseRun,
         session_name: projectName,
@@ -764,6 +772,13 @@ export class RunTree implements BaseRun {
       }
     }
 
+    if (primary) {
+      return {
+        ...baseRun,
+        session_name: projectName,
+      };
+    }
+
     // Remap IDs for the replica using nonCryptographicUuid7Deterministic
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
@@ -828,6 +843,7 @@ export class RunTree implements BaseRun {
       if (this.replicas && this.replicas.length > 0) {
         for (const {
           projectName,
+          primary,
           apiKey,
           apiUrl,
           workspaceId,
@@ -836,6 +852,7 @@ export class RunTree implements BaseRun {
         } of this.replicas) {
           const runCreate = this._remapForProject({
             projectName: projectName ?? this.project_name,
+            primary,
             runtimeEnv,
             excludeChildRuns: true,
             reroot,
@@ -879,6 +896,7 @@ export class RunTree implements BaseRun {
     if (this.replicas && this.replicas.length > 0) {
       for (const {
         projectName,
+        primary,
         apiKey,
         apiUrl,
         workspaceId,
@@ -888,6 +906,7 @@ export class RunTree implements BaseRun {
       } of this.replicas) {
         const runData = this._remapForProject({
           projectName: projectName ?? this.project_name,
+          primary,
           runtimeEnv: undefined,
           excludeChildRuns: true,
           reroot,
@@ -1211,9 +1230,31 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
           continue;
         }
 
+        if (
+          item.project_name !== undefined &&
+          item.project_name !== null &&
+          typeof item.project_name !== "string"
+        ) {
+          console.warn(
+            `Invalid project_name type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected string, got ${typeof item.project_name}`,
+          );
+          continue;
+        }
+
+        if (item.primary !== undefined && typeof item.primary !== "boolean") {
+          console.warn(
+            `Invalid primary type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected boolean, got ${typeof item.primary}`,
+          );
+          continue;
+        }
+
         replicas.push({
           apiUrl: item.api_url.replace(/\/$/, ""),
           apiKey: item.api_key,
+          projectName: item.project_name ?? undefined,
+          primary: item.primary ?? undefined,
         });
       }
       return replicas;
@@ -1258,19 +1299,21 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
 }
 
 function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
-  // If null -> fetch from env
-  if (replicas) {
-    return replicas.map((replica) => {
-      if (Array.isArray(replica)) {
-        return {
-          projectName: replica[0],
-          updates: replica[1],
-        };
-      }
-      return replica;
-    });
+  const ensured = replicas
+    ? replicas.map((replica) => {
+        if (Array.isArray(replica)) {
+          return {
+            projectName: replica[0],
+            updates: replica[1],
+          };
+        }
+        return replica;
+      })
+    : _getWriteReplicasFromEnv();
+  if (ensured.filter((replica) => replica.primary === true).length > 1) {
+    throw new Error("Only one replica can be marked as primary.");
   }
-  return _getWriteReplicasFromEnv();
+  return ensured;
 }
 
 function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {

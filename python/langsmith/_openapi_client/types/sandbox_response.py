@@ -532,6 +532,8 @@ class SandboxResponse(BaseModel):
 
     name: Optional[str] = None
 
+    preserve_memory_on_stop: Optional[bool] = None
+
     proxy_config: Optional[ProxyConfig] = None
 
     size_class: Optional[str] = None

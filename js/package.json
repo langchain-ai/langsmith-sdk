@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "pnpm@10.33.0",
   "files": [
@@ -476,7 +476,13 @@
   "pnpm": {
     "overrides": {
       "js-yaml": "^4.1.1",
-      "vite": "^7.3.2"
+      "vite": "^7.3.2",
+      "form-data": "4.0.6",
+      "langsmith": "0.6.0",
+      "@babel/core": "^7.29.7",
+      "esbuild": "^0.28.1",
+      "markdown-it": "^14.3.0",
+      "uuid": "^11.1.1"
     }
   },
   "browser": {

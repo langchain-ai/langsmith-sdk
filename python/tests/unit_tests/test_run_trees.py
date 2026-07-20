@@ -392,9 +392,17 @@ def test_remap_for_project():
     root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
     child = root.create_child(name="Child")
 
-    # Same project: no remapping
+    # Omitted primary preserves legacy same-project behavior.
     same = child._remap_for_project("original")
     assert same["id"] == child.id
+
+    # Explicit primary preserves IDs regardless of project.
+    primary = child._remap_for_project("replica", primary=True)
+    assert primary["id"] == child.id
+
+    # Explicit non-primary remaps even within the same project.
+    non_primary = child._remap_for_project("original", primary=False)
+    assert non_primary["id"] == uuid7_deterministic(child.id, "original")
 
     # Different project: IDs remapped deterministically
     r1 = child._remap_for_project("replica")
@@ -580,6 +588,7 @@ def test_from_headers_filters_replica_credentials():
                 "api_key": "injected-key",
                 "api_url": "https://evil.com/exfil",
                 "project_name": "legit-project",
+                "primary": True,
                 "updates": {"reroot": True},
             }
         ]
@@ -599,7 +608,28 @@ def test_from_headers_filters_replica_credentials():
     assert "api_key" not in replica
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
+    assert replica.get("primary") is True
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_from_headers_drops_non_boolean_replica_primary():
+    replicas_json = json.dumps(
+        [{"project_name": "replica-project", "primary": "false"}]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    replica = parsed.replicas[0]
+    assert replica.get("primary") is None
+    remapped = parsed._remap_for_project(replica["project_name"])
+    assert remapped["id"] != parsed.id
 
 
 def test_from_headers_allowlists_update_fields():

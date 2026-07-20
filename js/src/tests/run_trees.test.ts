@@ -5,6 +5,7 @@ import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
 import { traceable } from "../traceable.js";
+import { computeRunIdForSecondaryReplica } from "../uuid.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
@@ -398,6 +399,27 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(remappedNoParam.parent_run_id).toBeTruthy();
 });
 
+test("_remapForProject honors replica primary semantics", () => {
+  const { client } = mockClient();
+  const run = new RunTree({
+    name: "run",
+    inputs: {},
+    client,
+    project_name: "original-project",
+  });
+  const remap = (projectName: string, primary?: boolean) =>
+    (run as any)._remapForProject({ projectName, primary });
+
+  expect(remap("different-project", true).id).toBe(run.id);
+  expect(remap("original-project", false).id).toBe(
+    computeRunIdForSecondaryReplica(run.id, "original-project"),
+  );
+  expect(remap("original-project").id).toBe(run.id);
+  expect(remap("different-project").id).toBe(
+    computeRunIdForSecondaryReplica(run.id, "different-project"),
+  );
+});
+
 test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
   const { client } = mockClient();
 
@@ -657,6 +679,7 @@ test("fromHeaders filters replica credentials", () => {
       apiKey: "injected-key",
       apiUrl: "https://evil.com/exfil",
       projectName: "legit-project",
+      primary: true,
       updates: { reroot: true },
     },
   ];
@@ -679,5 +702,23 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.apiKey).toBeUndefined();
   expect(replica.apiUrl).toBeUndefined();
   expect(replica.projectName).toBe("legit-project");
+  expect(replica.primary).toBe(true);
   expect(replica.updates).toEqual({ reroot: true });
+});
+
+test("fromHeaders drops a non-boolean replica primary value", () => {
+  const baggage = `langsmith-replicas=${encodeURIComponent(
+    JSON.stringify([{ projectName: "replica-project", primary: "false" }]),
+  )}`;
+  const parsed = RunTree.fromHeaders({
+    "langsmith-trace":
+      "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+    baggage,
+  });
+
+  expect(parsed).toBeDefined();
+  const replica = parsed!.replicas![0];
+  expect(replica.primary).toBeUndefined();
+  const remapped = (parsed as any)._remapForProject(replica);
+  expect(remapped.id).not.toBe(parsed!.id);
 });

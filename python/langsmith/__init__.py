@@ -41,11 +41,15 @@ if TYPE_CHECKING:
     from langsmith.run_trees import RunTree, configure
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
-    from langsmith.uuid import uuid7, uuid7_from_datetime
+    from langsmith.uuid import (
+        compute_run_id_for_secondary_replica,
+        uuid7,
+        uuid7_from_datetime,
+    )
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.10.4"
+__version__ = "0.10.8"
 version = __version__  # for backwards compatibility
 
 # Metadata key to hide a traced run from LangSmith's Messages View.
@@ -144,6 +148,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import configure
 
         return configure
+    elif name == "compute_run_id_for_secondary_replica":
+        from langsmith.uuid import compute_run_id_for_secondary_replica
+
+        return compute_run_id_for_secondary_replica
     elif name == "uuid7":
         from langsmith.uuid import uuid7
 
@@ -238,6 +246,7 @@ __all__ = [
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
+    "compute_run_id_for_secondary_replica",
     "uuid7",
     "uuid7_from_datetime",
     "set_runtime_overrides",

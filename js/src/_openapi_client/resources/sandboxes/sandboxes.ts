@@ -58,6 +58,8 @@ export interface SandboxResponse {
 
   name?: string;
 
+  preserve_memory_on_stop?: boolean;
+
   proxy_config?: SandboxResponse.ProxyConfig;
 
   size_class?: string;

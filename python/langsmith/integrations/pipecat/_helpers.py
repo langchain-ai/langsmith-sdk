@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 from langsmith._internal.voice._helpers import (
     build_assistant_message,
@@ -61,3 +62,26 @@ def build_completion_message(output_data: Any) -> dict[str, Any]:
         return {"role": "assistant", **parsed}
     content = output_data if isinstance(output_data, str) else str(output_data)
     return build_assistant_message(content)
+
+
+def iso_to_ns(timestamp: str) -> int:
+    """Parse an ISO 8601 timestamp to epoch nanoseconds (0 if unparseable)."""
+    try:
+        return int(datetime.fromisoformat(timestamp).timestamp() * 1e9)
+    except (ValueError, TypeError):
+        return 0
+
+
+def tool_message_key(message: dict[str, Any]) -> Optional[tuple]:
+    """Dedup identity for a tool-round-trip message, or ``None`` otherwise.
+
+    Only assistant tool-call messages and tool-result messages carry one;
+    user turns and plain assistant replies (owned by other sources) return
+    ``None`` so they are ignored here.
+    """
+    tool_calls = message.get("tool_calls")
+    if tool_calls:
+        return ("assistant_tool_call", tuple(str(c.get("id")) for c in tool_calls))
+    if message.get("role") == "tool":
+        return ("tool_result", str(message.get("tool_call_id")))
+    return None
