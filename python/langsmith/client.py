@@ -112,7 +112,12 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
-from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
+from langsmith._openapi_client import (
+    AsyncLangsmith as LangsmithOpenAPIClient,
+)
+from langsmith._openapi_client import (
+    Langsmith as SyncLangsmithOpenAPIClient,
+)
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -270,7 +275,7 @@ if TYPE_CHECKING:
         AsyncDatasetsResource,
     )
     from langsmith._openapi_client.resources.online_evaluators import (
-        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+        OnlineEvaluatorsResource as EvaluatorsResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
@@ -914,6 +919,7 @@ class Client:
         "_profile_auth",
         "_profile_auth_headers",
         "_langsmith_api",
+        "_sync_langsmith_api",
     ]
 
     _api_key: Optional[str]
@@ -925,6 +931,7 @@ class Client:
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
     _langsmith_api: Optional[LangsmithOpenAPIClient]
+    _sync_langsmith_api: Optional[SyncLangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1464,6 +1471,7 @@ class Client:
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
         self._langsmith_api = None
+        self._sync_langsmith_api = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1488,6 +1496,22 @@ class Client:
             )
         return self._langsmith_api
 
+    def _get_sync_langsmith_api(self) -> SyncLangsmithOpenAPIClient:
+        if self._sync_langsmith_api is None:
+            self._sync_langsmith_api = SyncLangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._sync_langsmith_api
+
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
@@ -1495,10 +1519,10 @@ class Client:
         return self._get_langsmith_api().runs
 
     @property
-    def evaluators(self) -> AsyncEvaluatorsResource:
+    def evaluators(self) -> EvaluatorsResource:
         """Access the evaluator resource."""
         _check_backend_version(self.info.version)
-        return self._get_langsmith_api().online_evaluators
+        return self._get_sync_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
