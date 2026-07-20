@@ -1,5 +1,9 @@
 import { v7 as uuidv7 } from "./utils/uuid/src/index.js";
-import { nonCryptographicUuid7Deterministic } from "./utils/_uuid.js";
+import {
+  assertUuid,
+  getUuidVersion,
+  nonCryptographicUuid7Deterministic,
+} from "./utils/_uuid.js";
 
 export { uuid7FromTime } from "./utils/_uuid.js";
 
@@ -11,20 +15,24 @@ export function uuid7(): string {
 }
 
 /**
- * Generate the run ID used for a tracing replica.
+ * Compute the run ID used for a tracing replica project.
  *
- * Use this ID when creating feedback for a run in a replica project. The
- * result matches the deterministic ID remapping performed when LangSmith
- * sends a UUID v7 run to a replica whose project differs from the run's
- * original project.
- *
- * @param runId - The original run ID.
+ * @param runId - The original UUID v7 run ID.
  * @param projectName - The destination replica project name.
- * @returns The run ID used in the replica project.
+ * @returns The run ID used in the replica destination.
  */
 export function computeRunIdForReplica(
   runId: string,
   projectName: string,
 ): string {
-  return nonCryptographicUuid7Deterministic(runId, projectName);
+  if (typeof projectName !== "string" || projectName.length === 0) {
+    throw new Error("projectName must be a non-empty string");
+  }
+
+  assertUuid(runId, "runId");
+  const normalizedRunId = runId.toLowerCase();
+  if (getUuidVersion(normalizedRunId) !== 7) {
+    throw new Error("runId must be a UUID v7");
+  }
+  return nonCryptographicUuid7Deterministic(normalizedRunId, projectName);
 }

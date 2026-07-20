@@ -343,9 +343,17 @@ def test_remap_for_project():
     root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
     child = root.create_child(name="Child")
 
-    # Same project: no remapping
+    # Omitted primary preserves legacy same-project behavior.
     same = child._remap_for_project("original")
     assert same["id"] == child.id
+
+    # Explicit primary preserves IDs regardless of project.
+    primary = child._remap_for_project("replica", primary=True)
+    assert primary["id"] == child.id
+
+    # Explicit non-primary remaps even within the same project.
+    non_primary = child._remap_for_project("original", primary=False)
+    assert non_primary["id"] == uuid7_deterministic(child.id, "original")
 
     # Different project: IDs remapped deterministically
     r1 = child._remap_for_project("replica")

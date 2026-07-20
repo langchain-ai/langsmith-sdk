@@ -124,12 +124,36 @@ test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
 });
 
 test("computeRunIdForReplica returns the replica run ID", () => {
-  const remapped = computeRunIdForReplica(
-    "019c0711-e1aa-7223-bf21-12119afe80f7",
-    "replica-project",
-  );
+  const original = "019c0711-e1aa-7223-bf21-12119afe80f7";
+
+  const remapped = computeRunIdForReplica(original, "replica-project");
 
   expect(remapped).toBe("019c0711-e1aa-7817-8301-943c0df9a3cd");
+  expect(
+    computeRunIdForReplica(original.toUpperCase(), "replica-project"),
+  ).toBe(remapped);
+  expect(() => computeRunIdForReplica(original, "")).toThrow("projectName");
+  expect(() => computeRunIdForReplica(uuidv4(), "replica-project")).toThrow(
+    "UUID v7",
+  );
+});
+
+test("internal replica remapping accepts non-UUIDv7 run IDs", () => {
+  const { client } = mockClient();
+  const run = new RunTree({
+    id: uuidv4(),
+    name: "test",
+    inputs: {},
+    client,
+    project_name: "original-project",
+  });
+
+  const remapped = (run as any)._remapForProject({
+    projectName: "replica-project",
+    primary: false,
+  });
+
+  expect(getUuidVersion(remapped.id)).toBe(7);
 });
 
 test("nonCryptographicUuid7Deterministic produces expected values", () => {

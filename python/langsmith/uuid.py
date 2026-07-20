@@ -39,21 +39,26 @@ def uuid7_from_datetime(dt: _dt.datetime) -> _uuid.UUID:
 def compute_run_id_for_replica(
     run_id: _uuid.UUID | str, project_name: str
 ) -> _uuid.UUID:
-    """Generate the run ID used for a tracing replica.
-
-    Use this ID when creating feedback for a run in a replica project. The
-    result matches the deterministic ID remapping performed when LangSmith
-    sends a UUID v7 run to a replica whose project differs from the run's
-    original project.
+    """Compute the run ID used for a tracing replica project.
 
     Args:
-        run_id: The original run ID.
+        run_id: The original UUID v7 run ID.
         project_name: The destination replica project name.
 
     Returns:
-        uuid.UUID: The run ID used in the replica project.
+        uuid.UUID: The run ID used in the replica destination.
+
+    Raises:
+        ValueError: If ``run_id`` is not UUID v7, or if ``project_name`` is
+            empty or invalid.
     """
-    return _uuid7_deterministic(_uuid.UUID(str(run_id)), project_name)
+    if not isinstance(project_name, str) or not project_name:
+        raise ValueError("project_name must be a non-empty string")
+
+    parsed_run_id = _uuid.UUID(str(run_id))
+    if parsed_run_id.version != 7:
+        raise ValueError("run_id must be a UUID v7")
+    return _uuid7_deterministic(parsed_run_id, project_name)
 
 
 __all__ = ["compute_run_id_for_replica", "uuid7", "uuid7_from_datetime"]

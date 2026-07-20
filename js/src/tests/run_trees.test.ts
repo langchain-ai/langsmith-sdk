@@ -5,6 +5,7 @@ import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
 import { traceable } from "../traceable.js";
+import { computeRunIdForReplica } from "../uuid.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
@@ -324,6 +325,27 @@ test("distributed tracing: _remapForProject with reroot", () => {
   });
 
   expect(remappedNoParam.parent_run_id).toBeTruthy();
+});
+
+test("_remapForProject honors replica primary semantics", () => {
+  const { client } = mockClient();
+  const run = new RunTree({
+    name: "run",
+    inputs: {},
+    client,
+    project_name: "original-project",
+  });
+  const remap = (projectName: string, primary?: boolean) =>
+    (run as any)._remapForProject({ projectName, primary });
+
+  expect(remap("different-project", true).id).toBe(run.id);
+  expect(remap("original-project", false).id).toBe(
+    computeRunIdForReplica(run.id, "original-project"),
+  );
+  expect(remap("original-project").id).toBe(run.id);
+  expect(remap("different-project").id).toBe(
+    computeRunIdForReplica(run.id, "different-project"),
+  );
 });
 
 test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
