@@ -5,7 +5,7 @@ import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
 import { traceable } from "../traceable.js";
-import { computeRunIdForReplica } from "../uuid.js";
+import { computeRunIdForSecondaryReplica } from "../uuid.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
@@ -340,11 +340,11 @@ test("_remapForProject honors replica primary semantics", () => {
 
   expect(remap("different-project", true).id).toBe(run.id);
   expect(remap("original-project", false).id).toBe(
-    computeRunIdForReplica(run.id, "original-project"),
+    computeRunIdForSecondaryReplica(run.id, "original-project"),
   );
   expect(remap("original-project").id).toBe(run.id);
   expect(remap("different-project").id).toBe(
-    computeRunIdForReplica(run.id, "different-project"),
+    computeRunIdForSecondaryReplica(run.id, "different-project"),
   );
 });
 

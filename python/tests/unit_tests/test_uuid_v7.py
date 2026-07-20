@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from langsmith import compute_run_id_for_replica
+from langsmith import compute_run_id_for_secondary_replica
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_helpers import traceable
@@ -97,17 +97,17 @@ def test_post_and_patch_include_run_type_and_start_time() -> None:
     assert update_kwargs["start_time"] == fixed_start
 
 
-def test_compute_run_id_for_replica() -> None:
+def test_compute_run_id_for_secondary_replica() -> None:
     original = "019c0711-e1aa-7223-bf21-12119afe80f7"
 
-    remapped = compute_run_id_for_replica(original, "replica-project")
+    remapped = compute_run_id_for_secondary_replica(original, "replica-project")
 
     assert str(remapped) == "019c0711-e1aa-7817-8301-943c0df9a3cd"
 
     with pytest.raises(ValueError, match="project_name"):
-        compute_run_id_for_replica(original, "")
+        compute_run_id_for_secondary_replica(original, "")
     with pytest.raises(ValueError, match="UUID v7"):
-        compute_run_id_for_replica(
+        compute_run_id_for_secondary_replica(
             "12345678-1234-4234-8234-123456789abc", "replica-project"
         )
 

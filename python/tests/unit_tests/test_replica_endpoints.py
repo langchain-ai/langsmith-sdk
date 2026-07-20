@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from langsmith import Client, compute_run_id_for_replica
+from langsmith import Client, compute_run_id_for_secondary_replica
 from langsmith import utils as ls_utils
 from langsmith.run_trees import (
     ApiKeyAuth,
@@ -803,7 +803,7 @@ class TestRunTreeReplicas:
         assert calls[1][1]["api_key"] == "replica2-key"
         assert calls[1][1]["api_url"] == "https://replica2.example.com"
         assert calls[0][1]["id"] == run_tree.id
-        assert calls[1][1]["id"] == compute_run_id_for_replica(
+        assert calls[1][1]["id"] == compute_run_id_for_secondary_replica(
             run_tree.id, "replica2-project"
         )
 
@@ -865,7 +865,7 @@ class TestRunTreeReplicas:
         call_args = client.update_run.call_args
         assert call_args[1]["api_key"] == "replica-key"
         assert call_args[1]["api_url"] == "https://replica.example.com"
-        assert call_args[1]["run_id"] == compute_run_id_for_replica(
+        assert call_args[1]["run_id"] == compute_run_id_for_secondary_replica(
             run_tree.id, "replica-project"
         )
 

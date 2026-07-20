@@ -15,13 +15,13 @@ export function uuid7(): string {
 }
 
 /**
- * Compute the run ID used for a tracing replica project.
+ * Compute the run ID used for a secondary tracing replica.
  *
  * @param runId - The original UUID v7 run ID.
- * @param projectName - The destination replica project name.
- * @returns The run ID used in the replica destination.
+ * @param projectName - The secondary replica's destination project name.
+ * @returns The run ID used in the secondary replica destination.
  */
-export function computeRunIdForReplica(
+export function computeRunIdForSecondaryReplica(
   runId: string,
   projectName: string,
 ): string {

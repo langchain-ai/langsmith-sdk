@@ -36,17 +36,17 @@ def uuid7_from_datetime(dt: _dt.datetime) -> _uuid.UUID:
     return _uuid7(nanoseconds)
 
 
-def compute_run_id_for_replica(
+def compute_run_id_for_secondary_replica(
     run_id: _uuid.UUID | str, project_name: str
 ) -> _uuid.UUID:
-    """Compute the run ID used for a tracing replica project.
+    """Compute the run ID used for a secondary tracing replica.
 
     Args:
         run_id: The original UUID v7 run ID.
-        project_name: The destination replica project name.
+        project_name: The secondary replica's destination project name.
 
     Returns:
-        uuid.UUID: The run ID used in the replica destination.
+        uuid.UUID: The run ID used in the secondary replica destination.
 
     Raises:
         ValueError: If ``run_id`` is not UUID v7, or if ``project_name`` is
@@ -61,4 +61,4 @@ def compute_run_id_for_replica(
     return _uuid7_deterministic(parsed_run_id, project_name)
 
 
-__all__ = ["compute_run_id_for_replica", "uuid7", "uuid7_from_datetime"]
+__all__ = ["compute_run_id_for_secondary_replica", "uuid7", "uuid7_from_datetime"]
