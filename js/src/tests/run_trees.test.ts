@@ -633,3 +633,20 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.primary).toBe(true);
   expect(replica.updates).toEqual({ reroot: true });
 });
+
+test("fromHeaders drops a non-boolean replica primary value", () => {
+  const baggage = `langsmith-replicas=${encodeURIComponent(
+    JSON.stringify([{ projectName: "replica-project", primary: "false" }]),
+  )}`;
+  const parsed = RunTree.fromHeaders({
+    "langsmith-trace":
+      "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+    baggage,
+  });
+
+  expect(parsed).toBeDefined();
+  const replica = parsed!.replicas![0];
+  expect(replica.primary).toBeUndefined();
+  const remapped = (parsed as any)._remapForProject(replica);
+  expect(remapped.id).not.toBe(parsed!.id);
+});

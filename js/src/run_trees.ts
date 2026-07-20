@@ -187,6 +187,9 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
   const filtered: WriteReplica = {};
   for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
+    if (key === "primary" && typeof replica[key] !== "boolean") {
+      continue;
+    }
     if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
       (filtered as Record<string, unknown>)[key] = replica[key];
     }

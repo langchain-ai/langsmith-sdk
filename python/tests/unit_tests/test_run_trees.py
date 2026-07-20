@@ -563,6 +563,26 @@ def test_from_headers_filters_replica_credentials():
     assert replica.get("updates") == {"reroot": True}
 
 
+def test_from_headers_drops_non_boolean_replica_primary():
+    replicas_json = json.dumps(
+        [{"project_name": "replica-project", "primary": "false"}]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    replica = parsed.replicas[0]
+    assert replica.get("primary") is None
+    remapped = parsed._remap_for_project(replica["project_name"])
+    assert remapped["id"] != parsed.id
+
+
 def test_from_headers_allowlists_update_fields():
     """Only allow-listed fields survive in an untrusted baggage replica's `updates`."""
     replicas_json = json.dumps(

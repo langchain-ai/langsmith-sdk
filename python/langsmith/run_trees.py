@@ -133,6 +133,8 @@ def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
         for key, value in replica.items()
         if key in _HEADER_SAFE_REPLICA_FIELDS
     }
+    if "primary" in filtered and not isinstance(filtered["primary"], bool):
+        filtered.pop("primary")
     if "updates" in filtered:
         filtered["updates"] = _sanitize_header_updates(filtered.get("updates"))
     return cast(WriteReplica, filtered)
