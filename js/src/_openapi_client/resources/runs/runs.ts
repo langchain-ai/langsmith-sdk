@@ -18,6 +18,23 @@ export class Runs extends APIResource {
   share: ShareAPI.Share = new ShareAPI.Share(this._client);
 
   /**
+   * Returns the URL to view a specific run in the LangSmith UI. The caller must
+   * supply the run's project_id and trace_id as query parameters; start_time is
+   * optional.
+   *
+   * @example
+   * ```ts
+   * const response = await client.runs.getURL(
+   *   '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
+   *   { project_id: 'project_id', trace_id: 'trace_id' },
+   * );
+   * ```
+   */
+  getURL(runID: string, query: RunGetURLParams, options?: RequestOptions): APIPromise<RunGetURLResponse> {
+    return this._client.get(path`/v2/runs/${runID}/url`, { query, ...options });
+  }
+
+  /**
    * **Alpha:** The request and response contract may change; Returns a paginated
    * list of runs for the given projects within min/max start_time. Supports filters,
    * cursor pagination, and `selects` to select fields to return.
@@ -811,6 +828,27 @@ export type RunsFilterDataSourceTypeEnum =
   | 'root_lite'
   | 'runs_feedbacks_rmt_wide';
 
+export interface RunGetURLResponse {
+  url?: string;
+}
+
+export interface RunGetURLParams {
+  /**
+   * Project (session) UUID
+   */
+  project_id: string;
+
+  /**
+   * Trace UUID
+   */
+  trace_id: string;
+
+  /**
+   * Run start time in RFC3339 format; omit if unknown
+   */
+  start_time?: string;
+}
+
 export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   /**
    * Body param: `filter` narrows results to runs matching this LangSmith filter
@@ -1176,7 +1214,9 @@ export declare namespace Runs {
     type RunType as RunType,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
+    type RunGetURLResponse as RunGetURLResponse,
     type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
+    type RunGetURLParams as RunGetURLParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,

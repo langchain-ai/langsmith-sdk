@@ -12,6 +12,8 @@ export {
   type RunType,
   type RunTypeEnum,
   type RunsFilterDataSourceTypeEnum,
+  type RunGetURLResponse,
+  type RunGetURLParams,
   type RunQueryV2Params,
   type RunRetrieveV2Params,
   type RunRetrieveParams,
