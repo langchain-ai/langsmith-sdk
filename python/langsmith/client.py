@@ -1529,7 +1529,7 @@ class Client:
 
     @property
     def public(self) -> AsyncPublicResource:
-        """Access the public shared-run resource (runs.retrieve, runs.query)."""
+        """Access the public shared-run resource."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().public
 

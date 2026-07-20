@@ -1504,7 +1504,7 @@ export class Client implements LangSmithTracingClientInterface {
     return this.openAPIClient.traces;
   }
 
-  /** Access the public shared-run resource (runs.retrieve, runs.query). */
+  /** Access the public shared-run resource. */
   public get public(): Public {
     return this.openAPIClient.public;
   }

@@ -344,7 +344,7 @@ class AsyncClient:
 
     @property
     def public(self) -> AsyncPublicResource:
-        """Access the public shared-run resource (runs.retrieve, runs.query)."""
+        """Access the public shared-run resource."""
         return self._langsmith_api.public
 
     async def __aenter__(self) -> AsyncClient:
