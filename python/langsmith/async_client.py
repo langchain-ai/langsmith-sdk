@@ -52,6 +52,9 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
     )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
+    )
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
@@ -338,6 +341,11 @@ class AsyncClient:
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
         return self._langsmith_api.traces
+
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        return self._langsmith_api.public
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""

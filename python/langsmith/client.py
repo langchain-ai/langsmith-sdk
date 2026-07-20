@@ -272,6 +272,9 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
     )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
+    )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
@@ -1523,6 +1526,12 @@ class Client:
         """Access the traces resource (query, list_runs)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().traces
+
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().public
 
     def _dump_failed_trace(
         self,
