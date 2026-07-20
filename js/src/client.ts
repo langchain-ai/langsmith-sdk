@@ -82,6 +82,7 @@ import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -1501,6 +1502,11 @@ export class Client implements LangSmithTracingClientInterface {
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
     return this.openAPIClient.traces;
+  }
+
+  /** Access the public shared-run resource (runs.retrieve, runs.query). */
+  public get public(): Public {
+    return this.openAPIClient.public;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
