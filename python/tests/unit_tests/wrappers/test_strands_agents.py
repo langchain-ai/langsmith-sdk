@@ -358,10 +358,12 @@ class TestLangSmithSpanExporter:
         choice_event = self._make_event(
             "gen_ai.choice",
             {
-                "message": json.dumps([
-                    {"text": "Line one"},
-                    {"text": "Line two"},
-                ]),
+                "message": json.dumps(
+                    [
+                        {"text": "Line one"},
+                        {"text": "Line two"},
+                    ]
+                ),
                 "id": "tooluse_abc123",
             },
         )

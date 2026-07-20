@@ -183,12 +183,14 @@ class LangSmithSpanExporter(SpanExporter):
                         content = json.loads(raw) if isinstance(raw, str) else raw
                     except (json.JSONDecodeError, TypeError):
                         content = raw
-                    tool_output_completion = json.dumps({
-                        "role": "tool",
-                        "content": self._extract_tool_output(content),
-                        "name": tool_name,
-                        "tool_call_id": tool_call_id,
-                    })
+                    tool_output_completion = json.dumps(
+                        {
+                            "role": "tool",
+                            "content": self._extract_tool_output(content),
+                            "name": tool_name,
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
                 else:
                     # The final model response is the only true output
                     msg = self._event_to_message(
