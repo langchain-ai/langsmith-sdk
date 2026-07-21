@@ -51,22 +51,33 @@ describe("Client", () => {
 
   describe("evaluators", () => {
     it("creates an evaluator through the platform endpoint", async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            evaluator: {
-              id: "eval-1",
-              name: "SDK smoke test code evaluator",
-              type: "code",
-            },
-          }),
-          {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
             status: 200,
             statusText: "OK",
             headers: { "content-type": "application/json" },
-          },
-        ),
-      );
+          }),
+        )
+        .mockResolvedValueOnce(
+          // second call: the actual evaluator create
+          new Response(
+            JSON.stringify({
+              evaluator: {
+                id: "eval-1",
+                name: "SDK smoke test code evaluator",
+                type: "code",
+              },
+            }),
+            {
+              status: 200,
+              statusText: "OK",
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        );
       const client = new Client({
         apiUrl: "http://localhost:8080",
         apiKey: "test-api-key",
@@ -84,7 +95,7 @@ describe("Client", () => {
       });
 
       expect(response.evaluator?.id).toBe("eval-1");
-      const [url, init] = mockFetch.mock.calls[0];
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
       const headers = new Headers(init?.headers);
       expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
       expect(init).toEqual(
