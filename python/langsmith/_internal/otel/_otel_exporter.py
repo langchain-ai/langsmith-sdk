@@ -612,7 +612,7 @@ class OTELExporter:
                 span.set_attribute(GEN_AI_SERIALIZED_DOC, serialized["doc"])
 
         # Set inputs/outputs if available
-        self._set_io_attributes(span, op)
+        self._set_io_attributes(span, op, run_info)
 
     def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
@@ -702,12 +702,18 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
+    def _set_io_attributes(
+        self, span: Span, op: SerializedRunOperation, run_info: dict
+    ) -> None:
         """Set input/output attributes on the span.
 
         Args:
             span: The span to set attributes on.
             op: The serialized run operation.
+            run_info: The deserialized run info. Used to fall back to token
+                usage recorded under ``extra.metadata.usage_metadata`` (e.g.
+                by the claude_agent_sdk integration) when neither the
+                top-level run token fields nor the outputs carry usage.
         """
         if op.inputs:
             try:
@@ -755,6 +761,21 @@ class OTELExporter:
 
                 # Extract token usage from outputs (for LLM runs)
                 token_usage = self.get_unified_run_tokens(outputs)
+                if not token_usage and not self._has_run_info_token_usage(run_info):
+                    # Some integrations (e.g. claude_agent_sdk) record real
+                    # per-turn usage only under extra.metadata.usage_metadata,
+                    # never in outputs or the top-level run token fields.
+                    # Fall back to it as a last resort so usage still
+                    # reaches OTEL. Lowest precedence: only used when
+                    # neither run_info nor outputs already supplied usage.
+                    extra = run_info.get("extra")
+                    metadata = (
+                        extra.get("metadata") if isinstance(extra, dict) else None
+                    )
+                    if isinstance(metadata, dict):
+                        token_usage = self._extract_unified_run_tokens(
+                            metadata.get("usage_metadata")
+                        )
                 if token_usage:
                     span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
                     span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
@@ -837,6 +858,15 @@ class OTELExporter:
         except ValueError:
             logger.exception(f"Failed to parse timestamp {timestamp}")
             return None
+
+    @staticmethod
+    def _has_run_info_token_usage(run_info: dict) -> bool:
+        """Whether run_info's top-level token fields already carry usage."""
+        return (
+            run_info.get("prompt_tokens") is not None
+            or run_info.get("completion_tokens") is not None
+            or run_info.get("total_tokens") is not None
+        )
 
     def get_unified_run_tokens(
         self, outputs: Optional[dict]
