@@ -4447,12 +4447,6 @@ class Client:
             result = result[:limit]
         return result
 
-    @_deprecated(
-        "get_run_stats() is deprecated and will be removed after Jan 31, 2027. "
-        "Use client.threads.stats() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
-        "#threads-stats for the migration guide."
-    )
     def get_run_stats(
         self,
         *,
@@ -4474,11 +4468,6 @@ class Client:
         data_source_type: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get aggregate statistics over queried runs.
-
-        .. deprecated:: 0.10.7
-            Use :meth:`langsmith.Client.threads.stats` instead.
-            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.
-            Will be removed after Jan 31, 2027.
 
         Takes in similar query parameters to `list_runs` and returns statistics
         based on the runs that match the query.

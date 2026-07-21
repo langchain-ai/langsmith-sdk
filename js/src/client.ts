@@ -3409,7 +3409,6 @@ export class Client implements LangSmithTracingClientInterface {
     return withLimit;
   }
 
-  /** @deprecated Use `client.threads.stats()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunStats({
     id,
     trace,
@@ -3445,12 +3444,6 @@ export class Client implements LangSmithTracingClientInterface {
     isRoot?: boolean;
     dataSourceType?: string;
   }): Promise<any> {
-    _emitDeprecationWarning(
-      "getRunStats() is deprecated and will be removed after Jan 31, 2027. " +
-        "Use client.threads.stats() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.",
-      "LANGSMITH_DEPRECATED_GET_RUN_STATS",
-    );
     let projectIds_ = projectIds || [];
     if (projectNames) {
       projectIds_ = [
