@@ -144,6 +144,11 @@ export interface CreateOnlineEvaluatorResponse {
 export interface CreateOnlineLlmEvaluatorRequest {
   commit_hash_or_tag?: string;
 
+  /**
+   * Model Configuration ID
+   */
+  playground_settings_id?: string;
+
   prompt_repo_handle?: string;
 
   variable_mapping?: unknown;
@@ -333,6 +338,11 @@ export interface UpdateOnlineLlmEvaluatorRequest {
   commit_hash_or_tag?: string;
 
   num_few_shot_examples?: number;
+
+  /**
+   * Model Configuration ID
+   */
+  playground_settings_id?: string;
 
   prompt_repo_handle?: string;
 

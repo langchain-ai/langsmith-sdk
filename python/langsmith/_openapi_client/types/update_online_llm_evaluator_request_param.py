@@ -12,6 +12,9 @@ class UpdateOnlineLlmEvaluatorRequestParam(TypedDict, total=False):
 
     num_few_shot_examples: int
 
+    playground_settings_id: str
+    """Model Configuration ID"""
+
     prompt_repo_handle: str
 
     use_corrections_dataset: bool
