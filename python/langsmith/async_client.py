@@ -23,6 +23,7 @@ from typing import (
 import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -575,7 +576,7 @@ class AsyncClient:
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
         """Read a run.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -593,6 +594,12 @@ class AsyncClient:
         )
         return ls_schemas.Run(**response.json())
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     async def list_runs(
         self,
         *,
@@ -618,7 +625,7 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.AsyncClient.runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -711,13 +718,6 @@ class AsyncClient:
             )
             ```
         """  # noqa: E501
-        warnings.warn(
-            "list_runs() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.runs.query() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
             project_ids.append(project_id)

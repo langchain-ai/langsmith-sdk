@@ -79,7 +79,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._beta_decorator import deprecated as _deprecated, warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -3994,7 +3994,7 @@ class Client:
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.runs.retrieve` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4055,7 +4055,7 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.threads.list_traces` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4108,6 +4108,12 @@ class Client:
             **kwargs,
         )
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     def list_runs(
         self,
         *,
@@ -4131,7 +4137,7 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4224,13 +4230,6 @@ class Client:
             )
             ```
         """  # noqa: E501
-        warnings.warn(
-            "list_runs() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.runs.query() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
             project_ids.append(project_id)
@@ -4326,7 +4325,7 @@ class Client:
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.threads.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4472,7 +4471,7 @@ class Client:
     ) -> dict[str, Any]:
         """Get aggregate statistics over queried runs.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.threads.stats` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -10758,7 +10757,7 @@ class Client:
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
-        .. deprecated::
+        .. deprecated:: 0.10.7
             Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
