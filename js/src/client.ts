@@ -2845,6 +2845,12 @@ export class Client implements LangSmithTracingClientInterface {
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
   ): Promise<Run> {
+    process.emitWarning(
+      "readRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.retrieve() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
+    );
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
@@ -3019,6 +3025,12 @@ export class Client implements LangSmithTracingClientInterface {
    * });
    */
   public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
+    process.emitWarning(
+      "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
+    );
     const {
       projectId,
       projectName,
@@ -3208,6 +3220,15 @@ export class Client implements LangSmithTracingClientInterface {
 
   /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    process.emitWarning(
+      "readThread() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.listTraces() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_READ_THREAD",
+      },
+    );
     const {
       threadId,
       projectId,
@@ -3241,6 +3262,15 @@ export class Client implements LangSmithTracingClientInterface {
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
+    process.emitWarning(
+      "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_LIST_THREADS",
+      },
+    );
     const {
       projectId,
       projectName,
@@ -3405,6 +3435,15 @@ export class Client implements LangSmithTracingClientInterface {
     isRoot?: boolean;
     dataSourceType?: string;
   }): Promise<any> {
+    process.emitWarning(
+      "getRunStats() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.stats() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_GET_RUN_STATS",
+      },
+    );
     let projectIds_ = projectIds || [];
     if (projectNames) {
       projectIds_ = [
