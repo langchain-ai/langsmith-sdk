@@ -593,11 +593,12 @@ async def test_list_runs_child_run_ids_deprecation_warning(
         ):
             pass
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Test that the child_run_ids warning does NOT fire when child_run_ids is not in select
+    # (the overall list_runs deprecation warning will still fire)
+    with pytest.warns(DeprecationWarning) as warning_list:
         async for _ in client.list_runs(project_id=uuid4(), select=["id", "name"]):
             pass
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")

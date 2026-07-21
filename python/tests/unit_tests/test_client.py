@@ -5933,10 +5933,11 @@ def test_list_runs_child_run_ids_deprecation_warning(
             )
         )
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Test that the child_run_ids warning does NOT fire when child_run_ids is not in select
+    # (the overall list_runs deprecation warning will still fire)
+    with pytest.warns(DeprecationWarning) as warning_list:
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 def test_tracing_error_callback_on_429():
