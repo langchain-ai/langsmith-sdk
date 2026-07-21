@@ -79,7 +79,8 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._beta_decorator import deprecated as _deprecated, warn_beta
+from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
