@@ -2840,10 +2840,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /**
-   * Read a run from the LangSmith API.
-   * @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027.
-   */
+  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRun(
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
@@ -3209,10 +3206,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  /**
-   * Read runs for a single thread.
-   * @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027.
-   */
+  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
     const {
       threadId,
@@ -3243,10 +3237,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /**
-   * List threads and fetch runs for each thread.
-   * @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027.
-   */
+  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
@@ -3378,10 +3369,7 @@ export class Client implements LangSmithTracingClientInterface {
     return withLimit;
   }
 
-  /**
-   * Get aggregate statistics over queried runs.
-   * @deprecated Use `client.threads.stats()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide. Will be removed after Jan 31, 2027.
-   */
+  /** @deprecated Use `client.threads.stats()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunStats({
     id,
     trace,
