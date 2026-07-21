@@ -934,6 +934,8 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  private _stainlessVersionChecked = false;
+
   private manualFlushMode = false;
 
   private _serializeWorker?: SerializeWorker | null;
@@ -1477,30 +1479,36 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
+    this._checkStainlessVersion();
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
+    this._checkStainlessVersion();
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
+    this._checkStainlessVersion();
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
+    this._checkStainlessVersion();
     return this.openAPIClient.datasets;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
+    this._checkStainlessVersion();
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
+    this._checkStainlessVersion();
     return this.openAPIClient.traces;
   }
 
@@ -2096,15 +2104,26 @@ export class Client implements LangSmithTracingClientInterface {
     return json;
   }
 
+  private _checkStainlessVersion(): void {
+    if (this._stainlessVersionChecked) return;
+    this._stainlessVersionChecked = true;
+    this._ensureServerInfo()
+      .then((serverInfo) => {
+        if (serverInfo?.version) {
+          _checkBackendVersion(serverInfo.version);
+        }
+      })
+      .catch(() => {
+        // _ensureServerInfo handles and logs its own errors
+      });
+  }
+
   protected async _ensureServerInfo() {
     if (this._getServerInfoPromise === undefined) {
       this._getServerInfoPromise = (async () => {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-            if (this._serverInfo?.version) {
-              _checkBackendVersion(this._serverInfo.version);
-            }
           } catch (e: any) {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
