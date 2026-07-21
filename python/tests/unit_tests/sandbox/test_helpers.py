@@ -6,8 +6,9 @@ from langsmith.sandbox._helpers import merge_headers
 
 
 def test_merge_headers_override_wins() -> None:
+    # Names are normalized to lowercase and the override wins.
     merged = merge_headers({"X-Service-Key": "base"}, {"X-Service-Key": "override"})
-    assert merged == {"X-Service-Key": "override"}
+    assert merged == {"x-service-key": "override"}
 
 
 def test_merge_headers_preserves_non_overridden_base() -> None:

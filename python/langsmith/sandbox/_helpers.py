@@ -36,20 +36,15 @@ def merge_headers(
 ) -> dict[str, str]:
     """Merge request headers, giving precedence to overrides.
 
-    Matching is case-insensitive: an override replaces a base header that
-    differs only in casing, rather than both being sent. HTTP treats header
-    names case-insensitively, so emitting both is ambiguous — a server that
-    reads the first value would see the base header instead of the override.
+    Names are normalized to lowercase so an override replaces a base header that
+    differs only in casing. HTTP header names are case-insensitive, so keeping
+    both would be ambiguous — a server reading the first value would see the
+    base header instead of the override.
     """
-    merged: dict[str, str] = dict(base_headers or {})
-    if override_headers:
-        overridden = {name.lower() for name in override_headers}
-        merged = {
-            name: value
-            for name, value in merged.items()
-            if name.lower() not in overridden
-        }
-        merged.update(override_headers)
+    merged: dict[str, str] = {}
+    for headers in (base_headers, override_headers):
+        for name, value in (headers or {}).items():
+            merged[name.lower()] = value
     return merged
 
 
