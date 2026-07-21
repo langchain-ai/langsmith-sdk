@@ -44,7 +44,7 @@ class LangSmithError(Exception):
 
     .. deprecated::
         Use :class:`langsmith.LangsmithError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -54,7 +54,7 @@ class LangSmithAPIError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.InternalServerError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -64,7 +64,7 @@ class LangSmithRequestTimeout(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.APITimeoutError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -74,7 +74,7 @@ class LangSmithUserError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.BadRequestError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -84,7 +84,7 @@ class LangSmithRateLimitError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.RateLimitError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -94,7 +94,7 @@ class LangSmithAuthError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.AuthenticationError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -104,7 +104,7 @@ class LangSmithNotFoundError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.NotFoundError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -114,7 +114,7 @@ class LangSmithConflictError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.ConflictError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -124,7 +124,7 @@ class LangSmithConnectionError(LangSmithError):
 
     .. deprecated::
         Use :class:`langsmith.APIConnectionError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
@@ -134,7 +134,7 @@ class LangSmithExceptionGroup(LangSmithError):
 
     .. deprecated::
         Use Python 3.11+ native ``ExceptionGroup`` or :class:`langsmith.LangsmithError` instead.
-        See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+        See https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions for the migration guide.
         Will be removed after Jan 31, 2027.
     """
 
