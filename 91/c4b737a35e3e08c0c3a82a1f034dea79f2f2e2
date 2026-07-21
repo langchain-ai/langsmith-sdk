@@ -1,0 +1,24 @@
+js/src/client.ts
+  s_7e8cdf05c0de49::t_8f321ea81c804a 3041,3045
+  s_7e8cdf05c0de49::t_69bb5658871f5e 875-887
+  s_7e8cdf05c0de49::t_eb9bc0a5955ea3 3236,3240
+  s_7e8cdf05c0de49::t_c6d41d1d017833 3275,3279
+  s_7e8cdf05c0de49::t_846bea1f3c323b 2861,2865
+  s_7e8cdf05c0de49::t_dd447143995d27 3445,3449
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "91c4b737a35e3e08c0c3a82a1f034dea79f2f2e2",
+  "prompts": {},
+  "sessions": {
+    "s_7e8cdf05c0de49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66fd845d-7f22-4f45-8161-fb9fbffd9193",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
