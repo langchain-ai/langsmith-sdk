@@ -44,6 +44,7 @@ class FakeRequest:
     def __init__(self, ds_id, ds_name, ds_examples, tenant_id):
         self.created_session = None
         self.runs = {}
+        self.feedbacks = []
         self.should_fail = False
         self.ds_id = ds_id
         self.ds_name = ds_name
@@ -116,6 +117,7 @@ class FakeRequest:
                 }
                 return res
             elif endpoint == "http://localhost:1984/feedback":
+                self.feedbacks.append(json.loads(kwargs["data"]))
                 response = MagicMock()
                 response.json.return_value = {}
                 return response
@@ -176,6 +178,79 @@ def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
         "metadata": {"meta": idx},
         "attachment_urls": None,
     }
+
+
+def _fake_client_for_examples(
+    examples: list[dict[str, Any]], ds_id: str, ds_name: str
+) -> tuple[Client, FakeRequest]:
+    tenant_id = str(uuid.uuid4())
+    session = mock.Mock()
+    fake_request = FakeRequest(ds_id, ds_name, examples, tenant_id)
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = uuid.UUID(tenant_id)
+    return client, fake_request
+
+
+def test_evaluate_feedback_includes_experiment_session_id_and_run_start_time() -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    results = evaluate(
+        predict,
+        data=[example],
+        evaluators=[score],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+    )
+    assert len(list(results)) == 1
+    _wait_until(lambda: len(fake_request.feedbacks) == 1)
+
+    feedback = fake_request.feedbacks[0]
+    _wait_until(lambda: feedback["run_id"] in fake_request.runs)
+    run = fake_request.runs[feedback["run_id"]]
+    assert feedback["session_id"] == fake_request.created_session["id"]
+    assert feedback["start_time"] == run["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    async def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    async def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    results = await aevaluate(
+        predict,
+        data=[example],
+        evaluators=[score],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+    )
+    assert len([row async for row in results]) == 1
+    _wait_until(lambda: len(fake_request.feedbacks) == 1)
+
+    feedback = fake_request.feedbacks[0]
+    _wait_until(lambda: feedback["run_id"] in fake_request.runs)
+    run = fake_request.runs[feedback["run_id"]]
+    assert feedback["session_id"] == fake_request.created_session["id"]
+    assert feedback["start_time"] == run["start_time"]
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
