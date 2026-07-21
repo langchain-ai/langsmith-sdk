@@ -4,7 +4,6 @@ import json
 import logging
 import pathlib
 import uuid
-import warnings
 from datetime import datetime
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -593,8 +592,7 @@ async def test_list_runs_child_run_ids_deprecation_warning(
         ):
             pass
 
-    # Test that the child_run_ids warning does NOT fire when child_run_ids is not in select
-    # (the overall list_runs deprecation warning will still fire)
+    # Overall list_runs deprecation fires; child_run_ids-specific warning must not
     with pytest.warns(DeprecationWarning) as warning_list:
         async for _ in client.list_runs(project_id=uuid4(), select=["id", "name"]):
             pass
