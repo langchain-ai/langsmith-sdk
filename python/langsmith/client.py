@@ -3990,6 +3990,12 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
@@ -4020,13 +4026,6 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
-        warnings.warn(
-            "read_run() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.runs.retrieve() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
@@ -4041,6 +4040,12 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    @_deprecated(
+        "read_thread() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.list_traces() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-list-traces for the migration guide."
+    )
     def read_thread(
         self,
         *,
@@ -4085,13 +4090,6 @@ class Client:
                 print(run.id)
             ```
         """
-        warnings.warn(
-            "read_thread() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.threads.list_traces() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         if not (project_id or project_name):
             raise ValueError("thread_id requires project_id or project_name")
 
@@ -4314,6 +4312,12 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    @_deprecated(
+        "list_threads() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-query for the migration guide."
+    )
     def list_threads(
         self,
         *,
@@ -4343,13 +4347,6 @@ class Client:
             List of thread items, each with "thread_id", "runs", "count",
             "min_start_time", and "max_start_time".
         """
-        warnings.warn(
-            "list_threads() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.threads.query() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         if project_id is None and project_name is None:
             raise ValueError("Either project_id or project_name must be provided")
         if project_id is not None and project_name is not None:
@@ -4450,6 +4447,12 @@ class Client:
             result = result[:limit]
         return result
 
+    @_deprecated(
+        "get_run_stats() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.stats() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-stats for the migration guide."
+    )
     def get_run_stats(
         self,
         *,
@@ -4501,13 +4504,6 @@ class Client:
         Returns:
             Dict[str, Any]: A dictionary containing the run statistics.
         """  # noqa: E501
-        warnings.warn(
-            "get_run_stats() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.threads.stats() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 
         project_ids = project_ids or []
@@ -10747,6 +10743,12 @@ class Client:
 
             offset += len(batch)
 
+    @_deprecated(
+        "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.datasets.experiment_runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#dataset-experiment-runs-query for the migration guide."
+    )
     def get_experiment_results(
         self,
         name: Optional[str] = None,
@@ -10802,13 +10804,6 @@ class Client:
             print(f"Feedback stats: {results['feedback_stats']}")
             ```
         """
-        warnings.warn(
-            "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.datasets.experiment_runs.query() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         project = self.read_project(
             project_name=name, project_id=project_id, include_stats=True
         )

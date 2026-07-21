@@ -573,6 +573,12 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
         """Read a run.
 
@@ -581,13 +587,6 @@ class AsyncClient:
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
         """
-        warnings.warn(
-            "read_run() is deprecated and will be removed after Jan 31, 2027. "
-            "Use client.runs.retrieve() instead. "
-            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         response = await self._arequest_with_retries(
             "GET",
             f"/runs/{ls_client._as_uuid(run_id)}",
