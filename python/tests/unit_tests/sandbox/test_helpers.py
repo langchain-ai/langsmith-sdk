@@ -32,5 +32,7 @@ def test_merge_headers_override_replaces_across_casing() -> None:
     ]
     # And only one X-Service-Key actually goes on the wire.
     request = httpx.Request("GET", "https://example.com", headers=merged)
-    on_wire = [v.decode() for k, v in request.headers.raw if k.lower() == b"x-service-key"]
+    on_wire = [
+        v.decode() for k, v in request.headers.raw if k.lower() == b"x-service-key"
+    ]
     assert on_wire == ["override"]
