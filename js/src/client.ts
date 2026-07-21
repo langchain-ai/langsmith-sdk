@@ -874,7 +874,10 @@ export class AutoBatchQueue {
 
 const _emittedDeprecationWarnings = new Set<string>();
 function _emitDeprecationWarning(message: string, code: string): void {
-  if (typeof process !== "undefined" && typeof process.emitWarning === "function") {
+  if (
+    typeof process !== "undefined" &&
+    typeof process.emitWarning === "function"
+  ) {
     if (!_emittedDeprecationWarnings.has(code)) {
       _emittedDeprecationWarnings.add(code);
       process.emitWarning(message, { type: "DeprecationWarning", code });
