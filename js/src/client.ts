@@ -2936,6 +2936,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * List runs from the LangSmith server.
+   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide. Will be removed after Jan 31, 2027.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.
    * @param parentRunId - The ID of the parent run to filter by.

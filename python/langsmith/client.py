@@ -4107,6 +4107,11 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
+        .. deprecated::
+            Use :meth:`langsmith.Client.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.
+            Will be removed after Jan 31, 2027.
+
         Args:
             project_id: The ID(s) of the project to filter by.
             project_name: The name(s) of the project to filter by.
@@ -4195,6 +4200,13 @@ class Client:
             )
             ```
         """  # noqa: E501
+        warnings.warn(
+            "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+            "Use client.runs.query() instead. "
+            "See https://docs.langchain.com/langsmith/smithdb-sdk-migration for the migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
             project_ids.append(project_id)
