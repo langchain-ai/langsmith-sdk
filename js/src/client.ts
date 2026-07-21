@@ -872,6 +872,19 @@ export class AutoBatchQueue {
   }
 }
 
+const _emittedDeprecationWarnings = new Set<string>();
+function _emitDeprecationWarning(message: string, code: string): void {
+  if (typeof process !== "undefined" && typeof process.emitWarning === "function") {
+    if (!_emittedDeprecationWarnings.has(code)) {
+      _emittedDeprecationWarnings.add(code);
+      process.emitWarning(message, { type: "DeprecationWarning", code });
+    }
+  } else if (!_emittedDeprecationWarnings.has(code)) {
+    _emittedDeprecationWarnings.add(code);
+    console.warn(`DeprecationWarning [${code}]: ${message}`);
+  }
+}
+
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
@@ -2845,11 +2858,11 @@ export class Client implements LangSmithTracingClientInterface {
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
   ): Promise<Run> {
-    process.emitWarning(
+    _emitDeprecationWarning(
       "readRun() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.retrieve() instead. " +
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
-      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
+      "LANGSMITH_DEPRECATED_READ_RUN",
     );
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
@@ -3025,11 +3038,11 @@ export class Client implements LangSmithTracingClientInterface {
    * });
    */
   public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
-    process.emitWarning(
+    _emitDeprecationWarning(
       "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.query() instead. " +
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
-      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
+      "LANGSMITH_DEPRECATED_LIST_RUNS",
     );
     const {
       projectId,
@@ -3220,14 +3233,11 @@ export class Client implements LangSmithTracingClientInterface {
 
   /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
-    process.emitWarning(
+    _emitDeprecationWarning(
       "readThread() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.threads.listTraces() instead. " +
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
-      {
-        type: "DeprecationWarning",
-        code: "LANGSMITH_DEPRECATED_READ_THREAD",
-      },
+      "LANGSMITH_DEPRECATED_READ_THREAD",
     );
     const {
       threadId,
@@ -3262,14 +3272,11 @@ export class Client implements LangSmithTracingClientInterface {
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
-    process.emitWarning(
+    _emitDeprecationWarning(
       "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.threads.query() instead. " +
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
-      {
-        type: "DeprecationWarning",
-        code: "LANGSMITH_DEPRECATED_LIST_THREADS",
-      },
+      "LANGSMITH_DEPRECATED_LIST_THREADS",
     );
     const {
       projectId,
@@ -3435,14 +3442,11 @@ export class Client implements LangSmithTracingClientInterface {
     isRoot?: boolean;
     dataSourceType?: string;
   }): Promise<any> {
-    process.emitWarning(
+    _emitDeprecationWarning(
       "getRunStats() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.threads.stats() instead. " +
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-stats for the migration guide.",
-      {
-        type: "DeprecationWarning",
-        code: "LANGSMITH_DEPRECATED_GET_RUN_STATS",
-      },
+      "LANGSMITH_DEPRECATED_GET_RUN_STATS",
     );
     let projectIds_ = projectIds || [];
     if (projectNames) {
