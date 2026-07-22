@@ -7570,6 +7570,7 @@ class Client:
         source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
+        session_id: Optional[ID_TYPE] = None,
         _executor: Optional[cf.ThreadPoolExecutor] = None,
     ) -> list[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
@@ -7607,7 +7608,7 @@ class Client:
                 project_id=project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run else None,
+                session_id=run.session_id if run and run.session_id else session_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )

@@ -1021,7 +1021,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
                     if self._upload_results:
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=feedback_executor
+                            evaluator_response,
+                            run=run,
+                            session_id=self._get_experiment().id,
+                            _executor=feedback_executor,
                         )
                     return selected_results
                 except Exception as e:
@@ -1044,7 +1047,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                         if self._upload_results:
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=feedback_executor
+                                error_response,
+                                run=run,
+                                session_id=self._get_experiment().id,
+                                _executor=feedback_executor,
                             )
                         return selected_results
                     except Exception as e2:
