@@ -127,7 +127,7 @@ test("telemetry generateText with tools", async () => {
   expect(tree).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "listOrders:2"],
+      ["openai.responses:0", "listOrders:2"],
       ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
@@ -184,7 +184,11 @@ test("telemetry generateText with tools", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          output: expect.stringMatching(/User 123 has the following orders/),
+          role: "tool",
+          content: expect.stringMatching(/User 123 has the following orders/),
+          tool_call_id: expect.any(String),
+          name: "listOrders",
+          artifact: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "openai.responses:3": {
@@ -254,7 +258,7 @@ test("telemetry streamText", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "listOrders:2"],
+      ["openai.responses:0", "listOrders:2"],
       ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
@@ -303,7 +307,11 @@ test("telemetry streamText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          output: expect.stringMatching(/User 123 has the following orders/),
+          role: "tool",
+          content: expect.stringMatching(/User 123 has the following orders/),
+          tool_call_id: expect.any(String),
+          name: "listOrders",
+          artifact: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "openai.responses:3": {
@@ -746,7 +754,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "research:2"],
+      ["openai.responses:0", "research:2"],
       ["research:2", "sub-agent:3"],
       ["sub-agent:3", "openai.responses:4"],
       ["openai.responses:4", "openai.responses:5"],
@@ -803,7 +811,13 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
       "research:2": {
         run_type: "tool",
         inputs: { query: "AI trends" },
-        outputs: { output: "AI trends" },
+        outputs: {
+          role: "tool",
+          content: "AI trends",
+          tool_call_id: expect.any(String),
+          name: "research",
+          artifact: "AI trends",
+        },
       },
       "sub-agent:3": {
         run_type: "chain",
@@ -876,7 +890,7 @@ test("telemetry tool error handling", async () => {
   ).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "getWeather:2"],
+      ["openai.responses:0", "getWeather:2"],
     ],
     data: {
       "openai.responses:0": {
@@ -890,6 +904,13 @@ test("telemetry tool error handling", async () => {
       "getWeather:2": {
         run_type: "tool",
         inputs: { city: "Tokyo" },
+        outputs: {
+          role: "tool",
+          content: "No data found",
+          tool_call_id: expect.any(String),
+          name: "getWeather",
+          artifact: "No data found",
+        },
         error: "No data found",
       },
     },

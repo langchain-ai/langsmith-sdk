@@ -49,7 +49,7 @@ test("telemetry generateText", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["anthropic.messages:0", "anthropic.messages:1"],
-      ["anthropic.messages:1", "listOrders:2"],
+      ["anthropic.messages:0", "listOrders:2"],
       ["anthropic.messages:0", "anthropic.messages:3"],
     ],
     data: {
@@ -112,7 +112,11 @@ test("telemetry generateText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          output: expect.stringMatching(/User 123 has the following orders/),
+          role: "tool",
+          content: expect.stringMatching(/User 123 has the following orders/),
+          tool_call_id: expect.any(String),
+          name: "listOrders",
+          artifact: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "anthropic.messages:3": {
@@ -195,7 +199,7 @@ test("telemetry streamText", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["anthropic.messages:0", "anthropic.messages:1"],
-      ["anthropic.messages:1", "listOrders:2"],
+      ["anthropic.messages:0", "listOrders:2"],
       ["anthropic.messages:0", "anthropic.messages:3"],
     ],
     data: {
@@ -258,7 +262,11 @@ test("telemetry streamText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          output: expect.stringMatching(/User 123 has the following orders/),
+          role: "tool",
+          content: expect.stringMatching(/User 123 has the following orders/),
+          tool_call_id: expect.any(String),
+          name: "listOrders",
+          artifact: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "anthropic.messages:3": {

@@ -1,6 +1,6 @@
 import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
 import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
-import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
+import { getCurrentRunTree, withRunTree } from "../../traceable.js";
 import { isEnvTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./utils.js";
@@ -193,6 +193,51 @@ export function LangSmithTelemetry(
     rootRunTree: RunTree;
     stepRunTrees: Map<number, RunTree>;
     toolRunTrees: Map<string, RunTree>;
+    toolRunPostPromises: Map<string, Promise<void>>;
+    lastStepContent: unknown[];
+    reconstructStepMessages: boolean;
+    completedStepMessages: Record<string, unknown>[];
+    toolResults: Map<string, { toolName: string; output: unknown }>;
+    pendingToolCalls: Map<string, string>;
+    /** Most recently started model step, retained for delayed tool telemetry. */
+    latestStepRunTree?: RunTree;
+  }
+
+  function formatToolResultMessage(
+    toolCallId: string,
+    toolName: string,
+    toolOutput: unknown,
+  ): Record<string, unknown> {
+    const rawOutput = isRecord(toolOutput)
+      ? toolOutput.type === "tool-result"
+        ? toolOutput.output
+        : "error" in toolOutput
+          ? toolOutput.error
+          : toolOutput
+      : toolOutput;
+    const artifact = rawOutput instanceof Error ? rawOutput.message : rawOutput;
+    const content =
+      typeof artifact === "string"
+        ? artifact
+        : (JSON.stringify(artifact) ?? String(artifact));
+    return {
+      role: "tool",
+      content,
+      tool_call_id: toolCallId,
+      name: toolName,
+      artifact,
+    };
+  }
+
+  function appendToolResultMessage(
+    state: InvocationState,
+    toolCallId: string,
+    toolName: string,
+    toolOutput: unknown,
+  ): Record<string, unknown> {
+    const message = formatToolResultMessage(toolCallId, toolName, toolOutput);
+    state.completedStepMessages.push(message);
+    return message;
   }
 
   function getOpenStepOrRoot(state: InvocationState): RunTree {
@@ -211,7 +256,8 @@ export function LangSmithTelemetry(
   ) {
     const entries = Array.from(state.toolRunTrees.entries());
     for (let i = 0; i < entries.length; i++) {
-      const [, toolRt] = entries[i];
+      const [toolCallId, toolRt] = entries[i];
+      await state.toolRunPostPromises.get(toolCallId);
       if (toolRt.end_time == null) {
         if (opts?.error != null) {
           await toolRt.end(undefined, opts.error);
@@ -224,6 +270,7 @@ export function LangSmithTelemetry(
       }
     }
     state.toolRunTrees.clear();
+    state.toolRunPostPromises.clear();
   }
 
   /** Per-generation state keyed by AI SDK `callId` (stable across nested calls). */
@@ -288,7 +335,6 @@ export function LangSmithTelemetry(
           ai_sdk_method: event.operationId,
           ls_agent_type: _getLsAgentType(parentRunTree),
           ls_model_name: event.modelId,
-          ls_provider: event.provider,
           ls_integration: "vercel-ai-sdk-telemetry",
         },
       },
@@ -308,6 +354,12 @@ export function LangSmithTelemetry(
       rootRunTree,
       stepRunTrees: new Map(),
       toolRunTrees: new Map(),
+      toolRunPostPromises: new Map(),
+      lastStepContent: [],
+      reconstructStepMessages: event.operationId === "ai.harness",
+      completedStepMessages: [],
+      toolResults: new Map(),
+      pendingToolCalls: new Map(),
     });
   };
 
@@ -320,7 +372,10 @@ export function LangSmithTelemetry(
     let inputs: KVMap = {};
     if (event.recordInputs !== false) {
       if ("messages" in event && event.messages != null) {
-        inputs.messages = _formatMessages(event.messages);
+        inputs.messages = [
+          ..._formatMessages(event.messages),
+          ...(state.reconstructStepMessages ? state.completedStepMessages : []),
+        ];
       }
 
       if ("runtimeContext" in event && event.runtimeContext != null) {
@@ -347,10 +402,16 @@ export function LangSmithTelemetry(
       name: event.provider,
       run_type: "llm",
       inputs,
-      extra: { metadata: { step_number: stepNumber } },
+      extra: {
+        metadata: {
+          step_number: stepNumber,
+          ls_model_name: event.modelId,
+        },
+      },
     });
 
     state.stepRunTrees.set(stepNumber, stepRunTree);
+    state.latestStepRunTree = stepRunTree;
     await stepRunTree.postRun();
   };
 
@@ -401,21 +462,23 @@ export function LangSmithTelemetry(
     const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
-    const parentRunTree = getOpenStepOrRoot(state);
+    const parentRunTree = state.rootRunTree;
 
     let inputs: KVMap = {};
     if (event.recordInputs !== false) {
-      if (isRecord(event.toolCall.input)) {
-        inputs = { ...event.toolCall.input };
-      } else if (typeof event.toolCall.input !== "undefined") {
-        inputs = { input: event.toolCall.input };
+      let toolCallInput = event.toolCall.input;
+      if (typeof toolCallInput === "string") {
+        try {
+          toolCallInput = JSON.parse(toolCallInput);
+        } catch {
+          // The tool argument itself may be a plain string rather than JSON.
+        }
       }
-
-      if ("toolContext" in event && event.toolContext != null) {
-        inputs.toolContext = event.toolContext;
+      if (isRecord(toolCallInput)) {
+        inputs = { ...toolCallInput };
+      } else if (toolCallInput !== undefined) {
+        inputs = { input: toolCallInput };
       }
-    } else {
-      inputs = {};
     }
 
     const toolRunTree = parentRunTree.createChild({
@@ -429,8 +492,12 @@ export function LangSmithTelemetry(
         },
       },
     });
-    await toolRunTree.postRun();
+    // Register before posting because HarnessAgent does not await telemetry
+    // callbacks and may emit tool-end while this POST is still in flight.
     state.toolRunTrees.set(event.toolCall.toolCallId, toolRunTree);
+    const postPromise = toolRunTree.postRun();
+    state.toolRunPostPromises.set(event.toolCall.toolCallId, postPromise);
+    await postPromise;
   };
 
   const onToolExecutionEnd: Telemetry["onToolExecutionEnd"] = async (event) => {
@@ -439,15 +506,66 @@ export function LangSmithTelemetry(
 
     const toolRunTree = state.toolRunTrees.get(event.toolCall.toolCallId);
     if (!toolRunTree) return;
-    state.toolRunTrees.delete(event.toolCall.toolCallId);
+    await state.toolRunPostPromises.get(event.toolCall.toolCallId);
+
+    if (state.reconstructStepMessages) {
+      const pendingToolName = state.pendingToolCalls.get(
+        event.toolCall.toolCallId,
+      );
+      if (pendingToolName != null) {
+        const toolMessage = appendToolResultMessage(
+          state,
+          event.toolCall.toolCallId,
+          pendingToolName,
+          event.toolOutput,
+        );
+        state.pendingToolCalls.delete(event.toolCall.toolCallId);
+
+        // HarnessAgent may finish the next model step before its asynchronous
+        // tool-end telemetry callback completes. Retain and update the latest
+        // step if it was invoked with the corresponding assistant tool call.
+        const latestStep = state.latestStepRunTree;
+        const messages = latestStep?.inputs.messages;
+        if (
+          latestStep?.run_type === "llm" &&
+          Array.isArray(messages) &&
+          messages.some(
+            (message) =>
+              isRecord(message) &&
+              message.role === "assistant" &&
+              JSON.stringify(message).includes(event.toolCall.toolCallId),
+          ) &&
+          !messages.some(
+            (message) =>
+              isRecord(message) &&
+              message.role === "tool" &&
+              JSON.stringify(message).includes(event.toolCall.toolCallId),
+          )
+        ) {
+          latestStep.inputs = {
+            ...latestStep.inputs,
+            messages: [...messages, toolMessage],
+          };
+          await latestStep.patchRun();
+        }
+      } else {
+        state.toolResults.set(event.toolCall.toolCallId, {
+          toolName: event.toolCall.toolName,
+          output: event.toolOutput,
+        });
+      }
+    }
 
     let outputs: KVMap | undefined;
     let error: string | undefined;
 
     if (event.recordOutputs !== false) {
-      if (event.toolOutput.type === "tool-result") {
-        outputs = { output: event.toolOutput.output };
-      } else if (event.toolOutput.type === "tool-error") {
+      outputs = formatToolResultMessage(
+        event.toolCall.toolCallId,
+        event.toolCall.toolName,
+        event.toolOutput,
+      );
+      if (isRecord(event.toolOutput) && "error" in event.toolOutput) {
         const err = event.toolOutput.error;
         error = err instanceof Error ? err.message : String(err);
       }
@@ -461,6 +579,8 @@ export function LangSmithTelemetry(
       Math.floor(toolRunTree.start_time + event.toolExecutionMs),
     );
     await toolRunTree.patchRun({ excludeInputs: true });
+    state.toolRunTrees.delete(event.toolCall.toolCallId);
+    state.toolRunPostPromises.delete(event.toolCall.toolCallId);
   };
 
   const onStepFinish: Telemetry["onStepFinish"] = async (event) => {
@@ -473,6 +593,9 @@ export function LangSmithTelemetry(
 
     let outputs = {};
     if (event.recordOutputs !== false) {
+      if (Array.isArray(event.content)) {
+        state.lastStepContent = [...event.content];
+      }
       outputs = _formatStepOutput(event, traceRawHttp);
 
       if (processChildLLMRunOutputs) {
@@ -482,6 +605,40 @@ export function LangSmithTelemetry(
           console.error(
             "Error in processChildLLMRunOutputs, using raw outputs:",
             e,
+          );
+        }
+      }
+    }
+
+    if (state.reconstructStepMessages && Array.isArray(event.content)) {
+      state.completedStepMessages.push(
+        convertMessageToTracedFormat({
+          role: "assistant",
+          content: event.content,
+        }),
+      );
+
+      for (const part of event.content) {
+        if (
+          !isRecord(part) ||
+          part.type !== "tool-call" ||
+          typeof part.toolCallId !== "string"
+        ) {
+          continue;
+        }
+        const toolResult = state.toolResults.get(part.toolCallId);
+        if (toolResult) {
+          appendToolResultMessage(
+            state,
+            part.toolCallId,
+            toolResult.toolName,
+            toolResult.output,
+          );
+          state.toolResults.delete(part.toolCallId);
+        } else {
+          state.pendingToolCalls.set(
+            part.toolCallId,
+            typeof part.toolName === "string" ? part.toolName : "tool",
           );
         }
       }
@@ -521,8 +678,20 @@ export function LangSmithTelemetry(
       // Final result output
       if ("text" in event && event.text != null) {
         outputs.content = event.text;
-      } else if ("content" in event && event.content != null) {
+      } else if (
+        "content" in event &&
+        event.content != null &&
+        (!Array.isArray(event.content) || event.content.length > 0)
+      ) {
         outputs.content = event.content;
+      } else if (
+        state.reconstructStepMessages &&
+        state.lastStepContent.length > 0
+      ) {
+        // HarnessAgent currently reports an empty root `content` array even
+        // though each completed step contains assistant output. Only the final
+        // step belongs on the root; prior steps have their own child runs.
+        outputs.content = state.lastStepContent;
       }
 
       if (outputs.content != null) {
