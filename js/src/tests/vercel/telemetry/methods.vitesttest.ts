@@ -202,7 +202,7 @@ describe("basic tracing", () => {
       stepNumber: 0,
       messages,
     });
-    const toolStartPromise = trace.integration.onToolExecutionStart({
+    await trace.integration.onToolExecutionStart({
       callId,
       toolCall: {
         type: "tool-call",
@@ -222,7 +222,6 @@ describe("basic tracing", () => {
       },
       toolOutput: { type: "tool-result", output: "done" },
     });
-    await toolStartPromise;
     await trace.integration.onStepFinish({
       callId,
       stepNumber: 0,
@@ -1010,6 +1009,50 @@ describe("usage metadata tracking", () => {
           },
         },
       },
+    });
+  });
+
+  it("does not assign aggregate Harness usage to non-Pi steps", async () => {
+    const trace = createTrace();
+    const callId = "non-pi-harness-call";
+
+    await trace.integration.onStart({
+      callId,
+      operationId: "ai.harness",
+      provider: "other-harness",
+      modelId: "test-model",
+      messages: [{ role: "user", content: "Test" }],
+    });
+    await trace.integration.onStepStart({
+      callId,
+      provider: "other-harness",
+      modelId: "test-model",
+      stepNumber: 0,
+      messages: [{ role: "user", content: "Test" }],
+    });
+    await trace.integration.onStepFinish({
+      callId,
+      stepNumber: 0,
+      content: [{ type: "text", text: "Done" }],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 0, output: 0 }),
+    });
+    await trace.integration.onEnd({
+      callId,
+      operationId: "ai.harness",
+      content: [],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 10, output: 5 }),
+      totalUsage: usage({ input: 10, output: 5 }),
+    });
+
+    const tree = await expectTree(trace);
+    expect(
+      tree.data["other-harness:1"].extra?.metadata?.usage_metadata,
+    ).toMatchObject({
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
     });
   });
 
