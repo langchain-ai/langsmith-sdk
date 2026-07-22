@@ -57,11 +57,6 @@ test("telemetry generateText basic", async () => {
           content: expect.stringMatching(/blue/i),
           finish_reason: "stop",
         },
-        extra: {
-          metadata: {
-            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
-          },
-        },
       },
       "openai.responses:1": {
         run_type: "llm",
@@ -89,6 +84,9 @@ test("telemetry generateText basic", async () => {
       },
     },
   });
+  expect(runs.data["openai.responses:0"].extra?.metadata).not.toHaveProperty(
+    "usage_metadata",
+  );
 }, 30_000);
 
 test("telemetry generateText with tools", async () => {
@@ -140,11 +138,6 @@ test("telemetry generateText with tools", async () => {
         outputs: {
           content: expect.stringMatching(/order/i),
           finish_reason: "stop",
-        },
-        extra: {
-          metadata: {
-            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
-          },
         },
       },
       "openai.responses:1": {
@@ -214,6 +207,17 @@ test("telemetry generateText with tools", async () => {
   expect(
     tree.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
   ).not.toHaveProperty("inputSchema");
+  expect(tree.data["openai.responses:0"].extra?.metadata).not.toHaveProperty(
+    "usage_metadata",
+  );
+  expect(
+    tree.data["openai.responses:1"].extra?.metadata?.usage_metadata
+      ?.total_tokens,
+  ).toBeGreaterThan(0);
+  expect(
+    tree.data["openai.responses:3"].extra?.metadata?.usage_metadata
+      ?.total_tokens,
+  ).toBeGreaterThan(0);
 }, 30_000);
 
 test("telemetry streamText", async () => {

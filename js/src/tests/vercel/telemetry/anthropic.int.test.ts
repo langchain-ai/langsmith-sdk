@@ -146,8 +146,15 @@ test("telemetry generateText", async () => {
     runs.data["anthropic.messages:1"].extra?.invocation_params?.tools?.[0],
   ).not.toHaveProperty("inputSchema");
 
+  expect(runs.data["anthropic.messages:0"].extra?.metadata).not.toHaveProperty(
+    "usage_metadata",
+  );
   expect(
-    runs.data["anthropic.messages:0"].extra?.metadata?.usage_metadata
+    runs.data["anthropic.messages:1"].extra?.metadata?.usage_metadata
+      ?.total_tokens,
+  ).toBeGreaterThan(0);
+  expect(
+    runs.data["anthropic.messages:3"].extra?.metadata?.usage_metadata
       ?.total_tokens,
   ).toBeGreaterThan(0);
 });
