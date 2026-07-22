@@ -7590,7 +7590,6 @@ class Client:
         source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
-        session_id: Optional[ID_TYPE] = None,
         _executor: Optional[cf.ThreadPoolExecutor] = None,
     ) -> list[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
@@ -7625,10 +7624,10 @@ class Client:
                     Optional[ls_schemas.FeedbackConfig], res.feedback_config
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
-                project_id=project_id,
+                project_id=run.session_id if run and run.session_id else project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run and run.session_id else session_id,
+                session_id=run.session_id if run and run.session_id else project_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )
@@ -7752,8 +7751,7 @@ class Client:
                 The number of times to retry the request before giving up.
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (or experiment) to provide feedback on. This is
-                used for creating summary metrics for experiments. Cannot specify
-                run_id or trace_id if project_id is specified, and vice versa.
+                used for creating summary metrics for experiments.
             comparative_experiment_id (Optional[Union[UUID, str]]):
                 If this feedback was logged as a part of a comparative experiment, this
                 associates the feedback with that experiment.

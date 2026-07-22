@@ -1690,7 +1690,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.client._log_evaluation_feedback(
                             evaluator_response,
                             run=run,
-                            session_id=self._get_experiment().id,
+                            project_id=self._get_experiment().id,
                             _executor=executor,
                         )
                 except Exception as e:
@@ -1716,7 +1716,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self.client._log_evaluation_feedback(
                                 error_response,
                                 run=run,
-                                session_id=self._get_experiment().id,
+                                project_id=self._get_experiment().id,
                                 _executor=executor,
                             )
                     except Exception as e2:

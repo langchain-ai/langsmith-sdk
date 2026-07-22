@@ -1023,7 +1023,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         self.client._log_evaluation_feedback(
                             evaluator_response,
                             run=run,
-                            session_id=self._get_experiment().id,
+                            project_id=self._get_experiment().id,
                             _executor=feedback_executor,
                         )
                     return selected_results
@@ -1049,7 +1049,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             self.client._log_evaluation_feedback(
                                 error_response,
                                 run=run,
-                                session_id=self._get_experiment().id,
+                                project_id=self._get_experiment().id,
                                 _executor=feedback_executor,
                             )
                         return selected_results
