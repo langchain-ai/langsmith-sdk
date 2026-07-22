@@ -161,11 +161,77 @@ describe("evaluation runner internals", () => {
     }
 
     expect(feedbackCalls).toHaveLength(1);
-    expect(feedbackCalls[0][1]).toEqual(
-      expect.objectContaining({ start_time: expect.anything() }),
+    expect(feedbackCalls[0]).toEqual([
+      expect.objectContaining({
+        run: expect.objectContaining({ start_time: expect.anything() }),
+        projectId: experimentId,
+      }),
+    ]);
+  });
+
+  test("evaluate resolves existing runs by session_id and logs routing fields", async () => {
+    const experimentId = "00000000-0000-0000-0000-000000000004";
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const exampleId = "00000000-0000-0000-0000-000000000001";
+    const runId = "00000000-0000-0000-0000-000000000002";
+    const startTime = "2026-07-21T12:34:56.789Z";
+    const readProject = jest.fn(async () => ({
+      id: experimentId,
+      name: "existing-project",
+      reference_dataset_id: datasetId,
+    }));
+    const logEvaluationFeedback = jest.fn(async () => []);
+    const mockClient = {
+      readProject,
+      logEvaluationFeedback,
+      getDatasetUrl: async () => "http://test.com",
+      createRun: async () => undefined,
+      updateRun: async () => undefined,
+      awaitPendingTraceBatches: async () => undefined,
+    } as any;
+    const run = {
+      id: runId,
+      name: "existing-run",
+      run_type: "chain",
+      start_time: startTime,
+      trace_id: runId,
+      dotted_order: "",
+      session_id: experimentId,
+      reference_example_id: exampleId,
+      inputs: { input: "hello" },
+      outputs: { output: "ok" },
+    } as Run;
+    const now = new Date().toISOString();
+
+    const results = await evaluate(fromArray([run]) as never, {
+      data: [
+        {
+          id: exampleId,
+          inputs: { input: "hello" },
+          outputs: {},
+          dataset_id: datasetId,
+          created_at: now,
+          modified_at: now,
+          runs: [],
+        },
+      ],
+      evaluators: [async () => ({ key: "quality", score: 1 })],
+      client: mockClient,
+    });
+    for await (const _ of results) {
+      // Drain the result stream.
+    }
+
+    expect(readProject).toHaveBeenCalledWith({ projectId: experimentId });
+    expect(logEvaluationFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        run: expect.objectContaining({
+          session_id: experimentId,
+          start_time: startTime,
+        }),
+        projectId: experimentId,
+      }),
     );
-    expect(feedbackCalls[0][2]).toBeUndefined();
-    expect(feedbackCalls[0][3]).toBe(experimentId);
   });
 
   test("reorderResultRowsByExampleIndex restores original example order", () => {

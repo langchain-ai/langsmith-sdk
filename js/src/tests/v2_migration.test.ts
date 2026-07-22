@@ -30,6 +30,7 @@ describe("v2 migration utils", () => {
         id: v2Run.id,
         session_id: project.id,
         run_type: "chain",
+        status: "success",
         parent_run_id: undefined,
         inputs: v2Run.inputs,
         outputs: v2Run.outputs,

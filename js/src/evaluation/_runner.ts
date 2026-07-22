@@ -534,6 +534,8 @@ export class _ExperimentManager {
       experiment: project,
       metadata: this._metadata,
       client: this.client,
+      runs: this._runs,
+      _runsArray: this._runsArray,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
       numRepetitions: this._numRepetitions,
@@ -802,7 +804,7 @@ export class _ExperimentManager {
           ...(await fields.client.logEvaluationFeedback({
             evaluatorResponse,
             run,
-            projectId: this._getExperiment().id
+            projectId: this._getExperiment().id,
           })),
         );
       } catch (e) {
@@ -1443,7 +1445,12 @@ async function _resolveExperiment(
     const firstRun = await runsCloneIterator
       .next()
       .then((result) => result.value);
-    const retrievedExperiment = await client.readProject(firstRun.sessionId);
+    if (firstRun?.session_id == null) {
+      throw new Error("Experiment ID not found for provided runs.");
+    }
+    const retrievedExperiment = await client.readProject({
+      projectId: firstRun.session_id,
+    });
     if (!retrievedExperiment.name) {
       throw new Error("Experiment name not found for provided runs.");
     }

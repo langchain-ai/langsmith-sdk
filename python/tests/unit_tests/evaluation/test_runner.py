@@ -1683,6 +1683,7 @@ def test_v2_run_to_schema_maps_generated_fields() -> None:
     assert run.parent_run_id == parent_id
     assert run.reference_example_id == example_id
     assert run.outputs == {"b": 2}
+    assert run.status == "success"
 
 
 def test_v2_run_to_schema_handles_root_run() -> None:

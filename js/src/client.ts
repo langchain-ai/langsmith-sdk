@@ -5446,17 +5446,15 @@ export class Client implements LangSmithTracingClientInterface {
     return [evalResults, feedbacks];
   }
 
-  public async logEvaluationFeedback(
-    params: {
-      evaluatorResponse:
-        | EvaluationResult
-        | EvaluationResult[]
-        | EvaluationResults,
-      run: Run,
-      projectId: string,
-      sourceInfo?: { [key: string]: any }
-    }
-  ): Promise<EvaluationResult[]>;
+  public async logEvaluationFeedback(params: {
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults;
+    run: Run;
+    projectId: string;
+    sourceInfo?: { [key: string]: any };
+  }): Promise<EvaluationResult[]>;
   /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
@@ -5471,15 +5469,16 @@ export class Client implements LangSmithTracingClientInterface {
     evaluatorResponseOrParams:
       | EvaluationResult
       | EvaluationResult[]
-      | EvaluationResults | {
-        evaluatorResponse:
-          | EvaluationResult
-          | EvaluationResult[]
-          | EvaluationResults,
-        run: Run,
-        projectId: string,
-        sourceInfo?: { [key: string]: any }
-      },
+      | EvaluationResults
+      | {
+          evaluatorResponse:
+            | EvaluationResult
+            | EvaluationResult[]
+            | EvaluationResults;
+          run: Run;
+          projectId: string;
+          sourceInfo?: { [key: string]: any };
+        },
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,

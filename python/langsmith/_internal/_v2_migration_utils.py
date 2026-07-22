@@ -75,7 +75,9 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
         "inputs": getattr(run, "inputs", None) or {},
         "outputs": getattr(run, "outputs", None),
         "error": getattr(run, "error", None),
-        "status": getattr(run, "status", None),
+        "status": (
+            run.status.lower() if getattr(run, "status", None) is not None else None
+        ),
     }
     return schemas.Run(
         **{key: value for key, value in fields.items() if value is not None}

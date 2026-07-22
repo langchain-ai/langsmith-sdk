@@ -41,7 +41,7 @@ export function v2RunToRun(run: V2Run): Run {
     inputs: run.inputs ?? {},
     outputs: run.outputs,
     error: run.error ?? undefined,
-    status: run.status,
+    status: run.status?.toLowerCase(),
   };
 }
 

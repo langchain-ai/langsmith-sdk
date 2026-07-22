@@ -7624,7 +7624,7 @@ class Client:
                     Optional[ls_schemas.FeedbackConfig], res.feedback_config
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
-                project_id=run.session_id if run and run.session_id else project_id,
+                project_id=project_id if run is None else None,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
                 session_id=run.session_id if run and run.session_id else project_id,

@@ -40,9 +40,11 @@ describe("Jest-like feedback logging", () => {
     await Promise.all(evaluatorLogFeedbackPromises);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0][1]).toEqual(
-      expect.objectContaining({ start_time: startTime }),
-    );
-    expect(calls[0][3]).toBe("00000000-0000-0000-0000-000000000004");
+    expect(calls[0]).toEqual([
+      expect.objectContaining({
+        run: expect.objectContaining({ start_time: startTime }),
+        projectId: "00000000-0000-0000-0000-000000000004",
+      }),
+    ]);
   });
 });
