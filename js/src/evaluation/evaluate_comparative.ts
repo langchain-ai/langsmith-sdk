@@ -5,13 +5,14 @@ import {
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,
   Example,
   Run,
+  TracerSession,
 } from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { evaluate } from "./index.js";
 import pRetry from "../utils/p-retry/index.js";
 import { getCurrentRunTree, traceable } from "../traceable.js";
-import { loadTraces } from "../utils/v2_migration.js";
+import { loadTracesV2 } from "../utils/v2_migration.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
 
@@ -31,6 +32,45 @@ async function loadExperiment(
   return client.readProject(
     validate(value) ? { projectId: value } : { projectName: value },
   );
+}
+
+export async function loadTracesForExperiment(
+  client: Client,
+  project: TracerSession,
+  options: { loadNested: boolean },
+): Promise<Run[]> {
+  // v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
+  const isRoot = options.loadNested ? undefined : true;
+  const runs = (await client._supportsSDBQuery())
+    ? await loadTracesV2(client, project, { isRoot })
+    : await client.listRuns({
+        projectId: project.id,
+        executionOrder: options.loadNested ? undefined : 1,
+      });
+
+  const treeMap: Record<string, Run[]> = {};
+  const runIdMap: Record<string, Run> = {};
+  const results: Run[] = [];
+
+  for await (const run of runs) {
+    if (run.parent_run_id != null) {
+      treeMap[run.parent_run_id] ??= [];
+      treeMap[run.parent_run_id].push(run);
+    } else {
+      results.push(run);
+    }
+    runIdMap[run.id] = run;
+  }
+
+  for (const [parentRunId, childRuns] of Object.entries(treeMap)) {
+    const parentRun = runIdMap[parentRunId];
+    parentRun.child_runs = childRuns.sort((a, b) => {
+      if (a.dotted_order == null || b.dotted_order == null) return 0;
+      return a.dotted_order.localeCompare(b.dotted_order);
+    });
+  }
+
+  return results;
 }
 
 /** @deprecated Use ComparativeEvaluatorNew instead: (args: { runs, example, inputs, outputs, referenceOutputs }) => ... */
@@ -232,7 +272,9 @@ export async function evaluateComparative(
 
   const experimentRuns = await Promise.all(
     projects.map((project) =>
-      loadTraces(client, project, { loadNested: !!options.loadNested }),
+      loadTracesForExperiment(client, project, {
+        loadNested: !!options.loadNested,
+      }),
     ),
   );
 

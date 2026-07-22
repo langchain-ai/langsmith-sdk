@@ -42,7 +42,7 @@ from langsmith.evaluation._runner import (
     _load_examples_map,
     _load_experiment,
     _load_tqdm,
-    _load_traces,
+    _load_traces_for_experiment,
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
@@ -447,7 +447,7 @@ async def aevaluate_existing(
     )
     runs = await aitertools.aio_to_thread(
         contextvars.copy_context(),
-        _load_traces,
+        _load_traces_for_experiment,
         project,
         client,
         load_nested=load_nested,

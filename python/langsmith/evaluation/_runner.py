@@ -506,7 +506,7 @@ def evaluate_existing(
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)
-    runs = _load_traces(project, client, load_nested=load_nested)
+    runs = _load_traces_for_experiment(project, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
@@ -894,7 +894,8 @@ def evaluate_comparative(
     comparison_url = _build_comparative_url(experiments_tuple, comparative_experiment)
     _print_comparative_experiment_start(comparison_url)
     runs = [
-        _load_traces(project, client, load_nested=load_nested) for project in projects
+        _load_traces_for_experiment(project, client, load_nested=load_nested)
+        for project in projects
     ]
     # Only check intersections for the experiments
     examples_intersection = None
@@ -1160,7 +1161,7 @@ def _load_experiment(
         return client.read_project(project_name=project)
 
 
-def _load_traces(
+def _load_traces_for_experiment(
     project: Union[str, uuid.UUID, schemas.TracerSession],
     client: langsmith.Client,
     load_nested: bool = False,

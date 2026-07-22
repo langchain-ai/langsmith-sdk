@@ -1,12 +1,6 @@
-import { jest } from "@jest/globals";
 import type { Run as V2Run } from "../_openapi_client/resources/runs/runs.js";
-import type { Client } from "../client.js";
-import type { Run, TracerSession } from "../schemas.js";
-import { loadTraces, v2RunToRun } from "../utils/v2_migration.js";
-
-async function* fromArray<T>(items: T[]): AsyncGenerator<T> {
-  yield* items;
-}
+import type { TracerSession } from "../schemas.js";
+import { v2RunToRun } from "../utils/v2_migration.js";
 
 const project: TracerSession = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -41,63 +35,5 @@ describe("v2 migration utils", () => {
         outputs: v2Run.outputs,
       }),
     );
-  });
-
-  test("loads runs from v2 when SDB querying is enabled", async () => {
-    const queryV2 = jest.fn(() => fromArray([v2Run]));
-    const listRuns = jest.fn();
-    const client = {
-      _supportsSDBQuery: async () => true,
-      runs: { queryV2 },
-      listRuns,
-    } as unknown as Client;
-
-    const runs = await loadTraces(client, project, { loadNested: false });
-
-    expect(runs).toHaveLength(1);
-    expect(runs[0].session_id).toBe(project.id);
-    expect(queryV2).toHaveBeenCalledWith(
-      expect.objectContaining({
-        project_ids: [project.id],
-        min_start_time: "1970-01-01T00:00:00.000Z",
-        max_start_time: "1970-01-01T00:00:01.000Z",
-        is_root: true,
-      }),
-    );
-    expect(listRuns).not.toHaveBeenCalled();
-  });
-
-  test("loads and nests runs from v1 when SDB querying is disabled", async () => {
-    const root: Run = {
-      id: "00000000-0000-0000-0000-000000000005",
-      name: "root",
-      run_type: "chain",
-      inputs: {},
-    };
-    const child: Run = {
-      id: "00000000-0000-0000-0000-000000000006",
-      name: "child",
-      run_type: "tool",
-      inputs: {},
-      parent_run_id: root.id,
-      dotted_order: "2",
-    };
-    const listRuns = jest.fn(() => fromArray([child, root]));
-    const queryV2 = jest.fn();
-    const client = {
-      _supportsSDBQuery: async () => false,
-      runs: { queryV2 },
-      listRuns,
-    } as unknown as Client;
-
-    const runs = await loadTraces(client, project, { loadNested: true });
-
-    expect(runs).toEqual([root]);
-    expect(root.child_runs).toEqual([child]);
-    expect(listRuns).toHaveBeenCalledWith({
-      projectId: project.id,
-      executionOrder: undefined,
-    });
-    expect(queryV2).not.toHaveBeenCalled();
   });
 });

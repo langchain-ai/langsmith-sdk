@@ -28,7 +28,7 @@ from langsmith.evaluation._runner import (
     _build_comparative_url,
     _collect_evaluator_keys,
     _get_target_args,
-    _load_traces,
+    _load_traces_for_experiment,
 )
 from langsmith.evaluation.evaluator import (
     DynamicRunEvaluator,
@@ -1754,7 +1754,7 @@ def test_load_traces_uses_v2_when_sdb_query_enabled() -> None:
     client.info.instance_flags = {"sdb_query_enabled": True}
     client._get_langsmith_api_sync.return_value.runs.query_v2 = _query_v2
 
-    runs = _load_traces(project, client, load_nested=False)
+    runs = _load_traces_for_experiment(project, client, load_nested=False)
 
     assert len(runs) == 2
     assert all(isinstance(r, ls_schemas.Run) for r in runs)
@@ -1768,7 +1768,7 @@ def test_load_traces_uses_v1_when_sdb_query_disabled() -> None:
     client.info.instance_flags = {}  # sdb_query_enabled absent
     client.list_runs.return_value = iter([])
 
-    _load_traces(project, client, load_nested=False)
+    _load_traces_for_experiment(project, client, load_nested=False)
 
     client.list_runs.assert_called_once_with(project_id=project.id, is_root=True)
     client._get_langsmith_api_sync.assert_not_called()
