@@ -15,6 +15,16 @@ const ROOT_RUN_NAME = "AI SDK HarnessAgent with Pi";
 const TASK_FILE_NAME = "task-result.txt";
 const TASK_FILE_CONTENT = "HarnessAgent and Pi completed this task.";
 const TASK_FINAL_RESPONSE = "TASK_COMPLETE";
+const TELEMETRY_SETTLE_DELAY_MS = 1_000;
+
+async function waitForHarnessTelemetryToSettle() {
+  // Harness currently invokes PromiseLike telemetry lifecycle callbacks without
+  // awaiting them. Give those callbacks time to finish before destroying the
+  // session, which would otherwise race the final LLM and root trace writes.
+  await new Promise((resolve) =>
+    setTimeout(resolve, TELEMETRY_SETTLE_DELAY_MS),
+  );
+}
 
 function expectCompleteToolHistory(inputs: unknown) {
   expect(inputs).toMatchObject({
@@ -126,6 +136,7 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
       expect(result.text.trim()).toBe(TASK_FINAL_RESPONSE);
       expect(JSON.stringify(result.toolResults)).toContain(TASK_FILE_CONTENT);
     } finally {
+      await waitForHarnessTelemetryToSettle();
       await session.destroy();
     }
 
@@ -172,6 +183,7 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
       },
     });
     expect(harnessRoot.extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(harnessRoot.extra?.metadata).not.toHaveProperty("usage_metadata");
     expect(
       outboundRuns.filter((run) => run.parent_run_id === harnessRoot.id),
     ).toEqual(
@@ -208,6 +220,14 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
     );
     expectCompleteToolHistory(finalLlmRun?.inputs);
     expect(finalLlmRun?.extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(finalLlmRun?.extra?.metadata?.usage_metadata).toMatchObject({
+      input_tokens: expect.any(Number),
+      output_tokens: expect.any(Number),
+      total_tokens: expect.any(Number),
+    });
+    expect(
+      finalLlmRun?.extra?.metadata?.usage_metadata?.total_tokens as number,
+    ).toBeGreaterThan(0);
 
     const readPersistedRuns = () =>
       toArray(
@@ -262,6 +282,10 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
         },
       },
     ]);
+    const persistedRoot = persistedRuns.find(
+      (run) => run.id === harnessRoot.id,
+    );
+    expect(persistedRoot?.extra?.metadata).not.toHaveProperty("usage_metadata");
     const persistedFinalLlmRun = persistedRuns.find(
       (run) =>
         run.parent_run_id === harnessRoot.id &&
@@ -275,6 +299,13 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
     expect(persistedFinalLlmRun?.extra?.metadata).not.toHaveProperty(
       "ls_provider",
     );
+    expect(
+      persistedFinalLlmRun?.extra?.metadata?.usage_metadata?.total_tokens,
+    ).toEqual(expect.any(Number));
+    expect(
+      persistedFinalLlmRun?.extra?.metadata?.usage_metadata
+        ?.total_tokens as number,
+    ).toBeGreaterThan(0);
     const persistedToolRun = persistedRuns.find(
       (run) => run.name === "bash" && run.run_type === "tool",
     );
@@ -401,6 +432,7 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
             });
             return result.text.trim();
           } finally {
+            await waitForHarnessTelemetryToSettle();
             await subagentSession.destroy();
           }
         },
@@ -426,6 +458,7 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
       expect(JSON.stringify(result.toolResults)).toContain(SUBAGENT_RESULT);
       expect(subagentInvocationCount).toBe(1);
     } finally {
+      await waitForHarnessTelemetryToSettle();
       await coordinatorSession.destroy();
     }
 
