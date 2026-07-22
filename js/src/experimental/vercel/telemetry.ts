@@ -551,40 +551,13 @@ export function LangSmithTelemetry(
         event.toolCall.toolCallId,
       );
       if (pendingToolName != null) {
-        const toolMessage = appendToolResultMessage(
+        appendToolResultMessage(
           state,
           event.toolCall.toolCallId,
           pendingToolName,
           event.toolOutput,
         );
         state.pendingToolCalls.delete(event.toolCall.toolCallId);
-
-        // HarnessAgent may finish the next model step before its asynchronous
-        // tool-end telemetry callback completes. Retain and update the latest
-        // step if it was invoked with the corresponding assistant tool call.
-        const latestStep = state.latestStepRunTree;
-        const messages = latestStep?.inputs.messages;
-        if (
-          latestStep?.run_type === "llm" &&
-          Array.isArray(messages) &&
-          messages.some(
-            (message) =>
-              isRecord(message) &&
-              message.role === "assistant" &&
-              JSON.stringify(message).includes(event.toolCall.toolCallId),
-          ) &&
-          !messages.some(
-            (message) =>
-              isRecord(message) &&
-              message.role === "tool" &&
-              JSON.stringify(message).includes(event.toolCall.toolCallId),
-          )
-        ) {
-          latestStep.inputs = {
-            ...latestStep.inputs,
-            messages: [...messages, toolMessage],
-          };
-        }
       } else {
         state.toolResults.set(event.toolCall.toolCallId, {
           toolName: event.toolCall.toolName,
