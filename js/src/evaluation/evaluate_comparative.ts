@@ -11,6 +11,7 @@ import { AsyncCaller } from "../utils/async_caller.js";
 import { evaluate } from "./index.js";
 import pRetry from "../utils/p-retry/index.js";
 import { getCurrentRunTree, traceable } from "../traceable.js";
+import { loadTraces } from "../utils/v2_migration.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
 
@@ -30,44 +31,6 @@ async function loadExperiment(
   return client.readProject(
     validate(value) ? { projectId: value } : { projectName: value },
   );
-}
-
-async function loadTraces(
-  client: Client,
-  experiment: string,
-  options: { loadNested: boolean },
-) {
-  const executionOrder = options.loadNested ? undefined : 1;
-  const runs = await client.listRuns(
-    validate(experiment)
-      ? { projectId: experiment, executionOrder }
-      : { projectName: experiment, executionOrder },
-  );
-
-  const treeMap: Record<string, Run[]> = {};
-  const runIdMap: Record<string, Run> = {};
-  const results: Run[] = [];
-
-  for await (const run of runs) {
-    if (run.parent_run_id != null) {
-      treeMap[run.parent_run_id] ??= [];
-      treeMap[run.parent_run_id].push(run);
-    } else {
-      results.push(run);
-    }
-
-    runIdMap[run.id] = run;
-  }
-
-  for (const [parentRunId, childRuns] of Object.entries(treeMap)) {
-    const parentRun = runIdMap[parentRunId];
-    parentRun.child_runs = childRuns.sort((a, b) => {
-      if (a.dotted_order == null || b.dotted_order == null) return 0;
-      return a.dotted_order.localeCompare(b.dotted_order);
-    });
-  }
-
-  return results;
 }
 
 /** @deprecated Use ComparativeEvaluatorNew instead: (args: { runs, example, inputs, outputs, referenceOutputs }) => ... */
@@ -268,8 +231,8 @@ export async function evaluateComparative(
   }
 
   const experimentRuns = await Promise.all(
-    projects.map((p) =>
-      loadTraces(client, p.id, { loadNested: !!options.loadNested }),
+    projects.map((project) =>
+      loadTraces(client, project, { loadNested: !!options.loadNested }),
     ),
   );
 

@@ -2143,6 +2143,11 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  public async _supportsSDBQuery(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return serverInfo.instance_flags?.sdb_query_enabled === true;
+  }
+
   protected async _getSettings() {
     if (!this.settings) {
       this.settings = this._get("/settings");

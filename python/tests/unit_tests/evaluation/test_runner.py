@@ -22,13 +22,13 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
+from langsmith._internal._v2_migration_utils import _v2_run_to_schema
 from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
     _collect_evaluator_keys,
     _get_target_args,
     _load_traces,
-    _v2_run_to_schema,
 )
 from langsmith.evaluation.evaluator import (
     DynamicRunEvaluator,
@@ -1772,4 +1772,3 @@ def test_load_traces_uses_v1_when_sdb_query_disabled() -> None:
 
     client.list_runs.assert_called_once_with(project_id=project.id, is_root=True)
     client._get_langsmith_api_sync.assert_not_called()
-

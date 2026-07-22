@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import concurrent.futures as cf
-import datetime
 import functools
 import inspect
 import io
@@ -44,6 +43,7 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
@@ -1167,11 +1167,12 @@ def _load_traces(
 ) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
+    runs: Iterable[schemas.Run]
     # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
     if (client.info.instance_flags or {}).get("sdb_query_enabled"):
         if not isinstance(project, schemas.TracerSession):
             project = _load_experiment(project, client)
-        runs = _load_traces_v2(project, client, is_root=is_root)
+        runs = _v2_migration_utils._load_traces_v2(project, client, is_root=is_root)
     elif isinstance(project, schemas.TracerSession):
         runs = client.list_runs(project_id=project.id, is_root=is_root)
     elif isinstance(project, uuid.UUID) or _is_uuid(project):
@@ -1195,75 +1196,6 @@ def _load_traces(
     for run_id, child_runs in treemap.items():
         all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
     return results
-
-
-# Fields for `/v2/runs/query` (RunSelectField enum); omitting selects returns only id.
-_V2_RUN_SELECTS = [
-    "ID",
-    "NAME",
-    "RUN_TYPE",
-    "STATUS",
-    "START_TIME",
-    "END_TIME",
-    "INPUTS",
-    "OUTPUTS",
-    "PARENT_RUN_IDS",
-    "PROJECT_ID",
-    "TRACE_ID",
-    "DOTTED_ORDER",
-    "REFERENCE_EXAMPLE_ID",
-    "ERROR",
-]
-
-
-def _load_traces_v2(
-    project: schemas.TracerSession,
-    client: langsmith.Client,
-    *,
-    is_root: Optional[bool],
-) -> list[schemas.Run]:
-    """List an experiment's runs from v2.
-
-    `query_v2` defaults `min_start_time` to ~24h, so bound the window to the session
-    explicitly or older experiments drop.
-    """
-    now = datetime.datetime.now(datetime.timezone.utc)
-    kwargs: dict[str, Any] = {
-        "project_ids": [str(project.id)],
-        "min_start_time": project.start_time,
-        "max_start_time": project.end_time or now,
-        "selects": _V2_RUN_SELECTS,
-    }
-    if is_root is not None:
-        kwargs["is_root"] = is_root
-    pager = client._get_langsmith_api_sync().runs.query_v2(**kwargs)
-    return [_v2_run_to_schema(r) for r in pager]
-
-
-def _v2_run_to_schema(run: Any) -> schemas.Run:
-    """Map a v2 `Run` to `ls_schemas.Run`.
-
-    `project_id`→`session_id`, `parent_run_ids[-1]`→`parent_run_id`; drop `None` so
-    schema defaults apply (e.g. `dotted_order`).
-    """
-    parent_run_ids = getattr(run, "parent_run_ids", None)
-    fields = {
-        "id": run.id,
-        "name": run.name,
-        "run_type": run.run_type,
-        "start_time": run.start_time,
-        "end_time": getattr(run, "end_time", None),
-        "trace_id": run.trace_id,
-        "session_id": getattr(run, "project_id", None),
-        "parent_run_id": parent_run_ids[-1] if parent_run_ids else None,
-        "dotted_order": getattr(run, "dotted_order", None),
-        "reference_example_id": getattr(run, "reference_example_id", None),
-        "inputs": getattr(run, "inputs", None) or {},
-        "outputs": getattr(run, "outputs", None),
-        "error": getattr(run, "error", None),
-        "status": getattr(run, "status", None),
-    }
-    return schemas.Run(**{k: v for k, v in fields.items() if v is not None})
 
 
 def _load_examples_map(

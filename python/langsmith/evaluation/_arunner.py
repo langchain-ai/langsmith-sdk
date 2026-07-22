@@ -448,7 +448,7 @@ async def aevaluate_existing(
     runs = await aitertools.aio_to_thread(
         contextvars.copy_context(),
         _load_traces,
-        experiment,
+        project,
         client,
         load_nested=load_nested,
     )
