@@ -4156,8 +4156,6 @@ def test_create_insights_job(langchain_client: Client) -> None:
     assert insights_job.status in ["queued", "running", "success"]
 
 
-
-
 # ---------------------------------------------------------------------------
 # v2 resource tests (runs.retrieve / runs.query via AsyncRunsResource)
 # ---------------------------------------------------------------------------
