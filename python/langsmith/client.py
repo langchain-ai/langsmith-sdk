@@ -700,6 +700,28 @@ def _get_tracing_sampling_rate(
     return sampling_rate
 
 
+_SAMPLING_HASH_MODULUS = 1_000_000
+_FNV_64_OFFSET_BASIS = 14_695_981_039_346_656_037
+_FNV_64_PRIME = 1_099_511_628_211
+_FNV_64_MASK = (1 << 64) - 1
+
+
+def _is_sampled_by_id(identifier: Any, sampling_rate: float | None) -> bool:
+    if sampling_rate is None or sampling_rate >= 1:
+        return True
+    if sampling_rate <= 0:
+        return False
+    if identifier is None:
+        return True
+    value = str(identifier).lower()
+    hash_value = _FNV_64_OFFSET_BASIS
+    for byte in value.encode("utf-8"):
+        hash_value ^= byte
+        hash_value = (hash_value * _FNV_64_PRIME) & _FNV_64_MASK
+    threshold = int(sampling_rate * _SAMPLING_HASH_MODULUS)
+    return hash_value % _SAMPLING_HASH_MODULUS < threshold
+
+
 def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
     # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
     _write_api_urls = _write_api_urls or {}
@@ -881,7 +903,6 @@ class Client:
         "_web_url",
         "_tenant_id",
         "tracing_sample_rate",
-        "_filtered_post_uuids",
         "tracing_queue",
         "_anonymizer",
         "_hide_inputs",
@@ -1183,7 +1204,6 @@ class Client:
         self._profile_auth_headers: dict[str, str] = {}
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
-        self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
@@ -2333,10 +2353,8 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
-    def _should_sample(self) -> bool:
-        if self.tracing_sample_rate is None:
-            return True
-        return random.random() < self.tracing_sample_rate
+    def _should_sample(self, identifier: Any = None) -> bool:
+        return _is_sampled_by_id(identifier, self.tracing_sample_rate)
 
     def _filter_for_sampling(
         self,
@@ -2355,34 +2373,7 @@ class Client:
                     return getattr(run, key)
                 return getattr(run, key, default)
 
-        if patch:
-            sampled = []
-            for run in runs:
-                trace_id = _as_uuid(_val(run, "trace_id"))
-                if trace_id not in self._filtered_post_uuids:
-                    sampled.append(run)
-                elif _val(run, "id") == trace_id:
-                    self._filtered_post_uuids.remove(trace_id)
-            return sampled
-        else:
-            sampled = []
-            for run in runs:
-                trace_id = _val(run, "trace_id", None) or _val(run, "id")
-
-                # If we've already made a decision about this trace, follow it
-                if trace_id in self._filtered_post_uuids:
-                    continue
-
-                # For new traces, apply sampling
-                if _val(run, "id") == trace_id:
-                    if self._should_sample():
-                        sampled.append(run)
-                    else:
-                        self._filtered_post_uuids.add(trace_id)
-                else:
-                    # Child runs follow their trace's sampling decision
-                    sampled.append(run)
-            return sampled
+        return [run for run in runs if self._should_sample(_val(run, "id", None))]
 
     @property
     def tracing_mode(self) -> TracingMode:
@@ -7880,6 +7871,9 @@ class Client:
                 error=error,
                 extend_trace_retention=extend_trace_retention,
             )
+
+            if feedback.run_id is not None and not self._should_sample(feedback.run_id):
+                return ls_schemas.Feedback(**feedback.model_dump())
 
             use_multipart = not self._multipart_disabled and (
                 self.info.batch_ingest_config or {}

@@ -669,6 +669,33 @@ const getTracingSamplingRate = (configRate?: number) => {
   return samplingRate;
 };
 
+const SAMPLING_HASH_MODULUS = 1_000_000n;
+const FNV_64_OFFSET_BASIS = 14_695_981_039_346_656_037n;
+const FNV_64_PRIME = 1_099_511_628_211n;
+const FNV_64_MASK = (1n << 64n) - 1n;
+
+const isSampledById = (identifier?: string | null, samplingRate?: number) => {
+  if (samplingRate === undefined || samplingRate >= 1) {
+    return true;
+  }
+  if (samplingRate <= 0) {
+    return false;
+  }
+  if (identifier === undefined || identifier === null) {
+    return true;
+  }
+  let hashValue = FNV_64_OFFSET_BASIS;
+  const value = identifier.toLowerCase();
+  for (let i = 0; i < value.length; i += 1) {
+    hashValue ^= BigInt(value.charCodeAt(i));
+    hashValue = (hashValue * FNV_64_PRIME) & FNV_64_MASK;
+  }
+  const threshold = BigInt(
+    Math.floor(samplingRate * Number(SAMPLING_HASH_MODULUS)),
+  );
+  return hashValue % SAMPLING_HASH_MODULUS < threshold;
+};
+
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -903,8 +930,6 @@ export class Client implements LangSmithTracingClientInterface {
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
-
-  private filteredPostUuids = new Set();
 
   private autoBatchTracing = true;
 
@@ -1736,56 +1761,20 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   // Allows mocking for tests
-  private _shouldSample(): boolean {
-    if (this.tracingSampleRate === undefined) {
-      return true;
-    }
-    return Math.random() < this.tracingSampleRate;
+  private _shouldSample(identifier?: string | null): boolean {
+    return isSampledById(identifier, this.tracingSampleRate);
   }
 
   private _filterForSampling(
     runs: CreateRunParams[] | UpdateRunParams[],
     patch = false,
   ) {
+    void patch;
     if (this.tracingSampleRate === undefined) {
       return runs;
     }
 
-    if (patch) {
-      const sampled = [];
-      for (const run of runs) {
-        if (!this.filteredPostUuids.has(run.trace_id)) {
-          sampled.push(run);
-        } else if (run.id === run.trace_id) {
-          this.filteredPostUuids.delete(run.trace_id);
-        }
-      }
-      return sampled;
-    } else {
-      // For new runs, sample at trace level to maintain consistency
-      const sampled = [];
-      for (const run of runs) {
-        const traceId = run.trace_id ?? run.id;
-
-        // If we've already made a decision about this trace, follow it
-        if (this.filteredPostUuids.has(traceId)) {
-          continue;
-        }
-
-        // For new traces, apply sampling
-        if (run.id === traceId) {
-          if (this._shouldSample()) {
-            sampled.push(run);
-          } else {
-            this.filteredPostUuids.add(traceId);
-          }
-        } else {
-          // Child runs follow their trace's sampling decision
-          sampled.push(run);
-        }
-      }
-      return sampled;
-    }
+    return runs.filter((run) => this._shouldSample(run.id));
   }
 
   private async _getBatchSizeLimitBytes(): Promise<number> {
@@ -5135,6 +5124,9 @@ export class Client implements LangSmithTracingClientInterface {
       start_time: startTime,
       extend_trace_retention: extendTraceRetention,
     };
+    if (runId !== null && !this._shouldSample(runId)) {
+      return feedback as Feedback;
+    }
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
