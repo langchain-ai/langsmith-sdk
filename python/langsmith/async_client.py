@@ -1063,7 +1063,7 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and project_id is None:
+        if run_id is not None and session_id is None:
             warnings.warn(
                 "session_id will become a required argument to create_feedback() in "
                 "a future release. Please provide it to avoid errors.",

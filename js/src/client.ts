@@ -5117,7 +5117,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && !sessionId && !projectId) {
+    if (runId && !sessionId) {
       console.warn(
         "sessionId will become a required argument to createFeedback() in a future " +
           "release. Please provide it to avoid errors.",
