@@ -5119,8 +5119,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runId && !sessionId && !projectId) {
       console.warn(
-        "sessionId (or projectId) will become a required argument to " +
-          "createFeedback() in a future release. Please provide it to avoid errors.",
+        "sessionId will become a required argument to createFeedback() in a future " +
+          "release. Please provide it to avoid errors.",
       );
     }
     const feedback_source: feedback_source = {

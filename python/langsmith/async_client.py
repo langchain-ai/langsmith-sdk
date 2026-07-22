@@ -1065,9 +1065,8 @@ class AsyncClient:
             )
         if run_id is not None and session_id is None and project_id is None:
             warnings.warn(
-                "session_id (or project_id) will become a required argument to "
-                "create_feedback() in a future release. Please provide it to avoid "
-                "errors.",
+                "session_id will become a required argument to create_feedback() in "
+                "a future release. Please provide it to avoid errors.",
                 FutureWarning,
                 stacklevel=2,
             )

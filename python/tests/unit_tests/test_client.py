@@ -1936,7 +1936,7 @@ def test_create_feedback_warns_when_session_id_missing() -> None:
 
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
 
-    with pytest.warns(FutureWarning, match="session_id"):
+    with pytest.warns(FutureWarning, match="session_id will become a required"):
         client.create_feedback(run_id, key="Foo")
 
     with warnings.catch_warnings():
