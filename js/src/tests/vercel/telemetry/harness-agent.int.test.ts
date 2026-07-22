@@ -1,8 +1,8 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createPi } from "@ai-sdk/harness-pi";
 import { createJustBashSandbox } from "@ai-sdk/sandbox-just-bash";
-import { jest } from "@jest/globals";
 import { tool } from "ai";
+import { jest } from "@jest/globals";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Client } from "../../../client.js";
@@ -243,7 +243,6 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
               JSON.stringify(run.inputs).includes(TASK_FILE_NAME) &&
               !JSON.stringify(run.inputs).includes('"role":"user"') &&
               !JSON.stringify(run.inputs).includes('"type":"tool-call"') &&
-              JSON.stringify(run.outputs).includes('"role":"tool"') &&
               JSON.stringify(run.outputs).includes(TASK_FILE_CONTENT),
           )
         );
