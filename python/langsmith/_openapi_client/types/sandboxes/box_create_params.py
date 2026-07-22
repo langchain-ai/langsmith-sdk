@@ -75,6 +75,12 @@ class BoxCreateParams(TypedDict, total=False):
 
     idle_ttl_seconds: int
 
+    labels: Dict[str, str]
+    """
+    Labels are free-form key/value metadata persisted with the sandbox and returned
+    on reads. Labels from the source snapshot are inherited unless overridden here.
+    """
+
     mem_bytes: int
 
     mount_config: MountConfig

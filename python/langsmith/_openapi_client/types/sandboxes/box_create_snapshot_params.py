@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Dict
 from typing_extensions import Required, Annotated, TypedDict
 
 from ..._utils import PropertyInfo
@@ -28,3 +29,6 @@ class BoxCreateSnapshotParams(TypedDict, total=False):
     omitted (i.e. a fresh in-VM checkpoint is requested). Defaults to false to keep
     snapshots small unless memory restore is explicitly desired.
     """
+
+    labels: Dict[str, str]
+    """Labels seed the captured snapshot's labels."""

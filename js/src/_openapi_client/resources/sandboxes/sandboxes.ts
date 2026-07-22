@@ -52,6 +52,8 @@ export interface SandboxResponse {
 
   idle_ttl_seconds?: number;
 
+  labels?: { [key: string]: string };
+
   mem_bytes?: number;
 
   mount_config?: SandboxResponse.MountConfig;
@@ -610,6 +612,8 @@ export interface SnapshotResponse {
   fs_used_bytes?: number;
 
   image_digest?: string;
+
+  labels?: { [key: string]: string };
 
   /**
    * MemorySnapshotSizeBytes is non-nil iff the snapshot was captured with VM memory

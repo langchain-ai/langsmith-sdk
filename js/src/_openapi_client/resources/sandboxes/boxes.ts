@@ -125,6 +125,12 @@ export interface BoxCreateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * Labels are free-form key/value metadata persisted with the sandbox and returned
+   * on reads. Labels from the source snapshot are inherited unless overridden here.
+   */
+  labels?: { [key: string]: string };
+
   mem_bytes?: number;
 
   mount_config?: BoxCreateParams.MountConfig;
@@ -812,6 +818,12 @@ export interface BoxListParams {
   created_by?: string;
 
   /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
+
+  /**
    * Maximum number of results
    */
   limit?: number;
@@ -867,6 +879,11 @@ export interface BoxCreateSnapshotParams {
    * snapshots small unless memory restore is explicitly desired.
    */
   include_memory?: boolean;
+
+  /**
+   * Labels seed the captured snapshot's labels.
+   */
+  labels?: { [key: string]: string };
 }
 
 export interface BoxGenerateServiceURLParams {

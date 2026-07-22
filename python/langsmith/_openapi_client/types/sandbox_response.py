@@ -536,6 +536,8 @@ class SandboxResponse(BaseModel):
 
     idle_ttl_seconds: Optional[int] = None
 
+    labels: Optional[Dict[str, str]] = None
+
     mem_bytes: Optional[int] = None
 
     mount_config: Optional[MountConfig] = None
