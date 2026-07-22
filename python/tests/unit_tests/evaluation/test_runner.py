@@ -28,7 +28,6 @@ from langsmith.evaluation._runner import (
     _collect_evaluator_keys,
     _get_target_args,
     _load_traces,
-    _query_v2_runs_sync,
     _v2_run_to_schema,
 )
 from langsmith.evaluation.evaluator import (
@@ -1739,26 +1738,21 @@ def _experiment_session() -> ls_schemas.TracerSession:
 
 
 def test_load_traces_uses_v2_when_sdb_query_enabled() -> None:
-    """sdb_query_enabled → /v2/runs/query (client.runs.query_v2), never v1 list_runs."""
+    """sdb_query_enabled → sync query_v2 (/v2/runs/query), never v1 list_runs."""
     project = _experiment_session()
     gen_runs = [_make_generated_run(), _make_generated_run()]
 
-    class _AsyncPage:
-        async def __aiter__(self):
-            for r in gen_runs:
-                yield r
-
-    async def _query_v2(**kwargs):
+    def _query_v2(**kwargs):
         # Verify the query is scoped to this experiment, root-only, with a window.
         assert kwargs["project_ids"] == [str(project.id)]
         assert kwargs["is_root"] is True
         assert kwargs["min_start_time"] == project.start_time
         assert "selects" in kwargs
-        return _AsyncPage()
+        return iter(gen_runs)  # sync paginator auto-iterates with a plain for-loop
 
     client = mock.Mock()
     client.info.instance_flags = {"sdb_query_enabled": True}
-    client.runs.query_v2 = _query_v2
+    client._get_langsmith_api_sync.return_value.runs.query_v2 = _query_v2
 
     runs = _load_traces(project, client, load_nested=False)
 
@@ -1777,23 +1771,5 @@ def test_load_traces_uses_v1_when_sdb_query_disabled() -> None:
     _load_traces(project, client, load_nested=False)
 
     client.list_runs.assert_called_once_with(project_id=project.id, is_root=True)
-    client.runs.query_v2.assert_not_called()
+    client._get_langsmith_api_sync.assert_not_called()
 
-
-def test_query_v2_runs_sync_collects_all_pages() -> None:
-    """The sync wrapper drives the async auto-paginator to completion."""
-    gen_runs = [_make_generated_run() for _ in range(3)]
-
-    class _AsyncPage:
-        async def __aiter__(self):
-            for r in gen_runs:
-                yield r
-
-    async def _query_v2(**kwargs):
-        return _AsyncPage()
-
-    client = mock.Mock()
-    client.runs.query_v2 = _query_v2
-
-    out = _query_v2_runs_sync(client, project_ids=["x"])
-    assert out == gen_runs

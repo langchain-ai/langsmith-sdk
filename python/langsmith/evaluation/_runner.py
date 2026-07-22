@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import collections
 import concurrent.futures as cf
 import datetime
@@ -1237,25 +1236,8 @@ def _load_traces_v2(
     }
     if is_root is not None:
         kwargs["is_root"] = is_root
-    return [_v2_run_to_schema(r) for r in _query_v2_runs_sync(client, **kwargs)]
-
-
-def _query_v2_runs_sync(client: langsmith.Client, **kwargs: Any) -> list[Any]:
-    """Run the async `client.runs.query_v2` to completion.
-
-    Callers have no running loop (sync `evaluate`, or an `aio_to_thread` worker), so
-    `asyncio.run` works; fall back to a thread if one is running.
-    """
-
-    async def _collect() -> list[Any]:
-        return [run async for run in await client.runs.query_v2(**kwargs)]
-
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(_collect())
-    with cf.ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(lambda: asyncio.run(_collect())).result()
+    pager = client._get_langsmith_api_sync().runs.query_v2(**kwargs)
+    return [_v2_run_to_schema(r) for r in pager]
 
 
 def _v2_run_to_schema(run: Any) -> schemas.Run:

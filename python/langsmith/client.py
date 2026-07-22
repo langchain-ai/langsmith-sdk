@@ -113,6 +113,7 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
+from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -917,6 +918,7 @@ class Client:
         "_profile_auth",
         "_profile_auth_headers",
         "_langsmith_api",
+        "_langsmith_api_sync",
     ]
 
     _api_key: Optional[str]
@@ -928,6 +930,7 @@ class Client:
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
     _langsmith_api: Optional[LangsmithOpenAPIClient]
+    _langsmith_api_sync: Optional[SyncLangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1467,6 +1470,7 @@ class Client:
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
         self._langsmith_api = None
+        self._langsmith_api_sync = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1490,6 +1494,22 @@ class Client:
                 default_headers=self._headers or None,
             )
         return self._langsmith_api
+
+    def _get_langsmith_api_sync(self) -> SyncLangsmithOpenAPIClient:
+        if self._langsmith_api_sync is None:
+            self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._langsmith_api_sync
 
     @property
     def runs(self) -> AsyncRunsResource:
