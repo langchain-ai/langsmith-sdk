@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Dict, Iterable
 from typing_extensions import Literal, Required, Annotated, TypedDict
 
 from ..._types import SequenceNotStr
@@ -124,6 +124,16 @@ class ProxyConfigRule(TypedDict, total=False):
     aws: ProxyConfigRuleAws
 
     enabled: bool
+
+    env_vars: Dict[str, str]
+    """
+    EnvVars are plaintext env vars set for every command in the sandbox while this
+    rule is enabled. Use them for tools that refuse to run unless a credential env
+    var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+    credential on the wire — set a dummy value here so the command starts. Explicit
+    per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+    over both.
+    """
 
     gcp: ProxyConfigRuleGcp
 

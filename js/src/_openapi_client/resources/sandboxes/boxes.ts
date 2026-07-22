@@ -578,6 +578,16 @@ export namespace BoxCreateParams {
 
       enabled?: boolean;
 
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
+
       gcp?: Rule.Gcp;
 
       headers?: Array<Rule.Header>;
@@ -715,6 +725,16 @@ export namespace BoxUpdateParams {
       aws?: Rule.Aws;
 
       enabled?: boolean;
+
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
 
       gcp?: Rule.Gcp;
 

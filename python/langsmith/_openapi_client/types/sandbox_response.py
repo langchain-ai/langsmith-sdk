@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import List, Union, Optional
+from typing import Dict, List, Union, Optional
 from typing_extensions import Literal, TypeAlias
 
 from .._models import BaseModel
@@ -483,6 +483,16 @@ class ProxyConfigRule(BaseModel):
     aws: Optional[ProxyConfigRuleAws] = None
 
     enabled: Optional[bool] = None
+
+    env_vars: Optional[Dict[str, str]] = None
+    """
+    EnvVars are plaintext env vars set for every command in the sandbox while this
+    rule is enabled. Use them for tools that refuse to run unless a credential env
+    var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+    credential on the wire — set a dummy value here so the command starts. Explicit
+    per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+    over both.
+    """
 
     gcp: Optional[ProxyConfigRuleGcp] = None
 
