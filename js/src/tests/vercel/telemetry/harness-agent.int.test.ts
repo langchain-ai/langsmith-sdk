@@ -481,6 +481,9 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
         },
       },
     });
+    expect(coordinatorRoot.extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
     const delegateRun = outboundRuns.find(
       (run) =>
         run.name === DELEGATE_TOOL_NAME &&
@@ -526,6 +529,21 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
     });
     expect(subagentRoot.parent_run_id).toBe(delegateRun.id);
     expect(subagentRoot.trace_id).toBe(coordinatorRoot.trace_id);
+    expect(subagentRoot.extra?.metadata).not.toHaveProperty("usage_metadata");
+
+    const subagentLlm = outboundRuns.find(
+      (run) => run.parent_run_id === subagentRoot.id && run.run_type === "llm",
+    );
+    const subagentUsage = subagentLlm?.extra?.metadata?.usage_metadata as
+      | { total_tokens?: unknown }
+      | undefined;
+    expect(subagentUsage).toMatchObject({
+      input_tokens: expect.any(Number),
+      output_tokens: expect.any(Number),
+      total_tokens: expect.any(Number),
+    });
+    expect(subagentUsage?.total_tokens).toEqual(expect.any(Number));
+    expect(subagentUsage?.total_tokens as number).toBeGreaterThan(0);
 
     const finalCoordinatorLlm = outboundRuns.find(
       (run) =>
@@ -554,6 +572,14 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
         },
       ],
     });
+    const coordinatorUsage = finalCoordinatorLlm?.extra?.metadata
+      ?.usage_metadata as { total_tokens?: unknown } | undefined;
+    expect(coordinatorUsage).toMatchObject({
+      input_tokens: expect.any(Number),
+      output_tokens: expect.any(Number),
+      total_tokens: expect.any(Number),
+    });
+    expect(coordinatorUsage?.total_tokens as number).toBeGreaterThan(0);
 
     const coordinatorTraceId = coordinatorRoot.trace_id;
     const readTrace = () =>
@@ -592,6 +618,42 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
       500,
       "Waiting for the persisted nested coordinator/subagent trace",
     );
+
+    const persistedCoordinatorRoot = persistedRuns.find(
+      (run) => run.id === coordinatorRoot.id,
+    );
+    const persistedSubagentRoot = persistedRuns.find(
+      (run) => run.id === subagentRoot.id,
+    );
+    expect(persistedCoordinatorRoot?.extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
+    expect(persistedSubagentRoot?.extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
+    const persistedCoordinatorLlm = persistedRuns.find(
+      (run) =>
+        run.parent_run_id === coordinatorRoot.id &&
+        run.run_type === "llm" &&
+        run.extra?.metadata?.step_number === 1,
+    );
+    const persistedSubagentLlm = persistedRuns.find(
+      (run) => run.parent_run_id === subagentRoot.id && run.run_type === "llm",
+    );
+    expect(
+      persistedCoordinatorLlm?.extra?.metadata?.usage_metadata?.total_tokens,
+    ).toEqual(expect.any(Number));
+    expect(
+      persistedCoordinatorLlm?.extra?.metadata?.usage_metadata
+        ?.total_tokens as number,
+    ).toBeGreaterThan(0);
+    expect(
+      persistedSubagentLlm?.extra?.metadata?.usage_metadata?.total_tokens,
+    ).toEqual(expect.any(Number));
+    expect(
+      persistedSubagentLlm?.extra?.metadata?.usage_metadata
+        ?.total_tokens as number,
+    ).toBeGreaterThan(0);
 
     const traceUrl = await client.getRunUrl({ run: coordinatorRoot });
     console.log(`\nReal nested Pi coordinator/subagent trace: ${traceUrl}\n`);

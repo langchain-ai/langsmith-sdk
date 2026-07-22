@@ -143,6 +143,15 @@ function _getLsAgentType(parentRunTree: unknown): "subagent" | "root" {
   return "root";
 }
 
+function _hasNonzeroUsageMetadata(runTree: RunTree): boolean {
+  const usageMetadata = runTree.extra?.metadata?.usage_metadata;
+  if (!isRecord(usageMetadata)) return false;
+
+  return ["input_tokens", "output_tokens", "total_tokens"].some(
+    (key) => typeof usageMetadata[key] === "number" && usageMetadata[key] > 0,
+  );
+}
+
 /**
  * Creates a LangSmith `Telemetry` for the Vercel AI SDK.
  *
@@ -192,6 +201,8 @@ export function LangSmithTelemetry(
   interface InvocationState {
     rootRunTree: RunTree;
     stepRunTrees: Map<number, RunTree>;
+    deferredStepRunTrees: Map<number, RunTree>;
+    patchedStepRunIds: Set<string>;
     toolRunTrees: Map<string, RunTree>;
     toolRunPostPromises: Map<string, Promise<void>>;
     lastStepContent: unknown[];
@@ -248,6 +259,30 @@ export function LangSmithTelemetry(
       }
     });
     return openStep ?? state.rootRunTree;
+  }
+
+  async function patchStepRun(
+    state: InvocationState,
+    stepRunTree: RunTree,
+    options?: { excludeInputs?: boolean },
+  ) {
+    if (state.patchedStepRunIds.has(stepRunTree.id)) return;
+    // Harness dispatches telemetry callbacks without awaiting them, so reserve
+    // the one allowed PATCH synchronously before performing network I/O.
+    state.patchedStepRunIds.add(stepRunTree.id);
+    await stepRunTree.patchRun(options);
+  }
+
+  async function flushDeferredStepRuns(state: InvocationState) {
+    const entries = Array.from(state.deferredStepRunTrees.entries());
+    for (const [stepNumber] of entries) {
+      state.deferredStepRunTrees.delete(stepNumber);
+    }
+    await Promise.all(
+      entries.map(([, stepRunTree]) =>
+        patchStepRun(state, stepRunTree, { excludeInputs: true }),
+      ),
+    );
   }
 
   async function finalizeOpenToolRuns(
@@ -353,6 +388,8 @@ export function LangSmithTelemetry(
     invocationsByCallId.set(event.callId, {
       rootRunTree,
       stepRunTrees: new Map(),
+      deferredStepRunTrees: new Map(),
+      patchedStepRunIds: new Set(),
       toolRunTrees: new Map(),
       toolRunPostPromises: new Map(),
       lastStepContent: [],
@@ -367,6 +404,7 @@ export function LangSmithTelemetry(
     const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
+    await flushDeferredStepRuns(state);
     const stepNumber: number = event.stepNumber ?? 0;
 
     let inputs: KVMap = {};
@@ -546,7 +584,6 @@ export function LangSmithTelemetry(
             ...latestStep.inputs,
             messages: [...messages, toolMessage],
           };
-          await latestStep.patchRun();
         }
       } else {
         state.toolResults.set(event.toolCall.toolCallId, {
@@ -646,7 +683,17 @@ export function LangSmithTelemetry(
     setUsageMetadataOnRunTree(event, stepRunTree);
 
     await stepRunTree.end(outputs);
-    await stepRunTree.patchRun({ excludeInputs: true });
+    if (
+      state.reconstructStepMessages &&
+      !_hasNonzeroUsageMetadata(stepRunTree)
+    ) {
+      // Pi reports zero usage for inferred step boundaries and sends the real
+      // aggregate at turn end. Defer the final PATCH so that aggregate can be
+      // attached to the last LLM run without issuing a duplicate update.
+      state.deferredStepRunTrees.set(stepNumber, stepRunTree);
+    } else {
+      await patchStepRun(state, stepRunTree, { excludeInputs: true });
+    }
     state.stepRunTrees.delete(stepNumber);
   };
 
@@ -664,7 +711,14 @@ export function LangSmithTelemetry(
       const [stepNumber, stepRt] = remainingSteps[i];
       if (stepRt.end_time == null) {
         await stepRt.end({ note: "closed on finish" });
-        await stepRt.patchRun({ excludeInputs: true });
+        if (
+          state.reconstructStepMessages &&
+          !_hasNonzeroUsageMetadata(stepRt)
+        ) {
+          state.deferredStepRunTrees.set(stepNumber, stepRt);
+        } else {
+          await patchStepRun(state, stepRt, { excludeInputs: true });
+        }
       }
       state.stepRunTrees.delete(stepNumber);
     }
@@ -731,20 +785,34 @@ export function LangSmithTelemetry(
       }
     }
 
-    // Set aggregated usage on root
-    if ("totalUsage" in event && event.totalUsage != null) {
-      setUsageMetadataOnRunTree(
+    // Harness integrations such as Pi may report zero usage on inferred step
+    // boundaries and provide the actual aggregate only when the turn ends. Keep
+    // that usage on an LLM run rather than incorrectly elevating it to the
+    // parent chain. The latest step is the only accurate place available for
+    // this aggregate when the harness does not report per-step usage.
+    const latestStep = state.latestStepRunTree;
+    if (
+      state.reconstructStepMessages &&
+      latestStep?.run_type === "llm" &&
+      !_hasNonzeroUsageMetadata(latestStep)
+    ) {
+      if ("totalUsage" in event && event.totalUsage != null) {
+        setUsageMetadataOnRunTree(
+          // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
+          { usage: event.totalUsage, providerMetadata: event.providerMetadata },
+          latestStep,
+        );
+      } else if ("usage" in event && event.usage != null) {
         // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
-        { usage: event.totalUsage, providerMetadata: event.providerMetadata },
-        rootRunTree,
-      );
-    } else if ("usage" in event && event.usage != null) {
-      // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
-      setUsageMetadataOnRunTree(event, rootRunTree);
+        setUsageMetadataOnRunTree(event, latestStep);
+      }
     }
 
     await rootRunTree.end(outputs);
-    await rootRunTree.patchRun({ excludeInputs: true });
+    await Promise.all([
+      flushDeferredStepRuns(state),
+      rootRunTree.patchRun({ excludeInputs: true }),
+    ]);
 
     invocationsByCallId.delete(event.callId);
   };
@@ -777,10 +845,11 @@ export function LangSmithTelemetry(
       const [stepNumber, stepRt] = errorSteps[i];
       if (stepRt.end_time == null) {
         await stepRt.end(undefined, errorMsg);
-        await stepRt.patchRun({ excludeInputs: true });
+        await patchStepRun(state, stepRt, { excludeInputs: true });
       }
       state.stepRunTrees.delete(stepNumber);
     }
+    await flushDeferredStepRuns(state);
 
     await rootRunTree.end(undefined, errorMsg);
     await rootRunTree.patchRun({ excludeInputs: true });

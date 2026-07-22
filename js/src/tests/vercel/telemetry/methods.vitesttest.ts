@@ -236,7 +236,7 @@ describe("basic tracing", () => {
         },
       ],
       finishReason: { unified: "tool-calls" },
-      usage: usage({ input: 5, output: 3 }),
+      usage: usage({ input: 0, output: 0 }),
     });
     await trace.integration.onStepStart({
       callId,
@@ -250,7 +250,7 @@ describe("basic tracing", () => {
       stepNumber: 1,
       content: [{ type: "text", text: "TASK_COMPLETE" }],
       finishReason: { unified: "stop" },
-      usage: usage({ input: 5, output: 1 }),
+      usage: usage({ input: 0, output: 0 }),
     });
     await trace.integration.onEnd({
       callId,
@@ -263,12 +263,20 @@ describe("basic tracing", () => {
 
     const tree = await expectTree(trace);
     expect(tree.data["pi:0"].extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(tree.data["pi:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
     expect(tree.data["pi:1"].extra?.metadata).toMatchObject({
       ls_model_name: "claude-haiku-4-5",
     });
     expect(tree.data["pi:1"].extra?.metadata).not.toHaveProperty("ls_provider");
     expect(tree.data["pi:3"].extra?.metadata).toMatchObject({
       ls_model_name: "claude-haiku-4-5",
+      usage_metadata: {
+        input_tokens: 10,
+        output_tokens: 4,
+        total_tokens: 14,
+      },
     });
     expect(tree.data["pi:3"].extra?.metadata).not.toHaveProperty("ls_provider");
     expect(tree.data["pi:0"].outputs).toEqual({
@@ -485,13 +493,9 @@ describe("basic tracing", () => {
     expect(tree.data["test-provider:1"].outputs ?? {}).toEqual({});
     expect(tree.data["sensitiveTool:2"].outputs ?? {}).toEqual({});
     expect(tree.data["test-provider:3"].outputs ?? {}).toEqual({});
-    expect(tree.data["test-provider:0"].extra?.metadata).toMatchObject({
-      usage_metadata: {
-        input_tokens: 22,
-        output_tokens: 9,
-        total_tokens: 31,
-      },
-    });
+    expect(tree.data["test-provider:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
     expect(tree.data["test-provider:3"].extra?.metadata).toMatchObject({
       usage_metadata: {
         input_tokens: 12,
@@ -1009,7 +1013,7 @@ describe("usage metadata tracking", () => {
     });
   });
 
-  it("should track aggregated usage on the root span", async () => {
+  it("should track usage only on LLM spans", async () => {
     const trace = createTrace();
 
     await generateText({
@@ -1022,19 +1026,15 @@ describe("usage metadata tracking", () => {
       telemetry: { integrations: [trace.integration] },
     });
 
-    await expect(expectTree(trace)).resolves.toMatchObject({
-      data: {
-        "test-provider:0": {
-          extra: {
-            metadata: {
-              usage_metadata: {
-                input_tokens: 30,
-                output_tokens: 15,
-                total_tokens: 45,
-              },
-            },
-          },
-        },
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
+    expect(tree.data["test-provider:1"].extra?.metadata).toMatchObject({
+      usage_metadata: {
+        input_tokens: 30,
+        output_tokens: 15,
+        total_tokens: 45,
       },
     });
   });
