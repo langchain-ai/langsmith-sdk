@@ -4,6 +4,7 @@ import json
 import logging
 import pathlib
 import uuid
+import warnings
 from datetime import datetime
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -516,12 +517,38 @@ async def test_async_create_feedback_warns_and_ignores_unused_kwargs(
         await client.create_feedback(
             run_id=uuid.uuid4(),
             key="test_key",
+            session_id=uuid.uuid4(),
             unused_argument="unused",
         )
 
     request_kwargs = mock_httpx_client.request.call_args.kwargs
     body = json.loads(request_kwargs["content"])
     assert "unused_argument" not in body
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_warns_when_session_id_missing(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    with pytest.warns(FutureWarning, match="session_id"):
+        await client.create_feedback(run_id=uuid.uuid4(), key="test_key")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        # No warning when session_id is provided
+        await client.create_feedback(
+            run_id=uuid.uuid4(), key="test_key", session_id=uuid.uuid4()
+        )
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
