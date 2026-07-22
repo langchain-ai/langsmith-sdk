@@ -47,6 +47,36 @@ describe("Client", () => {
         }),
       );
     });
+
+    it("uses the supplied experiment session ID for evaluation feedback", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+      const createFeedback = jest
+        .spyOn(client, "createFeedback")
+        .mockResolvedValue({} as any);
+      const startTime = "2026-07-21T12:34:56.789Z";
+
+      await client.logEvaluationFeedback(
+        { key: "quality", score: 1 },
+        {
+          id: "550e8400-e29b-41d4-a716-446655440000",
+          start_time: startTime,
+        } as any,
+        undefined,
+        "550e8400-e29b-41d4-a716-446655440001",
+      );
+
+      expect(createFeedback).toHaveBeenCalledWith(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "quality",
+        expect.objectContaining({
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+          startTime,
+        }),
+      );
+    });
   });
 
   describe("evaluators", () => {

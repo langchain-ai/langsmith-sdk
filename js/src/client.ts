@@ -5403,6 +5403,7 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
     const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
@@ -5431,7 +5432,7 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
-          sessionId: run?.session_id,
+          sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
         }),
       );
@@ -5447,11 +5448,13 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<EvaluationResult[]> {
     const [results] = await this._logEvaluationFeedback(
       evaluatorResponse,
       run,
       sourceInfo,
+      sessionId,
     );
     return results;
   }

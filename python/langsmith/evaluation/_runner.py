@@ -1681,7 +1681,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=executor
+                            evaluator_response,
+                            run=run,
+                            session_id=self._get_experiment().id,
+                            _executor=executor,
                         )
                 except Exception as e:
                     try:
@@ -1704,7 +1707,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         if self._upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=executor
+                                error_response,
+                                run=run,
+                                session_id=self._get_experiment().id,
+                                _executor=executor,
                             )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")

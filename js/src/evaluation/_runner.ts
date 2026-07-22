@@ -802,6 +802,8 @@ export class _ExperimentManager {
           ...(await fields.client.logEvaluationFeedback(
             evaluatorResponse,
             run,
+            undefined,
+            this._getExperiment().id,
           )),
         );
       } catch (e) {

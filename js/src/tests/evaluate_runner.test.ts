@@ -117,6 +117,53 @@ describe("evaluation runner internals", () => {
     ).rejects.toThrow("source boom");
   });
 
+  test("evaluate supplies the experiment ID when logging run feedback", async () => {
+    const experimentId = "00000000-0000-0000-0000-000000000004";
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const now = new Date().toISOString();
+    const feedbackCalls: any[][] = [];
+    const mockClient = {
+      createProject: async () => ({
+        id: experimentId,
+        name: "test-project",
+        reference_dataset_id: datasetId,
+      }),
+      updateProject: async () => ({}),
+      logEvaluationFeedback: async (...args: any[]) => {
+        feedbackCalls.push(args);
+        return [];
+      },
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(async () => ({ output: "ok" }), {
+      data: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          inputs: { input: "hello" },
+          outputs: {},
+          dataset_id: datasetId,
+          created_at: now,
+          modified_at: now,
+          runs: [],
+        },
+      ],
+      evaluators: [async () => ({ key: "quality", score: 1 })],
+      client: mockClient,
+    });
+    for await (const _ of results) {
+      // Drain the result stream.
+    }
+
+    expect(feedbackCalls).toHaveLength(1);
+    expect(feedbackCalls[0][1]).toEqual(
+      expect.objectContaining({ start_time: expect.anything() }),
+    );
+    expect(feedbackCalls[0][2]).toBeUndefined();
+    expect(feedbackCalls[0][3]).toBe(experimentId);
+  });
+
   test("reorderResultRowsByExampleIndex restores original example order", () => {
     const inputRows = [
       {
