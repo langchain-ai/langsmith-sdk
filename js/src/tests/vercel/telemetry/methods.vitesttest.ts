@@ -283,13 +283,7 @@ describe("basic tracing", () => {
     expect(tree.data["bash:2"]).toMatchObject({
       run_type: "tool",
       inputs: { command: "echo done" },
-      outputs: {
-        role: "tool",
-        content: "done",
-        tool_call_id: "tool-1",
-        name: "bash",
-        artifact: "done",
-      },
+      outputs: { output: "done" },
     });
     expect(tree.data["pi:3"].inputs).toMatchObject({
       messages: [
@@ -688,13 +682,7 @@ describe("global telemetry registration", () => {
           "delegate:2": {
             run_type: "tool",
             inputs: { task: "summarize" },
-            outputs: {
-              role: "tool",
-              content: "Child answer",
-              tool_call_id: "tc-delegate-1",
-              name: "delegate",
-              artifact: "Child answer",
-            },
+            outputs: { output: "Child answer" },
           },
           "child-agent:3": {
             name: "child-agent",
@@ -859,13 +847,7 @@ describe("multi-step tracing", () => {
         "search:2": {
           run_type: "tool",
           inputs: { query: "weather" },
-          outputs: {
-            role: "tool",
-            content: "Sunny, 72F",
-            tool_call_id: "tc-1",
-            name: "search",
-            artifact: "Sunny, 72F",
-          },
+          outputs: { output: "Sunny, 72F" },
         },
         "test-provider:3": {
           run_type: "llm",
@@ -919,13 +901,7 @@ describe("tool tracing via executeTool", () => {
         "calculator:2": {
           run_type: "tool",
           inputs: { expression: "2+2" },
-          outputs: {
-            role: "tool",
-            content: "4",
-            tool_call_id: "tc-calc-1",
-            name: "calculator",
-            artifact: 4,
-          },
+          outputs: { output: 4 },
         },
       },
     });
@@ -976,13 +952,7 @@ describe("tool tracing via executeTool", () => {
         "research:2": {
           run_type: "tool",
           inputs: { topic: "AI" },
-          outputs: {
-            role: "tool",
-            content: "Processed: AI research",
-            tool_call_id: "tc-research-1",
-            name: "research",
-            artifact: "Processed: AI research",
-          },
+          outputs: { output: "Processed: AI research" },
         },
         "inner-agent-call:3": {
           run_type: "chain",
@@ -1199,13 +1169,7 @@ describe("runtime and tool context", () => {
         "weather:2": {
           run_type: "tool",
           inputs: { location: "Prague" },
-          outputs: {
-            role: "tool",
-            content: '{"location":"Prague","unit":"celsius"}',
-            tool_call_id: "tc-weather-1",
-            name: "weather",
-            artifact: { location: "Prague", unit: "celsius" },
-          },
+          outputs: { output: { location: "Prague", unit: "celsius" } },
         },
       },
     });
@@ -1677,13 +1641,7 @@ describe("integration reuse", () => {
         "calculator:2": {
           run_type: "tool",
           inputs: { expression: "1+1" },
-          outputs: {
-            role: "tool",
-            content: "2",
-            tool_call_id: "tc-2",
-            name: "calculator",
-            artifact: 2,
-          },
+          outputs: { output: 2 },
         },
       },
     });

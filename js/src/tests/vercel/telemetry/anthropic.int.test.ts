@@ -112,11 +112,7 @@ test("telemetry generateText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          role: "tool",
-          content: expect.stringMatching(/User 123 has the following orders/),
-          tool_call_id: expect.any(String),
-          name: "listOrders",
-          artifact: expect.stringMatching(/User 123 has the following orders/),
+          output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "anthropic.messages:3": {
@@ -262,11 +258,7 @@ test("telemetry streamText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          role: "tool",
-          content: expect.stringMatching(/User 123 has the following orders/),
-          tool_call_id: expect.any(String),
-          name: "listOrders",
-          artifact: expect.stringMatching(/User 123 has the following orders/),
+          output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "anthropic.messages:3": {

@@ -52,20 +52,12 @@ function expectToolMessageRun(
     run_type: "tool",
     parent_run_id: rootRunId,
     inputs: expect.anything(),
-    outputs: {
-      role: "tool",
-      content: expect.any(String),
-      name: "bash",
-      artifact: expect.anything(),
-    },
+    outputs: { output: expect.any(String) },
   });
   expect(run.inputs).not.toHaveProperty("role");
   expect(run.inputs).not.toHaveProperty("type");
   expect(run.inputs).not.toHaveProperty("toolCallId");
   expect(run.inputs).not.toHaveProperty("toolName");
-  expect((run.outputs as { tool_call_id?: unknown }).tool_call_id).toEqual(
-    expect.any(String),
-  );
   expect(JSON.stringify(run.inputs)).toContain(TASK_FILE_NAME);
   expect(JSON.stringify(run.outputs)).toContain(TASK_FILE_CONTENT);
 }
@@ -499,16 +491,8 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
     expect(delegateRun).toMatchObject({
       run_type: "tool",
       inputs: { task: expect.stringContaining(SUBAGENT_RESULT) },
-      outputs: {
-        role: "tool",
-        content: SUBAGENT_RESULT,
-        tool_call_id: expect.any(String),
-        name: DELEGATE_TOOL_NAME,
-        artifact: SUBAGENT_RESULT,
-      },
+      outputs: { output: SUBAGENT_RESULT },
     });
-    const delegateToolCallId = (delegateRun.outputs as { tool_call_id: string })
-      .tool_call_id;
     const subagentRoot = outboundRuns.find(
       (run) =>
         run.name === SUBAGENT_ROOT_RUN_NAME &&
@@ -516,6 +500,14 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
     );
     if (!subagentRoot?.trace_id) {
       throw new Error("Expected the subagent run beneath the delegate tool");
+    }
+    const delegateToolCallId = (
+      subagentRoot.extra as {
+        metadata?: { parent_tool_call_id?: unknown };
+      }
+    ).metadata?.parent_tool_call_id;
+    if (typeof delegateToolCallId !== "string") {
+      throw new Error("Expected the subagent tool-call metadata");
     }
 
     expect(subagentRoot).toMatchObject({

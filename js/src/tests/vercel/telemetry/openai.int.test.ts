@@ -184,11 +184,7 @@ test("telemetry generateText with tools", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          role: "tool",
-          content: expect.stringMatching(/User 123 has the following orders/),
-          tool_call_id: expect.any(String),
-          name: "listOrders",
-          artifact: expect.stringMatching(/User 123 has the following orders/),
+          output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "openai.responses:3": {
@@ -307,11 +303,7 @@ test("telemetry streamText", async () => {
         run_type: "tool",
         inputs: { userId: "123" },
         outputs: {
-          role: "tool",
-          content: expect.stringMatching(/User 123 has the following orders/),
-          tool_call_id: expect.any(String),
-          name: "listOrders",
-          artifact: expect.stringMatching(/User 123 has the following orders/),
+          output: expect.stringMatching(/User 123 has the following orders/),
         },
       },
       "openai.responses:3": {
@@ -811,13 +803,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
       "research:2": {
         run_type: "tool",
         inputs: { query: "AI trends" },
-        outputs: {
-          role: "tool",
-          content: "AI trends",
-          tool_call_id: expect.any(String),
-          name: "research",
-          artifact: "AI trends",
-        },
+        outputs: { output: "AI trends" },
       },
       "sub-agent:3": {
         run_type: "chain",
@@ -904,13 +890,6 @@ test("telemetry tool error handling", async () => {
       "getWeather:2": {
         run_type: "tool",
         inputs: { city: "Tokyo" },
-        outputs: {
-          role: "tool",
-          content: "No data found",
-          tool_call_id: expect.any(String),
-          name: "getWeather",
-          artifact: "No data found",
-        },
         error: "No data found",
       },
     },

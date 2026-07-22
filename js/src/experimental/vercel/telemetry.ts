@@ -560,12 +560,9 @@ export function LangSmithTelemetry(
     let error: string | undefined;
 
     if (event.recordOutputs !== false) {
-      outputs = formatToolResultMessage(
-        event.toolCall.toolCallId,
-        event.toolCall.toolName,
-        event.toolOutput,
-      );
-      if (isRecord(event.toolOutput) && "error" in event.toolOutput) {
+      if (event.toolOutput.type === "tool-result") {
+        outputs = { output: event.toolOutput.output };
+      } else if (isRecord(event.toolOutput) && "error" in event.toolOutput) {
         const err = event.toolOutput.error;
         error = err instanceof Error ? err.message : String(err);
       }
