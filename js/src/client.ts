@@ -3438,6 +3438,11 @@ export class Client implements LangSmithTracingClientInterface {
         )),
       ];
     }
+    if (projectIds_.length === 0) {
+      throw new Error(
+        "At least one of projectNames or projectIds must be provided.",
+      );
+    }
 
     const payload = {
       id,

@@ -4468,6 +4468,10 @@ class Client:
                 ]
                 for future in as_completed(futures):
                     project_ids.append(future.result().id)
+        if not project_ids:
+            raise ValueError(
+                "At least one of project_names or project_ids must be provided."
+            )
         payload = {
             "id": id,
             "trace": trace,
