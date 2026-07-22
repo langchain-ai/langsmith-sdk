@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import collections
 import concurrent.futures as cf
+import datetime
 import functools
 import inspect
 import io
@@ -505,7 +507,7 @@ def evaluate_existing(
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)
-    runs = _load_traces(experiment, client, load_nested=load_nested)
+    runs = _load_traces(project, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
@@ -893,8 +895,7 @@ def evaluate_comparative(
     comparison_url = _build_comparative_url(experiments_tuple, comparative_experiment)
     _print_comparative_experiment_start(comparison_url)
     runs = [
-        _load_traces(experiment, client, load_nested=load_nested)
-        for experiment in experiments
+        _load_traces(project, client, load_nested=load_nested) for project in projects
     ]
     # Only check intersections for the experiments
     examples_intersection = None
@@ -1167,7 +1168,12 @@ def _load_traces(
 ) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
-    if isinstance(project, schemas.TracerSession):
+    # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
+    if (client.info.instance_flags or {}).get("sdb_query_enabled"):
+        if not isinstance(project, schemas.TracerSession):
+            project = _load_experiment(project, client)
+        runs = _load_traces_v2(project, client, is_root=is_root)
+    elif isinstance(project, schemas.TracerSession):
         runs = client.list_runs(project_id=project.id, is_root=is_root)
     elif isinstance(project, uuid.UUID) or _is_uuid(project):
         runs = client.list_runs(project_id=project, is_root=is_root)
@@ -1190,6 +1196,92 @@ def _load_traces(
     for run_id, child_runs in treemap.items():
         all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
     return results
+
+
+# Fields for `/v2/runs/query` (RunSelectField enum); omitting selects returns only id.
+_V2_RUN_SELECTS = [
+    "ID",
+    "NAME",
+    "RUN_TYPE",
+    "STATUS",
+    "START_TIME",
+    "END_TIME",
+    "INPUTS",
+    "OUTPUTS",
+    "PARENT_RUN_IDS",
+    "PROJECT_ID",
+    "TRACE_ID",
+    "DOTTED_ORDER",
+    "REFERENCE_EXAMPLE_ID",
+    "ERROR",
+]
+
+
+def _load_traces_v2(
+    project: schemas.TracerSession,
+    client: langsmith.Client,
+    *,
+    is_root: Optional[bool],
+) -> list[schemas.Run]:
+    """List an experiment's runs from v2.
+
+    `query_v2` defaults `min_start_time` to ~24h, so bound the window to the session
+    explicitly or older experiments drop.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    kwargs: dict[str, Any] = {
+        "project_ids": [str(project.id)],
+        "min_start_time": project.start_time,
+        "max_start_time": project.end_time or now,
+        "selects": _V2_RUN_SELECTS,
+    }
+    if is_root is not None:
+        kwargs["is_root"] = is_root
+    return [_v2_run_to_schema(r) for r in _query_v2_runs_sync(client, **kwargs)]
+
+
+def _query_v2_runs_sync(client: langsmith.Client, **kwargs: Any) -> list[Any]:
+    """Run the async `client.runs.query_v2` to completion.
+
+    Callers have no running loop (sync `evaluate`, or an `aio_to_thread` worker), so
+    `asyncio.run` works; fall back to a thread if one is running.
+    """
+
+    async def _collect() -> list[Any]:
+        return [run async for run in await client.runs.query_v2(**kwargs)]
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_collect())
+    with cf.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(_collect())).result()
+
+
+def _v2_run_to_schema(run: Any) -> schemas.Run:
+    """Map a v2 `Run` to `ls_schemas.Run`.
+
+    `project_id`→`session_id`, `parent_run_ids[-1]`→`parent_run_id`; drop `None` so
+    schema defaults apply (e.g. `dotted_order`).
+    """
+    parent_run_ids = getattr(run, "parent_run_ids", None)
+    fields = {
+        "id": run.id,
+        "name": run.name,
+        "run_type": run.run_type,
+        "start_time": run.start_time,
+        "end_time": getattr(run, "end_time", None),
+        "trace_id": run.trace_id,
+        "session_id": getattr(run, "project_id", None),
+        "parent_run_id": parent_run_ids[-1] if parent_run_ids else None,
+        "dotted_order": getattr(run, "dotted_order", None),
+        "reference_example_id": getattr(run, "reference_example_id", None),
+        "inputs": getattr(run, "inputs", None) or {},
+        "outputs": getattr(run, "outputs", None),
+        "error": getattr(run, "error", None),
+        "status": getattr(run, "status", None),
+    }
+    return schemas.Run(**{k: v for k, v in fields.items() if v is not None})
 
 
 def _load_examples_map(
