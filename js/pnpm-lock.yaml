@@ -26,8 +26,8 @@ importers:
         version: 6.6.2
     devDependencies:
       '@ai-sdk/anthropic':
-        specifier: 4.0.0-beta.67
-        version: 4.0.0-beta.67(zod@4.4.3)
+        specifier: 4.0.18
+        version: 4.0.18(zod@4.4.3)
       '@ai-sdk/harness':
         specifier: 1.0.36
         version: 1.0.36(ws@8.21.0)(zod@4.4.3)
@@ -187,8 +187,8 @@ importers:
 
 packages:
 
-  '@ai-sdk/anthropic@4.0.0-beta.67':
-    resolution: {integrity: sha512-R0TMMlTui9AoaHTjiJWpnaQLBNBc/oKMCWaqalSnDPtKundJ0sIWZ+wkdNTZbEhq92blzYA7YLDvbDDl8UbGdQ==}
+  '@ai-sdk/anthropic@4.0.18':
+    resolution: {integrity: sha512-CpSBDI7DWk3DHM+qwbjhH7JxqqEqr5sK/SDrC9eit8Q03Uf1xBBrgMAVf9FajbpaH3oHxynLn474lf6ikjjO8A==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -221,14 +221,14 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.0-beta.49':
-    resolution: {integrity: sha512-7xnpAQLpW0KGIsh0CQERcIZuXEGqv7FtFW2BdFk14iuMxRMVpXhTVvEQyqkm6tWAbQ7OsGQJhO6M0Me9gHQ52g==}
+  '@ai-sdk/provider-utils@5.0.11':
+    resolution: {integrity: sha512-7/96wE+ZsKB35iS9ASyllrE4Ym/EolXEB7AkuJ5FI++fmS85BVTAs77890C+1Z2jwHfBKjBQSBmsliOsAh0iFQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.11':
-    resolution: {integrity: sha512-7/96wE+ZsKB35iS9ASyllrE4Ym/EolXEB7AkuJ5FI++fmS85BVTAs77890C+1Z2jwHfBKjBQSBmsliOsAh0iFQ==}
+  '@ai-sdk/provider-utils@5.0.12':
+    resolution: {integrity: sha512-bbhlOgHeYwrIGheLkM6fhS8hVger8uFPmcOLg+kxc9EFh7y30XYorWhthlYAgpadO3SJhFZrIcEknN7qEqEVvA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -238,10 +238,6 @@ packages:
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@4.0.0-beta.19':
-    resolution: {integrity: sha512-Aca/KiGeRtMM7rOJ38Qio+Dc2V45PpiGoWgdrdtIkgM9zkhYpS043t0ggKoNOWgm/csv99XWGrfSF63PSkVeHw==}
-    engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.1':
     resolution: {integrity: sha512-6p3C/vGqVIjcptBu1DnVd/BZJ2wWmV9TUv9192vT6ZvT9KNED8EwRTqyqFpoQZKgSbMDSvBSq3dqR524Nt/Crw==}
@@ -3553,10 +3549,6 @@ packages:
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
-  eventsource-parser@3.0.8:
-    resolution: {integrity: sha512-70QWGkr4snxr0OXLRWsFLeRBIRPuQOvt4s8QYjmUlmlkyTZkRqS7EDVRZtzU3TiyDbXSzaOeF0XUKy8PchzukQ==}
-    engines: {node: '>=18.0.0'}
-
   eventsource-parser@3.1.0:
     resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
     engines: {node: '>=18.0.0'}
@@ -5683,10 +5675,10 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/anthropic@4.0.0-beta.67(zod@4.4.3)':
+  '@ai-sdk/anthropic@4.0.18(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-beta.19
-      '@ai-sdk/provider-utils': 5.0.0-beta.49(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
       zod: 4.4.3
 
   '@ai-sdk/gateway@4.0.23(zod@4.4.3)':
@@ -5725,15 +5717,15 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.2(zod@4.4.3)
       zod: 4.4.3
 
-  '@ai-sdk/provider-utils@5.0.0-beta.49(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.11(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.0-beta.19
+      '@ai-sdk/provider': 4.0.3
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
-      eventsource-parser: 3.0.8
+      eventsource-parser: 3.1.0
       zod: 4.4.3
 
-  '@ai-sdk/provider-utils@5.0.11(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.12(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.3
       '@standard-schema/spec': 1.1.0
@@ -5748,10 +5740,6 @@ snapshots:
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.0
       zod: 4.4.3
-
-  '@ai-sdk/provider@4.0.0-beta.19':
-    dependencies:
-      json-schema: 0.4.0
 
   '@ai-sdk/provider@4.0.1':
     dependencies:
@@ -9633,8 +9621,6 @@ snapshots:
   etag@1.8.1: {}
 
   eventemitter3@4.0.7: {}
-
-  eventsource-parser@3.0.8: {}
 
   eventsource-parser@3.1.0: {}
 
