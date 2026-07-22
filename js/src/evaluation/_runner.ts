@@ -799,12 +799,11 @@ export class _ExperimentManager {
           options,
         );
         evaluationResults.results.push(
-          ...(await fields.client.logEvaluationFeedback(
+          ...(await fields.client.logEvaluationFeedback({
             evaluatorResponse,
             run,
-            undefined,
-            this._getExperiment().id,
-          )),
+            projectId: this._getExperiment().id
+          })),
         );
       } catch (e) {
         console.error(

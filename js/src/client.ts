@@ -5447,6 +5447,18 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public async logEvaluationFeedback(
+    params: {
+      evaluatorResponse:
+        | EvaluationResult
+        | EvaluationResult[]
+        | EvaluationResults,
+      run: Run,
+      projectId: string,
+      sourceInfo?: { [key: string]: any }
+    }
+  ): Promise<EvaluationResult[]>;
+  /** @deprecated Pass all params within an object and populate projectId. */
+  public async logEvaluationFeedback(
     evaluatorResponse:
       | EvaluationResult
       | EvaluationResult[]
@@ -5454,9 +5466,39 @@ export class Client implements LangSmithTracingClientInterface {
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,
+  ): Promise<EvaluationResult[]>;
+  public async logEvaluationFeedback(
+    evaluatorResponseOrParams:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults | {
+        evaluatorResponse:
+          | EvaluationResult
+          | EvaluationResult[]
+          | EvaluationResults,
+        run: Run,
+        projectId: string,
+        sourceInfo?: { [key: string]: any }
+      },
+    run?: Run,
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<EvaluationResult[]> {
+    if (
+      evaluatorResponseOrParams != null &&
+      typeof evaluatorResponseOrParams === "object" &&
+      "evaluatorResponse" in evaluatorResponseOrParams
+    ) {
+      const [results] = await this._logEvaluationFeedback(
+        evaluatorResponseOrParams.evaluatorResponse,
+        evaluatorResponseOrParams.run,
+        evaluatorResponseOrParams.sourceInfo,
+        evaluatorResponseOrParams.projectId,
+      );
+      return results;
+    }
     const [results] = await this._logEvaluationFeedback(
-      evaluatorResponse,
+      evaluatorResponseOrParams,
       run,
       sourceInfo,
       sessionId,
