@@ -382,9 +382,9 @@ class Sandbox:
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute via WebSocket /execute/ws."""
         import time
-        import uuid
 
         from langsmith.sandbox._ws_execute import run_ws_stream
+        from langsmith.uuid import uuid7
 
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
@@ -393,7 +393,7 @@ class Sandbox:
         # get-or-create keyed on it, so if the tunnel closes before "started" we
         # can re-issue the same id and reattach to the existing command instead
         # of spawning a second one.
-        command_id = uuid.uuid4().hex
+        command_id = uuid7().hex
 
         ws_kwargs: dict[str, Any] = {
             "command_id": command_id,

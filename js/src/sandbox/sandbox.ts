@@ -11,7 +11,7 @@ import type {
   Snapshot,
   StartSandboxOptions,
 } from "./types.js";
-import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
+import { uuid7 } from "../uuid.js";
 import {
   LangSmithDataplaneNotConfiguredError,
   LangSmithStreamEndedBeforeStartedError,
@@ -256,7 +256,7 @@ export class Sandbox {
     // get-or-create keyed on it, so if the tunnel closes before "started" we
     // can re-issue the same id and reattach to the existing command instead of
     // spawning a second one.
-    const execCommandId = commandId ?? uuidv4();
+    const execCommandId = commandId ?? uuid7();
 
     let attempt = 0;
     // eslint-disable-next-line no-constant-condition
