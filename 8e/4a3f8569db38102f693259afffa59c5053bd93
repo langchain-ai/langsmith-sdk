@@ -1,0 +1,26 @@
+python/langsmith/_internal/_v2_migration_utils.py
+  s_00da43c60604db::t_d7652614006648 160
+  s_00da43c60604db::t_75436fb4f7161c 11
+  s_00da43c60604db::t_a8e4b581994859 18
+  s_00da43c60604db::t_9c322c7dbc167c 33-44
+  s_00da43c60604db::t_9c53838929c403 79-80,84,98-111
+js/src/utils/v2_migration.ts
+  s_00da43c60604db::t_41fff9735cee3d 24-32
+  s_00da43c60604db::t_ccee4dc2f496ea 54-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8e4a3f8569db38102f693259afffa59c5053bd93",
+  "prompts": {},
+  "sessions": {
+    "s_00da43c60604db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f69987a4-8bc2-439a-9e9c-6071a213cf27",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
