@@ -11,7 +11,11 @@ import type {
   Snapshot,
   StartSandboxOptions,
 } from "./types.js";
-import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
+import {
+  LangSmithDataplaneNotConfiguredError,
+  LangSmithStreamEndedBeforeStartedError,
+} from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import { reconnectWsStream, runWsStream } from "./ws_execute.js";
@@ -77,6 +81,14 @@ export class Sandbox {
   readonly fs_capacity_bytes?: number;
 
   private _client: SandboxClient;
+
+  /**
+   * Learned once per sandbox: true after a "started" frame echoes back the
+   * client-supplied commandId, proving the daemon honors it (get-or-create).
+   * Only then is an early-close retry idempotency-safe. undefined = unknown.
+   * @internal
+   */
+  _clientCommandIdHonored?: boolean;
 
   /** @internal */
   constructor(data: SandboxData, client: SandboxClient) {
@@ -247,32 +259,65 @@ export class Sandbox {
     const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = this._client.getDefaultHeaders();
-    const [stream, control] = await runWsStream(
-      dataplaneUrl,
-      this._client.getApiKey(),
-      command,
-      {
-        timeout,
-        env,
-        cwd,
-        shell,
-        commandId,
-        idleTimeout,
-        killOnDisconnect,
-        ttlSeconds,
-        pty,
-        ...(Object.keys(clientHeaders).length > 0
-          ? { headers: clientHeaders }
-          : {}),
-      },
-    );
 
-    const handle = new CommandHandle(stream, control, this, {
-      onStdout,
-      onStderr,
-    });
-    await handle._ensureStarted();
-    return handle;
+    // Client-supplied command_id makes execute idempotent (server does
+    // get-or-create keyed on it), so a tunnel that closes before "started"
+    // can be safely re-issued: the daemon reattaches to the existing command
+    // rather than spawning a second one.
+    const sentCommandId = commandId ?? uuidv4();
+
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const [stream, control] = await runWsStream(
+        dataplaneUrl,
+        this._client.getApiKey(),
+        command,
+        {
+          timeout,
+          env,
+          cwd,
+          shell,
+          commandId: sentCommandId,
+          idleTimeout,
+          killOnDisconnect,
+          ttlSeconds,
+          pty,
+          ...(Object.keys(clientHeaders).length > 0
+            ? { headers: clientHeaders }
+            : {}),
+        },
+      );
+
+      const handle = new CommandHandle(stream, control, this, {
+        sentCommandId,
+        onStdout,
+        onStderr,
+      });
+      try {
+        await handle._ensureStarted();
+        return handle;
+      } catch (e) {
+        // Only retry when the daemon has proven it honors our command_id;
+        // otherwise a re-issue could double-run the command. Unknown/
+        // unsupported → surface the original error.
+        if (
+          !(e instanceof LangSmithStreamEndedBeforeStartedError) ||
+          this._clientCommandIdHonored !== true
+        ) {
+          throw e;
+        }
+        attempt++;
+        if (attempt > CommandHandle.MAX_AUTO_RECONNECTS) {
+          throw e;
+        }
+        const delay = Math.min(
+          CommandHandle.BACKOFF_BASE * 2 ** (attempt - 1),
+          CommandHandle.BACKOFF_MAX,
+        );
+        await new Promise((r) => setTimeout(r, delay * 1000));
+      }
+    }
   }
 
   /**

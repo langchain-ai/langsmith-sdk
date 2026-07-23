@@ -20,6 +20,7 @@ from langsmith.sandbox._models import (
     AsyncServiceURL,
     ExecutionResult,
     Snapshot,
+    _StreamEndedBeforeStarted,
 )
 from langsmith.sandbox._tunnel import AsyncTunnel
 
@@ -95,6 +96,10 @@ class AsyncSandbox:
     # Internal fields (not from API)
     _client: AsyncSandboxClient = field(repr=False, default=None)  # type: ignore
     _auto_delete: bool = field(repr=False, default=True)
+    # Learned once per sandbox: True after a "started" frame echoes back the
+    # client-supplied command_id, proving the daemon honors it (get-or-create).
+    # Only then is an early-close retry idempotency-safe. None = unknown.
+    _client_command_id_honored: Optional[bool] = field(repr=False, default=None)
 
     @classmethod
     def from_dict(
@@ -381,12 +386,22 @@ class AsyncSandbox:
         headers: RequestHeaders = None,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute via WebSocket /execute/ws."""
+        import asyncio
+        import uuid
+
         from langsmith.sandbox._ws_execute import run_ws_stream_async
 
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
 
+        # Client-supplied command_id makes execute idempotent (server does
+        # get-or-create keyed on it), so a tunnel that closes before "started"
+        # can be safely re-issued: the daemon reattaches to the existing command
+        # rather than spawning a second one.
+        command_id = uuid.uuid4().hex
+
         ws_kwargs: dict[str, Any] = {
+            "command_id": command_id,
             "timeout": timeout,
             "env": env,
             "cwd": cwd,
@@ -400,21 +415,40 @@ class AsyncSandbox:
         if merged:
             ws_kwargs["headers"] = merged
 
-        msg_stream, control = await run_ws_stream_async(
-            dataplane_url,
-            api_key,
-            command,
-            **ws_kwargs,
-        )
-
-        handle = AsyncCommandHandle(
-            msg_stream,
-            control,
-            self,
-            on_stdout=on_stdout,
-            on_stderr=on_stderr,
-        )
-        await handle._ensure_started()
+        attempt = 0
+        while True:
+            msg_stream, control = await run_ws_stream_async(
+                dataplane_url,
+                api_key,
+                command,
+                **ws_kwargs,
+            )
+            handle = AsyncCommandHandle(
+                msg_stream,
+                control,
+                self,
+                sent_command_id=command_id,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+            )
+            try:
+                await handle._ensure_started()
+                break
+            except _StreamEndedBeforeStarted:
+                # Only retry when the daemon has proven it honors our
+                # command_id; otherwise a re-issue could double-run the
+                # command. Unknown/unsupported → surface the original error.
+                if self._client_command_id_honored is not True:
+                    raise
+                attempt += 1
+                if attempt > AsyncCommandHandle.MAX_AUTO_RECONNECTS:
+                    raise
+                await asyncio.sleep(
+                    min(
+                        AsyncCommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
+                        AsyncCommandHandle._BACKOFF_MAX,
+                    )
+                )
 
         if not wait:
             return handle

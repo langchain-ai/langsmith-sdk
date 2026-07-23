@@ -35,6 +35,7 @@ import {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
+  LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
   WsMessage,
@@ -1600,6 +1601,42 @@ describe("CommandHandle", () => {
       });
       // Should already be started
       expect(handle.commandId).toBe("cmd-123");
+    });
+
+    it("marks the daemon as honoring the client command_id when echoed", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "cid-1", pid: 42 },
+        { type: "exit", exit_code: 0 },
+      ]);
+      const sandbox = createMockSandbox();
+      const handle = new CommandHandle(stream, null, sandbox, {
+        sentCommandId: "cid-1",
+      });
+      await handle._ensureStarted();
+      expect(sandbox._clientCommandIdHonored).toBe(true);
+    });
+
+    it("marks the daemon as not honoring the id on a mismatched echo", async () => {
+      const stream = createMockStream([
+        { type: "started", command_id: "server-assigned", pid: 42 },
+        { type: "exit", exit_code: 0 },
+      ]);
+      const sandbox = createMockSandbox();
+      const handle = new CommandHandle(stream, null, sandbox, {
+        sentCommandId: "cid-1",
+      });
+      await handle._ensureStarted();
+      expect(sandbox._clientCommandIdHonored).toBe(false);
+    });
+
+    it("throws the early-close marker when the stream ends before started", async () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        sentCommandId: "cid-1",
+      });
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        LangSmithStreamEndedBeforeStartedError,
+      );
     });
   });
 

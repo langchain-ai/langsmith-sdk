@@ -228,6 +228,7 @@ def run_ws_stream(
     api_key: Optional[str],
     command: str,
     *,
+    command_id: str = "",
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
@@ -281,6 +282,8 @@ def run_ws_stream(
                     "kill_on_disconnect": kill_on_disconnect,
                     "ttl_seconds": ttl_seconds,
                 }
+                if command_id:
+                    payload["command_id"] = command_id
                 if env:
                     payload["env"] = env
                 if cwd:
@@ -425,6 +428,7 @@ async def run_ws_stream_async(
     api_key: Optional[str],
     command: str,
     *,
+    command_id: str = "",
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
@@ -467,6 +471,8 @@ async def run_ws_stream_async(
                     "kill_on_disconnect": kill_on_disconnect,
                     "ttl_seconds": ttl_seconds,
                 }
+                if command_id:
+                    payload["command_id"] = command_id
                 if env:
                     payload["env"] = env
                 if cwd:
