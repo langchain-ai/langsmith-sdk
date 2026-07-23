@@ -502,7 +502,6 @@ class CommandHandle:
         sandbox: Sandbox,
         *,
         command_id: str = "",
-        sent_command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
@@ -511,7 +510,6 @@ class CommandHandle:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
-        self._sent_command_id = sent_command_id
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
@@ -553,10 +551,6 @@ class CommandHandle:
             )
         self._command_id = first_msg.get("command_id")
         self._pid = first_msg.get("pid")
-        if self._sent_command_id:
-            self._sandbox._client_command_id_honored = (
-                self._command_id == self._sent_command_id
-            )
 
     @property
     def command_id(self) -> Optional[str]:
@@ -768,7 +762,6 @@ class AsyncCommandHandle:
         sandbox: AsyncSandbox,
         *,
         command_id: str = "",
-        sent_command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
@@ -777,7 +770,6 @@ class AsyncCommandHandle:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
-        self._sent_command_id = sent_command_id
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
@@ -817,10 +809,6 @@ class AsyncCommandHandle:
         self._command_id = first_msg.get("command_id")
         self._pid = first_msg.get("pid")
         self._started = True
-        if self._sent_command_id:
-            self._sandbox._client_command_id_honored = (
-                self._command_id == self._sent_command_id
-            )
 
     @property
     def command_id(self) -> Optional[str]:

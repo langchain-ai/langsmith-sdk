@@ -96,10 +96,6 @@ class AsyncSandbox:
     # Internal fields (not from API)
     _client: AsyncSandboxClient = field(repr=False, default=None)  # type: ignore
     _auto_delete: bool = field(repr=False, default=True)
-    # Learned once per sandbox: True after a "started" frame echoes back the
-    # client-supplied command_id, proving the daemon honors it (get-or-create).
-    # Only then is an early-close retry idempotency-safe. None = unknown.
-    _client_command_id_honored: Optional[bool] = field(repr=False, default=None)
 
     @classmethod
     def from_dict(
@@ -394,10 +390,10 @@ class AsyncSandbox:
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
 
-        # Client-supplied command_id makes execute idempotent (server does
-        # get-or-create keyed on it), so a tunnel that closes before "started"
-        # can be safely re-issued: the daemon reattaches to the existing command
-        # rather than spawning a second one.
+        # A client-supplied command_id makes execute idempotent: the daemon does
+        # get-or-create keyed on it, so if the tunnel closes before "started" we
+        # can re-issue the same id and reattach to the existing command instead
+        # of spawning a second one.
         command_id = uuid.uuid4().hex
 
         ws_kwargs: dict[str, Any] = {
@@ -427,7 +423,6 @@ class AsyncSandbox:
                 msg_stream,
                 control,
                 self,
-                sent_command_id=command_id,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
             )
@@ -435,11 +430,7 @@ class AsyncSandbox:
                 await handle._ensure_started()
                 break
             except _StreamEndedBeforeStarted:
-                # Only retry when the daemon has proven it honors our
-                # command_id; otherwise a re-issue could double-run the
-                # command. Unknown/unsupported → surface the original error.
-                if self._client_command_id_honored is not True:
-                    raise
+                # Idempotent re-issue (same command_id) after an early close.
                 attempt += 1
                 if attempt > AsyncCommandHandle.MAX_AUTO_RECONNECTS:
                     raise

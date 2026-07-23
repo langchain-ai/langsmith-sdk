@@ -3,8 +3,7 @@
  *
  * run() sends a client-generated command_id and the server does get-or-create
  * keyed on it, so re-issuing a command whose tunnel closed before 'started'
- * reattaches to the same session instead of spawning a second one -- but only
- * once the daemon has proven it honors the id (echoed it back in a 'started').
+ * reattaches to the same session instead of spawning a second one.
  */
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 import type { WsMessage } from "../sandbox/types.js";
@@ -53,9 +52,8 @@ describe("run() early-close retry", () => {
     runWsStream.mockReset();
   });
 
-  it("retries with the same command_id once the daemon is known to honor it", async () => {
+  it("retries with the same command_id after a close before 'started'", async () => {
     const sandbox = makeSandbox();
-    sandbox._clientCommandIdHonored = true; // proven by a prior command
 
     runWsStream
       .mockImplementationOnce((..._args: unknown[]) => [makeStream([]), null])
@@ -79,15 +77,15 @@ describe("run() early-close retry", () => {
     expect(first.commandId).toBe(second.commandId);
   });
 
-  it("does not retry when the capability is unknown", async () => {
-    const sandbox = makeSandbox(); // _clientCommandIdHonored undefined
+  it("does not retry a non-early-close error (e.g. wrong first frame)", async () => {
+    const sandbox = makeSandbox();
     runWsStream.mockImplementation((..._args: unknown[]) => [
-      makeStream([]),
+      makeStream([{ type: "stdout", data: "oops", offset: 0 }]),
       null,
     ]);
 
     await expect(sandbox.run("echo hi", { wait: false })).rejects.toThrow(
-      "Command stream ended before 'started'",
+      "Expected 'started'",
     );
     expect(runWsStream).toHaveBeenCalledTimes(1);
   });

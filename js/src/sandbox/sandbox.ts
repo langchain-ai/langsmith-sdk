@@ -82,14 +82,6 @@ export class Sandbox {
 
   private _client: SandboxClient;
 
-  /**
-   * Learned once per sandbox: true after a "started" frame echoes back the
-   * client-supplied commandId, proving the daemon honors it (get-or-create).
-   * Only then is an early-close retry idempotency-safe. undefined = unknown.
-   * @internal
-   */
-  _clientCommandIdHonored?: boolean;
-
   /** @internal */
   constructor(data: SandboxData, client: SandboxClient) {
     this.name = data.name;
@@ -260,11 +252,11 @@ export class Sandbox {
 
     const clientHeaders = this._client.getDefaultHeaders();
 
-    // Client-supplied command_id makes execute idempotent (server does
-    // get-or-create keyed on it), so a tunnel that closes before "started"
-    // can be safely re-issued: the daemon reattaches to the existing command
-    // rather than spawning a second one.
-    const sentCommandId = commandId ?? uuidv4();
+    // A client-supplied command_id makes execute idempotent: the daemon does
+    // get-or-create keyed on it, so if the tunnel closes before "started" we
+    // can re-issue the same id and reattach to the existing command instead of
+    // spawning a second one.
+    const execCommandId = commandId ?? uuidv4();
 
     let attempt = 0;
     // eslint-disable-next-line no-constant-condition
@@ -278,7 +270,7 @@ export class Sandbox {
           env,
           cwd,
           shell,
-          commandId: sentCommandId,
+          commandId: execCommandId,
           idleTimeout,
           killOnDisconnect,
           ttlSeconds,
@@ -290,7 +282,6 @@ export class Sandbox {
       );
 
       const handle = new CommandHandle(stream, control, this, {
-        sentCommandId,
         onStdout,
         onStderr,
       });
@@ -298,13 +289,8 @@ export class Sandbox {
         await handle._ensureStarted();
         return handle;
       } catch (e) {
-        // Only retry when the daemon has proven it honors our command_id;
-        // otherwise a re-issue could double-run the command. Unknown/
-        // unsupported → surface the original error.
-        if (
-          !(e instanceof LangSmithStreamEndedBeforeStartedError) ||
-          this._clientCommandIdHonored !== true
-        ) {
+        // Idempotent re-issue (same command_id) after an early close.
+        if (!(e instanceof LangSmithStreamEndedBeforeStartedError)) {
           throw e;
         }
         attempt++;

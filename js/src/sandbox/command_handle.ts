@@ -55,7 +55,6 @@ export class CommandHandle {
   private _lastStdoutOffset: number;
   private _lastStderrOffset: number;
   private _started: boolean;
-  private _sentCommandId?: string;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
 
@@ -66,7 +65,6 @@ export class CommandHandle {
     sandbox: Sandbox,
     options?: {
       commandId?: string;
-      sentCommandId?: string;
       stdoutOffset?: number;
       stderrOffset?: number;
       onStdout?: (data: string) => void;
@@ -76,7 +74,6 @@ export class CommandHandle {
     this._stream = messageStream;
     this._control = control;
     this._sandbox = sandbox;
-    this._sentCommandId = options?.sentCommandId;
     this._lastStdoutOffset = options?.stdoutOffset ?? 0;
     this._lastStderrOffset = options?.stderrOffset ?? 0;
     this._onStdout = options?.onStdout;
@@ -117,10 +114,6 @@ export class CommandHandle {
     this._commandId = (firstMsg.command_id as string) ?? null;
     this._pid = (firstMsg.pid as number) ?? null;
     this._started = true;
-    if (this._sentCommandId) {
-      this._sandbox._clientCommandIdHonored =
-        this._commandId === this._sentCommandId;
-    }
   }
 
   /** The server-assigned command ID. Available after _ensureStarted(). */
