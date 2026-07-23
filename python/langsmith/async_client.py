@@ -1067,7 +1067,7 @@ class AsyncClient:
             warnings.warn(
                 "session_id will become a required argument to create_feedback() in "
                 "a future release. Please provide it to avoid errors.",
-                FutureWarning,
+                DeprecationWarning,
                 stacklevel=2,
             )
         if kwargs:

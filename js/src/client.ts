@@ -5844,6 +5844,15 @@ export class Client implements LangSmithTracingClientInterface {
         }),
       );
     } else {
+      warnOnce(
+        "Passing run IDs as strings to addRunsToAnnotationQueue() is deprecated and will be removed after Jan 31, 2027. " +
+          "Use RunKey[] instead. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+        {
+          type: "DeprecationWarning",
+          code: "LANGSMITH_DEPRECATED_ADD_RUNS_STRING_IDS",
+        },
+      );
       url = base;
       body = JSON.stringify(
         (runs as string[]).map((id, i) =>
