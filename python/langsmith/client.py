@@ -8851,8 +8851,9 @@ class Client:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
-          future release; prefer `runs`.
+        - `run_ids`: a plain list of run IDs. Deprecated; emits a
+          `DeprecationWarning` and will be removed in a future release. Prefer
+          `runs`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -8873,6 +8874,16 @@ class Client:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
             json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
         elif run_ids is not None:
+            warnings.warn(
+                "The `run_ids` parameter of `add_runs_to_annotation_queue` is "
+                "deprecated and will be removed in a future release. Pass `runs` "
+                "instead, with each run's full lookup key (`run_id`, `session_id`, "
+                "`start_time`). See "
+                "https://docs.langchain.com/langsmith/smithdb-sdk-migration "
+                "for details.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
             json_body = [
                 str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
