@@ -777,17 +777,11 @@ class TestAsyncSandboxRunWs:
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "exc",
-        [
-            SandboxConnectionError("WS failed"),
-            ImportError("no websockets"),
-        ],
-    )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
-    async def test_run_fallback_to_http(self, mock_run_ws, exc):
-        """WS failure (connection error or missing lib) falls back to HTTP."""
-        mock_run_ws.side_effect = exc
+    async def test_run_fallback_to_http_when_ws_unavailable(self, mock_run_ws):
+        """run() falls back to HTTP only when the websockets library is
+        missing (ImportError)."""
+        mock_run_ws.side_effect = ImportError("no websockets")
         sandbox = self._make_sandbox()
 
         with patch.object(sandbox, "_run_http", new_callable=AsyncMock) as mock_http:
@@ -800,6 +794,27 @@ class TestAsyncSandboxRunWs:
 
         assert result.stdout == "http output"
         mock_http.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            SandboxConnectionError("WS failed"),
+            OSError("socket down"),
+        ],
+    )
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
+    async def test_run_ws_error_propagates_without_http_fallback(
+        self, mock_run_ws, exc
+    ):
+        """Any WS failure other than a missing library propagates; run() must
+        not silently fall back to the capacity-capped blocking HTTP endpoint."""
+        mock_run_ws.side_effect = exc
+        sandbox = self._make_sandbox()
+
+        with patch.object(sandbox, "_run_http", new_callable=AsyncMock) as mock_http:
+            with pytest.raises(type(exc)):
+                await sandbox.run("echo hello")
+        mock_http.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

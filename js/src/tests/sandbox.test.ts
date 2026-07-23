@@ -35,6 +35,7 @@ import {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
+  LangSmithSandboxConnectionError,
 } from "../sandbox/errors.js";
 import type {
   WsMessage,
@@ -68,6 +69,16 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
+
+// run() uses WebSocket and only falls back to the blocking HTTP endpoint when
+// the 'ws' package can't be loaded. Simulate that so the tests below can pin
+// the HTTP fallback path's request/response shaping.
+const forceHttpFallback = (sandbox: any) =>
+  jest
+    .spyOn(sandbox, "_runWs")
+    .mockRejectedValue(
+      new Error("WebSocket-based execution requires the 'ws' package."),
+    );
 
 describe("sandbox proxy config helpers", () => {
   it("workspaceSecret wraps names and preserves references", () => {
@@ -575,6 +586,7 @@ describe("Sandbox", () => {
         mockClient,
         false,
       );
+      forceHttpFallback(sandbox);
 
       const result = await sandbox.run('echo "Hello, World!"');
 
@@ -605,6 +617,7 @@ describe("Sandbox", () => {
         mockClient,
         false,
       );
+      forceHttpFallback(sandbox);
 
       await sandbox.run("echo $MY_VAR", {
         env: { MY_VAR: "test-value" },
@@ -615,6 +628,30 @@ describe("Sandbox", () => {
       const body = JSON.parse(options.body as string);
       expect(body.env).toEqual({ MY_VAR: "test-value" });
       expect(body.cwd).toBe("/tmp");
+    });
+
+    it("propagates a WebSocket error without falling back to HTTP", async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: async () => ({ stdout: "", stderr: "", exit_code: 0 }),
+      });
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        createMockClient({ _fetch: mockFetch }),
+        false,
+      );
+      jest
+        .spyOn(sandbox as any, "_runWs")
+        .mockRejectedValue(new LangSmithSandboxConnectionError("WS failed"));
+
+      await expect(sandbox.run("echo hello")).rejects.toThrow(
+        LangSmithSandboxConnectionError,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -1298,6 +1335,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
       },
       createMockClient({ _fetch: mockFetch }),
     );
+    forceHttpFallback(sandbox);
 
     const result = await sandbox.run("echo ok");
     expect(result.stdout).toBe("ok\n");
@@ -1321,6 +1359,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
       },
       createMockClient({ _fetch: mockFetch }),
     );
+    forceHttpFallback(sandbox);
 
     const result = await sandbox.run("echo hello");
     expect(result.stdout).toBe("hello\n");

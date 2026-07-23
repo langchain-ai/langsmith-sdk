@@ -197,7 +197,9 @@ export class Sandbox {
       return handle.result;
     }
 
-    // wait=true, no callbacks: try WS, fall back to HTTP
+    // wait=true, no callbacks: use WS. Fall back to blocking HTTP only when
+    // the 'ws' package isn't installed; any other failure propagates so the
+    // caller sees the real error.
     try {
       const handle = await this._runWs(command, {
         ...restOptions,
@@ -208,15 +210,9 @@ export class Sandbox {
       });
       return await handle.result;
     } catch (e) {
-      // Fall back to HTTP on connection errors or missing ws package
-      const name = e != null && typeof e === "object" ? (e as Error).name : "";
       const message =
         e != null && typeof e === "object" ? ((e as Error).message ?? "") : "";
-      if (
-        name === "LangSmithSandboxConnectionError" ||
-        name === "LangSmithSandboxServerReloadError" ||
-        message.includes("'ws' package")
-      ) {
+      if (message.includes("'ws' package")) {
         return this._runHttp(command, restOptions);
       }
       throw e;

@@ -161,9 +161,16 @@ class TestSandboxStatusFields:
         assert sb.status == "ready"
         assert sb.status_message is None
 
-    def test_dataplane_op_not_gated_on_status(self, client, httpx_mock: HTTPXMock):
+    def test_dataplane_op_not_gated_on_status(
+        self, client, httpx_mock: HTTPXMock, monkeypatch
+    ):
         """The client does not pre-check status: a stopped sandbox still runs;
         the platform resumes it when the dataplane request arrives."""
+
+        def _raise(*args, **kwargs):
+            raise ImportError("websockets not installed")
+
+        monkeypatch.setattr("langsmith.sandbox._ws_execute.run_ws_stream", _raise)
         httpx_mock.add_response(
             method="POST",
             url="https://sandbox-router.example.com/sb-123/execute",
@@ -197,7 +204,21 @@ class TestSandboxStatusFields:
 
 
 class TestSandboxRun:
-    """Tests for sandbox run command."""
+    """Sandbox.run() over the HTTP fallback path.
+
+    run() uses WebSocket by default; these cases pin the request/response
+    shaping of the blocking HTTP endpoint it falls back to when the websockets
+    library is unavailable.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ws_unavailable(self, monkeypatch):
+        """Force the missing-websockets condition so run() takes the HTTP path."""
+
+        def _raise(*args, **kwargs):
+            raise ImportError("websockets not installed")
+
+        monkeypatch.setattr("langsmith.sandbox._ws_execute.run_ws_stream", _raise)
 
     def test_run_command_success(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a successful command."""
