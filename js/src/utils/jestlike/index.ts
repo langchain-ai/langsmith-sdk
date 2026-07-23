@@ -434,6 +434,7 @@ export function generateWrapperFromJestlikeMethods(
             await client.updateProject(datasetInfo.project.id, {
               metadata: {
                 ...suiteMetadata,
+                dataset_version: finalModifiedAt,
                 commit,
                 branch,
                 dirty,
