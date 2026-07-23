@@ -1,8 +1,10 @@
+import datetime
 import uuid
 from unittest.mock import MagicMock
 
 from langsmith.testing._internal import (
     _get_example_id,
+    _LangSmithTestSuite,
     _serde_example_values,
     _TestCase,
 )
@@ -76,3 +78,29 @@ def test_log_inputs_updates_test_case_inputs():
     actual_id = _get_example_id(dataset_id, test_case.inputs or {})
     assert actual_id == expected_id
     assert actual_id != fixture_id
+
+
+def test_pytest_feedback_includes_experiment_id_and_run_start_time():
+    experiment_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    test_suite = object.__new__(_LangSmithTestSuite)
+    test_suite.client = MagicMock()
+    test_suite._experiment = MagicMock(id=experiment_id)
+    test_suite._executor = MagicMock()
+    test_suite._executor.submit.side_effect = lambda fn, *args, **kwargs: fn(
+        *args, **kwargs
+    )
+
+    test_suite._submit_result(run_id, start_time, 1)
+    test_suite._submit_feedback(
+        run_id,
+        {"key": "quality", "score": 0.75},
+        start_time=start_time,
+    )
+
+    assert test_suite.client.create_feedback.call_count == 2
+    for call in test_suite.client.create_feedback.call_args_list:
+        assert call.args[0] == run_id
+        assert call.kwargs["session_id"] == experiment_id
+        assert call.kwargs["start_time"] == start_time

@@ -57,11 +57,6 @@ test("telemetry generateText basic", async () => {
           content: expect.stringMatching(/blue/i),
           finish_reason: "stop",
         },
-        extra: {
-          metadata: {
-            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
-          },
-        },
       },
       "openai.responses:1": {
         run_type: "llm",
@@ -89,6 +84,9 @@ test("telemetry generateText basic", async () => {
       },
     },
   });
+  expect(runs.data["openai.responses:0"].extra?.metadata).not.toHaveProperty(
+    "usage_metadata",
+  );
 }, 30_000);
 
 test("telemetry generateText with tools", async () => {
@@ -127,7 +125,7 @@ test("telemetry generateText with tools", async () => {
   expect(tree).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "listOrders:2"],
+      ["openai.responses:0", "listOrders:2"],
       ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
@@ -140,11 +138,6 @@ test("telemetry generateText with tools", async () => {
         outputs: {
           content: expect.stringMatching(/order/i),
           finish_reason: "stop",
-        },
-        extra: {
-          metadata: {
-            usage_metadata: { total_tokens: new GreaterThanMatcher(0) },
-          },
         },
       },
       "openai.responses:1": {
@@ -214,6 +207,17 @@ test("telemetry generateText with tools", async () => {
   expect(
     tree.data["openai.responses:1"].extra?.invocation_params?.tools?.[0],
   ).not.toHaveProperty("inputSchema");
+  expect(tree.data["openai.responses:0"].extra?.metadata).not.toHaveProperty(
+    "usage_metadata",
+  );
+  expect(
+    tree.data["openai.responses:1"].extra?.metadata?.usage_metadata
+      ?.total_tokens,
+  ).toBeGreaterThan(0);
+  expect(
+    tree.data["openai.responses:3"].extra?.metadata?.usage_metadata
+      ?.total_tokens,
+  ).toBeGreaterThan(0);
 }, 30_000);
 
 test("telemetry streamText", async () => {
@@ -254,7 +258,7 @@ test("telemetry streamText", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "listOrders:2"],
+      ["openai.responses:0", "listOrders:2"],
       ["openai.responses:0", "openai.responses:3"],
     ],
     data: {
@@ -746,7 +750,7 @@ test("telemetry tool with nested traceable (sub-agent pattern)", async () => {
   expect(runs).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "research:2"],
+      ["openai.responses:0", "research:2"],
       ["research:2", "sub-agent:3"],
       ["sub-agent:3", "openai.responses:4"],
       ["openai.responses:4", "openai.responses:5"],
@@ -876,7 +880,7 @@ test("telemetry tool error handling", async () => {
   ).toMatchObject({
     edges: [
       ["openai.responses:0", "openai.responses:1"],
-      ["openai.responses:1", "getWeather:2"],
+      ["openai.responses:0", "getWeather:2"],
     ],
     data: {
       "openai.responses:0": {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Iterator
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -692,6 +692,7 @@ class TestSandboxRunWs:
             "https://router.example.com/sb-123",
             "test-key",
             "echo hello",
+            command_id=ANY,
             timeout=60,
             env=None,
             cwd=None,

@@ -36,6 +36,7 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
   LangSmithSandboxConnectionError,
+  LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
   WsMessage,
@@ -1636,6 +1637,14 @@ describe("CommandHandle", () => {
       });
       // Should already be started
       expect(handle.commandId).toBe("cmd-123");
+    });
+
+    it("throws the early-close marker when the stream ends before started", async () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        LangSmithStreamEndedBeforeStartedError,
+      );
     });
   });
 
