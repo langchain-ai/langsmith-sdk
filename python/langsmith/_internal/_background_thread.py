@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import weakref
+from contextlib import nullcontext
 from multiprocessing import cpu_count
 from queue import Empty, Queue
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
@@ -22,6 +23,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
     _BOUNDARY,
 )
+from langsmith._internal._inflight import TracingBytesLimiter
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
@@ -333,35 +335,46 @@ def _tracing_thread_handle_batch(
                 group_ids = {item.item.id for item in group_batch}
                 group_ops = [op for op in ops if op.id in group_ids]
 
-            if use_multipart:
-                client._multipart_ingest_ops(
-                    group_ops,
-                    api_url=api_url,
-                    api_key=api_key,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
-            else:
-                if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
-                    logger.warning(
-                        "Feedback operations are not supported in non-multipart mode"
+            batch_bytes = sum(op.calculate_serialized_size() for op in group_ops)
+            limiter = getattr(client, "_tracing_inflight_limiter", None)
+            limit = (
+                limiter.limit(batch_bytes)
+                if isinstance(limiter, TracingBytesLimiter)
+                else nullcontext()
+            )
+            with limit:
+                if use_multipart:
+                    client._multipart_ingest_ops(
+                        group_ops,
+                        api_url=api_url,
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
                     )
-                    group_ops = [
-                        op
-                        for op in group_ops
-                        if not isinstance(op, SerializedFeedbackOperation)
-                    ]
-                client._batch_ingest_run_ops(
-                    cast(list[SerializedRunOperation], group_ops),
-                    api_url=api_url,
-                    api_key=api_key,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
+                else:
+                    if any(
+                        isinstance(op, SerializedFeedbackOperation) for op in group_ops
+                    ):
+                        logger.warning(
+                            "Feedback operations are not supported in "
+                            "non-multipart mode"
+                        )
+                        group_ops = [
+                            op
+                            for op in group_ops
+                            if not isinstance(op, SerializedFeedbackOperation)
+                        ]
+                    client._batch_ingest_run_ops(
+                        cast(list[SerializedRunOperation], group_ops),
+                        api_url=api_url,
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                    )
 
     except Exception as e:
         logger.error(
