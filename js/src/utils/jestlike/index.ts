@@ -676,7 +676,7 @@ export function generateWrapperFromJestlikeMethods(
                 // first before running the test.
                 if (context.syncExamplePromises === undefined) {
                   throw new Error(
-                    "Could not identify suite example state. Please contact us for help.",
+                    "Internal error: syncExamplePromises not initialized. This is a bug in the LangSmith SDK — please open an issue at https://github.com/langchain-ai/langsmith-sdk/issues.",
                   );
                 }
                 if (!context.syncExamplePromises.has(exampleId)) {
