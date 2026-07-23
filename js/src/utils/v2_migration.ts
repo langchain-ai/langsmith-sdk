@@ -21,6 +21,15 @@ export const V2_RUN_SELECTS: RunSelectField[] = [
   "DOTTED_ORDER",
   "REFERENCE_EXAMPLE_ID",
   "ERROR",
+  "TAGS",
+  "EXTRA",
+  "EVENTS",
+  "FEEDBACK_STATS",
+  "FIRST_TOKEN_TIME",
+  "APP_PATH",
+  "PROMPT_TOKENS",
+  "COMPLETION_TOKENS",
+  "TOTAL_TOKENS",
 ];
 
 export function v2RunToRun(run: V2Run): Run {
@@ -42,6 +51,21 @@ export function v2RunToRun(run: V2Run): Run {
     outputs: run.outputs,
     error: run.error ?? undefined,
     status: run.status?.toLowerCase(),
+    tags: run.tags ?? undefined,
+    extra: run.extra ?? undefined,
+    events: run.events as Run["events"],
+    feedback_stats: run.feedback_stats
+      ? (Object.fromEntries(
+          Object.entries(run.feedback_stats).map(([k, v]) => [k, v as Record<string, unknown>])
+        ) as Run["feedback_stats"])
+      : undefined,
+    first_token_time: run.first_token_time
+      ? new Date(run.first_token_time).getTime()
+      : undefined,
+    app_path: run.app_path ?? undefined,
+    prompt_tokens: run.prompt_tokens ?? undefined,
+    completion_tokens: run.completion_tokens ?? undefined,
+    total_tokens: run.total_tokens ?? undefined,
   };
 }
 

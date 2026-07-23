@@ -8,13 +8,14 @@ import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith import schemas
+from langsmith._openapi_client.types.run_select_field import RunSelectField
 
 if TYPE_CHECKING:
     from langsmith.client import Client
 
 
 # Fields for `/v2/runs/query` (RunSelectField enum); omitting selects returns only id.
-_V2_RUN_SELECTS = [
+_V2_RUN_SELECTS: list[RunSelectField] = [
     "ID",
     "NAME",
     "RUN_TYPE",
@@ -29,6 +30,18 @@ _V2_RUN_SELECTS = [
     "DOTTED_ORDER",
     "REFERENCE_EXAMPLE_ID",
     "ERROR",
+    "TAGS",
+    "EXTRA",
+    "EVENTS",
+    "FEEDBACK_STATS",
+    "FIRST_TOKEN_TIME",
+    "APP_PATH",
+    "PROMPT_TOKENS",
+    "COMPLETION_TOKENS",
+    "TOTAL_TOKENS",
+    "PROMPT_COST",
+    "COMPLETION_COST",
+    "TOTAL_COST",
 ]
 
 
@@ -63,10 +76,12 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
     schema defaults apply (e.g. `dotted_order`).
     """
     parent_run_ids = getattr(run, "parent_run_ids", None)
+    fb = getattr(run, "feedback_stats", None)
+    events = getattr(run, "events", None)
     fields = {
         "id": run.id,
         "name": run.name,
-        "run_type": run.run_type,
+        "run_type": run.run_type.lower() if getattr(run, "run_type", None) else None,
         "start_time": run.start_time,
         "end_time": getattr(run, "end_time", None),
         "trace_id": run.trace_id,
@@ -80,6 +95,20 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
         "status": (
             run.status.lower() if getattr(run, "status", None) is not None else None
         ),
+        "tags": getattr(run, "tags", None),
+        "extra": getattr(run, "extra", None),
+        "events": [e.model_dump() for e in events] if events else None,
+        "feedback_stats": (
+            {k: v.model_dump(exclude_none=True) for k, v in fb.items()} if fb else None
+        ),
+        "first_token_time": getattr(run, "first_token_time", None),
+        "app_path": getattr(run, "app_path", None),
+        "prompt_tokens": getattr(run, "prompt_tokens", None),
+        "completion_tokens": getattr(run, "completion_tokens", None),
+        "total_tokens": getattr(run, "total_tokens", None),
+        "prompt_cost": getattr(run, "prompt_cost", None),
+        "completion_cost": getattr(run, "completion_cost", None),
+        "total_cost": getattr(run, "total_cost", None),
     }
     return schemas.Run(
         **{key: value for key, value in fields.items() if value is not None}
@@ -128,9 +157,7 @@ def _load_child_runs_v2(run: schemas.Run, client: Client) -> schemas.Run:
     return run
 
 
-def _load_nested_traces_v2(
-    project_name: str, client: Client
-) -> list[schemas.Run]:
+def _load_nested_traces_v2(project_name: str, client: Client) -> list[schemas.Run]:
     """Load all runs for ``project_name`` from the v2 API and build a trace tree.
 
     Equivalent to the ``_load_nested_traces`` function in ``beta/_evals.py`` but
