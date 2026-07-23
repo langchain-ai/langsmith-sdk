@@ -23,6 +23,7 @@ from typing import (
 import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -580,14 +581,32 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
-        """Read a run."""
+        """Read a run.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
+        """
         response = await self._arequest_with_retries(
             "GET",
             f"/runs/{ls_client._as_uuid(run_id)}",
         )
         return ls_schemas.Run(**response.json())
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     async def list_runs(
         self,
         *,
@@ -612,6 +631,11 @@ class AsyncClient:
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.AsyncClient.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -1046,6 +1070,13 @@ class AsyncClient:
         if run_id is not None and project_id is not None:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
+            )
+        if run_id is not None and session_id is None:
+            warnings.warn(
+                "session_id will become a required argument to create_feedback() in "
+                "a future release. Please provide it to avoid errors.",
+                DeprecationWarning,
+                stacklevel=2,
             )
         if kwargs:
             warnings.warn(

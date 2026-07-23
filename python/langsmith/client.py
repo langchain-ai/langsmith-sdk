@@ -79,6 +79,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
@@ -4018,10 +4019,21 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]):
@@ -4057,6 +4069,12 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    @_deprecated(
+        "read_thread() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.list_traces() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-list-traces for the migration guide."
+    )
     def read_thread(
         self,
         *,
@@ -4071,6 +4089,11 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.threads.list_traces` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             thread_id: Thread id (required).
@@ -4113,6 +4136,12 @@ class Client:
             **kwargs,
         )
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     def list_runs(
         self,
         *,
@@ -4135,6 +4164,11 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -4307,6 +4341,12 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    @_deprecated(
+        "list_threads() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-query for the migration guide."
+    )
     def list_threads(
         self,
         *,
@@ -4318,6 +4358,11 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.threads.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The project (session) id.
@@ -7830,6 +7875,13 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            warnings.warn(
+                "session_id will become a required argument to create_feedback() in "
+                "a future release. Please provide it to avoid errors.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -8851,8 +8903,9 @@ class Client:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
-          future release; prefer `runs`.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -8873,6 +8926,13 @@ class Client:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
             json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
         elif run_ids is not None:
+            warnings.warn(
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
             json_body = [
                 str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
@@ -10711,6 +10771,12 @@ class Client:
 
             offset += len(batch)
 
+    @_deprecated(
+        "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.datasets.experiment_runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#dataset-experiment-runs-query for the migration guide."
+    )
     def get_experiment_results(
         self,
         name: Optional[str] = None,
@@ -10721,6 +10787,11 @@ class Client:
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Experiment results may not be available immediately after the experiment is created.
 
