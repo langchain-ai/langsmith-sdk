@@ -154,11 +154,9 @@ class TestAsyncSandboxStatusFields:
     ):
         """The client does not pre-check status: a stopped sandbox still runs;
         the platform resumes it when the dataplane request arrives."""
-
-        def _raise(*args, **kwargs):
-            raise ImportError("websockets not installed")
-
-        monkeypatch.setattr("langsmith.sandbox._ws_execute.run_ws_stream_async", _raise)
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
         httpx_mock.add_response(
             method="POST",
             url="https://sandbox-router.example.com/sb-123/execute",
@@ -203,11 +201,9 @@ class TestAsyncSandboxRun:
     @pytest.fixture(autouse=True)
     def _ws_unavailable(self, monkeypatch):
         """Force the missing-websockets condition so run() takes the HTTP path."""
-
-        def _raise(*args, **kwargs):
-            raise ImportError("websockets not installed")
-
-        monkeypatch.setattr("langsmith.sandbox._ws_execute.run_ws_stream_async", _raise)
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
 
     async def test_run_command_success(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a successful command."""

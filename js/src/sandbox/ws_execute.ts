@@ -20,19 +20,31 @@ import type { WsMessage, WsRunOptions } from "./types.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WsWebSocket = any;
 
+// Load the optional 'ws' package once, at module load, instead of importing on
+// every call. Resolves to the WebSocket constructor, or null if 'ws' isn't
+// installed. run() reads isWsAvailable() to choose WS vs the HTTP fallback.
+const wsWebSocketPromise: Promise<WsWebSocket | null> = import("ws").then(
+  (ws) => ws.default || ws.WebSocket || ws,
+  () => null,
+);
+
+/** Whether the optional `ws` package could be loaded (resolved once). */
+export async function isWsAvailable(): Promise<boolean> {
+  return (await wsWebSocketPromise) !== null;
+}
+
 async function ensureWs(): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   WebSocket: any;
 }> {
-  try {
-    const ws = await import("ws");
-    return { WebSocket: ws.default || ws.WebSocket || ws };
-  } catch {
+  const WebSocket = await wsWebSocketPromise;
+  if (!WebSocket) {
     throw new Error(
       "WebSocket-based execution requires the 'ws' package. " +
         "Install it with: npm install ws",
     );
   }
+  return { WebSocket };
 }
 
 // =============================================================================

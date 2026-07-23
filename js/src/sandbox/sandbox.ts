@@ -14,7 +14,7 @@ import type {
 import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
-import { reconnectWsStream, runWsStream } from "./ws_execute.js";
+import { isWsAvailable, reconnectWsStream, runWsStream } from "./ws_execute.js";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -197,10 +197,9 @@ export class Sandbox {
       return handle.result;
     }
 
-    // wait=true, no callbacks: use WS. Fall back to blocking HTTP only when
-    // the 'ws' package isn't installed; any other failure propagates so the
-    // caller sees the real error.
-    try {
+    // wait=true, no callbacks: use WebSocket when the 'ws' package is
+    // available, otherwise the blocking HTTP endpoint. WS errors propagate.
+    if (await this._wsAvailable()) {
       const handle = await this._runWs(command, {
         ...restOptions,
         idleTimeout,
@@ -209,14 +208,16 @@ export class Sandbox {
         pty,
       });
       return await handle.result;
-    } catch (e) {
-      const message =
-        e != null && typeof e === "object" ? ((e as Error).message ?? "") : "";
-      if (message.includes("'ws' package")) {
-        return this._runHttp(command, restOptions);
-      }
-      throw e;
     }
+    return this._runHttp(command, restOptions);
+  }
+
+  /**
+   * Whether the optional `ws` package is importable (resolved once).
+   * @internal
+   */
+  protected _wsAvailable(): Promise<boolean> {
+    return isWsAvailable();
   }
 
   /**

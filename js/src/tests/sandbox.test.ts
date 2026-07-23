@@ -74,11 +74,7 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
 // the 'ws' package can't be loaded. Simulate that so the tests below can pin
 // the HTTP fallback path's request/response shaping.
 const forceHttpFallback = (sandbox: any) =>
-  jest
-    .spyOn(sandbox, "_runWs")
-    .mockRejectedValue(
-      new Error("WebSocket-based execution requires the 'ws' package."),
-    );
+  jest.spyOn(sandbox, "_wsAvailable").mockResolvedValue(false);
 
 describe("sandbox proxy config helpers", () => {
   it("workspaceSecret wraps names and preserves references", () => {
@@ -644,6 +640,7 @@ describe("Sandbox", () => {
         createMockClient({ _fetch: mockFetch }),
         false,
       );
+      jest.spyOn(sandbox as any, "_wsAvailable").mockResolvedValue(true);
       jest
         .spyOn(sandbox as any, "_runWs")
         .mockRejectedValue(new LangSmithSandboxConnectionError("WS failed"));

@@ -20,6 +20,7 @@ from langsmith.sandbox._models import (
     Snapshot,
 )
 from langsmith.sandbox._tunnel import Tunnel
+from langsmith.sandbox._ws_execute import WEBSOCKETS_AVAILABLE
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -332,10 +333,9 @@ class Sandbox:
                 headers=headers,
             )
 
-        # Default (wait=True, no callbacks): use WS. Fall back to blocking
-        # HTTP only when the websockets library isn't installed; any other
-        # failure propagates so the caller sees the real error.
-        try:
+        # Default (wait=True, no callbacks): use WebSocket when the client
+        # library is available, otherwise the blocking HTTP endpoint.
+        if WEBSOCKETS_AVAILABLE:
             return self._run_ws(
                 command,
                 timeout=timeout,
@@ -351,15 +351,14 @@ class Sandbox:
                 pty=pty,
                 headers=headers,
             )
-        except ImportError:
-            return self._run_http(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                headers=headers,
-            )
+        return self._run_http(
+            command,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            shell=shell,
+            headers=headers,
+        )
 
     def _run_ws(
         self,

@@ -777,11 +777,12 @@ class TestAsyncSandboxRunWs:
             )
 
     @pytest.mark.asyncio
-    @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
-    async def test_run_fallback_to_http_when_ws_unavailable(self, mock_run_ws):
+    async def test_run_fallback_to_http_when_ws_unavailable(self, monkeypatch):
         """run() falls back to HTTP only when the websockets library is
-        missing (ImportError)."""
-        mock_run_ws.side_effect = ImportError("no websockets")
+        unavailable."""
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
         sandbox = self._make_sandbox()
 
         with patch.object(sandbox, "_run_http", new_callable=AsyncMock) as mock_http:
@@ -946,7 +947,7 @@ class TestAsyncHandshakeFailureWrapping:
 
     @pytest.mark.asyncio
     async def test_run_ws_stream_async_wraps_invalid_message(self):
-        with patch("websockets.asyncio.client.connect") as mock_connect:
+        with patch("langsmith.sandbox._ws_execute._ws_connect_async") as mock_connect:
             mock_connect.side_effect = self._invalid_message()
             msg_stream, _ = await run_ws_stream_async(
                 "https://sb.example.com", "key", "echo hi"
@@ -957,7 +958,7 @@ class TestAsyncHandshakeFailureWrapping:
 
     @pytest.mark.asyncio
     async def test_reconnect_ws_stream_async_wraps_invalid_message(self):
-        with patch("websockets.asyncio.client.connect") as mock_connect:
+        with patch("langsmith.sandbox._ws_execute._ws_connect_async") as mock_connect:
             mock_connect.side_effect = self._invalid_message()
             msg_stream, _ = await reconnect_ws_stream_async(
                 "https://sb.example.com", "key", "cmd-123"
