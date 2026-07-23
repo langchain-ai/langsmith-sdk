@@ -425,7 +425,7 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
           }
         },
       }),
-    },
+    } as any,
     telemetry: { integrations: [coordinatorTelemetry] },
   });
 
