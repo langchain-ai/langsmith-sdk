@@ -1,21 +1,18 @@
 import { jest } from "@jest/globals";
 
 import { Client } from "../../client.js";
-import {
-  evaluatorLogFeedbackPromises,
-  syncExamplePromises,
-} from "../../utils/jestlike/globals.js";
+import { evaluatorLogFeedbackPromises } from "../../utils/jestlike/globals.js";
 import { generateWrapperFromJestlikeMethods } from "../../utils/jestlike/index.js";
 
-const FUTURE_MODIFIED_AT = "2099-01-01T00:00:00.000Z";
+const FIRST_MODIFIED_AT = "2099-01-01T00:00:00.000Z";
+const SECOND_MODIFIED_AT = "2099-02-01T00:00:00.000Z";
 
-test("records the final example version on the experiment", async () => {
-  syncExamplePromises.clear();
+test("scopes the final example version to each experiment", async () => {
   evaluatorLogFeedbackPromises.clear();
 
-  let beforeAllHook: (() => Promise<void>) | undefined;
-  let afterAllHook: (() => Promise<void>) | undefined;
-  let testFunction: (() => Promise<void>) | undefined;
+  const beforeAllHooks: Array<() => Promise<void>> = [];
+  const afterAllHooks: Array<() => Promise<void>> = [];
+  const testFunctions: Array<() => Promise<void>> = [];
 
   const describe = Object.assign((_name: string, fn: () => void) => fn(), {
     only: (_name: string, fn: () => void) => fn(),
@@ -24,7 +21,7 @@ test("records the final example version on the experiment", async () => {
   });
   const testMethod = Object.assign(
     (_name: string, fn: () => Promise<void>) => {
-      testFunction = fn;
+      testFunctions.push(fn);
     },
     {
       only: jest.fn(),
@@ -42,22 +39,39 @@ test("records the final example version on the experiment", async () => {
   const client = {
     readDataset: resolved({
       id: "11111111-1111-4111-8111-111111111111",
-      name: "test-dataset",
+      name: "shared-dataset",
     }),
-    createProject: resolved({
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "test-project",
-    }),
+    createProject: jest
+      .fn<() => Promise<{ id: string; name: string }>>()
+      .mockResolvedValueOnce({
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "first-project",
+      })
+      .mockResolvedValueOnce({
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "second-project",
+      }),
     getDatasetUrl: resolved("https://example.com/datasets/1"),
-    readExample: resolved({
-      id: "33333333-3333-4333-8333-333333333333",
-      dataset_id: "11111111-1111-4111-8111-111111111111",
-      inputs: { question: "test" },
-      outputs: { answer: "test" },
-      metadata: {},
-      created_at: FUTURE_MODIFIED_AT,
-      modified_at: FUTURE_MODIFIED_AT,
-    }),
+    readExample: jest
+      .fn<() => Promise<Record<string, unknown>>>()
+      .mockResolvedValueOnce({
+        id: "33333333-3333-4333-8333-333333333333",
+        dataset_id: "11111111-1111-4111-8111-111111111111",
+        inputs: { question: "first" },
+        outputs: { answer: "first" },
+        metadata: {},
+        created_at: FIRST_MODIFIED_AT,
+        modified_at: FIRST_MODIFIED_AT,
+      })
+      .mockResolvedValueOnce({
+        id: "55555555-5555-4555-8555-555555555555",
+        dataset_id: "11111111-1111-4111-8111-111111111111",
+        inputs: { question: "second" },
+        outputs: { answer: "second" },
+        metadata: {},
+        created_at: SECOND_MODIFIED_AT,
+        modified_at: SECOND_MODIFIED_AT,
+      }),
     createRun: resolved(undefined),
     updateRun: resolved(undefined),
     logEvaluationFeedback: resolved(undefined),
@@ -71,44 +85,52 @@ test("records the final example version on the experiment", async () => {
       expect,
       test: testMethod,
       describe,
-      beforeAll: (fn: () => Promise<void>) => {
-        beforeAllHook = fn;
-      },
-      afterAll: (fn: () => Promise<void>) => {
-        afterAllHook = fn;
-      },
+      beforeAll: (fn: () => Promise<void>) => beforeAllHooks.push(fn),
+      afterAll: (fn: () => Promise<void>) => afterAllHooks.push(fn),
     },
     "jest",
   );
 
-  ls.describe(
-    "test-dataset",
-    () => {
-      ls.test(
-        "test-case",
-        {
-          inputs: { question: "test" },
-          referenceOutputs: { answer: "test" },
-        },
-        () => ({ answer: "test" }),
-      );
-    },
-    { client, enableTestTracking: true },
-  );
+  const registerSuite = (question: string) => {
+    ls.describe(
+      "shared-dataset",
+      () => {
+        ls.test(
+          `${question}-test`,
+          {
+            inputs: { question },
+            referenceOutputs: { answer: question },
+          },
+          () => ({ answer: question }),
+        );
+      },
+      { client, enableTestTracking: true },
+    );
+  };
 
-  await beforeAllHook?.();
-  await testFunction?.();
-  await afterAllHook?.();
+  registerSuite("first");
+  registerSuite("second");
+
+  for (const hook of beforeAllHooks) await hook();
+  for (const fn of testFunctions) await fn();
+  for (const hook of afterAllHooks) await hook();
 
   expect(updateProject).toHaveBeenCalledWith(
     "22222222-2222-4222-8222-222222222222",
     expect.objectContaining({
       metadata: expect.objectContaining({
-        dataset_version: FUTURE_MODIFIED_AT,
+        dataset_version: FIRST_MODIFIED_AT,
+      }),
+    }),
+  );
+  expect(updateProject).toHaveBeenCalledWith(
+    "44444444-4444-4444-8444-444444444444",
+    expect.objectContaining({
+      metadata: expect.objectContaining({
+        dataset_version: SECOND_MODIFIED_AT,
       }),
     }),
   );
 
-  syncExamplePromises.clear();
   evaluatorLogFeedbackPromises.clear();
 });
