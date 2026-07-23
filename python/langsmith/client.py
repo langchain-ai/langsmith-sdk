@@ -86,6 +86,7 @@ from langsmith._internal._constants import (
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
     _SIZE_LIMIT_BYTES,
+    _TRACING_MAX_INFLIGHT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
 from langsmith._internal._hub import (
@@ -95,6 +96,7 @@ from langsmith._internal._hub import (
     platform_hub_path,
     validate_parent_commit,
 )
+from langsmith._internal._inflight import TracingBytesLimiter
 from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
@@ -908,6 +910,7 @@ class Client:
         "_otel_trace",
         "_set_span_in_context",
         "_max_batch_size_bytes",
+        "_tracing_inflight_limiter",
         "_use_daemon_threads",
         "_tracing_error_callback",
         "_multipart_disabled",
@@ -960,6 +963,7 @@ class Client:
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
+        max_inflight_trace_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
         disable_prompt_cache: bool = False,
@@ -1077,6 +1081,10 @@ class Client:
             max_batch_size_bytes: The maximum size of a batch of runs in bytes.
 
                 If not provided, the default is set by the server.
+            max_inflight_trace_bytes: Maximum serialized bytes that background tracing
+                workers may upload concurrently. A batch larger than the limit runs alone.
+                Set to `0` to disable the limit. Defaults to 100 MiB and can be configured
+                with `LANGSMITH_TRACING_MAX_INFLIGHT_BYTES`.
             headers: Additional HTTP headers to include in all requests.
 
                 These headers will be merged with the default headers (User-Agent,
@@ -1252,6 +1260,20 @@ class Client:
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
+        inflight_bytes = max_inflight_trace_bytes
+        if inflight_bytes is None:
+            inflight_env = ls_utils.get_env_var("TRACING_MAX_INFLIGHT_BYTES")
+            try:
+                inflight_bytes = (
+                    int(inflight_env)
+                    if inflight_env is not None
+                    else _TRACING_MAX_INFLIGHT_BYTES
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "LANGSMITH_TRACING_MAX_INFLIGHT_BYTES must be an integer"
+                ) from exc
+        self._tracing_inflight_limiter = TracingBytesLimiter(inflight_bytes)
         self._multipart_disabled: bool = False
         self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
@@ -3485,6 +3507,23 @@ class Client:
         attempts: int = 3,
     ):
         """Send a zstd-compressed multipart form data stream to the backend."""
+        uncompressed_size = (
+            compressed_traces_info[0]
+            if compressed_traces_info is not None
+            else data_stream.getbuffer().nbytes
+        )
+        with self._tracing_inflight_limiter.limit(uncompressed_size):
+            return self._send_compressed_multipart_req_unlimited(
+                data_stream, compressed_traces_info, attempts=attempts
+            )
+
+    def _send_compressed_multipart_req_unlimited(
+        self,
+        data_stream: io.BytesIO,
+        compressed_traces_info: Optional[tuple[int, int]],
+        *,
+        attempts: int = 3,
+    ):
         _context: str = "; ".join(getattr(data_stream, "context", []))
 
         for api_url, api_key in self._write_api_urls.items():
