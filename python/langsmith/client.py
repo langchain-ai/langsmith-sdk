@@ -5176,7 +5176,7 @@ class Client:
                     **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
                     "execution_time": (
                         (r.end_time - r.start_time).total_seconds()
-                        if r.end_time
+                        if r.end_time and r.start_time
                         else None
                     ),
                     "error": r.error,

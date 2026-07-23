@@ -56,7 +56,10 @@ export function v2RunToRun(run: V2Run): Run {
     events: run.events as Run["events"],
     feedback_stats: run.feedback_stats
       ? (Object.fromEntries(
-          Object.entries(run.feedback_stats).map(([k, v]) => [k, v as Record<string, unknown>])
+          Object.entries(run.feedback_stats).map(([k, v]) => [
+            k,
+            v as Record<string, unknown>,
+          ]),
         ) as Run["feedback_stats"])
       : undefined,
     first_token_time: run.first_token_time
