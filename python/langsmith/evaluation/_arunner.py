@@ -42,7 +42,7 @@ from langsmith.evaluation._runner import (
     _load_examples_map,
     _load_experiment,
     _load_tqdm,
-    _load_traces,
+    _load_traces_for_experiment,
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
@@ -447,8 +447,8 @@ async def aevaluate_existing(
     )
     runs = await aitertools.aio_to_thread(
         contextvars.copy_context(),
-        _load_traces,
-        experiment,
+        _load_traces_for_experiment,
+        project,
         client,
         load_nested=load_nested,
     )
@@ -1021,7 +1021,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
                     if self._upload_results:
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=feedback_executor
+                            evaluator_response,
+                            run=run,
+                            project_id=self._get_experiment().id,
+                            _executor=feedback_executor,
                         )
                     return selected_results
                 except Exception as e:
@@ -1044,7 +1047,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                         if self._upload_results:
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=feedback_executor
+                                error_response,
+                                run=run,
+                                project_id=self._get_experiment().id,
+                                _executor=feedback_executor,
                             )
                         return selected_results
                     except Exception as e2:

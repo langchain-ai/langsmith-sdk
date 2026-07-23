@@ -628,6 +628,7 @@ class _LangSmithTestSuite:
     def submit_result(
         self,
         run_id: uuid.UUID,
+        start_time: datetime.datetime,
         error: Optional[str] = None,
         skipped: bool = False,
         pytest_plugin: Any = None,
@@ -644,12 +645,24 @@ class _LangSmithTestSuite:
             status = "passed"
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.update_process_status(pytest_nodeid, {"status": status})
-        self._executor.submit(self._submit_result, run_id, score)
+        self._executor.submit(self._submit_result, run_id, start_time, score)
 
-    def _submit_result(self, run_id: uuid.UUID, score: Optional[int]) -> None:
+    def _submit_result(
+        self,
+        run_id: uuid.UUID,
+        start_time: datetime.datetime,
+        score: Optional[int],
+    ) -> None:
         # trace_id will always be run_id here because the feedback is on the root
         # test run
-        self.client.create_feedback(run_id, key="pass", score=score, trace_id=run_id)
+        self.client.create_feedback(
+            run_id,
+            key="pass",
+            score=score,
+            trace_id=run_id,
+            session_id=self.experiment_id,
+            start_time=start_time,
+        )
 
     def sync_example(
         self,
@@ -726,10 +739,14 @@ class _LangSmithTestSuite:
         self,
         run_id: ID_TYPE,
         feedback: Union[dict, list],
+        *,
+        start_time: datetime.datetime,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
         **kwargs: Any,
     ):
+        kwargs["session_id"] = self.experiment_id
+        kwargs["start_time"] = start_time
         feedback = feedback if isinstance(feedback, list) else [feedback]
         for fb in feedback:
             if pytest_plugin and pytest_nodeid:
@@ -819,6 +836,7 @@ class _TestCase:
         self.pytest_nodeid = pytest_nodeid
         self.inputs = inputs
         self.reference_outputs = reference_outputs
+        self.run_start_time: Optional[datetime.datetime] = None
         self._logged_reference_outputs: Optional[dict] = None
         self._logged_outputs: Optional[dict] = None
 
@@ -832,11 +850,14 @@ class _TestCase:
                 self.log_reference_outputs(reference_outputs)
 
     def submit_feedback(self, *args, **kwargs: Any):
+        if self.run_start_time is None:
+            raise ValueError("Cannot submit feedback before the test run has started.")
         self.test_suite._submit_feedback(
             *args,
             **{
                 **kwargs,
                 **dict(
+                    start_time=self.run_start_time,
                     pytest_plugin=self.pytest_plugin,
                     pytest_nodeid=self.pytest_nodeid,
                 ),
@@ -869,8 +890,13 @@ class _TestCase:
         error: Optional[str] = None,
         skipped: bool = False,
     ) -> None:
+        if self.run_start_time is None:
+            raise ValueError(
+                "Cannot submit a test result before the test run has started."
+            )
         return self.test_suite.submit_result(
             self.run_id,
+            self.run_start_time,
             error=error,
             skipped=skipped,
             pytest_plugin=self.pytest_plugin,
@@ -1035,6 +1061,7 @@ def _run_test(
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
         ) as run_tree:
+            test_case.run_start_time = run_tree.start_time
             try:
                 result = func(*test_args, **test_kwargs)
             except SkipException as e:
@@ -1115,6 +1142,7 @@ async def _arun_test(
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
         ) as run_tree:
+            test_case.run_start_time = run_tree.start_time
             try:
                 result = await func(*test_args, **test_kwargs)
             except SkipException as e:

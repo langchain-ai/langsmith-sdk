@@ -43,6 +43,7 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
@@ -505,7 +506,7 @@ def evaluate_existing(
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)
-    runs = _load_traces(experiment, client, load_nested=load_nested)
+    runs = _load_traces_for_experiment(project, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
@@ -893,8 +894,8 @@ def evaluate_comparative(
     comparison_url = _build_comparative_url(experiments_tuple, comparative_experiment)
     _print_comparative_experiment_start(comparison_url)
     runs = [
-        _load_traces(experiment, client, load_nested=load_nested)
-        for experiment in experiments
+        _load_traces_for_experiment(project, client, load_nested=load_nested)
+        for project in projects
     ]
     # Only check intersections for the experiments
     examples_intersection = None
@@ -1160,14 +1161,20 @@ def _load_experiment(
         return client.read_project(project_name=project)
 
 
-def _load_traces(
+def _load_traces_for_experiment(
     project: Union[str, uuid.UUID, schemas.TracerSession],
     client: langsmith.Client,
     load_nested: bool = False,
 ) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
-    if isinstance(project, schemas.TracerSession):
+    runs: Iterable[schemas.Run]
+    # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
+    if (client.info.instance_flags or {}).get("sdb_query_enabled"):
+        if not isinstance(project, schemas.TracerSession):
+            project = _load_experiment(project, client)
+        runs = _v2_migration_utils._load_traces_v2(project, client, is_root=is_root)
+    elif isinstance(project, schemas.TracerSession):
         runs = client.list_runs(project_id=project.id, is_root=is_root)
     elif isinstance(project, uuid.UUID) or _is_uuid(project):
         runs = client.list_runs(project_id=project, is_root=is_root)
@@ -1681,7 +1688,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=executor
+                            evaluator_response,
+                            run=run,
+                            project_id=self._get_experiment().id,
+                            _executor=executor,
                         )
                 except Exception as e:
                     try:
@@ -1704,7 +1714,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         if self._upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=executor
+                                error_response,
+                                run=run,
+                                project_id=self._get_experiment().id,
+                                _executor=executor,
                             )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")

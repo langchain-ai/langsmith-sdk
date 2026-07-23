@@ -62,14 +62,21 @@ export function _logTestFeedback(params: {
     }
     evaluatorLogFeedbackPromises.add(
       (async () => {
+        if (context.project == null) {
+          throw new Error(
+            "Could not log feedback to LangSmith: missing project information. Please contact us for help.",
+          );
+        }
         await syncExamplePromises.get(exampleId);
-        await client?.logEvaluationFeedback(
-          feedback,
-          runTree,
-          sourceRunId !== undefined
-            ? { __run: { run_id: sourceRunId } }
-            : undefined,
-        );
+        await client?.logEvaluationFeedback({
+          evaluatorResponse: feedback,
+          run: runTree,
+          projectId: context.project.id,
+          sourceInfo:
+            sourceRunId !== undefined
+              ? { __run: { run_id: sourceRunId } }
+              : undefined,
+        });
       })(),
     );
   }
