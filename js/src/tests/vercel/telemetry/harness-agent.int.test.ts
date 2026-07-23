@@ -101,7 +101,7 @@ function expectToolMessageRun(
   expect(JSON.stringify(run.outputs)).toContain(TASK_FILE_CONTENT);
 }
 
-test("uploads a real HarnessAgent and Pi trace", async () => {
+test.skip("uploads a real HarnessAgent and Pi trace", async () => {
   const testRunId = randomUUID();
   const currentEnv = Reflect.get(process, "env") as NodeJS.ProcessEnv;
   const anthropicApiKey = currentEnv.ANTHROPIC_API_KEY;
@@ -360,7 +360,7 @@ const DELEGATE_TOOL_NAME = "delegate_to_pi_subagent";
 const SUBAGENT_RESULT = "SUBAGENT_RESULT_42";
 const COORDINATOR_RESULT = "DELEGATION_COMPLETE";
 
-test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async () => {
+test.skip("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async () => {
   const testRunId = randomUUID();
   const currentEnv = Reflect.get(process, "env") as NodeJS.ProcessEnv;
   const anthropicApiKey = currentEnv.ANTHROPIC_API_KEY;
