@@ -1,3 +1,12 @@
 minimumReleaseAge: 1440
 packages: []
-minimumReleaseAgeExclude: ["ai", "@ai-sdk/gateway", "@ai-sdk/harness", "@ai-sdk/harness-pi", "@ai-sdk/sandbox-just-bash"]
+minimumReleaseAgeExclude:
+  [
+    "ai",
+    "@ai-sdk/gateway",
+    "@ai-sdk/harness",
+    "@ai-sdk/harness-claude-code",
+    "@ai-sdk/harness-pi",
+    "@ai-sdk/sandbox-just-bash",
+    "@ai-sdk/sandbox-vercel",
+  ]

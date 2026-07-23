@@ -43,6 +43,18 @@ function expectNonEmptyTextOutput(outputs: unknown) {
   });
 }
 
+function hasCompletedLlmTelemetry(run: {
+  outputs?: unknown;
+  end_time?: string | number;
+  extra?: { metadata?: Record<string, any> };
+}): boolean {
+  return (
+    run.end_time != null &&
+    hasNonEmptyTextOutput(run.outputs) &&
+    typeof run.extra?.metadata?.usage_metadata?.total_tokens === "number"
+  );
+}
+
 function expectCompleteToolHistory(inputs: unknown) {
   expect(inputs).toMatchObject({
     messages: [{ role: "user" }, { role: "assistant" }, { role: "tool" }],
@@ -234,9 +246,10 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
         run.run_type === "llm" &&
         run.extra?.metadata?.step_number === 1,
     );
-    expectCompleteToolHistory(finalLlmRun?.inputs);
-    expect(finalLlmRun?.extra?.metadata).not.toHaveProperty("ls_provider");
-    expect(finalLlmRun?.extra?.metadata?.usage_metadata).toMatchObject({
+    if (!finalLlmRun) throw new Error("Expected a completed final Pi LLM run");
+    expectCompleteToolHistory(finalLlmRun.inputs);
+    expect(finalLlmRun.extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(finalLlmRun.extra?.metadata?.usage_metadata).toMatchObject({
       input_tokens: expect.any(Number),
       output_tokens: expect.any(Number),
       total_tokens: expect.any(Number),
@@ -253,9 +266,13 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
         }),
       );
     let persistedRuns = await readPersistedRuns();
+    let persistedFinalLlmRun = await client.readRun(finalLlmRun.id);
     await waitUntil(
       async () => {
-        persistedRuns = await readPersistedRuns();
+        [persistedRuns, persistedFinalLlmRun] = await Promise.all([
+          readPersistedRuns(),
+          client.readRun(finalLlmRun.id),
+        ]);
         return (
           persistedRuns.some(
             (run) =>
@@ -263,14 +280,13 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
               run.parent_run_id == null &&
               JSON.stringify(run.outputs).includes(TASK_FINAL_RESPONSE),
           ) &&
-          persistedRuns.some(
-            (run) =>
-              run.parent_run_id === harnessRoot.id &&
-              run.run_type === "llm" &&
-              run.extra?.metadata?.step_number === 1 &&
-              JSON.stringify(run.inputs).includes('"role":"tool"') &&
-              JSON.stringify(run.inputs).includes(TASK_FILE_CONTENT),
+          JSON.stringify(persistedFinalLlmRun.inputs).includes(
+            '"role":"tool"',
           ) &&
+          JSON.stringify(persistedFinalLlmRun.inputs).includes(
+            TASK_FILE_CONTENT,
+          ) &&
+          hasCompletedLlmTelemetry(persistedFinalLlmRun) &&
           persistedRuns.some(
             (run) =>
               run.name === "bash" &&
@@ -302,15 +318,17 @@ test("uploads a real HarnessAgent and Pi trace", async () => {
       (run) => run.id === harnessRoot.id,
     );
     expect(persistedRoot?.extra?.metadata).not.toHaveProperty("usage_metadata");
-    const persistedFinalLlmRun = persistedRuns.find(
-      (run) =>
-        run.parent_run_id === harnessRoot.id &&
-        run.run_type === "llm" &&
-        run.extra?.metadata?.step_number === 1,
-    );
-    expectCompleteToolHistory(persistedFinalLlmRun?.inputs);
-    expect(persistedFinalLlmRun?.extra?.metadata).toMatchObject({
-      ls_model_name: "claude-haiku-4-5",
+    expectCompleteToolHistory(persistedFinalLlmRun.inputs);
+    expect(persistedFinalLlmRun).toMatchObject({
+      parent_run_id: harnessRoot.id,
+      run_type: "llm",
+      end_time: expect.anything(),
+      extra: {
+        metadata: {
+          step_number: 1,
+          ls_model_name: "claude-haiku-4-5",
+        },
+      },
     });
     expect(persistedFinalLlmRun?.extra?.metadata).not.toHaveProperty(
       "ls_provider",
@@ -580,7 +598,8 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
     const subagentLlm = outboundRuns.find(
       (run) => run.parent_run_id === subagentRoot.id && run.run_type === "llm",
     );
-    const subagentUsage = subagentLlm?.extra?.metadata?.usage_metadata as
+    if (!subagentLlm) throw new Error("Expected a completed subagent LLM run");
+    const subagentUsage = subagentLlm.extra?.metadata?.usage_metadata as
       | { total_tokens?: unknown }
       | undefined;
     expect(subagentUsage).toMatchObject({
@@ -627,9 +646,16 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
         }),
       );
     let persistedRuns = await readTrace();
+    let persistedCoordinatorLlm = await client.readRun(finalCoordinatorLlm.id);
+    let persistedSubagentLlm = await client.readRun(subagentLlm.id);
     await waitUntil(
       async () => {
-        persistedRuns = await readTrace();
+        [persistedRuns, persistedCoordinatorLlm, persistedSubagentLlm] =
+          await Promise.all([
+            readTrace(),
+            client.readRun(finalCoordinatorLlm.id),
+            client.readRun(subagentLlm.id),
+          ]);
         return (
           persistedRuns.some((run) => run.id === coordinatorRoot.id) &&
           persistedRuns.some(
@@ -643,13 +669,8 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
               run.parent_run_id === delegateRun.id &&
               run.trace_id === coordinatorTraceId,
           ) &&
-          persistedRuns.some(
-            (run) =>
-              run.id === finalCoordinatorLlm.id &&
-              hasNonEmptyTextOutput(run.outputs) &&
-              typeof run.extra?.metadata?.usage_metadata?.total_tokens ===
-                "number",
-          )
+          hasCompletedLlmTelemetry(persistedCoordinatorLlm) &&
+          hasCompletedLlmTelemetry(persistedSubagentLlm)
         );
       },
       30_000,
@@ -669,13 +690,9 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
     expect(persistedSubagentRoot?.extra?.metadata).not.toHaveProperty(
       "usage_metadata",
     );
-    const persistedCoordinatorLlm = persistedRuns.find(
-      (run) => run.id === finalCoordinatorLlm.id,
-    );
-    const persistedSubagentLlm = persistedRuns.find(
-      (run) => run.parent_run_id === subagentRoot.id && run.run_type === "llm",
-    );
     expect(persistedCoordinatorLlm).toMatchObject({
+      parent_run_id: coordinatorRoot.id,
+      run_type: "llm",
       end_time: expect.anything(),
       extra: {
         metadata: {
@@ -687,13 +704,19 @@ test("uploads a nested HarnessAgent and Pi coordinator/subagent trace", async ()
         },
       },
     });
-    expectNonEmptyTextOutput(persistedCoordinatorLlm?.outputs);
+    expectNonEmptyTextOutput(persistedCoordinatorLlm.outputs);
     expect(
-      persistedCoordinatorLlm?.extra?.metadata?.usage_metadata
+      persistedCoordinatorLlm.extra?.metadata?.usage_metadata
         ?.total_tokens as number,
     ).toBeGreaterThan(0);
+    expect(persistedSubagentLlm).toMatchObject({
+      parent_run_id: subagentRoot.id,
+      run_type: "llm",
+      end_time: expect.anything(),
+    });
+    expectNonEmptyTextOutput(persistedSubagentLlm.outputs);
     expect(
-      persistedSubagentLlm?.extra?.metadata?.usage_metadata?.total_tokens,
+      persistedSubagentLlm.extra?.metadata?.usage_metadata?.total_tokens,
     ).toEqual(expect.any(Number));
     expect(
       persistedSubagentLlm?.extra?.metadata?.usage_metadata
