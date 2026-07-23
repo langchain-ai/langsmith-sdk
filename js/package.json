@@ -158,10 +158,10 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.18",
     "@ai-sdk/harness": "1.0.40",
-    "@ai-sdk/harness-pi": "1.0.36",
+    "@ai-sdk/harness-pi": "1.0.40",
     "@ai-sdk/openai": "4.0.4",
     "@ai-sdk/provider": "4.0.1",
-    "@ai-sdk/sandbox-just-bash": "1.0.36",
+    "@ai-sdk/sandbox-just-bash": "1.0.40",
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@anthropic-ai/sdk": "^0.98.0",
     "@babel/preset-env": "^8.0.2",
