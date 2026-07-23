@@ -29,8 +29,8 @@ importers:
         specifier: 4.0.18
         version: 4.0.18(zod@4.4.3)
       '@ai-sdk/harness':
-        specifier: 1.0.36
-        version: 1.0.36(ws@8.21.0)(zod@4.4.3)
+        specifier: 1.0.40
+        version: 1.0.40(ws@8.21.0)(zod@4.4.3)
       '@ai-sdk/harness-pi':
         specifier: 1.0.36
         version: 1.0.36(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
@@ -199,6 +199,12 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/gateway@4.0.27':
+    resolution: {integrity: sha512-gqTMvV0N8/JirIZ3OzwjSZRYxzwZu/PeOFCKb8NB9fstWH39tI+L6CkeMNVou5/HCKEYAw6RCOHW59Vhquv8vA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/harness-pi@1.0.36':
     resolution: {integrity: sha512-JUMgxz+8v0D8F/TovmKqfxIqn7nW7wu9uoDq5T3OF1sfKTM3qt/mJj4zygxWZa4qohxjeBnPqkfa6Xc8d8Ib3w==}
     engines: {node: '>=22'}
@@ -207,6 +213,16 @@ packages:
 
   '@ai-sdk/harness@1.0.36':
     resolution: {integrity: sha512-R8wD8IuQH6LmSEK85FVFkyGJ0SIUHuEYMaQJwTEzKr3u/5ZoabhVRza55eXVKo9XbSDfFxwt6RNxP0cRzLqjVg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      ws: ^8.21.0
+      zod: ^3.25.76 || ^4.1.8
+    peerDependenciesMeta:
+      ws:
+        optional: true
+
+  '@ai-sdk/harness@1.0.40':
+    resolution: {integrity: sha512-LauzEpCdCCsKHInj3ndWoSfSHRaMejtUPDyuNDNX95bwB1x0HTpzfROOmQySN93wRd19NQaLcqGmVn4jWiJjgg==}
     engines: {node: '>=22'}
     peerDependencies:
       ws: ^8.21.0
@@ -3014,6 +3030,12 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  ai@7.0.35:
+    resolution: {integrity: sha512-en8xnTNoVJVWk/Y7TsXuTkc463ehuQUqrofjPs/TAd4O3h14QKmq4rWWG3/Eb05r3f2MvvxfCuXNnvhTdzyoTg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
     peerDependencies:
@@ -5688,6 +5710,13 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
+  '@ai-sdk/gateway@4.0.27(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
+      '@vercel/oidc': 3.2.0
+      zod: 4.4.3
+
   '@ai-sdk/harness-pi@1.0.36(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@ai-sdk/harness': 1.0.36(ws@8.21.0)(zod@4.4.3)
@@ -5707,6 +5736,15 @@ snapshots:
       '@ai-sdk/provider': 4.0.3
       '@ai-sdk/provider-utils': 5.0.11(zod@4.4.3)
       ai: 7.0.31(zod@4.4.3)
+      zod: 4.4.3
+    optionalDependencies:
+      ws: 8.21.0
+
+  '@ai-sdk/harness@1.0.40(ws@8.21.0)(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
+      ai: 7.0.35(zod@4.4.3)
       zod: 4.4.3
     optionalDependencies:
       ws: 8.21.0
@@ -9058,6 +9096,13 @@ snapshots:
       '@ai-sdk/gateway': 4.0.23(zod@4.4.3)
       '@ai-sdk/provider': 4.0.3
       '@ai-sdk/provider-utils': 5.0.11(zod@4.4.3)
+      zod: 4.4.3
+
+  ai@7.0.35(zod@4.4.3):
+    dependencies:
+      '@ai-sdk/gateway': 4.0.27(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
       zod: 4.4.3
 
   ajv-formats@3.0.1(ajv@8.20.0):
