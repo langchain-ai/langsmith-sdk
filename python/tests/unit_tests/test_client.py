@@ -6734,6 +6734,13 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
     )
 
 
+def test_get_run_stats_requires_project() -> None:
+    """get_run_stats must raise ValueError when no project is specified."""
+    client = Client(api_key="test", api_url="http://localhost")
+    with pytest.raises(ValueError, match="project_names or project_ids"):
+        client.get_run_stats()
+
+
 def test_removed_sdk_methods_absent() -> None:
     """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
     from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource

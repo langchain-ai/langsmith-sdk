@@ -706,6 +706,9 @@ export function generateWrapperFromJestlikeMethods(
                     return testWrapperAsyncLocalStorageInstance.run(
                       {
                         ...context,
+                        dataset,
+                        project,
+                        client,
                         currentExample: {
                           inputs,
                           outputs: referenceOutputs,
