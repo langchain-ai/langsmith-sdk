@@ -540,7 +540,7 @@ async def test_async_create_feedback_warns_when_session_id_missing(
     )
     client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
 
-    with pytest.warns(FutureWarning, match="session_id will become a required"):
+    with pytest.warns(DeprecationWarning, match="session_id will become a required"):
         await client.create_feedback(run_id=uuid.uuid4(), key="test_key")
 
     with warnings.catch_warnings():
