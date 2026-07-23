@@ -1657,7 +1657,14 @@ class InsightsReportResult(BaseModel):
 
 
 class FeedbackFormulaWeightedVariable(BaseModel):
-    """A feedback key and weight used when calculating feedback formulas."""
+    """A feedback key and weight used when calculating feedback formulas.
+
+    .. deprecated::
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     part_type: Literal["weighted_key"]
     weight: float
@@ -1665,7 +1672,14 @@ class FeedbackFormulaWeightedVariable(BaseModel):
 
 
 class FeedbackFormulaCreate(BaseModel):
-    """Schema used for creating a feedback formula."""
+    """Schema used for creating a feedback formula.
+
+    .. deprecated::
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     dataset_id: Optional[UUID] = None
     session_id: Optional[UUID] = None
@@ -1677,7 +1691,14 @@ class FeedbackFormulaCreate(BaseModel):
 
 
 class FeedbackFormulaUpdate(BaseModel):
-    """Schema used for updating a feedback formula."""
+    """Schema used for updating a feedback formula.
+
+    .. deprecated::
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
@@ -1687,7 +1708,14 @@ class FeedbackFormulaUpdate(BaseModel):
 
 
 class FeedbackFormula(FeedbackFormulaCreate):
-    """Schema for getting feedback formulas."""
+    """Schema for getting feedback formulas.
+
+    .. deprecated::
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     id: UUID
     created_at: datetime

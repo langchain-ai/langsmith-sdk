@@ -62,7 +62,7 @@ from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
 )
-from typing_extensions import TypeGuard, overload
+from typing_extensions import TypeGuard, deprecated, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
@@ -8314,6 +8314,21 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    # Composite feedback formula API (deprecated)
+    #
+    # These operations are no longer supported. The signatures are retained so
+    # existing imports and type checks keep working, but every method now raises
+    # NotImplementedError. Add composite feedback scores via the LangSmith UI.
+
+    _FEEDBACK_FORMULA_DEPRECATION_MSG = (
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
+
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def list_feedback_formulas(
         self,
         *,
@@ -8324,55 +8339,33 @@ class Client:
     ) -> Iterator[ls_schemas.FeedbackFormula]:
         """List feedback formulas.
 
-        Args:
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to filter by.
-            session_id (Optional[Union[UUID, str]]):
-                The ID of the session to filter by.
-            limit (Optional[int]):
-                The maximum number of feedback formulas to return.
-            offset (int):
-                The starting offset for pagination.
-
-        Yields:
-            The feedback formulas.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        params: dict[str, Any] = {
-            "dataset_id": (
-                _as_uuid(dataset_id, "dataset_id") if dataset_id is not None else None
-            ),
-            "session_id": (
-                _as_uuid(session_id, "session_id") if session_id is not None else None
-            ),
-            "limit": min(limit, 100) if limit is not None else 100,
-            "offset": offset,
-        }
-        for i, feedback_formula in enumerate(
-            self._get_paginated_list("/feedback/formulas", params=params)
-        ):
-            yield ls_schemas.FeedbackFormula(**feedback_formula)
-            if limit is not None and i + 1 >= limit:
-                break
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def get_feedback_formula_by_id(
         self, feedback_formula_id: ID_TYPE
     ) -> ls_schemas.FeedbackFormula:
         """Get a feedback formula by ID.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to retrieve.
-
-        Returns:
-            The requested feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        response = self.request_with_retries(
-            "GET",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def create_feedback_formula(
         self,
         *,
@@ -8386,48 +8379,17 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Create a feedback formula.
 
-        Args:
-            feedback_key (str):
-                The feedback key for the formula.
-            aggregation_type (Literal["sum", "avg"]):
-                The aggregation type to use when combining parts.
-            formula_parts (Sequence[FeedbackFormulaWeightedVariable | dict]):
-                The weighted feedback keys included in the formula.
-            dataset_id (Optional[Union[UUID, str]]):
-                The dataset to scope the formula to.
-            session_id (Optional[Union[UUID, str]]):
-                The session to scope the formula to.
-
-        Returns:
-            The created feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        typed_parts: list[ls_schemas.FeedbackFormulaWeightedVariable] = [
-            part
-            if isinstance(part, ls_schemas.FeedbackFormulaWeightedVariable)
-            else ls_schemas.FeedbackFormulaWeightedVariable(**part)
-            for part in formula_parts
-        ]
-        payload = ls_schemas.FeedbackFormulaCreate(
-            feedback_key=feedback_key,
-            aggregation_type=aggregation_type,
-            formula_parts=typed_parts,
-            dataset_id=(
-                _as_uuid(dataset_id, "dataset_id") if dataset_id is not None else None
-            ),
-            session_id=(
-                _as_uuid(session_id, "session_id") if session_id is not None else None
-            ),
-        )
-        response = self.request_with_retries(
-            "POST",
-            "/feedback/formulas",
-            request_kwargs={
-                "data": _dumps_json(payload.model_dump(exclude_none=True)),
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def update_feedback_formula(
         self,
         feedback_formula_id: ID_TYPE,
@@ -8440,52 +8402,26 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Update a feedback formula.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to update.
-            feedback_key (str):
-                The feedback key for the formula.
-            aggregation_type (Literal["sum", "avg"]):
-                The aggregation type to use when combining parts.
-            formula_parts (Sequence[FeedbackFormulaWeightedVariable | dict]):
-                The weighted feedback keys included in the formula.
-
-        Returns:
-            The updated feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        typed_parts: list[ls_schemas.FeedbackFormulaWeightedVariable] = [
-            part
-            if isinstance(part, ls_schemas.FeedbackFormulaWeightedVariable)
-            else ls_schemas.FeedbackFormulaWeightedVariable(**part)
-            for part in formula_parts
-        ]
-        payload = ls_schemas.FeedbackFormulaUpdate(
-            feedback_key=feedback_key,
-            aggregation_type=aggregation_type,
-            formula_parts=typed_parts,
-        )
-        response = self.request_with_retries(
-            "PUT",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-            request_kwargs={
-                "data": _dumps_json(payload.model_dump(exclude_none=True)),
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def delete_feedback_formula(self, feedback_formula_id: ID_TYPE) -> None:
         """Delete a feedback formula by ID.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to delete.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        response = self.request_with_retries(
-            "DELETE",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-        )
-        ls_utils.raise_for_status_with_text(response)
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
     # Feedback Config API
 
