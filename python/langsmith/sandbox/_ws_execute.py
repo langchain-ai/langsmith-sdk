@@ -25,7 +25,7 @@ try:
 
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
-    _ws_connect_async = _ws_connect_sync = None  # type: ignore[assignment]
+    _ws_connect_async = _ws_connect_sync = None  # type: ignore[assignment,misc]
     ConnectionClosed = InvalidHandshake = None  # type: ignore[assignment,misc]
     WEBSOCKETS_AVAILABLE = False
 
