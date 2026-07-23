@@ -135,9 +135,7 @@ def convert_runs_to_test(
     if not load_child_runs:
         runs_to_copy = runs
     else:
-        runs_to_copy = [
-            client.read_run(r.id, load_child_runs=load_child_runs) for r in runs
-        ]
+        runs_to_copy = [client._load_child_runs(r) for r in runs]
 
     test_project_name = test_project_name or f"prod-baseline-{uuid.uuid4().hex[:6]}"
 
@@ -175,6 +173,12 @@ def convert_runs_to_test(
 
 
 def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Run]:
+    from langsmith._internal import _v2_migration_utils
+
+    # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
+    if (client.info.instance_flags or {}).get("sdb_query_enabled"):
+        return _v2_migration_utils._load_nested_traces_v2(project_name, client)
+
     runs = client.list_runs(project_name=project_name)
     treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
         collections.defaultdict(list)

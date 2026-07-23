@@ -3988,6 +3988,12 @@ class Client:
         Raises:
             LangSmithError: If a child run has no parent.
         """
+        from langsmith._internal import _v2_migration_utils
+
+        # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
+        if (self.info.instance_flags or {}).get("sdb_query_enabled"):
+            return _v2_migration_utils._load_child_runs_v2(run, self)
+
         child_runs = self.list_runs(
             is_root=False, session_id=run.session_id, trace_id=run.trace_id
         )
@@ -5127,20 +5133,24 @@ class Client:
 
         import pandas as pd  # type: ignore
 
-        runs = self.list_runs(
-            project_id=project_id,
-            project_name=project_name,
+        if project_id is None and project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        if project_id is None:
+            raise ValueError("Either project_id or project_name must be provided.")
+        runs = self._get_langsmith_api_sync().runs.query(
+            project_ids=[str(project_id)],
             is_root=True,
-            select=[
-                "id",
-                "reference_example_id",
-                "inputs",
-                "outputs",
-                "error",
-                "feedback_stats",
-                "start_time",
-                "end_time",
+            selects=[
+                "ID",
+                "REFERENCE_EXAMPLE_ID",
+                "INPUTS",
+                "OUTPUTS",
+                "ERROR",
+                "FEEDBACK_STATS",
+                "START_TIME",
+                "END_TIME",
             ],
+            min_start_time=datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc),
         )
         results: list[dict] = []
         example_ids = []
@@ -5162,7 +5172,7 @@ class Client:
             for r in runs:
                 row = {
                     "example_id": r.reference_example_id,
-                    **{f"input.{k}": v for k, v in r.inputs.items()},
+                    **{f"input.{k}": v for k, v in (r.inputs or {}).items()},
                     **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
                     "execution_time": (
                         (r.end_time - r.start_time).total_seconds()
@@ -5175,15 +5185,14 @@ class Client:
                 if r.feedback_stats:
                     row.update(
                         {
-                            f"feedback.{k}": v.get("avg")
+                            f"feedback.{k}": v.avg
                             for k, v in r.feedback_stats.items()
-                            if not (k == "note" and v.get("comments"))
+                            if not (k == "note" and v.comments)
                         }
                     )
-                    if r.feedback_stats.get("note") and (
-                        comments := r.feedback_stats["note"].get("comments")
-                    ):
-                        row["notes"] = comments
+                    if note_stats := r.feedback_stats.get("note"):
+                        if comments := note_stats.comments:
+                            row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:

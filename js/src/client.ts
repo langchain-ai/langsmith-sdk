@@ -118,6 +118,7 @@ import {
   hasLargeString,
   SerializeWorker,
 } from "./utils/serialize_worker.js";
+import { v2RunToRun, V2_RUN_SELECTS } from "./utils/v2_migration.js";
 
 function assertPullPublicPromptAllowed(
   promptIdentifier: string,
@@ -2924,13 +2925,31 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
-    const childRuns = await toArray(
-      this.listRuns({
-        isRoot: false,
-        projectId: run.session_id,
-        traceId: run.trace_id,
-      }),
-    );
+    let childRuns: Run[];
+    if (await this._supportsSDBQuery()) {
+      const fetched: Run[] = [];
+      const pager = this.runs.queryV2({
+        project_ids: [run.session_id!],
+        is_root: false,
+        trace_id: run.trace_id ?? undefined,
+        min_start_time: run.start_time
+          ? new Date(run.start_time).toISOString()
+          : undefined,
+        selects: V2_RUN_SELECTS,
+      });
+      for await (const r of pager) {
+        fetched.push(v2RunToRun(r));
+      }
+      childRuns = fetched;
+    } else {
+      childRuns = await toArray(
+        this.listRuns({
+          isRoot: false,
+          projectId: run.session_id,
+          traceId: run.trace_id,
+        }),
+      );
+    }
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     // TODO: make dotted order required when the migration finishes

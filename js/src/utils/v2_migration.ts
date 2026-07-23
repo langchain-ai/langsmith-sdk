@@ -6,7 +6,7 @@ import type { Client } from "../client.js";
 import type { Run, TracerSession } from "../schemas.js";
 
 // Omitting selects from `/v2/runs/query` returns only the run ID.
-const V2_RUN_SELECTS: RunSelectField[] = [
+export const V2_RUN_SELECTS: RunSelectField[] = [
   "ID",
   "NAME",
   "RUN_TYPE",
