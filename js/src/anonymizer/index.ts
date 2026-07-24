@@ -308,6 +308,14 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
  *   `createAnonymizer`'s default of 10 because traced payloads nest deeply,
  *   e.g. `messages[].content[].args`).
  *
+ * Strings that are wholly base64 (image/PDF/binary blobs) or `data:` URIs are
+ * skipped before the rules run — scanning a multi-MB blob with every rule is
+ * wasted CPU and risks matching random base64 substrings (corrupting it). The
+ * base64 check uses the STANDARD alphabet (A-Za-z0-9+/) only, NOT base64url, so
+ * `-`/`_`-bearing provider keys (sk-ant-, lsv2_, ghp_, glpat-) and dotted JWTs
+ * still scan. Consequence: a *standalone* pure-base64 value (e.g. a bare AWS
+ * key) isn't redacted, but the same key in context (`AWS_ACCESS_KEY_ID=…`) is.
+ *
  * @example
  * ```ts
  * import { Client } from "langsmith";
@@ -321,5 +329,24 @@ export function createSecretAnonymizer(options?: {
   maxDepth?: number;
 }) {
   const rules = [...DEFAULT_SECRET_RULES, ...(options?.extraRules ?? [])];
-  return createAnonymizer(rules, { maxDepth: options?.maxDepth ?? 24 });
+  const compiled: Array<[RegExp, string]> = rules.map(
+    ({ pattern, replace }) => [
+      typeof pattern === "string" ? new RegExp(pattern, "g") : pattern,
+      replace ?? "[redacted]",
+    ],
+  );
+
+  const redactString = (value: string): string => {
+    // Skip base64 blobs: a `data:` URI, or any wholly-base64 string.
+    if (/^\s*data:/i.test(value.slice(0, 16))) return value;
+    if (/^[A-Za-z0-9+/\r\n]+={0,2}$/.test(value)) return value;
+    let out = value;
+    for (const [regex, replace] of compiled) {
+      out = out.replace(regex, replace);
+      regex.lastIndex = 0;
+    }
+    return out;
+  };
+
+  return createAnonymizer(redactString, { maxDepth: options?.maxDepth ?? 24 });
 }

@@ -443,6 +443,34 @@ describe("createSecretAnonymizer", () => {
     );
   });
 
+  describe("base64 skip", () => {
+    test("skips any wholly-base64 string (blob or bare pure-base64 key)", () => {
+      // Deliberate: a wholly-base64 value is treated as a blob and skipped, so
+      // a standalone pure-base64 secret (e.g. a bare AWS key) is NOT redacted.
+      expect(redact("AKIAIOSFODNN7EXAMPLE")).toBe("AKIAIOSFODNN7EXAMPLE");
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ" + "A".repeat(40);
+      expect(redact(png)).toBe(png);
+    });
+
+    test("skips data: URI blobs", () => {
+      const blob = `data:image/png;base64,AKIAIOSFODNN7EXAMPLE${"A".repeat(60)}`;
+      expect(redact(blob)).toBe(blob);
+    });
+
+    test("still redacts a pure-base64 key when it appears in context", () => {
+      // The same AWS key in an assignment isn't wholly base64 → still scanned.
+      const out = redact("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE") as string;
+      expect(out).toContain(SECRET_PLACEHOLDER);
+      expect(out).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    });
+
+    test("still scans non-base64 strings (separators/dots/spaces present)", () => {
+      // sk-ant- (dash), JWT (dots) are not wholly base64 → still redacted.
+      expect(redact(`sk-ant-${"a".repeat(30)}`)).toContain(SECRET_PLACEHOLDER);
+    });
+  });
+
   test("DEFAULT_SECRET_RULES all set an explicit replacement token", () => {
     for (const rule of DEFAULT_SECRET_RULES) {
       expect(rule.replace).toContain(SECRET_PLACEHOLDER);
@@ -460,7 +488,7 @@ describe("createSecretAnonymizer", () => {
       { client, name: "fn", tracingEnabled: true },
     );
 
-    await fn({ apiKey: "AKIAIOSFODNN7EXAMPLE" });
+    await fn({ command: `export ANTHROPIC_API_KEY=sk-ant-${"a".repeat(30)}` });
 
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     const data = tree.data["fn:0"] as {
@@ -468,7 +496,7 @@ describe("createSecretAnonymizer", () => {
       outputs: Record<string, unknown>;
     };
     expect(JSON.stringify(data.inputs)).toContain(SECRET_PLACEHOLDER);
-    expect(JSON.stringify(data.inputs)).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(JSON.stringify(data.inputs)).not.toContain("sk-ant-");
     expect(JSON.stringify(data.outputs)).toContain(SECRET_PLACEHOLDER);
   });
 });
