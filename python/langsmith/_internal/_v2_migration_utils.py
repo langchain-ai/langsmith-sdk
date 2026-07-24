@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import collections
 import datetime
+import enum
 import uuid
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith import schemas
@@ -13,6 +15,32 @@ from langsmith._openapi_client.types.run_select_field import RunSelectField
 
 if TYPE_CHECKING:
     from langsmith.client import Client
+
+
+class QueryBackend(enum.Enum):
+    """Which backend(s) a LangSmith instance can serve run/trace queries from."""
+
+    CLICKHOUSE_ONLY = "clickhouse_only"
+    SMITHDB_ONLY = "smithdb_only"
+    DUAL = "dual"
+
+
+def get_query_backend(
+    instance_flags: Optional[Mapping[str, Any]],
+) -> QueryBackend:
+    """Determine which backend(s) `/info`'s `instance_flags` indicate for queries.
+
+    `ch_query_enabled` defaults to enabled when absent (older backends predate
+    the flag); `sdb_query_enabled` defaults to disabled when absent.
+    """
+    flags = instance_flags or {}
+    ch_enabled = bool(flags.get("ch_query_enabled", True))
+    sdb_enabled = bool(flags.get("sdb_query_enabled", False))
+    if not ch_enabled and sdb_enabled:
+        return QueryBackend.SMITHDB_ONLY
+    if ch_enabled and sdb_enabled:
+        return QueryBackend.DUAL
+    return QueryBackend.CLICKHOUSE_ONLY
 
 
 # Fields for `/v2/runs/query` (RunSelectField enum); omitting selects returns only id.

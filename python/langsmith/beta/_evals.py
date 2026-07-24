@@ -176,7 +176,8 @@ def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Ru
     from langsmith._internal import _v2_migration_utils
 
     # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
-    if (client.info.instance_flags or {}).get("sdb_query_enabled"):
+    backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
+    if backend != _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
         return _v2_migration_utils._load_nested_traces_v2(project_name, client)
 
     runs = client.list_runs(project_name=project_name)

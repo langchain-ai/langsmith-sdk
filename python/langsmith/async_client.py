@@ -596,9 +596,15 @@ class AsyncClient:
         """
         run_id_ = ls_client._as_uuid(run_id)
         info = await self.info()
-        instance_flags = info.instance_flags or {}
-        ch_query_enabled = instance_flags.get("ch_query_enabled", True)
-        if ch_query_enabled or not instance_flags.get("sdb_query_enabled"):
+        from langsmith._internal._v2_migration_utils import (
+            _V2_RUN_SELECTS,
+            QueryBackend,
+            _v2_run_to_schema,
+            get_query_backend,
+        )
+
+        backend = get_query_backend(info.instance_flags)
+        if backend != QueryBackend.SMITHDB_ONLY:
             response = await self._arequest_with_retries(
                 "GET",
                 f"/runs/{run_id_}",
@@ -610,11 +616,6 @@ class AsyncClient:
                 "read_run requires project_id on SmithDB-only backends"
                 " (no ClickHouse query support)."
             )
-        from langsmith._internal._v2_migration_utils import (
-            _V2_RUN_SELECTS,
-            _v2_run_to_schema,
-        )
-
         run = await self.runs.retrieve_v2(
             run_id=str(run_id_),
             project_id=str(ls_client._as_uuid(project_id)),

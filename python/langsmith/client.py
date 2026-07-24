@@ -3991,10 +3991,10 @@ class Client:
                 backends (no ClickHouse query support), where loading child
                 runs isn't supported.
         """
-        instance_flags = self.info.instance_flags or {}
-        if not instance_flags.get("ch_query_enabled", True) and instance_flags.get(
-            "sdb_query_enabled"
-        ):
+        from langsmith._internal import _v2_migration_utils
+
+        backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+        if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
             raise ls_utils.LangSmithError(
                 "Loading child runs is not supported on SmithDB-only"
                 " backends (no ClickHouse query support)."
@@ -4078,9 +4078,10 @@ class Client:
                 stacklevel=2,
             )
         run_id_ = _as_uuid(run_id, "run_id")
-        instance_flags = self.info.instance_flags or {}
-        ch_query_enabled = instance_flags.get("ch_query_enabled", True)
-        if ch_query_enabled or not instance_flags.get("sdb_query_enabled"):
+        from langsmith._internal import _v2_migration_utils
+
+        backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+        if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
             response = self.request_with_retries("GET", f"/runs/{run_id_}")
             attachments = _convert_stored_attachments_to_attachments_dict(
                 response.json(), attachments_key="s3_urls", api_url=self.api_url
@@ -4106,8 +4107,6 @@ class Client:
                     "load_child_runs is not supported on SmithDB-only"
                     " backends (no ClickHouse query support)."
                 )
-            from langsmith._internal import _v2_migration_utils
-
             run = _v2_migration_utils._read_run_v2(
                 run_id_,
                 self,
@@ -7537,9 +7536,10 @@ class Client:
             TypeError: If the run type is invalid.
         """
         if isinstance(run, (str, uuid.UUID)):
-            instance_flags = self.info.instance_flags or {}
-            ch_disabled = not instance_flags.get("ch_query_enabled", True)
-            if ch_disabled and instance_flags.get("sdb_query_enabled"):
+            from langsmith._internal import _v2_migration_utils
+
+            backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+            if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
                 if project_id is None:
                     raise ls_utils.LangSmithError(
                         "project_id is required to resolve a run from an ID"
@@ -7552,7 +7552,7 @@ class Client:
                         " when ClickHouse query support is disabled"
                         " (SmithDB-only backend)."
                     )
-            elif not ch_disabled and project_id is None:
+            elif project_id is None:
                 warnings.warn(
                     "Resolving a run from an ID without passing project_id is"
                     " deprecated and will raise an error in a future release."
