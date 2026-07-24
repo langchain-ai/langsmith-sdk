@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Dict, List
-from typing_extensions import Literal
 
 import httpx
 
@@ -20,6 +19,7 @@ from ..._response import (
 from ...pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from ..._base_client import AsyncPaginator, make_request_options
 from ...types.datasets import experiment_run_query_params
+from ...types.run_select_field import RunSelectField
 from ...types.datasets.experiment_run_query_response import ExperimentRunQueryResponse
 
 __all__ = ["ExperimentRunsResource", "AsyncExperimentRunsResource"]
@@ -31,8 +31,6 @@ class ExperimentRunsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return ExperimentRunsResourceWithRawResponse(self)
 
@@ -40,8 +38,6 @@ class ExperimentRunsResource(SyncAPIResource):
     def with_streaming_response(self) -> ExperimentRunsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return ExperimentRunsResourceWithStreamingResponse(self)
 
@@ -55,55 +51,7 @@ class ExperimentRunsResource(SyncAPIResource):
         experiment_ids: SequenceNotStr[str] | Omit = omit,
         filters: Dict[str, SequenceNotStr[str]] | Omit = omit,
         page_size: int | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         sort: experiment_run_query_params.Sort | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -179,8 +127,6 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncExperimentRunsResourceWithRawResponse(self)
 
@@ -188,8 +134,6 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncExperimentRunsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncExperimentRunsResourceWithStreamingResponse(self)
 
@@ -203,55 +147,7 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
         experiment_ids: SequenceNotStr[str] | Omit = omit,
         filters: Dict[str, SequenceNotStr[str]] | Omit = omit,
         page_size: int | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         sort: experiment_run_query_params.Sort | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.

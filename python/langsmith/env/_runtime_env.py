@@ -177,6 +177,9 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
         "LANGSMITH_RUNS_ENDPOINTS",
+        # Control-plane signing secrets the substring filter misses; excluded here.
+        "LANGSMITH_SIGNING_JWKS",
+        "LANGSMITH_SANDBOX_CALLBACK_SIGNING_JWK",
     }
     langchain_metadata = {
         k: v

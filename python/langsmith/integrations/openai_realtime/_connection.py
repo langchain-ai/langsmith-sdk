@@ -156,15 +156,14 @@ def _usage_to_dict(usage: Any) -> dict[str, Any]:
     return base
 
 
-def response_usage_metadata(response: Any) -> dict[str, Any] | None:
-    """Map Realtime token ``usage`` onto LangSmith ``usage_metadata`` (for cost).
+def usage_metadata_from_usage(usage: Any) -> dict[str, Any] | None:
+    """Map a Realtime ``usage`` (object or dict) onto LangSmith ``usage_metadata``.
 
     Delegates to the shared OpenAI usage mapper so the Realtime integration and
     the Chat/Agents wrappers agree on the canonical shape (and so audio/cached
-    token detail is captured, not dropped). Returns ``None`` when the response
-    carries no usage (e.g. a cancelled turn).
+    token detail is captured, not dropped). Returns ``None`` when there is no
+    usage or it carries no token counts (e.g. a cancelled turn).
     """
-    usage = getattr(response, "usage", None)
     if usage is None:
         return None
     usage_dict = _usage_to_dict(usage)
@@ -174,6 +173,11 @@ def response_usage_metadata(response: Any) -> dict[str, Any] | None:
     ):
         return None
     return dict(_create_usage_metadata(usage_dict))
+
+
+def response_usage_metadata(response: Any) -> dict[str, Any] | None:
+    """Map a ``response.done`` payload's token ``usage`` onto ``usage_metadata``."""
+    return usage_metadata_from_usage(getattr(response, "usage", None))
 
 
 class _RealtimeTracer:

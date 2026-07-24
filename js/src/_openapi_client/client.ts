@@ -72,30 +72,15 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
-  ResponseBodyForRunsGenerateQuery,
-  Run,
-  RunIngest,
-  RunQueryParams,
-  RunQueryV2Params,
-  RunRetrieveParams,
-  RunRetrieveV2Params,
-  RunSchema,
-  RunStatsQueryParams,
-  RunTypeEnum,
-  Runs,
-  RunsFilterDataSourceTypeEnum,
-  RunsItemsCursorPostPagination,
-} from './resources/runs.js';
-import {
-  ThreadListItem,
-  ThreadListItemsItemsCursorPostPagination,
+  Thread,
   ThreadListTracesParams,
   ThreadQueryParams,
+  ThreadStats,
   ThreadStatsParams,
-  ThreadStatsResponse,
-  ThreadTraceListItem,
-  ThreadTraceListItemsItemsCursorGetPagination,
+  ThreadTrace,
+  ThreadTracesItemsCursorGetPagination,
   Threads,
+  ThreadsItemsCursorPostPagination,
 } from './resources/threads.js';
 import {
   Trace,
@@ -116,6 +101,26 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import { Public } from './resources/public/public.js';
+import {
+  ResponseBodyForRunsGenerateQuery,
+  Run,
+  RunGetURLParams,
+  RunGetURLResponse,
+  RunIngest,
+  RunQueryParams,
+  RunQueryV2Params,
+  RunRetrieveParams,
+  RunRetrieveV2Params,
+  RunSchema,
+  RunSelectField,
+  RunStatsQueryParams,
+  RunType,
+  RunTypeEnum,
+  Runs,
+  RunsFilterDataSourceTypeEnum,
+  RunsItemsCursorPostPagination,
+} from './resources/runs/runs.js';
 import {
   SandboxListResponse,
   SandboxResponse,
@@ -898,6 +903,7 @@ export class Langsmith {
   threads: API.Threads = new API.Threads(this);
   traces: API.Traces = new API.Traces(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
+  public: API.Public = new API.Public(this);
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
@@ -908,6 +914,7 @@ Langsmith.Runs = Runs;
 Langsmith.Threads = Threads;
 Langsmith.Traces = Traces;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
+Langsmith.Public = Public;
 Langsmith.Info = Info;
 Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
@@ -986,10 +993,14 @@ export declare namespace Langsmith {
     type Run as Run,
     type RunIngest as RunIngest,
     type RunSchema as RunSchema,
+    type RunSelectField as RunSelectField,
     type RunStatsQueryParams as RunStatsQueryParams,
+    type RunType as RunType,
     type RunTypeEnum as RunTypeEnum,
     type RunsFilterDataSourceTypeEnum as RunsFilterDataSourceTypeEnum,
+    type RunGetURLResponse as RunGetURLResponse,
     type RunsItemsCursorPostPagination as RunsItemsCursorPostPagination,
+    type RunGetURLParams as RunGetURLParams,
     type RunQueryV2Params as RunQueryV2Params,
     type RunRetrieveV2Params as RunRetrieveV2Params,
     type RunRetrieveParams as RunRetrieveParams,
@@ -998,11 +1009,11 @@ export declare namespace Langsmith {
 
   export {
     Threads as Threads,
-    type ThreadListItem as ThreadListItem,
-    type ThreadTraceListItem as ThreadTraceListItem,
-    type ThreadStatsResponse as ThreadStatsResponse,
-    type ThreadTraceListItemsItemsCursorGetPagination as ThreadTraceListItemsItemsCursorGetPagination,
-    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type Thread as Thread,
+    type ThreadStats as ThreadStats,
+    type ThreadTrace as ThreadTrace,
+    type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
+    type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,
@@ -1047,6 +1058,8 @@ export declare namespace Langsmith {
     type OnlineEvaluatorBulkDeleteParams as OnlineEvaluatorBulkDeleteParams,
     type OnlineEvaluatorSpendParams as OnlineEvaluatorSpendParams,
   };
+
+  export { Public as Public };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
 

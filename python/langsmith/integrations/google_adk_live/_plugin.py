@@ -159,23 +159,70 @@ def _resolve_model(invocation_context: Any) -> str | None:
     return getattr(model, "model", None) or None
 
 
-def _usage_metadata(event: Any) -> dict[str, int] | None:
+def _audio_tokens(details: Any) -> int | None:
+    """Sum the ``AUDIO`` modality token count from a ``ModalityTokenCount`` list.
+
+    Gemini reports per-modality breakdowns as a list of ``{modality, token_count}``
+    entries; the audio bucket is what the cost engine prices at the (much higher)
+    audio rate. ``MediaModality`` has a single audio member (``AUDIO``), so an
+    exact match is enough. Returns ``None`` when no audio modality is present.
+    """
+    if not isinstance(details, (list, tuple)):
+        return None
+    total = 0
+    found = False
+    for entry in details:
+        modality = getattr(entry, "modality", None)
+        modality = getattr(modality, "value", modality)
+        count = getattr(entry, "token_count", None)
+        if str(modality).upper() == "AUDIO" and isinstance(count, int):
+            total += count
+            found = True
+    return total if found else None
+
+
+def _usage_metadata(event: Any) -> dict[str, Any] | None:
     """Map an ADK event's ``usage_metadata`` to LangSmith token usage, if any.
 
-    ADK inherits genai's ``GenerateContentResponseUsageMetadata`` (prompt /
-    candidates / total token counts). Live events may carry no usage at all, in
-    which case the ``llm`` span is still recorded without token counts. Only
+    ADK inherits genai's ``GenerateContentResponseUsageMetadata``. Beyond the
+    aggregate prompt / candidates / total counts, the ``audio`` modality split
+    (from ``prompt_tokens_details`` / ``candidates_tokens_details``), the
+    ``cache_read`` count, and the ``reasoning`` count are captured — for Gemini
+    Live the audio tokens dominate and are priced very differently from text, so
+    dropping the split would mis-price the turn. Live events may carry no usage
+    at all, in which case the ``llm`` span is recorded without token counts. Only
     the fields ADK actually reports are included.
     """
     um = getattr(event, "usage_metadata", None)
     if um is None:
         return None
-    mapping = {
-        "input_tokens": getattr(um, "prompt_token_count", None),
-        "output_tokens": getattr(um, "candidates_token_count", None),
-        "total_tokens": getattr(um, "total_token_count", None),
-    }
-    usage = {k: v for k, v in mapping.items() if isinstance(v, int)}
+    usage: dict[str, Any] = {}
+    for key, attr in (
+        ("input_tokens", "prompt_token_count"),
+        ("output_tokens", "candidates_token_count"),
+        ("total_tokens", "total_token_count"),
+    ):
+        if isinstance(v := getattr(um, attr, None), int):
+            usage[key] = v
+
+    input_details: dict[str, int] = {}
+    if (audio := _audio_tokens(getattr(um, "prompt_tokens_details", None))) is not None:
+        input_details["audio"] = audio
+    if isinstance(cached := getattr(um, "cached_content_token_count", None), int):
+        input_details["cache_read"] = cached
+    if input_details:
+        usage["input_token_details"] = input_details
+
+    output_details: dict[str, int] = {}
+    if (
+        audio := _audio_tokens(getattr(um, "candidates_tokens_details", None))
+    ) is not None:
+        output_details["audio"] = audio
+    if isinstance(reasoning := getattr(um, "thoughts_token_count", None), int):
+        output_details["reasoning"] = reasoning
+    if output_details:
+        usage["output_token_details"] = output_details
+
     return usage or None
 
 
@@ -196,6 +243,17 @@ class _AdkLiveTracer:
         # FunctionCall.id (falling back to the tool name when ADK omits an id).
         # A FIFO list per key disambiguates repeated/parallel identical calls.
         self._open_tools: dict[str, list[RunTree]] = {}
+        # ADK reports token usage on its own event, separate from (and just
+        # after) the agent transcript, and before turn_complete. The priced
+        # ``output_transcription`` llm span must carry that usage on the run's
+        # finalizing patch (cost is derived at finalize, not from a later
+        # patch), so the transcript is held here until its usage arrives — then
+        # both are recorded in one shot. ``_pending_event`` is the raw agent
+        # event (kept for the span's raw_event metadata). ``_pending_usage``
+        # covers the rarer case where usage lands before the transcript.
+        self._pending_text: str | None = None
+        self._pending_event: Any = None
+        self._pending_usage: dict[str, Any] | None = None
 
     @property
     def session(self) -> EventSession:
@@ -233,29 +291,37 @@ class _AdkLiveTracer:
         for response in view.function_responses:
             self._end_tool(response, event, t)
 
-        # A finalized agent utterance: transcript rollup plus a point-in-time
-        # ``output_transcription`` span (raw event payload, token usage when ADK
-        # reports it). Anchored at the event's arrival and left flat rather than
-        # grouped into a synthetic turn: Gemini finalizes transcripts late (often
-        # after the audio it describes), so a turn's boundaries can't be placed
-        # against the audio timeline without reading as misaligned.
+        # A finalized agent utterance. ADK reports its token usage on a
+        # *separate*, later event (before turn_complete), and cost is derived
+        # when the ``llm`` run is finalized — so usage patched on after the run
+        # ends is lost. The transcript is therefore held until its usage
+        # arrives, then recorded in one shot (see ``_emit_agent_turn``). Flat
+        # and point-in-time, not turn-grouped: Gemini finalizes transcripts late
+        # (often after the audio they describe), so turn boundaries can't be
+        # placed against the audio timeline without reading as misaligned.
+        um = _usage_metadata(event)
         fa = view.final_agent_transcript
         if fa:
             self._trace.add_message("assistant", fa)
-            # llm-kind (not chain) so LangSmith prices it; ls_provider +
-            # ls_model_name let it match a Gemini pricing entry. Still flat and
-            # point-in-time at event arrival — no turn grouping. Raw event kept
-            # in metadata so nothing is lost.
-            self._trace.record_llm(
-                name="output_transcription",
-                outputs={"role": "assistant", "content": fa},
-                usage_metadata=_usage_metadata(event),
-                metadata={
-                    "raw_event": scrub(dump_event(event)),
-                    "ls_provider": "google",
-                    "ls_model_name": self._model,
-                },
-            )
+            if um is not None:
+                # Usage already on this event — record immediately.
+                self._emit_agent_turn(event, fa, um)
+            elif self._pending_usage is not None:
+                # Usage arrived first this turn — pair them now.
+                self._emit_agent_turn(event, fa, self._pending_usage)
+                self._pending_usage = None
+            else:
+                # Hold for the usage event that follows within the turn.
+                self._flush_pending_agent_turn()
+                self._pending_text = fa
+                self._pending_event = event
+        elif um is not None:
+            if self._pending_text is not None:
+                self._emit_agent_turn(self._pending_event, self._pending_text, um)
+                self._pending_text = None
+                self._pending_event = None
+            else:
+                self._pending_usage = um
 
         # Barge-in and end-of-turn markers, each a point-in-time span.
         if view.interrupted:
@@ -264,6 +330,40 @@ class _AdkLiveTracer:
         if view.turn_complete:
             with self._trace.event_span(event, t, name="turn_complete", inbound=False):
                 pass
+            # Turn boundary: a held transcript never got usage — record it as-is
+            # rather than lose it. Drop stray usage that never found a transcript
+            # so it can't attach to the next turn.
+            self._flush_pending_agent_turn()
+            self._pending_usage = None
+
+    def _emit_agent_turn(
+        self, event: Any, text: str, usage: dict[str, Any] | None
+    ) -> None:
+        """Record one ``output_transcription`` ``llm`` run with its usage.
+
+        llm-kind (not chain) so LangSmith prices it; ls_provider + ls_model_name
+        let it match a Gemini pricing entry. ``usage`` is passed in (not patched
+        later) so it lands on the run's finalizing patch. Raw event kept in
+        metadata so nothing is lost.
+        """
+        self._trace.record_llm(
+            name="output_transcription",
+            outputs={"role": "assistant", "content": text},
+            usage_metadata=usage,
+            metadata={
+                "raw_event": scrub(dump_event(event)),
+                "ls_provider": "google",
+                "ls_model_name": self._model,
+            },
+        )
+        logger.debug("ADK Live: recorded output_transcription (usage=%s)", usage)
+
+    def _flush_pending_agent_turn(self) -> None:
+        """Record a held transcript that never received usage (usage stays None)."""
+        if self._pending_text is not None:
+            self._emit_agent_turn(self._pending_event, self._pending_text, None)
+            self._pending_text = None
+            self._pending_event = None
 
     def _start_tool(self, call: Any, event: Any) -> None:
         """Open a held-open ``tool`` span for one ``function_call``.
@@ -328,12 +428,15 @@ class _AdkLiveTracer:
         self._open_tools = {k: v for k, v in self._open_tools.items() if v}
 
     def flush_pending(self) -> None:
-        """Close any tool span that never saw its response, with an error.
+        """Close anything left open at teardown.
 
-        Called at teardown: a tool that raised (ADK routes that through its own
-        error handling, not a function_response event) or a session torn down
-        mid-call would otherwise leave a span dangling open forever.
+        A held agent transcript whose turn never completed (e.g. a Ctrl-C
+        mid-turn) is recorded without usage rather than dropped. A tool that
+        raised (ADK routes that through its own error handling, not a
+        function_response event) or a session torn down mid-call would otherwise
+        leave a span dangling open forever, so each is closed with an error.
         """
+        self._flush_pending_agent_turn()
         for queue in self._open_tools.values():
             for run in queue:
                 run.error = "tool did not complete before the session ended"

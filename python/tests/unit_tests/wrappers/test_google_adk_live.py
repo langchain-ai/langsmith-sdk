@@ -264,6 +264,45 @@ class TestUsageMetadata:
         )
         assert _usage_metadata(_event(usage_metadata=um)) == {"input_tokens": 10}
 
+    def test_captures_audio_cache_and_reasoning_detail(self):
+        # Gemini Live's dominant cost is audio tokens, split out by modality; the
+        # audio bucket, cache_read, and reasoning must all be captured or the
+        # audio gets mis-priced as text.
+        def _mtc(modality, count):
+            return SimpleNamespace(
+                modality=SimpleNamespace(value=modality), token_count=count
+            )
+
+        um = SimpleNamespace(
+            prompt_token_count=100,
+            candidates_token_count=40,
+            total_token_count=140,
+            cached_content_token_count=15,
+            thoughts_token_count=8,
+            prompt_tokens_details=[_mtc("AUDIO", 90), _mtc("TEXT", 10)],
+            candidates_tokens_details=[_mtc("AUDIO", 35)],
+        )
+        assert _usage_metadata(_event(usage_metadata=um)) == {
+            "input_tokens": 100,
+            "output_tokens": 40,
+            "total_tokens": 140,
+            "input_token_details": {"audio": 90, "cache_read": 15},
+            "output_token_details": {"audio": 35, "reasoning": 8},
+        }
+
+    def test_audio_modality_as_plain_string(self):
+        # The modality can arrive as a bare string rather than an enum.
+        um = SimpleNamespace(
+            prompt_token_count=50,
+            prompt_tokens_details=[
+                SimpleNamespace(modality="AUDIO", token_count=50),
+            ],
+        )
+        assert _usage_metadata(_event(usage_metadata=um)) == {
+            "input_tokens": 50,
+            "input_token_details": {"audio": 50},
+        }
+
 
 # --------------------------------------------------------------------------- #
 # _session_key — per-conversation key precedence.
@@ -445,25 +484,27 @@ class TestObserve:
         session.add_message.assert_not_called()
         session.event_span.assert_not_called()
 
-    def test_final_agent_transcript_records_llm_output_transcription(self, make_plugin):
-        # The agent response is a flat, point-in-time ``llm`` run named
-        # ``output_transcription`` (so LangSmith prices it), carrying token usage
-        # and ls_provider/ls_model_name — not a chain event span, not turn-grouped.
+    def test_transcript_then_usage_records_one_priced_llm_run(self, make_plugin):
+        # ADK reports usage on a separate event just after the transcript. The
+        # transcript is held until that usage arrives, then recorded once as a
+        # flat ``output_transcription`` llm run carrying the usage — so it lands
+        # on the run's finalizing patch (patching usage after the run ends is
+        # not reflected in cost). Not a chain event span, not turn-grouped.
         plugin, ctx, session = self._start(make_plugin)
-        um = SimpleNamespace(
-            prompt_token_count=3, candidates_token_count=2, total_token_count=5
-        )
         self._emit(
-            plugin,
-            ctx,
-            _event(
-                output_transcription=_txn("sunny", finished=True), usage_metadata=um
-            ),
+            plugin, ctx, _event(output_transcription=_txn("sunny", finished=True))
         )
+        # Held, not yet recorded — waiting for its usage.
         session.add_message.assert_called_once_with("assistant", "sunny")
         session.set_title.assert_not_called()  # title only set from user speech
         session.event_span.assert_not_called()  # llm run, not a chain event span
         session.start_turn.assert_not_called()
+        session.record_llm.assert_not_called()
+
+        um = SimpleNamespace(
+            prompt_token_count=3, candidates_token_count=2, total_token_count=5
+        )
+        self._emit(plugin, ctx, _event(usage_metadata=um))
         session.record_llm.assert_called_once()
         kwargs = session.record_llm.call_args.kwargs
         assert kwargs["name"] == "output_transcription"
@@ -476,20 +517,94 @@ class TestObserve:
         assert kwargs["metadata"]["ls_provider"] == "google"
         assert "ls_model_name" in kwargs["metadata"]
 
+    def test_usage_on_same_event_records_immediately(self, make_plugin):
+        # If usage happens to ride the transcript event, record in one shot.
+        plugin, ctx, session = self._start(make_plugin)
+        um = SimpleNamespace(
+            prompt_token_count=3, candidates_token_count=2, total_token_count=5
+        )
+        self._emit(
+            plugin,
+            ctx,
+            _event(
+                output_transcription=_txn("sunny", finished=True), usage_metadata=um
+            ),
+        )
+        session.record_llm.assert_called_once()
+        assert session.record_llm.call_args.kwargs["usage_metadata"] == {
+            "input_tokens": 3,
+            "output_tokens": 2,
+            "total_tokens": 5,
+        }
+
     def test_agent_model_is_resolved_onto_llm_span(self, make_plugin):
         # The run's agent model becomes ls_model_name for cost lookup.
         factory, created = make_plugin
         plugin = factory()
         ctx = _ctx(session_id="A", model="gemini-2.0-flash-live")
         _run(plugin.before_run_callback(invocation_context=ctx))
+        um = SimpleNamespace(
+            prompt_token_count=3, candidates_token_count=2, total_token_count=5
+        )
         _run(
             plugin.on_event_callback(
                 invocation_context=ctx,
-                event=_event(output_transcription=_txn("hi", finished=True)),
+                event=_event(
+                    output_transcription=_txn("hi", finished=True), usage_metadata=um
+                ),
             )
         )
         meta = created[0].record_llm.call_args.kwargs["metadata"]
         assert meta["ls_model_name"] == "gemini-2.0-flash-live"
+
+    def test_usage_before_transcript_is_paired_when_transcript_arrives(
+        self, make_plugin
+    ):
+        # Usage can also arrive before the transcript within a turn; it's held
+        # and paired when the transcript lands, still recorded in one shot.
+        plugin, ctx, session = self._start(make_plugin)
+        um = SimpleNamespace(
+            prompt_token_count=7, candidates_token_count=1, total_token_count=8
+        )
+        self._emit(plugin, ctx, _event(usage_metadata=um))
+        session.record_llm.assert_not_called()  # nothing to record yet
+
+        self._emit(plugin, ctx, _event(output_transcription=_txn("hi", finished=True)))
+        session.record_llm.assert_called_once()
+        assert session.record_llm.call_args.kwargs["usage_metadata"] == {
+            "input_tokens": 7,
+            "output_tokens": 1,
+            "total_tokens": 8,
+        }
+
+    def test_turn_complete_flushes_transcript_that_got_no_usage(self, make_plugin):
+        # A held transcript whose turn ends with no usage is recorded as-is
+        # (usage=None) rather than dropped.
+        plugin, ctx, session = self._start(make_plugin)
+        self._emit(
+            plugin, ctx, _event(output_transcription=_txn("sunny", finished=True))
+        )
+        session.record_llm.assert_not_called()  # held, awaiting usage
+        self._emit(plugin, ctx, _event(turn_complete=True))
+        session.record_llm.assert_called_once()
+        assert session.record_llm.call_args.kwargs["usage_metadata"] is None
+
+    def test_stray_usage_after_turn_complete_is_not_recorded(self, make_plugin):
+        # Usage in a turn that never produced a transcript is dropped, not
+        # misattributed to a later turn.
+        plugin, ctx, session = self._start(make_plugin)
+        self._emit(
+            plugin, ctx, _event(output_transcription=_txn("sunny", finished=True))
+        )
+        self._emit(plugin, ctx, _event(turn_complete=True))  # flushes "sunny"
+        session.record_llm.reset_mock()
+
+        um = SimpleNamespace(
+            prompt_token_count=3, candidates_token_count=2, total_token_count=5
+        )
+        self._emit(plugin, ctx, _event(usage_metadata=um))
+        self._emit(plugin, ctx, _event(turn_complete=True))
+        session.record_llm.assert_not_called()
 
     def test_tool_call_is_one_span_start_to_end(self, make_plugin):
         # function_call opens a held-open ``tool`` span; the matching

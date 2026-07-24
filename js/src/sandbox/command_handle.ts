@@ -11,6 +11,7 @@ import type { Sandbox } from "./sandbox.js";
 import {
   LangSmithSandboxConnectionError,
   LangSmithSandboxOperationError,
+  LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
 
 /**
@@ -99,9 +100,8 @@ export class CommandHandle {
 
     const firstResult = await this._stream.next();
     if (firstResult.done) {
-      throw new LangSmithSandboxOperationError(
+      throw new LangSmithStreamEndedBeforeStartedError(
         "Command stream ended before 'started' message",
-        "command",
       );
     }
     const firstMsg = firstResult.value;

@@ -82,6 +82,7 @@ import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -933,6 +934,8 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  private _stainlessVersionChecked = false;
+
   private manualFlushMode = false;
 
   private _serializeWorker?: SerializeWorker | null;
@@ -1479,31 +1482,42 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
+    this._checkStainlessVersion();
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
+    this._checkStainlessVersion();
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
+    this._checkStainlessVersion();
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
+    this._checkStainlessVersion();
     return this.openAPIClient.datasets;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
+    this._checkStainlessVersion();
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
+    this._checkStainlessVersion();
     return this.openAPIClient.traces;
+  }
+
+  /** Access the public shared-run resource. */
+  public get public(): Public {
+    return this.openAPIClient.public;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
@@ -2093,15 +2107,26 @@ export class Client implements LangSmithTracingClientInterface {
     return json;
   }
 
+  private _checkStainlessVersion(): void {
+    if (this._stainlessVersionChecked) return;
+    this._stainlessVersionChecked = true;
+    this._ensureServerInfo()
+      .then((serverInfo) => {
+        if (serverInfo?.version) {
+          _checkBackendVersion(serverInfo.version);
+        }
+      })
+      .catch(() => {
+        // _ensureServerInfo handles and logs its own errors
+      });
+  }
+
   protected async _ensureServerInfo() {
     if (this._getServerInfoPromise === undefined) {
       this._getServerInfoPromise = (async () => {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-            if (this._serverInfo?.version) {
-              _checkBackendVersion(this._serverInfo.version);
-            }
           } catch (e: any) {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
@@ -2119,6 +2144,11 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return serverInfo;
     });
+  }
+
+  public async _supportsSDBQuery(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return serverInfo.instance_flags?.sdb_query_enabled === true;
   }
 
   protected async _getSettings() {
@@ -3415,6 +3445,11 @@ export class Client implements LangSmithTracingClientInterface {
           ),
         )),
       ];
+    }
+    if (projectIds_.length === 0) {
+      throw new Error(
+        "At least one of projectNames or projectIds must be provided.",
+      );
     }
 
     const payload = {
@@ -5381,6 +5416,7 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
     const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
@@ -5409,7 +5445,7 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
-          sessionId: run?.session_id,
+          sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
         }),
       );
@@ -5418,6 +5454,16 @@ export class Client implements LangSmithTracingClientInterface {
     return [evalResults, feedbacks];
   }
 
+  public async logEvaluationFeedback(params: {
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults;
+    run: Run;
+    projectId: string;
+    sourceInfo?: { [key: string]: any };
+  }): Promise<EvaluationResult[]>;
+  /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
       | EvaluationResult
@@ -5425,11 +5471,44 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
+  ): Promise<EvaluationResult[]>;
+  public async logEvaluationFeedback(
+    evaluatorResponseOrParams:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults
+      | {
+          evaluatorResponse:
+            | EvaluationResult
+            | EvaluationResult[]
+            | EvaluationResults;
+          run: Run;
+          projectId: string;
+          sourceInfo?: { [key: string]: any };
+        },
+    run?: Run,
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<EvaluationResult[]> {
+    if (
+      evaluatorResponseOrParams != null &&
+      typeof evaluatorResponseOrParams === "object" &&
+      "evaluatorResponse" in evaluatorResponseOrParams
+    ) {
+      const [results] = await this._logEvaluationFeedback(
+        evaluatorResponseOrParams.evaluatorResponse,
+        evaluatorResponseOrParams.run,
+        evaluatorResponseOrParams.sourceInfo,
+        evaluatorResponseOrParams.projectId,
+      );
+      return results;
+    }
     const [results] = await this._logEvaluationFeedback(
-      evaluatorResponse,
+      evaluatorResponseOrParams,
       run,
       sourceInfo,
+      sessionId,
     );
     return results;
   }

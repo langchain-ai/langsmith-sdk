@@ -22,6 +22,7 @@ from .._response import (
 from ..pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from ..types.trace import Trace
 from .._base_client import AsyncPaginator, make_request_options
+from ..types.run_select_field import RunSelectField
 from ..types.trace_list_runs_response import TraceListRunsResponse
 
 __all__ = ["TracesResource", "AsyncTracesResource"]
@@ -33,8 +34,6 @@ class TracesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return TracesResourceWithRawResponse(self)
 
@@ -42,8 +41,6 @@ class TracesResource(SyncAPIResource):
     def with_streaming_response(self) -> TracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return TracesResourceWithStreamingResponse(self)
 
@@ -176,55 +173,7 @@ class TracesResource(SyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -320,8 +269,6 @@ class AsyncTracesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncTracesResourceWithRawResponse(self)
 
@@ -329,8 +276,6 @@ class AsyncTracesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncTracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncTracesResourceWithStreamingResponse(self)
 
@@ -463,55 +408,7 @@ class AsyncTracesResource(AsyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,

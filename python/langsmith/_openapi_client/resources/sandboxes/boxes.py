@@ -39,8 +39,6 @@ class BoxesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return BoxesResourceWithRawResponse(self)
 
@@ -48,8 +46,6 @@ class BoxesResource(SyncAPIResource):
     def with_streaming_response(self) -> BoxesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return BoxesResourceWithStreamingResponse(self)
 
@@ -64,6 +60,7 @@ class BoxesResource(SyncAPIResource):
         mem_bytes: int | Omit = omit,
         mount_config: box_create_params.MountConfig | Omit = omit,
         name: str | Omit = omit,
+        preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
         snapshot_id: str | Omit = omit,
@@ -80,13 +77,18 @@ class BoxesResource(SyncAPIResource):
         """Create a new sandbox from a snapshot.
 
         Provide at most one of `snapshot_id` or
-        `snapshot_name`; if neither is provided, the server uses the default static
-        blueprint.
+        `snapshot_name`; if neither is provided, the server uses the default snapshot.
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
               vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
               available for every sandbox.
+
+          preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
+              stop (idle timeout or explicit stop) so the next start resumes from where it
+              left off. Default false discards memory and keeps only the filesystem, so the
+              next start is a cold boot. Restarts triggered by infrastructure maintenance
+              always preserve memory regardless of this setting.
 
           restore_memory:
               RestoreMemory selects how the sandbox handles a snapshot's captured memory:
@@ -117,6 +119,7 @@ class BoxesResource(SyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "mount_config": mount_config,
                     "name": name,
+                    "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
                     "snapshot_id": snapshot_id,
@@ -541,8 +544,6 @@ class AsyncBoxesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncBoxesResourceWithRawResponse(self)
 
@@ -550,8 +551,6 @@ class AsyncBoxesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncBoxesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncBoxesResourceWithStreamingResponse(self)
 
@@ -566,6 +565,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         mem_bytes: int | Omit = omit,
         mount_config: box_create_params.MountConfig | Omit = omit,
         name: str | Omit = omit,
+        preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
         snapshot_id: str | Omit = omit,
@@ -582,13 +582,18 @@ class AsyncBoxesResource(AsyncAPIResource):
         """Create a new sandbox from a snapshot.
 
         Provide at most one of `snapshot_id` or
-        `snapshot_name`; if neither is provided, the server uses the default static
-        blueprint.
+        `snapshot_name`; if neither is provided, the server uses the default snapshot.
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
               vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
               available for every sandbox.
+
+          preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
+              stop (idle timeout or explicit stop) so the next start resumes from where it
+              left off. Default false discards memory and keeps only the filesystem, so the
+              next start is a cold boot. Restarts triggered by infrastructure maintenance
+              always preserve memory regardless of this setting.
 
           restore_memory:
               RestoreMemory selects how the sandbox handles a snapshot's captured memory:
@@ -619,6 +624,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "mount_config": mount_config,
                     "name": name,
+                    "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
                     "snapshot_id": snapshot_id,

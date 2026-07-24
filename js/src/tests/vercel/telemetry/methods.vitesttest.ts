@@ -183,6 +183,138 @@ describe("basic tracing", () => {
     });
   });
 
+  it("uses only the final step when the root event has empty content", async () => {
+    const trace = createTrace();
+    const callId = "harness-call";
+    const messages = [{ role: "user", content: "Complete a task" }];
+
+    await trace.integration.onStart({
+      callId,
+      operationId: "ai.harness",
+      provider: "pi",
+      modelId: "claude-haiku-4-5",
+      messages,
+    });
+    await trace.integration.onStepStart({
+      callId,
+      provider: "pi",
+      modelId: "claude-haiku-4-5",
+      stepNumber: 0,
+      messages,
+    });
+    await trace.integration.onToolExecutionStart({
+      callId,
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "tool-1",
+        toolName: "bash",
+        input: '{"command":"echo done"}',
+      },
+    });
+    await trace.integration.onToolExecutionEnd({
+      callId,
+      toolExecutionMs: 1,
+      toolCall: {
+        type: "tool-call",
+        toolCallId: "tool-1",
+        toolName: "bash",
+        input: '{"command":"echo done"}',
+      },
+      toolOutput: { type: "tool-result", output: "done" },
+    });
+    await trace.integration.onStepFinish({
+      callId,
+      stepNumber: 0,
+      content: [
+        { type: "text", text: "I will use a tool." },
+        {
+          type: "tool-call",
+          toolCallId: "tool-1",
+          toolName: "bash",
+          input: "{}",
+        },
+      ],
+      finishReason: { unified: "tool-calls" },
+      usage: usage({ input: 0, output: 0 }),
+    });
+    await trace.integration.onStepStart({
+      callId,
+      provider: "pi",
+      modelId: "claude-haiku-4-5",
+      stepNumber: 1,
+      messages,
+    });
+    await trace.integration.onStepFinish({
+      callId,
+      stepNumber: 1,
+      content: [{ type: "text", text: "TASK_COMPLETE" }],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 0, output: 0 }),
+    });
+    await trace.integration.onEnd({
+      callId,
+      operationId: "ai.harness",
+      content: [],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 10, output: 4 }),
+      totalUsage: usage({ input: 10, output: 4 }),
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["pi:0"].extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(tree.data["pi:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
+    expect(tree.data["pi:1"].extra?.metadata).toMatchObject({
+      ls_model_name: "claude-haiku-4-5",
+    });
+    expect(tree.data["pi:1"].extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(tree.data["pi:3"].extra?.metadata).toMatchObject({
+      ls_model_name: "claude-haiku-4-5",
+      usage_metadata: {
+        input_tokens: 10,
+        output_tokens: 4,
+        total_tokens: 14,
+      },
+    });
+    expect(tree.data["pi:3"].extra?.metadata).not.toHaveProperty("ls_provider");
+    expect(tree.data["pi:0"].outputs).toEqual({
+      role: "assistant",
+      content: [{ type: "text", text: "TASK_COMPLETE" }],
+      finish_reason: { unified: "stop" },
+    });
+    expect(JSON.stringify(tree.data["pi:0"].outputs)).not.toContain(
+      "I will use a tool.",
+    );
+    expect(tree.edges).toContainEqual(["pi:0", "bash:2"]);
+    expect(tree.data["bash:2"]).toMatchObject({
+      run_type: "tool",
+      inputs: { command: "echo done" },
+      outputs: { output: "done" },
+    });
+    expect(tree.data["pi:3"].inputs).toMatchObject({
+      messages: [
+        { role: "user", content: "Complete a task" },
+        {
+          role: "assistant",
+          tool_calls: [
+            expect.objectContaining({
+              id: "tool-1",
+              function: expect.objectContaining({ name: "bash" }),
+            }),
+          ],
+        },
+        {
+          role: "tool",
+          content: "done",
+          tool_call_id: "tool-1",
+          name: "bash",
+          artifact: "done",
+        },
+      ],
+    });
+  });
+
   it("should use the provider as default run name and store the AI SDK operation id", async () => {
     const trace = createTrace();
 
@@ -192,7 +324,8 @@ describe("basic tracing", () => {
       telemetry: { integrations: [trace.integration] },
     });
 
-    await expect(expectTree(trace)).resolves.toMatchObject({
+    const tree = await expectTree(trace);
+    expect(tree).toMatchObject({
       edges: [["openai:0", "openai:1"]],
       data: {
         "openai:0": {
@@ -201,12 +334,17 @@ describe("basic tracing", () => {
             metadata: {
               ai_sdk_method: "ai.generateText",
               ls_model_name: "gpt-4o",
-              ls_provider: "openai",
             },
           },
         },
+        "openai:1": {
+          extra: { metadata: { ls_model_name: "gpt-4o" } },
+        },
       },
     });
+    expect(tree.data["openai:1"].extra?.metadata).not.toHaveProperty(
+      "ls_provider",
+    );
   });
 
   it("should use the AI SDK function id as the default run name when present", async () => {
@@ -231,9 +369,11 @@ describe("basic tracing", () => {
             metadata: {
               ai_sdk_method: "ai.generateText",
               ls_model_name: "test-model",
-              ls_provider: "test-provider",
             },
           },
+        },
+        "test-provider:1": {
+          extra: { metadata: { ls_model_name: "test-model" } },
         },
       },
     });
@@ -352,13 +492,9 @@ describe("basic tracing", () => {
     expect(tree.data["test-provider:1"].outputs ?? {}).toEqual({});
     expect(tree.data["sensitiveTool:2"].outputs ?? {}).toEqual({});
     expect(tree.data["test-provider:3"].outputs ?? {}).toEqual({});
-    expect(tree.data["test-provider:0"].extra?.metadata).toMatchObject({
-      usage_metadata: {
-        input_tokens: 22,
-        output_tokens: 9,
-        total_tokens: 31,
-      },
-    });
+    expect(tree.data["test-provider:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
     expect(tree.data["test-provider:3"].extra?.metadata).toMatchObject({
       usage_metadata: {
         input_tokens: 12,
@@ -431,7 +567,7 @@ describe("metadata", () => {
     await expect(expectTree(trace)).resolves.toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "research:2"],
+        ["test-provider:0", "research:2"],
         ["research:2", "inner-provider:3"],
         ["inner-provider:3", "inner-provider:4"],
         ["test-provider:0", "test-provider:5"],
@@ -527,7 +663,7 @@ describe("global telemetry registration", () => {
       await expect(expectTree(trace)).resolves.toMatchObject({
         edges: [
           ["test-provider:0", "test-provider:1"],
-          ["test-provider:1", "delegate:2"],
+          ["test-provider:0", "delegate:2"],
           ["delegate:2", "child-agent:3"],
           ["child-agent:3", "child-provider:4"],
           ["test-provider:0", "test-provider:5"],
@@ -667,7 +803,7 @@ describe("multi-step tracing", () => {
     expect(tree).toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "search:2"],
+        ["test-provider:0", "search:2"],
         ["test-provider:0", "test-provider:3"],
       ],
       data: {
@@ -761,7 +897,7 @@ describe("tool tracing via executeTool", () => {
     await expect(expectTree(trace)).resolves.toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "calculator:2"],
+        ["test-provider:0", "calculator:2"],
         ["test-provider:0", "test-provider:3"],
       ],
       data: {
@@ -811,7 +947,7 @@ describe("tool tracing via executeTool", () => {
     await expect(expectTree(trace)).resolves.toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "research:2"],
+        ["test-provider:0", "research:2"],
         ["research:2", "inner-agent-call:3"],
         ["test-provider:0", "test-provider:4"],
       ],
@@ -876,7 +1012,51 @@ describe("usage metadata tracking", () => {
     });
   });
 
-  it("should track aggregated usage on the root span", async () => {
+  it("does not assign aggregate Harness usage to non-Pi steps", async () => {
+    const trace = createTrace();
+    const callId = "non-pi-harness-call";
+
+    await trace.integration.onStart({
+      callId,
+      operationId: "ai.harness",
+      provider: "other-harness",
+      modelId: "test-model",
+      messages: [{ role: "user", content: "Test" }],
+    });
+    await trace.integration.onStepStart({
+      callId,
+      provider: "other-harness",
+      modelId: "test-model",
+      stepNumber: 0,
+      messages: [{ role: "user", content: "Test" }],
+    });
+    await trace.integration.onStepFinish({
+      callId,
+      stepNumber: 0,
+      content: [{ type: "text", text: "Done" }],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 0, output: 0 }),
+    });
+    await trace.integration.onEnd({
+      callId,
+      operationId: "ai.harness",
+      content: [],
+      finishReason: { unified: "stop" },
+      usage: usage({ input: 10, output: 5 }),
+      totalUsage: usage({ input: 10, output: 5 }),
+    });
+
+    const tree = await expectTree(trace);
+    expect(
+      tree.data["other-harness:1"].extra?.metadata?.usage_metadata,
+    ).toMatchObject({
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    });
+  });
+
+  it("should track usage only on LLM spans", async () => {
     const trace = createTrace();
 
     await generateText({
@@ -889,19 +1069,15 @@ describe("usage metadata tracking", () => {
       telemetry: { integrations: [trace.integration] },
     });
 
-    await expect(expectTree(trace)).resolves.toMatchObject({
-      data: {
-        "test-provider:0": {
-          extra: {
-            metadata: {
-              usage_metadata: {
-                input_tokens: 30,
-                output_tokens: 15,
-                total_tokens: 45,
-              },
-            },
-          },
-        },
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].extra?.metadata).not.toHaveProperty(
+      "usage_metadata",
+    );
+    expect(tree.data["test-provider:1"].extra?.metadata).toMatchObject({
+      usage_metadata: {
+        input_tokens: 30,
+        output_tokens: 15,
+        total_tokens: 45,
       },
     });
   });
@@ -1013,7 +1189,7 @@ describe("runtime and tool context", () => {
     expect(tree).toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "weather:2"],
+        ["test-provider:0", "weather:2"],
         ["test-provider:0", "test-provider:3"],
       ],
       data: {
@@ -1035,13 +1211,8 @@ describe("runtime and tool context", () => {
         },
         "weather:2": {
           run_type: "tool",
-          inputs: {
-            location: "Prague",
-            toolContext: { defaultUnit: "celsius" },
-          },
-          outputs: {
-            output: { location: "Prague", unit: "celsius" },
-          },
+          inputs: { location: "Prague" },
+          outputs: { output: { location: "Prague", unit: "celsius" } },
         },
       },
     });
@@ -1506,7 +1677,7 @@ describe("integration reuse", () => {
     expect(secondTree).toMatchObject({
       edges: [
         ["test-provider:0", "test-provider:1"],
-        ["test-provider:1", "calculator:2"],
+        ["test-provider:0", "calculator:2"],
         ["test-provider:0", "test-provider:3"],
       ],
       data: {

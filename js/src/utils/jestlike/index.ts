@@ -23,7 +23,6 @@ import {
   TestWrapperAsyncLocalStorageData,
   testWrapperAsyncLocalStorageInstance,
   _logTestFeedback,
-  syncExamplePromises,
   trackingEnabled,
   DEFAULT_TEST_CLIENT,
 } from "./globals.js";
@@ -365,6 +364,7 @@ export function generateWrapperFromJestlikeMethods(
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
           setupPromise,
+          syncExamplePromises: new Map(),
         };
 
         beforeAll(async () => {
@@ -374,15 +374,16 @@ export function generateWrapperFromJestlikeMethods(
         });
 
         afterAll(async () => {
+          const examples = await Promise.all(
+            context.syncExamplePromises.values(),
+          );
           await Promise.all([
             client.awaitPendingTraceBatches(),
-            ...syncExamplePromises.values(),
             ...evaluatorLogFeedbackPromises.values(),
           ]);
           if (!trackingEnabled(context)) {
             return;
           }
-          const examples = [...syncExamplePromises.values()];
           if (examples.length === 0) {
             return;
           }
@@ -434,6 +435,7 @@ export function generateWrapperFromJestlikeMethods(
             await client.updateProject(datasetInfo.project.id, {
               metadata: {
                 ...suiteMetadata,
+                dataset_version: finalModifiedAt,
                 commit,
                 branch,
                 dirty,
@@ -672,21 +674,25 @@ export function generateWrapperFromJestlikeMethods(
                 // Currently run end time has to be after example modified time
                 // for examples to render properly, so we must modify the example
                 // first before running the test.
-                if (syncExamplePromises.get(exampleId) === undefined) {
-                  syncExamplePromises.set(
-                    exampleId,
-                    await syncExample({
-                      client,
-                      exampleId,
-                      datasetId: dataset.id,
-                      inputs,
-                      outputs: referenceOutputs ?? {},
-                      metadata,
-                      split,
-                      createdAt,
-                    }),
+                if (context.syncExamplePromises === undefined) {
+                  throw new Error(
+                    "Internal error: syncExamplePromises not initialized. This is a bug in the LangSmith SDK — please open an issue at https://github.com/langchain-ai/langsmith-sdk/issues.",
                   );
                 }
+                if (!context.syncExamplePromises.has(exampleId)) {
+                  const syncPromise = syncExample({
+                    client,
+                    exampleId,
+                    datasetId: dataset.id,
+                    inputs,
+                    outputs: referenceOutputs ?? {},
+                    metadata,
+                    split,
+                    createdAt,
+                  });
+                  context.syncExamplePromises.set(exampleId, syncPromise);
+                }
+                await context.syncExamplePromises.get(exampleId);
 
                 const traceableOptions = {
                   reference_example_id: exampleId,
@@ -706,6 +712,9 @@ export function generateWrapperFromJestlikeMethods(
                     return testWrapperAsyncLocalStorageInstance.run(
                       {
                         ...context,
+                        dataset,
+                        project,
+                        client,
                         currentExample: {
                           inputs,
                           outputs: referenceOutputs,

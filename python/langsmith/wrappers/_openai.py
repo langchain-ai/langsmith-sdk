@@ -133,7 +133,12 @@ def _infer_invocation_params(
     if use_responses_api:
         invocation_params["use_responses_api"] = True
 
+    request_metadata = stripped.get("metadata")
+    if not isinstance(request_metadata, Mapping):
+        request_metadata = {}
+
     return {
+        **request_metadata,
         "ls_provider": provider,
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),

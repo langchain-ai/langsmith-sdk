@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -734,6 +734,7 @@ class TestAsyncSandboxRunWs:
             "https://router.example.com/sb-123",
             "test-key",
             "echo hello",
+            command_id=ANY,
             timeout=60,
             env=None,
             cwd=None,

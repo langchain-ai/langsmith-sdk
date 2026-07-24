@@ -21,7 +21,7 @@ export class Threads extends APIResource {
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
-   * for await (const threadTraceListItem of client.threads.listTraces(
+   * for await (const threadTrace of client.threads.listTraces(
    *   'thread_id',
    *   { project_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e' },
    * )) {
@@ -33,10 +33,10 @@ export class Threads extends APIResource {
     threadID: string,
     query: ThreadListTracesParams,
     options?: RequestOptions,
-  ): PagePromise<ThreadTraceListItemsItemsCursorGetPagination, ThreadTraceListItem> {
+  ): PagePromise<ThreadTracesItemsCursorGetPagination, ThreadTrace> {
     return this._client.getAPIList(
       path`/v2/threads/${threadID}/traces`,
-      ItemsCursorGetPagination<ThreadTraceListItem>,
+      ItemsCursorGetPagination<ThreadTrace>,
       { query, ...options },
     );
   }
@@ -49,7 +49,7 @@ export class Threads extends APIResource {
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
-   * for await (const threadListItem of client.threads.query()) {
+   * for await (const thread of client.threads.query()) {
    *   // ...
    * }
    * ```
@@ -57,8 +57,8 @@ export class Threads extends APIResource {
   query(
     body: ThreadQueryParams,
     options?: RequestOptions,
-  ): PagePromise<ThreadListItemsItemsCursorPostPagination, ThreadListItem> {
-    return this._client.getAPIList('/v2/threads/query', ItemsCursorPostPagination<ThreadListItem>, {
+  ): PagePromise<ThreadsItemsCursorPostPagination, Thread> {
+    return this._client.getAPIList('/v2/threads/query', ItemsCursorPostPagination<Thread>, {
       body,
       method: 'post',
       ...options,
@@ -72,26 +72,25 @@ export class Threads extends APIResource {
    *
    * @example
    * ```ts
-   * const response = await client.threads.stats('thread_id', {
-   *   selects: ['TURNS'],
-   *   session_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
-   * });
+   * const threadStats = await client.threads.stats(
+   *   'thread_id',
+   *   {
+   *     selects: ['TURNS'],
+   *     session_id: '182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e',
+   *   },
+   * );
    * ```
    */
-  stats(
-    threadID: string,
-    query: ThreadStatsParams,
-    options?: RequestOptions,
-  ): APIPromise<ThreadStatsResponse> {
+  stats(threadID: string, query: ThreadStatsParams, options?: RequestOptions): APIPromise<ThreadStats> {
     return this._client.get(path`/v2/threads/${threadID}/stats`, { query, ...options });
   }
 }
 
-export type ThreadTraceListItemsItemsCursorGetPagination = ItemsCursorGetPagination<ThreadTraceListItem>;
+export type ThreadTracesItemsCursorGetPagination = ItemsCursorGetPagination<ThreadTrace>;
 
-export type ThreadListItemsItemsCursorPostPagination = ItemsCursorPostPagination<ThreadListItem>;
+export type ThreadsItemsCursorPostPagination = ItemsCursorPostPagination<Thread>;
 
-export interface ThreadListItem {
+export interface Thread {
   /**
    * `count` is how many root traces (conversation turns) fall in this thread for the
    * query time range.
@@ -102,7 +101,7 @@ export interface ThreadListItem {
    * `feedback_stats` is the aggregated feedback across traces in the thread, keyed
    * by feedback key; shape matches `feedback_stats` on a single run.
    */
-  feedback_stats?: { [key: string]: ThreadListItem.FeedbackStats };
+  feedback_stats?: { [key: string]: Thread.FeedbackStats };
 
   /**
    * `first_inputs` is a truncated preview of inputs from the earliest trace in the
@@ -210,7 +209,7 @@ export interface ThreadListItem {
   trace_id?: string;
 }
 
-export namespace ThreadListItem {
+export namespace Thread {
   export interface FeedbackStats {
     /**
      * `avg` is the arithmetic mean of numeric feedback scores for this key on the run,
@@ -284,189 +283,7 @@ export namespace ThreadListItem {
   }
 }
 
-export interface ThreadTraceListItem {
-  /**
-   * `completion_cost` is the estimated USD cost for the completion. Omitted unless
-   * included in `selects`.
-   */
-  completion_cost?: number;
-
-  /**
-   * `completion_cost_details` is the USD cost breakdown for completion-side
-   * categories; per-category values are under `raw`. Omitted unless included in
-   * `selects`.
-   */
-  completion_cost_details?: ThreadTraceListItem.CompletionCostDetails;
-
-  /**
-   * `completion_token_details` is the completion-side token breakdown by category;
-   * per-category counts are under `raw`. Omitted unless included in `selects`.
-   */
-  completion_token_details?: ThreadTraceListItem.CompletionTokenDetails;
-
-  /**
-   * `completion_tokens` is the completion-side token count. Omitted unless included
-   * in `selects`.
-   */
-  completion_tokens?: number;
-
-  /**
-   * `end_time` is when the root run ended (RFC3339 date-time). JSON null if the run
-   * is still in progress. Omitted unless included in `selects`.
-   */
-  end_time?: string;
-
-  /**
-   * `error_preview` is a short error summary when the run failed. Omitted unless
-   * included in `selects`.
-   */
-  error_preview?: string;
-
-  /**
-   * `first_token_time` is when the first output token was produced (RFC3339
-   * date-time), for streamed runs when that metadata exists. Omitted unless included
-   * in `selects`.
-   */
-  first_token_time?: string;
-
-  /**
-   * `inputs_preview` is a truncated text preview of inputs. Omitted unless included
-   * in `selects`.
-   */
-  inputs_preview?: string;
-
-  /**
-   * `latency` is wall-clock duration from start to end in seconds. Omitted unless
-   * included in `selects`.
-   */
-  latency?: number;
-
-  /**
-   * `name` is a human-readable label for the root run (for example the model name,
-   * function name, or step name chosen when the run was traced). Omitted unless
-   * included in `selects`.
-   */
-  name?: string;
-
-  /**
-   * `op` is a numeric code identifying the root run's `run_type` (for example LLM
-   * vs. tool vs. chain). Encoded as a number for compatibility with legacy clients;
-   * prefer the string `run_type` on `RunResponse` when available. Omitted unless
-   * included in `selects`.
-   */
-  op?: number;
-
-  /**
-   * `outputs_preview` is a truncated text preview of outputs. Omitted unless
-   * included in `selects`.
-   */
-  outputs_preview?: string;
-
-  /**
-   * `prompt_cost` is the estimated USD cost for the prompt. Omitted unless included
-   * in `selects`.
-   */
-  prompt_cost?: number;
-
-  /**
-   * `prompt_cost_details` is the USD cost breakdown for prompt-side categories;
-   * per-category values are under `raw`. Omitted unless included in `selects`.
-   */
-  prompt_cost_details?: ThreadTraceListItem.PromptCostDetails;
-
-  /**
-   * `prompt_token_details` is the prompt-side token breakdown by category;
-   * per-category counts are under nested `raw`. Omitted unless included in
-   * `selects`.
-   */
-  prompt_token_details?: ThreadTraceListItem.PromptTokenDetails;
-
-  /**
-   * `prompt_tokens` is the prompt-side token count. Omitted unless included in
-   * `selects`.
-   */
-  prompt_tokens?: number;
-
-  /**
-   * `start_time` is when the trace started (RFC3339 date-time). Omitted unless
-   * included in `selects`.
-   */
-  start_time?: string;
-
-  /**
-   * `thread_id` is the conversation thread UUID that contains this trace. Matches
-   * the `thread_id` path parameter of the request. Omitted unless included in
-   * `selects`.
-   */
-  thread_id?: string;
-
-  /**
-   * `total_cost` is the estimated total USD cost for the root run. Omitted unless
-   * included in `selects`.
-   */
-  total_cost?: number;
-
-  /**
-   * `total_tokens` is the total token count (prompt plus completion). Omitted unless
-   * included in `selects`.
-   */
-  total_tokens?: number;
-
-  /**
-   * `trace_id` is the UUID of this trace (the root run). Always present.
-   */
-  trace_id?: string;
-}
-
-export namespace ThreadTraceListItem {
-  /**
-   * `completion_cost_details` is the USD cost breakdown for completion-side
-   * categories; per-category values are under `raw`. Omitted unless included in
-   * `selects`.
-   */
-  export interface CompletionCostDetails {
-    /**
-     * `raw` maps each category name to its estimated USD cost.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  /**
-   * `completion_token_details` is the completion-side token breakdown by category;
-   * per-category counts are under `raw`. Omitted unless included in `selects`.
-   */
-  export interface CompletionTokenDetails {
-    /**
-     * `raw` maps each category name to its completion-token count.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  /**
-   * `prompt_cost_details` is the USD cost breakdown for prompt-side categories;
-   * per-category values are under `raw`. Omitted unless included in `selects`.
-   */
-  export interface PromptCostDetails {
-    /**
-     * `raw` maps each category name to its estimated USD cost.
-     */
-    raw?: { [key: string]: number };
-  }
-
-  /**
-   * `prompt_token_details` is the prompt-side token breakdown by category;
-   * per-category counts are under nested `raw`. Omitted unless included in
-   * `selects`.
-   */
-  export interface PromptTokenDetails {
-    /**
-     * `raw` maps each category name to its prompt-token count.
-     */
-    raw?: { [key: string]: number };
-  }
-}
-
-export interface ThreadStatsResponse {
+export interface ThreadStats {
   /**
    * `completion_cost` is the sum of per-trace completion costs across the thread, in
    * USD. Populated when `COMPLETION_COST` is selected.
@@ -477,14 +294,14 @@ export interface ThreadStatsResponse {
    * `completion_cost_details` is the per-sub-category sum of completion cost details
    * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
    */
-  completion_cost_details?: ThreadStatsResponse.CompletionCostDetails;
+  completion_cost_details?: ThreadStats.CompletionCostDetails;
 
   /**
    * `completion_token_details` is the per-sub-category sum of completion token
    * details across the thread. Populated when `COMPLETION_TOKEN_DETAILS` is
    * selected.
    */
-  completion_token_details?: ThreadStatsResponse.CompletionTokenDetails;
+  completion_token_details?: ThreadStats.CompletionTokenDetails;
 
   /**
    * `completion_tokens` is the sum of per-trace completion token counts across the
@@ -496,7 +313,7 @@ export interface ThreadStatsResponse {
    * `feedback_stats` aggregates run-level feedback across the thread's traces, keyed
    * by feedback key. Populated when `FEEDBACK_STATS` is selected.
    */
-  feedback_stats?: { [key: string]: ThreadStatsResponse.FeedbackStats };
+  feedback_stats?: { [key: string]: ThreadStats.FeedbackStats };
 
   /**
    * `first_start_time` is the earliest trace start time in the thread (RFC3339).
@@ -538,13 +355,13 @@ export interface ThreadStatsResponse {
    * `prompt_cost_details` is the per-sub-category sum of prompt cost details across
    * the thread. Populated when `PROMPT_COST_DETAILS` is selected.
    */
-  prompt_cost_details?: ThreadStatsResponse.PromptCostDetails;
+  prompt_cost_details?: ThreadStats.PromptCostDetails;
 
   /**
    * `prompt_token_details` is the per-sub-category sum of prompt token details
    * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
    */
-  prompt_token_details?: ThreadStatsResponse.PromptTokenDetails;
+  prompt_token_details?: ThreadStats.PromptTokenDetails;
 
   /**
    * `prompt_tokens` is the sum of per-trace prompt token counts across the thread.
@@ -571,7 +388,7 @@ export interface ThreadStatsResponse {
   turns?: number;
 }
 
-export namespace ThreadStatsResponse {
+export namespace ThreadStats {
   /**
    * `completion_cost_details` is the per-sub-category sum of completion cost details
    * across the thread. Populated when `COMPLETION_COST_DETAILS` is selected.
@@ -681,6 +498,206 @@ export namespace ThreadStatsResponse {
   /**
    * `prompt_token_details` is the per-sub-category sum of prompt token details
    * across the thread. Populated when `PROMPT_TOKEN_DETAILS` is selected.
+   */
+  export interface PromptTokenDetails {
+    /**
+     * `raw` maps each category name to its prompt-token count.
+     */
+    raw?: { [key: string]: number };
+  }
+}
+
+export interface ThreadTrace {
+  /**
+   * `completion_cost` is the estimated USD cost for the completion. Omitted unless
+   * included in `selects`.
+   */
+  completion_cost?: number;
+
+  /**
+   * `completion_cost_details` is the USD cost breakdown for completion-side
+   * categories; per-category values are under `raw`. Omitted unless included in
+   * `selects`.
+   */
+  completion_cost_details?: ThreadTrace.CompletionCostDetails;
+
+  /**
+   * `completion_token_details` is the completion-side token breakdown by category;
+   * per-category counts are under `raw`. Omitted unless included in `selects`.
+   */
+  completion_token_details?: ThreadTrace.CompletionTokenDetails;
+
+  /**
+   * `completion_tokens` is the completion-side token count. Omitted unless included
+   * in `selects`.
+   */
+  completion_tokens?: number;
+
+  /**
+   * `end_time` is when the root run ended (RFC3339 date-time). JSON null if the run
+   * is still in progress. Omitted unless included in `selects`.
+   */
+  end_time?: string;
+
+  /**
+   * `error` is the full root run error message when the run failed. Omitted unless
+   * included in `selects`.
+   */
+  error?: string;
+
+  /**
+   * `error_preview` is a short error summary when the run failed. Omitted unless
+   * included in `selects`.
+   */
+  error_preview?: string;
+
+  /**
+   * `first_token_time` is when the first output token was produced (RFC3339
+   * date-time), for streamed runs when that metadata exists. Omitted unless included
+   * in `selects`.
+   */
+  first_token_time?: string;
+
+  /**
+   * `inputs` is the full root run input payload. Omitted unless included in
+   * `selects`.
+   */
+  inputs?: unknown;
+
+  /**
+   * `inputs_preview` is a truncated text preview of inputs. Omitted unless included
+   * in `selects`.
+   */
+  inputs_preview?: string;
+
+  /**
+   * `latency` is wall-clock duration from start to end in seconds. Omitted unless
+   * included in `selects`.
+   */
+  latency?: number;
+
+  /**
+   * `name` is a human-readable label for the root run (for example the model name,
+   * function name, or step name chosen when the run was traced). Omitted unless
+   * included in `selects`.
+   */
+  name?: string;
+
+  /**
+   * `op` is a numeric code identifying the root run's `run_type` (for example LLM
+   * vs. tool vs. chain). Encoded as a number for compatibility with legacy clients;
+   * prefer the string `run_type` on `RunResponse` when available. Omitted unless
+   * included in `selects`.
+   */
+  op?: number;
+
+  /**
+   * `outputs` is the full root run output payload. Omitted unless included in
+   * `selects`.
+   */
+  outputs?: unknown;
+
+  /**
+   * `outputs_preview` is a truncated text preview of outputs. Omitted unless
+   * included in `selects`.
+   */
+  outputs_preview?: string;
+
+  /**
+   * `prompt_cost` is the estimated USD cost for the prompt. Omitted unless included
+   * in `selects`.
+   */
+  prompt_cost?: number;
+
+  /**
+   * `prompt_cost_details` is the USD cost breakdown for prompt-side categories;
+   * per-category values are under `raw`. Omitted unless included in `selects`.
+   */
+  prompt_cost_details?: ThreadTrace.PromptCostDetails;
+
+  /**
+   * `prompt_token_details` is the prompt-side token breakdown by category;
+   * per-category counts are under nested `raw`. Omitted unless included in
+   * `selects`.
+   */
+  prompt_token_details?: ThreadTrace.PromptTokenDetails;
+
+  /**
+   * `prompt_tokens` is the prompt-side token count. Omitted unless included in
+   * `selects`.
+   */
+  prompt_tokens?: number;
+
+  /**
+   * `start_time` is when the trace started (RFC3339 date-time). Omitted unless
+   * included in `selects`.
+   */
+  start_time?: string;
+
+  /**
+   * `thread_id` is the conversation thread UUID that contains this trace. Matches
+   * the `thread_id` path parameter of the request. Omitted unless included in
+   * `selects`.
+   */
+  thread_id?: string;
+
+  /**
+   * `total_cost` is the estimated total USD cost for the root run. Omitted unless
+   * included in `selects`.
+   */
+  total_cost?: number;
+
+  /**
+   * `total_tokens` is the total token count (prompt plus completion). Omitted unless
+   * included in `selects`.
+   */
+  total_tokens?: number;
+
+  /**
+   * `trace_id` is the UUID of this trace (the root run). Always present.
+   */
+  trace_id?: string;
+}
+
+export namespace ThreadTrace {
+  /**
+   * `completion_cost_details` is the USD cost breakdown for completion-side
+   * categories; per-category values are under `raw`. Omitted unless included in
+   * `selects`.
+   */
+  export interface CompletionCostDetails {
+    /**
+     * `raw` maps each category name to its estimated USD cost.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  /**
+   * `completion_token_details` is the completion-side token breakdown by category;
+   * per-category counts are under `raw`. Omitted unless included in `selects`.
+   */
+  export interface CompletionTokenDetails {
+    /**
+     * `raw` maps each category name to its completion-token count.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  /**
+   * `prompt_cost_details` is the USD cost breakdown for prompt-side categories;
+   * per-category values are under `raw`. Omitted unless included in `selects`.
+   */
+  export interface PromptCostDetails {
+    /**
+     * `raw` maps each category name to its estimated USD cost.
+     */
+    raw?: { [key: string]: number };
+  }
+
+  /**
+   * `prompt_token_details` is the prompt-side token breakdown by category;
+   * per-category counts are under nested `raw`. Omitted unless included in
+   * `selects`.
    */
   export interface PromptTokenDetails {
     /**
@@ -724,6 +741,9 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
     | 'FIRST_TOKEN_TIME'
     | 'INPUTS_PREVIEW'
     | 'OUTPUTS_PREVIEW'
+    | 'INPUTS'
+    | 'OUTPUTS'
+    | 'ERROR'
     | 'PROMPT_COST'
     | 'COMPLETION_COST'
     | 'TOTAL_COST'
@@ -748,13 +768,13 @@ export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
 
   /**
    * `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-   * date-time).
+   * date-time). Defaults to now (UTC) when omitted.
    */
   max_start_time?: string;
 
   /**
    * `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-   * date-time).
+   * date-time). Defaults to 1 day before now (UTC) when omitted.
    */
   min_start_time?: string;
 
@@ -794,15 +814,24 @@ export interface ThreadStatsParams {
    * `session_id` is the tracing project (session) UUID (required).
    */
   session_id: string;
+
+  /**
+   * `filter` narrows which of the thread's traces are aggregated, using a LangSmith
+   * filter expression. For example: lt(start_time, "2025-01-01T00:00:00Z") or
+   * eq(trace_id, "0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328"). See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  filter?: string;
 }
 
 export declare namespace Threads {
   export {
-    type ThreadListItem as ThreadListItem,
-    type ThreadTraceListItem as ThreadTraceListItem,
-    type ThreadStatsResponse as ThreadStatsResponse,
-    type ThreadTraceListItemsItemsCursorGetPagination as ThreadTraceListItemsItemsCursorGetPagination,
-    type ThreadListItemsItemsCursorPostPagination as ThreadListItemsItemsCursorPostPagination,
+    type Thread as Thread,
+    type ThreadStats as ThreadStats,
+    type ThreadTrace as ThreadTrace,
+    type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
+    type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,

@@ -393,7 +393,7 @@ class BaseClient(Generic[_HttpxClientT, _DefaultStreamT]):
 
         if max_retries is None:  # pyright: ignore[reportUnnecessaryComparison]
             raise TypeError(
-                "max_retries cannot be None. If you want to disable retries, pass `0`; if you want unlimited retries, pass `math.inf` or a very high number; if you want the default behavior, pass `langsmith_api.DEFAULT_MAX_RETRIES`"
+                "max_retries cannot be None. If you want to disable retries, pass `0`; if you want unlimited retries, pass `math.inf` or a very high number; if you want the default behavior, pass `langsmith._openapi_client.DEFAULT_MAX_RETRIES`"
             )
 
     def _enforce_trailing_slash(self, url: URL) -> URL:
