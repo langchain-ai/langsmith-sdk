@@ -1,12 +1,17 @@
 """This module contains the StringEvaluator class."""
 
+from __future__ import annotations
+
 import uuid
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 from pydantic import BaseModel
 
 from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
-from langsmith.schemas import Example, Run
+from langsmith.schemas import Example, Run, RunBase
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.types.run import Run as V2Run
 
 
 class StringEvaluator(RunEvaluator, BaseModel):
@@ -30,19 +35,21 @@ class StringEvaluator(RunEvaluator, BaseModel):
 
     def evaluate_run(
         self,
-        run: Run,
+        run: Union[Run, RunBase, V2Run],
         example: Optional[Example] = None,
         evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> EvaluationResult:
         """Evaluate a single run."""
-        if run.outputs is None:
+        run_outputs = cast(Optional[dict], run.outputs)
+        run_inputs = cast(dict, run.inputs)
+        if run_outputs is None:
             raise ValueError("Run outputs cannot be None.")
         if not example or example.outputs is None or self.answer_key is None:
             answer = None
         else:
             answer = example.outputs.get(self.answer_key)
-        run_input = run.inputs[self.input_key]
-        run_output = run.outputs[self.prediction_key]
+        run_input = run_inputs[self.input_key]
+        run_output = run_outputs[self.prediction_key]
         grading_results = self.grading_function(run_input, run_output, answer)
         return EvaluationResult(**{"key": self.evaluation_name, **grading_results})
 
