@@ -5,8 +5,6 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
 from langsmith._internal._v2_migration_utils import _v2_run_to_schema
 
 
