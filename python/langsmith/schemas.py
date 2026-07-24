@@ -908,6 +908,8 @@ class LangSmithInfo(BaseModel):
     batch_ingest_config: Optional[BatchIngestConfig] = None
     """The instance flags."""
     instance_flags: Optional[dict[str, Any]] = None
+    sdk_versions: Optional[dict[str, Any]] = None
+    """Max SDK versions supported by this backend."""
 
 
 Example.model_rebuild()
