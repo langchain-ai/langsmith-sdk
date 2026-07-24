@@ -12,7 +12,6 @@ import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
-    SandboxConnectionError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
@@ -23,6 +22,7 @@ from langsmith.sandbox._models import (
     _StreamEndedBeforeStarted,
 )
 from langsmith.sandbox._tunnel import AsyncTunnel
+from langsmith.sandbox._ws_execute import WEBSOCKETS_AVAILABLE
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -336,9 +336,9 @@ class AsyncSandbox:
                 headers=headers,
             )
 
-        # Catch broad exceptions so that unexpected WS failures (e.g. version
-        # incompatibilities) don't break users who don't need WS features.
-        try:
+        # Default (wait=True, no callbacks): use WebSocket when the client
+        # library is available, otherwise the blocking HTTP endpoint.
+        if WEBSOCKETS_AVAILABLE:
             return await self._run_ws(
                 command,
                 timeout=timeout,
@@ -354,15 +354,14 @@ class AsyncSandbox:
                 pty=pty,
                 headers=headers,
             )
-        except (SandboxConnectionError, ImportError, OSError, TypeError):
-            return await self._run_http(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                headers=headers,
-            )
+        return await self._run_http(
+            command,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            shell=shell,
+            headers=headers,
+        )
 
     async def _run_ws(
         self,

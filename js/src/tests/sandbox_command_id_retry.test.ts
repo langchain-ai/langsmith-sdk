@@ -15,6 +15,7 @@ jest.unstable_mockModule("../sandbox/ws_execute.js", () => ({
   runWsStream,
   reconnectWsStream,
   WSStreamControl: class {},
+  isWsAvailable: () => Promise.resolve(true),
 }));
 
 const { Sandbox } = await import("../sandbox/sandbox.js");

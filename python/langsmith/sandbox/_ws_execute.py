@@ -15,35 +15,39 @@ from langsmith.sandbox._exceptions import (
 )
 from langsmith.sandbox._helpers import merge_headers
 
+# Resolve the optional ``websockets`` dependency once, at import time, instead
+# of re-importing on every WS call. ``WEBSOCKETS_AVAILABLE`` is what run() reads
+# to choose WebSocket vs the blocking HTTP fallback.
+try:
+    from websockets.asyncio.client import connect as _ws_connect_async
+    from websockets.exceptions import ConnectionClosed, InvalidHandshake
+    from websockets.sync.client import connect as _ws_connect_sync
+
+    WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    _ws_connect_async = _ws_connect_sync = None  # type: ignore[assignment,misc]
+    ConnectionClosed = InvalidHandshake = None  # type: ignore[assignment,misc]
+    WEBSOCKETS_AVAILABLE = False
+
+
+_MISSING_WEBSOCKETS_MSG = (
+    "WebSocket-based execution requires the 'websockets' package, which ships "
+    "with langsmith by default. Reinstall with: pip install --upgrade langsmith"
+)
+
 
 def _ensure_websockets():
-    """Import websockets or raise a clear error."""
-    try:
-        from websockets.exceptions import ConnectionClosed, InvalidHandshake
-        from websockets.sync.client import connect as ws_connect
-
-        return ws_connect, ConnectionClosed, InvalidHandshake
-    except ImportError:
-        raise ImportError(
-            "WebSocket-based execution requires the 'websockets' package, "
-            "which ships with langsmith by default. Reinstall with: "
-            "pip install --upgrade langsmith"
-        ) from None
+    """Return the cached sync websockets symbols, or raise if unavailable."""
+    if not WEBSOCKETS_AVAILABLE:
+        raise ImportError(_MISSING_WEBSOCKETS_MSG)
+    return _ws_connect_sync, ConnectionClosed, InvalidHandshake
 
 
 def _ensure_websockets_async():
-    """Import async websockets or raise a clear error."""
-    try:
-        from websockets.asyncio.client import connect as ws_connect_async
-        from websockets.exceptions import ConnectionClosed, InvalidHandshake
-
-        return ws_connect_async, ConnectionClosed, InvalidHandshake
-    except ImportError:
-        raise ImportError(
-            "WebSocket-based execution requires the 'websockets' package, "
-            "which ships with langsmith by default. Reinstall with: "
-            "pip install --upgrade langsmith"
-        ) from None
+    """Return the cached async websockets symbols, or raise if unavailable."""
+    if not WEBSOCKETS_AVAILABLE:
+        raise ImportError(_MISSING_WEBSOCKETS_MSG)
+    return _ws_connect_async, ConnectionClosed, InvalidHandshake
 
 
 def _build_ws_url(dataplane_url: str) -> str:
