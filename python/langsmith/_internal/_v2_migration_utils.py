@@ -8,6 +8,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith import schemas
+from langsmith._openapi_client._types import omit
 from langsmith._openapi_client.types.run_select_field import RunSelectField
 
 if TYPE_CHECKING:
@@ -128,13 +129,18 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
 
 
 def _read_run_v2(
-    run_id: uuid.UUID, client: Client, *, project_id: uuid.UUID
+    run_id: uuid.UUID,
+    client: Client,
+    *,
+    project_id: uuid.UUID,
+    start_time: Optional[datetime.datetime] = None,
 ) -> schemas.Run:
     """Fetch a single run by ID via the v2 API (for SmithDB-only backends)."""
     run = client._get_langsmith_api_sync().runs.retrieve_v2(
         run_id=str(run_id),
         project_id=str(project_id),
         selects=_V2_RUN_SELECTS,
+        start_time=start_time if start_time is not None else omit,
     )
     return _v2_run_to_schema(run)
 

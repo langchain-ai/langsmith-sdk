@@ -4031,6 +4031,7 @@ class Client:
         load_child_runs: bool = False,
         *,
         project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -4046,6 +4047,9 @@ class Client:
                 The ID of the project (session) that owns the run. Required on
                 SmithDB-only backends (no ClickHouse query support), where it's
                 used to look up the run via the v2 API.
+            start_time (Optional[datetime]):
+                The run's start time. Required on SmithDB-only backends (no
+                ClickHouse query support), where it speeds up the v2 lookup.
 
         Returns:
             Run: The run read from the LangSmith API.
@@ -4087,6 +4091,11 @@ class Client:
                     "read_run requires project_id on SmithDB-only backends"
                     " (no ClickHouse query support)."
                 )
+            if start_time is None:
+                raise ls_utils.LangSmithError(
+                    "read_run requires start_time on SmithDB-only backends"
+                    " (no ClickHouse query support)."
+                )
             if load_child_runs:
                 raise ls_utils.LangSmithError(
                     "load_child_runs is not supported on SmithDB-only"
@@ -4095,7 +4104,10 @@ class Client:
             from langsmith._internal import _v2_migration_utils
 
             run = _v2_migration_utils._read_run_v2(
-                run_id_, self, project_id=_as_uuid(project_id, "project_id")
+                run_id_,
+                self,
+                project_id=_as_uuid(project_id, "project_id"),
+                start_time=start_time,
             )
 
         return run
@@ -7497,6 +7509,7 @@ class Client:
         load_child_runs: bool,
         *,
         project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
     ) -> Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]:
         """Resolve the run ID.
 
@@ -7508,6 +7521,9 @@ class Client:
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (session) that owns the run. Required to
                 look the run up on SmithDB-only backends.
+            start_time (Optional[datetime]):
+                The run's start time. Required to look the run up on
+                SmithDB-only backends.
 
         Returns:
             Run: The resolved run.
@@ -7525,6 +7541,12 @@ class Client:
                         " when ClickHouse query support is disabled"
                         " (SmithDB-only backend)."
                     )
+                if start_time is None:
+                    raise ls_utils.LangSmithError(
+                        "start_time is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
             elif not ch_disabled and project_id is None:
                 warnings.warn(
                     "Resolving a run from an ID without passing project_id is"
@@ -7534,7 +7556,10 @@ class Client:
                     stacklevel=3,
                 )
             run_ = self.read_run(
-                run, load_child_runs=load_child_runs, project_id=project_id
+                run,
+                load_child_runs=load_child_runs,
+                project_id=project_id,
+                start_time=start_time,
             )
         else:
             run_ = run
@@ -7617,6 +7642,7 @@ class Client:
         evaluator: ls_evaluator.RunEvaluator,
         *,
         project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7635,6 +7661,10 @@ class Client:
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (session) that owns the run. Omitting it is deprecated and will
                 raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7649,7 +7679,10 @@ class Client:
             Feedback: The feedback object created by the evaluation.
         """
         run_ = self._resolve_run_id(
-            run, load_child_runs=load_child_runs, project_id=project_id
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
@@ -7730,6 +7763,7 @@ class Client:
         evaluator: ls_evaluator.RunEvaluator,
         *,
         project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7748,6 +7782,10 @@ class Client:
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (session) that owns the run. Omitting it is deprecated and will
                 raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7762,7 +7800,10 @@ class Client:
             EvaluationResult: The evaluation result object created by the evaluation.
         """
         run_ = self._resolve_run_id(
-            run, load_child_runs=load_child_runs, project_id=project_id
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
