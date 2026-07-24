@@ -825,3 +825,103 @@ async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
     # Verify IDs are different between projects
     assert run1.id != run2.id
     assert run1.trace_id != run2.trace_id
+
+
+# ---------------------------------------------------------------------------
+# v2 migration routing / adaptation layer integration tests
+# ---------------------------------------------------------------------------
+
+
+@skip_if_rate_limited
+def test_load_child_runs_populates_tree(langchain_client: Client):
+    """_load_child_runs must return child runs with correctly-mapped fields.
+
+    This exercises the SDB-aware routing in Client._load_child_runs: when the
+    backend has sdb_query_enabled the v2 helper is used, otherwise the legacy
+    list_runs fallback is used. Either way the contract must hold.
+    """
+    project_name = "__test_load_child_runs_" + uuid.uuid4().hex
+    run_meta = uuid.uuid4().hex
+
+    @traceable(run_type="chain")
+    def parent_fn(x: int) -> int:
+        return child_fn(x)
+
+    @traceable(run_type="llm")
+    def child_fn(x: int) -> int:
+        return x + 1
+
+    parent_fn(
+        1,
+        langsmith_extra=dict(
+            project_name=project_name, metadata={"test_run": run_meta}
+        ),
+    )
+    filter_ = f'and(eq(metadata_key,"test_run"),eq(metadata_value,"{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 2, max_retries=20, filter_=filter_
+    )
+
+    # Get the root run from the API — no child_runs yet.
+    [parent] = list(
+        langchain_client.list_runs(
+            project_name=project_name,
+            filter=filter_,
+            execution_order=1,
+        )
+    )
+    assert parent.child_runs is None or parent.child_runs == []
+
+    populated = langchain_client._load_child_runs(parent)
+
+    assert populated.child_runs is not None
+    assert len(populated.child_runs) == 1
+    child = populated.child_runs[0]
+    # run_type must be lowercase regardless of path (v2 uppercases it on the wire)
+    assert child.run_type == "llm"
+    # status must also be lowercase
+    assert child.status in {"success", "error"}
+    assert child.parent_run_id == parent.id
+
+
+@skip_if_rate_limited
+def test_load_nested_traces_builds_tree(langchain_client: Client):
+    """_load_nested_traces must return root runs with child_runs attached.
+
+    Exercises the SDB-aware routing in beta/_evals._load_nested_traces.
+    """
+    from langsmith.beta._evals import _load_nested_traces
+
+    project_name = "__test_load_nested_traces_" + uuid.uuid4().hex
+    run_meta = uuid.uuid4().hex
+
+    @traceable(run_type="chain")
+    def outer(x: int) -> int:
+        return inner(x)
+
+    @traceable(run_type="tool")
+    def inner(x: int) -> int:
+        return x * 2
+
+    outer(
+        3,
+        langsmith_extra=dict(
+            project_name=project_name, metadata={"test_run": run_meta}
+        ),
+    )
+    filter_ = f'and(eq(metadata_key,"test_run"),eq(metadata_value,"{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 2, max_retries=20, filter_=filter_
+    )
+
+    roots = _load_nested_traces(project_name, langchain_client)
+
+    assert len(roots) == 1
+    root = roots[0]
+    assert root.run_type == "chain"
+    assert root.parent_run_id is None
+    assert root.child_runs is not None
+    assert len(root.child_runs) == 1
+    child = root.child_runs[0]
+    assert child.run_type == "tool"
+    assert child.parent_run_id == root.id
