@@ -46,19 +46,23 @@ async def test_create_run(async_client: AsyncClient):
         run_type="llm",
         project_name=project_name,
         id=run_id,
-        start_time=start_time
+        start_time=start_time,
     )
 
     async def check_run():
         try:
-            run = await async_client.runs.retrieve(run_id, project_id=project_id, selects=["NAME"], start_time=start_time)
+            run = await async_client.runs.retrieve(
+                run_id, project_id=project_id, selects=["NAME"], start_time=start_time
+            )
             return run.name == "test_run"
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
 
-    run = await async_client.runs.retrieve(run_id, project_id=project_id, selects=["NAME","INPUTS"], start_time=start_time)
+    run = await async_client.runs.retrieve(
+        run_id, project_id=project_id, selects=["NAME", "INPUTS"], start_time=start_time
+    )
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 
