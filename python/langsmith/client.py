@@ -282,6 +282,7 @@ if TYPE_CHECKING:
     )
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
+    from langsmith._openapi_client.types.run import Run as V2Run
 
     # OTEL imports for type hints
     try:
@@ -3988,6 +3989,12 @@ class Client:
         Raises:
             LangSmithError: If a child run has no parent.
         """
+        from langsmith._internal import _v2_migration_utils
+
+        # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
+        if (self.info.instance_flags or {}).get("sdb_query_enabled"):
+            return _v2_migration_utils._load_child_runs_v2(run, self)
+
         child_runs = self.list_runs(
             is_root=False, session_id=run.session_id, trace_id=run.trace_id
         )
@@ -4019,7 +4026,12 @@ class Client:
         return run
 
     def read_run(
-        self, run_id: ID_TYPE, load_child_runs: bool = False
+        self,
+        run_id: ID_TYPE,
+        load_child_runs: bool = False,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -4027,7 +4039,17 @@ class Client:
             run_id (Union[UUID, str]):
                 The ID of the run to read.
             load_child_runs (bool, default=False):
-                Whether to load nested child runs.
+                Whether to load nested child runs. **Deprecated**: this will
+                be removed in a future release, and raises on SmithDB-only
+                backends (no ClickHouse query support), where child runs are
+                never loaded.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required on
+                SmithDB-only backends (no ClickHouse query support), where it's
+                used to look up the run via the v2 API.
+            start_time (Optional[datetime]):
+                The run's start time. Required on SmithDB-only backends (no
+                ClickHouse query support), where it speeds up the v2 lookup.
 
         Returns:
             Run: The run read from the LangSmith API.
@@ -4043,18 +4065,51 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
-        response = self.request_with_retries(
-            "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
-        )
-        attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), attachments_key="s3_urls", api_url=self.api_url
-        )
-        run = ls_schemas.Run(
-            attachments=attachments, **response.json(), _host_url=self._host_url
-        )
-
         if load_child_runs:
-            run = self._load_child_runs(run)
+            warnings.warn(
+                "load_child_runs is deprecated and will be removed in a"
+                " future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        run_id_ = _as_uuid(run_id, "run_id")
+        instance_flags = self.info.instance_flags or {}
+        ch_query_enabled = instance_flags.get("ch_query_enabled", True)
+        if ch_query_enabled or not instance_flags.get("sdb_query_enabled"):
+            response = self.request_with_retries("GET", f"/runs/{run_id_}")
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                response.json(), attachments_key="s3_urls", api_url=self.api_url
+            )
+            run = ls_schemas.Run(
+                attachments=attachments, **response.json(), _host_url=self._host_url
+            )
+            if load_child_runs:
+                run = self._load_child_runs(run)
+        else:
+            if project_id is None:
+                raise ls_utils.LangSmithError(
+                    "read_run requires project_id on SmithDB-only backends"
+                    " (no ClickHouse query support)."
+                )
+            if start_time is None:
+                raise ls_utils.LangSmithError(
+                    "read_run requires start_time on SmithDB-only backends"
+                    " (no ClickHouse query support)."
+                )
+            if load_child_runs:
+                raise ls_utils.LangSmithError(
+                    "load_child_runs is not supported on SmithDB-only"
+                    " backends (no ClickHouse query support)."
+                )
+            from langsmith._internal import _v2_migration_utils
+
+            run = _v2_migration_utils._read_run_v2(
+                run_id_,
+                self,
+                project_id=_as_uuid(project_id, "project_id"),
+                start_time=start_time,
+            )
+
         return run
 
     def read_thread(
@@ -5127,20 +5182,24 @@ class Client:
 
         import pandas as pd  # type: ignore
 
-        runs = self.list_runs(
-            project_id=project_id,
-            project_name=project_name,
+        if project_id is None and project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        if project_id is None:
+            raise ValueError("Either project_id or project_name must be provided.")
+        runs = self._get_langsmith_api_sync().runs.query(
+            project_ids=[str(project_id)],
             is_root=True,
-            select=[
-                "id",
-                "reference_example_id",
-                "inputs",
-                "outputs",
-                "error",
-                "feedback_stats",
-                "start_time",
-                "end_time",
+            selects=[
+                "ID",
+                "REFERENCE_EXAMPLE_ID",
+                "INPUTS",
+                "OUTPUTS",
+                "ERROR",
+                "FEEDBACK_STATS",
+                "START_TIME",
+                "END_TIME",
             ],
+            min_start_time=datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc),
         )
         results: list[dict] = []
         example_ids = []
@@ -5162,11 +5221,11 @@ class Client:
             for r in runs:
                 row = {
                     "example_id": r.reference_example_id,
-                    **{f"input.{k}": v for k, v in r.inputs.items()},
+                    **{f"input.{k}": v for k, v in (r.inputs or {}).items()},
                     **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
                     "execution_time": (
                         (r.end_time - r.start_time).total_seconds()
-                        if r.end_time
+                        if r.end_time and r.start_time
                         else None
                     ),
                     "error": r.error,
@@ -5175,15 +5234,14 @@ class Client:
                 if r.feedback_stats:
                     row.update(
                         {
-                            f"feedback.{k}": v.get("avg")
+                            f"feedback.{k}": v.avg
                             for k, v in r.feedback_stats.items()
-                            if not (k == "note" and v.get("comments"))
+                            if not (k == "note" and v.comments)
                         }
                     )
-                    if r.feedback_stats.get("note") and (
-                        comments := r.feedback_stats["note"].get("comments")
-                    ):
-                        row["notes"] = comments
+                    if note_stats := r.feedback_stats.get("note"):
+                        if comments := note_stats.comments:
+                            row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:
@@ -7447,16 +7505,25 @@ class Client:
 
     def _resolve_run_id(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         load_child_runs: bool,
-    ) -> ls_schemas.Run:
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+    ) -> Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]:
         """Resolve the run ID.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
+            run (Union[V2Run, Run, RunBase, str, UUID]):
                 The run to resolve.
             load_child_runs (bool):
                 Whether to load child runs.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required to
+                look the run up on SmithDB-only backends.
+            start_time (Optional[datetime]):
+                The run's start time. Required to look the run up on
+                SmithDB-only backends.
 
         Returns:
             Run: The resolved run.
@@ -7465,22 +7532,50 @@ class Client:
             TypeError: If the run type is invalid.
         """
         if isinstance(run, (str, uuid.UUID)):
-            run_ = self.read_run(run, load_child_runs=load_child_runs)
+            instance_flags = self.info.instance_flags or {}
+            ch_disabled = not instance_flags.get("ch_query_enabled", True)
+            if ch_disabled and instance_flags.get("sdb_query_enabled"):
+                if project_id is None:
+                    raise ls_utils.LangSmithError(
+                        "project_id is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
+                if start_time is None:
+                    raise ls_utils.LangSmithError(
+                        "start_time is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
+            elif not ch_disabled and project_id is None:
+                warnings.warn(
+                    "Resolving a run from an ID without passing project_id is"
+                    " deprecated and will raise an error in a future release."
+                    " Pass project_id explicitly.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+            run_ = self.read_run(
+                run,
+                load_child_runs=load_child_runs,
+                project_id=project_id,
+                start_time=start_time,
+            )
         else:
-            run_ = cast(ls_schemas.Run, run)
+            run_ = run
         return run_
 
     def _resolve_example_id(
         self,
         example: Union[ls_schemas.Example, str, uuid.UUID, dict, None],
-        run: ls_schemas.Run,
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase],
     ) -> Optional[ls_schemas.Example]:
         """Resolve the example ID.
 
         Args:
             example (Optional[Union[Example, str, UUID, dict]]):
                 The example to resolve.
-            run (Run):
+            run (Union[V2Run, Run, RunBase]):
                 The run associated with the example.
 
         Returns:
@@ -7543,9 +7638,11 @@ class Client:
 
     def evaluate_run(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7555,10 +7652,19 @@ class Client:
         """Evaluate a run.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7567,11 +7673,17 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             Feedback: The feedback object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
             run_,
@@ -7581,6 +7693,7 @@ class Client:
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         # TODO: Return all results
         return results[0]
@@ -7590,7 +7703,7 @@ class Client:
         evaluator_response: Union[
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
-        run: Optional[ls_schemas.Run] = None,
+        run: Optional[Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]] = None,
         source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
@@ -7603,6 +7716,13 @@ class Client:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
                 self.create_feedback(**kwargs)
+
+        # `session_id` on the legacy `schemas.Run`; `project_id` on the v2 `Run`.
+        run_session_id = (
+            (getattr(run, "session_id", None) or getattr(run, "project_id", None))
+            if run is not None
+            else None
+        )
 
         for res in results:
             source_info_ = source_info or {}
@@ -7631,7 +7751,7 @@ class Client:
                 project_id=project_id if run is None else None,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run and run.session_id else project_id,
+                session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )
@@ -7639,9 +7759,11 @@ class Client:
 
     async def aevaluate_run(
         self,
-        run: Union[ls_schemas.Run, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7651,10 +7773,19 @@ class Client:
         """Evaluate a run asynchronously.
 
         Args:
-            run (Union[Run, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7663,11 +7794,17 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             EvaluationResult: The evaluation result object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
             run_,
@@ -7678,6 +7815,7 @@ class Client:
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         return results[0]
 
