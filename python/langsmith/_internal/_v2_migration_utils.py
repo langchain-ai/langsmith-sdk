@@ -42,6 +42,10 @@ _V2_RUN_SELECTS: list[RunSelectField] = [
     "PROMPT_COST",
     "COMPLETION_COST",
     "TOTAL_COST",
+    "PROMPT_TOKEN_DETAILS",
+    "COMPLETION_TOKEN_DETAILS",
+    "PROMPT_COST_DETAILS",
+    "COMPLETION_COST_DETAILS",
 ]
 
 
@@ -78,6 +82,10 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
     parent_run_ids = getattr(run, "parent_run_ids", None)
     fb = getattr(run, "feedback_stats", None)
     events = getattr(run, "events", None)
+    ptd = getattr(run, "prompt_token_details", None)
+    ctd = getattr(run, "completion_token_details", None)
+    pcd = getattr(run, "prompt_cost_details", None)
+    ccd = getattr(run, "completion_cost_details", None)
     fields = {
         "id": run.id,
         "name": run.name,
@@ -109,6 +117,10 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
         "prompt_cost": getattr(run, "prompt_cost", None),
         "completion_cost": getattr(run, "completion_cost", None),
         "total_cost": getattr(run, "total_cost", None),
+        "prompt_token_details": ptd.raw if ptd else None,
+        "completion_token_details": ctd.raw if ctd else None,
+        "prompt_cost_details": pcd.raw if pcd else None,
+        "completion_cost_details": ccd.raw if ccd else None,
     }
     return schemas.Run(
         **{key: value for key, value in fields.items() if value is not None}
