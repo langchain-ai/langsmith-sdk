@@ -2112,10 +2112,50 @@ export class Client implements LangSmithTracingClientInterface {
         if (serverInfo?.version) {
           _checkBackendVersion(serverInfo.version);
         }
+        this._checkMaxSdkVersion(serverInfo);
       })
       .catch(() => {
         // _ensureServerInfo handles and logs its own errors
       });
+  }
+
+  private _checkMaxSdkVersion(serverInfo: Record<string, any>): void {
+    const maxSdkVersion = serverInfo?.sdk_versions?.max_js_sdk_version;
+    if (!maxSdkVersion) return;
+
+    // Only warn on self-hosted (non-langchain.com) backends.
+    try {
+      const url = new URL(this.apiUrl);
+      const host = url.hostname;
+      if (host === "langchain.com" || host.endsWith(".langchain.com")) return;
+    } catch {
+      return;
+    }
+
+    const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
+    const [curMaj, curMin, curPat] = parse(__version__);
+    const [maxMaj, maxMin, maxPat] = parse(maxSdkVersion);
+
+    if (
+      isNaN(curMaj) ||
+      isNaN(curMin) ||
+      isNaN(curPat) ||
+      isNaN(maxMaj) ||
+      isNaN(maxMin) ||
+      isNaN(maxPat)
+    ) {
+      return;
+    }
+
+    if (
+      curMaj > maxMaj ||
+      (curMaj === maxMaj && curMin > maxMin) ||
+      (curMaj === maxMaj && curMin === maxMin && curPat > maxPat)
+    ) {
+      console.warn(
+        `[LANGSMITH]: LangSmith SDK version ${JSON.stringify(__version__)} is newer than the maximum version supported by this backend (${JSON.stringify(maxSdkVersion)}). Consider using version ${JSON.stringify(maxSdkVersion)}.`,
+      );
+    }
   }
 
   protected async _ensureServerInfo() {
