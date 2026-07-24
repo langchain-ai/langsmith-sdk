@@ -31,10 +31,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _profiles
-from langsmith._internal._backend_version import (
-    _check_backend_version,
-    _check_max_sdk_version,
-)
+from langsmith._internal._backend_version import _check_sdk_compat
 from langsmith._internal._hub import (
     HUB,
     REPO_HANDLE_PATTERN,
@@ -355,8 +352,7 @@ class AsyncClient:
         if self._cache is not None:
             await self._cache.start()
         info = await self.info()
-        _check_backend_version(info.version)
-        _check_max_sdk_version(info.sdk_versions, self._api_url)
+        _check_sdk_compat(info, self._api_url)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

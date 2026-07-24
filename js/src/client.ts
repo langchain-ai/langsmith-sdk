@@ -2109,51 +2109,59 @@ export class Client implements LangSmithTracingClientInterface {
     this._stainlessVersionChecked = true;
     this._ensureServerInfo()
       .then((serverInfo) => {
-        if (serverInfo?.version) {
-          _checkBackendVersion(serverInfo.version);
-        }
-        this._checkMaxSdkVersion(serverInfo);
+        this._checkSdkCompat(serverInfo);
       })
       .catch(() => {
         // _ensureServerInfo handles and logs its own errors
       });
   }
 
-  private _checkMaxSdkVersion(serverInfo: Record<string, any>): void {
-    const maxSdkVersion = serverInfo?.sdk_versions?.max_js_sdk_version;
-    if (!maxSdkVersion) return;
-
+  private _checkSdkCompat(serverInfo: Record<string, any>): void {
     // Only warn on self-hosted (non-langchain.com) backends.
     try {
-      const url = new URL(this.apiUrl);
-      const host = url.hostname;
+      const host = new URL(this.apiUrl).hostname;
       if (host === "langchain.com" || host.endsWith(".langchain.com")) return;
     } catch {
       return;
     }
 
-    const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
-    const [curMaj, curMin, curPat] = parse(__version__);
-    const [maxMaj, maxMin, maxPat] = parse(maxSdkVersion);
+    const parseVer = (v: string) => v.split(".").map((s) => parseInt(s, 10));
+    const isOlder = (a: number[], b: number[]) =>
+      a[0] < b[0] ||
+      (a[0] === b[0] && a[1] < b[1]) ||
+      (a[0] === b[0] && a[1] === b[1] && a[2] < b[2]);
+    const isNewer = (a: number[], b: number[]) => isOlder(b, a);
+    const validVer = (parts: number[]) => parts.every((p) => !isNaN(p));
 
-    if (
-      isNaN(curMaj) ||
-      isNaN(curMin) ||
-      isNaN(curPat) ||
-      isNaN(maxMaj) ||
-      isNaN(maxMin) ||
-      isNaN(maxPat)
-    ) {
-      return;
+    const issues: string[] = [];
+
+    // Backend version < SDK minimum.
+    const backendVersion = serverInfo?.version;
+    if (backendVersion) {
+      const bParts = parseVer(backendVersion);
+      const minParts = parseVer(_MIN_BACKEND_VERSION);
+      if (validVer(bParts) && validVer(minParts) && isOlder(bParts, minParts)) {
+        issues.push(
+          `backend version ${JSON.stringify(backendVersion)} is older than the minimum required by this SDK (${JSON.stringify(_MIN_BACKEND_VERSION)})`,
+        );
+      }
     }
 
-    if (
-      curMaj > maxMaj ||
-      (curMaj === maxMaj && curMin > maxMin) ||
-      (curMaj === maxMaj && curMin === maxMin && curPat > maxPat)
-    ) {
+    // SDK version > backend maximum.
+    const maxSdkVersion = serverInfo?.sdk_versions?.max_js_sdk_version;
+    if (maxSdkVersion) {
+      const curParts = parseVer(__version__);
+      const maxParts = parseVer(maxSdkVersion);
+      if (validVer(curParts) && validVer(maxParts) && isNewer(curParts, maxParts)) {
+        issues.push(
+          `SDK version ${JSON.stringify(__version__)} is newer than the maximum supported by this backend (${JSON.stringify(maxSdkVersion)}); consider using SDK version ${JSON.stringify(maxSdkVersion)}`,
+        );
+      }
+    }
+
+    if (issues.length > 0) {
       console.warn(
-        `[LANGSMITH]: LangSmith SDK version ${JSON.stringify(__version__)} is newer than the maximum version supported by this backend (${JSON.stringify(maxSdkVersion)}). Consider using version ${JSON.stringify(maxSdkVersion)}.`,
+        `[LANGSMITH]: Compatibility issue(s) detected: ${issues.join("; ")}. Some features may not work as expected.`,
       );
     }
   }

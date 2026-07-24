@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from urllib import parse as urllib_parse
 
 import packaging.version
@@ -7,27 +7,12 @@ import packaging.version
 from langsmith._internal._constants import _MIN_BACKEND_VERSION
 from langsmith._internal._package_version import get_package_version
 
+if TYPE_CHECKING:
+    from langsmith.schemas import LangSmithInfo
+
 logger = logging.getLogger(__name__)
 
-_max_sdk_version_checked = False
-
-
-def _check_backend_version(version: str) -> None:
-    try:
-        _parsed = packaging.version.parse(version)
-        _supported = packaging.version.parse(_MIN_BACKEND_VERSION)
-        if _parsed < _supported:
-            logger.warning(
-                "Backend version %r is older than the minimum version required by "
-                "this SDK (%r). Some features may not work as expected.",
-                version,
-                _MIN_BACKEND_VERSION,
-            )
-    except packaging.version.InvalidVersion:
-        logger.warning(
-            "Could not parse backend version %r for compatibility check.",
-            version,
-        )
+_sdk_compat_checked = False
 
 
 def _is_self_hosted(api_url: str) -> bool:
@@ -38,40 +23,59 @@ def _is_self_hosted(api_url: str) -> bool:
         return False
 
 
-def _check_max_sdk_version(
-    sdk_versions: Optional[dict[str, Any]], api_url: str
-) -> None:
-    global _max_sdk_version_checked
-    if _max_sdk_version_checked:
+def _check_sdk_compat(info: "LangSmithInfo", api_url: str) -> None:
+    """Check backend and SDK version compatibility, emitting a single warning.
+
+    Only runs on self-hosted deployments (URL not under *.langchain.com).
+    Warns if the backend is older than the minimum required version and/or
+    the installed SDK is newer than what the backend supports.
+    """
+    global _sdk_compat_checked
+    if _sdk_compat_checked:
         return
-    _max_sdk_version_checked = True
+    _sdk_compat_checked = True
 
     if not _is_self_hosted(api_url):
         return
 
-    if not sdk_versions:
-        return
+    issues: list[str] = []
 
-    max_version_str = sdk_versions.get("max_python_sdk_version")
-    if not max_version_str:
-        return
+    # Check backend version against SDK minimum requirement.
+    backend_version_str = info.version
+    if backend_version_str:
+        try:
+            backend_version = packaging.version.parse(backend_version_str)
+            min_backend = packaging.version.parse(_MIN_BACKEND_VERSION)
+            if backend_version < min_backend:
+                issues.append(
+                    f"backend version {backend_version_str!r} is older than the "
+                    f"minimum required by this SDK ({_MIN_BACKEND_VERSION!r})"
+                )
+        except packaging.version.InvalidVersion:
+            pass
 
-    current_version_str = get_package_version("langsmith")
-    if not current_version_str:
-        return
+    # Check SDK version against backend maximum.
+    sdk_versions: Optional[dict[str, Any]] = info.sdk_versions
+    if sdk_versions:
+        max_sdk_str = sdk_versions.get("max_python_sdk_version")
+        if max_sdk_str:
+            current_sdk_str = get_package_version("langsmith")
+            if current_sdk_str:
+                try:
+                    current_sdk = packaging.version.parse(current_sdk_str)
+                    max_sdk = packaging.version.parse(max_sdk_str)
+                    if current_sdk > max_sdk:
+                        issues.append(
+                            f"SDK version {current_sdk_str!r} is newer than the "
+                            f"maximum supported by this backend ({max_sdk_str!r}); "
+                            f"consider using SDK version {max_sdk_str!r}"
+                        )
+                except packaging.version.InvalidVersion:
+                    pass
 
-    try:
-        current = packaging.version.parse(current_version_str)
-        max_version = packaging.version.parse(max_version_str)
-        if current > max_version:
-            logger.warning(
-                "LangSmith SDK version %r is newer than the maximum version "
-                "supported by this backend (%r). Consider using version %r.",
-                current_version_str,
-                max_version_str,
-                max_version_str,
-            )
-    except packaging.version.InvalidVersion:
+    if issues:
         logger.warning(
-            "Could not parse SDK version for max version compatibility check.",
+            "LangSmith compatibility issue(s) detected: %s. "
+            "Some features may not work as expected.",
+            "; ".join(issues),
         )
