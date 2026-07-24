@@ -82,7 +82,7 @@ describe("v2 migration utils", () => {
   });
 
   test("tags is undefined when absent", () => {
-    const result = v2RunToRun(makeV2Run({ tags: null }));
+    const result = v2RunToRun(makeV2Run({ tags: undefined }));
     expect(result.tags).toBeUndefined();
   });
 
@@ -115,8 +115,8 @@ describe("v2 migration utils", () => {
     expect(result.feedback_stats!["quality"]).toMatchObject({ avg: 0.9 });
   });
 
-  test("feedback_stats is undefined when null", () => {
-    const result = v2RunToRun(makeV2Run({ feedback_stats: null }));
+  test("feedback_stats is undefined when absent", () => {
+    const result = v2RunToRun(makeV2Run({ feedback_stats: undefined }));
     expect(result.feedback_stats).toBeUndefined();
   });
 
@@ -168,9 +168,9 @@ describe("v2 migration utils", () => {
   test("token counts are undefined when absent", () => {
     const result = v2RunToRun(
       makeV2Run({
-        prompt_tokens: null,
-        completion_tokens: null,
-        total_tokens: null,
+        prompt_tokens: undefined,
+        completion_tokens: undefined,
+        total_tokens: undefined,
       }),
     );
     expect(result.prompt_tokens).toBeUndefined();

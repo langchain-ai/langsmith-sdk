@@ -138,9 +138,7 @@ def test_feedback_stats_multiple_keys():
     f1, f2 = MagicMock(), MagicMock()
     f1.model_dump.return_value = {"avg": 1.0}
     f2.model_dump.return_value = {"avg": None, "comments": ["ok"]}
-    result = _v2_run_to_schema(
-        _make_v2_run(feedback_stats={"score": f1, "notes": f2})
-    )
+    result = _v2_run_to_schema(_make_v2_run(feedback_stats={"score": f1, "notes": f2}))
     assert result.feedback_stats["score"] == {"avg": 1.0}
     assert result.feedback_stats["notes"] == {"avg": None, "comments": ["ok"]}
 
