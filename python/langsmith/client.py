@@ -4059,11 +4059,16 @@ class Client:
         """
         run_id_ = _as_uuid(run_id, "run_id")
         instance_flags = self.info.instance_flags or {}
-        # v1 `GET /runs/{id}` returns 501 on SmithDB-only backends (ClickHouse
-        # query support disabled); use v2 when that's the case and available.
-        if not instance_flags.get("ch_query_enabled", True) and instance_flags.get(
-            "sdb_query_enabled"
-        ):
+        ch_query_enabled = instance_flags.get("ch_query_enabled", True)
+        if ch_query_enabled or not instance_flags.get("sdb_query_enabled"):
+            response = self.request_with_retries("GET", f"/runs/{run_id_}")
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                response.json(), attachments_key="s3_urls", api_url=self.api_url
+            )
+            run = ls_schemas.Run(
+                attachments=attachments, **response.json(), _host_url=self._host_url
+            )
+        else:
             if project_id is None:
                 raise ls_utils.LangSmithError(
                     "read_run requires project_id on SmithDB-only backends"
@@ -4073,14 +4078,6 @@ class Client:
 
             run = _v2_migration_utils._read_run_v2(
                 run_id_, self, project_id=_as_uuid(project_id, "project_id")
-            )
-        else:
-            response = self.request_with_retries("GET", f"/runs/{run_id_}")
-            attachments = _convert_stored_attachments_to_attachments_dict(
-                response.json(), attachments_key="s3_urls", api_url=self.api_url
-            )
-            run = ls_schemas.Run(
-                attachments=attachments, **response.json(), _host_url=self._host_url
             )
 
         if load_child_runs:
