@@ -48,6 +48,7 @@ class RunQueryParams(TypedDict, total=False):
             "PRICE_MODEL_ID",
             "TAGS",
             "THREAD_EVALUATION_TIME",
+            "FEEDBACK_STATS",
         ]
     ]
     """`selects` lists which public run properties to include on each returned run."""

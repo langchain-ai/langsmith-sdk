@@ -59,6 +59,7 @@ class RunRetrieveParams(TypedDict, total=False):
             "ATTACHMENTS",
             "THREAD_EVALUATION_TIME",
             "IS_IN_DATASET",
+            "LAST_QUEUED_AT",
             "SHARE_URL",
             "FEEDBACK_STATS",
         ]
