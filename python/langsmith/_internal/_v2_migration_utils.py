@@ -145,48 +145,6 @@ def _read_run_v2(
     return _v2_run_to_schema(run)
 
 
-def _load_child_runs_v2(run: schemas.Run, client: Client) -> schemas.Run:
-    """Load child runs for ``run`` using the v2 API and populate ``run.child_runs``.
-
-    Uses ``_v2_run_to_schema`` so that returned child runs are proper
-    ``schemas.Run`` objects and tree-building with ``parent_run_id`` works.
-    """
-    pager = client._get_langsmith_api_sync().runs.query_v2(
-        project_ids=[str(run.session_id)],
-        is_root=False,
-        trace_id=str(run.trace_id),
-        min_start_time=run.start_time,
-        selects=_V2_RUN_SELECTS,
-    )
-    child_runs = [_v2_run_to_schema(r) for r in pager]
-
-    treemap: collections.defaultdict[uuid.UUID, list[schemas.Run]] = (
-        collections.defaultdict(list)
-    )
-    runs: dict[uuid.UUID, schemas.Run] = {}
-    run_id_str = str(run.id)
-
-    for child_run in sorted(child_runs, key=lambda r: r.dotted_order or ""):
-        if child_run.parent_run_id is None:
-            from langsmith.utils import LangSmithError
-
-            raise LangSmithError(f"Child run {child_run.id} has no parent")
-        ancestor_ids = {
-            seg.split("Z", 1)[1]
-            for seg in (child_run.dotted_order or "").split(".")
-            if "Z" in seg
-        }
-        if run_id_str in ancestor_ids and str(child_run.id) != run_id_str:
-            treemap[child_run.parent_run_id].append(child_run)
-            runs[child_run.id] = child_run
-
-    run.child_runs = treemap.pop(run.id, [])
-    for run_id, children in treemap.items():
-        if run_id in runs:
-            runs[run_id].child_runs = children
-    return run
-
-
 def _load_nested_traces_v2(project_name: str, client: Client) -> list[schemas.Run]:
     """Load all runs for ``project_name`` from the v2 API and build a trace tree.
 

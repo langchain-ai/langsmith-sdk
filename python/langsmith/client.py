@@ -3987,13 +3987,18 @@ class Client:
             Run: The run with loaded child runs.
 
         Raises:
-            LangSmithError: If a child run has no parent.
+            LangSmithError: If a child run has no parent, or on SmithDB-only
+                backends (no ClickHouse query support), where loading child
+                runs isn't supported.
         """
-        from langsmith._internal import _v2_migration_utils
-
-        # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
-        if (self.info.instance_flags or {}).get("sdb_query_enabled"):
-            return _v2_migration_utils._load_child_runs_v2(run, self)
+        instance_flags = self.info.instance_flags or {}
+        if not instance_flags.get("ch_query_enabled", True) and instance_flags.get(
+            "sdb_query_enabled"
+        ):
+            raise ls_utils.LangSmithError(
+                "Loading child runs is not supported on SmithDB-only"
+                " backends (no ClickHouse query support)."
+            )
 
         child_runs = self.list_runs(
             is_root=False, session_id=run.session_id, trace_id=run.trace_id
@@ -7555,7 +7560,7 @@ class Client:
                     DeprecationWarning,
                     stacklevel=3,
                 )
-            run_ = self.read_run(
+            run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
                 run,
                 load_child_runs=load_child_runs,
                 project_id=project_id,
@@ -7686,7 +7691,7 @@ class Client:
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         results = self._log_evaluation_feedback(
@@ -7750,7 +7755,7 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                trace_id=run.trace_id if run else None,
+                trace_id=getattr(run, "trace_id", None) if run else None,
                 session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
@@ -7807,7 +7812,7 @@ class Client:
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         # TODO: Return all results and use async API
