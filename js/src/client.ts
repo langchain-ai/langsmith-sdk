@@ -1444,7 +1444,10 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _getOpenAPIBaseUrl(): string {
-    return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+    const url = this.apiUrl.replace(/\/$/, "");
+    if (url.endsWith("/api/v1")) return url.slice(0, -"/api/v1".length);
+    if (url.endsWith("/v1")) return url.slice(0, -3);
+    return url;
   }
 
   private _newOpenAPIClient(): OpenAPILangsmith {

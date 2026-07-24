@@ -153,6 +153,14 @@ def _reset_tracing_drop_log() -> None:
         _tracing_drops_last_log_time = 0.0
 
 
+def _get_openapi_base_url(api_url: str) -> str:
+    """Convert a handwritten client API URL to a generated OpenAPI base URL."""
+    api_url = api_url.rstrip("/")
+    if api_url.endswith("/api/v1"):
+        return api_url[: -len("/api/v1")]
+    return api_url[:-3] if api_url.endswith("/v1") else api_url
+
+
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
 
 _OPENAI_API_KEY = "OPENAI_API_KEY"
@@ -1484,7 +1492,7 @@ class Client:
             self._langsmith_api = LangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=self.api_url,
+                base_url=_get_openapi_base_url(self.api_url),
                 timeout=_httpx.Timeout(
                     connect=self._timeout[0],
                     read=self._timeout[1],
