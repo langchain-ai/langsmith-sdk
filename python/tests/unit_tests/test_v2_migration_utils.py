@@ -77,7 +77,7 @@ def test_parent_run_id_set_to_last_ancestor():
     grandparent = str(uuid.uuid4())
     parent = str(uuid.uuid4())
     result = _v2_run_to_schema(_make_v2_run(parent_run_ids=[grandparent, parent]))
-    assert result.parent_run_id == parent
+    assert str(result.parent_run_id) == parent
 
 
 def test_no_parent_run_id_when_root():
