@@ -4038,7 +4038,10 @@ class Client:
             run_id (Union[UUID, str]):
                 The ID of the run to read.
             load_child_runs (bool, default=False):
-                Whether to load nested child runs.
+                Whether to load nested child runs. **Deprecated**: this will
+                be removed in a future release, and raises on SmithDB-only
+                backends (no ClickHouse query support), where child runs are
+                never loaded.
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (session) that owns the run. Required on
                 SmithDB-only backends (no ClickHouse query support), where it's
@@ -4058,6 +4061,13 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
+        if load_child_runs:
+            warnings.warn(
+                "load_child_runs is deprecated and will be removed in a"
+                " future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         run_id_ = _as_uuid(run_id, "run_id")
         instance_flags = self.info.instance_flags or {}
         ch_query_enabled = instance_flags.get("ch_query_enabled", True)
@@ -4069,11 +4079,18 @@ class Client:
             run = ls_schemas.Run(
                 attachments=attachments, **response.json(), _host_url=self._host_url
             )
+            if load_child_runs:
+                run = self._load_child_runs(run)
         else:
             if project_id is None:
                 raise ls_utils.LangSmithError(
                     "read_run requires project_id on SmithDB-only backends"
                     " (no ClickHouse query support)."
+                )
+            if load_child_runs:
+                raise ls_utils.LangSmithError(
+                    "load_child_runs is not supported on SmithDB-only"
+                    " backends (no ClickHouse query support)."
                 )
             from langsmith._internal import _v2_migration_utils
 
@@ -4081,8 +4098,6 @@ class Client:
                 run_id_, self, project_id=_as_uuid(project_id, "project_id")
             )
 
-        if load_child_runs:
-            run = self._load_child_runs(run)
         return run
 
     def read_thread(
@@ -7628,6 +7643,7 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             Feedback: The feedback object created by the evaluation.
@@ -7740,6 +7756,7 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             EvaluationResult: The evaluation result object created by the evaluation.
