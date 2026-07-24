@@ -1676,18 +1676,18 @@ class AsyncClient:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    async def _get_settings(self) -> ls_schemas.LangSmithSettings:
-        """Get the settings for the current tenant.
-
-        Returns:
-            dict: The settings for the current tenant.
-        """
+    async def get_current_workspace(self) -> ls_schemas.LangSmithSettings:
+        """Get the workspace selected by the client's endpoint and credentials."""
         if self._settings is None:
             response = await self._arequest_with_retries("GET", "/settings")
             ls_utils.raise_for_status_with_text(response)
             self._settings = ls_schemas.LangSmithSettings(**response.json())
 
         return self._settings
+
+    async def _get_settings(self) -> ls_schemas.LangSmithSettings:
+        """Get the settings for the current tenant."""
+        return await self.get_current_workspace()
 
     async def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.
