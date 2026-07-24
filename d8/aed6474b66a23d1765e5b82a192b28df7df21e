@@ -1,0 +1,28 @@
+python/tests/integration_tests/test_async_client.py
+  s_00da43c60604db::t_13460e01885d45 248,261,268,276
+  s_322a465b6e5eed::t_87fc8cc1950123 260,262-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d8aed6474b66a23d1765e5b82a192b28df7df21e",
+  "prompts": {},
+  "sessions": {
+    "s_00da43c60604db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f69987a4-8bc2-439a-9e9c-6071a213cf27",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    },
+    "s_322a465b6e5eed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c9a142f-5b36-4f64-8896-9a5a3ce814c1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
