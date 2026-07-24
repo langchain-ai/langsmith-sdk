@@ -282,6 +282,7 @@ if TYPE_CHECKING:
     )
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
+    from langsmith._openapi_client.types.run import Run as V2Run
 
     # OTEL imports for type hints
     try:
@@ -7477,15 +7478,15 @@ class Client:
 
     def _resolve_run_id(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         load_child_runs: bool,
         *,
         project_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.Run:
+    ) -> Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]:
         """Resolve the run ID.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
+            run (Union[V2Run, Run, RunBase, str, UUID]):
                 The run to resolve.
             load_child_runs (bool):
                 Whether to load child runs.
@@ -7521,20 +7522,20 @@ class Client:
                 run, load_child_runs=load_child_runs, project_id=project_id
             )
         else:
-            run_ = cast(ls_schemas.Run, run)
+            run_ = run
         return run_
 
     def _resolve_example_id(
         self,
         example: Union[ls_schemas.Example, str, uuid.UUID, dict, None],
-        run: ls_schemas.Run,
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase],
     ) -> Optional[ls_schemas.Example]:
         """Resolve the example ID.
 
         Args:
             example (Optional[Union[Example, str, UUID, dict]]):
                 The example to resolve.
-            run (Run):
+            run (Union[V2Run, Run, RunBase]):
                 The run associated with the example.
 
         Returns:
@@ -7597,7 +7598,7 @@ class Client:
 
     def evaluate_run(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
         project_id: Optional[ID_TYPE] = None,
@@ -7610,8 +7611,10 @@ class Client:
         """Evaluate a run.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
             project_id (Optional[Union[UUID, str]]):
@@ -7641,6 +7644,7 @@ class Client:
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         # TODO: Return all results
         return results[0]
@@ -7650,7 +7654,7 @@ class Client:
         evaluator_response: Union[
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
-        run: Optional[ls_schemas.Run] = None,
+        run: Optional[Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]] = None,
         source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
@@ -7663,6 +7667,13 @@ class Client:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
                 self.create_feedback(**kwargs)
+
+        # `session_id` on the legacy `schemas.Run`; `project_id` on the v2 `Run`.
+        run_session_id = (
+            (getattr(run, "session_id", None) or getattr(run, "project_id", None))
+            if run is not None
+            else None
+        )
 
         for res in results:
             source_info_ = source_info or {}
@@ -7691,7 +7702,7 @@ class Client:
                 project_id=project_id if run is None else None,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run and run.session_id else project_id,
+                session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )
@@ -7699,7 +7710,7 @@ class Client:
 
     async def aevaluate_run(
         self,
-        run: Union[ls_schemas.Run, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
         project_id: Optional[ID_TYPE] = None,
@@ -7712,8 +7723,10 @@ class Client:
         """Evaluate a run asynchronously.
 
         Args:
-            run (Union[Run, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
             project_id (Optional[Union[UUID, str]]):
@@ -7744,6 +7757,7 @@ class Client:
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         return results[0]
 
