@@ -22,6 +22,7 @@ export type TestWrapperAsyncLocalStorageData = {
   suiteName: string;
   testRootRunTree?: RunTree;
   setupPromise?: Promise<void>;
+  syncExamplePromises?: Map<string, Promise<Example>>;
 };
 
 export const testWrapperAsyncLocalStorageInstance =
@@ -38,7 +39,6 @@ export function trackingEnabled(context: TestWrapperAsyncLocalStorageData) {
 }
 
 export const evaluatorLogFeedbackPromises = new Set();
-export const syncExamplePromises = new Map();
 
 export function _logTestFeedback(params: {
   exampleId?: string;
@@ -67,7 +67,7 @@ export function _logTestFeedback(params: {
             "Could not log feedback to LangSmith: missing project information. Please contact us for help.",
           );
         }
-        await syncExamplePromises.get(exampleId);
+        await context.syncExamplePromises?.get(exampleId);
         await client?.logEvaluationFeedback({
           evaluatorResponse: feedback,
           run: runTree,

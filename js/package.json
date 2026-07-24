@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "pnpm@10.33.0",
   "files": [
@@ -156,12 +156,18 @@
     "p-queue": "6.6.2"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "4.0.18",
+    "@ai-sdk/harness": "1.0.41",
+    "@ai-sdk/harness-claude-code": "1.0.42",
+    "@ai-sdk/harness-pi": "1.0.41",
     "@ai-sdk/openai": "4.0.4",
     "@ai-sdk/provider": "4.0.1",
-    "@ai-sdk/anthropic": "4.0.0-beta.67",
+    "@ai-sdk/sandbox-just-bash": "1.0.40",
+    "@ai-sdk/sandbox-vercel": "1.0.41",
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@anthropic-ai/sdk": "^0.98.0",
     "@babel/preset-env": "^8.0.2",
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@faker-js/faker": "^8.4.1",
     "@google/genai": "^2.0.1",
     "@jest/globals": "^30.4.1",
@@ -184,7 +190,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
-    "ai": "7.0.0-beta.178",
+    "ai": "7.0.36",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",

@@ -24,6 +24,16 @@ if TYPE_CHECKING:
     )
 
 
+class _StreamEndedBeforeStarted(SandboxOperationError):
+    """A command WebSocket closed before the guest sent its 'started' frame.
+
+    Internal marker for the idempotently-retryable early close (the proxied
+    tunnel was torn down gracefully mid-handshake), as distinct from a
+    command-level failure. Subclasses SandboxOperationError so callers that
+    catch the public type are unaffected.
+    """
+
+
 @dataclass
 class ExecutionResult:
     """Result of executing a command in a sandbox."""
@@ -530,7 +540,7 @@ class CommandHandle:
         try:
             first_msg = next(self._stream)
         except StopIteration:
-            raise SandboxOperationError(
+            raise _StreamEndedBeforeStarted(
                 "Command stream ended before 'started' message",
                 operation="command",
             )
@@ -787,7 +797,7 @@ class AsyncCommandHandle:
         try:
             first_msg = await self._stream.__anext__()
         except StopAsyncIteration:
-            raise SandboxOperationError(
+            raise _StreamEndedBeforeStarted(
                 "Command stream ended before 'started' message",
                 operation="command",
             )
