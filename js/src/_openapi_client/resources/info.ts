@@ -7,40 +7,32 @@ import { RequestOptions } from '../internal/request-options.js';
 
 export class Info extends APIResource {
   /**
-   * Get information about the current deployment of LangSmith.
+   * Returns information about the current LangSmith deployment: version, instance
+   * feature flags, batch-ingest limits, and max SDK versions. Unauthenticated by
+   * default; set FF_INFO_ENDPOINT_AUTH_REQUIRED=true to require auth.
    */
   list(options?: RequestOptions): APIPromise<InfoListResponse> {
     return this._client.get('/api/v1/info', options);
   }
 }
 
-/**
- * The LangSmith server info.
- */
 export interface InfoListResponse {
-  version: string;
-
-  /**
-   * Batch ingest config.
-   */
   batch_ingest_config?: InfoListResponse.BatchIngestConfig;
 
-  /**
-   * Customer info.
-   */
-  customer_info?: InfoListResponse.CustomerInfo | null;
+  customer_info?: InfoListResponse.CustomerInfo;
 
-  git_sha?: string | null;
+  git_sha?: string;
 
   instance_flags?: { [key: string]: unknown };
 
-  license_expiration_time?: string | null;
+  license_expiration_time?: string;
+
+  sdk_versions?: InfoListResponse.SDKVersions;
+
+  version?: string;
 }
 
 export namespace InfoListResponse {
-  /**
-   * Batch ingest config.
-   */
   export interface BatchIngestConfig {
     scale_down_nempty_trigger?: number;
 
@@ -55,13 +47,20 @@ export namespace InfoListResponse {
     use_multipart_endpoint?: boolean;
   }
 
-  /**
-   * Customer info.
-   */
   export interface CustomerInfo {
-    customer_id: string;
+    customer_id?: string;
 
-    customer_name: string;
+    customer_name?: string;
+  }
+
+  export interface SDKVersions {
+    max_go_sdk_version?: string;
+
+    max_java_sdk_version?: string;
+
+    max_js_sdk_version?: string;
+
+    max_python_sdk_version?: string;
   }
 }
 
