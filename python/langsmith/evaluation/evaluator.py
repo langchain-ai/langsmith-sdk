@@ -10,7 +10,6 @@ from abc import abstractmethod
 from collections.abc import Awaitable, Coroutine, Sequence
 from functools import wraps
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Literal,
@@ -25,10 +24,7 @@ from typing_extensions import TypedDict
 from langsmith import run_helpers as rh
 from langsmith import schemas
 from langsmith.evaluation._key_extraction import _safe_extract_feedback_keys
-from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run, RunBase
-
-if TYPE_CHECKING:
-    from langsmith._openapi_client.types.run import Run as V2Run
+from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +127,7 @@ class RunEvaluator:
     @abstractmethod
     def evaluate_run(
         self,
-        run: Union[Run, RunBase, V2Run],
+        run: Run,
         example: Optional[Example] = None,
         evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -139,7 +135,7 @@ class RunEvaluator:
 
     async def aevaluate_run(
         self,
-        run: Union[Run, RunBase, V2Run],
+        run: Run,
         example: Optional[Example] = None,
         evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -345,7 +341,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
     def evaluate_run(
         self,
-        run: Union[Run, RunBase, V2Run],
+        run: Run,
         example: Optional[Example] = None,
         evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -369,11 +365,8 @@ class DynamicRunEvaluator(RunEvaluator):
         if evaluator_run_id is None:
             evaluator_run_id = uuid.uuid4()
         metadata: dict[str, Any] = {"target_run_id": run.id}
-        run_session_id = getattr(run, "session_id", None) or getattr(
-            run, "project_id", None
-        )
-        if run_session_id:
-            metadata["experiment"] = str(run_session_id)
+        if getattr(run, "session_id", None):
+            metadata["experiment"] = str(run.session_id)
         result = self.func(
             run,
             example,
@@ -383,7 +376,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
     async def aevaluate_run(
         self,
-        run: Union[Run, RunBase, V2Run],
+        run: Run,
         example: Optional[Example] = None,
         evaluator_run_id: Optional[uuid.UUID] = None,
     ):
@@ -405,11 +398,8 @@ class DynamicRunEvaluator(RunEvaluator):
         if evaluator_run_id is None:
             evaluator_run_id = uuid.uuid4()
         metadata: dict[str, Any] = {"target_run_id": run.id}
-        run_session_id = getattr(run, "session_id", None) or getattr(
-            run, "project_id", None
-        )
-        if run_session_id:
-            metadata["experiment"] = str(run_session_id)
+        if getattr(run, "session_id", None):
+            metadata["experiment"] = str(run.session_id)
         result = await self.afunc(
             run,
             example,
@@ -418,7 +408,7 @@ class DynamicRunEvaluator(RunEvaluator):
         return self._format_result(result, evaluator_run_id)
 
     def __call__(
-        self, run: Union[Run, RunBase, V2Run], example: Optional[Example] = None
+        self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Make the evaluator callable, allowing it to be used like a function.
 

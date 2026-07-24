@@ -7691,7 +7691,7 @@ class Client:
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         results = self._log_evaluation_feedback(
@@ -7812,7 +7812,7 @@ class Client:
         )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         # TODO: Return all results and use async API
