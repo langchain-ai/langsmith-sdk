@@ -36,7 +36,9 @@ async def async_client():
 @skip_if_rate_limited
 async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
+    project_id = (await async_client.create_project(project_name=project_name)).id
     run_id = uuid7()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
 
     await async_client.create_run(
         name="test_run",
@@ -44,18 +46,19 @@ async def test_create_run(async_client: AsyncClient):
         run_type="llm",
         project_name=project_name,
         id=run_id,
-        start_time=datetime.datetime.now(datetime.timezone.utc),
+        start_time=start_time
     )
 
     async def check_run():
         try:
-            run = await async_client.read_run(run_id)
+            run = await async_client.runs.retrieve(run_id, project_id=project_id, selects=["NAME"], start_time=start_time)
             return run.name == "test_run"
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
-    run = await async_client.read_run(run_id)
+
+    run = await async_client.runs.retrieve(run_id, project_id=project_id, selects=["NAME","INPUTS"], start_time=start_time)
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 

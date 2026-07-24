@@ -127,6 +127,18 @@ def _v2_run_to_schema(run: Any) -> schemas.Run:
     )
 
 
+def _read_run_v2(
+    run_id: uuid.UUID, client: Client, *, project_id: uuid.UUID
+) -> schemas.Run:
+    """Fetch a single run by ID via the v2 API (for SmithDB-only backends)."""
+    run = client._get_langsmith_api_sync().runs.retrieve_v2(
+        run_id=str(run_id),
+        project_id=str(project_id),
+        selects=_V2_RUN_SELECTS,
+    )
+    return _v2_run_to_schema(run)
+
+
 def _load_child_runs_v2(run: schemas.Run, client: Client) -> schemas.Run:
     """Load child runs for ``run`` using the v2 API and populate ``run.child_runs``.
 

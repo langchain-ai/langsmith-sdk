@@ -4025,7 +4025,11 @@ class Client:
         return run
 
     def read_run(
-        self, run_id: ID_TYPE, load_child_runs: bool = False
+        self,
+        run_id: ID_TYPE,
+        load_child_runs: bool = False,
+        *,
+        project_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -4034,6 +4038,10 @@ class Client:
                 The ID of the run to read.
             load_child_runs (bool, default=False):
                 Whether to load nested child runs.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required on
+                SmithDB-only backends (no ClickHouse query support), where it's
+                used to look up the run via the v2 API.
 
         Returns:
             Run: The run read from the LangSmith API.
@@ -4049,15 +4057,31 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
-        response = self.request_with_retries(
-            "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
-        )
-        attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), attachments_key="s3_urls", api_url=self.api_url
-        )
-        run = ls_schemas.Run(
-            attachments=attachments, **response.json(), _host_url=self._host_url
-        )
+        run_id_ = _as_uuid(run_id, "run_id")
+        instance_flags = self.info.instance_flags or {}
+        # v1 `GET /runs/{id}` returns 501 on SmithDB-only backends (ClickHouse
+        # query support disabled); use v2 when that's the case and available.
+        if not instance_flags.get("ch_query_enabled", True) and instance_flags.get(
+            "sdb_query_enabled"
+        ):
+            if project_id is None:
+                raise ls_utils.LangSmithError(
+                    "read_run requires project_id on SmithDB-only backends"
+                    " (no ClickHouse query support)."
+                )
+            from langsmith._internal import _v2_migration_utils
+
+            run = _v2_migration_utils._read_run_v2(
+                run_id_, self, project_id=_as_uuid(project_id, "project_id")
+            )
+        else:
+            response = self.request_with_retries("GET", f"/runs/{run_id_}")
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                response.json(), attachments_key="s3_urls", api_url=self.api_url
+            )
+            run = ls_schemas.Run(
+                attachments=attachments, **response.json(), _host_url=self._host_url
+            )
 
         if load_child_runs:
             run = self._load_child_runs(run)
@@ -7458,6 +7482,8 @@ class Client:
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         load_child_runs: bool,
+        *,
+        project_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Run:
         """Resolve the run ID.
 
@@ -7466,6 +7492,9 @@ class Client:
                 The run to resolve.
             load_child_runs (bool):
                 Whether to load child runs.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required to
+                look the run up on SmithDB-only backends.
 
         Returns:
             Run: The resolved run.
@@ -7474,7 +7503,26 @@ class Client:
             TypeError: If the run type is invalid.
         """
         if isinstance(run, (str, uuid.UUID)):
-            run_ = self.read_run(run, load_child_runs=load_child_runs)
+            instance_flags = self.info.instance_flags or {}
+            ch_disabled = not instance_flags.get("ch_query_enabled", True)
+            if ch_disabled and instance_flags.get("sdb_query_enabled"):
+                if project_id is None:
+                    raise ls_utils.LangSmithError(
+                        "project_id is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
+            elif not ch_disabled and project_id is None:
+                warnings.warn(
+                    "Resolving a run from an ID without passing project_id is"
+                    " deprecated and will raise an error in a future release."
+                    " Pass project_id explicitly.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+            run_ = self.read_run(
+                run, load_child_runs=load_child_runs, project_id=project_id
+            )
         else:
             run_ = cast(ls_schemas.Run, run)
         return run_
@@ -7555,6 +7603,7 @@ class Client:
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7568,6 +7617,9 @@ class Client:
                 The run to evaluate.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7580,7 +7632,9 @@ class Client:
         Returns:
             Feedback: The feedback object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run, load_child_runs=load_child_runs, project_id=project_id
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
             run_,
@@ -7651,6 +7705,7 @@ class Client:
         run: Union[ls_schemas.Run, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7664,6 +7719,9 @@ class Client:
                 The run to evaluate.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7676,7 +7734,9 @@ class Client:
         Returns:
             EvaluationResult: The evaluation result object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run, load_child_runs=load_child_runs, project_id=project_id
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
             run_,
