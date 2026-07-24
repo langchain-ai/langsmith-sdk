@@ -245,7 +245,7 @@ async def test_create_feedback(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_feedback(async_client: AsyncClient):
-    project_name = "__test_list_feedback"
+    project_name = "__test_list_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -257,6 +257,15 @@ async def test_list_feedback(async_client: AsyncClient):
         start_time=datetime.datetime.now(datetime.timezone.utc),
     )
 
+    session: dict = {}
+
+    async def check_project_exists():
+        session["project"] = await async_client.read_project(project_name=project_name)
+        return True
+
+    await wait_for(check_project_exists, timeout=20)
+    session_id = session["project"].id
+
     for i in range(3):
         await async_client.create_feedback(
             run_id=run_id,
@@ -264,6 +273,7 @@ async def test_list_feedback(async_client: AsyncClient):
             score=0.9,
             value=f"test_value_{i}",
             comment=f"test_comment_{i}",
+            session_id=session_id,
         )
 
     async def check_feedbacks():
