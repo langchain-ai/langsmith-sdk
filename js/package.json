@@ -488,7 +488,12 @@
       "@babel/core": "^7.29.7",
       "esbuild": "^0.28.1",
       "markdown-it": "^14.3.0",
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "@hono/node-server@<2.0.5": "2.0.5",
+      "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0",
+      "brace-expansion": "5.0.8",
+      "fast-uri@>=3.0.0 <3.1.4": "3.1.4",
+      "postcss@<=8.5.17": "8.5.18"
     }
   },
   "browser": {
