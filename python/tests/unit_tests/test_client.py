@@ -50,6 +50,7 @@ from langsmith.client import (
     _dataset_examples_path,
     _default_retry_config,
     _dumps_json,
+    _get_openapi_base_url,
     _is_langchain_hosted,
     _parse_token_or_url,
     _reject_filesystem_attachments,
@@ -5479,6 +5480,90 @@ def test_construct_url_errors(api_url, pathname, error_match):
     """Test error cases for _construct_url."""
     with pytest.raises(ValueError, match=error_match):
         _construct_url(api_url, pathname)
+
+
+@pytest.mark.parametrize(
+    "api_url,expected",
+    [
+        # Cloud API URL: the /api/v1 suffix is stripped so the generated client
+        # can append its own /v2/... path segments.
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "https://api.smith.langchain.com",
+        ),
+        # httpx stringifies base_url with a trailing slash.
+        (
+            "https://api.smith.langchain.com/api/v1/",
+            "https://api.smith.langchain.com",
+        ),
+        # Bare /v1 suffix (no /api prefix).
+        (
+            "https://api.smith.langchain.com/v1",
+            "https://api.smith.langchain.com",
+        ),
+        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com"),
+        # Self-hosted deployments under a path prefix.
+        (
+            "https://self-hosted.example.com/langsmith/api/v1",
+            "https://self-hosted.example.com/langsmith",
+        ),
+        (
+            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/langsmith",
+        ),
+        # No version suffix: left unchanged (aside from trailing slashes).
+        ("https://api.smith.langchain.com", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/", "https://api.smith.langchain.com"),
+        (
+            "https://self-hosted.example.com/api",
+            "https://self-hosted.example.com/api",
+        ),
+        ("http://localhost:1984", "http://localhost:1984"),
+        ("http://localhost:1984/api/v1", "http://localhost:1984"),
+        # /v1 must be a trailing path segment, not a substring.
+        (
+            "https://api.smith.langchain.com/v1/runs",
+            "https://api.smith.langchain.com/v1/runs",
+        ),
+        ("https://v1.example.com", "https://v1.example.com"),
+    ],
+)
+def test_get_openapi_base_url(api_url: str, expected: str) -> None:
+    """Test _get_openapi_base_url strips the handwritten client's version suffix."""
+    assert _get_openapi_base_url(api_url) == expected
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
+def test_get_langsmith_api_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The generated OpenAPI client must not receive the /api/v1 suffix."""
+    client = Client(api_url=api_url, api_key="test-api-key", auto_batch_tracing=False)
+    openapi_client = client._get_langsmith_api()
+    assert str(openapi_client.base_url).rstrip("/") == expected_base_url
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
+def test_async_client_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The async client normalizes its httpx base_url before the generated client."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url=api_url, api_key="test-api-key")
+    assert str(client._langsmith_api.base_url).rstrip("/") == expected_base_url
 
 
 def test_process_buffered_run_ops_core_functionality():
