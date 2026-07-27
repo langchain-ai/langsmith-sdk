@@ -11,6 +11,10 @@ inputs:
   langsmith-api-key:
     description: "LangSmith API key for langsmith-endpoint"
     required: true
+  pytest-addopts:
+    description: "Extra pytest options, e.g. -m 'not require_clickhouse' for SmithDB-only backends"
+    required: false
+    default: ""
   langchain-api-key-prod:
     description: "LangSmith Key"
     required: true
@@ -77,6 +81,7 @@ runs:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
+        PYTEST_ADDOPTS: ${{ inputs.pytest-addopts }}
         PYTEST_SHARD_TOTAL: ${{ inputs.shard-total }}
         PYTEST_SHARD_INDEX: ${{ inputs.shard-index }}
       # PYTEST_EXIT_FIRST= drops -x so a shard reports every failure, not just the first.
@@ -95,6 +100,7 @@ runs:
           GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
           GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
+          PYTEST_ADDOPTS: ${{ inputs.pytest-addopts }}
       run: make evals PYTEST_EXIT_FIRST=
       shell: bash
       working-directory: python

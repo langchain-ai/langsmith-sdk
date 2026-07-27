@@ -119,6 +119,7 @@ async def test_traces_query(langchain_client: Client, project_with_runs) -> None
     assert len(page.items) > 0
 
 
+@pytest.mark.require_clickhouse
 async def test_traces_list_runs(langchain_client: Client, project_with_runs) -> None:
     """traces.list_runs() returns the runs belonging to a trace."""
     project_id, min_start_time, max_start_time = project_with_runs

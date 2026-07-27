@@ -548,6 +548,8 @@ jobs:
               "v16-smithdb": "https://stable-smithdb.eks.smith.langchain.dev/api",
           }
           SHARD_TOTAL = 6
+          # SmithDB-only backends don't serve the legacy ClickHouse-backed endpoints.
+          SMITHDB_ONLY = {"v16-smithdb"}
 
           selected = os.environ.get("SELECTED_ENVIRONMENT", "").strip()
           if selected == "all":
@@ -564,6 +566,9 @@ jobs:
                   "endpoint": ENDPOINTS[environment],
                   # Keep the beta job names untouched so required checks still match.
                   "name_suffix": "" if environment == "beta" else f" [{environment}]",
+                  "pytest_addopts": (
+                      '-m "not require_clickhouse"' if environment in SMITHDB_ONLY else ""
+                  ),
               }
               for shard_index in range(SHARD_TOTAL):
                   include.append(
@@ -600,6 +605,7 @@ jobs:
              || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
              || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
              || '' }}
+          pytest-addopts: ${{ matrix.pytest_addopts }}
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

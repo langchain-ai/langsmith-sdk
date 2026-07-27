@@ -261,6 +261,9 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["slow: long-running tests"]
+markers = [
+  "slow: long-running tests",
+  "require_clickhouse: test calls a legacy (pre-SmithDB) SDK method directly, so it only passes against a ClickHouse-backed deployment",
+]
 timeout = 120
 timeout_method = "thread"

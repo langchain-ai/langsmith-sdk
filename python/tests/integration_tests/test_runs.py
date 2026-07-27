@@ -65,6 +65,7 @@ def poll_runs_until_count(
     raise AssertionError(f"Failed to get {count} runs after {max_retries} attempts.")
 
 
+@pytest.mark.require_clickhouse
 def test_nested_runs(
     langchain_client: Client,
 ):
@@ -116,6 +117,7 @@ def test_nested_runs(
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_list_runs_multi_project(langchain_client: Client):
     project_names = [
@@ -152,6 +154,7 @@ async def test_list_runs_multi_project(langchain_client: Client):
     assert runs[0].session_id != runs[1].session_id
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
@@ -247,6 +250,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
             assert run.parent_run_id is None
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
@@ -273,6 +277,7 @@ async def test_context_manager(langchain_client: Client) -> None:
     assert len(runs_) == 8
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 def test_sync_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator"
@@ -305,6 +310,7 @@ def test_sync_generator(langchain_client: Client):
     }
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
@@ -342,6 +348,7 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
     }
 
 
+@pytest.mark.require_clickhouse
 async def test_async_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator"
     run_meta = uuid.uuid4().hex
@@ -387,6 +394,7 @@ async def test_async_generator(langchain_client: Client):
     }
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_async_generator_reduce_fn(langchain_client: Client):
     project_name = (
@@ -440,6 +448,7 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
     }
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_end_metadata_with_run_tree(langchain_client: Client):
     project_name = (
@@ -467,6 +476,7 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     assert run.outputs == {"result": "success"}
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 def test_trace_file_path(langchain_client: Client) -> None:
     """Test that you can trace attachments with file paths"""
@@ -512,6 +522,7 @@ def test_trace_file_path(langchain_client: Client) -> None:
     )
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip()
 async def test_trace_to_multiple_projects(langchain_client: Client):
     """Test tracing to multiple projects."""
@@ -577,6 +588,7 @@ async def test_trace_to_multiple_projects(langchain_client: Client):
     assert runs1_dict["my_chain"].trace_id != runs2_dict["my_chain"].trace_id
 
 
+@pytest.mark.require_clickhouse
 def test_usage_metadata(langchain_client: Client):
     project_name = "__My Tracer Project - test_usage_metadata"
     usage_metadata = {
@@ -671,6 +683,7 @@ def test_usage_metadata(langchain_client: Client):
             pass
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 async def test_usage_metadata_async(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_usage_metadata"
@@ -769,6 +782,7 @@ async def test_usage_metadata_async(langchain_client: Client):
 
 
 # TODO: Don't skip this test after langchain-ai/langchain#31493 is merged
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Skipping test that requires langchain to be updated")
 async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
     """Test tracing LangChain components to multiple projects."""
