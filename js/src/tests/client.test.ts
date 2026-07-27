@@ -582,6 +582,61 @@ describe("Client", () => {
     });
   });
 
+  describe("_getOpenAPIBaseUrl", () => {
+    const getOpenAPIBaseUrl = (apiUrl: string) =>
+      (
+        new Client({ apiUrl, apiKey: "test-api-key" }) as any
+      )._getOpenAPIBaseUrl();
+
+    it("should strip a trailing /api/v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should strip a trailing /api/v1 with a trailing slash", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1/")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should strip a trailing /v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should preserve a self-hosted path prefix", () => {
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+    });
+
+    it("should leave a URL without a version suffix unchanged", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("https://self-hosted.example.com/api")).toBe(
+        "https://self-hosted.example.com/api",
+      );
+      expect(getOpenAPIBaseUrl("http://localhost:1984")).toBe(
+        "http://localhost:1984",
+      );
+    });
+
+    it("should only strip /v1 when it is the trailing path segment", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1/runs")).toBe(
+        "https://api.smith.langchain.com/v1/runs",
+      );
+      expect(getOpenAPIBaseUrl("https://v1.example.com")).toBe(
+        "https://v1.example.com",
+      );
+    });
+  });
+
   describe("env functions", () => {
     it("should return the env variables correctly", async () => {
       // eslint-disable-next-line no-process-env
