@@ -13,6 +13,7 @@ from typing import Optional, TypeVar
 import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import Client
 
@@ -173,8 +174,6 @@ def convert_runs_to_test(
 
 
 def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Run]:
-    from langsmith._internal import _v2_migration_utils
-
     # v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when available.
     backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
     if backend != _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:

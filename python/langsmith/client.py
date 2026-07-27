@@ -71,7 +71,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
-from langsmith._internal import _orjson, _profiles
+from langsmith._internal import _orjson, _profiles, _v2_migration_utils
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -3991,8 +3991,6 @@ class Client:
                 backends (no ClickHouse query support), where loading child
                 runs isn't supported.
         """
-        from langsmith._internal import _v2_migration_utils
-
         backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
         if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
             raise ls_utils.LangSmithError(
@@ -4070,16 +4068,7 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
-        if load_child_runs:
-            warnings.warn(
-                "load_child_runs is deprecated and will be removed in a"
-                " future release.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         run_id_ = _as_uuid(run_id, "run_id")
-        from langsmith._internal import _v2_migration_utils
-
         backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
         if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
             response = self.request_with_retries("GET", f"/runs/{run_id_}")
@@ -7536,8 +7525,6 @@ class Client:
             TypeError: If the run type is invalid.
         """
         if isinstance(run, (str, uuid.UUID)):
-            from langsmith._internal import _v2_migration_utils
-
             backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
             if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
                 if project_id is None:
