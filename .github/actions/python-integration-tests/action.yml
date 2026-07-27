@@ -79,7 +79,8 @@ runs:
         LANGSMITH_TEST_CACHE: tests/cassettes
         PYTEST_SHARD_TOTAL: ${{ inputs.shard-total }}
         PYTEST_SHARD_INDEX: ${{ inputs.shard-index }}
-      run: make integration_tests_fast
+      # PYTEST_EXIT_FIRST= drops -x so a shard reports every failure, not just the first.
+      run: make integration_tests_fast PYTEST_EXIT_FIRST=
       shell: bash
       working-directory: python
 
@@ -94,6 +95,6 @@ runs:
           GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
           GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make evals
+      run: make evals PYTEST_EXIT_FIRST=
       shell: bash
       working-directory: python
