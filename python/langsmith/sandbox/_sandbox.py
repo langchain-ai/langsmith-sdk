@@ -754,8 +754,9 @@ class Sandbox:
             SandboxClientError: For other errors.
         """
         self._client.stop_sandbox(self.name, headers=headers)
+        # dataplane_url stays set: it is stable across stop/start and a request
+        # on it resumes the sandbox.
         self.status = "stopped"
-        self.dataplane_url = None
 
     def delete(self, *, headers: RequestHeaders = None) -> None:
         """Delete this sandbox.

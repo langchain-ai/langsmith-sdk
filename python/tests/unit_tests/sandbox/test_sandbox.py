@@ -198,6 +198,27 @@ class TestSandboxStatusFields:
         with pytest.raises(DataplaneNotConfiguredError):
             sb.read("/tmp/test.txt")
 
+    def test_stop_preserves_dataplane_url(self, client, httpx_mock: HTTPXMock):
+        """stop() must not clear dataplane_url: it stays valid across
+        stop/start and a request on it resumes the sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/test-sandbox/stop",
+            json={},
+        )
+        sb = Sandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "status": "ready",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        sb.stop()
+        assert sb.status == "stopped"
+        assert sb.dataplane_url == "https://sandbox-router.example.com/sb-123"
+
 
 class TestSandboxRun:
     """Sandbox.run() over the HTTP fallback path.
