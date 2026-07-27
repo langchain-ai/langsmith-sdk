@@ -1920,6 +1920,43 @@ def test_create_feedback_opt_out_uses_direct_post_when_batching_available() -> N
     assert client.tracing_queue.qsize() == 0
 
 
+def _feedback_client(session: mock.Mock, **flags: bool) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(version="0.8.11", instance_flags=flags),
+    )
+
+
+def test_create_feedback_requires_session_id_when_ch_query_disabled() -> None:
+    """SmithDB-only backends cannot locate the run without session_id."""
+    session = mock.Mock()
+    client = _feedback_client(session, ch_query_enabled=False)
+
+    with pytest.raises(ValueError, match="session_id must be provided"):
+        client.create_feedback(uuid.uuid4(), key="Foo")
+
+    session.request.assert_not_called()
+
+    # start_time stays optional, matching the server.
+    client.create_feedback(uuid.uuid4(), key="Foo", session_id=uuid.uuid4())
+    session.request.assert_called_once()
+
+    # Session-level feedback has no run to locate.
+    client.create_feedback(None, key="Foo", project_id=uuid.uuid4())
+
+
+def test_create_feedback_warns_without_session_id() -> None:
+    """Backends that can still look the run up get a deprecation warning."""
+    session = mock.Mock()
+    client = _feedback_client(session, ch_query_enabled=True)
+
+    with pytest.warns(ls_utils.LangSmithWarning, match="smithdb-sdk-migration"):
+        client.create_feedback(uuid.uuid4(), key="Foo")
+    session.request.assert_called_once()
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()

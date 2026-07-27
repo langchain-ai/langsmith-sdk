@@ -2148,6 +2148,26 @@ export class Client implements LangSmithTracingClientInterface {
     return serverInfo.instance_flags?.sdb_query_enabled === true;
   }
 
+  /**
+   * Throw on SmithDB-only deployments, warn elsewhere. Call only when run-level
+   * feedback has no sessionId.
+   */
+  private async _checkFeedbackSessionId(): Promise<void> {
+    const docs =
+      "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
+    const serverInfo = await this._ensureServerInfo();
+    if (serverInfo.instance_flags?.ch_query_enabled === false) {
+      throw new Error(
+        `sessionId must be provided when creating feedback for a run: this ` +
+          `deployment cannot locate the run without it. See ${docs}`,
+      );
+    }
+    warnOnce(
+      `Creating feedback for a run without sessionId is deprecated and will ` +
+        `stop working in a future release. See ${docs}`,
+    );
+  }
+
   protected async _getSettings() {
     if (!this.settings) {
       this.settings = this._get("/settings");
@@ -5094,9 +5114,16 @@ export class Client implements LangSmithTracingClientInterface {
       eager?: boolean;
       projectId?: string;
       comparativeExperimentId?: string;
-      /** The session (project) ID of the run this feedback is for. */
+      /**
+       * The session (project) ID of the run. Required for run-level feedback;
+       * omitting it is deprecated. See
+       * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+       */
       sessionId?: string;
-      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
+      /**
+       * The run's start time, ISO string or epoch ms. With sessionId and traceId,
+       * skips the server-side run lookup.
+       */
       startTime?: number | string;
       /** If false, create feedback without extending the trace's retention tier. */
       extendTraceRetention?: boolean;
@@ -5107,6 +5134,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
+    }
+    if (runId && sessionId === undefined) {
+      await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",
