@@ -1,0 +1,28 @@
+python/Makefile
+  s_72011fe0490cd0::t_9bcd665250f243 41-42,44,47
+  s_72011fe0490cd0::t_334b406e6137ed 56
+.github/actions/python-integration-tests/action.yml
+  s_72011fe0490cd0::t_0dfdc1c0acb980 82-83
+  s_72011fe0490cd0::t_f26583c8e0e4fc 98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2173be2f82bbc9f92cb38a0cfc39fbccf9d825f0",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_72011fe0490cd0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3982bd9b-61f2-4295-8e48-3fe116f4f91d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
