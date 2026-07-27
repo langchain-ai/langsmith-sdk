@@ -1,0 +1,21 @@
+js/package.json
+  s_e1fd8b3cc3faaa::t_31311c15e5cbbc 157
+js/pnpm-lock.yaml
+  s_e1fd8b3cc3faaa::t_047f761a9d49b9 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "20f3180214af0641b3d394847879fda198049b54",
+  "prompts": {},
+  "sessions": {
+    "s_e1fd8b3cc3faaa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aa414635-fb95-4f75-870f-f79eb4bdf21a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
