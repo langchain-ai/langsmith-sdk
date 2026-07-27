@@ -39,12 +39,12 @@ from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
+from langsmith._internal._backend_version import _check_sdk_compat
 from langsmith.client import (
     Client,
     _apply_auth_overrides,
     _apply_optional_api_key,
     _attachment_references_filesystem,
-    _check_backend_version,
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
@@ -79,17 +79,22 @@ def test_is_localhost() -> None:
         ("1.0.0", False),
         ("0.5.4rc1", False),
         ("0.4.4rc1", True),
-        ("not-a-version", True),
+        # Invalid versions are silently skipped (no warning) by _check_sdk_compat
+        ("not-a-version", False),
     ],
 )
 @mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
+@mock.patch("langsmith._internal._backend_version._sdk_compat_checked", False)
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
+    from langsmith.schemas import LangSmithInfo
+
+    info = LangSmithInfo(version=version)
     with caplog.at_level(
         logging.WARNING, logger="langsmith._internal._backend_version"
     ):
-        _check_backend_version(version)
+        _check_sdk_compat(info, "http://self-hosted.example.com")
     if expect_warning:
         assert caplog.records, f"expected a warning for version {version!r}"
     else:

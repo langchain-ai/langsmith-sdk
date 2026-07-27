@@ -33,10 +33,11 @@ def _check_sdk_compat(info: "LangSmithInfo", api_url: str) -> None:
     global _sdk_compat_checked
     if _sdk_compat_checked:
         return
-    _sdk_compat_checked = True
 
     if not _is_self_hosted(api_url):
         return
+
+    _sdk_compat_checked = True
 
     issues: list[str] = []
 
