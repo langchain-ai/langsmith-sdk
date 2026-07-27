@@ -36,10 +36,10 @@ import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._backend_version import _check_sdk_compat
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
-from langsmith._internal._backend_version import _check_sdk_compat
 from langsmith.client import (
     Client,
     _apply_auth_overrides,
