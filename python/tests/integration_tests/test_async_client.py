@@ -250,6 +250,8 @@ async def test_list_feedback(async_client: AsyncClient):
     project_name = "__test_list_feedback"
     run_id = uuid7()
 
+    project_id = (await async_client.read_project(project_name=project_name)).id
+
     await async_client.create_run(
         name="test_run",
         inputs={"input": "hello"},
@@ -266,6 +268,7 @@ async def test_list_feedback(async_client: AsyncClient):
             score=0.9,
             value=f"test_value_{i}",
             comment=f"test_comment_{i}",
+            session_id=project_id
         )
 
     async def check_feedbacks():
