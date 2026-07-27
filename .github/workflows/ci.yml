@@ -548,8 +548,12 @@ jobs:
               "v16-smithdb": "https://stable-smithdb.eks.smith.langchain.dev/api",
           }
           SHARD_TOTAL = 6
-          # SmithDB-only backends don't serve the legacy ClickHouse-backed endpoints.
-          SMITHDB_ONLY = {"v16-smithdb"}
+          # Markers to deselect per environment: SmithDB-only backends don't serve
+          # the legacy ClickHouse-backed endpoints, and V15 doesn't serve the v2 ones.
+          EXCLUDED_MARKERS = {
+              "v15-aks": ["require_v2"],
+              "v16-smithdb": ["require_clickhouse"],
+          }
 
           selected = os.environ.get("SELECTED_ENVIRONMENT", "").strip()
           if selected == "all":
@@ -561,14 +565,14 @@ jobs:
 
           include = []
           for environment in environments:
+              excluded = EXCLUDED_MARKERS.get(environment, [])
+              marker_expr = " and ".join(f"not {m}" for m in excluded)
               base = {
                   "environment": environment,
                   "endpoint": ENDPOINTS[environment],
                   # Keep the beta job names untouched so required checks still match.
                   "name_suffix": "" if environment == "beta" else f" [{environment}]",
-                  "pytest_addopts": (
-                      '-m "not require_clickhouse"' if environment in SMITHDB_ONLY else ""
-                  ),
+                  "pytest_addopts": f'-m "{marker_expr}"' if marker_expr else "",
               }
               for shard_index in range(SHARD_TOTAL):
                   include.append(

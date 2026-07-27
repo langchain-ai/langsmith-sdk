@@ -122,6 +122,7 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
+@pytest.mark.require_v2
 async def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
@@ -4256,6 +4257,7 @@ def v2_client() -> Client:
     return Client()
 
 
+@pytest.mark.require_v2
 async def test_runs_retrieve(v2_client: Client) -> None:
     import time as _time
 
@@ -4277,6 +4279,7 @@ async def test_runs_retrieve(v2_client: Client) -> None:
     _v2_cleanup_project(v2_client, project_name)
 
 
+@pytest.mark.require_v2
 async def test_runs_query(v2_client: Client) -> None:
     project_name = _v2_create_project_name("runs_query")
     trace_id, project_id, _ = _v2_post_trace(project_name)
