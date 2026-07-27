@@ -268,7 +268,7 @@ async def test_list_feedback(async_client: AsyncClient):
             score=0.9,
             value=f"test_value_{i}",
             comment=f"test_comment_{i}",
-            session_id=project_id
+            session_id=project_id,
         )
 
     async def check_feedbacks():
