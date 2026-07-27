@@ -154,7 +154,7 @@
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
     "p-queue": "6.6.2",
-    "semver": "^7.7.4"
+    "semver": "7.8.5"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.18",
