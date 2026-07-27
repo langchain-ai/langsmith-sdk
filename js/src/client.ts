@@ -87,6 +87,7 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
+import * as semver from "semver";
 import {
   raiseForStatus,
   isLangSmithNotFoundError,
@@ -2125,22 +2126,15 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
 
-    const parseVer = (v: string) => v.split(".").map((s) => parseInt(s, 10));
-    const isOlder = (a: number[], b: number[]) =>
-      a[0] < b[0] ||
-      (a[0] === b[0] && a[1] < b[1]) ||
-      (a[0] === b[0] && a[1] === b[1] && a[2] < b[2]);
-    const isNewer = (a: number[], b: number[]) => isOlder(b, a);
-    const validVer = (parts: number[]) => parts.every((p) => !isNaN(p));
-
     const issues: string[] = [];
 
     // Backend version < SDK minimum.
+    // Use coerce to tolerate non-standard backend version strings like "0.16.14rc1".
     const backendVersion = serverInfo?.version;
     if (backendVersion) {
-      const bParts = parseVer(backendVersion);
-      const minParts = parseVer(_MIN_BACKEND_VERSION);
-      if (validVer(bParts) && validVer(minParts) && isOlder(bParts, minParts)) {
+      const bVer = semver.coerce(backendVersion);
+      const minVer = semver.coerce(_MIN_BACKEND_VERSION);
+      if (bVer && minVer && semver.lt(bVer, minVer)) {
         issues.push(
           `backend version ${JSON.stringify(backendVersion)} is older than the minimum required by this SDK (${JSON.stringify(_MIN_BACKEND_VERSION)})`,
         );
@@ -2148,11 +2142,16 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     // SDK version > backend maximum.
+    // Both __version__ and maxSdkVersion are expected to be valid semver, which
+    // ensures prerelease versions (e.g. "0.8.6-rc.1") compare correctly: a stable
+    // "0.8.6" is greater than "0.8.6-rc.1" per the SemVer spec.
     const maxSdkVersion = serverInfo?.sdk_versions?.max_js_sdk_version;
     if (maxSdkVersion) {
-      const curParts = parseVer(__version__);
-      const maxParts = parseVer(maxSdkVersion);
-      if (validVer(curParts) && validVer(maxParts) && isNewer(curParts, maxParts)) {
+      if (
+        semver.valid(__version__) &&
+        semver.valid(maxSdkVersion) &&
+        semver.gt(__version__, maxSdkVersion)
+      ) {
         issues.push(
           `SDK version ${JSON.stringify(__version__)} is newer than the maximum supported by this backend (${JSON.stringify(maxSdkVersion)}); consider using SDK version ${JSON.stringify(maxSdkVersion)}`,
         );

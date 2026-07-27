@@ -9,6 +9,7 @@ import {
   mergeRuntimeEnvIntoRun,
   _checkBackendVersion,
 } from "../client.js";
+import * as semver from "semver";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
@@ -1736,5 +1737,65 @@ describe("_checkBackendVersion", () => {
     } else {
       expect(warnSpy).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("_checkSdkCompat", () => {
+  let warnSpy: ReturnType<typeof jest.spyOn>;
+
+  const makeClient = () =>
+    new Client({ apiUrl: "http://self-hosted.example.com", apiKey: "test" });
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it("skips warning for langchain.com backends", () => {
+    const client = new Client({
+      apiUrl: "https://api.smith.langchain.com",
+      apiKey: "test",
+    });
+    (client as any)._checkSdkCompat({
+      sdk_versions: { max_js_sdk_version: "0.0.1" },
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("warns when SDK version exceeds stable max", () => {
+    const client = makeClient();
+    (client as any)._checkSdkCompat({
+      sdk_versions: { max_js_sdk_version: "0.0.1" },
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("newer than the maximum supported"),
+    );
+  });
+
+  it("semver correctly orders stable vs prerelease (regression for parseInt bug)", () => {
+    // The old parseInt-based parser treated "0.8.6-rc.1" as [0,8,6], same as
+    // "0.8.6", so no warning was emitted when stable exceeded a prerelease max.
+    expect(semver.gt("0.8.6", "0.8.6-rc.1")).toBe(true);
+    expect(semver.gt("0.8.6-rc.1", "0.8.6")).toBe(false);
+    expect(semver.gt("0.8.6-rc.2", "0.8.6-rc.1")).toBe(true);
+  });
+
+  it("warns when backend version is older than minimum", () => {
+    const client = makeClient();
+    (client as any)._checkSdkCompat({ version: "0.0.1" });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("older than the minimum required"),
+    );
+  });
+
+  it("does not warn when versions are within bounds", () => {
+    const client = makeClient();
+    (client as any)._checkSdkCompat({
+      sdk_versions: { max_js_sdk_version: "999.0.0" },
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
