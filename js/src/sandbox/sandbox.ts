@@ -496,8 +496,9 @@ export class Sandbox {
    */
   async stop(): Promise<void> {
     await this._client.stopSandbox(this.name);
+    // dataplane_url stays set: it is stable across stop/start and a request on
+    // it resumes the sandbox.
     this.status = "stopped";
-    this.dataplane_url = undefined;
   }
 
   /**

@@ -2437,7 +2437,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     expect(sandbox.dataplane_url).toBe("https://dp.example.com/my-vm");
   });
 
-  it("stop should set status to stopped and clear dataplane_url", async () => {
+  it("stop should set status to stopped and keep dataplane_url", async () => {
     const mockClient = createMockClient({
       stopSandbox: jest
         .fn<(name: string) => Promise<void>>()
@@ -2456,7 +2456,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     await sandbox.stop();
 
     expect(sandbox.status).toBe("stopped");
-    expect(sandbox.dataplane_url).toBeUndefined();
+    expect(sandbox.dataplane_url).toBe("https://dp.example.com/my-vm");
   });
 
   it("captureSnapshot should delegate to client", async () => {

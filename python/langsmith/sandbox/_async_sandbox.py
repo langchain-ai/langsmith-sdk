@@ -752,8 +752,9 @@ class AsyncSandbox:
             SandboxClientError: For other errors.
         """
         await self._client.stop_sandbox(self.name, headers=headers)
+        # dataplane_url stays set: it is stable across stop/start and a request
+        # on it resumes the sandbox.
         self.status = "stopped"
-        self.dataplane_url = None
 
     async def delete(self, *, headers: RequestHeaders = None) -> None:
         """Delete this sandbox.
