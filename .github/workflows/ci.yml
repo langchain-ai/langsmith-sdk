@@ -16,6 +16,17 @@ on:
         description: "Run JS integration tests"
         default: "true"
         required: false
+      python-integration-environment:
+        description: "Environment to run the Python integration tests and evals against"
+        type: choice
+        default: "beta"
+        required: false
+        options:
+          - beta
+          - v15-aks
+          - v16-dual
+          - v16-smithdb
+          - all
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -503,8 +514,11 @@ jobs:
             echo "js_changed=false" >> $GITHUB_OUTPUT
           fi
 
-  python-integration:
-    name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}"
+  # Builds the python-integration matrix so a workflow_dispatch run can target
+  # one (or all) of the LangSmith environments. Anything other than a dispatch
+  # keeps the previous behavior: beta only.
+  python-integration-matrix:
+    name: "Python Integration Matrix"
     needs: integration-changes
     if: >
       (github.event_name == 'push') ||
@@ -514,34 +528,62 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-integration == 'true')
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+    steps:
+      - name: Build matrix
+        id: build-matrix
+        env:
+          SELECTED_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.python-integration-environment || 'beta' }}
+        run: |
+          python3 <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          # Allowlist: anything unrecognized falls back to beta.
+          ENDPOINTS = {
+              "beta": "https://beta.api.smith.langchain.com",
+              "v15-aks": "https://aks.smith.langchain.dev/api",
+              "v16-dual": "https://stable-dual.eks.smith.langchain.dev/api",
+              "v16-smithdb": "https://stable-smithdb.eks.smith.langchain.dev/api",
+          }
+          SHARD_TOTAL = 6
+
+          selected = os.environ.get("SELECTED_ENVIRONMENT", "").strip()
+          if selected == "all":
+              environments = list(ENDPOINTS)
+          elif selected in ENDPOINTS:
+              environments = [selected]
+          else:
+              environments = ["beta"]
+
+          include = []
+          for environment in environments:
+              base = {
+                  "environment": environment,
+                  "endpoint": ENDPOINTS[environment],
+                  # Keep the beta job names untouched so required checks still match.
+                  "name_suffix": "" if environment == "beta" else f" [{environment}]",
+              }
+              for shard_index in range(SHARD_TOTAL):
+                  include.append(
+                      {**base, "test-type": "integration", "shard_total": SHARD_TOTAL, "shard_index": shard_index}
+                  )
+              include.append({**base, "test-type": "evals", "shard_total": "", "shard_index": ""})
+              # Doctests don't exercise the backend, so run them once against beta.
+              if environment == "beta":
+                  include.append({**base, "test-type": "doctest", "shard_total": "", "shard_index": ""})
+
+          print("matrix=" + json.dumps({"include": include}))
+          EOF
+
+  python-integration:
+    name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}${{ matrix.name_suffix }}"
+    needs: [integration-changes, python-integration-matrix]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - test-type: integration
-            shard_total: 6
-            shard_index: 0
-          - test-type: integration
-            shard_total: 6
-            shard_index: 1
-          - test-type: integration
-            shard_total: 6
-            shard_index: 2
-          - test-type: integration
-            shard_total: 6
-            shard_index: 3
-          - test-type: integration
-            shard_total: 6
-            shard_index: 4
-          - test-type: integration
-            shard_total: 6
-            shard_index: 5
-          - test-type: doctest
-            shard_total: ""
-            shard_index: ""
-          - test-type: evals
-            shard_total: ""
-            shard_index: ""
+      matrix: ${{ fromJSON(needs.python-integration-matrix.outputs.matrix) }}
     defaults:
       run:
         working-directory: python
@@ -551,7 +593,13 @@ jobs:
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v15-aks' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
