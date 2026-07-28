@@ -7788,8 +7788,7 @@ class Client:
                 feedback; omitting it is deprecated. See
                 https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
             start_time (Optional[datetime]):
-                The start time of the run. With `session_id` and `trace_id`, skips
-                the server-side run lookup.
+                The start time of the run. Better performance if provided.
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.

@@ -5121,8 +5121,7 @@ export class Client implements LangSmithTracingClientInterface {
        */
       sessionId?: string;
       /**
-       * The run's start time, ISO string or epoch ms. With sessionId and traceId,
-       * skips the server-side run lookup.
+       * The run's start time, ISO string or epoch ms. Better performance if provided.
        */
       startTime?: number | string;
       /** If false, create feedback without extending the trace's retention tier. */

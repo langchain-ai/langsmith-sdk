@@ -1030,8 +1030,7 @@ class AsyncClient:
             session_id: The project ID of the run. Required for run-level feedback;
                 omitting it is deprecated. See
                 https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
-            start_time: The start time of the run. With `session_id` and `trace_id`,
-                skips the server-side run lookup.
+            start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
