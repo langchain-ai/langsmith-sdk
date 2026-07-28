@@ -85,7 +85,6 @@ import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -718,37 +717,6 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
-export function _checkBackendVersion(
-  version: string,
-  minVersion: string = _MIN_BACKEND_VERSION,
-): void {
-  const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
-  const [maj, min, pat] = parse(version);
-  const [rMaj, rMin, rPat] = parse(minVersion);
-  if (
-    isNaN(maj) ||
-    isNaN(min) ||
-    isNaN(pat) ||
-    isNaN(rMaj) ||
-    isNaN(rMin) ||
-    isNaN(rPat)
-  ) {
-    console.warn(
-      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(version)} for compatibility check.`,
-    );
-    return;
-  }
-  if (
-    maj < rMaj ||
-    (maj === rMaj && min < rMin) ||
-    (maj === rMaj && min === rMin && pat < rPat)
-  ) {
-    console.warn(
-      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
-    );
-  }
-}
-
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 
 /** Default maximum memory (1GB) for queue size limits. */
@@ -933,8 +901,6 @@ export class Client implements LangSmithTracingClientInterface {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
-
-  private _stainlessVersionChecked = false;
 
   private manualFlushMode = false;
 
@@ -1482,36 +1448,30 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
-    this._checkStainlessVersion();
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
-    this._checkStainlessVersion();
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
-    this._checkStainlessVersion();
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
-    this._checkStainlessVersion();
     return this.openAPIClient.datasets;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
-    this._checkStainlessVersion();
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
-    this._checkStainlessVersion();
     return this.openAPIClient.traces;
   }
 
@@ -2105,20 +2065,6 @@ export class Client implements LangSmithTracingClientInterface {
       );
     }
     return json;
-  }
-
-  private _checkStainlessVersion(): void {
-    if (this._stainlessVersionChecked) return;
-    this._stainlessVersionChecked = true;
-    this._ensureServerInfo()
-      .then((serverInfo) => {
-        if (serverInfo?.version) {
-          _checkBackendVersion(serverInfo.version);
-        }
-      })
-      .catch(() => {
-        // _ensureServerInfo handles and logs its own errors
-      });
   }
 
   protected async _ensureServerInfo() {
