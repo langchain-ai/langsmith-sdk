@@ -16,8 +16,8 @@ on:
         description: "Run JS integration tests"
         default: "true"
         required: false
-      python-integration-environment:
-        description: "Environment to run the Python integration tests and evals against"
+      integration-environment:
+        description: "Environment to run the Python and JS integration tests and evals against"
         type: choice
         default: "beta"
         required: false
@@ -530,27 +530,32 @@ jobs:
             echo "js_changed=false" >> $GITHUB_OUTPUT
           fi
 
-  # Builds the python-integration matrix so a workflow_dispatch run can target
-  # one (or all) of the LangSmith environments. Anything other than a dispatch
-  # keeps the previous behavior: beta only.
-  python-integration-matrix:
-    name: "Python Integration Matrix"
+  # Builds the Python and JS integration matrices so a workflow_dispatch run can
+  # target one (or all) of the LangSmith environments. Anything other than a
+  # dispatch keeps the previous behavior: beta only.
+  integration-matrix:
+    name: "Integration Matrix"
     needs: integration-changes
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
-        needs.integration-changes.outputs.python_changed == 'true'
+        needs.integration-changes.outputs.python_changed == 'true' ||
+        needs.integration-changes.outputs.js_changed == 'true'
       )) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-integration == 'true')
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.run-python-integration == 'true' ||
+        github.event.inputs.run-js-integration == 'true'
+      ))
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      python_matrix: ${{ steps.build-matrix.outputs.python_matrix }}
+      js_matrix: ${{ steps.build-matrix.outputs.js_matrix }}
     steps:
       - name: Build matrix
         id: build-matrix
         env:
-          SELECTED_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.python-integration-environment || 'beta' }}
+          SELECTED_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.integration-environment || 'beta' }}
         run: |
           python3 <<'EOF' >> "$GITHUB_OUTPUT"
           import json
@@ -579,36 +584,51 @@ jobs:
           else:
               environments = ["beta"]
 
-          include = []
+          python_include = []
+          js_include = []
           for environment in environments:
               excluded = EXCLUDED_MARKERS.get(environment, [])
               marker_expr = " and ".join(f"not {m}" for m in excluded)
+              # Keep the beta job names untouched so required checks still match.
+              name_suffix = "" if environment == "beta" else f" [{environment}]"
               base = {
                   "environment": environment,
                   "endpoint": ENDPOINTS[environment],
-                  # Keep the beta job names untouched so required checks still match.
-                  "name_suffix": "" if environment == "beta" else f" [{environment}]",
-                  "pytest_addopts": f'-m "{marker_expr}"' if marker_expr else "",
+                  "name_suffix": name_suffix,
               }
+              python_base = {**base, "pytest_addopts": f'-m "{marker_expr}"' if marker_expr else ""}
               for shard_index in range(SHARD_TOTAL):
-                  include.append(
-                      {**base, "test-type": "integration", "shard_total": SHARD_TOTAL, "shard_index": shard_index}
+                  python_include.append(
+                      {**python_base, "test-type": "integration", "shard_total": SHARD_TOTAL, "shard_index": shard_index}
                   )
-              include.append({**base, "test-type": "evals", "shard_total": "", "shard_index": ""})
+              python_include.append({**python_base, "test-type": "evals", "shard_total": "", "shard_index": ""})
               # Doctests don't exercise the backend, so run them once against beta.
               if environment == "beta":
-                  include.append({**base, "test-type": "doctest", "shard_total": "", "shard_index": ""})
+                  python_include.append({**python_base, "test-type": "doctest", "shard_total": "", "shard_index": ""})
+              # Jest has no marker system, so the JS suite runs whole against every
+              # environment: one integration job and one eval job each.
+              js_include.append(base)
 
-          print("matrix=" + json.dumps({"include": include}))
+          print("python_matrix=" + json.dumps({"include": python_include}))
+          print("js_matrix=" + json.dumps({"include": js_include}))
           EOF
 
   python-integration:
     name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}${{ matrix.name_suffix }}"
-    needs: [integration-changes, python-integration-matrix]
+    needs: [integration-changes, integration-matrix]
+    # The matrix job is shared with JS, so it no longer skips on a JS-only
+    # change: gate the Python shards on the Python conditions here instead.
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        needs.integration-changes.outputs.python_changed == 'true'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-integration == 'true')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.python-integration-matrix.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.python_matrix) }}
     defaults:
       run:
         working-directory: python
@@ -637,8 +657,8 @@ jobs:
           shard-index: ${{ matrix.shard_index }}
 
   js-integration:
-    name: "JS Integration Test"
-    needs: integration-changes
+    name: "JS Integration Test${{ matrix.name_suffix }}"
+    needs: [integration-changes, integration-matrix]
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
@@ -647,6 +667,9 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.js_matrix) }}
     defaults:
       run:
         working-directory: js
@@ -670,14 +693,20 @@ jobs:
           node-version: 24.x
           # Push/PR runs report every failure; a dispatch can ask for --bail.
           exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v15' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   js-vitest-eval:
-    name: "JS Vitest Runner Test"
-    needs: integration-changes
+    name: "JS Vitest Runner Test${{ matrix.name_suffix }}"
+    needs: [integration-changes, integration-matrix]
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
@@ -686,6 +715,9 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.js_matrix) }}
     defaults:
       run:
         working-directory: js
@@ -708,7 +740,13 @@ jobs:
         with:
           node-version: 24.x
           exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v15' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   bun-test:
@@ -761,7 +799,7 @@ jobs:
       - python-deepagent-compat
       # Integration
       - integration-changes
-      - python-integration-matrix
+      - integration-matrix
       - python-integration
       - js-integration
       - js-vitest-eval
