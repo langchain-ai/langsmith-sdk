@@ -1,0 +1,25 @@
+python/tests/unit_tests/test_v2_migration_utils.py
+  s_a9a0f97f0d8387::t_befbd1d5b7cac0 216-271
+  s_a9a0f97f0d8387::t_894090a6ebd31b 8-14
+python/langsmith/client.py
+  s_a9a0f97f0d8387::t_a5d612f2aa02e7 5254,5256,5260
+  s_a9a0f97f0d8387::t_edce765d748ca5 4054
+  s_a9a0f97f0d8387::t_f2d0a990d3e84c 5228-5233
+  s_a9a0f97f0d8387::t_48464626ad326f 5176-5214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "32bc24f74281c0263b07dfd58db0cf904aec002b",
+  "prompts": {},
+  "sessions": {
+    "s_a9a0f97f0d8387": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f0b89430-e925-48d6-9a0b-6b351abb811b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
