@@ -35,6 +35,14 @@ on:
         options:
           - "true"
           - "false"
+      js-integration-exit-first:
+        description: "Stop the JS integration and eval runs at their first failure (--bail)"
+        type: choice
+        default: "false"
+        required: false
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -660,6 +668,8 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 24.x
+          # Push/PR runs report every failure; a dispatch can ask for --bail.
+          exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
@@ -697,6 +707,7 @@ jobs:
         uses: ./.github/actions/js-vitest-eval-test
         with:
           node-version: 24.x
+          exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
