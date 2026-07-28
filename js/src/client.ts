@@ -572,6 +572,8 @@ export type CreateFeedbackOptions = {
 
 /** @deprecated Pass all params within an object and populate sessionId. */
 export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
+  /** @deprecated This option is no longer used. */
+  eager?: boolean;
   /**
    * The session (project) ID of the run. Required for run-level feedback;
    * omitting it is deprecated. See
