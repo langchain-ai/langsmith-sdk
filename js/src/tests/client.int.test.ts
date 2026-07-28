@@ -28,6 +28,7 @@ import {
   waitUntil,
   skipIfTransientError,
 } from "./utils.js";
+import { requiresBetaDataset } from "./utils/markers.js";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
@@ -1148,44 +1149,52 @@ test("Test pull prompt include model", async () => {
   }
 });
 
-test("list shared examples can list shared examples", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const multiverseMathPublicDatasetShareToken =
-    "cce9c8a9-761a-4756-b159-58ed2640e274";
-  const sharedExamples = await client.listSharedExamples(
-    multiverseMathPublicDatasetShareToken,
-  );
-  expect(sharedExamples.length).toBeGreaterThan(0);
-});
+// The share token below only resolves on the beta tenant.
+requiresBetaDataset.test(
+  "list shared examples can list shared examples",
+  async () => {
+    const client = new Client({ callerOptions: { maxRetries: 6 } });
+    const multiverseMathPublicDatasetShareToken =
+      "cce9c8a9-761a-4756-b159-58ed2640e274";
+    const sharedExamples = await client.listSharedExamples(
+      multiverseMathPublicDatasetShareToken,
+    );
+    expect(sharedExamples.length).toBeGreaterThan(0);
+  },
+);
 
-test("clonePublicDataset method can clone a dataset", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const datasetName = "multiverse_math_public_testing";
-  const multiverseMathPublicDatasetURL =
-    "https://beta.smith.langchain.com/public/cce9c8a9-761a-4756-b159-58ed2640e274/d";
+// Clones from a beta.smith.langchain.com public URL, absent on self-hosted.
+requiresBetaDataset.test(
+  "clonePublicDataset method can clone a dataset",
+  async () => {
+    const client = new Client({ callerOptions: { maxRetries: 6 } });
+    const datasetName = "multiverse_math_public_testing";
+    const multiverseMathPublicDatasetURL =
+      "https://beta.smith.langchain.com/public/cce9c8a9-761a-4756-b159-58ed2640e274/d";
 
-  try {
-    await client.clonePublicDataset(multiverseMathPublicDatasetURL, {
-      datasetName,
-    });
-
-    const clonedDataset = await client.hasDataset({ datasetName });
-    expect(clonedDataset).toBe(true);
-
-    const examples: Example[] = [];
-    for await (const ex of client.listExamples({ datasetName })) {
-      examples.push(ex);
-    }
-    expect(examples.length).toBeGreaterThan(0);
-  } finally {
     try {
-      // Attempt to remove the newly created dataset if successful.
-      await client.deleteDataset({ datasetName });
-    } catch (_) {
-      // no-op if failure
+      await client.clonePublicDataset(multiverseMathPublicDatasetURL, {
+        datasetName,
+      });
+
+      const clonedDataset = await client.hasDataset({ datasetName });
+      expect(clonedDataset).toBe(true);
+
+      const examples: Example[] = [];
+      for await (const ex of client.listExamples({ datasetName })) {
+        examples.push(ex);
+      }
+      expect(examples.length).toBeGreaterThan(0);
+    } finally {
+      try {
+        // Attempt to remove the newly created dataset if successful.
+        await client.deleteDataset({ datasetName });
+      } catch (_) {
+        // no-op if failure
+      }
     }
-  }
-});
+  },
+);
 
 test("annotationqueue crud", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });

@@ -575,6 +575,13 @@ jobs:
               "v15": ["require_v2"],
               "v16-smithdb": ["require_clickhouse"],
           }
+          # The JS suite carries the same two markers plus require_beta_dataset for
+          # the tests pinned to a share token that only the beta tenant resolves.
+          JS_EXCLUDED_MARKERS = {
+              environment: markers + ["require_beta_dataset"]
+              for environment, markers in
+              [(e, EXCLUDED_MARKERS.get(e, [])) for e in ENDPOINTS if e != "beta"]
+          }
 
           selected = os.environ.get("SELECTED_ENVIRONMENT", "").strip()
           if selected == "all":
@@ -605,9 +612,11 @@ jobs:
               # Doctests don't exercise the backend, so run them once against beta.
               if environment == "beta":
                   python_include.append({**python_base, "test-type": "doctest", "shard_total": "", "shard_index": ""})
-              # Jest has no marker system, so the JS suite runs whole against every
-              # environment: one integration job and one eval job each.
-              js_include.append(base)
+              # Jest has no marker expression, so the exclusions travel as an env
+              # var that src/tests/utils/markers.ts reads. No shards on the JS side.
+              js_include.append(
+                  {**base, "exclude_markers": ",".join(JS_EXCLUDED_MARKERS.get(environment, []))}
+              )
 
           print("python_matrix=" + json.dumps({"include": python_include}))
           print("js_matrix=" + json.dumps({"include": js_include}))
@@ -700,6 +709,7 @@ jobs:
              || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
              || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
              || '' }}
+          exclude-markers: ${{ matrix.exclude_markers }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

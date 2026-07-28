@@ -8,6 +8,10 @@ inputs:
     description: "Stop at the first failing test (--bail). Defaults to off so a run reports every failure."
     required: false
     default: "false"
+  exclude-markers:
+    description: "Comma-separated markers to skip, e.g. require_v2 for deployments that don't serve the v2 endpoints"
+    required: false
+    default: ""
   langsmith-endpoint:
     description: "LangSmith API endpoint to run the tests against"
     required: false
@@ -20,6 +24,9 @@ inputs:
     required: false
   gemini-api-key:
     description: "Gemini API key"
+    required: false
+  anthropic-api-key:
+    description: "Anthropic API key"
     required: false
 runs:
   using: "composite"
@@ -63,6 +70,7 @@ runs:
       working-directory: js
       env:
         JEST_BAIL: ${{ inputs.exit-first == 'true' && '--bail' || '' }}
+        LANGSMITH_TEST_EXCLUDE_MARKERS: ${{ inputs.exclude-markers }}
         LANGSMITH_TRACING_V2: "true"
         LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
         LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
