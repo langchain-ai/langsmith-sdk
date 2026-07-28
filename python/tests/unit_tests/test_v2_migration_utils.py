@@ -5,7 +5,13 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from langsmith._internal._v2_migration_utils import _v2_run_to_schema
+import pytest
+
+from langsmith._internal._v2_migration_utils import (
+    QueryBackend,
+    _v2_run_to_schema,
+    get_query_backend,
+)
 
 
 def _make_v2_run(**kwargs):
@@ -207,3 +213,59 @@ def test_app_path_passed_through():
     path = "/o/my-org/projects/p/abc123/r/run-id"
     result = _v2_run_to_schema(_make_v2_run(app_path=path))
     assert result.app_path == path
+
+
+# ---------------------------------------------------------------------------
+# get_query_backend
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("instance_flags", "expected"),
+    [
+        # Absent flags: ch_query_enabled defaults to enabled (older backends
+        # predate the flag), sdb_query_enabled defaults to disabled.
+        (None, QueryBackend.CLICKHOUSE_ONLY),
+        ({}, QueryBackend.CLICKHOUSE_ONLY),
+        ({"ch_query_enabled": True}, QueryBackend.CLICKHOUSE_ONLY),
+        ({"sdb_query_enabled": False}, QueryBackend.CLICKHOUSE_ONLY),
+        # Only sdb_query_enabled present, so ClickHouse stays on by default.
+        ({"sdb_query_enabled": True}, QueryBackend.DUAL),
+        # Both flags explicit.
+        (
+            {"ch_query_enabled": True, "sdb_query_enabled": False},
+            QueryBackend.CLICKHOUSE_ONLY,
+        ),
+        ({"ch_query_enabled": True, "sdb_query_enabled": True}, QueryBackend.DUAL),
+        (
+            {"ch_query_enabled": False, "sdb_query_enabled": True},
+            QueryBackend.SMITHDB_ONLY,
+        ),
+        # Neither backend serves queries: fall back to the legacy path rather
+        # than routing to a backend that is explicitly off.
+        (
+            {"ch_query_enabled": False, "sdb_query_enabled": False},
+            QueryBackend.CLICKHOUSE_ONLY,
+        ),
+        # Unrelated flags are ignored.
+        ({"some_other_flag": True}, QueryBackend.CLICKHOUSE_ONLY),
+    ],
+)
+def test_get_query_backend(instance_flags, expected):
+    assert get_query_backend(instance_flags) == expected
+
+
+@pytest.mark.parametrize(
+    ("ch_value", "sdb_value", "expected"),
+    [
+        # Values are coerced with bool(), so falsy/truthy non-bools work too.
+        (0, 1, QueryBackend.SMITHDB_ONLY),
+        (None, True, QueryBackend.SMITHDB_ONLY),
+        ("", "yes", QueryBackend.SMITHDB_ONLY),
+        (1, 1, QueryBackend.DUAL),
+        (1, 0, QueryBackend.CLICKHOUSE_ONLY),
+    ],
+)
+def test_get_query_backend_coerces_non_bool_flags(ch_value, sdb_value, expected):
+    flags = {"ch_query_enabled": ch_value, "sdb_query_enabled": sdb_value}
+    assert get_query_backend(flags) == expected
