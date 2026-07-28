@@ -66,6 +66,36 @@ async function countProjectRuns(
   }
 }
 
+/**
+ * Resolves a run's trace id, preferring the v2 read path.
+ *
+ * SmithDB answers the legacy single-run read with 501, so `readRun` is only a
+ * fallback for deployments without the v2 runs endpoints. Callers create root
+ * runs, whose trace id is the run id itself — the last resort.
+ */
+export async function resolveTraceId(
+  client: Client,
+  runId: string,
+  projectId: string,
+): Promise<string> {
+  try {
+    const run = await client.runs.retrieve(runId, {
+      project_id: projectId,
+      selects: ["TRACE_ID"],
+    });
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the legacy endpoint.
+  }
+  try {
+    const run = await client.readRun(runId);
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the run id.
+  }
+  return runId;
+}
+
 export async function pollRunsUntilCount(
   client: Client,
   projectName: string,
