@@ -23,10 +23,18 @@ on:
         required: false
         options:
           - beta
-          - v15-aks
+          - v15
           - v16-dual
           - v16-smithdb
           - all
+      python-integration-exit-first:
+        description: "Stop each Python integration shard at its first failure (-x)"
+        type: choice
+        default: "true"
+        required: false
+        options:
+          - "true"
+          - "false"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -543,7 +551,7 @@ jobs:
           # Allowlist: anything unrecognized falls back to beta.
           ENDPOINTS = {
               "beta": "https://beta.api.smith.langchain.com",
-              "v15-aks": "https://aks.smith.langchain.dev/api",
+              "v15": "https://aks.smith.langchain.dev/api",
               "v16-dual": "https://stable-dual.eks.smith.langchain.dev/api",
               "v16-smithdb": "https://stable-smithdb.eks.smith.langchain.dev/api",
           }
@@ -551,7 +559,7 @@ jobs:
           # Markers to deselect per environment: SmithDB-only backends don't serve
           # the legacy ClickHouse-backed endpoints, and V15 doesn't serve the v2 ones.
           EXCLUDED_MARKERS = {
-              "v15-aks": ["require_v2"],
+              "v15": ["require_v2"],
               "v16-smithdb": ["require_clickhouse"],
           }
 
@@ -604,12 +612,14 @@ jobs:
           python-version: 3.11
           langsmith-endpoint: ${{ matrix.endpoint }}
           langsmith-api-key: >-
-            ${{ (matrix.environment == 'v15-aks' && secrets.LANGSMITH_API_KEY_AKS_V15)
+            ${{ (matrix.environment == 'v15' && secrets.LANGSMITH_API_KEY_AKS_V15)
              || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
              || (matrix.environment == 'v16-smithdb' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
              || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
              || '' }}
           pytest-addopts: ${{ matrix.pytest_addopts }}
+          # Push/PR runs keep -x; a dispatch can clear it to see every failure.
+          exit-first: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.python-integration-exit-first == 'true' }}
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
