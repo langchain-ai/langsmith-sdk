@@ -549,6 +549,56 @@ type RecordStringAny = Record<string, any>;
 
 export type FeedbackSourceType = "model" | "api" | "app";
 
+export type CreateFeedbackOptions = {
+  /** The metric name, tag, or aspect to provide feedback on. */
+  key: string;
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object;
+  comment?: string;
+  sourceInfo?: object;
+  feedbackSourceType?: FeedbackSourceType;
+  feedbackConfig?: FeedbackConfig;
+  sourceRunId?: string;
+  feedbackId?: string;
+  comparativeExperimentId?: string;
+  /**
+   * The run's start time, ISO string or epoch ms. Better performance if provided.
+   */
+  startTime?: number | string;
+  /** If false, create feedback without extending the trace's retention tier. */
+  extendTraceRetention?: boolean;
+};
+
+/** @deprecated Pass all params within an object and populate sessionId. */
+export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
+  /**
+   * The session (project) ID of the run. Required for run-level feedback;
+   * omitting it is deprecated. See
+   * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+   */
+  sessionId?: string;
+  /** The project (or experiment) to provide feedback on, for session-level feedback. */
+  projectId?: string;
+};
+
+export type CreateFeedbackParams = CreateFeedbackOptions &
+  (
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** The session (project) ID of the run. */
+        sessionId: string;
+        projectId?: never;
+      }
+    | {
+        runId?: null;
+        /** The project (or experiment) to provide feedback on. */
+        projectId: string;
+        sessionId?: never;
+      }
+  );
+
 export type CreateExampleOptions = {
   /** The ID of the dataset to create the example in. */
   datasetId?: string;
@@ -5083,10 +5133,21 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  public async createFeedback(params: CreateFeedbackParams): Promise<Feedback>;
+  /** @deprecated Pass all params within an object and populate sessionId. */
   public async createFeedback(
     runId: string | null,
     key: string,
-    {
+    options: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback>;
+  public async createFeedback(
+    runIdOrParams: string | null | CreateFeedbackParams,
+    keyArg?: string,
+    optionsArg?: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback> {
+    const {
+      runId = null,
+      key,
       score,
       value,
       correction,
@@ -5101,33 +5162,9 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
-    }: {
-      score?: ScoreType;
-      value?: ValueType;
-      correction?: object;
-      comment?: string;
-      sourceInfo?: object;
-      feedbackSourceType?: FeedbackSourceType;
-      feedbackConfig?: FeedbackConfig;
-      sourceRunId?: string;
-      feedbackId?: string;
-      eager?: boolean;
-      projectId?: string;
-      comparativeExperimentId?: string;
-      /**
-       * The session (project) ID of the run. Required for run-level feedback;
-       * omitting it is deprecated. See
-       * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
-       */
-      sessionId?: string;
-      /**
-       * The run's start time, ISO string or epoch ms. Better performance if provided.
-       */
-      startTime?: number | string;
-      /** If false, create feedback without extending the trace's retention tier. */
-      extendTraceRetention?: boolean;
-    },
-  ): Promise<Feedback> {
+    } = typeof runIdOrParams === "object" && runIdOrParams !== null
+      ? runIdOrParams
+      : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }

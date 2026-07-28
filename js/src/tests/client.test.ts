@@ -128,6 +128,28 @@ describe("Client", () => {
       });
     });
 
+    it("accepts the params-object overload, which requires sessionId", async () => {
+      const { client, paths } = infoClient(false);
+
+      await client.createFeedback({
+        runId: "550e8400-e29b-41d4-a716-446655440000",
+        key: "Foo",
+        score: 1,
+        sessionId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+      // sessionId came from the params, so /info was never consulted.
+      expect(paths()).toEqual(["/feedback"]);
+
+      await client.createFeedback({
+        key: "Foo",
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+
+      // @ts-expect-error sessionId is required alongside runId.
+      await client.createFeedback({ runId: "x", key: "Foo" }).catch(() => {});
+    });
+
     it("warns without a sessionId on other deployments", async () => {
       const { client, paths } = infoClient(true);
       // warnOnce dedupes per process, so this must be the only test that warns.
