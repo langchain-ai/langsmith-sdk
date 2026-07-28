@@ -36,16 +36,22 @@ export async function waitUntil(
 }
 
 /**
- * Counts the runs in a project, preferring the v2 read path.
+ * Counts the runs in a project.
  *
- * SmithDB-only backends don't serve `listRuns`, so waiting for ingestion through
- * it never settles there; deployments without the v2 runs endpoints (V15) fall
- * back to the legacy one.
+ * `listRuns` comes first so environments that serve it keep the exact behavior
+ * they had before; SmithDB-only backends don't serve it and never settle, so
+ * they fall through to the v2 read path.
  */
 async function countProjectRuns(
   client: Client,
   projectName: string,
 ): Promise<number | null> {
+  try {
+    const count = (await toArray(client.listRuns({ projectName }))).length;
+    if (count > 0) return count;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
   try {
     const { id } = await client.readProject({ projectName });
     let count = 0;
@@ -55,23 +61,19 @@ async function countProjectRuns(
     })) {
       count++;
     }
-    if (count > 0) return count;
-  } catch (_e) {
-    // Fall through to the legacy endpoint.
-  }
-  try {
-    return (await toArray(client.listRuns({ projectName }))).length;
+    return count;
   } catch (_e) {
     return null;
   }
 }
 
 /**
- * Resolves a run's trace id, preferring the v2 read path.
+ * Resolves a run's trace id.
  *
- * SmithDB answers the legacy single-run read with 501, so `readRun` is only a
- * fallback for deployments without the v2 runs endpoints. Callers create root
- * runs, whose trace id is the run id itself — the last resort.
+ * `readRun` comes first to keep the previous behavior where it works; SmithDB
+ * answers the legacy single-run read with 501, so those deployments fall through
+ * to the v2 read. Callers create root runs, whose trace id is the run id itself
+ * — the last resort.
  */
 export async function resolveTraceId(
   client: Client,
@@ -79,16 +81,16 @@ export async function resolveTraceId(
   projectId: string,
 ): Promise<string> {
   try {
+    const run = await client.readRun(runId);
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
+  try {
     const run = await client.runs.retrieve(runId, {
       project_id: projectId,
       selects: ["TRACE_ID"],
     });
-    if (run?.trace_id) return run.trace_id;
-  } catch (_e) {
-    // Fall through to the legacy endpoint.
-  }
-  try {
-    const run = await client.readRun(runId);
     if (run?.trace_id) return run.trace_id;
   } catch (_e) {
     // Fall through to the run id.
