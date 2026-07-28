@@ -39,6 +39,12 @@ from langsmith._internal._hub import (
     platform_hub_path,
     validate_parent_commit,
 )
+from langsmith._internal._v2_migration_utils import (
+    _V2_RUN_SELECTS,
+    QueryBackend,
+    _v2_run_to_schema,
+    get_query_backend,
+)
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -596,13 +602,6 @@ class AsyncClient:
         """
         run_id_ = ls_client._as_uuid(run_id)
         info = await self.info()
-        from langsmith._internal._v2_migration_utils import (
-            _V2_RUN_SELECTS,
-            QueryBackend,
-            _v2_run_to_schema,
-            get_query_backend,
-        )
-
         backend = get_query_backend(info.instance_flags)
         if backend != QueryBackend.SMITHDB_ONLY:
             response = await self._arequest_with_retries(

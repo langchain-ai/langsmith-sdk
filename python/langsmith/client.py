@@ -4080,30 +4080,29 @@ class Client:
             )
             if load_child_runs:
                 run = self._load_child_runs(run)
-        else:
-            if project_id is None:
-                raise ls_utils.LangSmithError(
-                    "read_run requires project_id on SmithDB-only backends"
-                    " (no ClickHouse query support)."
-                )
-            if start_time is None:
-                raise ls_utils.LangSmithError(
-                    "read_run requires start_time on SmithDB-only backends"
-                    " (no ClickHouse query support)."
-                )
-            if load_child_runs:
-                raise ls_utils.LangSmithError(
-                    "load_child_runs is not supported on SmithDB-only"
-                    " backends (no ClickHouse query support)."
-                )
-            run = _v2_migration_utils._read_run_v2(
-                run_id_,
-                self,
-                project_id=_as_uuid(project_id, "project_id"),
-                start_time=start_time,
-            )
+            return run
 
-        return run
+        if project_id is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires project_id on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        if start_time is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires start_time on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        if load_child_runs:
+            raise ls_utils.LangSmithError(
+                "load_child_runs is not supported on SmithDB-only"
+                " backends (no ClickHouse query support)."
+            )
+        return _v2_migration_utils._read_run_v2(
+            run_id_,
+            self,
+            project_id=_as_uuid(project_id, "project_id"),
+            start_time=start_time,
+        )
 
     def read_thread(
         self,
