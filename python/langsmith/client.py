@@ -4048,8 +4048,7 @@ class Client:
                 never loaded.
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (session) that owns the run. Required on
-                SmithDB-only backends (no ClickHouse query support), where it's
-                used to look up the run via the v2 API.
+                SmithDB-only backends (no ClickHouse query support).
             start_time (Optional[datetime]):
                 The run's start time. Required on SmithDB-only backends (no
                 ClickHouse query support), where it speeds up the v2 lookup.
