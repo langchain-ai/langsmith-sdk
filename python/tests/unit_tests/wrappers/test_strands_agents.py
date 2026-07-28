@@ -267,6 +267,166 @@ class TestLangSmithSpanExporter:
         assert result["status"] == "success"
         assert result["content"] == [{"type": "text", "text": "result"}]
 
+    def test_convert_content_block_reasoning(self):
+        """Test conversion of reasoningContent content blocks."""
+        block = {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "Let me break down the problem step by step.",
+                    "signature": "Ev4Q_signature_data",
+                }
+            }
+        }
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "Let me break down the problem step by step.",
+            "signature": "Ev4Q_signature_data",
+        }
+
+    def test_convert_content_block_reasoning_missing_signature(self):
+        """Test conversion of reasoningContent blocks without signature."""
+        block = {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "Thinking about this...",
+                }
+            }
+        }
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "Thinking about this...",
+            "signature": "",
+        }
+
+    def test_convert_content_block_reasoning_empty(self):
+        """Test conversion of reasoningContent blocks with missing reasoningText."""
+        block = {"reasoningContent": {}}
+        result = LangSmithSpanExporter._convert_content_block(block)
+
+        assert result == {
+            "type": "thinking",
+            "thinking": "",
+            "signature": "",
+        }
+
+    def test_transform_tool_span_choice_outputs_tool_envelope(self):
+        """Test that execute_tool span choice events produce tool output envelope."""
+        delegate = MagicMock()
+        delegate.export.return_value = 0
+
+        exporter = LangSmithSpanExporter(delegate=delegate)
+
+        choice_event = self._make_event(
+            "gen_ai.choice",
+            {
+                "message": json.dumps([{"text": "Hippopotamus"}]),
+                "id": "tooluse_5lnW6BJJLFew8zk9eFpVUt",
+            },
+        )
+        span = self._make_span(
+            name="execute_tool get_magic_word",
+            attributes={
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "get_magic_word",
+                "gen_ai.tool.call.id": "tooluse_5lnW6BJJLFew8zk9eFpVUt",
+            },
+            events=[choice_event],
+        )
+
+        exporter.export([span])
+        transformed = delegate.export.call_args[0][0][0]
+
+        completion = json.loads(transformed.attributes["gen_ai.completion"])
+        assert completion == {
+            "role": "tool",
+            "content": "Hippopotamus",
+            "name": "get_magic_word",
+            "tool_call_id": "tooluse_5lnW6BJJLFew8zk9eFpVUt",
+        }
+
+    def test_transform_tool_span_choice_multiple_text_blocks(self):
+        """Test that multi-block tool outputs are joined with newlines."""
+        delegate = MagicMock()
+        delegate.export.return_value = 0
+
+        exporter = LangSmithSpanExporter(delegate=delegate)
+
+        choice_event = self._make_event(
+            "gen_ai.choice",
+            {
+                "message": json.dumps(
+                    [
+                        {"text": "Line one"},
+                        {"text": "Line two"},
+                    ]
+                ),
+                "id": "tooluse_abc123",
+            },
+        )
+        span = self._make_span(
+            name="execute_tool my_tool",
+            attributes={
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "my_tool",
+                "gen_ai.tool.call.id": "tooluse_abc123",
+            },
+            events=[choice_event],
+        )
+
+        exporter.export([span])
+        transformed = delegate.export.call_args[0][0][0]
+
+        completion = json.loads(transformed.attributes["gen_ai.completion"])
+        assert completion["role"] == "tool"
+        assert completion["content"] == "Line one\nLine two"
+        assert completion["name"] == "my_tool"
+        assert completion["tool_call_id"] == "tooluse_abc123"
+
+    def test_transform_chat_span_choice_still_uses_message_format(self):
+        """Test that chat span choice events still produce
+        message-format completions."""
+        delegate = MagicMock()
+        delegate.export.return_value = 0
+
+        exporter = LangSmithSpanExporter(delegate=delegate)
+
+        choice_event = self._make_event(
+            "gen_ai.choice",
+            {"message": json.dumps([{"text": "Final response"}])},
+        )
+        span = self._make_span(
+            name="chat",
+            attributes={"gen_ai.operation.name": "chat"},
+            events=[choice_event],
+        )
+
+        exporter.export([span])
+        transformed = delegate.export.call_args[0][0][0]
+
+        completion_data = json.loads(transformed.attributes["gen_ai.completion"])
+        assert completion_data["role"] == "assistant"
+        assert "content" in completion_data
+
+    def test_extract_tool_output_single_text_block(self):
+        """Test extraction from a single text block."""
+        result = LangSmithSpanExporter._extract_tool_output([{"text": "Hello world"}])
+        assert result == "Hello world"
+
+    def test_extract_tool_output_string_passthrough(self):
+        """Test that strings pass through unchanged."""
+        result = LangSmithSpanExporter._extract_tool_output("already a string")
+        assert result == "already a string"
+
+    def test_extract_tool_output_non_text_block(self):
+        """Test that non-text blocks are JSON serialized."""
+        content = [{"image": "base64data", "format": "png"}]
+        result = LangSmithSpanExporter._extract_tool_output(content)
+        assert json.loads(result) == {"image": "base64data", "format": "png"}
+
     def test_flatten_tool_result_message(self):
         """Test flattening of Bedrock tool result messages."""
         content_blocks = [

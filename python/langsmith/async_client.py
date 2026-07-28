@@ -23,6 +23,7 @@ from typing import (
 import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -51,6 +52,9 @@ if TYPE_CHECKING:
     )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
     )
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
@@ -339,6 +343,11 @@ class AsyncClient:
         """Access the traces resource (query, list_runs)."""
         return self._langsmith_api.traces
 
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        return self._langsmith_api.public
+
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
@@ -572,14 +581,32 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
-        """Read a run."""
+        """Read a run.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
+        """
         response = await self._arequest_with_retries(
             "GET",
             f"/runs/{ls_client._as_uuid(run_id)}",
         )
         return ls_schemas.Run(**response.json())
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     async def list_runs(
         self,
         *,
@@ -604,6 +631,11 @@ class AsyncClient:
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.AsyncClient.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -1039,6 +1071,13 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            warnings.warn(
+                "session_id will become a required argument to create_feedback() in "
+                "a future release. Please provide it to avoid errors.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -1436,9 +1475,9 @@ class AsyncClient:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. Deprecated; emits a
-          `DeprecationWarning` and will be removed in a future release. Prefer
-          `runs`.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -1460,12 +1499,9 @@ class AsyncClient:
             ]
         elif run_ids is not None:
             warnings.warn(
-                "The `run_ids` parameter of `add_runs_to_annotation_queue` is "
-                "deprecated and will be removed in a future release. Pass `runs` "
-                "instead, with each run's full lookup key (`run_id`, `session_id`, "
-                "`start_time`). See "
-                "https://docs.langchain.com/langsmith/smithdb-sdk-migration "
-                "for details.",
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
                 DeprecationWarning,
                 stacklevel=2,
             )

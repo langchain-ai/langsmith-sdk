@@ -133,13 +133,14 @@ class TestSandboxClientInit:
             api_key="api-key",
             headers={"X-Service-Key": "svc-jwt"},
         )
-        assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
+        # merge_headers normalizes names to lowercase.
+        assert client._ws_default_headers(None) == {"x-service-key": "svc-jwt"}
         assert client._ws_default_headers({"X-Test": "v"}) == {
-            "X-Service-Key": "svc-jwt",
-            "X-Test": "v",
+            "x-service-key": "svc-jwt",
+            "x-test": "v",
         }
         assert client._ws_default_headers({"X-Service-Key": "override"}) == {
-            "X-Service-Key": "override"
+            "x-service-key": "override"
         }
         client.close()
 

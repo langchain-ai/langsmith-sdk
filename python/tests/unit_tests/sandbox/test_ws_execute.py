@@ -74,8 +74,9 @@ class TestBuildWsUrl:
 
 class TestBuildAuthHeaders:
     def test_builds_header(self):
+        # Header names are normalized to lowercase.
         headers = _build_auth_headers("my-key")
-        assert headers == {"X-Api-Key": "my-key"}
+        assert headers == {"x-api-key": "my-key"}
 
     def test_none_key_returns_empty(self):
         headers = _build_auth_headers(None)
@@ -87,8 +88,8 @@ class TestBuildAuthHeaders:
             {"X-Api-Key": "override-key", "X-Test-Header": "ws-value"},
         )
         assert headers == {
-            "X-Api-Key": "override-key",
-            "X-Test-Header": "ws-value",
+            "x-api-key": "override-key",
+            "x-test-header": "ws-value",
         }
 
 

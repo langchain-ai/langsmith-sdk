@@ -116,7 +116,8 @@ class TestAsyncSandboxClientInit:
             assert client._http.headers.get("X-Service-Key") == "svc-jwt"
             assert client._http.headers.get("X-Api-Key") == "api-key"
             assert client._default_headers == {"X-Service-Key": "svc-jwt"}
-            assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
+            # merge_headers normalizes names to lowercase.
+            assert client._ws_default_headers(None) == {"x-service-key": "svc-jwt"}
             await client.aclose()
 
     async def test_max_retries_default(self):

@@ -236,6 +236,20 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
   });
 
   describe("RunTree Replicas", () => {
+    it("should reject multiple primary replicas", () => {
+      expect(
+        () =>
+          new RunTree({
+            name: "test-run",
+            inputs: {},
+            replicas: [
+              { projectName: "primary-1", primary: true },
+              { projectName: "primary-2", primary: true },
+            ],
+          }),
+      ).toThrow("Only one replica");
+    });
+
     it("should send traces to multiple replicas via RunTree", async () => {
       const endpointsConfig = {
         "https://primary.example.com": "primary-key",
@@ -331,6 +345,57 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Should make calls for all replicas
       expect(callSpy).toHaveBeenCalled();
+    });
+
+    it("should preserve project names from array format", async () => {
+      const endpointsConfig = [
+        {
+          api_url: "https://workspace1.example.com",
+          api_key: "workspace1-key",
+          project_name: "project-prod",
+          primary: true,
+        },
+        {
+          api_url: "https://workspace2.example.com",
+          api_key: "workspace2-key",
+          project_name: "project-staging",
+          primary: false,
+        },
+        {
+          api_url: "https://invalid.example.com",
+          api_key: "invalid-key",
+          project_name: "invalid-project",
+          primary: "true",
+        },
+      ];
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const client = new Client({ autoBatchTracing: false });
+
+      const createRunSpy = jest
+        .spyOn(client, "createRun")
+        .mockResolvedValue(undefined);
+
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "fallback-project",
+      });
+
+      expect(runTree.replicas?.map((replica) => replica.primary)).toEqual([
+        true,
+        false,
+      ]);
+
+      await runTree.postRun();
+
+      const sessionNames = createRunSpy.mock.calls.map(
+        ([runCreate]: any) => runCreate.session_name,
+      );
+
+      expect(sessionNames.sort()).toEqual(["project-prod", "project-staging"]);
     });
 
     it("should handle object format", async () => {

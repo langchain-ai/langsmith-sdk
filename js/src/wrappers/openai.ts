@@ -360,7 +360,15 @@ const getChatModelInvocationParamsFn = (
       ls_invocation_params.use_responses_api = true;
     }
 
+    const requestMetadata =
+      typeof params.metadata === "object" &&
+      params.metadata !== null &&
+      !Array.isArray(params.metadata)
+        ? (params.metadata as Record<string, unknown>)
+        : {};
+
     return {
+      ...requestMetadata,
       ls_provider: provider,
       ls_model_type: "chat",
       ls_model_name: params.model,

@@ -7,11 +7,14 @@ span rewriting, the shared ``BaseLangSmithSpanProcessor`` helpers, and the
 required (only ``opentelemetry-sdk``, a dev dependency).
 """
 
+import asyncio
 import base64
 import io
 import json
 import sys
 import wave
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,22 +33,38 @@ from langsmith.integrations.pipecat.processor import (
 )
 
 
-def _make_span(name: str, attributes: dict | None = None, trace_id: int = 0x1):
+def _ns(iso: str) -> int:
+    """Epoch nanoseconds for an ISO 8601 timestamp (the transcript sort scale)."""
+    return int(datetime.fromisoformat(iso).timestamp() * 1e9)
+
+
+def _make_span(
+    name: str,
+    attributes: dict | None = None,
+    trace_id: int = 0x1,
+    start_time: int = 0,
+):
     """Build a mock span for the processor.
 
-    The processor only *reads* ``span.attributes`` (and a few read-only fields);
-    it never mutates the span. Translation accumulates on a ``TranslatedSpan``
-    draft, and a fresh span is built for export — so the rewritten attributes are
-    read off the exported span (see :func:`_exported_attrs`), not this input. The
-    remaining ``ReadableSpan`` fields are auto-mocked, which is all
-    ``TranslatedSpan.finalize`` needs to construct the export span.
+    The processor copies the span into a ``TranslatedSpan`` draft and builds a
+    fresh span for export, leaving this input unchanged. The remaining
+    ``ReadableSpan`` fields are auto-mocked, which is all ``finalize`` needs.
+    ``start_time`` (epoch ns) is the transcript sort key for span-sourced
+    messages; pass it (e.g. via :func:`_ns`) when a test asserts ordering.
     """
     span = MagicMock()
     span.name = name
+    span._name = name
     span.attributes = dict(attributes or {})
     span.context = MagicMock()
     span.context.trace_id = trace_id
     span.events = []
+    span.end_time = None
+    span._end_time = None
+    span._start_time = start_time
+    type(span).name = property(lambda value: value._name)
+    type(span).end_time = property(lambda value: value._end_time)
+    type(span).start_time = property(lambda value: value._start_time)
     return span
 
 
@@ -239,6 +258,244 @@ class TestPipecatDispatch:
 
         assert "langsmith.span.kind" not in _exported_attrs(proc)
         proc.downstream.on_end.assert_called_once()
+
+
+class TestPipecatRealtimeHistory:
+    """OpenAI realtime ``llm_request`` contributes only the tool round-trip."""
+
+    def test_llm_request_contributes_tool_structure_only(self):
+        # OpenAI realtime emits no per-tool spans, so the assistant tool call and
+        # its result are taken from the llm_request context snapshot. The user and
+        # plain-assistant messages in that snapshot are ignored (they come from
+        # the aggregator and llm_response); the spoken reply arrives on
+        # llm_response. Ordering is by span time: request (t=1) then response (t=2).
+        proc = _processor()
+        trace_id = 0xDEF
+        history = [
+            {"role": "system", "content": "be nice"},
+            {"role": "user", "content": "weather?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city":"SF"}',
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": '{"temp": 68}'},
+        ]
+        req = _make_span(
+            "llm_request",
+            {"input": json.dumps(history)},
+            trace_id=trace_id,
+            start_time=_ns("2026-01-01T00:00:01+00:00"),
+        )
+        proc.on_end(req)
+        # The llm_request span itself stays a chain wrapper (usage is on response).
+        assert _exported_attrs(proc)["langsmith.span.kind"] == "chain"
+
+        resp = _make_span(
+            "llm_response",
+            {"output": "it's 68"},
+            trace_id=trace_id,
+            start_time=_ns("2026-01-01T00:00:02+00:00"),
+        )
+        proc.on_end(resp)
+
+        convo = _make_span("conversation", {"conversation.id": "c"}, trace_id=trace_id)
+        proc.on_end(convo)
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        # No user turn (that needs the aggregator); tool call + result + reply.
+        assert [m["role"] for m in prompt] == ["assistant", "tool", "assistant"]
+        assert prompt[0]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert prompt[1]["content"] == '{"temp": 68}'  # tool result rendered
+        assert prompt[2]["content"] == "it's 68"  # spoken reply appended
+
+    def test_llm_request_dedupes_tool_round_trip_across_snapshots(self):
+        # Each snapshot is the full history, so the same tool call recurs. Dedup by
+        # tool_call_id keeps one assistant-call + one result, not one per snapshot.
+        proc = _processor()
+        tid = 0x1
+        first = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": "sunny"},
+        ]
+        proc.on_end(
+            _make_span(
+                "llm_request",
+                {"input": json.dumps(first)},
+                tid,
+                _ns("2026-01-01T00:00:01+00:00"),
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "llm_request",
+                {"input": json.dumps(first)},
+                tid,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        proc.on_end(_make_span("conversation", {"conversation.id": "c"}, trace_id=tid))
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["role"] for m in prompt] == ["assistant", "tool"]
+
+    def test_cascade_llm_handling_unchanged(self):
+        # Cascade emits `llm`, never `llm_request`; its snapshot+append behavior
+        # is untouched by the realtime path.
+        proc = _processor()
+        tid = 0x1
+        proc.on_end(
+            _make_span(
+                "llm",
+                {
+                    "input": json.dumps([{"role": "user", "content": "q"}]),
+                    "output": "a",
+                },
+                trace_id=tid,
+            )
+        )
+        proc.on_end(_make_span("conversation", {"conversation.id": "c"}, trace_id=tid))
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["content"] for m in prompt] == ["q", "a"]
+
+
+class TestPipecatToolCalls:
+    """Realtime tool spans: ``llm_tool_call`` + ``llm_tool_result`` merge to one run."""
+
+    @staticmethod
+    def _exported_spans(proc) -> list:
+        """Every finalized span forwarded downstream, in order."""
+        return [c.args[0] for c in proc.downstream.on_end.call_args_list]
+
+    def test_call_and_result_merge_into_one_span(self):
+        # Pipecat puts no usable id on the result span, so pairing is by order.
+        proc = _processor()
+        trace_id = 0xABC
+        call = _make_span(
+            "llm_tool_call",
+            {"tool.function_name": "get_weather", "tool.arguments": '{"city": "SF"}'},
+            trace_id=trace_id,
+        )
+
+        # The call span is held (deferred) until its result arrives.
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        result = _make_span(
+            "llm_tool_result",
+            {"tool.result": '{"temp": 68}', "tool.result_status": "completed"},
+            trace_id=trace_id,
+        )
+        result._end_time = 999
+
+        proc.on_end(result)
+
+        # One span exported: the merged call span; the result span is dropped.
+        exported = self._exported_spans(proc)
+        assert len(exported) == 1
+        span = exported[0]
+        attrs = dict(span.attributes)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert span.name == "get_weather"
+        assert attrs["gen_ai.prompt"] == '{"city": "SF"}'
+        assert attrs["gen_ai.completion"] == '{"temp": 68}'
+        assert attrs["langsmith.metadata.tool_result_status"] == "completed"
+        assert span.end_time == 999  # stretched to the result's end
+        assert not proc._tool_calls_by_trace
+
+    def test_result_without_call_exported_standalone(self):
+        # A result with no deferred call still surfaces as a tool run (output only).
+        proc = _processor()
+        result = _make_span("llm_tool_result", {"tool.result": '{"ok": true}'})
+
+        proc.on_end(result)
+
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert attrs["gen_ai.completion"] == '{"ok": true}'
+        assert "gen_ai.prompt" not in attrs  # no args were ever seen
+
+    def test_multiple_calls_pair_in_order(self):
+        # Two sequential calls, two results: each result pairs with the oldest
+        # deferred call (FIFO).
+        proc = _processor()
+        trace_id = 0xABC
+        for name, args in (("a", '{"x": 1}'), ("b", '{"y": 2}')):
+            proc.on_end(
+                _make_span(
+                    "llm_tool_call",
+                    {"tool.function_name": name, "tool.arguments": args},
+                    trace_id=trace_id,
+                )
+            )
+        for res in ('"A"', '"B"'):
+            proc.on_end(
+                _make_span("llm_tool_result", {"tool.result": res}, trace_id=trace_id)
+            )
+
+        exported = self._exported_spans(proc)
+        by_name = {s.name: dict(s.attributes) for s in exported}
+        assert by_name["a"]["gen_ai.prompt"] == '{"x": 1}'
+        assert by_name["a"]["gen_ai.completion"] == '"A"'
+        assert by_name["b"]["gen_ai.prompt"] == '{"y": 2}'
+        assert by_name["b"]["gen_ai.completion"] == '"B"'
+        assert not proc._tool_calls_by_trace
+
+    def test_orphaned_call_flushed_on_conversation_end(self):
+        # A call whose result never arrives is flushed (args only) when the
+        # conversation ends, not held indefinitely.
+        proc = _processor()
+        trace_id = 0xABC
+        call = _make_span(
+            "llm_tool_call",
+            {"tool.function_name": "hang", "tool.arguments": "{}"},
+            trace_id=trace_id,
+        )
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        convo = _make_span("conversation", {"conversation.id": "x"}, trace_id=trace_id)
+        proc.on_end(convo)
+
+        exported = self._exported_spans(proc)
+        kinds = [dict(s.attributes).get("langsmith.span.kind") for s in exported]
+        assert "tool" in kinds  # the orphaned call was flushed
+        assert not proc._tool_calls_by_trace
+
+    def test_orphaned_call_flushed_on_shutdown(self):
+        proc = _processor()
+        call = _make_span(
+            "llm_tool_call", {"tool.function_name": "hang", "tool.arguments": "{}"}
+        )
+        proc.on_end(call)
+        assert not proc.downstream.on_end.called
+
+        proc.shutdown()
+
+        attrs = _exported_attrs(proc)
+        assert attrs["langsmith.span.kind"] == "tool"
+        assert not proc._tool_calls_by_trace
+        proc.downstream.shutdown.assert_called_once()
 
 
 class TestPipecatAudio:
@@ -636,6 +893,301 @@ class TestConfigureAndWarning:
             assert configure_pipecat() is None
 
 
+class _FakeUserAggregator:
+    """Minimal Pipecat user aggregator event emitter."""
+
+    def __init__(self):
+        self.handlers = {}
+
+    def event_handler(self, event_name):
+        def decorator(handler):
+            self.handlers[event_name] = handler
+            return handler
+
+        return decorator
+
+    def emit(self, content, timestamp="2026-01-01T00:00:00+00:00"):
+        message = SimpleNamespace(content=content, timestamp=timestamp)
+        asyncio.run(self.handlers["on_user_turn_message_added"](self, message))
+
+
+class _FakeAggregatorPair:
+    """Minimal Pipecat context aggregator pair."""
+
+    def __init__(self):
+        self.user_aggregator = _FakeUserAggregator()
+
+    def user(self):
+        return self.user_aggregator
+
+
+class TestPipecatRealtimeTranscript:
+    """Realtime user events populate response inputs and the root transcript."""
+
+    def test_aggregator_pair_records_user_turn(self):
+        proc = _processor()
+        trace_id = 0x71
+        proc._remember_thread_id(trace_id, "conv-1")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-1")
+
+        aggregators.user().emit("what's the weather?")
+
+        assert proc._render_messages(trace_id) == [
+            {"role": "user", "content": "what's the weather?"}
+        ]
+
+    def test_invalid_aggregator_raises(self):
+        proc = _processor()
+        with pytest.raises(AttributeError):
+            proc.instrument_user_aggregator(object(), "conv-2")
+
+    def test_repeated_finalized_events_are_distinct_turns(self):
+        # Identical utterances are kept as separate turns (no dedup).
+        proc = _processor()
+        trace_id = 0x72
+        proc._remember_thread_id(trace_id, "conv-2")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-2")
+
+        aggregators.user().emit("yes", "2026-01-01T00:00:01+00:00")
+        aggregators.user().emit("yes", "2026-01-01T00:00:02+00:00")
+
+        assert proc._render_messages(trace_id) == [
+            {"role": "user", "content": "yes"},
+            {"role": "user", "content": "yes"},
+        ]
+
+    def test_transcript_before_trace_is_buffered_and_cleaned_up(self):
+        proc = _processor()
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-3")
+        aggregators.user().emit("early words")
+        # Pending entries are (sort_key, message) tuples.
+        assert (
+            proc._pending_user_transcripts["conv-3"][0][1]["content"] == "early words"
+        )
+
+        trace_id = 0x73
+        proc._remember_thread_id(trace_id, "conv-3")
+        assert proc._render_messages(trace_id)[0]["content"] == "early words"
+        assert "conv-3" not in proc._pending_user_transcripts
+
+        proc.on_end(_make_span("conversation", {"conversation.id": "conv-3"}, trace_id))
+        assert "conv-3" not in proc._trace_by_thread
+        assert trace_id not in proc._transcript_by_trace
+
+    def test_gemini_response_has_history_and_root_has_both_roles(self):
+        proc = _processor()
+        trace_id = 0x74
+        proc._remember_thread_id(trace_id, "conv-4")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-4")
+        aggregators.user().emit("hi there", "2026-01-01T00:00:01+00:00")
+
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "hello!"},
+                trace_id,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        response_attrs = _exported_attrs(proc)
+        assert json.loads(response_attrs["gen_ai.prompt"])["messages"] == [
+            {"role": "user", "content": "hi there"}
+        ]
+
+        proc.on_end(_make_span("conversation", {"conversation.id": "conv-4"}, trace_id))
+        root = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [(message["role"], message["content"]) for message in root] == [
+            ("user", "hi there"),
+            ("assistant", "hello!"),
+        ]
+
+    def test_user_from_aggregator_tools_from_snapshot_reply_from_response(self):
+        # The three sources compose into one ordered transcript: user (aggregator),
+        # tool call + result (llm_request snapshot), spoken reply (llm_response).
+        proc = _processor()
+        trace_id = 0x75
+        proc._remember_thread_id(trace_id, "conv-5")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-5")
+        aggregators.user().emit("weather?", "2026-01-01T00:00:01+00:00")
+        history = [
+            {"role": "system", "content": "be brief"},
+            {"role": "user", "content": "weather?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": "sunny"},
+        ]
+        proc.on_end(
+            _make_span(
+                "llm_request",
+                {"input": json.dumps(history)},
+                trace_id,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "It is sunny."},
+                trace_id,
+                _ns("2026-01-01T00:00:03+00:00"),
+            )
+        )
+        proc.on_end(_make_span("conversation", {"conversation.id": "conv-5"}, trace_id))
+
+        prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["role"] for m in prompt] == [
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+        ]
+        assert prompt[0]["content"] == "weather?"  # once, from the aggregator
+        assert prompt[1]["tool_calls"][0]["function"]["name"] == "weather"
+        assert prompt[3]["content"] == "It is sunny."
+
+    def test_snapshot_without_tools_contributes_nothing(self):
+        # A snapshot with only user / plain-assistant messages adds nothing: those
+        # roles come from the aggregator and llm_response, not llm_request.
+        proc = _processor()
+        trace_id = 0x76
+        proc._remember_thread_id(trace_id, "conv-6")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-6")
+        aggregators.user().emit("new question", "2026-01-01T00:00:01+00:00")
+
+        proc.on_end(
+            _make_span(
+                "llm_request",
+                {"input": json.dumps([{"role": "assistant", "content": "hello"}])},
+                trace_id,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "answer"},
+                trace_id,
+                _ns("2026-01-01T00:00:03+00:00"),
+            )
+        )
+
+        # The snapshot's "hello" is absent; only the aggregator user turn and the
+        # llm_response reply make up the transcript.
+        assert [(m["role"], m["content"]) for m in proc._render_messages(trace_id)] == [
+            ("user", "new question"),
+            ("assistant", "answer"),
+        ]
+
+    def test_async_user_turn_sorts_by_speech_time_not_arrival(self):
+        # The regression: OpenAI transcribes late, so the tool round-trip
+        # (llm_request) is processed BEFORE the user transcript arrives — but the
+        # user spoke first. Keying the user turn by its turn-start timestamp puts
+        # it ahead of the tool block, regardless of arrival order.
+        proc = _processor()
+        trace_id = 0x7A
+        proc._remember_thread_id(trace_id, "conv-async")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-async")
+
+        history = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": "sunny"},
+        ]
+        # Tool round-trip arrives first (t=3)...
+        proc.on_end(
+            _make_span(
+                "llm_request",
+                {"input": json.dumps(history)},
+                trace_id,
+                _ns("2026-01-01T00:00:03+00:00"),
+            )
+        )
+        # ...then the late user transcript, stamped when the user started (t=1).
+        aggregators.user().emit("weather?", "2026-01-01T00:00:01+00:00")
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "It is sunny."},
+                trace_id,
+                _ns("2026-01-01T00:00:04+00:00"),
+            )
+        )
+        proc.on_end(
+            _make_span("conversation", {"conversation.id": "conv-async"}, trace_id)
+        )
+
+        root = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [m["role"] for m in root] == ["user", "assistant", "tool", "assistant"]
+        assert root[0]["content"] == "weather?"  # ahead of the tool call it triggered
+
+    def test_multi_turn_order_and_empty_transcript(self):
+        proc = _processor()
+        trace_id = 0x77
+        proc._remember_thread_id(trace_id, "conv-7")
+        aggregators = _FakeAggregatorPair()
+        proc.instrument_user_aggregator(aggregators, "conv-7")
+        user = aggregators.user()
+
+        user.emit("")  # empty content is ignored
+        user.emit("first", "2026-01-01T00:00:01+00:00")
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "one"},
+                trace_id,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        user.emit("second", "2026-01-01T00:00:03+00:00")
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "two"},
+                trace_id,
+                _ns("2026-01-01T00:00:04+00:00"),
+            )
+        )
+
+        rollup = proc._render_messages(trace_id)
+        assert [(message["role"], message["content"]) for message in rollup] == [
+            ("user", "first"),
+            ("assistant", "one"),
+            ("user", "second"),
+            ("assistant", "two"),
+        ]
+        second_prompt = json.loads(_exported_attrs(proc)["gen_ai.prompt"])["messages"]
+        assert [(message["role"], message["content"]) for message in second_prompt] == [
+            ("user", "first"),
+            ("assistant", "one"),
+            ("user", "second"),
+        ]
+
+
 class TestPipecatUsageCapture:
     """Token/usage capture for cost: LLM usage + detail, realtime spans."""
 
@@ -682,21 +1234,30 @@ class TestPipecatUsageCapture:
         completion = json.loads(attrs["gen_ai.completion"])["messages"]
         assert completion[0]["content"] == "the weather is sunny"
         # Reply folds into the conversation the root renders.
-        assert (
-            proc._transcript_by_trace[trace_id][-1]["content"] == "the weather is sunny"
-        )
+        assert proc._render_messages(trace_id)[-1]["content"] == "the weather is sunny"
 
     def test_realtime_rollup_has_user_and_agent_turns(self):
-        # Realtime has no cascade `llm` span carrying history: the user turn
-        # arrives on a standard `stt` span, the agent reply on `llm_response`.
-        # Both must fold into the conversation rollup the root renders.
+        # Without an instrumented aggregator, a finalized `stt` span folds the user
+        # turn and `llm_response` folds the agent reply; both roll up on the root.
         proc = _processor()
         trace_id = 0x56
-        proc.on_end(_make_span("stt", {"transcript": "what's the weather?"}, trace_id))
         proc.on_end(
-            _make_span("llm_response", {"output": "it's sunny"}, trace_id=trace_id)
+            _make_span(
+                "stt",
+                {"transcript": "what's the weather?"},
+                trace_id,
+                _ns("2026-01-01T00:00:01+00:00"),
+            )
         )
-        rollup = proc._transcript_by_trace[trace_id]
+        proc.on_end(
+            _make_span(
+                "llm_response",
+                {"output": "it's sunny"},
+                trace_id,
+                _ns("2026-01-01T00:00:02+00:00"),
+            )
+        )
+        rollup = proc._render_messages(trace_id)
         assert [(m["role"], m["content"]) for m in rollup] == [
             ("user", "what's the weather?"),
             ("assistant", "it's sunny"),

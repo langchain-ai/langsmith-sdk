@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import List, Union
 from datetime import datetime
-from typing_extensions import Literal, Annotated, TypedDict
+from typing_extensions import Annotated, TypedDict
 
 from .._types import SequenceNotStr
 from .._utils import PropertyInfo
+from .run_select_field import RunSelectField
 
 __all__ = ["TraceQueryParams"]
 
@@ -37,54 +38,7 @@ class TraceQueryParams(TypedDict, total=False):
     project_id: str
     """`project_id` is the UUID of the tracing project that owns the traces. Required."""
 
-    selects: List[
-        Literal[
-            "ID",
-            "NAME",
-            "RUN_TYPE",
-            "STATUS",
-            "START_TIME",
-            "END_TIME",
-            "LATENCY_SECONDS",
-            "FIRST_TOKEN_TIME",
-            "ERROR",
-            "ERROR_PREVIEW",
-            "EXTRA",
-            "METADATA",
-            "EVENTS",
-            "INPUTS",
-            "INPUTS_PREVIEW",
-            "OUTPUTS",
-            "OUTPUTS_PREVIEW",
-            "MANIFEST",
-            "PARENT_RUN_IDS",
-            "PROJECT_ID",
-            "TRACE_ID",
-            "THREAD_ID",
-            "DOTTED_ORDER",
-            "IS_ROOT",
-            "REFERENCE_EXAMPLE_ID",
-            "REFERENCE_DATASET_ID",
-            "TOTAL_TOKENS",
-            "PROMPT_TOKENS",
-            "COMPLETION_TOKENS",
-            "TOTAL_COST",
-            "PROMPT_COST",
-            "COMPLETION_COST",
-            "PROMPT_TOKEN_DETAILS",
-            "COMPLETION_TOKEN_DETAILS",
-            "PROMPT_COST_DETAILS",
-            "COMPLETION_COST_DETAILS",
-            "PRICE_MODEL_ID",
-            "TAGS",
-            "APP_PATH",
-            "ATTACHMENTS",
-            "THREAD_EVALUATION_TIME",
-            "IS_IN_DATASET",
-            "SHARE_URL",
-            "FEEDBACK_STATS",
-        ]
-    ]
+    selects: List[RunSelectField]
     """`selects` lists which properties to include on each returned trace.
 
     Properties listed here are routed to the appropriate sub-object on each item:

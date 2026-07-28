@@ -517,12 +517,38 @@ async def test_async_create_feedback_warns_and_ignores_unused_kwargs(
         await client.create_feedback(
             run_id=uuid.uuid4(),
             key="test_key",
+            session_id=uuid.uuid4(),
             unused_argument="unused",
         )
 
     request_kwargs = mock_httpx_client.request.call_args.kwargs
     body = json.loads(request_kwargs["content"])
     assert "unused_argument" not in body
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_warns_when_session_id_missing(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    with pytest.warns(DeprecationWarning, match="session_id will become a required"):
+        await client.create_feedback(run_id=uuid.uuid4(), key="test_key")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        # No warning when session_id is provided
+        await client.create_feedback(
+            run_id=uuid.uuid4(), key="test_key", session_id=uuid.uuid4()
+        )
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -593,11 +619,11 @@ async def test_list_runs_child_run_ids_deprecation_warning(
         ):
             pass
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Overall list_runs deprecation fires; child_run_ids-specific warning must not
+    with pytest.warns(DeprecationWarning) as warning_list:
         async for _ in client.list_runs(project_id=uuid4(), select=["id", "name"]):
             pass
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")

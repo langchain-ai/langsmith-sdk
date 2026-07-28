@@ -41,11 +41,17 @@ class Issue(BaseModel):
 
     proposed_prompt_fixes: Optional[List[object]] = None
 
+    recurrences_since_watching: Optional[int] = None
+    """
+    RecurrencesSinceWatching counts linked traces whose run start_time is after
+    watching_since — i.e. recurrences observed during the current watch period.
+    """
+
     session_id: Optional[str] = None
 
     severity: Optional[Literal[0, 1, 2, 3]] = None
 
-    status: Optional[Literal["open", "completed", "ignored"]] = None
+    status: Optional[Literal["open", "fixing", "watching", "completed", "ignored"]] = None
 
     tags: Optional[List[str]] = None
 
@@ -54,3 +60,5 @@ class Issue(BaseModel):
     traces: Optional[object] = None
 
     updated_at: Optional[str] = None
+
+    watching_since: Optional[str] = None

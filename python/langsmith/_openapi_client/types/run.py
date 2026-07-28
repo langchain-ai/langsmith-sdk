@@ -5,6 +5,7 @@ from datetime import datetime
 from typing_extensions import Literal
 
 from .._models import BaseModel
+from .run_type import RunType
 
 __all__ = [
     "Run",
@@ -301,7 +302,7 @@ class Run(BaseModel):
     against, if any.
     """
 
-    run_type: Optional[Literal["TOOL", "CHAIN", "LLM", "RETRIEVER", "EMBEDDING", "PROMPT", "PARSER"]] = None
+    run_type: Optional[RunType] = None
     """
     `run_type` identifies what kind of operation this run represents (for example an
     LLM call, a tool invocation, or a chain step). See the `RunType` enum for

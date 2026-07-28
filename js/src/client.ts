@@ -82,6 +82,7 @@ import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
@@ -872,6 +873,7 @@ export class AutoBatchQueue {
   }
 }
 
+
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
@@ -932,6 +934,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
+
+  private _stainlessVersionChecked = false;
 
   private manualFlushMode = false;
 
@@ -1476,31 +1480,42 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
+    this._checkStainlessVersion();
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
+    this._checkStainlessVersion();
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
+    this._checkStainlessVersion();
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
+    this._checkStainlessVersion();
     return this.openAPIClient.datasets;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
+    this._checkStainlessVersion();
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
+    this._checkStainlessVersion();
     return this.openAPIClient.traces;
+  }
+
+  /** Access the public shared-run resource. */
+  public get public(): Public {
+    return this.openAPIClient.public;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
@@ -2090,15 +2105,26 @@ export class Client implements LangSmithTracingClientInterface {
     return json;
   }
 
+  private _checkStainlessVersion(): void {
+    if (this._stainlessVersionChecked) return;
+    this._stainlessVersionChecked = true;
+    this._ensureServerInfo()
+      .then((serverInfo) => {
+        if (serverInfo?.version) {
+          _checkBackendVersion(serverInfo.version);
+        }
+      })
+      .catch(() => {
+        // _ensureServerInfo handles and logs its own errors
+      });
+  }
+
   protected async _ensureServerInfo() {
     if (this._getServerInfoPromise === undefined) {
       this._getServerInfoPromise = (async () => {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-            if (this._serverInfo?.version) {
-              _checkBackendVersion(this._serverInfo.version);
-            }
           } catch (e: any) {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
@@ -2116,6 +2142,11 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return serverInfo;
     });
+  }
+
+  public async _supportsSDBQuery(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return serverInfo.instance_flags?.sdb_query_enabled === true;
   }
 
   protected async _getSettings() {
@@ -2840,10 +2871,17 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRun(
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
   ): Promise<Run> {
+    warnOnce(
+      "readRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.retrieve() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
+    );
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
@@ -2936,6 +2974,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * List runs from the LangSmith server.
+   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide. Will be removed after Jan 31, 2027.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.
    * @param parentRunId - The ID of the parent run to filter by.
@@ -3017,6 +3056,12 @@ export class Client implements LangSmithTracingClientInterface {
    * });
    */
   public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
+    warnOnce(
+      "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
+    );
     const {
       projectId,
       projectName,
@@ -3204,7 +3249,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    warnOnce(
+      "readThread() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.listTraces() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_THREAD" },
+    );
     const {
       threadId,
       projectId,
@@ -3234,9 +3286,16 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
+    warnOnce(
+      "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_THREADS" },
+    );
     const {
       projectId,
       projectName,
@@ -3412,6 +3471,11 @@ export class Client implements LangSmithTracingClientInterface {
           ),
         )),
       ];
+    }
+    if (projectIds_.length === 0) {
+      throw new Error(
+        "At least one of projectNames or projectIds must be provided.",
+      );
     }
 
     const payload = {
@@ -5073,6 +5137,17 @@ export class Client implements LangSmithTracingClientInterface {
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
+    if (runId && !sessionId) {
+      warnOnce(
+        "sessionId will become a required argument to createFeedback() in a future " +
+          "release. Please provide it to avoid errors. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create for the migration guide.",
+        {
+          type: "DeprecationWarning",
+          code: "LANGSMITH_DEPRECATED_CREATE_FEEDBACK_SESSION_ID",
+        },
+      );
+    }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",
       metadata: sourceInfo ?? {},
@@ -5378,6 +5453,7 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
     const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
@@ -5406,7 +5482,7 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
-          sessionId: run?.session_id,
+          sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
         }),
       );
@@ -5415,6 +5491,16 @@ export class Client implements LangSmithTracingClientInterface {
     return [evalResults, feedbacks];
   }
 
+  public async logEvaluationFeedback(params: {
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults;
+    run: Run;
+    projectId: string;
+    sourceInfo?: { [key: string]: any };
+  }): Promise<EvaluationResult[]>;
+  /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
       | EvaluationResult
@@ -5422,11 +5508,44 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
+    sessionId?: string,
+  ): Promise<EvaluationResult[]>;
+  public async logEvaluationFeedback(
+    evaluatorResponseOrParams:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults
+      | {
+          evaluatorResponse:
+            | EvaluationResult
+            | EvaluationResult[]
+            | EvaluationResults;
+          run: Run;
+          projectId: string;
+          sourceInfo?: { [key: string]: any };
+        },
+    run?: Run,
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<EvaluationResult[]> {
+    if (
+      evaluatorResponseOrParams != null &&
+      typeof evaluatorResponseOrParams === "object" &&
+      "evaluatorResponse" in evaluatorResponseOrParams
+    ) {
+      const [results] = await this._logEvaluationFeedback(
+        evaluatorResponseOrParams.evaluatorResponse,
+        evaluatorResponseOrParams.run,
+        evaluatorResponseOrParams.sourceInfo,
+        evaluatorResponseOrParams.projectId,
+      );
+      return results;
+    }
     const [results] = await this._logEvaluationFeedback(
-      evaluatorResponse,
+      evaluatorResponseOrParams,
       run,
       sourceInfo,
+      sessionId,
     );
     return results;
   }
@@ -5756,8 +5875,9 @@ export class Client implements LangSmithTracingClientInterface {
    * - `RunKey[]` (preferred): each entry carries the run's full lookup key, so
    *   it can be located directly without a scan. Required for workspaces served
    *   by SmithDB; routes to `POST /runs/by-key`.
-   * - `string[]`: a plain list of run IDs. This path will be deprecated in a
-   *   future release; prefer the key form. Routes to `POST /runs`.
+   * - `string[]`: a plain list of run IDs. **Deprecated**: this path will be
+   *   removed after Jan 31, 2027; prefer the key form. Routes to `POST /runs`.
+   *   See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
    *
    * If every element is a string (or the list is empty) it is treated as run
    * IDs; otherwise the list is treated as `RunKey` objects.
@@ -5804,10 +5924,13 @@ export class Client implements LangSmithTracingClientInterface {
       );
     } else {
       warnOnce(
-        "Passing an array of run-ID strings to addRunsToAnnotationQueue is " +
-          "deprecated and will be removed in a future version. Pass an array of " +
-          "RunKey objects instead, each with runId, sessionId, and startTime. " +
-          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration for details.",
+        "Passing run IDs as strings to addRunsToAnnotationQueue() is deprecated and will be removed after Jan 31, 2027. " +
+          "Use RunKey[] instead. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+        {
+          type: "DeprecationWarning",
+          code: "LANGSMITH_DEPRECATED_ADD_RUNS_STRING_IDS",
+        },
       );
       url = base;
       body = JSON.stringify(

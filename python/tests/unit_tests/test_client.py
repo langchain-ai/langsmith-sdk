@@ -1920,6 +1920,36 @@ def test_create_feedback_opt_out_uses_direct_post_when_batching_available() -> N
     assert client.tracing_queue.qsize() == 0
 
 
+def test_create_feedback_warns_when_session_id_missing() -> None:
+    session = mock.Mock()
+    run_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    request_object = mock.Mock()
+    request_object.json.return_value = {
+        "id": uuid.uuid4(),
+        "key": "Foo",
+        "created_at": _CREATED_AT,
+        "modified_at": _CREATED_AT,
+        "run_id": run_id,
+    }
+    session.post.return_value = request_object
+
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+
+    with pytest.warns(DeprecationWarning, match="session_id will become a required"):
+        client.create_feedback(run_id, key="Foo")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        # No warning when session_id is provided
+        client.create_feedback(run_id, key="Foo", session_id=session_id)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        # No warning for project-level feedback (no run_id)
+        client.create_feedback(project_id=session_id, key="Foo")
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()
@@ -5933,10 +5963,10 @@ def test_list_runs_child_run_ids_deprecation_warning(
             )
         )
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Overall list_runs deprecation fires; child_run_ids-specific warning must not
+    with pytest.warns(DeprecationWarning) as warning_list:
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 def test_tracing_error_callback_on_429():
@@ -6732,6 +6762,13 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
         run_type="chain",
         attachments={"ok": ("text/plain", b"data")},
     )
+
+
+def test_get_run_stats_requires_project() -> None:
+    """get_run_stats must raise ValueError when no project is specified."""
+    client = Client(api_key="test", api_url="http://localhost")
+    with pytest.raises(ValueError, match="project_names or project_ids"):
+        client.get_run_stats()
 
 
 def test_removed_sdk_methods_absent() -> None:

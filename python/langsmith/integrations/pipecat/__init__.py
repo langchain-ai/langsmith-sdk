@@ -47,6 +47,11 @@ def configure_pipecat(
     and applies it to every span in the trace — so it holds even for spans
     finished on a background task, and concurrent conversations stay separated.
 
+    For a realtime (speech-to-speech) service, also call
+    :meth:`PipecatLangSmithSpanProcessor.instrument_user_aggregator` on the
+    returned processor. Pipecat delivers finalized user text through the user
+    context aggregator rather than an OTel span.
+
     Args:
         llm_span_kind: LangSmith run kind for Pipecat's ``llm`` span; see the
             :mod:`~langsmith.integrations.pipecat.processor` module docstring.

@@ -10,6 +10,7 @@ namespaces.
 from __future__ import annotations
 
 import json
+from copy import copy
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -29,11 +30,10 @@ def _clean_token_details(details: Optional[dict[str, Any]]) -> dict[str, int]:
 class TranslatedSpan:
     """A span being translated into LangSmith's namespaces before export.
 
-    Wraps the original read-only OTel ``ReadableSpan`` with mutable
-    ``attributes`` and ``events`` seeded from it. Handlers rewrite the copies
-    while translating; :meth:`finalize` builds a fresh ``ReadableSpan`` from them
-    — so OpenTelemetry's private ``span._attributes`` / ``span._events`` are
-    never mutated.
+    Wraps a shallow copy of the original read-only OTel ``ReadableSpan`` with
+    mutable ``attributes`` and ``events`` seeded from it. Handlers rewrite the
+    draft while translating; :meth:`finalize` builds a fresh ``ReadableSpan``
+    from it — so the original span is never mutated.
 
     Created per span in :meth:`BaseLangSmithSpanProcessor.on_end` and threaded
     through dispatch — no global state. A processor that defers a span (see
@@ -48,14 +48,30 @@ class TranslatedSpan:
 
     @classmethod
     def of(cls, span: ReadableSpan) -> TranslatedSpan:
-        """Seed a draft from a span's own (read-only) attributes and events."""
-        return cls(span, dict(span.attributes or {}), list(span.events or []))
+        """Seed a draft from a span's own fields, attributes, and events."""
+        return cls(
+            copy(span),
+            dict(span.attributes or {}),
+            list(span.events or []),
+        )
 
     def finalize(self) -> ReadableSpan:
-        """Build the export span: the original's fields + our rewritten attrs/events."""
+        """Build the export span from the draft and its rewritten attrs/events."""
         return rebuild_readable_span(
             self.span, attributes=self.attributes, events=self.events
         )
+
+    def set_name(self, name: str) -> None:
+        """Set the exported span's name (the LangSmith run name)."""
+        self.span._name = name
+
+    def set_end_time(self, end_time_ns: int) -> None:
+        """Set the exported span's end time (epoch ns).
+
+        Lets a span merged from two sources report a duration that runs past its
+        own end — e.g. a tool span spanning from the call to the result.
+        """
+        self.span._end_time = end_time_ns
 
     def set_kind(self, kind: str) -> None:
         """Set ``langsmith.span.kind`` (``llm`` / ``chain`` / ``tool`` / …)."""

@@ -79,6 +79,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
@@ -113,6 +114,7 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
+from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -271,6 +273,9 @@ if TYPE_CHECKING:
     )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
     )
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
@@ -914,6 +919,7 @@ class Client:
         "_profile_auth",
         "_profile_auth_headers",
         "_langsmith_api",
+        "_langsmith_api_sync",
     ]
 
     _api_key: Optional[str]
@@ -925,6 +931,7 @@ class Client:
     _profile_auth: Optional[_profiles.ProfileAuth]
     _profile_auth_headers: dict[str, str]
     _langsmith_api: Optional[LangsmithOpenAPIClient]
+    _langsmith_api_sync: Optional[SyncLangsmithOpenAPIClient]
 
     def __init__(
         self,
@@ -1464,6 +1471,7 @@ class Client:
             self._failed_traces_max_bytes = 100 * 1024 * 1024
 
         self._langsmith_api = None
+        self._langsmith_api_sync = None
 
     # ------------------------------------------------------------------
     # Stainless v2 resource accessors
@@ -1487,6 +1495,22 @@ class Client:
                 default_headers=self._headers or None,
             )
         return self._langsmith_api
+
+    def _get_langsmith_api_sync(self) -> SyncLangsmithOpenAPIClient:
+        if self._langsmith_api_sync is None:
+            self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
+                api_key=self._api_key,
+                tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                base_url=self.api_url,
+                timeout=_httpx.Timeout(
+                    connect=self._timeout[0],
+                    read=self._timeout[1],
+                    write=self._timeout[1],
+                    pool=self._timeout[0],
+                ),
+                default_headers=self._headers or None,
+            )
+        return self._langsmith_api_sync
 
     @property
     def runs(self) -> AsyncRunsResource:
@@ -1523,6 +1547,12 @@ class Client:
         """Access the traces resource (query, list_runs)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().traces
+
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().public
 
     def _dump_failed_trace(
         self,
@@ -3989,10 +4019,21 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]):
@@ -4028,6 +4069,12 @@ class Client:
             run = self._load_child_runs(run)
         return run
 
+    @_deprecated(
+        "read_thread() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.list_traces() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-list-traces for the migration guide."
+    )
     def read_thread(
         self,
         *,
@@ -4042,6 +4089,11 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.threads.list_traces` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             thread_id: Thread id (required).
@@ -4084,6 +4136,12 @@ class Client:
             **kwargs,
         )
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     def list_runs(
         self,
         *,
@@ -4106,6 +4164,11 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -4278,6 +4341,12 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    @_deprecated(
+        "list_threads() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-query for the migration guide."
+    )
     def list_threads(
         self,
         *,
@@ -4289,6 +4358,11 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.threads.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The project (session) id.
@@ -4459,6 +4533,10 @@ class Client:
                 ]
                 for future in as_completed(futures):
                     project_ids.append(future.result().id)
+        if not project_ids:
+            raise ValueError(
+                "At least one of project_names or project_ids must be provided."
+            )
         payload = {
             "id": id,
             "trace": trace,
@@ -7595,10 +7673,10 @@ class Client:
                     Optional[ls_schemas.FeedbackConfig], res.feedback_config
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
-                project_id=project_id,
+                project_id=project_id if run is None else None,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run else None,
+                session_id=run.session_id if run and run.session_id else project_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )
@@ -7722,8 +7800,7 @@ class Client:
                 The number of times to retry the request before giving up.
             project_id (Optional[Union[UUID, str]]):
                 The ID of the project (or experiment) to provide feedback on. This is
-                used for creating summary metrics for experiments. Cannot specify
-                run_id or trace_id if project_id is specified, and vice versa.
+                used for creating summary metrics for experiments.
             comparative_experiment_id (Optional[Union[UUID, str]]):
                 If this feedback was logged as a part of a comparative experiment, this
                 associates the feedback with that experiment.
@@ -7797,6 +7874,13 @@ class Client:
         if run_id is not None and project_id is not None:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
+            )
+        if run_id is not None and session_id is None:
+            warnings.warn(
+                "session_id will become a required argument to create_feedback() in "
+                "a future release. Please provide it to avoid errors.",
+                DeprecationWarning,
+                stacklevel=2,
             )
         if kwargs:
             warnings.warn(
@@ -8819,9 +8903,9 @@ class Client:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. Deprecated; emits a
-          `DeprecationWarning` and will be removed in a future release. Prefer
-          `runs`.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -8843,12 +8927,9 @@ class Client:
             json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
         elif run_ids is not None:
             warnings.warn(
-                "The `run_ids` parameter of `add_runs_to_annotation_queue` is "
-                "deprecated and will be removed in a future release. Pass `runs` "
-                "instead, with each run's full lookup key (`run_id`, `session_id`, "
-                "`start_time`). See "
-                "https://docs.langchain.com/langsmith/smithdb-sdk-migration "
-                "for details.",
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -10690,6 +10771,12 @@ class Client:
 
             offset += len(batch)
 
+    @_deprecated(
+        "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.datasets.experiment_runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#dataset-experiment-runs-query for the migration guide."
+    )
     def get_experiment_results(
         self,
         name: Optional[str] = None,
@@ -10700,6 +10787,11 @@ class Client:
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
+
+        .. deprecated:: 0.10.7
+            Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Experiment results may not be available immediately after the experiment is created.
 

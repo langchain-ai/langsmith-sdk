@@ -309,6 +309,11 @@ class EventSession:
         prompt* — the conversation transcript so far minus the response being
         recorded (the trailing assistant message) — so the ``llm`` run reads like
         a normal model call instead of having empty inputs.
+
+        ``usage_metadata`` must be passed here, not patched on afterwards: cost
+        is derived when the run is finalized, so usage that lands on a later
+        patch (after ``end``) is not reflected. Services that report tokens on a
+        separate, later event should defer this call until the counts arrive.
         """
         parent = parent or self._current_turn or self.run
         if inputs is None:

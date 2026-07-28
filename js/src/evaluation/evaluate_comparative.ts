@@ -5,12 +5,14 @@ import {
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,
   Example,
   Run,
+  TracerSession,
 } from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { evaluate } from "./index.js";
 import pRetry from "../utils/p-retry/index.js";
 import { getCurrentRunTree, traceable } from "../traceable.js";
+import { loadTracesV2 } from "../utils/v2_migration.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
 
@@ -32,17 +34,19 @@ async function loadExperiment(
   );
 }
 
-async function loadTraces(
+export async function loadTracesForExperiment(
   client: Client,
-  experiment: string,
+  project: TracerSession,
   options: { loadNested: boolean },
-) {
-  const executionOrder = options.loadNested ? undefined : 1;
-  const runs = await client.listRuns(
-    validate(experiment)
-      ? { projectId: experiment, executionOrder }
-      : { projectName: experiment, executionOrder },
-  );
+): Promise<Run[]> {
+  // v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
+  const isRoot = options.loadNested ? undefined : true;
+  const runs = (await client._supportsSDBQuery())
+    ? await loadTracesV2(client, project, { isRoot })
+    : await client.listRuns({
+        projectId: project.id,
+        executionOrder: options.loadNested ? undefined : 1,
+      });
 
   const treeMap: Record<string, Run[]> = {};
   const runIdMap: Record<string, Run> = {};
@@ -55,7 +59,6 @@ async function loadTraces(
     } else {
       results.push(run);
     }
-
     runIdMap[run.id] = run;
   }
 
@@ -268,8 +271,10 @@ export async function evaluateComparative(
   }
 
   const experimentRuns = await Promise.all(
-    projects.map((p) =>
-      loadTraces(client, p.id, { loadNested: !!options.loadNested }),
+    projects.map((project) =>
+      loadTracesForExperiment(client, project, {
+        loadNested: !!options.loadNested,
+      }),
     ),
   );
 

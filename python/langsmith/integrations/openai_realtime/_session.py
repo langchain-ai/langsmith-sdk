@@ -15,8 +15,11 @@ per id wins → partials collapse); each finalized message emits one span (a
 curated ``user_message`` or an assistant ``model`` ``llm`` span), grouped into
 turns. Each SDK-run tool becomes a single ``tool`` span spanning its
 ``tool_start``→``tool_end`` pair (so the span duration is the real tool latency);
-``audio_interrupted`` flags the turn. (Token usage isn't available — the SDK has
-no per-response usage events yet.)
+``audio_interrupted`` flags the turn. Token usage — which the SDK exposes no
+*semantic* event for — is recovered from the raw ``response.done`` the SDK still
+forwards as a ``raw_model_event`` (``raw_server_event``), then attached to that
+turn's assistant ``model`` span so the conversation is priced (audio tokens
+included).
 
 Trace shape — one conversation = one trace::
 
@@ -42,6 +45,9 @@ from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
     EventSession,
     start_session,
+)
+from langsmith.integrations.openai_realtime._connection import (
+    usage_metadata_from_usage,
 )
 from langsmith.run_helpers import tracing_context
 
@@ -175,6 +181,25 @@ def raw_input_transcript(event: Any) -> tuple[str | None, str] | None:
     return getattr(data, "item_id", None), transcript
 
 
+def raw_response_usage(event: Any) -> dict[str, Any] | None:
+    """Token usage from a ``raw_model_event`` wrapping a ``response.done``.
+
+    The Agents SDK emits no semantic usage event, but still forwards the raw
+    ``response.done`` (as a ``raw_server_event``), which carries ``response.usage``
+    — the only place per-turn token counts appear on this backend. Maps it via the
+    shared Realtime usage mapper (so audio/cached detail is kept). Returns ``None``
+    for any other event or a payload without usage.
+    """
+    data = getattr(event, "data", None)
+    raw = getattr(data, "data", None)
+    if not isinstance(raw, dict) or raw.get("type") != "response.done":
+        return None
+    response = raw.get("response")
+    if not isinstance(response, dict):
+        return None
+    return usage_metadata_from_usage(response.get("usage"))
+
+
 def history_item(event: Any) -> tuple[str | None, str | None, str | None]:
     """``(item_id, role, text)`` for a ``history_added`` event's single item."""
     item = getattr(event, "item", None)
@@ -278,6 +303,9 @@ class _AgentsRealtimeTracer:
         self._notified: set[tuple[str, str]] = set()  # (role, text) already sent out
         # Per-turn latency: when the current user turn opened; None = not armed.
         self._latency_since: float | None = None
+        # Usage from the most recent raw response.done, awaiting the assistant
+        # model span it belongs to (see observe / _record_item). None = none seen.
+        self._pending_usage: dict[str, Any] | None = None
         # Open tool spans, keyed by (tool_name, arguments). The SDK's
         # tool_start/tool_end events carry no call_id, so start→end is matched on
         # that pair; a FIFO list per key disambiguates the (rare) concurrent or
@@ -295,6 +323,8 @@ class _AgentsRealtimeTracer:
             self.record_first_audio(received_at)
             return
         if etype == "raw_model_event":
+            if (usage := raw_response_usage(event)) is not None:
+                self._pending_usage = usage
             rec = raw_input_transcript(event)
             if rec:
                 item_id, transcript = rec
@@ -464,8 +494,10 @@ class _AgentsRealtimeTracer:
         else:
             self._trace.record_llm(
                 outputs={"role": "assistant", "content": text},
+                usage_metadata=self._pending_usage,
                 metadata={"ls_provider": "openai", "ls_model_name": self._model},
             )
+            self._pending_usage = None
 
 
 class _TracedRealtimeSession:

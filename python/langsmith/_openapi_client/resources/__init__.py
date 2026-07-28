@@ -24,6 +24,14 @@ from .issues import (
     IssuesResourceWithStreamingResponse,
     AsyncIssuesResourceWithStreamingResponse,
 )
+from .public import (
+    PublicResource,
+    AsyncPublicResource,
+    PublicResourceWithRawResponse,
+    AsyncPublicResourceWithRawResponse,
+    PublicResourceWithStreamingResponse,
+    AsyncPublicResourceWithStreamingResponse,
+)
 from .traces import (
     TracesResource,
     AsyncTracesResource,
@@ -96,6 +104,12 @@ __all__ = [
     "AsyncOnlineEvaluatorsResourceWithRawResponse",
     "OnlineEvaluatorsResourceWithStreamingResponse",
     "AsyncOnlineEvaluatorsResourceWithStreamingResponse",
+    "PublicResource",
+    "AsyncPublicResource",
+    "PublicResourceWithRawResponse",
+    "AsyncPublicResourceWithRawResponse",
+    "PublicResourceWithStreamingResponse",
+    "AsyncPublicResourceWithStreamingResponse",
     "InfoResource",
     "AsyncInfoResource",
     "InfoResourceWithRawResponse",

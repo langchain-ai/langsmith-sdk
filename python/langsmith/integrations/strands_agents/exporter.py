@@ -166,6 +166,7 @@ class LangSmithSpanExporter(SpanExporter):
 
         input_messages: list[dict[str, Any]] = []
         output_messages: list[dict[str, Any]] = []
+        tool_output_completion: str | None = None
         remaining_events: list[Any] = []
 
         for event in span.events:
@@ -173,13 +174,31 @@ class LangSmithSpanExporter(SpanExporter):
             attrs = dict(event.attributes) if event.attributes else {}
 
             if name == "gen_ai.choice":
-                # The final model response is the only true output
-                msg = self._event_to_message(
-                    name, attrs, tool_id_to_name=tool_id_to_name
-                )
-                if tool_call_id:
-                    msg["tool_call_id"] = tool_call_id
-                output_messages.append(msg)
+                if operation == "execute_tool":
+                    # In an 'execute_tool' span, Strands adds tool results
+                    # in a gen_ai.choice event. We convert it to expected
+                    # tool result block.
+                    raw = attrs.get("message", "[]")
+                    try:
+                        content = json.loads(raw) if isinstance(raw, str) else raw
+                    except (json.JSONDecodeError, TypeError):
+                        content = raw
+                    tool_output_completion = json.dumps(
+                        {
+                            "role": "tool",
+                            "content": self._extract_tool_output(content),
+                            "name": tool_name,
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
+                else:
+                    # The final model response is the only true output
+                    msg = self._event_to_message(
+                        name, attrs, tool_id_to_name=tool_id_to_name
+                    )
+                    if tool_call_id:
+                        msg["tool_call_id"] = tool_call_id
+                    output_messages.append(msg)
             elif name in self._MESSAGE_EVENTS:
                 msg = self._event_to_message(
                     name, attrs, tool_id_to_name=tool_id_to_name
@@ -198,7 +217,9 @@ class LangSmithSpanExporter(SpanExporter):
         new_attrs: dict[str, Any] = dict(span_attrs)
         if input_messages:
             new_attrs["gen_ai.prompt"] = json.dumps({"messages": input_messages})
-        if output_messages:
+        if tool_output_completion is not None:
+            new_attrs["gen_ai.completion"] = tool_output_completion
+        elif output_messages:
             new_attrs["gen_ai.completion"] = json.dumps(output_messages[-1])
 
         # Map gen_ai.operation.name to langsmith.span.kind (run type).
@@ -372,6 +393,35 @@ class LangSmithSpanExporter(SpanExporter):
         return msg
 
     @staticmethod
+    def _extract_tool_output(content: Any) -> str:
+        """Extract plain-text output from tool result content blocks.
+
+        Strands tool spans emit their output as a list of content blocks
+        (e.g. ``[{"text": "Hippopotamus"}]``). This extracts the text and
+        returns it as a plain string for ``gen_ai.completion`` on tool spans.
+        """
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict) and "text" in block and len(block) == 1:
+                    text_parts.append(block["text"])
+                else:
+                    try:
+                        text_parts.append(json.dumps(block, ensure_ascii=False))
+                    except (TypeError, ValueError):
+                        text_parts.append(str(block))
+            if text_parts:
+                return "\n".join(text_parts) if len(text_parts) > 1 else text_parts[0]
+
+        try:
+            return json.dumps(content, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(content)
+
+    @staticmethod
     def _stringify_tool_content(content: Any) -> str:
         """Ensure tool message content is a string.
 
@@ -395,12 +445,14 @@ class LangSmithSpanExporter(SpanExporter):
         Bedrock uses implicit typing (the key name *is* the type)::
 
             {"text": "hello"}
+            {"reasoningContent": {"reasoningText": {"text": "...", "signature": "..."}}}
             {"toolUse": {"toolUseId": "x", "name": "f", "input": {...}}}
             {"toolResult": {"toolUseId": "x", "status": "success", "content": [...]}}
 
         LangSmith expects explicit ``type`` fields::
 
             {"type": "text", "text": "hello"}
+            {"type": "thinking", "thinking": "...", "signature": "..."}
             {"type": "tool_use", "id": "x", "name": "f", "input": {...}}
             {
                 "type": "tool_result",
@@ -416,6 +468,15 @@ class LangSmithSpanExporter(SpanExporter):
 
         if "text" in block and len(block) == 1:
             return {"type": "text", "text": block["text"]}
+
+        if "reasoningContent" in block:
+            rc = block["reasoningContent"]
+            reasoning_text = rc.get("reasoningText", {})
+            return {
+                "type": "thinking",
+                "thinking": reasoning_text.get("text", ""),
+                "signature": reasoning_text.get("signature", ""),
+            }
 
         if "toolUse" in block:
             tu = block["toolUse"]
