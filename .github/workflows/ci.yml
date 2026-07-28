@@ -740,6 +740,7 @@ jobs:
       - python-deepagent-compat
       # Integration
       - integration-changes
+      - python-integration-matrix
       - python-integration
       - js-integration
       - js-vitest-eval
