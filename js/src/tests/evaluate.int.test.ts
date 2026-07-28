@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import * as ai from "ai";
 import { openai } from "@ai-sdk/openai";
 import { wrapAISDK } from "../experimental/vercel/index.js";
+import { requiresClickhouse } from "./utils/markers.js";
 
 const { generateText } = wrapAISDK(ai);
 
@@ -577,99 +578,102 @@ test("concurrent evaluate restores dataset order before summary", async () => {
   );
 });
 
-test("evaluate handles comparative target with ComparativeEvaluateOptions", async () => {
-  const client = new Client();
+requiresClickhouse.test(
+  "evaluate handles comparative target with ComparativeEvaluateOptions",
+  async () => {
+    const client = new Client();
 
-  // First, create two experiments to compare
-  const targetFunc1 = (input: Record<string, any>) => {
-    return {
-      foo: input.input + 1,
+    // First, create two experiments to compare
+    const targetFunc1 = (input: Record<string, any>) => {
+      return {
+        foo: input.input + 1,
+      };
     };
-  };
 
-  const targetFunc2 = (input: Record<string, any>) => {
-    return {
-      foo: input.input + 2,
+    const targetFunc2 = (input: Record<string, any>) => {
+      return {
+        foo: input.input + 2,
+      };
     };
-  };
 
-  // Run initial experiments
-  const exp1 = await evaluate(targetFunc1, {
-    data: TESTING_DATASET_NAME,
-    description: "First experiment for comparison",
-  });
+    // Run initial experiments
+    const exp1 = await evaluate(targetFunc1, {
+      data: TESTING_DATASET_NAME,
+      description: "First experiment for comparison",
+    });
 
-  const exp2 = await evaluate(targetFunc2, {
-    data: TESTING_DATASET_NAME,
-    description: "Second experiment for comparison",
-  });
+    const exp2 = await evaluate(targetFunc2, {
+      data: TESTING_DATASET_NAME,
+      description: "Second experiment for comparison",
+    });
 
-  await Promise.all(
-    [exp1, exp2].flatMap(({ results }) =>
-      results.flatMap(({ run }) => waitUntilRunFound(client, run.id)),
-    ),
-  );
-  // Create comparative evaluator
-  const comparativeEvaluator = ({
-    runs,
-    example,
-  }: {
-    runs: Run[];
-    example: Example;
-  }) => {
-    if (!runs || !example) throw new Error("Missing required parameters");
+    await Promise.all(
+      [exp1, exp2].flatMap(({ results }) =>
+        results.flatMap(({ run }) => waitUntilRunFound(client, run.id)),
+      ),
+    );
+    // Create comparative evaluator
+    const comparativeEvaluator = ({
+      runs,
+      example,
+    }: {
+      runs: Run[];
+      example: Example;
+    }) => {
+      if (!runs || !example) throw new Error("Missing required parameters");
 
-    // Compare outputs from both runs
-    const scores = Object.fromEntries(
-      runs.map((run) => [
-        run.id,
-        run.outputs?.foo === example.outputs?.output ? 1 : 0,
-      ]),
+      // Compare outputs from both runs
+      const scores = Object.fromEntries(
+        runs.map((run) => [
+          run.id,
+          run.outputs?.foo === example.outputs?.output ? 1 : 0,
+        ]),
+      );
+
+      return {
+        key: "comparative_score",
+        scores,
+      };
+    };
+
+    // Run comparative evaluation
+    const compareRes = await evaluate(
+      [exp1.experimentName, exp2.experimentName],
+      {
+        evaluators: [comparativeEvaluator],
+        description: "Comparative evaluation test",
+        randomizeOrder: true,
+        loadNested: false,
+      },
     );
 
-    return {
-      key: "comparative_score",
-      scores,
-    };
-  };
+    // Verify we got ComparisonEvaluationResults
+    expect(compareRes.experimentName).toBeDefined();
+    expect(compareRes.experimentName).toBeDefined();
+    expect(compareRes.results).toBeDefined();
+    expect(Array.isArray(compareRes.results)).toBe(true);
 
-  // Run comparative evaluation
-  const compareRes = await evaluate(
-    [exp1.experimentName, exp2.experimentName],
-    {
-      evaluators: [comparativeEvaluator],
-      description: "Comparative evaluation test",
-      randomizeOrder: true,
-      loadNested: false,
-    },
-  );
-
-  // Verify we got ComparisonEvaluationResults
-  expect(compareRes.experimentName).toBeDefined();
-  expect(compareRes.experimentName).toBeDefined();
-  expect(compareRes.results).toBeDefined();
-  expect(Array.isArray(compareRes.results)).toBe(true);
-
-  // The pairwise comparison URL and comparative experiment are exposed on the result
-  expect(compareRes).toHaveProperty("url");
-  expect(typeof compareRes.url === "string" || compareRes.url === null).toBe(
-    true,
-  );
-  expect(compareRes.comparativeExperiment).toBeDefined();
-  expect(compareRes.comparativeExperiment.id).toBeDefined();
-  if (compareRes.url != null) {
-    expect(compareRes.url).toContain(
-      `comparativeExperiment=${compareRes.comparativeExperiment.id}`,
+    // The pairwise comparison URL and comparative experiment are exposed on the result
+    expect(compareRes).toHaveProperty("url");
+    expect(typeof compareRes.url === "string" || compareRes.url === null).toBe(
+      true,
     );
-  }
+    expect(compareRes.comparativeExperiment).toBeDefined();
+    expect(compareRes.comparativeExperiment.id).toBeDefined();
+    if (compareRes.url != null) {
+      expect(compareRes.url).toContain(
+        `comparativeExperiment=${compareRes.comparativeExperiment.id}`,
+      );
+    }
 
-  // Check structure of comparison results
-  for (const result of compareRes.results) {
-    expect(result.key).toBe("comparative_score");
-    expect(result.scores).toBeDefined();
-    expect(Object.keys(result.scores)).toHaveLength(2); // Should have scores for both experiments
-  }
-});
+    // Check structure of comparison results
+    for (const result of compareRes.results) {
+      expect(result.key).toBe("comparative_score");
+      expect(result.scores).toBeDefined();
+      expect(Object.keys(result.scores)).toHaveLength(2); // Should have scores for both experiments
+    }
+  },
+);
 
 test("evaluate enforces correct evaluator types for comparative evaluation at runtime", async () => {
   const exp1 = await evaluate(

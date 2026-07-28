@@ -35,6 +35,37 @@ export async function waitUntil(
   );
 }
 
+/**
+ * Counts the runs in a project, preferring the v2 read path.
+ *
+ * SmithDB-only backends don't serve `listRuns`, so waiting for ingestion through
+ * it never settles there; deployments without the v2 runs endpoints (V15) fall
+ * back to the legacy one.
+ */
+async function countProjectRuns(
+  client: Client,
+  projectName: string,
+): Promise<number | null> {
+  try {
+    const { id } = await client.readProject({ projectName });
+    let count = 0;
+    for await (const _run of client.runs.query({
+      project_ids: [id],
+      selects: ["ID"],
+    })) {
+      count++;
+    }
+    if (count > 0) return count;
+  } catch (_e) {
+    // Fall through to the legacy endpoint.
+  }
+  try {
+    return (await toArray(client.listRuns({ projectName }))).length;
+  } catch (_e) {
+    return null;
+  }
+}
+
 export async function pollRunsUntilCount(
   client: Client,
   projectName: string,
@@ -42,14 +73,7 @@ export async function pollRunsUntilCount(
   timeout?: number,
 ): Promise<void> {
   await waitUntil(
-    async () => {
-      try {
-        const runs = await toArray(client.listRuns({ projectName }));
-        return runs.length === count;
-      } catch (_e) {
-        return false;
-      }
-    },
+    async () => (await countProjectRuns(client, projectName)) === count,
     timeout ?? 120_000, // Wait up to 120 seconds
     3000,
   );

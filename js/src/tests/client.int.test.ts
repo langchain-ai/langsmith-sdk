@@ -28,7 +28,7 @@ import {
   waitUntil,
   skipIfTransientError,
 } from "./utils.js";
-import { requiresBetaDataset } from "./utils/markers.js";
+import { requiresBetaDataset, requiresClickhouse } from "./utils/markers.js";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
@@ -260,31 +260,35 @@ test("evaluators generated client CRUD", async () => {
   }
 }, 180_000);
 
-test("Test share and unshare run", async () => {
-  const langchainClient = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
+requiresClickhouse.test(
+  "Test share and unshare run",
+  async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: false,
+      callerOptions: { maxRetries: 6 },
+    });
 
-  // Create a new run
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    name: "Test run",
-    inputs: { input: "hello world" },
-    run_type: "chain",
-    id: runId,
-  });
+    // Create a new run
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      name: "Test run",
+      inputs: { input: "hello world" },
+      run_type: "chain",
+      id: runId,
+    });
 
-  await waitUntilRunFound(langchainClient, runId);
-  const sharedUrl = await langchainClient.shareRun(runId);
-  const response = await _getFetchImplementation()(sharedUrl);
-  expect(response.status).toEqual(200);
-  expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
+    await waitUntilRunFound(langchainClient, runId);
+    const sharedUrl = await langchainClient.shareRun(runId);
+    const response = await _getFetchImplementation()(sharedUrl);
+    expect(response.status).toEqual(200);
+    expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
 
-  await langchainClient.unshareRun(runId);
-  const sharedLink = await langchainClient.readRunSharedLink(runId);
-  expect(sharedLink).toBe(undefined);
-}, 180_000);
+    await langchainClient.unshareRun(runId);
+    const sharedLink = await langchainClient.readRunSharedLink(runId);
+    expect(sharedLink).toBe(undefined);
+  },
+  180_000,
+);
 
 test("Test list datasets", async () => {
   const langchainClient = new Client({
@@ -330,16 +334,90 @@ test("Test list datasets", async () => {
   await langchainClient.deleteDataset({ datasetId: dataset2.id });
 }, 180_000);
 
-test("Test create feedback with source run", async () => {
-  await skipIfTransientError(async () => {
+requiresClickhouse.test(
+  "Test create feedback with source run",
+  async () => {
+    await skipIfTransientError(async () => {
+      const langchainClient = new Client({
+        autoBatchTracing: false,
+        callerOptions: { maxRetries: 6 },
+      });
+      const projectName = "__test_create_feedback_with_source_run JS";
+      if (await langchainClient.hasProject({ projectName })) {
+        await deleteProject(langchainClient, projectName);
+      }
+      const runId = uuidv4();
+      await langchainClient.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { prompt: "hello world" },
+        outputs: { generation: "hi there" },
+        start_time: new Date().getTime(),
+        end_time: new Date().getTime(),
+      });
+
+      const runId2 = uuidv4();
+      await langchainClient.createRun({
+        id: runId2,
+        project_name: projectName,
+        name: "test_run_2",
+        run_type: "llm",
+        inputs: { prompt: "hello world 2" },
+        outputs: { generation: "hi there 2" },
+        start_time: new Date().getTime(),
+        end_time: new Date().getTime(),
+      });
+
+      // Wait for runs to be ingested before creating feedback
+      await Promise.all([
+        waitUntilRunFound(langchainClient, runId, true),
+        waitUntilRunFound(langchainClient, runId2, true),
+      ]);
+
+      await langchainClient.createFeedback(runId, "test_feedback", {
+        score: 0.5,
+        sourceRunId: runId2,
+        feedbackSourceType: "app",
+      });
+      await langchainClient.createFeedback(runId2, "test_feedback_2", {
+        score: 0.5,
+        feedbackSourceType: "app",
+      });
+
+      // Poll for feedbacks to be available (up to 10 seconds)
+      let feedbacks: Feedback[] = [];
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        feedbacks = await toArray(
+          langchainClient.listFeedback({
+            runIds: [runId, runId2],
+          }),
+        );
+        if (feedbacks.length >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      expect(feedbacks).toHaveLength(2);
+      expect(feedbacks.map((f) => f.run_id)).toContain(runId);
+      expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
+    });
+  },
+  180_000,
+);
+
+requiresClickhouse.test(
+  "Test create run with masked inputs/outputs",
+  async () => {
     const langchainClient = new Client({
+      hideInputs: true,
+      hideOutputs: true,
       autoBatchTracing: false,
       callerOptions: { maxRetries: 6 },
     });
-    const projectName = "__test_create_feedback_with_source_run JS";
-    if (await langchainClient.hasProject({ projectName })) {
-      await deleteProject(langchainClient, projectName);
-    }
+    const projectName = "__test_create_run_with_masked_inputs_outputs JS";
+    await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
     await langchainClient.createRun({
       id: runId,
@@ -358,91 +436,25 @@ test("Test create feedback with source run", async () => {
       project_name: projectName,
       name: "test_run_2",
       run_type: "llm",
-      inputs: { prompt: "hello world 2" },
-      outputs: { generation: "hi there 2" },
+      inputs: { messages: "hello world 2" },
       start_time: new Date().getTime(),
+    });
+
+    await langchainClient.updateRun(runId2, {
+      outputs: { generation: "hi there 2" },
       end_time: new Date().getTime(),
     });
-
-    // Wait for runs to be ingested before creating feedback
-    await Promise.all([
-      waitUntilRunFound(langchainClient, runId, true),
-      waitUntilRunFound(langchainClient, runId2, true),
-    ]);
-
-    await langchainClient.createFeedback(runId, "test_feedback", {
-      score: 0.5,
-      sourceRunId: runId2,
-      feedbackSourceType: "app",
-    });
-    await langchainClient.createFeedback(runId2, "test_feedback_2", {
-      score: 0.5,
-      feedbackSourceType: "app",
-    });
-
-    // Poll for feedbacks to be available (up to 10 seconds)
-    let feedbacks: Feedback[] = [];
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      feedbacks = await toArray(
-        langchainClient.listFeedback({
-          runIds: [runId, runId2],
-        }),
-      );
-      if (feedbacks.length >= 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    expect(feedbacks).toHaveLength(2);
-    expect(feedbacks.map((f) => f.run_id)).toContain(runId);
-    expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
-  });
-}, 180_000);
-
-test("Test create run with masked inputs/outputs", async () => {
-  const langchainClient = new Client({
-    hideInputs: true,
-    hideOutputs: true,
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const projectName = "__test_create_run_with_masked_inputs_outputs JS";
-  await deleteProject(langchainClient, projectName);
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
-
-  const runId2 = uuidv4();
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { messages: "hello world 2" },
-    start_time: new Date().getTime(),
-  });
-
-  await langchainClient.updateRun(runId2, {
-    outputs: { generation: "hi there 2" },
-    end_time: new Date().getTime(),
-  });
-  await waitUntilRunFound(langchainClient, runId, false);
-  const run1 = await langchainClient.readRun(runId);
-  expect(Object.keys(run1.inputs ?? {})).toHaveLength(0);
-  expect(Object.keys(run1.outputs ?? {})).toHaveLength(0);
-  await waitUntilRunFound(langchainClient, runId2, false);
-  const run2 = await langchainClient.readRun(runId2);
-  expect(Object.keys(run2.inputs ?? {})).toHaveLength(0);
-  expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
-}, 240_000);
+    await waitUntilRunFound(langchainClient, runId, false);
+    const run1 = await langchainClient.readRun(runId);
+    expect(Object.keys(run1.inputs ?? {})).toHaveLength(0);
+    expect(Object.keys(run1.outputs ?? {})).toHaveLength(0);
+    await waitUntilRunFound(langchainClient, runId2, false);
+    const run2 = await langchainClient.readRun(runId2);
+    expect(Object.keys(run2.inputs ?? {})).toHaveLength(0);
+    expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
+  },
+  240_000,
+);
 
 // TODO: investigate - revision_id metadata not being set consistently
 // Environment variables (LANGCHAIN_REVISION_ID) may not be properly propagating to the API
@@ -579,31 +591,35 @@ describe("createChatExample", () => {
   }, 180_000);
 });
 
-test("Test getRunUrl with run", async () => {
-  const client = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const runId = uuidv4();
-  const run: Run = {
-    id: runId,
-    name: "foo",
-    run_type: "llm",
-    inputs: { input: "hello world" },
-    outputs: { output: "hi there" },
-  };
-  await client.createRun({ project_name: "foo", ...run });
-  await waitUntilRunFound(
-    client,
-    runId,
-    (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0,
-  );
-  const result = await client.getRunUrl({
-    run,
-    projectOpts: { projectName: "foo" },
-  });
-  expect(result).toContain(runId);
-}, 180_000);
+requiresClickhouse.test(
+  "Test getRunUrl with run",
+  async () => {
+    const client = new Client({
+      autoBatchTracing: false,
+      callerOptions: { maxRetries: 6 },
+    });
+    const runId = uuidv4();
+    const run: Run = {
+      id: runId,
+      name: "foo",
+      run_type: "llm",
+      inputs: { input: "hello world" },
+      outputs: { output: "hi there" },
+    };
+    await client.createRun({ project_name: "foo", ...run });
+    await waitUntilRunFound(
+      client,
+      runId,
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0,
+    );
+    const result = await client.getRunUrl({
+      run,
+      projectOpts: { projectName: "foo" },
+    });
+    expect(result).toContain(runId);
+  },
+  180_000,
+);
 
 test("Examples CRUD", async () => {
   const client = new Client({
@@ -828,55 +844,59 @@ test("Examples CRUD", async () => {
   await client.deleteDataset({ datasetId: dataset.id });
 }, 180_000);
 
-test("list runs limit arg works", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
+requiresClickhouse.test(
+  "list runs limit arg works",
+  async () => {
+    const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
-  const limit = 6;
+    const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
+    const limit = 6;
 
-  // delete the project just in case
-  if (await client.hasProject({ projectName })) {
-    await client.deleteProject({ projectName });
-  }
-
-  try {
-    const runsArr: Array<Run> = [];
-    // create a fresh project with 10 runs --default amount created by createRunsFactory
-    await client.createProject({ projectName });
-    await Promise.all(
-      createRunsFactory(projectName).map(async (payload) => {
-        if (!payload.id) payload.id = uuidv4();
-        await client.createRun(payload);
-        await waitUntilRunFound(client, payload.id);
-      }),
-    );
-
-    let iters = 0;
-    for await (const run of client.listRuns({ limit, projectName })) {
-      expect(run).toBeDefined();
-      runsArr.push(run);
-      iters += 1;
-      if (iters > limit) {
-        throw new Error(
-          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`,
-        );
-      }
-    }
-
-    expect(runsArr.length).toBe(limit);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (e: any) {
-    if (e.message.startsWith("More runs returned than expected.")) {
-      throw e;
-    } else {
-      console.error(e);
-    }
-  } finally {
+    // delete the project just in case
     if (await client.hasProject({ projectName })) {
       await client.deleteProject({ projectName });
     }
-  }
-}, 180_000); // Increased timeout for creating/waiting for 10 runs
+
+    try {
+      const runsArr: Array<Run> = [];
+      // create a fresh project with 10 runs --default amount created by createRunsFactory
+      await client.createProject({ projectName });
+      await Promise.all(
+        createRunsFactory(projectName).map(async (payload) => {
+          if (!payload.id) payload.id = uuidv4();
+          await client.createRun(payload);
+          await waitUntilRunFound(client, payload.id);
+        }),
+      );
+
+      let iters = 0;
+      for await (const run of client.listRuns({ limit, projectName })) {
+        expect(run).toBeDefined();
+        runsArr.push(run);
+        iters += 1;
+        if (iters > limit) {
+          throw new Error(
+            `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`,
+          );
+        }
+      }
+
+      expect(runsArr.length).toBe(limit);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      if (e.message.startsWith("More runs returned than expected.")) {
+        throw e;
+      } else {
+        console.error(e);
+      }
+    } finally {
+      if (await client.hasProject({ projectName })) {
+        await client.deleteProject({ projectName });
+      }
+    }
+  },
+  180_000,
+); // Increased timeout for creating/waiting for 10 runs
 
 test("Test run stats", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
@@ -1196,7 +1216,7 @@ requiresBetaDataset.test(
   },
 );
 
-test("annotationqueue crud", async () => {
+requiresClickhouse.test("annotationqueue crud", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
   const projectName = `test-project-${uuidv4().substring(0, 8)}`;
@@ -1300,7 +1320,7 @@ test("annotationqueue crud", async () => {
   }
 });
 
-test("annotationqueue add runs by key", async () => {
+requiresClickhouse.test("annotationqueue add runs by key", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
   const projectName = `test-project-${uuidv4().substring(0, 8)}`;
@@ -2289,7 +2309,7 @@ test("create example errors", async () => {
   await client.deleteDataset({ datasetName });
 });
 
-test("fetch child runs", async () => {
+requiresClickhouse.test("fetch child runs", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const projectName = `__test_fetch_child_runs_${uuidv4().slice(0, 4)}`;
   await deleteProject(client, projectName);
@@ -2340,107 +2360,111 @@ test("fetch child runs", async () => {
 // runs. Previously split across
 // "listThreads returns threads grouped by thread_id" and
 // "readThread yields runs for a single thread_id".
-test("listThreads groups runs by thread_id and readThread yields per-thread runs", async () => {
-  const client = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const projectName = `test-list-threads-${uuidv4().slice(0, 12)}`;
-  if (await client.hasProject({ projectName })) {
-    await deleteProject(client, projectName);
-  }
-  try {
-    const base = uuidv4().slice(0, 8);
-    const threadA = `thread-${base}-a`;
-    const threadB = `thread-${base}-b`;
-    const now = new Date();
-    const threadMeta = (tid: string) => ({
-      metadata: {
-        thread_id: tid,
-        session_id: null,
-        conversation_id: null,
-      },
+requiresClickhouse.test(
+  "listThreads groups runs by thread_id and readThread yields per-thread runs",
+  async () => {
+    const client = new Client({
+      autoBatchTracing: false,
+      callerOptions: { maxRetries: 6 },
     });
-    await client.createRun({
-      name: "run_a1",
-      inputs: { x: 1 },
-      run_type: "llm",
-      project_name: projectName,
-      start_time: now.getTime(),
-      extra: threadMeta(threadA),
-    });
-    await client.createRun({
-      name: "run_a2",
-      inputs: { x: 2 },
-      run_type: "llm",
-      project_name: projectName,
-      start_time: now.getTime() + 1000,
-      extra: threadMeta(threadA),
-    });
-    await client.createRun({
-      name: "run_b1",
-      inputs: { y: 1 },
-      run_type: "llm",
-      project_name: projectName,
-      start_time: now.getTime() + 2000,
-      extra: threadMeta(threadB),
-    });
-    await pollRunsUntilCount(client, projectName, 3, 30_000);
-    const threads = await client.listThreads({
-      projectName,
-      limit: 10,
-    });
-    expect(Array.isArray(threads)).toBe(true);
-    expect(threads.length).toBeGreaterThanOrEqual(2);
-    for (const item of threads) {
-      expect(item).toHaveProperty("thread_id");
-      expect(item).toHaveProperty("runs");
-      expect(item).toHaveProperty("count");
-      expect(item).toHaveProperty("min_start_time");
-      expect(item).toHaveProperty("max_start_time");
-      expect(Array.isArray(item.runs)).toBe(true);
-      expect(item.count).toEqual(item.runs.length);
-    }
-    const threadIds = new Set(threads.map((t) => t.thread_id));
-    expect(threadIds.has(threadA)).toBe(true);
-    expect(threadIds.has(threadB)).toBe(true);
-    const threadAItem = threads.find((t) => t.thread_id === threadA);
-    const threadBItem = threads.find((t) => t.thread_id === threadB);
-    expect(threadAItem).toBeDefined();
-    expect(threadBItem).toBeDefined();
-    expect(threadAItem!.count).toEqual(2);
-    expect(threadBItem!.count).toEqual(1);
-
-    // readThread should yield only the runs belonging to the requested thread.
-    const readRunsA: Run[] = [];
-    for await (const run of client.readThread({
-      threadId: threadA,
-      projectName,
-      limit: 10,
-    })) {
-      readRunsA.push(run);
-    }
-    expect(readRunsA.length).toEqual(2);
-    const readNamesA = new Set(readRunsA.map((r) => r.name));
-    expect(readNamesA.has("run_a1")).toBe(true);
-    expect(readNamesA.has("run_a2")).toBe(true);
-
-    const readRunsB: Run[] = [];
-    for await (const run of client.readThread({
-      threadId: threadB,
-      projectName,
-      limit: 10,
-    })) {
-      readRunsB.push(run);
-    }
-    expect(readRunsB.length).toEqual(1);
-    expect(readRunsB[0].name).toBe("run_b1");
-  } finally {
+    const projectName = `test-list-threads-${uuidv4().slice(0, 12)}`;
     if (await client.hasProject({ projectName })) {
       await deleteProject(client, projectName);
     }
-  }
-}, 60_000);
+    try {
+      const base = uuidv4().slice(0, 8);
+      const threadA = `thread-${base}-a`;
+      const threadB = `thread-${base}-b`;
+      const now = new Date();
+      const threadMeta = (tid: string) => ({
+        metadata: {
+          thread_id: tid,
+          session_id: null,
+          conversation_id: null,
+        },
+      });
+      await client.createRun({
+        name: "run_a1",
+        inputs: { x: 1 },
+        run_type: "llm",
+        project_name: projectName,
+        start_time: now.getTime(),
+        extra: threadMeta(threadA),
+      });
+      await client.createRun({
+        name: "run_a2",
+        inputs: { x: 2 },
+        run_type: "llm",
+        project_name: projectName,
+        start_time: now.getTime() + 1000,
+        extra: threadMeta(threadA),
+      });
+      await client.createRun({
+        name: "run_b1",
+        inputs: { y: 1 },
+        run_type: "llm",
+        project_name: projectName,
+        start_time: now.getTime() + 2000,
+        extra: threadMeta(threadB),
+      });
+      await pollRunsUntilCount(client, projectName, 3, 30_000);
+      const threads = await client.listThreads({
+        projectName,
+        limit: 10,
+      });
+      expect(Array.isArray(threads)).toBe(true);
+      expect(threads.length).toBeGreaterThanOrEqual(2);
+      for (const item of threads) {
+        expect(item).toHaveProperty("thread_id");
+        expect(item).toHaveProperty("runs");
+        expect(item).toHaveProperty("count");
+        expect(item).toHaveProperty("min_start_time");
+        expect(item).toHaveProperty("max_start_time");
+        expect(Array.isArray(item.runs)).toBe(true);
+        expect(item.count).toEqual(item.runs.length);
+      }
+      const threadIds = new Set(threads.map((t) => t.thread_id));
+      expect(threadIds.has(threadA)).toBe(true);
+      expect(threadIds.has(threadB)).toBe(true);
+      const threadAItem = threads.find((t) => t.thread_id === threadA);
+      const threadBItem = threads.find((t) => t.thread_id === threadB);
+      expect(threadAItem).toBeDefined();
+      expect(threadBItem).toBeDefined();
+      expect(threadAItem!.count).toEqual(2);
+      expect(threadBItem!.count).toEqual(1);
+
+      // readThread should yield only the runs belonging to the requested thread.
+      const readRunsA: Run[] = [];
+      for await (const run of client.readThread({
+        threadId: threadA,
+        projectName,
+        limit: 10,
+      })) {
+        readRunsA.push(run);
+      }
+      expect(readRunsA.length).toEqual(2);
+      const readNamesA = new Set(readRunsA.map((r) => r.name));
+      expect(readNamesA.has("run_a1")).toBe(true);
+      expect(readNamesA.has("run_a2")).toBe(true);
+
+      const readRunsB: Run[] = [];
+      for await (const run of client.readThread({
+        threadId: threadB,
+        projectName,
+        limit: 10,
+      })) {
+        readRunsB.push(run);
+      }
+      expect(readRunsB.length).toEqual(1);
+      expect(readRunsB[0].name).toBe("run_b1");
+    } finally {
+      if (await client.hasProject({ projectName })) {
+        await deleteProject(client, projectName);
+      }
+    }
+  },
+  60_000,
+);
 
 // ---------------------------------------------------------------------------
 // v2 OpenAPI client resources
