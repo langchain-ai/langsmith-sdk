@@ -72,7 +72,7 @@ class ItemsResource(SyncAPIResource):
 
         RUN items require run_id
         unless they are created from a suggested example. THREAD items require thread_id
-        and session_id.
+        and project_id.
 
         Args:
           extend_trace_retention: Extend trace retention for added run items
@@ -422,7 +422,7 @@ class AsyncItemsResource(AsyncAPIResource):
 
         RUN items require run_id
         unless they are created from a suggested example. THREAD items require thread_id
-        and session_id.
+        and project_id.
 
         Args:
           extend_trace_retention: Extend trace retention for added run items

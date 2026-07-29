@@ -15,7 +15,7 @@ export class Items extends APIResource {
   /**
    * Add RUN or THREAD items to a single annotation queue. RUN items require run_id
    * unless they are created from a suggested example. THREAD items require thread_id
-   * and session_id.
+   * and project_id.
    */
   create(
     queueID: string,
@@ -134,11 +134,11 @@ export namespace ItemCreateResponse {
      */
     last_reviewed_time?: string;
 
+    project_id?: string;
+
     queue_id?: string;
 
     run_id?: string;
-
-    session_id?: string;
 
     source_proposed_example_id?: string;
 
@@ -160,11 +160,11 @@ export interface ItemUpdateResponse {
    */
   last_reviewed_time?: string;
 
+  project_id?: string;
+
   queue_id?: string;
 
   run_id?: string;
-
-  session_id?: string;
 
   source_proposed_example_id?: string;
 
@@ -189,13 +189,13 @@ export interface ItemListResponse {
    */
   last_reviewed_time?: string;
 
+  project_id?: string;
+
   queue_id?: string;
 
   reserved_by?: Array<string>;
 
   run_id?: string;
-
-  session_id?: string;
 
   source_proposed_example_id?: string;
 
@@ -246,13 +246,15 @@ export namespace ItemCreateParams {
   export interface Item {
     item_type?: 'RUN' | 'THREAD';
 
+    project_id?: string;
+
     /**
      * RUN fields
      */
     run_id?: string;
 
     /**
-     * SessionID is the ID of the tracing project that contains the run or thread.
+     * SessionID is an alias for project_id.
      */
     session_id?: string;
 
@@ -262,14 +264,8 @@ export namespace ItemCreateParams {
      */
     source_proposed_example_id?: string;
 
-    /**
-     * StartTime is the start time of the run being added, used to identify it.
-     */
     start_time?: string;
 
-    /**
-     * ThreadID is the ID of the thread being added.
-     */
     thread_id?: string;
   }
 }
