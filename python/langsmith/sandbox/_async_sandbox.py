@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
@@ -12,6 +13,7 @@ import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
+    SandboxConnectTimeoutError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
@@ -22,7 +24,11 @@ from langsmith.sandbox._models import (
     _StreamEndedBeforeStarted,
 )
 from langsmith.sandbox._tunnel import AsyncTunnel
-from langsmith.sandbox._ws_execute import WEBSOCKETS_AVAILABLE
+from langsmith.sandbox._ws_execute import (
+    WEBSOCKETS_AVAILABLE,
+    connect_deadline,
+    open_timeout_for,
+)
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -411,7 +417,9 @@ class AsyncSandbox:
             ws_kwargs["headers"] = merged
 
         attempt = 0
+        deadline = connect_deadline()
         while True:
+            ws_kwargs["open_timeout"] = open_timeout_for(deadline)
             msg_stream, control = await run_ws_stream_async(
                 dataplane_url,
                 api_key,
@@ -428,17 +436,22 @@ class AsyncSandbox:
             try:
                 await handle._ensure_started()
                 break
-            except _StreamEndedBeforeStarted:
-                # Idempotent re-issue (same command_id) after an early close.
+            except (_StreamEndedBeforeStarted, SandboxConnectTimeoutError):
+                # Idempotent re-issue (same command_id): neither an early close
+                # nor a failed connect can have started a second command.
                 attempt += 1
                 if attempt > AsyncCommandHandle.MAX_AUTO_RECONNECTS:
                     raise
-                await asyncio.sleep(
-                    min(
-                        AsyncCommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
-                        AsyncCommandHandle._BACKOFF_MAX,
-                    )
+                backoff = min(
+                    AsyncCommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
+                    AsyncCommandHandle._BACKOFF_MAX,
                 )
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    backoff = min(backoff, remaining)
+                await asyncio.sleep(backoff)
 
         if not wait:
             return handle

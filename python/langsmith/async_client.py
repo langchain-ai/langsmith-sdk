@@ -40,6 +40,12 @@ from langsmith._internal._hub import (
     platform_hub_path,
     validate_parent_commit,
 )
+from langsmith._internal._v2_migration_utils import (
+    _V2_RUN_SELECTS,
+    QueryBackend,
+    _v2_run_to_schema,
+    get_query_backend,
+)
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -581,13 +587,41 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
-    async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
-        """Read a run."""
-        response = await self._arequest_with_retries(
-            "GET",
-            f"/runs/{ls_client._as_uuid(run_id)}",
+    async def read_run(
+        self,
+        run_id: ls_client.ID_TYPE,
+        *,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> ls_schemas.Run:
+        """Read a run.
+
+        Args:
+            run_id: The ID of the run to read.
+            project_id: The ID of the project (session) that owns the run.
+                Required on SmithDB-only backends (no ClickHouse query
+                support), where it's used to look up the run via the v2 API.
+        """
+        run_id_ = ls_client._as_uuid(run_id)
+        info = await self.info()
+        backend = get_query_backend(info.instance_flags)
+        if backend != QueryBackend.SMITHDB_ONLY:
+            response = await self._arequest_with_retries(
+                "GET",
+                f"/runs/{run_id_}",
+            )
+            return ls_schemas.Run(**response.json())
+
+        if project_id is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires project_id on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        run = await self.runs.retrieve_v2(
+            run_id=str(run_id_),
+            project_id=str(ls_client._as_uuid(project_id)),
+            selects=_V2_RUN_SELECTS,
         )
-        return ls_schemas.Run(**response.json())
+        return _v2_run_to_schema(run)
 
     async def list_runs(
         self,
@@ -1028,8 +1062,10 @@ class AsyncClient:
                 feedback.
             extra: Metadata for the feedback.
             error: Whether the feedback represents an error.
-            session_id: The project ID of the run this feedback is for.
-            start_time: The start time of the run this feedback is for.
+            session_id: The project ID of the run. Required for run-level feedback;
+                omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+            start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
@@ -1048,6 +1084,8 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"

@@ -549,6 +549,58 @@ type RecordStringAny = Record<string, any>;
 
 export type FeedbackSourceType = "model" | "api" | "app";
 
+export type CreateFeedbackOptions = {
+  /** The metric name, tag, or aspect to provide feedback on. */
+  key: string;
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object;
+  comment?: string;
+  sourceInfo?: object;
+  feedbackSourceType?: FeedbackSourceType;
+  feedbackConfig?: FeedbackConfig;
+  sourceRunId?: string;
+  feedbackId?: string;
+  comparativeExperimentId?: string;
+  /**
+   * The run's start time, ISO string or epoch ms. Better performance if provided.
+   */
+  startTime?: number | string;
+  /** If false, create feedback without extending the trace's retention tier. */
+  extendTraceRetention?: boolean;
+};
+
+/** @deprecated Pass all params within an object and populate sessionId. */
+export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
+  /** @deprecated This option is no longer used. */
+  eager?: boolean;
+  /**
+   * The session (project) ID of the run. Required for run-level feedback;
+   * omitting it is deprecated. See
+   * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+   */
+  sessionId?: string;
+  /** The project (or experiment) to provide feedback on, for session-level feedback. */
+  projectId?: string;
+};
+
+export type CreateFeedbackParams = CreateFeedbackOptions &
+  (
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** The session (project) ID of the run. */
+        sessionId: string;
+        projectId?: never;
+      }
+    | {
+        runId?: null;
+        /** The project (or experiment) to provide feedback on. */
+        projectId: string;
+        sessionId?: never;
+      }
+  );
+
 export type CreateExampleOptions = {
   /** The ID of the dataset to create the example in. */
   datasetId?: string;
@@ -2149,6 +2201,26 @@ export class Client implements LangSmithTracingClientInterface {
   public async _supportsSDBQuery(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
     return serverInfo.instance_flags?.sdb_query_enabled === true;
+  }
+
+  /**
+   * Throw on SmithDB-only deployments, warn elsewhere. Call only when run-level
+   * feedback has no sessionId.
+   */
+  private async _checkFeedbackSessionId(): Promise<void> {
+    const docs =
+      "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
+    const serverInfo = await this._ensureServerInfo();
+    if (serverInfo.instance_flags?.ch_query_enabled === false) {
+      throw new Error(
+        `sessionId must be provided when creating feedback for a run: this ` +
+          `deployment cannot locate the run without it. See ${docs}`,
+      );
+    }
+    warnOnce(
+      `Creating feedback for a run without sessionId is deprecated and will ` +
+        `stop working in a future release. See ${docs}`,
+    );
   }
 
   protected async _getSettings() {
@@ -5066,10 +5138,21 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  public async createFeedback(params: CreateFeedbackParams): Promise<Feedback>;
+  /** @deprecated Pass all params within an object and populate sessionId. */
   public async createFeedback(
     runId: string | null,
     key: string,
-    {
+    options: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback>;
+  public async createFeedback(
+    runIdOrParams: string | null | CreateFeedbackParams,
+    keyArg?: string,
+    optionsArg?: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback> {
+    const {
+      runId = null,
+      key,
       score,
       value,
       correction,
@@ -5084,32 +5167,17 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
-    }: {
-      score?: ScoreType;
-      value?: ValueType;
-      correction?: object;
-      comment?: string;
-      sourceInfo?: object;
-      feedbackSourceType?: FeedbackSourceType;
-      feedbackConfig?: FeedbackConfig;
-      sourceRunId?: string;
-      feedbackId?: string;
-      eager?: boolean;
-      projectId?: string;
-      comparativeExperimentId?: string;
-      /** The session (project) ID of the run this feedback is for. */
-      sessionId?: string;
-      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
-      startTime?: number | string;
-      /** If false, create feedback without extending the trace's retention tier. */
-      extendTraceRetention?: boolean;
-    },
-  ): Promise<Feedback> {
+    } = typeof runIdOrParams === "object" && runIdOrParams !== null
+      ? runIdOrParams
+      : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
+    }
+    if (runId && sessionId === undefined) {
+      await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",

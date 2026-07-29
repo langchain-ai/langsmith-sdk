@@ -888,6 +888,7 @@ class TestRunTreeReplicas:
 
         with patch.dict(os.environ, {"LANGSMITH_RUNS_ENDPOINTS": env_var}, clear=True):
             _parse_write_replicas_from_env_var.cache_clear()
+            ls_utils.get_env_var.cache_clear()
             run_tree = RunTree(
                 name="test_run",
                 inputs={"input": "test"},

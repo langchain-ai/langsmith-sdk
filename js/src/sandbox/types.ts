@@ -148,6 +148,11 @@ export interface WsMessage {
 export interface WsRunOptions {
   /** Command timeout in seconds. Default: 60. */
   timeout?: number;
+  /**
+   * WebSocket connect timeout in seconds, overriding the module default.
+   * run() passes the remainder of its overall connect budget. @internal
+   */
+  openTimeout?: number;
   /** Environment variables to set for the command. */
   env?: Record<string, string>;
   /** Working directory for command execution. */

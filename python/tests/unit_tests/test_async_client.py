@@ -283,7 +283,9 @@ async def test_create_feedback_forwards_trace_id(
     mock_httpx_client.request.return_value = response
 
     client = AsyncClient(api_url="http://localhost:1984", api_key="test")
-    await client.create_feedback(run_id, key="quality", score=1, trace_id=trace_id)
+    await client.create_feedback(
+        run_id, key="quality", score=1, trace_id=trace_id, session_id=uuid4()
+    )
 
     call = mock_httpx_client.request.call_args
     assert call.args[0] == "POST"
@@ -339,7 +341,9 @@ async def test_create_feedback_retries_on_not_found(
         api_key="test",
         retry_config={"max_retries": 2},
     )
-    feedback = await client.create_feedback(run_id, key="quality", trace_id=trace_id)
+    feedback = await client.create_feedback(
+        run_id, key="quality", trace_id=trace_id, session_id=uuid4()
+    )
 
     # A 404 (run not yet ingested) is retried, unlike other 4xx.
     assert mock_httpx_client.request.call_count == 2
@@ -397,6 +401,36 @@ async def test_async_create_feedback_includes_trace_id_and_feedback_id(
     assert body["value"] == "test_value"
     assert body["comment"] == "test_comment"
     assert body["feedback_source"]["type"] == "api"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_requires_session_id_on_smithdb(
+    mock_client_cls: mock.Mock,
+) -> None:
+    """SmithDB-only backends cannot locate the run without session_id."""
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+    client._info = ls_schemas.LangSmithInfo(instance_flags={"ch_query_enabled": False})
+
+    with pytest.raises(ValueError, match="session_id must be provided"):
+        await client.create_feedback(uuid4(), key="quality")
+    mock_httpx_client.request.assert_not_called()
+
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={
+            "id": str(uuid4()),
+            "key": "quality",
+            "created_at": datetime.now().isoformat(),
+            "modified_at": datetime.now().isoformat(),
+        },
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client._info = ls_schemas.LangSmithInfo(instance_flags={"ch_query_enabled": True})
+    with pytest.warns(ls_utils.LangSmithWarning, match="smithdb-sdk-migration"):
+        await client.create_feedback(uuid4(), key="quality")
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -560,6 +594,7 @@ async def test_async_create_feedback_retries_on_not_found(
         trace_id=trace_id,
         feedback_id=feedback_id,
         key="test_key",
+        session_id=uuid.uuid4(),
         stop_after_attempt=2,
     )
 
