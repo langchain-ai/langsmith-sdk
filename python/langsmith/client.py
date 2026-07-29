@@ -3995,7 +3995,9 @@ class Client:
         if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
             raise ls_utils.LangSmithError(
                 "Loading child runs is not supported on SmithDB-only"
-                " backends (no ClickHouse query support)."
+                " backends (no ClickHouse query support). See"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                "#load-a-run’s-child-runs"
             )
 
         child_runs = self.list_runs(
@@ -4094,7 +4096,9 @@ class Client:
         if load_child_runs:
             raise ls_utils.LangSmithError(
                 "load_child_runs is not supported on SmithDB-only"
-                " backends (no ClickHouse query support)."
+                " backends (no ClickHouse query support). See"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                "#load-a-run’s-child-runs"
             )
         return _v2_migration_utils._read_run_v2(
             run_id_,
