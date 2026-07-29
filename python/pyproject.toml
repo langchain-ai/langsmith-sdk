@@ -86,6 +86,10 @@ openai-realtime = [
     "openai-agents>=0.0.3",
 ]
 
+# Enabled via `pip install langsmith[gemini-live]`
+# Raw Gemini Live WebSocket tracing via ``wrap_gemini_live``.
+gemini-live = ["google-genai>=1.75"]
+
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
