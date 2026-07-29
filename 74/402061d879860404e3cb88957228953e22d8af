@@ -1,0 +1,19 @@
+python/tests/integration_tests/test_async_client.py
+  s_75cbef382e8efa::t_e83d071868ca8e 40,42,50,55-57,63-66,257,269-276,285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "74402061d879860404e3cb88957228953e22d8af",
+  "prompts": {},
+  "sessions": {
+    "s_75cbef382e8efa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1ec2d9f1-8bcc-486d-b975-a5e45acb890c",
+        "model": "unknown"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
