@@ -30,6 +30,13 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
 
 
+# Cold-start sandboxes can take well over a minute to accept the connection.
+WS_OPEN_TIMEOUT = 120
+WS_PING_INTERVAL = 30
+WS_PING_TIMEOUT = 120
+# Kept short: a dead peer would otherwise stall teardown for the full duration.
+WS_CLOSE_TIMEOUT = 10
+
 _MISSING_WEBSOCKETS_MSG = (
     "WebSocket-based execution requires the 'websockets' package, which ships "
     "with langsmith by default. Reinstall with: pip install --upgrade langsmith"
@@ -269,10 +276,10 @@ def run_ws_stream(
             with ws_connect(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=120,
-                close_timeout=120,
-                ping_interval=30,
-                ping_timeout=120,
+                open_timeout=WS_OPEN_TIMEOUT,
+                close_timeout=WS_CLOSE_TIMEOUT,
+                ping_interval=WS_PING_INTERVAL,
+                ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
 
@@ -370,10 +377,10 @@ def reconnect_ws_stream(
             with ws_connect(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=120,
-                close_timeout=120,
-                ping_interval=30,
-                ping_timeout=120,
+                open_timeout=WS_OPEN_TIMEOUT,
+                close_timeout=WS_CLOSE_TIMEOUT,
+                ping_interval=WS_PING_INTERVAL,
+                ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
 
@@ -459,10 +466,10 @@ async def run_ws_stream_async(
             async with ws_connect_async(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=120,
-                close_timeout=120,
-                ping_interval=30,
-                ping_timeout=120,
+                open_timeout=WS_OPEN_TIMEOUT,
+                close_timeout=WS_CLOSE_TIMEOUT,
+                ping_interval=WS_PING_INTERVAL,
+                ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
 
@@ -543,10 +550,10 @@ async def reconnect_ws_stream_async(
             async with ws_connect_async(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=120,
-                close_timeout=120,
-                ping_interval=30,
-                ping_timeout=120,
+                open_timeout=WS_OPEN_TIMEOUT,
+                close_timeout=WS_CLOSE_TIMEOUT,
+                ping_interval=WS_PING_INTERVAL,
+                ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
 
