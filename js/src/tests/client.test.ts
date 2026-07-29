@@ -1792,4 +1792,18 @@ describe("_checkBackendVersion", () => {
       expect(warnSpy).not.toHaveBeenCalled();
     }
   });
+
+  it("reports both versions and links to the migration docs", () => {
+    _checkBackendVersion("0.15.0", "0.16.0");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Backend version "0.15.0" is older than the minimum version required by this SDK ("0.16.0")',
+      ),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
+      ),
+    );
+  });
 });

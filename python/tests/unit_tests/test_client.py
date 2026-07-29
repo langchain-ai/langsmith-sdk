@@ -83,18 +83,30 @@ def test_is_localhost() -> None:
         ("not-a-version", True),
     ],
 )
-@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(
         logging.WARNING, logger="langsmith._internal._backend_version"
     ):
-        _check_backend_version(version)
+        _check_backend_version(version, min_version="0.5.0")
     if expect_warning:
         assert caplog.records, f"expected a warning for version {version!r}"
     else:
         assert not caplog.records, f"unexpected warning for version {version!r}"
+
+
+def test_check_backend_version_warning_links_to_docs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(
+        logging.WARNING, logger="langsmith._internal._backend_version"
+    ):
+        _check_backend_version("0.15.0", min_version="0.16.0")
+    message = caplog.records[0].getMessage()
+    assert "0.15.0" in message
+    assert "0.16.0" in message
+    assert "https://docs.langchain.com/langsmith/smithdb-sdk-migration" in message
 
 
 def test__is_langchain_hosted() -> None:

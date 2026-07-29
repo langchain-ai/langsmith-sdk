@@ -1,5 +1,6 @@
 """Test the AsyncClient."""
 
+import asyncio
 import json
 import logging
 import pathlib
@@ -830,13 +831,19 @@ async def test_async_client_info_falls_back_on_error(
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
-@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "version,expect_warning",
-    [("0.4.9", True), ("0.5.0", False), ("0.5.4rc1", False)],
+    [
+        ("0.15.9", True),
+        ("0.16.0", False),
+        ("0.16.4rc1", False),
+        ("0.16.1", False),
+        ("0.17.0", False),
+        ("", False),
+    ],
 )
-async def test_async_client_aenter_version_check(
+async def test_async_client_resource_version_check(
     mock_client_cls: mock.Mock,
     version: str,
     expect_warning: bool,
@@ -853,11 +860,15 @@ async def test_async_client_aenter_version_check(
     response.json.return_value = {"version": version}
     mock_httpx_client.request.return_value = response
 
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
     with caplog.at_level(
         logging.WARNING, logger="langsmith._internal._backend_version"
     ):
-        async with AsyncClient(api_url="http://localhost:1984", api_key="test"):
-            pass
+        _ = client.runs
+        _ = client.threads
+        # Both resources share a min version, so a single check is scheduled.
+        assert len(client._version_check_tasks) == 1
+        await asyncio.gather(*client._version_check_tasks)
 
     if expect_warning:
         assert caplog.records

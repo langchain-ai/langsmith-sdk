@@ -1522,43 +1522,43 @@ class Client:
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().runs
 
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().sandboxes
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().datasets
 
     @property
     def threads(self) -> AsyncThreadsResource:
         """Access the threads resource (query, stats, list_traces)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().threads
 
     @property
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().traces
 
     @property
     def public(self) -> AsyncPublicResource:
         """Access the public shared-run resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().public
 
     def _dump_failed_trace(
