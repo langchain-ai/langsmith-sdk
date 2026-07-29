@@ -275,6 +275,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith._openapi_client.resources.annotation_queues.annotation_queues import (
+        AsyncAnnotationQueuesResource,
+    )
     from langsmith._openapi_client.resources.datasets.datasets import (
         AsyncDatasetsResource,
     )
@@ -1562,6 +1565,12 @@ class Client:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
         _check_backend_version(self.info.version)
         return self._get_langsmith_api().datasets
+
+    @property
+    def annotation_queues(self) -> AsyncAnnotationQueuesResource:
+        """Access the annotation queues resource (runs, items)."""
+        _check_backend_version(self.info.version)
+        return self._get_langsmith_api().annotation_queues
 
     @property
     def threads(self) -> AsyncThreadsResource:

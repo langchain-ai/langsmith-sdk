@@ -239,6 +239,49 @@ describe("Client", () => {
     });
   });
 
+  describe("annotationQueues", () => {
+    it("exposes generated annotation queue item endpoints", async () => {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ count: 3 }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.annotationQueues.items.retrieveCount(
+        "queue-1",
+        { status: "all" },
+      );
+
+      expect(response.count).toBe(3);
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
+      const headers = new Headers(init?.headers);
+      expect(url).toBe(
+        "http://localhost:8080/api/v1/annotation-queues/queue-1/items/count?status=all",
+      );
+      expect(init).toEqual(expect.objectContaining({ method: "GET" }));
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
