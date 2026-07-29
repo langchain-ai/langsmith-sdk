@@ -316,6 +316,21 @@ export class LangSmithStreamEndedBeforeStartedError extends LangSmithSandboxOper
 }
 
 /**
+ * Thrown when the socket fails or times out before the WebSocket handshake.
+ *
+ * Distinct from its parent because it is safely retryable: the execute frame
+ * was never sent, so re-issuing the same command_id cannot double-run a
+ * command. run() retries this with backoff; a plain connection error (a
+ * rejected handshake) is permanent and propagates immediately.
+ */
+export class LangSmithSandboxConnectTimeoutError extends LangSmithSandboxConnectionError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxConnectTimeoutError";
+  }
+}
+
+/**
  * Raised when the sandbox server is reloading (close code 1001).
  *
  * Subclass of connection error that signals immediate reconnect (no backoff).

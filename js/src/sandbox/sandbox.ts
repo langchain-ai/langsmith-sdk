@@ -14,11 +14,19 @@ import type {
 import { uuid7 } from "../uuid.js";
 import {
   LangSmithDataplaneNotConfiguredError,
+  LangSmithSandboxConnectTimeoutError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
-import { isWsAvailable, reconnectWsStream, runWsStream } from "./ws_execute.js";
+import {
+  connectDeadline,
+  isWsAvailable,
+  openTimeoutFor,
+  reconnectWsStream,
+  remainingBudget,
+  runWsStream,
+} from "./ws_execute.js";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -257,6 +265,7 @@ export class Sandbox {
     const execCommandId = commandId ?? uuid7();
 
     let attempt = 0;
+    const deadline = connectDeadline();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const [stream, control] = await runWsStream(
@@ -273,6 +282,7 @@ export class Sandbox {
           killOnDisconnect,
           ttlSeconds,
           pty,
+          openTimeout: openTimeoutFor(deadline),
           ...(Object.keys(clientHeaders).length > 0
             ? { headers: clientHeaders }
             : {}),
@@ -287,18 +297,29 @@ export class Sandbox {
         await handle._ensureStarted();
         return handle;
       } catch (e) {
-        // Idempotent re-issue (same command_id) after an early close.
-        if (!(e instanceof LangSmithStreamEndedBeforeStartedError)) {
+        // Idempotent re-issue (same command_id): neither an early close nor a
+        // failed connect can have started a second command.
+        if (
+          !(e instanceof LangSmithStreamEndedBeforeStartedError) &&
+          !(e instanceof LangSmithSandboxConnectTimeoutError)
+        ) {
           throw e;
         }
         attempt++;
         if (attempt > CommandHandle.MAX_AUTO_RECONNECTS) {
           throw e;
         }
-        const delay = Math.min(
+        let delay = Math.min(
           CommandHandle.BACKOFF_BASE * 2 ** (attempt - 1),
           CommandHandle.BACKOFF_MAX,
         );
+        const remaining = remainingBudget(deadline);
+        if (remaining !== undefined) {
+          if (remaining <= 0) {
+            throw e;
+          }
+          delay = Math.min(delay, remaining);
+        }
         await new Promise((r) => setTimeout(r, delay * 1000));
       }
     }
