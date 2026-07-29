@@ -13,6 +13,7 @@ import pytest
 from langsmith.sandbox import (
     AsyncSandboxClient,
     SandboxClient,
+    _ws_execute,
 )
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._exceptions import (
@@ -126,6 +127,33 @@ class TestSyncRetry:
         with pytest.raises(SandboxConnectionError):
             sandbox.run("echo hi")
         assert len(calls) == 1
+
+    def test_connect_budget_caps_total_wall_clock(self, monkeypatch):
+        """A blackholed handshake must not cost attempts x open_timeout."""
+        sandbox = _sandbox()
+        clock = {"now": 0.0}
+        opens: list[float] = []
+
+        def fake_run_ws_stream(dataplane_url, api_key, command, **kwargs):
+            opens.append(kwargs["open_timeout"])
+            clock["now"] += kwargs["open_timeout"]  # attempt burns its timeout
+            return _raises(SandboxConnectTimeoutError("timed out")), None
+
+        monkeypatch.setattr("time.monotonic", lambda: clock["now"])
+        monkeypatch.setattr(
+            "time.sleep", lambda s: clock.__setitem__("now", clock["now"] + s)
+        )
+        monkeypatch.setattr(
+            "langsmith.sandbox._ws_execute.run_ws_stream", fake_run_ws_stream
+        )
+
+        with pytest.raises(SandboxConnectTimeoutError):
+            sandbox.run("echo hi")
+
+        assert clock["now"] <= _ws_execute.WS_CONNECT_BUDGET
+        # Later attempts get clamped so none can outlive the budget.
+        assert opens[0] == _ws_execute.WS_OPEN_TIMEOUT
+        assert sum(opens) <= _ws_execute.WS_CONNECT_BUDGET
 
     def test_gives_up_after_max_attempts(self, monkeypatch):
         sandbox = _sandbox()

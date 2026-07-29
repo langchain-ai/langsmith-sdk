@@ -744,6 +744,7 @@ class TestAsyncSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            open_timeout=ANY,
         )
 
     @pytest.mark.asyncio

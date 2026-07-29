@@ -22,7 +22,11 @@ from langsmith.sandbox._models import (
     _StreamEndedBeforeStarted,
 )
 from langsmith.sandbox._tunnel import Tunnel
-from langsmith.sandbox._ws_execute import WEBSOCKETS_AVAILABLE
+from langsmith.sandbox._ws_execute import (
+    WEBSOCKETS_AVAILABLE,
+    connect_deadline,
+    open_timeout_for,
+)
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -410,7 +414,9 @@ class Sandbox:
             ws_kwargs["headers"] = merged
 
         attempt = 0
+        deadline = connect_deadline()
         while True:
+            ws_kwargs["open_timeout"] = open_timeout_for(deadline)
             msg_stream, control = run_ws_stream(
                 dataplane_url,
                 api_key,
@@ -432,12 +438,16 @@ class Sandbox:
                 attempt += 1
                 if attempt > CommandHandle.MAX_AUTO_RECONNECTS:
                     raise
-                time.sleep(
-                    min(
-                        CommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
-                        CommandHandle._BACKOFF_MAX,
-                    )
+                backoff = min(
+                    CommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
+                    CommandHandle._BACKOFF_MAX,
                 )
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    backoff = min(backoff, remaining)
+                time.sleep(backoff)
 
         if not wait:
             return handle
