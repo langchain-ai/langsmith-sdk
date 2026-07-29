@@ -139,6 +139,7 @@ class RunsResource(SyncAPIResource):
                 "PRICE_MODEL_ID",
                 "TAGS",
                 "THREAD_EVALUATION_TIME",
+                "FEEDBACK_STATS",
             ]
         ]
         | Omit = omit,
@@ -292,6 +293,7 @@ class AsyncRunsResource(AsyncAPIResource):
                 "PRICE_MODEL_ID",
                 "TAGS",
                 "THREAD_EVALUATION_TIME",
+                "FEEDBACK_STATS",
             ]
         ]
         | Omit = omit,

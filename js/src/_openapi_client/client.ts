@@ -92,6 +92,31 @@ import {
   TracesItemsCursorPostPagination,
 } from './resources/traces.js';
 import {
+  AnnotationQueueAnnotationQueuesParams,
+  AnnotationQueueCreateRunStatusParams,
+  AnnotationQueueCreateRunStatusResponse,
+  AnnotationQueueDeleteResponse,
+  AnnotationQueueExportParams,
+  AnnotationQueueExportResponse,
+  AnnotationQueuePopulateParams,
+  AnnotationQueuePopulateResponse,
+  AnnotationQueueRetrieveAnnotationQueuesParams,
+  AnnotationQueueRetrieveAnnotationQueuesResponse,
+  AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray,
+  AnnotationQueueRetrieveQueuesResponse,
+  AnnotationQueueRetrieveResponse,
+  AnnotationQueueRetrieveRunParams,
+  AnnotationQueueRetrieveSizeParams,
+  AnnotationQueueRetrieveTotalArchivedParams,
+  AnnotationQueueRubricItemSchema,
+  AnnotationQueueSchema,
+  AnnotationQueueSizeSchema,
+  AnnotationQueueUpdateParams,
+  AnnotationQueueUpdateResponse,
+  AnnotationQueues,
+  RunSchemaWithAnnotationQueueInfo,
+} from './resources/annotation-queues/annotation-queues.js';
+import {
   DataType,
   Dataset,
   DatasetTransformation,
@@ -904,6 +929,7 @@ export class Langsmith {
   traces: API.Traces = new API.Traces(this);
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   public: API.Public = new API.Public(this);
+  annotationQueues: API.AnnotationQueues = new API.AnnotationQueues(this);
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
@@ -915,6 +941,7 @@ Langsmith.Threads = Threads;
 Langsmith.Traces = Traces;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Public = Public;
+Langsmith.AnnotationQueues = AnnotationQueues;
 Langsmith.Info = Info;
 Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
@@ -1060,6 +1087,32 @@ export declare namespace Langsmith {
   };
 
   export { Public as Public };
+
+  export {
+    AnnotationQueues as AnnotationQueues,
+    type AnnotationQueueRubricItemSchema as AnnotationQueueRubricItemSchema,
+    type AnnotationQueueSchema as AnnotationQueueSchema,
+    type AnnotationQueueSizeSchema as AnnotationQueueSizeSchema,
+    type RunSchemaWithAnnotationQueueInfo as RunSchemaWithAnnotationQueueInfo,
+    type AnnotationQueueRetrieveResponse as AnnotationQueueRetrieveResponse,
+    type AnnotationQueueUpdateResponse as AnnotationQueueUpdateResponse,
+    type AnnotationQueueDeleteResponse as AnnotationQueueDeleteResponse,
+    type AnnotationQueueCreateRunStatusResponse as AnnotationQueueCreateRunStatusResponse,
+    type AnnotationQueueExportResponse as AnnotationQueueExportResponse,
+    type AnnotationQueuePopulateResponse as AnnotationQueuePopulateResponse,
+    type AnnotationQueueRetrieveAnnotationQueuesResponse as AnnotationQueueRetrieveAnnotationQueuesResponse,
+    type AnnotationQueueRetrieveQueuesResponse as AnnotationQueueRetrieveQueuesResponse,
+    type AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray as AnnotationQueueRetrieveAnnotationQueuesResponsesOffsetPaginationTopLevelArray,
+    type AnnotationQueueUpdateParams as AnnotationQueueUpdateParams,
+    type AnnotationQueueAnnotationQueuesParams as AnnotationQueueAnnotationQueuesParams,
+    type AnnotationQueueCreateRunStatusParams as AnnotationQueueCreateRunStatusParams,
+    type AnnotationQueueExportParams as AnnotationQueueExportParams,
+    type AnnotationQueuePopulateParams as AnnotationQueuePopulateParams,
+    type AnnotationQueueRetrieveAnnotationQueuesParams as AnnotationQueueRetrieveAnnotationQueuesParams,
+    type AnnotationQueueRetrieveRunParams as AnnotationQueueRetrieveRunParams,
+    type AnnotationQueueRetrieveSizeParams as AnnotationQueueRetrieveSizeParams,
+    type AnnotationQueueRetrieveTotalArchivedParams as AnnotationQueueRetrieveTotalArchivedParams,
+  };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };
 

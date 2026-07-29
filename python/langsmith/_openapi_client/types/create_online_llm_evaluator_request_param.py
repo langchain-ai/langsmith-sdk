@@ -10,6 +10,9 @@ __all__ = ["CreateOnlineLlmEvaluatorRequestParam"]
 class CreateOnlineLlmEvaluatorRequestParam(TypedDict, total=False):
     commit_hash_or_tag: str
 
+    playground_settings_id: str
+    """Model Configuration ID"""
+
     prompt_repo_handle: str
 
     variable_mapping: object

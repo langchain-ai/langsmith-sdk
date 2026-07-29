@@ -4,12 +4,21 @@ from __future__ import annotations
 
 from typing_extensions import TypedDict
 
+from ..._types import SequenceNotStr
+
 __all__ = ["BoxListParams"]
 
 
 class BoxListParams(TypedDict, total=False):
     created_by: str
     """Filter by creator identity. Only 'me' is supported."""
+
+    label: SequenceNotStr[str]
+    """Filter by label.
+
+    Repeatable; all must match. Use 'key' to match on key presence or 'key=value'
+    for equality.
+    """
 
     limit: int
     """Maximum number of results"""

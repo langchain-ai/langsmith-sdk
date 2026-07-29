@@ -64,6 +64,14 @@ from .sandboxes import (
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
 )
+from .annotation_queues import (
+    AnnotationQueuesResource,
+    AsyncAnnotationQueuesResource,
+    AnnotationQueuesResourceWithRawResponse,
+    AsyncAnnotationQueuesResourceWithRawResponse,
+    AnnotationQueuesResourceWithStreamingResponse,
+    AsyncAnnotationQueuesResourceWithStreamingResponse,
+)
 from .online_evaluators import (
     OnlineEvaluatorsResource,
     AsyncOnlineEvaluatorsResource,
@@ -110,6 +118,12 @@ __all__ = [
     "AsyncPublicResourceWithRawResponse",
     "PublicResourceWithStreamingResponse",
     "AsyncPublicResourceWithStreamingResponse",
+    "AnnotationQueuesResource",
+    "AsyncAnnotationQueuesResource",
+    "AnnotationQueuesResourceWithRawResponse",
+    "AsyncAnnotationQueuesResourceWithRawResponse",
+    "AnnotationQueuesResourceWithStreamingResponse",
+    "AsyncAnnotationQueuesResourceWithStreamingResponse",
     "InfoResource",
     "AsyncInfoResource",
     "InfoResourceWithRawResponse",

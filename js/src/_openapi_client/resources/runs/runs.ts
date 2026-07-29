@@ -199,6 +199,12 @@ export interface Run {
   is_root?: boolean;
 
   /**
+   * `last_queued_at` is the most recent time this run was added to an annotation
+   * queue.
+   */
+  last_queued_at?: string;
+
+  /**
    * `latency_seconds` is wall-clock duration from start to end in seconds.
    */
   latency_seconds?: number;
@@ -694,6 +700,7 @@ export type RunSelectField =
   | 'ATTACHMENTS'
   | 'THREAD_EVALUATION_TIME'
   | 'IS_IN_DATASET'
+  | 'LAST_QUEUED_AT'
   | 'SHARE_URL'
   | 'FEEDBACK_STATS';
 
@@ -701,6 +708,8 @@ export type RunSelectField =
  * Query params for run stats.
  */
 export interface RunStatsQueryParams {
+  session: Array<string>;
+
   id?: Array<string> | null;
 
   /**
@@ -778,8 +787,6 @@ export interface RunStatsQueryParams {
     | 'prompt_cost_details'
     | 'completion_cost_details'
   > | null;
-
-  session?: Array<string> | null;
 
   skip_pagination?: boolean | null;
 
@@ -1009,6 +1016,7 @@ export interface RunRetrieveV2Params {
     | 'ATTACHMENTS'
     | 'THREAD_EVALUATION_TIME'
     | 'IS_IN_DATASET'
+    | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
@@ -1079,6 +1087,7 @@ export interface RunRetrieveParams {
     | 'ATTACHMENTS'
     | 'THREAD_EVALUATION_TIME'
     | 'IS_IN_DATASET'
+    | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;

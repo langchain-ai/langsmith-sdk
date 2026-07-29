@@ -128,6 +128,7 @@ export interface RunQueryParams {
     | 'PRICE_MODEL_ID'
     | 'TAGS'
     | 'THREAD_EVALUATION_TIME'
+    | 'FEEDBACK_STATS'
   >;
 
   /**

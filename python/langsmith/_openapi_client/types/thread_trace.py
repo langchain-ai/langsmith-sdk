@@ -192,4 +192,8 @@ class ThreadTrace(BaseModel):
     """
 
     trace_id: Optional[str] = None
-    """`trace_id` is the UUID of this trace (the root run). Always present."""
+    """`trace_id` is the UUID of this trace (the root run).
+
+    Returned when `TRACE_ID` is in `selects`, or when `selects` is omitted entirely
+    (sole fallback field).
+    """

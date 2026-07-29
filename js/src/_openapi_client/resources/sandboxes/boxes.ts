@@ -125,6 +125,12 @@ export interface BoxCreateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * Labels are free-form key/value metadata persisted with the sandbox and returned
+   * on reads. Labels from the source snapshot are inherited unless overridden here.
+   */
+  labels?: { [key: string]: string };
+
   mem_bytes?: number;
 
   mount_config?: BoxCreateParams.MountConfig;
@@ -578,6 +584,16 @@ export namespace BoxCreateParams {
 
       enabled?: boolean;
 
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
+
       gcp?: Rule.Gcp;
 
       headers?: Array<Rule.Header>;
@@ -716,6 +732,16 @@ export namespace BoxUpdateParams {
 
       enabled?: boolean;
 
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
+
       gcp?: Rule.Gcp;
 
       headers?: Array<Rule.Header>;
@@ -792,6 +818,12 @@ export interface BoxListParams {
   created_by?: string;
 
   /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
+
+  /**
    * Maximum number of results
    */
   limit?: number;
@@ -847,6 +879,11 @@ export interface BoxCreateSnapshotParams {
    * snapshots small unless memory restore is explicitly desired.
    */
   include_memory?: boolean;
+
+  /**
+   * Labels seed the captured snapshot's labels.
+   */
+  labels?: { [key: string]: string };
 }
 
 export interface BoxGenerateServiceURLParams {

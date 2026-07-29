@@ -52,6 +52,12 @@ export interface SnapshotCreateParams {
 
   name: string;
 
+  /**
+   * Labels seed the snapshot's labels, overriding any label of the same key derived
+   * from the Docker image.
+   */
+  labels?: { [key: string]: string };
+
   registry_id?: string;
 }
 
@@ -60,6 +66,12 @@ export interface SnapshotListParams {
    * Filter by creator identity. Only 'me' is supported.
    */
   created_by?: string;
+
+  /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
 
   /**
    * Maximum number of results

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Dict
+
 import httpx
 
-from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, omit, not_given
+from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform
 from ..._compat import cached_property
 from ..._resource import SyncAPIResource, AsyncAPIResource
@@ -44,6 +46,7 @@ class SnapshotsResource(SyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -56,6 +59,9 @@ class SnapshotsResource(SyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          labels: Labels seed the snapshot's labels, overriding any label of the same key derived
+              from the Docker image.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -71,6 +77,7 @@ class SnapshotsResource(SyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "labels": labels,
                     "registry_id": registry_id,
                 },
                 snapshot_create_params.SnapshotCreateParams,
@@ -118,6 +125,7 @@ class SnapshotsResource(SyncAPIResource):
         self,
         *,
         created_by: str | Omit = omit,
+        label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
@@ -137,6 +145,9 @@ class SnapshotsResource(SyncAPIResource):
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
+
+          label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+              or 'key=value' for equality.
 
           limit: Maximum number of results
 
@@ -168,6 +179,7 @@ class SnapshotsResource(SyncAPIResource):
                 query=maybe_transform(
                     {
                         "created_by": created_by,
+                        "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,
@@ -239,6 +251,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -251,6 +264,9 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          labels: Labels seed the snapshot's labels, overriding any label of the same key derived
+              from the Docker image.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -266,6 +282,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "labels": labels,
                     "registry_id": registry_id,
                 },
                 snapshot_create_params.SnapshotCreateParams,
@@ -313,6 +330,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         self,
         *,
         created_by: str | Omit = omit,
+        label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
@@ -332,6 +350,9 @@ class AsyncSnapshotsResource(AsyncAPIResource):
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
+
+          label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+              or 'key=value' for equality.
 
           limit: Maximum number of results
 
@@ -363,6 +384,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
                 query=await async_maybe_transform(
                     {
                         "created_by": created_by,
+                        "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,

@@ -1,16 +1,13 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 from typing import Dict, Optional
-from datetime import datetime
 
 from .._models import BaseModel
 
-__all__ = ["InfoListResponse", "BatchIngestConfig", "CustomerInfo"]
+__all__ = ["InfoListResponse", "BatchIngestConfig", "CustomerInfo", "SDKVersions"]
 
 
 class BatchIngestConfig(BaseModel):
-    """Batch ingest config."""
-
     scale_down_nempty_trigger: Optional[int] = None
 
     scale_up_nthreads_limit: Optional[int] = None
@@ -25,26 +22,32 @@ class BatchIngestConfig(BaseModel):
 
 
 class CustomerInfo(BaseModel):
-    """Customer info."""
+    customer_id: Optional[str] = None
 
-    customer_id: str
+    customer_name: Optional[str] = None
 
-    customer_name: str
+
+class SDKVersions(BaseModel):
+    max_go_sdk_version: Optional[str] = None
+
+    max_java_sdk_version: Optional[str] = None
+
+    max_js_sdk_version: Optional[str] = None
+
+    max_python_sdk_version: Optional[str] = None
 
 
 class InfoListResponse(BaseModel):
-    """The LangSmith server info."""
-
-    version: str
-
     batch_ingest_config: Optional[BatchIngestConfig] = None
-    """Batch ingest config."""
 
     customer_info: Optional[CustomerInfo] = None
-    """Customer info."""
 
     git_sha: Optional[str] = None
 
     instance_flags: Optional[Dict[str, object]] = None
 
-    license_expiration_time: Optional[datetime] = None
+    license_expiration_time: Optional[str] = None
+
+    sdk_versions: Optional[SDKVersions] = None
+
+    version: Optional[str] = None

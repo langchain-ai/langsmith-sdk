@@ -96,6 +96,7 @@ class TracesResource(SyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -331,6 +332,7 @@ class AsyncTracesResource(AsyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
