@@ -5175,7 +5175,7 @@ class Client:
 
         backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
         if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
-            runs: Iterable[Any] = self.list_runs(
+            runs: Iterable[ls_schemas.Run] = self.list_runs(
                 project_id=project_id,
                 project_name=project_name,
                 is_root=True,
@@ -5195,11 +5195,15 @@ class Client:
                 project_id = self.read_project(project_name=project_name).id
             if project_id is None:
                 raise ValueError("Either project_id or project_name must be provided.")
-            runs = self._get_langsmith_api_sync().runs.query(
+            pager = self._get_langsmith_api_sync().runs.query(
                 project_ids=[str(project_id)],
                 is_root=True,
                 selects=[
                     "ID",
+                    # NAME and RUN_TYPE are required by `schemas.Run` even though
+                    # they don't reach the returned dataframe.
+                    "NAME",
+                    "RUN_TYPE",
                     "REFERENCE_EXAMPLE_ID",
                     "INPUTS",
                     "OUTPUTS",
@@ -5212,6 +5216,10 @@ class Client:
                     2000, 1, 1, tzinfo=datetime.timezone.utc
                 ),
             )
+            # Convert to `schemas.Run` so both branches yield the same datamodel:
+            # the v2 model types `reference_example_id` as `str`, which would not
+            # match the `UUID` example ids when joining the two dataframes below.
+            runs = (_v2_migration_utils._v2_run_to_schema(r) for r in pager)
         results: list[dict] = []
         example_ids = []
 
@@ -5224,12 +5232,6 @@ class Client:
                 }
                 for example in examples
             ]
-
-        def stat_field(stat: Any, field: str) -> Any:
-            """Read a feedback-stat field from either the v1 dict or v2 model form."""
-            if isinstance(stat, Mapping):
-                return stat.get(field)
-            return getattr(stat, field, None)
 
         batch_size = 50
         cursor = 0
@@ -5251,13 +5253,13 @@ class Client:
                 if r.feedback_stats:
                     row.update(
                         {
-                            f"feedback.{k}": stat_field(v, "avg")
+                            f"feedback.{k}": v.get("avg")
                             for k, v in r.feedback_stats.items()
-                            if not (k == "note" and stat_field(v, "comments"))
+                            if not (k == "note" and v.get("comments"))
                         }
                     )
                     if note_stats := r.feedback_stats.get("note"):
-                        if comments := stat_field(note_stats, "comments"):
+                        if comments := note_stats.get("comments"):
                             row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)

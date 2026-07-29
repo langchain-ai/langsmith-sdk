@@ -269,3 +269,25 @@ def test_get_query_backend(instance_flags, expected):
 def test_get_query_backend_coerces_non_bool_flags(ch_value, sdb_value, expected):
     flags = {"ch_query_enabled": ch_value, "sdb_query_enabled": sdb_value}
     assert get_query_backend(flags) == expected
+
+
+# ---------------------------------------------------------------------------
+# reference_example_id — v2 types it as `str`; `schemas.Run` must coerce to UUID
+# ---------------------------------------------------------------------------
+
+
+def test_reference_example_id_coerced_to_uuid():
+    """The v2 model returns a str; callers join against `Example.id` (a UUID).
+
+    `get_test_results` indexes its dataframe on this value and merges it against
+    example ids, so a str here silently produces an empty inner join.
+    """
+    example_id = uuid.uuid4()
+    result = _v2_run_to_schema(_make_v2_run(reference_example_id=str(example_id)))
+    assert result.reference_example_id == example_id
+    assert isinstance(result.reference_example_id, uuid.UUID)
+
+
+def test_reference_example_id_none_stays_none():
+    result = _v2_run_to_schema(_make_v2_run(reference_example_id=None))
+    assert result.reference_example_id is None
