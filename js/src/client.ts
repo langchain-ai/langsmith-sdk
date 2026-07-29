@@ -1445,7 +1445,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _getOpenAPIBaseUrl(): string {
     const url = this.apiUrl.replace(/\/$/, "");
-    for (const suffix of ["/api/v1", "/v1", "/api"]) {
+    for (const suffix of ["/api/v1", "/api"]) {
       if (url.endsWith(suffix)) return url.slice(0, -suffix.length);
     }
     return url;
