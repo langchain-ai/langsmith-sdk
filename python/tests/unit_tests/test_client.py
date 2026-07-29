@@ -20,6 +20,7 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
+from types import SimpleNamespace
 from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
@@ -6839,3 +6840,123 @@ def test_removed_sdk_methods_absent() -> None:
     assert not hasattr(DatasetsResource, "experiments"), (
         "datasets.experiments.grouped was de-publicized in PR #28358 and should not exist"
     )
+
+
+def _gtr_example_id() -> uuid.UUID:
+    return uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+
+def _gtr_legacy_run() -> mock.Mock:
+    """A `schemas.Run`-shaped run, as `list_runs` returns it."""
+    run = mock.Mock()
+    run.id = uuid.uuid4()
+    run.reference_example_id = _gtr_example_id()  # UUID
+    run.inputs = {"q": "hi"}
+    run.outputs = {"a": "yo"}
+    run.error = None
+    run.start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    run.end_time = datetime(2024, 1, 1, 0, 0, 5, tzinfo=timezone.utc)
+    run.feedback_stats = {"correctness": {"avg": 0.75}}
+    return run
+
+
+def _gtr_v2_run() -> SimpleNamespace:
+    """A raw v2 `Run`, which types `reference_example_id` as a *str*.
+
+    Uses SimpleNamespace rather than Mock so unset fields read as None, matching
+    the generated model (a Mock would hand `_v2_run_to_schema` truthy garbage).
+    """
+    stat = mock.Mock()
+    stat.model_dump.return_value = {"avg": 0.75}
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        reference_example_id=str(_gtr_example_id()),  # str, not UUID
+        inputs={"q": "hi"},
+        outputs={"a": "yo"},
+        error=None,
+        start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime(2024, 1, 1, 0, 0, 5, tzinfo=timezone.utc),
+        # Selected only so `schemas.Run` validates; absent from the dataframe.
+        name="my_run",
+        run_type="CHAIN",
+        trace_id=str(uuid.uuid4()),
+        feedback_stats={"correctness": stat},
+        # Not selected by get_test_results -> None on the generated model.
+        project_id=None,
+        parent_run_ids=[],
+        dotted_order=None,
+        status=None,
+        tags=None,
+        extra=None,
+        events=None,
+        first_token_time=None,
+        app_path=None,
+        prompt_tokens=None,
+        completion_tokens=None,
+        total_tokens=None,
+        prompt_cost=None,
+        completion_cost=None,
+        total_cost=None,
+        prompt_token_details=None,
+        completion_token_details=None,
+        prompt_cost_details=None,
+        completion_cost_details=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("instance_flags", "expect_v2"),
+    [
+        ({"ch_query_enabled": True}, False),
+        ({"ch_query_enabled": True, "sdb_query_enabled": True}, False),
+        ({"ch_query_enabled": False, "sdb_query_enabled": True}, True),
+    ],
+)
+def test_get_test_results_joins_reference_examples(instance_flags, expect_v2) -> None:
+    """Both backends must join runs to their reference examples.
+
+    Regression test: the SmithDB-only branch used to iterate raw v2 runs, whose
+    `reference_example_id` is a str. Indexing the dataframe on a str and merging
+    against UUID example ids produced an empty inner join, silently returning no
+    rows instead of the expected results.
+    """
+    pytest.importorskip("pandas")
+
+    client = Client(api_key="test", api_url="http://localhost")
+    example = mock.Mock()
+    example.id = _gtr_example_id()
+    example.outputs = {"a": "yo"}
+
+    api = mock.MagicMock()
+    api.runs.query.return_value = [_gtr_v2_run()]
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags=instance_flags)),
+        ),
+        patch.object(
+            type(client), "list_runs", return_value=[_gtr_legacy_run()]
+        ) as mock_list_runs,
+        patch.object(type(client), "_get_langsmith_api_sync", return_value=api),
+        patch.object(type(client), "list_examples", return_value=[example]),
+        patch.object(
+            type(client), "read_project", return_value=mock.Mock(id=uuid.uuid4())
+        ),
+    ):
+        with pytest.warns(UserWarning, match="in beta"):
+            df = client.get_test_results(project_name="p")
+
+    # Correct backend was queried.
+    assert mock_list_runs.called is not expect_v2
+    assert api.runs.query.called is expect_v2
+
+    # The run/example join produced a row with both sides' data.
+    assert len(df) == 1, f"expected 1 joined row, got {len(df)}"
+    row = df.iloc[0]
+    assert row["reference.a"] == "yo"
+    assert row["input.q"] == "hi"
+    assert row["outputs.a"] == "yo"
+    assert row["feedback.correctness"] == 0.75
+    assert row["execution_time"] == 5.0
