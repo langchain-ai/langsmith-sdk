@@ -708,6 +708,8 @@ export type RunSelectField =
  * Query params for run stats.
  */
 export interface RunStatsQueryParams {
+  session: Array<string>;
+
   id?: Array<string> | null;
 
   /**
@@ -785,8 +787,6 @@ export interface RunStatsQueryParams {
     | 'prompt_cost_details'
     | 'completion_cost_details'
   > | null;
-
-  session?: Array<string> | null;
 
   skip_pagination?: boolean | null;
 
