@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+  h_53e10026eac609 567-569
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1c36e50185b7cd613946f752c9a2631c7158910c",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
