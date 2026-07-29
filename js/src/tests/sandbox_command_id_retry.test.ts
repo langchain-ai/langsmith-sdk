@@ -175,6 +175,74 @@ describe("run() early-close retry", () => {
     expect(total).toBeLessThanOrEqual(120);
   });
 
+  it("never starts an attempt once the budget is spent", async () => {
+    const sandbox = makeSandbox();
+    const opens: (number | undefined)[] = [];
+
+    runWsStream.mockImplementation((...args: unknown[]) => {
+      const opts = args[3] as { openTimeout?: number };
+      opens.push(opts.openTimeout);
+      // Land just short of the deadline so the clamped backoff spends the rest.
+      clock.now = 119.9;
+      return [
+        failingStream(new LangSmithSandboxConnectTimeoutError("timed out")),
+        null,
+      ];
+    });
+
+    await expect(sandbox.run("echo hi")).rejects.toThrow(
+      LangSmithSandboxConnectTimeoutError,
+    );
+
+    // A 0 openTimeout would disable ws's handshakeTimeout entirely.
+    expect(opens).not.toContain(0);
+  });
+
+  it("retries a connect timeout while reconnecting a live command", async () => {
+    const sandbox = makeSandbox();
+
+    // Stream dies mid-command; the handle must reconnect to finish it.
+    runWsStream.mockImplementationOnce((...args: unknown[]) => {
+      const opts = args[3] as { commandId: string };
+      return [
+        (function () {
+          const msgs: WsMessage[] = [
+            { type: "started", command_id: opts.commandId, pid: 1 },
+          ];
+          let i = 0;
+          return {
+            next: async () => {
+              if (i < msgs.length) return { value: msgs[i++], done: false };
+              throw new LangSmithSandboxConnectionError("connection lost");
+            },
+            [Symbol.asyncIterator]() {
+              return this;
+            },
+          } as AsyncIterableIterator<WsMessage>;
+        })(),
+        null,
+      ];
+    });
+
+    // First reconnect attempt fails at the socket level (the subclass that a
+    // name-based check would have let escape), the second succeeds.
+    reconnectWsStream
+      .mockImplementationOnce(() => [
+        failingStream(new LangSmithSandboxConnectTimeoutError("timed out")),
+        null,
+      ])
+      .mockImplementationOnce(() => [
+        makeStream([{ type: "exit", exit_code: 0 }]),
+        null,
+      ]);
+
+    const handle = await sandbox.run("echo hi", { wait: false });
+    const result = await handle.result;
+
+    expect(result.exit_code).toBe(0);
+    expect(reconnectWsStream).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry a non-early-close error (e.g. wrong first frame)", async () => {
     const sandbox = makeSandbox();
     runWsStream.mockImplementation((..._args: unknown[]) => [

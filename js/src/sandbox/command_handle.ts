@@ -10,6 +10,7 @@ import type { WSStreamControl } from "./ws_execute.js";
 import type { Sandbox } from "./sandbox.js";
 import {
   LangSmithSandboxConnectionError,
+  LangSmithSandboxServerReloadError,
   LangSmithSandboxOperationError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
@@ -213,12 +214,9 @@ export class CommandHandle {
         }
         return; // Stream ended normally (exit message received)
       } catch (e) {
-        const eName =
-          e != null && typeof e === "object" ? (e as Error).name : "";
-        if (
-          eName !== "LangSmithSandboxConnectionError" &&
-          eName !== "LangSmithSandboxServerReloadError"
-        ) {
+        // instanceof, not a name check: subclasses (connect timeout, server
+        // reload) must stay retryable here.
+        if (!(e instanceof LangSmithSandboxConnectionError)) {
           throw e;
         }
 
@@ -233,7 +231,7 @@ export class CommandHandle {
           );
         }
 
-        const isHotReload = eName === "LangSmithSandboxServerReloadError";
+        const isHotReload = e instanceof LangSmithSandboxServerReloadError;
         if (!isHotReload) {
           const delay = Math.min(
             CommandHandle.BACKOFF_BASE * 2 ** (reconnectAttempts - 1),

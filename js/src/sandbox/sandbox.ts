@@ -321,6 +321,12 @@ export class Sandbox {
           delay = Math.min(delay, remaining);
         }
         await new Promise((r) => setTimeout(r, delay * 1000));
+        // Never start an attempt with no budget left: openTimeoutFor would
+        // return 0, which ws forwards to Node as "no timeout at all".
+        const left = remainingBudget(deadline);
+        if (left !== undefined && left <= 0) {
+          throw e;
+        }
       }
     }
   }
