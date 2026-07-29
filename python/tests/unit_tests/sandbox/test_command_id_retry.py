@@ -1,9 +1,11 @@
-"""Idempotent retry when a command WebSocket closes before 'started'.
+"""Idempotent retry when a command WebSocket fails before 'started'.
 
 A proxied exec tunnel can be torn down gracefully before the guest emits its
-'started' frame. run() sends a client-generated command_id and the server does
-get-or-create keyed on it, so re-issuing the same command reattaches to the
-existing session instead of spawning a second one.
+'started' frame, and a cold-starting sandbox can refuse the connection outright.
+run() sends a client-generated command_id and the server does get-or-create
+keyed on it, so re-issuing the same command reattaches to the existing session
+instead of spawning a second one. A rejected handshake is permanent and must
+not be retried.
 """
 
 import pytest
@@ -13,6 +15,10 @@ from langsmith.sandbox import (
     SandboxClient,
 )
 from langsmith.sandbox._async_sandbox import AsyncSandbox
+from langsmith.sandbox._exceptions import (
+    SandboxConnectionError,
+    SandboxConnectTimeoutError,
+)
 from langsmith.sandbox._models import (
     CommandHandle,
     _StreamEndedBeforeStarted,
@@ -38,6 +44,14 @@ def _sandbox():
 
 def _empty():
     return iter(())
+
+
+def _raises(exc):
+    def _gen():
+        raise exc
+        yield  # make it a generator
+
+    return _gen()
 
 
 def _started_then_exit(command_id):
@@ -76,6 +90,42 @@ class TestSyncRetry:
         assert len(calls) == 2
         # Same id across the retry -> server dedupes, no double-run.
         assert calls[0]["command_id"] == calls[1]["command_id"]
+
+    def test_retries_connect_timeout(self, monkeypatch):
+        sandbox = _sandbox()
+        calls: list[dict] = []
+
+        def fake_run_ws_stream(dataplane_url, api_key, command, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return _raises(SandboxConnectTimeoutError("timed out")), None
+            return _started_then_exit(kwargs["command_id"]), None
+
+        monkeypatch.setattr(
+            "langsmith.sandbox._ws_execute.run_ws_stream", fake_run_ws_stream
+        )
+
+        result = sandbox.run("echo hi")
+
+        assert result.exit_code == 0
+        assert len(calls) == 2
+        assert calls[0]["command_id"] == calls[1]["command_id"]
+
+    def test_does_not_retry_rejected_handshake(self, monkeypatch):
+        sandbox = _sandbox()
+        calls: list[dict] = []
+
+        def fake_run_ws_stream(dataplane_url, api_key, command, **kwargs):
+            calls.append(kwargs)
+            return _raises(SandboxConnectionError("upgrade rejected (HTTP 404)")), None
+
+        monkeypatch.setattr(
+            "langsmith.sandbox._ws_execute.run_ws_stream", fake_run_ws_stream
+        )
+
+        with pytest.raises(SandboxConnectionError):
+            sandbox.run("echo hi")
+        assert len(calls) == 1
 
     def test_gives_up_after_max_attempts(self, monkeypatch):
         sandbox = _sandbox()
@@ -116,6 +166,11 @@ async def _astarted_then_exit(command_id):
     yield {"type": "exit", "exit_code": 0}
 
 
+async def _araises(exc):
+    raise exc
+    yield  # make it an async generator
+
+
 class TestAsyncRetry:
     async def test_retries_with_same_command_id(self, monkeypatch):
         sandbox = _async_sandbox()
@@ -125,6 +180,28 @@ class TestAsyncRetry:
             calls.append(kwargs)
             if len(calls) == 1:
                 return _aempty(), None
+            return _astarted_then_exit(kwargs["command_id"]), None
+
+        async def _no_sleep(_s):
+            return None
+
+        monkeypatch.setattr("asyncio.sleep", _no_sleep)
+        monkeypatch.setattr("langsmith.sandbox._ws_execute.run_ws_stream_async", fake)
+
+        result = await sandbox.run("echo hi")
+
+        assert result.exit_code == 0
+        assert len(calls) == 2
+        assert calls[0]["command_id"] == calls[1]["command_id"]
+
+    async def test_retries_connect_timeout(self, monkeypatch):
+        sandbox = _async_sandbox()
+        calls: list[dict] = []
+
+        async def fake(dataplane_url, api_key, command, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return _araises(SandboxConnectTimeoutError("timed out")), None
             return _astarted_then_exit(kwargs["command_id"]), None
 
         async def _no_sleep(_s):

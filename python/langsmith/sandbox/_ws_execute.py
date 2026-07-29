@@ -11,6 +11,7 @@ from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
+    SandboxConnectTimeoutError,
     SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
@@ -47,10 +48,10 @@ def _env_timeout(name: str, default: float) -> Optional[float]:
     return value if value > 0 else None
 
 
-# Cold-start sandboxes can take well over a minute to accept the connection.
-WS_OPEN_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_OPEN", 120)
+# A slow cold start is recovered by the retry loop in run(), not by waiting here.
+WS_OPEN_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_OPEN", 30)
 WS_PING_INTERVAL = _env_timeout("SANDBOX_WS_TIMEOUT_PING_INTERVAL", 30)
-WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 120)
+WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 60)
 # Kept short: a dead peer would otherwise stall teardown for the full duration.
 WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 10)
 
@@ -356,7 +357,9 @@ def run_ws_stream(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -439,7 +442,9 @@ def reconnect_ws_stream(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -540,7 +545,9 @@ async def run_ws_stream_async(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -608,7 +615,9 @@ async def reconnect_ws_stream_async(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 

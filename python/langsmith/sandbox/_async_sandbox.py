@@ -12,6 +12,7 @@ import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
+    SandboxConnectTimeoutError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
@@ -428,8 +429,9 @@ class AsyncSandbox:
             try:
                 await handle._ensure_started()
                 break
-            except _StreamEndedBeforeStarted:
-                # Idempotent re-issue (same command_id) after an early close.
+            except (_StreamEndedBeforeStarted, SandboxConnectTimeoutError):
+                # Idempotent re-issue (same command_id): neither an early close
+                # nor a failed connect can have started a second command.
                 attempt += 1
                 if attempt > AsyncCommandHandle.MAX_AUTO_RECONNECTS:
                     raise
