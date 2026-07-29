@@ -702,6 +702,7 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            open_timeout=ANY,
         )
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")

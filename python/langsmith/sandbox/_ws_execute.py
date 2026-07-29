@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
 
@@ -11,6 +12,7 @@ from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
+    SandboxConnectTimeoutError,
     SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
@@ -47,12 +49,33 @@ def _env_timeout(name: str, default: float) -> Optional[float]:
     return value if value > 0 else None
 
 
-# Cold-start sandboxes can take well over a minute to accept the connection.
-WS_OPEN_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_OPEN", 120)
+# A slow cold start is recovered by the retry loop in run(), not by waiting here.
+WS_OPEN_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_OPEN", 30)
 WS_PING_INTERVAL = _env_timeout("SANDBOX_WS_TIMEOUT_PING_INTERVAL", 30)
-WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 120)
+WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 60)
 # Kept short: a dead peer would otherwise stall teardown for the full duration.
 WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 10)
+# Ceiling on the whole connect phase. Without it, retrying a blackholed handshake
+# costs MAX_AUTO_RECONNECTS + 1 full open timeouts plus backoff.
+WS_CONNECT_BUDGET = _env_timeout("SANDBOX_WS_TIMEOUT_CONNECT_BUDGET", 120)
+
+
+def connect_deadline() -> Optional[float]:
+    """Monotonic instant after which connect attempts must stop, if bounded."""
+    if WS_CONNECT_BUDGET is None:
+        return None
+    return time.monotonic() + WS_CONNECT_BUDGET
+
+
+def open_timeout_for(deadline: Optional[float]) -> Optional[float]:
+    """Per-attempt open timeout, clamped so it cannot outlive ``deadline``."""
+    if deadline is None:
+        return WS_OPEN_TIMEOUT
+    remaining = max(deadline - time.monotonic(), 0.0)
+    if WS_OPEN_TIMEOUT is None:
+        return remaining
+    return min(WS_OPEN_TIMEOUT, remaining)
+
 
 _MISSING_WEBSOCKETS_MSG = (
     "WebSocket-based execution requires the 'websockets' package, which ships "
@@ -268,6 +291,7 @@ def run_ws_stream(
     ttl_seconds: int = 600,
     pty: bool = False,
     headers: Optional[Mapping[str, str]] = None,
+    open_timeout: Optional[float] = WS_OPEN_TIMEOUT,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
     """Execute a command over WebSocket, yielding raw message dicts.
 
@@ -293,7 +317,7 @@ def run_ws_stream(
             with ws_connect(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=WS_OPEN_TIMEOUT,
+                open_timeout=open_timeout,
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
@@ -356,7 +380,9 @@ def run_ws_stream(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -439,7 +465,9 @@ def reconnect_ws_stream(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -468,6 +496,7 @@ async def run_ws_stream_async(
     ttl_seconds: int = 600,
     pty: bool = False,
     headers: Optional[Mapping[str, str]] = None,
+    open_timeout: Optional[float] = WS_OPEN_TIMEOUT,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
     """Async equivalent of run_ws_stream.
 
@@ -483,7 +512,7 @@ async def run_ws_stream_async(
             async with ws_connect_async(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=WS_OPEN_TIMEOUT,
+                open_timeout=open_timeout,
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
@@ -540,7 +569,9 @@ async def run_ws_stream_async(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
@@ -608,7 +639,9 @@ async def reconnect_ws_stream_async(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
-            raise SandboxConnectionError(f"Failed to connect to sandbox: {e}") from e
+            raise SandboxConnectTimeoutError(
+                f"Failed to connect to sandbox: {e}"
+            ) from e
         finally:
             control._unbind()
 
