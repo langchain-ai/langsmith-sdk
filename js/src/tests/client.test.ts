@@ -37,6 +37,7 @@ describe("Client", () => {
         {
           score: 1,
           extendTraceRetention: false,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
         },
       );
 
@@ -76,6 +77,97 @@ describe("Client", () => {
           startTime,
         }),
       );
+    });
+
+    const infoClient = (chQueryEnabled: boolean) => {
+      const mockFetch = jest.fn<typeof fetch>().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              instance_flags: { ch_query_enabled: chQueryEnabled },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+      const paths = () =>
+        mockFetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
+      return { client, paths };
+    };
+
+    it("throws without a sessionId on a SmithDB-only deployment", async () => {
+      const { client, paths } = infoClient(false);
+
+      await expect(
+        client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
+          score: 1,
+        }),
+      ).rejects.toThrow(/sessionId must be provided/);
+      // Only GET /info was called: the feedback was never sent.
+      expect(paths()).toEqual(["/info"]);
+
+      // startTime stays optional, matching the server.
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+        },
+      );
+      expect(paths()).toContain("/feedback");
+
+      // Session-level feedback has no run to locate.
+      await client.createFeedback(null, "Foo", {
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+    });
+
+    it("accepts the params-object overload, which requires sessionId", async () => {
+      const { client, paths } = infoClient(false);
+
+      await client.createFeedback({
+        runId: "550e8400-e29b-41d4-a716-446655440000",
+        key: "Foo",
+        score: 1,
+        sessionId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+      // sessionId came from the params, so /info was never consulted.
+      expect(paths()).toEqual(["/feedback"]);
+
+      await client.createFeedback({
+        key: "Foo",
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+
+      // @ts-expect-error sessionId is required alongside runId.
+      await client.createFeedback({ runId: "x", key: "Foo" }).catch(() => {});
+    });
+
+    it("warns without a sessionId on other deployments", async () => {
+      const { client, paths } = infoClient(true);
+      // warnOnce dedupes per process, so this must be the only test that warns.
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+        },
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("smithdb-sdk-migration#feedback-create"),
+      );
+      expect(paths()).toContain("/feedback");
+      warn.mockRestore();
     });
   });
 

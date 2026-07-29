@@ -1062,8 +1062,10 @@ class AsyncClient:
                 feedback.
             extra: Metadata for the feedback.
             error: Whether the feedback represents an error.
-            session_id: The project ID of the run this feedback is for.
-            start_time: The start time of the run this feedback is for.
+            session_id: The project ID of the run. Required for run-level feedback;
+                omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+            start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
@@ -1082,6 +1084,8 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"

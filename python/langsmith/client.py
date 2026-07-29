@@ -687,6 +687,25 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
+def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
+    """Raise on SmithDB-only deployments, warn elsewhere.
+
+    Call only when run-level feedback has no ``session_id``.
+    """
+    docs = "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create"
+    if (info.instance_flags or {}).get("ch_query_enabled") is False:
+        raise ValueError(
+            "session_id must be provided when creating feedback for a run:"
+            f" this deployment cannot locate the run without it. See {docs}"
+        )
+    warnings.warn(
+        "Creating feedback for a run without session_id is deprecated and will"
+        f" stop working in a future release. See {docs}",
+        ls_utils.LangSmithWarning,
+        stacklevel=3,
+    )
+
+
 def _get_tracing_sampling_rate(
     tracing_sampling_rate: Optional[float] = None,
 ) -> float | None:
@@ -7933,11 +7952,11 @@ class Client:
             extra (Optional[Dict]):
                 Metadata for the feedback.
             session_id (Optional[Union[UUID, str]]):
-                The session (project) ID of the run this feedback is for. Used to
-                optimize feedback ingestion by avoiding server-side lookups.
+                The session (project) ID of the run. Required for run-level
+                feedback; omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
             start_time (Optional[datetime]):
-                The start time of the run this feedback is for. Used to optimize
-                feedback ingestion by avoiding server-side lookups.
+                The start time of the run. Better performance if provided.
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
@@ -7998,6 +8017,8 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            _check_feedback_session_id(self.info)
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
