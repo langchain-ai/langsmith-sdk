@@ -313,7 +313,7 @@ class Tunnel:
         self._ws = ws_connect(
             ws_url,
             additional_headers=headers,
-            open_timeout=15,
+            open_timeout=120,
             close_timeout=5,
             ping_interval=None,  # yamux handles keepalive
         )

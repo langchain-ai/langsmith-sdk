@@ -269,7 +269,7 @@ def run_ws_stream(
             with ws_connect(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=30,
+                open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
                 ping_timeout=60,
@@ -370,7 +370,7 @@ def reconnect_ws_stream(
             with ws_connect(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=30,
+                open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
                 ping_timeout=60,
@@ -459,7 +459,7 @@ async def run_ws_stream_async(
             async with ws_connect_async(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=30,
+                open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
                 ping_timeout=60,
@@ -543,7 +543,7 @@ async def reconnect_ws_stream_async(
             async with ws_connect_async(
                 ws_url,
                 additional_headers=request_headers,
-                open_timeout=30,
+                open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
                 ping_timeout=60,
