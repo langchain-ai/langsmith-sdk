@@ -35,6 +35,69 @@ export async function waitUntil(
   );
 }
 
+/**
+ * Counts the runs in a project.
+ *
+ * `listRuns` comes first so environments that serve it keep the exact behavior
+ * they had before; SmithDB-only backends don't serve it and never settle, so
+ * they fall through to the v2 read path.
+ */
+async function countProjectRuns(
+  client: Client,
+  projectName: string,
+): Promise<number | null> {
+  try {
+    const count = (await toArray(client.listRuns({ projectName }))).length;
+    if (count > 0) return count;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
+  try {
+    const { id } = await client.readProject({ projectName });
+    let count = 0;
+    for await (const _run of client.runs.query({
+      project_ids: [id],
+      selects: ["ID"],
+    })) {
+      count++;
+    }
+    return count;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Resolves a run's trace id.
+ *
+ * `readRun` comes first to keep the previous behavior where it works; SmithDB
+ * answers the legacy single-run read with 501, so those deployments fall through
+ * to the v2 read. Callers create root runs, whose trace id is the run id itself
+ * — the last resort.
+ */
+export async function resolveTraceId(
+  client: Client,
+  runId: string,
+  projectId: string,
+): Promise<string> {
+  try {
+    const run = await client.readRun(runId);
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
+  try {
+    const run = await client.runs.retrieve(runId, {
+      project_id: projectId,
+      selects: ["TRACE_ID"],
+    });
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the run id.
+  }
+  return runId;
+}
+
 export async function pollRunsUntilCount(
   client: Client,
   projectName: string,
@@ -42,14 +105,7 @@ export async function pollRunsUntilCount(
   timeout?: number,
 ): Promise<void> {
   await waitUntil(
-    async () => {
-      try {
-        const runs = await toArray(client.listRuns({ projectName }));
-        return runs.length === count;
-      } catch (_e) {
-        return false;
-      }
-    },
+    async () => (await countProjectRuns(client, projectName)) === count,
     timeout ?? 120_000, // Wait up to 120 seconds
     3000,
   );

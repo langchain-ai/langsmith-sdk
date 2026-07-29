@@ -122,6 +122,7 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
+@pytest.mark.require_v2
 async def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
@@ -463,6 +464,7 @@ def test_list_examples(langchain_client: "Client") -> None:
         safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -499,6 +501,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_update_run_attachments(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -848,6 +851,7 @@ def test_list_datasets(langchain_client: Client) -> None:
                 pass
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
@@ -955,6 +959,7 @@ def test_create_chat_example(
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
 @pytest.mark.slow
 def test_batch_ingest_runs(
@@ -1111,6 +1116,7 @@ def test_multipart_ingest_create_with_attachments_error(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1159,6 +1165,7 @@ def test_multipart_ingest_create_with_attachments(
         )
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_update_with_attachments_no_paths(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1225,6 +1232,7 @@ def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -
         return False
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments_error(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1274,6 +1282,7 @@ def test_multipart_ingest_update_with_attachments_error(
 
 
 # TODO: fix flakiness
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1475,6 +1484,7 @@ def test_get_info() -> None:
     assert info.batch_ingest_config["size_limit"] > 0  # type: ignore
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 @pytest.mark.parametrize("add_metadata", [True, False])
 @pytest.mark.parametrize("do_batching", [True, False])
@@ -3451,6 +3461,7 @@ def test_list_annotation_queues(langchain_client: Client):
             langchain_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_annotation_queue_runs(langchain_client: Client):
     """Test managing runs within an annotation queue."""
@@ -3521,6 +3532,7 @@ def test_annotation_queue_runs(langchain_client: Client):
     langchain_client.delete_annotation_queue(queue.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_annotation_queue_runs_by_key(langchain_client: Client):
     """Test adding runs to an annotation queue via the SmithDB by-key path."""
@@ -3653,6 +3665,7 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_list_threads(langchain_client: Client) -> None:
     """Test list_threads returns threads grouped by thread_id."""
@@ -3736,6 +3749,7 @@ def test_list_threads(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_read_thread(langchain_client: Client) -> None:
     """Test read_thread yields runs for a single thread_id."""
@@ -3797,6 +3811,7 @@ def test_read_thread(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
@@ -3833,6 +3848,7 @@ def test_list_runs_with_child_runs(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_run_ops_buffer_integration(langchain_client: Client) -> None:
     project_name = f"test-run-ops-buffer-{str(uuid7())[:8]}"
@@ -4031,6 +4047,7 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
     )
 
 
+@pytest.mark.require_clickhouse
 def test_get_experiment_results(langchain_client: Client) -> None:
     """Test get_experiment_results method with evaluation data."""
     dataset_name = "__test_evaluate_attachments" + uuid7().hex
@@ -4240,6 +4257,7 @@ def v2_client() -> Client:
     return Client()
 
 
+@pytest.mark.require_v2
 async def test_runs_retrieve(v2_client: Client) -> None:
     import time as _time
 
@@ -4261,6 +4279,7 @@ async def test_runs_retrieve(v2_client: Client) -> None:
     _v2_cleanup_project(v2_client, project_name)
 
 
+@pytest.mark.require_v2
 async def test_runs_query(v2_client: Client) -> None:
     project_name = _v2_create_project_name("runs_query")
     trace_id, project_id, _ = _v2_post_trace(project_name)

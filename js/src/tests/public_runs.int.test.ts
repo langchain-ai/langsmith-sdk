@@ -7,7 +7,12 @@
  */
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
-import { deleteProject, pollRunsUntilCount, waitUntil } from "./utils.js";
+import {
+  deleteProject,
+  pollRunsUntilCount,
+  resolveTraceId,
+  waitUntil,
+} from "./utils.js";
 
 // Public run fields to request; START_TIME is needed as the retrieve coordinate.
 const SELECTS: Array<"ID" | "NAME" | "RUN_TYPE" | "STATUS" | "START_TIME"> = [
@@ -36,9 +41,8 @@ async function setUpSharedRun(client: Client) {
   });
   await pollRunsUntilCount(client, projectName, 1, 30_000);
 
-  const run = await client.readRun(runId);
   const project = await client.readProject({ projectName });
-  const traceId = run.trace_id ?? runId;
+  const traceId = await resolveTraceId(client, runId, project.id);
 
   let shareToken: string | undefined;
   // share.create resolves the trace root from SmithDB, which may lag indexing.

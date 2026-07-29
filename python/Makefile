@@ -38,11 +38,13 @@ tests_watch:
 	uv run ptw --now . -- -vv -x  tests/unit_tests
 
 INT_TEST ?= "tests/integration_tests"
+# Set to empty to run the whole suite instead of stopping at the first failure.
+PYTEST_EXIT_FIRST ?= -x
 integration_tests:
-	uv run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
+	uv run python -m pytest ${PYTEST_EXIT_FIRST} -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 integration_tests_fast:
-	uv run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
+	uv run python -m pytest ${PYTEST_EXIT_FIRST} -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 integration_tests_watch:
 	uv run ptw --now . -- -vv -x  ${INT_TEST}
@@ -51,7 +53,7 @@ doctest:
 	uv run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
 
 evals:
-	uv run python -m pytest -n auto -x tests/evaluation
+	uv run python -m pytest -n auto ${PYTEST_EXIT_FIRST} tests/evaluation
 
 lint:
 	uv run ruff check .

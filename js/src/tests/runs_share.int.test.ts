@@ -5,7 +5,12 @@
  */
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
-import { deleteProject, pollRunsUntilCount, waitUntil } from "./utils.js";
+import {
+  deleteProject,
+  pollRunsUntilCount,
+  resolveTraceId,
+  waitUntil,
+} from "./utils.js";
 
 async function setUpProjectWithRun(client: Client) {
   const projectName = `__test_v2_runs_share_${uuidv4().slice(0, 12)}`;
@@ -25,12 +30,11 @@ async function setUpProjectWithRun(client: Client) {
   });
   await pollRunsUntilCount(client, projectName, 1, 30_000);
 
-  const run = await client.readRun(runId);
   const project = await client.readProject({ projectName });
   return {
     projectName,
     runId,
-    traceId: run.trace_id ?? runId,
+    traceId: await resolveTraceId(client, runId, project.id),
     projectId: project.id,
   };
 }

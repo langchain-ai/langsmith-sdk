@@ -1,17 +1,29 @@
 import asyncio
+import datetime
 import functools
 import logging
 import time
+import uuid
 from contextlib import contextmanager
-from typing import Callable, Sequence, Tuple, TypeVar
+from typing import Callable, Iterator, Optional, Sequence, Tuple, TypeVar
 
 import pytest
 
 from langsmith import Client, aevaluate, evaluate, expect, test
+from langsmith import utils as ls_utils
 from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
+
+_VERSION_TAG = "test_version"
+
+# Answers for the seeded dataset. A yes/no mix keeps the `precision` summary
+# evaluator meaningful: it divides by the number of yes/no answers.
+_SEEDED_ANSWERS = ["Yes", "No", "Yes", "Yes", "No", "Yes", "No", "Yes", "Yes", "No"]
+_NUM_EXAMPLES = len(_SEEDED_ANSWERS)
 
 
 @contextmanager
@@ -47,12 +59,69 @@ def wait_for(
     raise ValueError(f"Callable did not return within {total_time}")
 
 
-async def test_error_handling_evaluators():
+def _tag_seeded_version(client: Client, dataset_id: uuid.UUID) -> Optional[str]:
+    """Tag the dataset's current version, if this deployment records versions.
+
+    Returns the tag to pass as `as_of`, or None when no version shows up — some
+    deployments don't serve `/datasets/{id}/version` for a freshly seeded
+    dataset, and pinning a version isn't what these tests are about.
+    """
+    deadline = time.time() + 30
+    while True:
+        for kwargs in (
+            {"tag": "latest"},
+            {"as_of": datetime.datetime.now(datetime.timezone.utc)},
+        ):
+            try:
+                version = client.read_dataset_version(dataset_id=dataset_id, **kwargs)
+                # `update_dataset_tag` needs an exact version, not just any timestamp.
+                client.update_dataset_tag(
+                    dataset_id=dataset_id, as_of=version.as_of, tag=_VERSION_TAG
+                )
+                return _VERSION_TAG
+            except ls_utils.LangSmithNotFoundError:
+                continue
+        if time.time() >= deadline:
+            logger.warning(
+                "No dataset version available after 30s; reading examples untagged."
+            )
+            return None
+        time.sleep(2)
+
+
+@pytest.fixture(scope="module")
+def evaluate_examples() -> Iterator[Tuple[str, Optional[str]]]:
+    """Seed a dataset and yield `(dataset_name, as_of)`.
+
+    These tests used to clone a public dataset from the prod app and read the
+    `test_version` tag off it. That tag only exists on the prod copy, so on any
+    other deployment `list_examples(as_of="test_version")` came back empty.
+    """
     client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
-    )
-    dataset_name = "Evaluate Examples"
+    dataset_name = f"Evaluate Examples - {uuid.uuid4().hex[:12]}"
+    dataset = client.create_dataset(dataset_name=dataset_name)
+    try:
+        client.create_examples(
+            dataset_id=dataset.id,
+            examples=[
+                {
+                    "inputs": {
+                        "context": f"Context {i}",
+                        "question": f"Is this question {i}?",
+                    },
+                    "outputs": {"answer": answer},
+                }
+                for i, answer in enumerate(_SEEDED_ANSWERS)
+            ],
+        )
+        yield dataset_name, _tag_seeded_version(client, dataset.id)
+    finally:
+        client.delete_dataset(dataset_id=dataset.id)
+
+
+async def test_error_handling_evaluators(evaluate_examples: Tuple[str, Optional[str]]):
+    client = Client()
+    dataset_name, as_of = evaluate_examples
 
     # Case 1: Normal dictionary return
     def error_dict_evaluator(run: Run, example: Example):
@@ -104,7 +173,7 @@ async def test_error_handling_evaluators():
             predict,
             data=client.list_examples(
                 dataset_name=dataset_name,
-                as_of="test_version",
+                as_of=as_of,
             ),
             evaluators=[
                 error_dict_evaluator,
@@ -116,7 +185,7 @@ async def test_error_handling_evaluators():
             max_concurrency=1,  # To ensure deterministic order
         )
 
-    assert len(sync_results) == 10  # Assuming 10 examples in the dataset
+    assert len(sync_results) == _NUM_EXAMPLES
 
     def check_results(results):
         for result in results:
@@ -173,7 +242,7 @@ async def test_error_handling_evaluators():
             data=list(
                 client.list_examples(
                     dataset_name=dataset_name,
-                    as_of="test_version",
+                    as_of=as_of,
                 )
             ),
             evaluators=[
@@ -186,7 +255,7 @@ async def test_error_handling_evaluators():
             max_concurrency=1,  # To ensure deterministic order
         )
 
-    assert len(async_results) == 10  # Assuming 10 examples in the dataset
+    assert len(async_results) == _NUM_EXAMPLES
     check_results([res async for res in async_results])
 
 
@@ -277,12 +346,9 @@ async def test_aevaluate():
     assert len(results4) == 10
 
 
-def test_evaluate():
+def test_evaluate(evaluate_examples: Tuple[str, Optional[str]]):
     client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
-    )
-    dataset_name = "Evaluate Examples"
+    dataset_name, as_of = evaluate_examples
 
     def accuracy(run: Run, example: Example):
         pred = run.outputs["output"]  # type: ignore
@@ -301,7 +367,7 @@ def test_evaluate():
 
     results = evaluate(
         predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset_name, as_of=as_of),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         description="My sync experiment",
@@ -311,10 +377,10 @@ def test_evaluate():
         },
         num_repetitions=3,
     )
-    assert len(results) == 30
+    assert len(results) == 3 * _NUM_EXAMPLES
     if _has_pandas():
         df = results.to_pandas()
-        assert len(df) == 30
+        assert len(df) == 3 * _NUM_EXAMPLES
         assert set(df.columns) == {
             "inputs.context",
             "inputs.question",
@@ -326,40 +392,40 @@ def test_evaluate():
             "example_id",
             "id",
         }
-    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
+    examples = client.list_examples(dataset_name=dataset_name, as_of=as_of)
     for example in examples:
         assert len([r for r in results if r["example"].id == example.id]) == 3
 
     # Run it again with the existing project
     results2 = evaluate(
         predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset_name, as_of=as_of),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=results.experiment_name,
     )
-    assert len(results2) == 10
+    assert len(results2) == _NUM_EXAMPLES
 
     # ... and again with the object
     experiment = client.read_project(project_name=results.experiment_name)
     results3 = evaluate(
         predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset_name, as_of=as_of),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=experiment,
     )
-    assert len(results3) == 10
+    assert len(results3) == _NUM_EXAMPLES
 
     # ... and again with the ID
     results4 = evaluate(
         predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset_name, as_of=as_of),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=str(experiment.id),
     )
-    assert len(results4) == 10
+    assert len(results4) == _NUM_EXAMPLES
 
 
 @test
@@ -457,12 +523,11 @@ async def test_aevaluate_good_error():
         )
 
 
-async def test_aevaluate_large_dataset_and_concurrency():
+async def test_aevaluate_large_dataset_and_concurrency(
+    evaluate_examples: Tuple[str, Optional[str]],
+):
     client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/2bbf4a10-c3d5-4868-9e96-400df97fed69/d"
-    )
-    dataset_name = "Evaluate Examples"
+    dataset_name, as_of = evaluate_examples
 
     async def mock_chat_completion(*, messages):
         await asyncio.sleep(1)
@@ -522,7 +587,7 @@ Actual: {outputs["equation"]}
 
     await client.aevaluate(
         target,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset_name, as_of=as_of),
         evaluators=[
             mock_correctness_evaluator,
         ],
