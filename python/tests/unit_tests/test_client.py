@@ -5511,21 +5511,33 @@ def test_construct_url_errors(api_url, pathname, error_match):
             "https://self-hosted.example.com/langsmith/v1",
             "https://self-hosted.example.com/langsmith",
         ),
-        # No version suffix: left unchanged (aside from trailing slashes).
+        # Bare /api suffix (no version segment).
+        ("https://api.smith.langchain.com/api", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/api/", "https://api.smith.langchain.com"),
+        (
+            "https://self-hosted.example.com/api",
+            "https://self-hosted.example.com",
+        ),
+        (
+            "https://self-hosted.example.com/langsmith/api",
+            "https://self-hosted.example.com/langsmith",
+        ),
+        # No version or /api suffix: left unchanged (aside from trailing slashes).
         ("https://api.smith.langchain.com", "https://api.smith.langchain.com"),
         ("https://api.smith.langchain.com/", "https://api.smith.langchain.com"),
-        (
-            "https://self-hosted.example.com/api",
-            "https://self-hosted.example.com/api",
-        ),
         ("http://localhost:1984", "http://localhost:1984"),
         ("http://localhost:1984/api/v1", "http://localhost:1984"),
-        # /v1 must be a trailing path segment, not a substring.
+        # /v1 and /api must be trailing path segments, not substrings.
         (
             "https://api.smith.langchain.com/v1/runs",
             "https://api.smith.langchain.com/v1/runs",
         ),
+        (
+            "https://api.smith.langchain.com/api/runs",
+            "https://api.smith.langchain.com/api/runs",
+        ),
         ("https://v1.example.com", "https://v1.example.com"),
+        ("https://api.example.com", "https://api.example.com"),
     ],
 )
 def test_get_openapi_base_url(api_url: str, expected: str) -> None:
