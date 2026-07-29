@@ -12,6 +12,24 @@ import {
   LangSmithSandboxServerReloadError,
 } from "./errors.js";
 import type { WsMessage, WsRunOptions } from "./types.js";
+import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+
+/** Read a WebSocket timeout override, in seconds. `<= 0` disables it. */
+function envTimeout(name: string, defaultSeconds: number): number | undefined {
+  const raw = getLangSmithEnvironmentVariable(name);
+  if (raw === undefined || raw.trim() === "") return defaultSeconds;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.warn(
+      `Ignoring invalid LANGSMITH_${name}=${raw}, using ${defaultSeconds}`,
+    );
+    return defaultSeconds;
+  }
+  return value > 0 ? value : undefined;
+}
+
+// Cold-start sandboxes can take well over a minute to accept the connection.
+export const WS_OPEN_TIMEOUT = envTimeout("SANDBOX_WS_TIMEOUT_OPEN", 120);
 
 // =============================================================================
 // Lazy ws import (optional peer dependency)
@@ -176,7 +194,11 @@ async function connectWs(
 ): Promise<WsWebSocket> {
   const { WebSocket: WS } = await ensureWs();
   return new Promise((resolve, reject) => {
-    const ws = new WS(url, { headers });
+    const ws = new WS(url, {
+      headers,
+      handshakeTimeout:
+        WS_OPEN_TIMEOUT === undefined ? undefined : WS_OPEN_TIMEOUT * 1000,
+    });
 
     ws.on("open", () => {
       ws.removeAllListeners("error");
