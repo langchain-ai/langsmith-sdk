@@ -35,7 +35,7 @@ export class Threads extends APIResource {
     options?: RequestOptions,
   ): PagePromise<ThreadTracesItemsCursorGetPagination, ThreadTrace> {
     return this._client.getAPIList(
-      path`/v2/threads/${threadID}/traces`,
+      path`/api/v2/threads/${threadID}/traces`,
       ItemsCursorGetPagination<ThreadTrace>,
       { query, ...options },
     );
@@ -58,7 +58,7 @@ export class Threads extends APIResource {
     body: ThreadQueryParams,
     options?: RequestOptions,
   ): PagePromise<ThreadsItemsCursorPostPagination, Thread> {
-    return this._client.getAPIList('/v2/threads/query', ItemsCursorPostPagination<Thread>, {
+    return this._client.getAPIList('/api/v2/threads/query', ItemsCursorPostPagination<Thread>, {
       body,
       method: 'post',
       ...options,
@@ -82,7 +82,7 @@ export class Threads extends APIResource {
    * ```
    */
   stats(threadID: string, query: ThreadStatsParams, options?: RequestOptions): APIPromise<ThreadStats> {
-    return this._client.get(path`/v2/threads/${threadID}/stats`, { query, ...options });
+    return this._client.get(path`/api/v2/threads/${threadID}/stats`, { query, ...options });
   }
 }
 

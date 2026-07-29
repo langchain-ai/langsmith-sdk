@@ -20,14 +20,14 @@ export class OnlineEvaluators extends APIResource {
     body: OnlineEvaluatorCreateParams,
     options?: RequestOptions,
   ): APIPromise<CreateOnlineEvaluatorResponse> {
-    return this._client.post('/v1/platform/evaluators', { body, ...options });
+    return this._client.post('/api/v1/platform/evaluators', { body, ...options });
   }
 
   /**
    * Retrieve a single evaluator by its ID.
    */
   retrieve(evaluatorID: string, options?: RequestOptions): APIPromise<OnlineEvaluator> {
-    return this._client.get(path`/v1/platform/evaluators/${evaluatorID}`, options);
+    return this._client.get(path`/api/v1/platform/evaluators/${evaluatorID}`, options);
   }
 
   /**
@@ -38,7 +38,7 @@ export class OnlineEvaluators extends APIResource {
     body: OnlineEvaluatorUpdateParams,
     options?: RequestOptions,
   ): APIPromise<UpdateOnlineEvaluatorResponse> {
-    return this._client.patch(path`/v1/platform/evaluators/${evaluatorID}`, { body, ...options });
+    return this._client.patch(path`/api/v1/platform/evaluators/${evaluatorID}`, { body, ...options });
   }
 
   /**
@@ -50,7 +50,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): PagePromise<OnlineEvaluatorsOffsetPaginationOnlineEvaluators, OnlineEvaluator> {
     return this._client.getAPIList(
-      '/v1/platform/evaluators',
+      '/api/v1/platform/evaluators',
       OffsetPaginationOnlineEvaluators<OnlineEvaluator>,
       { query, ...options },
     );
@@ -68,7 +68,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): APIPromise<void> {
     const { delete_run_rules } = params ?? {};
-    return this._client.delete(path`/v1/platform/evaluators/${evaluatorID}`, {
+    return this._client.delete(path`/api/v1/platform/evaluators/${evaluatorID}`, {
       query: { delete_run_rules },
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
@@ -83,7 +83,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): APIPromise<BulkDeleteEvaluatorsResponse> {
     const { evaluator_ids, delete_run_rules } = params;
-    return this._client.delete('/v1/platform/evaluators', {
+    return this._client.delete('/api/v1/platform/evaluators', {
       query: { evaluator_ids, delete_run_rules },
       ...options,
     });
@@ -99,7 +99,7 @@ export class OnlineEvaluators extends APIResource {
     query: OnlineEvaluatorSpendParams,
     options?: RequestOptions,
   ): APIPromise<GetOnlineEvaluatorSpendResponse> {
-    return this._client.get('/v1/platform/evaluators/spend', { query, ...options });
+    return this._client.get('/api/v1/platform/evaluators/spend', { query, ...options });
   }
 }
 

@@ -14,7 +14,7 @@ export class Issues extends APIResource {
    * Returns one issue for the authenticated tenant.
    */
   retrieve(id: string, options?: RequestOptions): APIPromise<Issue> {
-    return this._client.get(path`/v1/platform/issues/${id}`, options);
+    return this._client.get(path`/api/v1/platform/issues/${id}`, options);
   }
 
   /**
@@ -27,7 +27,7 @@ export class Issues extends APIResource {
     query: IssueListParams | null | undefined = {},
     options?: RequestOptions,
   ): PagePromise<IssuesOffsetPaginationIssues, Issue> {
-    return this._client.getAPIList('/v1/platform/issues', OffsetPaginationIssues<Issue>, {
+    return this._client.getAPIList('/api/v1/platform/issues', OffsetPaginationIssues<Issue>, {
       query,
       ...options,
     });
