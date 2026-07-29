@@ -314,7 +314,7 @@ class Tunnel:
             ws_url,
             additional_headers=headers,
             open_timeout=120,
-            close_timeout=5,
+            close_timeout=120,
             ping_interval=None,  # yamux handles keepalive
         )
 
