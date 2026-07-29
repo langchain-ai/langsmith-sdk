@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
@@ -36,6 +37,27 @@ if TYPE_CHECKING:
 # Any is used since it may work with Azure or other providers
 C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
 logger = logging.getLogger(__name__)
+
+
+def _is_async_or_wraps_async(func: Callable) -> bool:
+    """Walk the __wrapped__ chain to detect if func or any ancestor is async.
+
+    Needed for OTel compatibility: opentelemetry-instrumentation-openai replaces
+    async SDK methods with a sync closure (via wrapt.wrap_function_wrapper) that
+    internally returns a coroutine. inspect.iscoroutinefunction returns False for
+    the outer closure, so a single-level check misclassifies it as sync. Walking
+    the full __wrapped__ chain catches this pattern.
+    """
+    seen: set[int] = set()
+    current: Optional[Callable] = func
+    while current is not None:
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        if inspect.iscoroutinefunction(current):
+            return True
+        current = getattr(current, "__wrapped__", None)
+    return False
 
 
 @functools.lru_cache
@@ -313,9 +335,16 @@ def _get_wrapper(
             process_outputs=process_outputs,
             **textra,
         )
-        return await decorator(original_create)(*args, **kwargs)
+        if run_helpers.is_async(original_create):
+            return await decorator(original_create)(*args, **kwargs)
+        # OTel-style sync wrapper that returns a coroutine: wrap in a true async
+        # function so traceable selects its async path and awaits the result.
+        async def _async_proxy(*a: Any, **kw: Any) -> Any:
+            return await original_create(*a, **kw)
 
-    return acreate if run_helpers.is_async(original_create) else create
+        return await decorator(_async_proxy)(*args, **kwargs)
+
+    return acreate if _is_async_or_wraps_async(original_create) else create
 
 
 def _get_parse_wrapper(
@@ -351,9 +380,14 @@ def _get_parse_wrapper(
             process_outputs=process_outputs,
             **textra,
         )
-        return await decorator(original_parse)(*args, **kwargs)
+        if run_helpers.is_async(original_parse):
+            return await decorator(original_parse)(*args, **kwargs)
+        async def _async_proxy(*a: Any, **kw: Any) -> Any:
+            return await original_parse(*a, **kw)
 
-    return aparse if run_helpers.is_async(original_parse) else parse
+        return await decorator(_async_proxy)(*args, **kwargs)
+
+    return aparse if _is_async_or_wraps_async(original_parse) else parse
 
 
 def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
