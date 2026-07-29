@@ -21,7 +21,7 @@ function envTimeout(name: string, defaultSeconds: number): number | undefined {
   const value = Number(raw);
   if (!Number.isFinite(value)) {
     console.warn(
-      `Ignoring invalid LANGSMITH_${name}=${raw}, using ${defaultSeconds}`
+      `Ignoring invalid LANGSMITH_${name}=${raw}, using ${defaultSeconds}`,
     );
     return defaultSeconds;
   }
@@ -43,7 +43,7 @@ type WsWebSocket = any;
 // installed. run() reads isWsAvailable() to choose WS vs the HTTP fallback.
 const wsWebSocketPromise: Promise<WsWebSocket | null> = import("ws").then(
   (ws) => ws.default || ws.WebSocket || ws,
-  () => null
+  () => null,
 );
 
 /** Whether the optional `ws` package could be loaded (resolved once). */
@@ -59,7 +59,7 @@ async function ensureWs(): Promise<{
   if (!WebSocket) {
     throw new Error(
       "WebSocket-based execution requires the 'ws' package. " +
-        "Install it with: npm install ws"
+        "Install it with: npm install ws",
     );
   }
   return { WebSocket };
@@ -84,7 +84,7 @@ export function buildWsUrl(dataplaneUrl: string): string {
  */
 export function buildAuthHeaders(
   apiKey: string | undefined,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
 ): Record<string, string> {
   const headers: Record<string, string> = {};
   if (apiKey) {
@@ -162,21 +162,21 @@ export function raiseForWsError(msg: WsMessage, commandId = ""): never {
     throw new LangSmithSandboxOperationError(
       commandId ? `Command not found: ${commandId}` : errorMsg,
       commandId ? "reconnect" : "command",
-      errorType
+      errorType,
     );
   }
   if (errorType === "SessionExpired") {
     throw new LangSmithSandboxOperationError(
       commandId ? `Session expired: ${commandId}` : errorMsg,
       commandId ? "reconnect" : "command",
-      errorType
+      errorType,
     );
   }
 
   throw new LangSmithSandboxOperationError(
     errorMsg,
     commandId ? "reconnect" : "command",
-    errorType
+    errorType,
   );
 }
 
@@ -190,7 +190,7 @@ export function raiseForWsError(msg: WsMessage, commandId = ""): never {
  */
 async function connectWs(
   url: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
 ): Promise<WsWebSocket> {
   const { WebSocket: WS } = await ensureWs();
   return new Promise((resolve, reject) => {
@@ -209,8 +209,8 @@ async function connectWs(
       ws.removeAllListeners("open");
       reject(
         new LangSmithSandboxConnectionError(
-          `Failed to connect to sandbox WebSocket: ${err.message}`
-        )
+          `Failed to connect to sandbox WebSocket: ${err.message}`,
+        ),
       );
     });
   });
@@ -223,7 +223,7 @@ async function connectWs(
  * mapping them to appropriate exceptions.
  */
 async function* readWsMessages(
-  ws: WsWebSocket
+  ws: WsWebSocket,
 ): AsyncIterableIterator<WsMessage> {
   // Buffer incoming messages so the consumer can process them at its own pace
   const messageQueue: WsMessage[] = [];
@@ -246,11 +246,11 @@ async function* readWsMessages(
     done = true;
     if (code === 1001) {
       error = new LangSmithSandboxServerReloadError(
-        "Server is reloading, reconnect to resume"
+        "Server is reloading, reconnect to resume",
       );
     } else if (code !== 1000) {
       error = new LangSmithSandboxConnectionError(
-        `WebSocket connection closed unexpectedly (code: ${code}, reason: ${reason.toString()})`
+        `WebSocket connection closed unexpectedly (code: ${code}, reason: ${reason.toString()})`,
       );
     }
     if (resolve) {
@@ -264,7 +264,7 @@ async function* readWsMessages(
     done = true;
     if (!error) {
       error = new LangSmithSandboxConnectionError(
-        `WebSocket connection error: ${err.message}`
+        `WebSocket connection error: ${err.message}`,
       );
     }
     if (resolve) {
@@ -328,7 +328,7 @@ export async function runWsStream(
   dataplaneUrl: string,
   apiKey: string | undefined,
   command: string,
-  options: WsRunOptions = {}
+  options: WsRunOptions = {},
 ): Promise<[AsyncIterableIterator<WsMessage>, WSStreamControl]> {
   const {
     timeout = 60,
@@ -417,7 +417,7 @@ export async function reconnectWsStream(
     stdoutOffset?: number;
     stderrOffset?: number;
     headers?: Record<string, string>;
-  } = {}
+  } = {},
 ): Promise<[AsyncIterableIterator<WsMessage>, WSStreamControl]> {
   const { stdoutOffset = 0, stderrOffset = 0, headers: extraHeaders } = options;
 
@@ -438,7 +438,7 @@ export async function reconnectWsStream(
           command_id: commandId,
           stdout_offset: stdoutOffset,
           stderr_offset: stderrOffset,
-        })
+        }),
       );
 
       // Read messages until exit or error
