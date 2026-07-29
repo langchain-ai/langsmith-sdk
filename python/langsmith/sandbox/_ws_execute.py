@@ -272,7 +272,7 @@ def run_ws_stream(
                 open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
-                ping_timeout=60,
+                ping_timeout=120,
             ) as ws:
                 control._bind(ws)
 
@@ -373,7 +373,7 @@ def reconnect_ws_stream(
                 open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
-                ping_timeout=60,
+                ping_timeout=120,
             ) as ws:
                 control._bind(ws)
 
@@ -462,7 +462,7 @@ async def run_ws_stream_async(
                 open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
-                ping_timeout=60,
+                ping_timeout=120,
             ) as ws:
                 control._bind(ws)
 
@@ -546,7 +546,7 @@ async def reconnect_ws_stream_async(
                 open_timeout=120,
                 close_timeout=10,
                 ping_interval=30,
-                ping_timeout=60,
+                ping_timeout=120,
             ) as ws:
                 control._bind(ws)
 
