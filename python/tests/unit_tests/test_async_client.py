@@ -19,6 +19,8 @@ from langsmith import AsyncClient
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 
+_VERSION_LOGGER = "langsmith._internal._backend_version"
+
 
 def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ls_utils.get_env_var.cache_clear()
@@ -833,15 +835,7 @@ async def test_async_client_info_falls_back_on_error(
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "version,expect_warning",
-    [
-        ("0.15.9", True),
-        ("0.16.0", False),
-        ("0.16.4rc1", False),
-        ("0.16.1", False),
-        ("0.17.0", False),
-        ("", False),
-    ],
+    "version,expect_warning", [("0.15.9", True), ("0.16.0", False)]
 )
 async def test_async_client_resource_version_check(
     mock_client_cls: mock.Mock,
@@ -849,6 +843,11 @@ async def test_async_client_resource_version_check(
     expect_warning: bool,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Accessing a v2 resource schedules the check against its min version.
+
+    The full version matrix lives in `test_check_backend_version`; this covers
+    the wiring: the property schedules one background check per min version.
+    """
     mock_httpx_client = AsyncMock()
     mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
     mock_httpx_client.headers = httpx.Headers()
@@ -861,16 +860,14 @@ async def test_async_client_resource_version_check(
     mock_httpx_client.request.return_value = response
 
     client = AsyncClient(api_url="http://localhost:1984", api_key="test")
-    with caplog.at_level(
-        logging.WARNING, logger="langsmith._internal._backend_version"
-    ):
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
         _ = client.runs
+        assert len(client._version_check_tasks) == 1, "runs did not schedule a check"
         _ = client.threads
-        # Both resources share a min version, so a single check is scheduled.
-        assert len(client._version_check_tasks) == 1
+        assert len(client._version_check_tasks) == 1, (
+            "same min version must be checked once"
+        )
         await asyncio.gather(*client._version_check_tasks)
 
-    if expect_warning:
-        assert caplog.records
-    else:
-        assert not caplog.records
+    version_warnings = [r for r in caplog.records if r.name == _VERSION_LOGGER]
+    assert bool(version_warnings) is expect_warning

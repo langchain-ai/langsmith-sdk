@@ -1776,22 +1776,61 @@ describe("_checkBackendVersion", () => {
   });
 
   it.each([
-    ["0.4.9", true],
-    ["0.4.99", true],
-    ["0.5.0", false],
-    ["0.5.1", false],
-    ["1.0.0", false],
-    ["0.5.4rc1", false],
-    ["0.4.4rc1", true],
+    ["0.15.9", true],
+    ["0.15.4rc1", true],
+    ["0.16.0", false],
+    ["0.16.1", false],
+    ["0.16.4rc1", false],
+    ["0.17.0", false],
+    ["", false],
     ["not-a-version", true],
   ])("version %s -> warns: %s", (version, expectWarn) => {
-    _checkBackendVersion(version as string, "0.5.0");
+    _checkBackendVersion(version as string, "0.16.0");
     if (expectWarn) {
       expect(warnSpy).toHaveBeenCalledTimes(1);
     } else {
       expect(warnSpy).not.toHaveBeenCalled();
     }
   });
+
+  it.each([
+    ["0.15.9", true],
+    ["0.16.0", false],
+  ])(
+    "resource getter checks the backend version (%s -> warns: %s)",
+    async (version, expectWarn) => {
+      // Guards the min version passed by the getters: drop the call, or declare
+      // a version below 0.16.0, and this fails.
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ version }), {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      void client.runs;
+      // The check is fire-and-forget: await the same /info promise it awaits,
+      // then let its callback run.
+      await (
+        client as unknown as { _ensureServerInfo(): Promise<unknown> }
+      )._ensureServerInfo();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      if (expectWarn) {
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("older than the minimum version"),
+        );
+      } else {
+        expect(warnSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("reports both versions and links to the migration docs", () => {
     _checkBackendVersion("0.15.0", "0.16.0");
