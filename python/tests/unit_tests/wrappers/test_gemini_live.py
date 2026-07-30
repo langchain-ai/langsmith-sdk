@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace as NS
 from unittest import mock
 
@@ -47,13 +49,14 @@ class FakeSession:
     def __init__(self, messages):
         self._messages = list(messages)
         self.session_id = "provider-session"
+        self.sent_tool_responses = []
 
     async def receive(self):
         for message in self._messages:
             yield message
 
-    async def send_tool_response(self, **kwargs):
-        return kwargs
+    async def send_tool_response(self, *, function_responses):
+        self.sent_tool_responses.append(function_responses)
 
 
 def _message(
@@ -181,20 +184,41 @@ def _spy_children(monkeypatch):
 
 
 class TestWrapper:
+    def test_import_does_not_load_google_genai(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "import langsmith.integrations.gemini_live; "
+                    "assert not any(name == 'google.genai' or "
+                    "name.startswith('google.genai.') for name in sys.modules)"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
     async def test_proxy_is_transparent_and_tracing_is_fail_open(self, monkeypatch):
         messages = [_message(user="hello"), _message(turn_complete=True)]
+        raw = FakeSession(messages)
         monkeypatch.setattr(
             live_mod._GeminiLiveTracer,
             "observe",
             mock.Mock(side_effect=RuntimeError("broken tracer")),
         )
         seen = []
-        async with wrap_gemini_live(FakeSession(messages)) as session:
+        response = {"id": "call-1", "name": "tool", "response": {"answer": 42}}
+        async with wrap_gemini_live(raw) as session:
             assert session.session_id == "provider-session"
-            assert await session.send_tool_response(answer=42) == {"answer": 42}
+            assert await session.send_tool_response(function_responses=response) is None
             async for message in session.receive():
                 seen.append(message)
         assert seen == messages
+        assert raw.sent_tool_responses == [response]
 
     async def test_transcript_usage_llm_and_markers(self, monkeypatch):
         created = _spy_children(monkeypatch)

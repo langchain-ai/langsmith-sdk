@@ -25,7 +25,9 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from contextlib import AbstractContextManager
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.helpers import dump_event, observe_safely, scrub
@@ -40,6 +42,14 @@ from langsmith.run_helpers import tracing_context
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from google.genai.live import AsyncSession
+    from google.genai.types import (
+        FunctionCall,
+        FunctionResponseOrDict,
+        LiveServerContent,
+        LiveServerMessage,
+    )
+
     from langsmith import Client
     from langsmith.run_trees import RunTree, WriteReplica
 
@@ -52,12 +62,12 @@ MAX_TRANSCRIPT_CHARS = 2_000
 class _LiveMessageView:
     """Readable, dependency-free view over a ``LiveServerMessage``."""
 
-    def __init__(self, raw: Any) -> None:
+    def __init__(self, raw: LiveServerMessage) -> None:
         self.raw = raw
 
     @property
-    def server_content(self) -> Any:
-        return getattr(self.raw, "server_content", None)
+    def server_content(self) -> LiveServerContent | None:
+        return self.raw.server_content
 
     def _transcript(self, attr: str) -> str | None:
         content = self.server_content
@@ -80,14 +90,14 @@ class _LiveMessageView:
         return self._transcript("output_transcription")
 
     @property
-    def function_calls(self) -> list[Any]:
-        tool_call = getattr(self.raw, "tool_call", None)
-        return list(getattr(tool_call, "function_calls", None) or [])
+    def function_calls(self) -> list[FunctionCall]:
+        tool_call = self.raw.tool_call
+        return list(tool_call.function_calls or []) if tool_call is not None else []
 
     @property
     def cancelled_tool_call_ids(self) -> list[str]:
-        cancellation = getattr(self.raw, "tool_call_cancellation", None)
-        return [str(value) for value in getattr(cancellation, "ids", None) or []]
+        cancellation = self.raw.tool_call_cancellation
+        return [str(value) for value in cancellation.ids or []] if cancellation else []
 
     @property
     def interrupted(self) -> bool:
@@ -100,9 +110,11 @@ class _LiveMessageView:
         return bool(content is not None and getattr(content, "turn_complete", False))
 
 
-def usage_metadata_from_message(message: Any) -> dict[str, Any] | None:
+def usage_metadata_from_message(
+    message: LiveServerMessage,
+) -> dict[str, Any] | None:
     """Map Gemini Live usage onto LangSmith's canonical token metadata."""
-    return normalize_gemini_usage_metadata(getattr(message, "usage_metadata", None))
+    return normalize_gemini_usage_metadata(message.usage_metadata)
 
 
 def _append_transcript(current: str, fragment: str) -> str:
@@ -127,10 +139,10 @@ class _GeminiLiveTracer:
         self._user_text = ""
         self._agent_text = ""
         self._turn_usage: dict[str, Any] | None = None
-        self._last_message: Any = None
+        self._last_message: LiveServerMessage | None = None
         self._open_tools: dict[str, list[RunTree]] = {}
 
-    def observe(self, message: Any) -> None:
+    def observe(self, message: LiveServerMessage) -> None:
         self._last_message = message
         view = _LiveMessageView(message)
         now = self._session.now()
@@ -203,48 +215,57 @@ class _GeminiLiveTracer:
             self._start_tool(call, message)
 
     @staticmethod
-    def _field(value: Any, name: str) -> Any:
+    def _field(value: object, name: str) -> object:
         if isinstance(value, Mapping):
-            return value.get(name)
+            return next((item for key, item in value.items() if key == name), None)
         return getattr(value, name, None)
 
     @classmethod
-    def _tool_key(cls, value: Any) -> str:
+    def _tool_id(cls, value: FunctionCall | FunctionResponseOrDict) -> str | None:
         call_id = cls._field(value, "id")
-        if call_id:
-            return str(call_id)
-        return str(cls._field(value, "name") or "tool")
+        return call_id if isinstance(call_id, str) else None
 
-    def _start_tool(self, call: Any, message: Any) -> None:
-        name = self._field(call, "name") or "tool"
+    @classmethod
+    def _tool_name(cls, value: FunctionCall | FunctionResponseOrDict) -> str | None:
+        name = cls._field(value, "name")
+        return name if isinstance(name, str) else None
+
+    @classmethod
+    def _tool_key(cls, value: FunctionCall | FunctionResponseOrDict) -> str:
+        return cls._tool_id(value) or cls._tool_name(value) or "tool"
+
+    def _start_tool(self, call: FunctionCall, message: LiveServerMessage) -> None:
+        name = call.name or "tool"
         run = self._session.open_span(
-            name=str(name),
+            name=name,
             run_type="tool",
-            inputs={"args": self._field(call, "args")},
+            inputs={"args": call.args},
             metadata={
-                "function_call_id": self._field(call, "id"),
+                "function_call_id": call.id,
                 "raw_event": scrub(dump_event(message)),
             },
         )
         self._open_tools.setdefault(self._tool_key(call), []).append(run)
 
-    def observe_tool_responses(self, responses: Any) -> None:
+    def observe_tool_responses(
+        self,
+        responses: FunctionResponseOrDict | Sequence[FunctionResponseOrDict],
+    ) -> None:
         """Close tool spans after responses are sent to Gemini."""
-        if isinstance(responses, Sequence) and not isinstance(
-            responses, (str, bytes, bytearray, Mapping)
-        ):
-            items = responses
+        if isinstance(responses, Sequence) and not isinstance(responses, Mapping):
+            items = cast("Sequence[FunctionResponseOrDict]", responses)
         else:
-            items = [responses]
+            items = (cast("FunctionResponseOrDict", responses),)
         for response in items:
             self._end_tool(response)
 
-    def _end_tool(self, response: Any) -> None:
-        name = self._field(response, "name") or "tool"
-        outputs = {"response": self._field(response, "response")}
+    def _end_tool(self, response: FunctionResponseOrDict) -> None:
+        name = self._tool_name(response) or "tool"
+        response_value = self._field(response, "response")
+        outputs = {"response": response_value}
         queue = self._open_tools.get(self._tool_key(response))
-        if not queue and self._field(response, "id"):
-            queue = self._open_tools.get(str(name))
+        if not queue and self._tool_id(response):
+            queue = self._open_tools.get(name)
         if queue:
             run = queue.pop(0)
             self._prune_empty_tools()
@@ -283,7 +304,7 @@ class _GeminiLiveTracer:
                 self._session.close_span(run)
         self._open_tools.clear()
 
-    def _flush_user(self, message: Any, now: float) -> None:
+    def _flush_user(self, message: LiveServerMessage, now: float) -> None:
         text = self._user_text.strip()
         self._user_text = ""
         if not text:
@@ -332,7 +353,7 @@ class _TracedGeminiLiveSession:
     """Transparent proxy over ``google.genai.live.AsyncSession``."""
 
     def __init__(
-        self, session: Any, tracer: _GeminiLiveTracer, trace: EventSession
+        self, session: AsyncSession, tracer: _GeminiLiveTracer, trace: EventSession
     ) -> None:
         self._wrapped_session = session
         self._tracer = tracer
@@ -341,20 +362,21 @@ class _TracedGeminiLiveSession:
     def __getattr__(self, name: str) -> Any:
         return getattr(object.__getattribute__(self, "_wrapped_session"), name)
 
-    async def receive(self) -> AsyncIterator[Any]:
+    async def receive(self) -> AsyncIterator[LiveServerMessage]:
         async for message in self._wrapped_session.receive():
             observe_safely(self._tracer.observe, message)
             yield message
 
-    async def send_tool_response(self, *args: Any, **kwargs: Any) -> Any:
+    async def send_tool_response(
+        self,
+        *,
+        function_responses: FunctionResponseOrDict | Sequence[FunctionResponseOrDict],
+    ) -> None:
         """Forward tool responses and use them to finish inferred tool spans."""
-        result = await self._wrapped_session.send_tool_response(*args, **kwargs)
-        responses = kwargs.get("function_responses")
-        if responses is None and args:
-            responses = args[0]
-        if responses is not None:
-            observe_safely(self._tracer.observe_tool_responses, responses)
-        return result
+        await self._wrapped_session.send_tool_response(
+            function_responses=function_responses
+        )
+        observe_safely(self._tracer.observe_tool_responses, function_responses)
 
     def record_user_audio(self, pcm: bytes) -> None:
         """Record user PCM16 for the bounded stereo conversation WAV."""
@@ -370,7 +392,7 @@ class _GeminiLiveTracingSession:
 
     def __init__(
         self,
-        session: Any,
+        session: AsyncSession,
         *,
         model: str | None,
         thread_id: Optional[str],
@@ -396,7 +418,7 @@ class _GeminiLiveTracingSession:
         self._replicas = replicas
         self._trace: EventSession | None = None
         self._tracer: _GeminiLiveTracer | None = None
-        self._context: Any = None
+        self._context: AbstractContextManager[None] | None = None
 
     async def __aenter__(self) -> _TracedGeminiLiveSession:
         self._trace = start_session(
@@ -428,13 +450,18 @@ class _GeminiLiveTracingSession:
             self._wrapped_session, self._tracer, self._trace
         )
 
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
         try:
             if self._tracer is not None:
                 self._tracer.finalize()
             if self._trace is not None:
                 if exc is not None:
-                    self._trace.run.error = f"{exc_type.__name__}: {exc}"
+                    self._trace.run.error = f"{type(exc).__name__}: {exc}"
                 self._trace.finalize()
         except Exception:
             logger.warning("Gemini Live tracing: failed to finalize", exc_info=True)
@@ -445,7 +472,7 @@ class _GeminiLiveTracingSession:
 
 
 def wrap_gemini_live(
-    session: Any,
+    session: AsyncSession,
     *,
     model: str | None = None,
     thread_id: Optional[str] = None,
