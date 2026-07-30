@@ -55,6 +55,7 @@ from langsmith.client import (
     _reject_filesystem_attachments,
     _resolve_tracing_mode,
 )
+from langsmith.evaluation.evaluator import RunEvaluator
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 from tests.unit_tests.conftest import parse_request_data
@@ -6784,3 +6785,52 @@ def test_removed_sdk_methods_absent() -> None:
     assert not hasattr(DatasetsResource, "experiments"), (
         "datasets.experiments.grouped was de-publicized in PR #28358 and should not exist"
     )
+
+
+class _StubEvaluator(RunEvaluator):
+    """Minimal evaluator that returns a fixed result without doing any work."""
+
+    def evaluate_run(self, run, example=None) -> EvaluationResult:
+        return EvaluationResult(key="stub", score=1)
+
+    async def aevaluate_run(self, run, example=None) -> EvaluationResult:
+        return EvaluationResult(key="stub", score=1)
+
+
+def _stub_run() -> ls_schemas.Run:
+    run_id = uuid.uuid4()
+    return ls_schemas.Run(
+        id=run_id,
+        name="stub",
+        run_type="chain",
+        start_time=_CREATED_AT,
+        trace_id=run_id,
+    )
+
+
+def test_evaluate_run_deprecation_warning() -> None:
+    """evaluate_run is deprecated with no replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    result = EvaluationResult(key="stub", score=1)
+
+    with mock.patch.object(
+        Client, "_log_evaluation_feedback", return_value=[result]
+    ) as log_feedback:
+        with pytest.warns(DeprecationWarning, match="evaluate_run\\(\\) is deprecated"):
+            assert client.evaluate_run(_stub_run(), _StubEvaluator()) is result
+    log_feedback.assert_called_once()
+
+
+async def test_aevaluate_run_deprecation_warning() -> None:
+    """aevaluate_run is deprecated with no replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    result = EvaluationResult(key="stub", score=1)
+
+    with mock.patch.object(
+        Client, "_log_evaluation_feedback", return_value=[result]
+    ) as log_feedback:
+        with pytest.warns(
+            DeprecationWarning, match="aevaluate_run\\(\\) is deprecated"
+        ):
+            assert await client.aevaluate_run(_stub_run(), _StubEvaluator()) is result
+    log_feedback.assert_called_once()
