@@ -89,6 +89,8 @@ class AsyncClient:
         "_profile_auth_headers",
         "_langsmith_api",
         "_info",
+        "_checked_min_versions",
+        "_version_check_tasks",
     )
 
     _custom_headers: dict[str, str]
@@ -269,6 +271,8 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
         self._info: Optional[ls_schemas.LangSmithInfo] = None
+        self._checked_min_versions: set[str] = set()
+        self._version_check_tasks: set[asyncio.Task] = set()
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -322,52 +326,82 @@ class AsyncClient:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _schedule_backend_version_check(self, min_version: str) -> None:
+        """Warn if the backend is older than *min_version*, without blocking.
+
+        These properties are sync while `info()` is async, so the check runs as a
+        background task (as the JS client does) instead of inline. Scheduled at
+        most once per version, and only when a resource is actually accessed.
+        """
+        if min_version in self._checked_min_versions:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no event loop: nothing to schedule the check on
+            return
+        self._checked_min_versions.add(min_version)
+        task = loop.create_task(self._acheck_backend_version(min_version))
+        # Keep a strong reference so the task is not garbage collected mid-flight.
+        self._version_check_tasks.add(task)
+        task.add_done_callback(self._version_check_tasks.discard)
+
+    async def _acheck_backend_version(self, min_version: str) -> None:
+        info = await self.info()
+        _check_backend_version(info.version, min_version=min_version)
+
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.runs
 
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.sandboxes
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.datasets
 
     @property
     def annotation_queues(self) -> AsyncAnnotationQueuesResource:
         """Access the annotation queues resource (runs, items)."""
+        # The items endpoints landed in backend 0.16.14; the rest are older.
+        self._schedule_backend_version_check("0.16.14")
         return self._langsmith_api.annotation_queues
 
     @property
     def threads(self) -> AsyncThreadsResource:
         """Access the threads resource (query, stats, list_traces)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.threads
 
     @property
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.traces
 
     @property
     def public(self) -> AsyncPublicResource:
         """Access the public shared-run resource."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.public
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
             await self._cache.start()
-        info = await self.info()
-        _check_backend_version(info.version)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

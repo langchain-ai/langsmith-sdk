@@ -86,7 +86,6 @@ import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -772,11 +771,15 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
 }
 
 export function _checkBackendVersion(
-  version: string,
-  minVersion: string = _MIN_BACKEND_VERSION,
+  backendVersion: string,
+  minVersion: string,
 ): void {
+  if (!backendVersion) {
+    // /info was unreachable (or skipped): nothing to compare against.
+    return;
+  }
   const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
-  const [maj, min, pat] = parse(version);
+  const [maj, min, pat] = parse(backendVersion);
   const [rMaj, rMin, rPat] = parse(minVersion);
   if (
     isNaN(maj) ||
@@ -787,7 +790,7 @@ export function _checkBackendVersion(
     isNaN(rPat)
   ) {
     console.warn(
-      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(version)} for compatibility check.`,
+      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(backendVersion)} for compatibility check.`,
     );
     return;
   }
@@ -797,7 +800,10 @@ export function _checkBackendVersion(
     (maj === rMaj && min === rMin && pat < rPat)
   ) {
     console.warn(
-      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
+      `[LANGSMITH]: Backend version ${JSON.stringify(backendVersion)} is older than ` +
+        `the minimum version required by this SDK (${JSON.stringify(minVersion)}). ` +
+        "Some features may not work as expected. See " +
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
     );
   }
 }
@@ -987,7 +993,7 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
-  private _stainlessVersionChecked = false;
+  private _stainlessVersionsChecked = new Set<string>();
 
   private manualFlushMode = false;
 
@@ -1536,47 +1542,49 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.datasets;
   }
 
   /** Access the annotation queues resource (runs, items). */
   public get annotationQueues(): AnnotationQueues {
-    this._checkStainlessVersion();
+    // The items endpoints landed in backend 0.16.14; the rest are older.
+    this._checkStainlessVersion("0.16.14");
     return this.openAPIClient.annotationQueues;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.traces;
   }
 
   /** Access the public shared-run resource. */
   public get public(): Public {
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.public;
   }
 
@@ -2167,14 +2175,12 @@ export class Client implements LangSmithTracingClientInterface {
     return json;
   }
 
-  private _checkStainlessVersion(): void {
-    if (this._stainlessVersionChecked) return;
-    this._stainlessVersionChecked = true;
+  private _checkStainlessVersion(minVersion: string): void {
+    if (this._stainlessVersionsChecked.has(minVersion)) return;
+    this._stainlessVersionsChecked.add(minVersion);
     this._ensureServerInfo()
       .then((serverInfo) => {
-        if (serverInfo?.version) {
-          _checkBackendVersion(serverInfo.version);
-        }
+        _checkBackendVersion(serverInfo?.version, minVersion);
       })
       .catch(() => {
         // _ensureServerInfo handles and logs its own errors

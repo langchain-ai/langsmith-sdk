@@ -71,31 +71,64 @@ def test_is_localhost() -> None:
     assert not ls_utils._is_localhost("http://example.com:1984")
 
 
+_VERSION_LOGGER = "langsmith._internal._backend_version"
+
+
+def _version_warnings(caplog: pytest.LogCaptureFixture) -> List[logging.LogRecord]:
+    """Only the version-check warnings, ignoring other langsmith.client noise."""
+    return [record for record in caplog.records if record.name == _VERSION_LOGGER]
+
+
 @pytest.mark.parametrize(
     "version,expect_warning",
     [
-        ("0.4.9", True),
-        ("0.4.99", True),
-        ("0.5.0", False),
-        ("0.5.1", False),
-        ("1.0.0", False),
-        ("0.5.4rc1", False),
-        ("0.4.4rc1", True),
+        ("0.15.9", True),
+        ("0.15.4rc1", True),
+        ("0.16.0", False),
+        ("0.16.1", False),
+        ("0.16.4rc1", False),
+        ("0.17.0", False),
+        ("", False),
         ("not-a-version", True),
     ],
 )
-@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(
-        logging.WARNING, logger="langsmith._internal._backend_version"
-    ):
-        _check_backend_version(version)
-    if expect_warning:
-        assert caplog.records, f"expected a warning for version {version!r}"
-    else:
-        assert not caplog.records, f"unexpected warning for version {version!r}"
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _check_backend_version(version, min_version="0.16.0")
+    assert bool(_version_warnings(caplog)) is expect_warning, (
+        f"version {version!r} vs min 0.16.0"
+    )
+
+
+def test_check_backend_version_warning_links_to_docs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _check_backend_version("0.15.0", min_version="0.16.0")
+    message = _version_warnings(caplog)[0].getMessage()
+    assert "0.15.0" in message
+    assert "0.16.0" in message
+    assert "https://docs.langchain.com/langsmith/smithdb-sdk-migration" in message
+
+
+@pytest.mark.parametrize(
+    "version,expect_warning", [("0.15.9", True), ("0.16.0", False)]
+)
+def test_client_resource_version_check(
+    version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Accessing a v2 resource runs the check against the resource's min version.
+
+    Guards the `min_version` calls in the resource properties: drop one, or
+    declare a version below 0.16.0, and this fails.
+    """
+    client = Client(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(version=version)
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _ = client.runs
+    assert bool(_version_warnings(caplog)) is expect_warning
 
 
 def test__is_langchain_hosted() -> None:

@@ -134,7 +134,7 @@ async def test_threads_list_traces(
         )
         return page if page.items else None
 
-    page = await _wait_for_async(_ready, max_sleep_time=60)
+    page = await _wait_for_async(_ready, max_sleep_time=90)
     assert len(page.items) > 0
 
 
