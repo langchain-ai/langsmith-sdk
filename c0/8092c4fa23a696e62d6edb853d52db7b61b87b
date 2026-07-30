@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "c08092c4fa23a696e62d6edb853d52db7b61b87b",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
