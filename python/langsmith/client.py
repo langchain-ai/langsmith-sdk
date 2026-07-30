@@ -7604,7 +7604,7 @@ class Client:
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
 
-        .. deprecated:: 0.10.11
+        .. deprecated::
             There is no replacement. Run the evaluator yourself and log the
             result with :meth:`langsmith.Client.create_feedback`.
             Will be removed after Jan 31, 2027.
@@ -7710,7 +7710,7 @@ class Client:
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
 
-        .. deprecated:: 0.10.11
+        .. deprecated::
             There is no replacement. Run the evaluator yourself and log the
             result with :meth:`langsmith.Client.create_feedback`.
             Will be removed after Jan 31, 2027.
