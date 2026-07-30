@@ -904,6 +904,31 @@ def test_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.read == 5.678
 
 
+def test_annotation_queues_uses_generated_openapi_resource() -> None:
+    resource = object()
+
+    with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
+        openapi_client.return_value.annotation_queues = resource
+
+        client = Client(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+            info=ls_schemas.LangSmithInfo(),
+        )
+
+        assert client.annotation_queues is resource
+
+    openapi_client.assert_called_once()
+    assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
+    assert openapi_client.call_args.kwargs["tenant_id"] == "test-workspace-id"
+    assert openapi_client.call_args.kwargs["base_url"] == "http://localhost:8080"
+    timeout = openapi_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 1.234
+    assert timeout.read == 5.678
+
+
 def test_async_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
@@ -918,6 +943,34 @@ def test_async_evaluators_uses_generated_openapi_resource() -> None:
         )
 
         assert client.evaluators is resource
+
+    openapi_client.assert_called_once()
+    assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
+    assert openapi_client.call_args.kwargs["tenant_id"] == "test-workspace-id"
+    assert openapi_client.call_args.kwargs["base_url"] == "http://localhost:8080"
+    timeout = openapi_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 1.234
+    assert timeout.read == 5.678
+    assert (
+        openapi_client.call_args.kwargs["default_headers"]["X-Tenant-Id"]
+        == "test-workspace-id"
+    )
+
+
+def test_async_annotation_queues_uses_generated_openapi_resource() -> None:
+    resource = object()
+
+    with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
+        openapi_client.return_value.annotation_queues = resource
+
+        client = AsyncClient(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+        )
+
+        assert client.annotation_queues is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
@@ -5534,40 +5587,47 @@ def test_construct_url_errors(api_url, pathname, error_match):
             "https://api.smith.langchain.com/api/v1/",
             "https://api.smith.langchain.com",
         ),
-        # Bare /v1 suffix (no /api prefix).
+        # A bare /v1 suffix (no /api prefix) is not stripped.
         (
             "https://api.smith.langchain.com/v1",
-            "https://api.smith.langchain.com",
+            "https://api.smith.langchain.com/v1",
         ),
-        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com/v1"),
+        (
+            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/langsmith/v1",
+        ),
         # Self-hosted deployments under a path prefix.
         (
             "https://self-hosted.example.com/langsmith/api/v1",
             "https://self-hosted.example.com/langsmith",
         ),
+        # Bare /api suffix (no version segment).
+        ("https://api.smith.langchain.com/api", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/api/", "https://api.smith.langchain.com"),
         (
-            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/api",
+            "https://self-hosted.example.com",
+        ),
+        (
+            "https://self-hosted.example.com/langsmith/api",
             "https://self-hosted.example.com/langsmith",
         ),
-        # No version suffix: left unchanged (aside from trailing slashes).
+        # No /api suffix: left unchanged (aside from trailing slashes).
         ("https://api.smith.langchain.com", "https://api.smith.langchain.com"),
         ("https://api.smith.langchain.com/", "https://api.smith.langchain.com"),
-        (
-            "https://self-hosted.example.com/api",
-            "https://self-hosted.example.com/api",
-        ),
         ("http://localhost:1984", "http://localhost:1984"),
         ("http://localhost:1984/api/v1", "http://localhost:1984"),
-        # /v1 must be a trailing path segment, not a substring.
+        # /api must be a trailing path segment, not a substring.
         (
-            "https://api.smith.langchain.com/v1/runs",
-            "https://api.smith.langchain.com/v1/runs",
+            "https://api.smith.langchain.com/api/runs",
+            "https://api.smith.langchain.com/api/runs",
         ),
-        ("https://v1.example.com", "https://v1.example.com"),
+        ("https://api.example.com", "https://api.example.com"),
     ],
 )
 def test_get_openapi_base_url(api_url: str, expected: str) -> None:
-    """Test _get_openapi_base_url strips the handwritten client's version suffix."""
+    """Test _get_openapi_base_url strips the handwritten client's /api[/v1] suffix."""
     assert _get_openapi_base_url(api_url) == expected
 
 

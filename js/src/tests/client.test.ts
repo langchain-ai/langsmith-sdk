@@ -239,6 +239,49 @@ describe("Client", () => {
     });
   });
 
+  describe("annotationQueues", () => {
+    it("exposes generated annotation queue item endpoints", async () => {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ count: 3 }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.annotationQueues.items.retrieveCount(
+        "queue-1",
+        { status: "all" },
+      );
+
+      expect(response.count).toBe(3);
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
+      const headers = new Headers(init?.headers);
+      expect(url).toBe(
+        "http://localhost:8080/api/v1/annotation-queues/queue-1/items/count?status=all",
+      );
+      expect(init).toEqual(expect.objectContaining({ method: "GET" }));
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
@@ -692,8 +735,20 @@ describe("Client", () => {
       );
     });
 
-    it("should strip a trailing /v1", () => {
+    it("should not strip a bare trailing /v1", () => {
       expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1")).toBe(
+        "https://api.smith.langchain.com/v1",
+      );
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith/v1");
+    });
+
+    it("should strip a trailing /api", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/")).toBe(
         "https://api.smith.langchain.com",
       );
     });
@@ -703,28 +758,25 @@ describe("Client", () => {
         getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api/v1"),
       ).toBe("https://self-hosted.example.com/langsmith");
       expect(
-        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api"),
       ).toBe("https://self-hosted.example.com/langsmith");
     });
 
-    it("should leave a URL without a version suffix unchanged", () => {
+    it("should leave a URL without an /api suffix unchanged", () => {
       expect(getOpenAPIBaseUrl("https://api.smith.langchain.com")).toBe(
         "https://api.smith.langchain.com",
-      );
-      expect(getOpenAPIBaseUrl("https://self-hosted.example.com/api")).toBe(
-        "https://self-hosted.example.com/api",
       );
       expect(getOpenAPIBaseUrl("http://localhost:1984")).toBe(
         "http://localhost:1984",
       );
     });
 
-    it("should only strip /v1 when it is the trailing path segment", () => {
-      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1/runs")).toBe(
-        "https://api.smith.langchain.com/v1/runs",
-      );
-      expect(getOpenAPIBaseUrl("https://v1.example.com")).toBe(
-        "https://v1.example.com",
+    it("should only strip /api when it is the trailing path segment", () => {
+      expect(
+        getOpenAPIBaseUrl("https://api.smith.langchain.com/api/runs"),
+      ).toBe("https://api.smith.langchain.com/api/runs");
+      expect(getOpenAPIBaseUrl("https://api.example.com")).toBe(
+        "https://api.example.com",
       );
     });
   });

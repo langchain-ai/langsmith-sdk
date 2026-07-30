@@ -80,6 +80,7 @@ import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/onli
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
 import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
+import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
@@ -1497,8 +1498,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _getOpenAPIBaseUrl(): string {
     const url = this.apiUrl.replace(/\/$/, "");
-    if (url.endsWith("/api/v1")) return url.slice(0, -"/api/v1".length);
-    if (url.endsWith("/v1")) return url.slice(0, -3);
+    for (const suffix of ["/api/v1", "/api"]) {
+      if (url.endsWith(suffix)) return url.slice(0, -suffix.length);
+    }
     return url;
   }
 
@@ -1553,6 +1555,12 @@ export class Client implements LangSmithTracingClientInterface {
   public get datasets(): Datasets {
     this._checkStainlessVersion();
     return this.openAPIClient.datasets;
+  }
+
+  /** Access the annotation queues resource (runs, items). */
+  public get annotationQueues(): AnnotationQueues {
+    this._checkStainlessVersion();
+    return this.openAPIClient.annotationQueues;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
