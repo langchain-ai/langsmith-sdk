@@ -20,6 +20,7 @@ from typing_extensions import NotRequired, TypedDict
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 from langsmith.uuid import uuid7_from_datetime
@@ -919,6 +920,11 @@ class RunTree(ls_schemas.RunBase):
 
     def get_url(self) -> str:
         """Return the URL of the run."""
+        backend = _v2_migration_utils.get_query_backend(self.client.info.instance_flags)
+        if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
+            # The v2 endpoint doesn't exist on ClickHouse-only backends, which may
+            # predate it; build the URL locally there instead.
+            return self.client._construct_run_url(run=self)
         session_id = (
             self.session_id
             or self.client.read_project(project_name=self.session_name).id

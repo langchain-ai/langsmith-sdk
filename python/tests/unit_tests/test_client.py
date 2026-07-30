@@ -7050,8 +7050,18 @@ def test_get_run_url_deprecation_warning() -> None:
     assert str(run.id) in url
 
 
-def test_run_tree_get_url_does_not_warn() -> None:
-    """RunTree.get_url() is supported and must not emit a deprecation warning."""
+@pytest.mark.parametrize(
+    "instance_flags",
+    [
+        {"ch_query_enabled": False, "sdb_query_enabled": True},
+        {"ch_query_enabled": True, "sdb_query_enabled": True},
+    ],
+)
+def test_run_tree_get_url_uses_v2_endpoint(instance_flags) -> None:
+    """On SmithDB-only and dual backends, RunTree.get_url() asks the backend.
+
+    It must not emit a deprecation warning either — RunTree.get_url() is supported.
+    """
     client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
     project_id = uuid.uuid4()
     run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
@@ -7061,7 +7071,14 @@ def test_run_tree_get_url_does_not_warn() -> None:
     api = mock.Mock()
     api.runs = runs_resource
 
-    with mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api):
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags=instance_flags)),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+    ):
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             assert run_tree.get_url() == "http://localhost:1984/run-url"
@@ -7072,6 +7089,38 @@ def test_run_tree_get_url_does_not_warn() -> None:
         trace_id=str(run_tree.trace_id),
         start_time=run_tree.start_time.isoformat(),
     )
+
+
+def test_run_tree_get_url_builds_url_locally_on_clickhouse_only() -> None:
+    """ClickHouse-only backends may predate `/runs/{run_id}/url`.
+
+    Those deployments must keep getting a locally constructed URL rather than a 404.
+    """
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    api = mock.Mock()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(Client, "_get_tenant_id", return_value=tenant_id),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            url = run_tree.get_url()
+
+    assert url == (
+        f"{client._host_url}/o/{tenant_id}/projects/p/{project_id}/"
+        f"r/{run_tree.id}?poll=true"
+    )
+    api.runs.get_url.assert_not_called()
 
 
 def _gtr_example_id() -> uuid.UUID:

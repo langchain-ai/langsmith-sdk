@@ -4693,6 +4693,21 @@ class Client:
         Returns:
             str: The URL for the run.
         """
+        return self._construct_run_url(
+            run=run, project_name=project_name, project_id=project_id
+        )
+
+    def _construct_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Build a run's UI URL locally, without calling the backend.
+
+        Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
+        """
         if session_id := getattr(run, "session_id", None):
             pass
         elif session_name := getattr(run, "session_name", None):
