@@ -921,6 +921,8 @@ def poll_nested_traces_until_tree(
             if len(roots) == 1 and roots[0].child_runs:
                 return roots
             last_error = None
+        except ls_utils.LangSmithRateLimitError:
+            raise
         except ls_utils.LangSmithError as e:
             last_error = e
             logger.debug("Error polling nested traces", exc_info=True)
