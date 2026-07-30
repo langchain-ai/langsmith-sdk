@@ -9,7 +9,7 @@ Trace shape -- one live session = one trace::
 
     realtime_session                         (root; transcript + stereo WAV)
     ├── input_transcription                  (curated user message)
-    ├── lookup_weather                       (caller's @traceable tool)
+    ├── lookup_weather                       (tool; args in / response out)
     ├── turn_complete                        (llm; assistant text + usage)
     ├── interrupted                          (barge-in marker)
     └── turn_complete                        (turn marker)
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langsmith._internal._package_version import get_package_version
@@ -37,10 +38,10 @@ from langsmith.integrations._gemini_usage import normalize_gemini_usage_metadata
 from langsmith.run_helpers import tracing_context
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import AsyncIterator
 
     from langsmith import Client
-    from langsmith.run_trees import WriteReplica
+    from langsmith.run_trees import RunTree, WriteReplica
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ class _GeminiLiveTracer:
         self._agent_text = ""
         self._turn_usage: dict[str, Any] | None = None
         self._last_message: Any = None
+        self._open_tools: dict[str, list[RunTree]] = {}
 
     def observe(self, message: Any) -> None:
         self._last_message = message
@@ -192,10 +194,94 @@ class _GeminiLiveTracer:
                 outputs={"call_ids": cancelled_ids},
             ):
                 pass
+            for call_id in cancelled_ids:
+                self._cancel_tool(call_id)
 
-        # Function-call messages deliberately create no synthetic wrapper span.
-        # The application's @traceable function is the single, correctly typed
-        # tool run and inherits the live session root as its parent.
+        # One held-open tool span per function call. ``send_tool_response`` on
+        # the session proxy closes it after the application executes the tool.
+        for call in view.function_calls:
+            self._start_tool(call, message)
+
+    @staticmethod
+    def _field(value: Any, name: str) -> Any:
+        if isinstance(value, Mapping):
+            return value.get(name)
+        return getattr(value, name, None)
+
+    @classmethod
+    def _tool_key(cls, value: Any) -> str:
+        call_id = cls._field(value, "id")
+        if call_id:
+            return str(call_id)
+        return str(cls._field(value, "name") or "tool")
+
+    def _start_tool(self, call: Any, message: Any) -> None:
+        name = self._field(call, "name") or "tool"
+        run = self._session.open_span(
+            name=str(name),
+            run_type="tool",
+            inputs={"args": self._field(call, "args")},
+            metadata={
+                "function_call_id": self._field(call, "id"),
+                "raw_event": scrub(dump_event(message)),
+            },
+        )
+        self._open_tools.setdefault(self._tool_key(call), []).append(run)
+
+    def observe_tool_responses(self, responses: Any) -> None:
+        """Close tool spans after responses are sent to Gemini."""
+        if isinstance(responses, Sequence) and not isinstance(
+            responses, (str, bytes, bytearray, Mapping)
+        ):
+            items = responses
+        else:
+            items = [responses]
+        for response in items:
+            self._end_tool(response)
+
+    def _end_tool(self, response: Any) -> None:
+        name = self._field(response, "name") or "tool"
+        outputs = {"response": self._field(response, "response")}
+        queue = self._open_tools.get(self._tool_key(response))
+        if not queue and self._field(response, "id"):
+            queue = self._open_tools.get(str(name))
+        if queue:
+            run = queue.pop(0)
+            self._prune_empty_tools()
+            self._session.close_span(
+                run,
+                outputs=outputs,
+                metadata={"raw_response": dump_event(response)},
+            )
+            return
+        with self._session.event_span(
+            response,
+            self._session.now(),
+            name=str(name),
+            run_type="tool",
+            inbound=False,
+            inputs={},
+            outputs=outputs,
+        ):
+            pass
+
+    def _cancel_tool(self, call_id: str) -> None:
+        queue = self._open_tools.pop(str(call_id), [])
+        for run in queue:
+            run.error = "tool call cancelled by Gemini"
+            self._session.close_span(run)
+
+    def _prune_empty_tools(self) -> None:
+        self._open_tools = {
+            key: queue for key, queue in self._open_tools.items() if queue
+        }
+
+    def _flush_open_tools(self) -> None:
+        for queue in self._open_tools.values():
+            for run in queue:
+                run.error = "tool did not complete before the session ended"
+                self._session.close_span(run)
+        self._open_tools.clear()
 
     def _flush_user(self, message: Any, now: float) -> None:
         text = self._user_text.strip()
@@ -239,6 +325,7 @@ class _GeminiLiveTracer:
         if self._last_message is not None:
             self._flush_user(self._last_message, self._session.now())
         self._flush_incomplete_agent()
+        self._flush_open_tools()
 
 
 class _TracedGeminiLiveSession:
@@ -258,6 +345,16 @@ class _TracedGeminiLiveSession:
         async for message in self._wrapped_session.receive():
             observe_safely(self._tracer.observe, message)
             yield message
+
+    async def send_tool_response(self, *args: Any, **kwargs: Any) -> Any:
+        """Forward tool responses and use them to finish inferred tool spans."""
+        result = await self._wrapped_session.send_tool_response(*args, **kwargs)
+        responses = kwargs.get("function_responses")
+        if responses is None and args:
+            responses = args[0]
+        if responses is not None:
+            observe_safely(self._tracer.observe_tool_responses, responses)
+        return result
 
     def record_user_audio(self, pcm: bytes) -> None:
         """Record user PCM16 for the bounded stereo conversation WAV."""

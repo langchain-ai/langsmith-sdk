@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from langsmith import Client, traceable
+from langsmith import Client
 from langsmith._internal.voice import session as session_mod
 from langsmith.integrations.gemini_live import _session as live_mod
 from langsmith.integrations.gemini_live._session import (
@@ -16,7 +16,6 @@ from langsmith.integrations.gemini_live._session import (
     usage_metadata_from_message,
     wrap_gemini_live,
 )
-from langsmith.run_helpers import get_current_run_tree
 
 LS_TEST_CLIENT_INFO = {
     "batch_ingest_config": {
@@ -249,12 +248,11 @@ class TestWrapper:
     async def test_function_call_span_and_interruption(self, monkeypatch):
         created = _spy_children(monkeypatch)
         call = NS(id="call-1", name="lookup_weather", args={"city": "Tokyo"})
-        tool_runs = []
-
-        @traceable(run_type="tool", name="lookup_weather")
-        async def lookup_weather(city: str) -> dict:
-            tool_runs.append(get_current_run_tree())
-            return {"city": city, "condition": "sunny"}
+        response = NS(
+            id="call-1",
+            name="lookup_weather",
+            response={"city": "Tokyo", "condition": "sunny"},
+        )
 
         messages = [
             _message(calls=[call]),
@@ -265,19 +263,55 @@ class TestWrapper:
         ) as session:
             async for message in session.receive():
                 if message.tool_call:
-                    await lookup_weather("Tokyo")
+                    await session.send_tool_response(function_responses=response)
             trace = session._trace
 
-        # The integration emits no synthetic function-call chain. The demo's
-        # @traceable lookup_weather function is therefore the only tool run.
-        assert not [name for name, _ in created if name.startswith("function_call")]
+        tool_runs = [child for name, child in created if name == "lookup_weather"]
         assert len(tool_runs) == 1
         assert tool_runs[0].run_type == "tool"
         assert tool_runs[0].parent_run_id == trace.run.id
+        assert tool_runs[0].inputs == {"args": {"city": "Tokyo"}}
+        assert tool_runs[0].outputs == {
+            "response": {"city": "Tokyo", "condition": "sunny"}
+        }
+        tool_metadata = (tool_runs[0].extra or {}).get("metadata") or {}
+        assert tool_metadata["function_call_id"] == "call-1"
         interrupted = [child for name, child in created if name == "interrupted"]
         assert len(interrupted) == 1
         metadata = (interrupted[0].extra or {}).get("metadata") or {}
         assert metadata["was_audible"] is True
+
+    async def test_parallel_tool_calls_are_matched_by_id(self, monkeypatch):
+        created = _spy_children(monkeypatch)
+        calls = [
+            NS(id="call-1", name="first", args={"value": 1}),
+            NS(id="call-2", name="second", args={"value": 2}),
+        ]
+        responses = [
+            {"id": "call-2", "name": "second", "response": {"result": 2}},
+            {"id": "call-1", "name": "first", "response": {"result": 1}},
+        ]
+
+        async with wrap_gemini_live(FakeSession([_message(calls=calls)])) as session:
+            async for _ in session.receive():
+                pass
+            await session.send_tool_response(function_responses=responses)
+
+        tools = {name: child for name, child in created if name in {"first", "second"}}
+        assert tools["first"].outputs == {"response": {"result": 1}}
+        assert tools["second"].outputs == {"response": {"result": 2}}
+
+    async def test_incomplete_tool_call_is_closed_with_error(self, monkeypatch):
+        created = _spy_children(monkeypatch)
+        call = NS(id="call-1", name="lookup_weather", args={"city": "Tokyo"})
+
+        async with wrap_gemini_live(FakeSession([_message(calls=[call])])) as session:
+            async for _ in session.receive():
+                pass
+
+        tool_runs = [child for name, child in created if name == "lookup_weather"]
+        assert len(tool_runs) == 1
+        assert tool_runs[0].error == "tool did not complete before the session ended"
 
     async def test_audio_is_bounded_and_replicas_propagate(self, monkeypatch):
         created = _spy_children(monkeypatch)
