@@ -98,6 +98,7 @@ async def test_openai_agents_tracing_processor():
     assert "ls_integration_version" in metadata, agent_run
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.xfail(reason="Flaky test - may fail intermittently")
 async def test_openai_agents_with_evaluate():
     client = langsmith.Client()

@@ -1738,8 +1738,8 @@ def _experiment_session() -> ls_schemas.TracerSession:
     )
 
 
-def test_load_traces_uses_v2_when_sdb_query_enabled() -> None:
-    """sdb_query_enabled → sync query_v2 (/v2/runs/query), never v1 list_runs."""
+def test_load_traces_uses_v2_when_smithdb_only() -> None:
+    """ClickHouse off + SmithDB on → query_v2 (/v2/runs/query), never v1 list_runs."""
     project = _experiment_session()
     gen_runs = [_make_generated_run(), _make_generated_run()]
 
@@ -1752,7 +1752,10 @@ def test_load_traces_uses_v2_when_sdb_query_enabled() -> None:
         return iter(gen_runs)  # sync paginator auto-iterates with a plain for-loop
 
     client = mock.Mock()
-    client.info.instance_flags = {"sdb_query_enabled": True}
+    client.info.instance_flags = {
+        "ch_query_enabled": False,
+        "sdb_query_enabled": True,
+    }
     client._get_langsmith_api_sync.return_value.runs.query_v2 = _query_v2
 
     runs = _load_traces_for_experiment(project, client, load_nested=False)
@@ -1762,11 +1765,21 @@ def test_load_traces_uses_v2_when_sdb_query_enabled() -> None:
     client.list_runs.assert_not_called()
 
 
-def test_load_traces_uses_v1_when_sdb_query_disabled() -> None:
-    """Without the flag, keep the existing v1 client.list_runs path unchanged."""
+@pytest.mark.parametrize(
+    ("instance_flags", "case"),
+    [
+        ({}, "clickhouse-only (sdb_query_enabled absent)"),
+        ({"ch_query_enabled": True}, "clickhouse-only (explicit)"),
+        # Dual: SmithDB is available but ClickHouse still serves queries, so the
+        # legacy path stays in use until ClickHouse is actually switched off.
+        ({"ch_query_enabled": True, "sdb_query_enabled": True}, "dual"),
+    ],
+)
+def test_load_traces_uses_v1_unless_smithdb_only(instance_flags, case) -> None:
+    """Keep the v1 client.list_runs path whenever ClickHouse can serve queries."""
     project = _experiment_session()
     client = mock.Mock()
-    client.info.instance_flags = {}  # sdb_query_enabled absent
+    client.info.instance_flags = instance_flags
     client.list_runs.return_value = iter([])
 
     _load_traces_for_experiment(project, client, load_nested=False)

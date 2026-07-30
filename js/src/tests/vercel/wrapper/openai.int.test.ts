@@ -15,6 +15,7 @@ import {
 import { generateLongContext, waitUntilRunFound } from "../../utils.js";
 import { mockClient } from "../../utils/mock_client.js";
 import { traceable } from "../../../traceable.js";
+import { requiresClickhouse } from "../../utils/markers.js";
 
 const { tool, stepCountIs } = ai;
 
@@ -318,7 +319,7 @@ test.skip("wrap streamObject", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("can set run id", async () => {
+requiresClickhouse.test("can set run id", async () => {
   const runId = v4();
   const client = new Client();
   const { generateText } = wrapAISDK(ai, { id: runId });

@@ -31,7 +31,7 @@ export class Runs extends APIResource {
    * ```
    */
   getURL(runID: string, query: RunGetURLParams, options?: RequestOptions): APIPromise<RunGetURLResponse> {
-    return this._client.get(path`/v2/runs/${runID}/url`, { query, ...options });
+    return this._client.get(path`/api/v2/runs/${runID}/url`, { query, ...options });
   }
 
   /**
@@ -52,7 +52,7 @@ export class Runs extends APIResource {
     options?: RequestOptions,
   ): PagePromise<RunsItemsCursorPostPagination, Run> {
     const { Accept, ...body } = params;
-    return this._client.getAPIList('/v2/runs/query', ItemsCursorPostPagination<Run>, {
+    return this._client.getAPIList('/api/v2/runs/query', ItemsCursorPostPagination<Run>, {
       body,
       method: 'post',
       ...options,
@@ -75,7 +75,7 @@ export class Runs extends APIResource {
    */
   retrieveV2(runID: string, params: RunRetrieveV2Params, options?: RequestOptions): APIPromise<Run> {
     const { Accept, ...query } = params;
-    return this._client.get(path`/v2/runs/${runID}`, {
+    return this._client.get(path`/api/v2/runs/${runID}`, {
       query,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
@@ -197,6 +197,12 @@ export interface Run {
    * `is_root` is true when this run has no parent (it is the trace root).
    */
   is_root?: boolean;
+
+  /**
+   * `last_queued_at` is the most recent time this run was added to an annotation
+   * queue.
+   */
+  last_queued_at?: string;
 
   /**
    * `latency_seconds` is wall-clock duration from start to end in seconds.
@@ -694,6 +700,7 @@ export type RunSelectField =
   | 'ATTACHMENTS'
   | 'THREAD_EVALUATION_TIME'
   | 'IS_IN_DATASET'
+  | 'LAST_QUEUED_AT'
   | 'SHARE_URL'
   | 'FEEDBACK_STATS';
 
@@ -701,6 +708,8 @@ export type RunSelectField =
  * Query params for run stats.
  */
 export interface RunStatsQueryParams {
+  session: Array<string>;
+
   id?: Array<string> | null;
 
   /**
@@ -778,8 +787,6 @@ export interface RunStatsQueryParams {
     | 'prompt_cost_details'
     | 'completion_cost_details'
   > | null;
-
-  session?: Array<string> | null;
 
   skip_pagination?: boolean | null;
 
@@ -1009,6 +1016,7 @@ export interface RunRetrieveV2Params {
     | 'ATTACHMENTS'
     | 'THREAD_EVALUATION_TIME'
     | 'IS_IN_DATASET'
+    | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
@@ -1079,6 +1087,7 @@ export interface RunRetrieveParams {
     | 'ATTACHMENTS'
     | 'THREAD_EVALUATION_TIME'
     | 'IS_IN_DATASET'
+    | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;

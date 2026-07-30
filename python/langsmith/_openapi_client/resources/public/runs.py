@@ -81,7 +81,7 @@ class RunsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get(
-            path_template("/v2/public/{share_token}/run/{run_id}", share_token=share_token, run_id=run_id),
+            path_template("/api/v2/public/{share_token}/run/{run_id}", share_token=share_token, run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -139,6 +139,7 @@ class RunsResource(SyncAPIResource):
                 "PRICE_MODEL_ID",
                 "TAGS",
                 "THREAD_EVALUATION_TIME",
+                "FEEDBACK_STATS",
             ]
         ]
         | Omit = omit,
@@ -170,7 +171,7 @@ class RunsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `share_token` but received {share_token!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._post(
-            path_template("/v2/public/{share_token}/runs/v2/query", share_token=share_token),
+            path_template("/api/v2/public/{share_token}/runs/v2/query", share_token=share_token),
             body=maybe_transform({"selects": selects}, run_query_params.RunQueryParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -234,7 +235,7 @@ class AsyncRunsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._get(
-            path_template("/v2/public/{share_token}/run/{run_id}", share_token=share_token, run_id=run_id),
+            path_template("/api/v2/public/{share_token}/run/{run_id}", share_token=share_token, run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -292,6 +293,7 @@ class AsyncRunsResource(AsyncAPIResource):
                 "PRICE_MODEL_ID",
                 "TAGS",
                 "THREAD_EVALUATION_TIME",
+                "FEEDBACK_STATS",
             ]
         ]
         | Omit = omit,
@@ -323,7 +325,7 @@ class AsyncRunsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `share_token` but received {share_token!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._post(
-            path_template("/v2/public/{share_token}/runs/v2/query", share_token=share_token),
+            path_template("/api/v2/public/{share_token}/runs/v2/query", share_token=share_token),
             body=await async_maybe_transform({"selects": selects}, run_query_params.RunQueryParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
