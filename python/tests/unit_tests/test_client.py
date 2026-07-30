@@ -5654,6 +5654,22 @@ def test_get_langsmith_api_uses_normalized_base_url(
         ("http://localhost:1984", "http://localhost:1984"),
     ],
 )
+def test_get_langsmith_api_sync_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The sync accessor must normalize its base URL like the async one."""
+    client = Client(api_url=api_url, api_key="test-api-key", auto_batch_tracing=False)
+    openapi_client = client._get_langsmith_api_sync()
+    assert str(openapi_client.base_url).rstrip("/") == expected_base_url
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
 def test_async_client_uses_normalized_base_url(
     api_url: str, expected_base_url: str
 ) -> None:
