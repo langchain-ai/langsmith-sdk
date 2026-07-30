@@ -10,6 +10,7 @@ from typing import AsyncGenerator, Generator, Optional, Sequence
 
 import pytest  # type: ignore
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith import uuid7
 from langsmith.client import Client
@@ -846,13 +847,14 @@ async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.require_clickhouse
 @skip_if_rate_limited
 def test_load_child_runs_populates_tree(langchain_client: Client):
     """_load_child_runs must return child runs with correctly-mapped fields.
 
-    This exercises the SDB-aware routing in Client._load_child_runs: when the
-    backend has sdb_query_enabled the v2 helper is used, otherwise the legacy
-    list_runs fallback is used. Either way the contract must hold.
+    Child-run loading is unsupported on SmithDB-only backends (`_load_child_runs`
+    raises there), so this is ClickHouse-only: it pins the legacy path's contract,
+    including the uppercase-to-lowercase `run_type`/`status` normalization.
     """
     project_name = "__test_load_child_runs_" + uuid.uuid4().hex
     run_meta = uuid.uuid4().hex
@@ -898,16 +900,54 @@ def test_load_child_runs_populates_tree(langchain_client: Client):
     assert child.parent_run_id == parent.id
 
 
-@skip_if_rate_limited
-def test_load_nested_traces_builds_tree(langchain_client: Client):
-    """_load_nested_traces must return root runs with child_runs attached.
+def poll_nested_traces_until_tree(
+    client: Client,
+    project_name: str,
+    max_retries: int = 20,
+    sleep_time: int = 2,
+) -> list[ls_schemas.Run]:
+    """Poll _load_nested_traces until one root with at least one child appears.
 
-    Exercises the SDB-aware routing in beta/_evals._load_nested_traces.
+    Deliberately polls _load_nested_traces rather than poll_runs_until_count:
+    the latter is built on list_runs, which has no v2 routing and so returns 501
+    on SmithDB-only backends.
     """
     from langsmith.beta._evals import _load_nested_traces
 
+    last_error: Optional[Exception] = None
+    for _ in range(max_retries):
+        try:
+            roots = _load_nested_traces(project_name, client)
+            if len(roots) == 1 and roots[0].child_runs:
+                return roots
+            last_error = None
+        except ls_utils.LangSmithRateLimitError:
+            raise
+        except ls_utils.LangSmithError as e:
+            last_error = e
+            logger.debug("Error polling nested traces", exc_info=True)
+        time.sleep(sleep_time)
+    # Surface the underlying API error instead of a bare "no runs" assertion.
+    raise AssertionError(
+        f"Failed to load a nested trace for {project_name} after "
+        f"{max_retries} attempts."
+        + (f" Last error: {last_error!r}" if last_error else "")
+    )
+
+
+@skip_if_rate_limited
+def test_load_nested_traces_builds_tree():
+    """_load_nested_traces must return root runs with child_runs attached.
+
+    Exercises the SDB-aware routing in beta/_evals._load_nested_traces, which
+    dispatches on the deployment's real `/info` instance_flags. The shared
+    `langchain_client` fixture can't be used here: it hardcodes a partial
+    `info=`, which makes get_query_backend always resolve CLICKHOUSE_ONLY and
+    so would pin this test to the legacy path on every deployment.
+    """
+    client = Client()
+
     project_name = "__test_load_nested_traces_" + uuid.uuid4().hex
-    run_meta = uuid.uuid4().hex
 
     @traceable(run_type="chain")
     def outer(x: int) -> int:
@@ -917,18 +957,9 @@ def test_load_nested_traces_builds_tree(langchain_client: Client):
     def inner(x: int) -> int:
         return x * 2
 
-    outer(
-        3,
-        langsmith_extra=dict(
-            project_name=project_name, metadata={"test_run": run_meta}
-        ),
-    )
-    filter_ = f'and(eq(metadata_key,"test_run"),eq(metadata_value,"{run_meta}"))'
-    poll_runs_until_count(
-        langchain_client, project_name, 2, max_retries=20, filter_=filter_
-    )
+    outer(3, langsmith_extra=dict(project_name=project_name))
 
-    roots = _load_nested_traces(project_name, langchain_client)
+    roots = poll_nested_traces_until_tree(client, project_name)
 
     assert len(roots) == 1
     root = roots[0]
