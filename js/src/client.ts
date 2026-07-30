@@ -2890,6 +2890,7 @@ export class Client implements LangSmithTracingClientInterface {
     return run;
   }
 
+  /** @deprecated Use `client.runs.getURL()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunUrl({
     runId,
     run,
@@ -2899,6 +2900,12 @@ export class Client implements LangSmithTracingClientInterface {
     run?: Run;
     projectOpts?: ProjectOptions;
   }): Promise<string> {
+    warnOnce(
+      "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.getURL() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
+    );
     if (run !== undefined) {
       let sessionId: string;
       if (run.session_id) {
@@ -2920,7 +2927,12 @@ export class Client implements LangSmithTracingClientInterface {
         run.id
       }?poll=true`;
     } else if (runId !== undefined) {
-      const run_ = await this.readRun(runId);
+      // Fetch directly rather than through readRun() so callers don't also get a
+      // readRun deprecation warning for a method they never called.
+      assertUuid(runId);
+      const run_ = _normalizeRunTimestamps(
+        await this._get<Run>(`/runs/${runId}`),
+      );
       if (!run_.app_path) {
         throw new Error(`Run ${runId} has no app_path`);
       }

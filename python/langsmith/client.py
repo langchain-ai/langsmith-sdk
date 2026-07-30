@@ -4030,7 +4030,7 @@ class Client:
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
-        .. deprecated:: 0.10.7
+        .. deprecated::
             Use :meth:`langsmith.Client.runs.retrieve` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4090,7 +4090,7 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
 
-        .. deprecated:: 0.10.7
+        .. deprecated::
             Use :meth:`langsmith.Client.threads.list_traces` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4165,7 +4165,7 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
-        .. deprecated:: 0.10.7
+        .. deprecated::
             Use :meth:`langsmith.Client.runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4359,7 +4359,7 @@ class Client:
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
 
-        .. deprecated:: 0.10.7
+        .. deprecated::
             Use :meth:`langsmith.Client.threads.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4568,6 +4568,12 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return response.json()
 
+    @_deprecated(
+        "get_run_url() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.get_url() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-get-url for the migration guide."
+    )
     def get_run_url(
         self,
         *,
@@ -4580,6 +4586,11 @@ class Client:
         Not recommended for use within your agent runtime.
         More for use interacting with runs after the fact
         for data analysis or ETL workloads.
+
+        .. deprecated::
+            Use :meth:`langsmith.Client.runs.get_url` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run (RunBase): The run.
@@ -10808,7 +10819,7 @@ class Client:
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
-        .. deprecated:: 0.10.7
+        .. deprecated::
             Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
             Will be removed after Jan 31, 2027.

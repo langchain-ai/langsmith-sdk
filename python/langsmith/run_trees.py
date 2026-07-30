@@ -919,7 +919,19 @@ class RunTree(ls_schemas.RunBase):
 
     def get_url(self) -> str:
         """Return the URL of the run."""
-        return self.client.get_run_url(run=self)
+        session_id = (
+            self.session_id
+            or self.client.read_project(project_name=self.session_name).id
+        )
+        response = self.client._get_langsmith_api_sync().runs.get_url(
+            str(self.id),
+            project_id=str(session_id),
+            trace_id=str(self.trace_id),
+            start_time=self.start_time.isoformat(),
+        )
+        if response.url is None:
+            raise utils.LangSmithError(f"No URL returned for run {self.id}")
+        return response.url
 
     @classmethod
     def from_dotted_order(

@@ -40,114 +40,43 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class LangSmithError(Exception):
-    """An error occurred while communicating with the LangSmith API.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.LangsmithError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """An error occurred while communicating with the LangSmith API."""
 
 
 class LangSmithAPIError(LangSmithError):
-    """Internal server error while communicating with LangSmith.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.InternalServerError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Internal server error while communicating with LangSmith."""
 
 
 class LangSmithRequestTimeout(LangSmithError):
-    """Client took too long to send request body.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.APITimeoutError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Client took too long to send request body."""
 
 
 class LangSmithUserError(LangSmithError):
-    """User error caused an exception when communicating with LangSmith.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.BadRequestError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """User error caused an exception when communicating with LangSmith."""
 
 
 class LangSmithRateLimitError(LangSmithError):
-    """You have exceeded the rate limit for the LangSmith API.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.RateLimitError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """You have exceeded the rate limit for the LangSmith API."""
 
 
 class LangSmithAuthError(LangSmithError):
-    """Couldn't authenticate with the LangSmith API.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.AuthenticationError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Couldn't authenticate with the LangSmith API."""
 
 
 class LangSmithNotFoundError(LangSmithError):
-    """Couldn't find the requested resource.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.NotFoundError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Couldn't find the requested resource."""
 
 
 class LangSmithConflictError(LangSmithError):
-    """The resource already exists.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.ConflictError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """The resource already exists."""
 
 
 class LangSmithConnectionError(LangSmithError):
-    """Couldn't connect to the LangSmith API.
-
-    .. deprecated:: 0.10.7
-        Use :class:`langsmith.APIConnectionError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Couldn't connect to the LangSmith API."""
 
 
 class LangSmithExceptionGroup(LangSmithError):
-    """Port of ExceptionGroup for Py < 3.11.
-
-    .. deprecated:: 0.10.7
-        Use Python 3.11+ native ``ExceptionGroup``
-        or :class:`langsmith.LangsmithError` instead.
-        See the migration guide at
-        https://docs.langchain.com/langsmith/smithdb-sdk-migration#exceptions
-        Will be removed after Jan 31, 2027.
-    """
+    """Port of ExceptionGroup for Py < 3.11."""
 
     def __init__(
         self, *args: Any, exceptions: Sequence[Exception], **kwargs: Any

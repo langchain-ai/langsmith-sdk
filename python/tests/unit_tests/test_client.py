@@ -6834,3 +6834,39 @@ async def test_aevaluate_run_deprecation_warning() -> None:
         ):
             assert await client.aevaluate_run(_stub_run(), _StubEvaluator()) is result
     log_feedback.assert_called_once()
+
+
+def test_get_run_url_deprecation_warning() -> None:
+    """get_run_url is deprecated in favor of client.runs.get_url()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+    run.session_id = uuid.uuid4()
+
+    with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
+        with pytest.warns(DeprecationWarning, match="get_run_url\\(\\) is deprecated"):
+            url = client.get_run_url(run=run)
+    assert str(run.id) in url
+
+
+def test_run_tree_get_url_does_not_warn() -> None:
+    """RunTree.get_url() is supported and must not emit a deprecation warning."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    runs_resource.get_url.assert_called_once_with(
+        str(run_tree.id),
+        project_id=str(project_id),
+        trace_id=str(run_tree.trace_id),
+        start_time=run_tree.start_time.isoformat(),
+    )
