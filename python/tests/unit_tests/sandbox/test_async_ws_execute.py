@@ -502,6 +502,145 @@ class TestAsyncCommandHandle:
                 _ = [c async for c in handle]
 
     @pytest.mark.asyncio
+    async def test_reconnect_ack_resets_counter_without_output(self):
+        """A silent command survives more socket losses than the reconnect budget.
+
+        Every reattachment is acknowledged with 'started' and produces no output.
+        The budget bounds *failed* reattachments, so it must never be consumed by
+        a command that is simply quiet.
+        """
+        losses = AsyncCommandHandle.MAX_AUTO_RECONNECTS + 3
+        attempts = [0]
+
+        async def initial_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            attempts[0] += 1
+            h = MagicMock()
+            if attempts[0] < losses:
+
+                async def acked_then_lost():
+                    yield _started_msg()
+                    raise SandboxConnectionError("lost again")
+
+                h._stream = acked_then_lost()
+            else:
+                h._stream = _make_async_stream([_started_msg(), _exit_msg(7)])
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        handle = AsyncCommandHandle(initial_stream(), None, sandbox)
+        await handle._ensure_started()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            chunks = [c async for c in handle]
+
+        assert chunks == []
+        assert attempts[0] == losses
+        assert (await handle.result).exit_code == 7
+
+    @pytest.mark.asyncio
+    async def test_reconnect_ack_for_another_command_does_not_reset(self):
+        """An acknowledgement naming a different command is not proof of anything."""
+
+        async def initial_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            h = MagicMock()
+
+            async def foreign_ack_then_lost():
+                yield _started_msg("someone-elses-cmd")
+                raise SandboxConnectionError("lost again")
+
+            h._stream = foreign_ack_then_lost()
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        handle = AsyncCommandHandle(initial_stream(), None, sandbox)
+        await handle._ensure_started()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(SandboxConnectionError, match="giving up"):
+                _ = [c async for c in handle]
+
+        assert sandbox.reconnect.call_count == AsyncCommandHandle.MAX_AUTO_RECONNECTS
+
+    @pytest.mark.asyncio
+    async def test_reconnect_ack_is_consumed_and_leaves_offsets_alone(self):
+        """The acknowledgement yields no chunk, fires no callback, moves no offset."""
+
+        async def initial_stream():
+            yield _started_msg()
+            yield _stdout_msg("before", 0)
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            h = MagicMock()
+            h._stream = _make_async_stream(
+                [
+                    _started_msg(),
+                    _stdout_msg("after", 6),
+                    _exit_msg(0),
+                ]
+            )
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        seen: list[str] = []
+        handle = AsyncCommandHandle(
+            initial_stream(), None, sandbox, on_stdout=seen.append
+        )
+        await handle._ensure_started()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            chunks = [c async for c in handle]
+
+        assert [chunk.data for chunk in chunks] == ["before", "after"]
+        assert seen == ["before", "after"]
+        # Offsets are the ones "before" left behind: the ack carried no bytes.
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123", stdout_offset=6, stderr_offset=0
+        )
+        assert (await handle.result).stdout == "beforeafter"
+
+    @pytest.mark.asyncio
+    async def test_command_not_found_not_retried(self):
+        """A permanently gone command fails on the first reattachment attempt."""
+
+        async def failing_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+        sandbox.reconnect.side_effect = SandboxOperationError(
+            "Command not found: cmd-123",
+            operation="reconnect",
+            error_type="CommandNotFound",
+        )
+
+        handle = AsyncCommandHandle(failing_stream(), None, sandbox)
+        await handle._ensure_started()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(SandboxOperationError, match="Command not found"):
+                _ = [c async for c in handle]
+
+        assert sandbox.reconnect.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_manual_reconnect(self):
         """handle.reconnect() delegates to sandbox.reconnect()."""
         stream = _make_async_stream(
@@ -936,6 +1075,32 @@ class TestAsyncSandboxReconnect:
 # =============================================================================
 # Tests: async handshake failures are wrapped as SandboxConnectionError
 # =============================================================================
+
+
+class TestAsyncReconnectStreamFrames:
+    @pytest.mark.asyncio
+    async def test_forwards_started_acknowledgement(self):
+        """The reattachment ack must reach the handle, not be dropped in transport."""
+        frames = [
+            {"type": "started", "command_id": "cmd-123", "pid": 42},
+            {"type": "stdout", "data": "resumed", "offset": 10},
+            {"type": "exit", "exit_code": 0},
+        ]
+
+        async def raw_frames():
+            for frame in frames:
+                yield json.dumps(frame)
+
+        ws = MagicMock()
+        ws.send = AsyncMock()
+        ws.__aiter__ = lambda self: raw_frames()
+        with patch("langsmith.sandbox._ws_execute._ws_connect_async") as mock_connect:
+            mock_connect.return_value.__aenter__ = AsyncMock(return_value=ws)
+            mock_connect.return_value.__aexit__ = AsyncMock(return_value=False)
+            msg_stream, _ = await reconnect_ws_stream_async(
+                "https://sb.example.com", "key", "cmd-123", stdout_offset=10
+            )
+            assert [msg async for msg in msg_stream] == frames
 
 
 class TestAsyncHandshakeFailureWrapping:
