@@ -4085,7 +4085,8 @@ class Client:
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.runs.retrieve` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4178,7 +4179,8 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.threads.list_traces` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4253,7 +4255,8 @@ class Client:
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4447,7 +4450,8 @@ class Client:
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.threads.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -4675,7 +4679,8 @@ class Client:
         More for use interacting with runs after the fact
         for data analysis or ETL workloads.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.runs.get_url` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -7772,7 +7777,8 @@ class Client:
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             There is no replacement. Run the evaluator yourself and log the
             result with :meth:`langsmith.Client.create_feedback`.
             Will be removed after Jan 31, 2027.
@@ -7903,7 +7909,8 @@ class Client:
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             There is no replacement. Run the evaluator yourself and log the
             result with :meth:`langsmith.Client.create_feedback`.
             Will be removed after Jan 31, 2027.
@@ -8615,7 +8622,8 @@ class Client:
     ) -> Iterator[ls_schemas.FeedbackFormula]:
         """List feedback formulas.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8631,7 +8639,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Get a feedback formula by ID.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8655,7 +8664,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Create a feedback formula.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8678,7 +8688,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Update a feedback formula.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8692,7 +8703,8 @@ class Client:
     def delete_feedback_formula(self, feedback_formula_id: ID_TYPE) -> None:
         """Delete a feedback formula by ID.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -10948,7 +10960,8 @@ class Client:
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
             Will be removed after Jan 31, 2027.

@@ -220,7 +220,8 @@ def compute_test_metrics(
 ) -> None:
     """Compute test metrics for a given test name using a list of evaluators.
 
-    .. deprecated::
+    .. admonition:: Deprecated
+
         There is no replacement: run the evaluators yourself and log the results
         with :meth:`langsmith.Client.create_feedback`.
         Will be removed after Jan 31, 2027.

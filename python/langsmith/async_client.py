@@ -644,7 +644,8 @@ class AsyncClient:
     ) -> ls_schemas.Run:
         """Read a run.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
@@ -708,7 +709,8 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Use :meth:`langsmith.AsyncClient.runs.query` instead.
             See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
