@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 ID_TYPE = Union[uuid.UUID, str]
 
 if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.annotation_queues.annotation_queues import (
+        AsyncAnnotationQueuesResource,
+    )
     from langsmith._openapi_client.resources.datasets.datasets import (
         AsyncDatasetsResource,
     )
@@ -338,6 +341,11 @@ class AsyncClient:
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
         return self._langsmith_api.datasets
+
+    @property
+    def annotation_queues(self) -> AsyncAnnotationQueuesResource:
+        """Access the annotation queues resource (runs, items)."""
+        return self._langsmith_api.annotation_queues
 
     @property
     def threads(self) -> AsyncThreadsResource:
