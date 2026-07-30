@@ -16,6 +16,29 @@ import {
 } from "./errors.js";
 
 /**
+ * Whether a 'started' frame proves *this* command was reattached to.
+ *
+ * A command and its WebSocket are separate things: the command keeps running on
+ * the server and the socket is only this client's attachment to it. The server
+ * acknowledges every successful reattachment with 'started', which for a command
+ * that produces no output is the only evidence it landed. One naming a different
+ * command is not evidence, and must not clear the reconnect budget.
+ */
+function acknowledgesReconnect(
+  msg: WsMessage,
+  commandId: string | null,
+): boolean {
+  const acked = msg.command_id;
+  if (acked === commandId) return true;
+  console.warn(
+    `Ignoring reconnect acknowledgement for command ${String(
+      acked,
+    )} while attached to ${String(commandId)}`,
+  );
+  return false;
+}
+
+/**
  * Async handle to a running command with streaming output and auto-reconnect.
  *
  * Async iterable, yielding OutputChunk objects (stdout and stderr interleaved
@@ -56,6 +79,7 @@ export class CommandHandle {
   private _lastStdoutOffset: number;
   private _lastStderrOffset: number;
   private _started: boolean;
+  private _reconnectAttempts = 0;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
 
@@ -159,7 +183,11 @@ export class CommandHandle {
 
     for await (const msg of this._stream) {
       const msgType = msg.type;
-      if (msgType === "stdout" || msgType === "stderr") {
+      if (msgType === "started") {
+        if (acknowledgesReconnect(msg, this._commandId)) {
+          this._reconnectAttempts = 0;
+        }
+      } else if (msgType === "stdout" || msgType === "stderr") {
         const chunk: OutputChunk = {
           stream: msgType,
           data: msg.data as string,
@@ -195,12 +223,12 @@ export class CommandHandle {
    * - After kill():                  no reconnect, error propagates
    */
   async *[Symbol.asyncIterator](): AsyncIterableIterator<OutputChunk> {
-    let reconnectAttempts = 0;
+    this._reconnectAttempts = 0;
 
     while (true) {
       try {
         for await (const chunk of this._iterStream()) {
-          reconnectAttempts = 0; // Reset on successful data
+          this._reconnectAttempts = 0; // Reset on successful data
           if (chunk.stream === "stdout") {
             this._lastStdoutOffset =
               chunk.offset + new TextEncoder().encode(chunk.data).length;
@@ -224,17 +252,17 @@ export class CommandHandle {
           throw e;
         }
 
-        reconnectAttempts++;
-        if (reconnectAttempts > CommandHandle.MAX_AUTO_RECONNECTS) {
+        this._reconnectAttempts++;
+        if (this._reconnectAttempts > CommandHandle.MAX_AUTO_RECONNECTS) {
           throw new LangSmithSandboxConnectionError(
-            `Lost connection ${reconnectAttempts} times in succession, giving up`,
+            `Failed to reattach to the command ${this._reconnectAttempts} times in succession, giving up`,
           );
         }
 
         const isHotReload = e instanceof LangSmithSandboxServerReloadError;
         if (!isHotReload) {
           const delay = Math.min(
-            CommandHandle.BACKOFF_BASE * 2 ** (reconnectAttempts - 1),
+            CommandHandle.BACKOFF_BASE * 2 ** (this._reconnectAttempts - 1),
             CommandHandle.BACKOFF_MAX,
           );
           await new Promise((r) => setTimeout(r, delay * 1000));

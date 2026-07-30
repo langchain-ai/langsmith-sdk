@@ -401,8 +401,10 @@ def reconnect_ws_stream(
     """Reconnect to an existing command over WebSocket.
 
     Returns a tuple of (message_iterator, control), same as run_ws_stream.
-    The iterator yields stdout, stderr, exit, and error messages.
-    No 'started' message is sent on reconnection.
+    The iterator yields the server's ``started`` acknowledgement, then stdout,
+    stderr, exit, and error messages. That acknowledgement is the only evidence
+    a reattachment landed for a command producing no output, so it is forwarded
+    rather than dropped.
 
     With the ring buffer reader server model, there is no replay/live
     phase distinction and no deduplication needed. The server reads from
@@ -444,7 +446,7 @@ def reconnect_ws_stream(
                     msg = json.loads(raw_msg)
                     msg_type = msg.get("type")
 
-                    if msg_type in ("stdout", "stderr"):
+                    if msg_type in ("started", "stdout", "stderr"):
                         yield msg
 
                     elif msg_type == "exit":
@@ -620,7 +622,7 @@ async def reconnect_ws_stream_async(
                     msg = json.loads(raw_msg)
                     msg_type = msg.get("type")
 
-                    if msg_type in ("stdout", "stderr"):
+                    if msg_type in ("started", "stdout", "stderr"):
                         yield msg
                     elif msg_type == "exit":
                         yield msg

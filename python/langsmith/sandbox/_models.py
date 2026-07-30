@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -22,6 +23,28 @@ if TYPE_CHECKING:
         _AsyncWSStreamControl,
         _WSStreamControl,
     )
+
+logger = logging.getLogger(__name__)
+
+
+def _acknowledges_reconnect(msg: dict, command_id: Optional[str]) -> bool:
+    """Whether a 'started' frame proves *this* command was reattached to.
+
+    A command and its WebSocket are separate things: the command keeps running on
+    the server and the socket is only this client's attachment to it. The server
+    acknowledges every successful reattachment with 'started', which for a
+    command that produces no output is the only evidence it landed. One naming a
+    different command is not evidence, and must not clear the reconnect budget.
+    """
+    acked = msg.get("command_id")
+    if acked == command_id:
+        return True
+    logger.warning(
+        "Ignoring reconnect acknowledgement for command %r while attached to %r",
+        acked,
+        command_id,
+    )
+    return False
 
 
 class _StreamEndedBeforeStarted(SandboxOperationError):
@@ -479,7 +502,10 @@ class CommandHandle:
       eagerly reads the server's ``"started"`` message to populate
       ``command_id`` and ``pid`` before returning.
     - **Reconnection** (``command_id`` set): skips the started-message
-      read, since reconnect streams don't emit one.
+      read. A reconnect stream's ``"started"`` message is the server's
+      acknowledgement that the reattachment landed, consumed while iterating to
+      clear the reconnect budget — the only such signal for a command that
+      emits no output.
 
     Example:
         handle = sandbox.run("make build", timeout=600, wait=False)
@@ -520,10 +546,11 @@ class CommandHandle:
         self._exhausted = False
         self._last_stdout_offset = stdout_offset
         self._last_stderr_offset = stderr_offset
+        self._reconnect_attempts = 0
 
         # New executions (command_id=""): eager_start reads "started" message.
-        # Reconnections (command_id set): skip eager_start since reconnect
-        # streams don't send a "started" message.
+        # Reconnections (command_id set): the "started" message is the server's
+        # reattachment acknowledgement, consumed by _iter_stream instead.
         if command_id:
             self._command_id = command_id
         else:
@@ -585,7 +612,10 @@ class CommandHandle:
             return
         for msg in self._stream:
             msg_type = msg.get("type")
-            if msg_type in ("stdout", "stderr"):
+            if msg_type == "started":
+                if _acknowledges_reconnect(msg, self._command_id):
+                    self._reconnect_attempts = 0
+            elif msg_type in ("stdout", "stderr"):
                 chunk = OutputChunk(
                     stream=msg_type,
                     data=msg["data"],
@@ -616,11 +646,11 @@ class CommandHandle:
         """
         import time
 
-        reconnect_attempts = 0
+        self._reconnect_attempts = 0
         while True:
             try:
                 for chunk in self._iter_stream():
-                    reconnect_attempts = 0  # Reset on successful data
+                    self._reconnect_attempts = 0  # Reset on successful data
                     if chunk.stream == "stdout":
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
@@ -640,17 +670,18 @@ class CommandHandle:
                 if self._control and self._control.killed:
                     raise
 
-                reconnect_attempts += 1
-                if reconnect_attempts > self.MAX_AUTO_RECONNECTS:
+                self._reconnect_attempts += 1
+                if self._reconnect_attempts > self.MAX_AUTO_RECONNECTS:
                     raise SandboxConnectionError(
-                        f"Lost connection {reconnect_attempts} times in "
-                        f"succession, giving up"
+                        f"Failed to reattach to the command "
+                        f"{self._reconnect_attempts} times in succession, "
+                        f"giving up"
                     ) from e
 
                 is_hot_reload = isinstance(e, SandboxServerReloadError)
                 if not is_hot_reload:
                     delay = min(
-                        self._BACKOFF_BASE * (2 ** (reconnect_attempts - 1)),
+                        self._BACKOFF_BASE * (2 ** (self._reconnect_attempts - 1)),
                         self._BACKOFF_MAX,
                     )
                     time.sleep(delay)
@@ -739,7 +770,10 @@ class AsyncCommandHandle:
       ``await handle._ensure_started()`` after construction to read the
       server's ``"started"`` message and populate ``command_id`` / ``pid``.
     - **Reconnection** (``command_id`` set): skips the started-message
-      read, since reconnect streams don't emit one.
+      read. A reconnect stream's ``"started"`` message is the server's
+      acknowledgement that the reattachment landed, consumed while iterating to
+      clear the reconnect budget — the only such signal for a command that
+      emits no output.
 
     Example:
         handle = await sandbox.run("make build", timeout=600, wait=False)
@@ -780,10 +814,11 @@ class AsyncCommandHandle:
         self._exhausted = False
         self._last_stdout_offset = stdout_offset
         self._last_stderr_offset = stderr_offset
+        self._reconnect_attempts = 0
 
         # New executions (command_id=""): _ensure_started reads "started".
-        # Reconnections (command_id set): skip since reconnect streams
-        # don't send a "started" message.
+        # Reconnections (command_id set): the "started" message is the server's
+        # reattachment acknowledgement, consumed by _aiter_stream instead.
         if command_id:
             self._command_id = command_id
             self._started = True
@@ -840,7 +875,10 @@ class AsyncCommandHandle:
             return
         async for msg in self._stream:
             msg_type = msg.get("type")
-            if msg_type in ("stdout", "stderr"):
+            if msg_type == "started":
+                if _acknowledges_reconnect(msg, self._command_id):
+                    self._reconnect_attempts = 0
+            elif msg_type in ("stdout", "stderr"):
                 chunk = OutputChunk(
                     stream=msg_type,
                     data=msg["data"],
@@ -865,11 +903,11 @@ class AsyncCommandHandle:
         """Async iterate with auto-reconnect on transient errors."""
         import asyncio
 
-        reconnect_attempts = 0
+        self._reconnect_attempts = 0
         while True:
             try:
                 async for chunk in self._aiter_stream():
-                    reconnect_attempts = 0
+                    self._reconnect_attempts = 0
                     if chunk.stream == "stdout":
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
@@ -889,17 +927,18 @@ class AsyncCommandHandle:
                 if self._control and self._control.killed:
                     raise
 
-                reconnect_attempts += 1
-                if reconnect_attempts > self.MAX_AUTO_RECONNECTS:
+                self._reconnect_attempts += 1
+                if self._reconnect_attempts > self.MAX_AUTO_RECONNECTS:
                     raise SandboxConnectionError(
-                        f"Lost connection {reconnect_attempts} times "
-                        f"in succession, giving up"
+                        f"Failed to reattach to the command "
+                        f"{self._reconnect_attempts} times in succession, "
+                        f"giving up"
                     ) from e
 
                 is_hot_reload = isinstance(e, SandboxServerReloadError)
                 if not is_hot_reload:
                     delay = min(
-                        self._BACKOFF_BASE * (2 ** (reconnect_attempts - 1)),
+                        self._BACKOFF_BASE * (2 ** (self._reconnect_attempts - 1)),
                         self._BACKOFF_MAX,
                     )
                     await asyncio.sleep(delay)
