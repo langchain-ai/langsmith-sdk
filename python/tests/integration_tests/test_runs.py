@@ -846,6 +846,59 @@ async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.require_clickhouse
+@skip_if_rate_limited
+def test_load_child_runs_populates_tree(langchain_client: Client):
+    """_load_child_runs must return child runs with correctly-mapped fields.
+
+    Child-run loading is unsupported on SmithDB-only backends (`_load_child_runs`
+    raises there), so this is ClickHouse-only: it pins the legacy path's contract,
+    including the uppercase-to-lowercase `run_type`/`status` normalization.
+    """
+    project_name = "__test_load_child_runs_" + uuid.uuid4().hex
+    run_meta = uuid.uuid4().hex
+
+    @traceable(run_type="chain")
+    def parent_fn(x: int) -> int:
+        return child_fn(x)
+
+    @traceable(run_type="llm")
+    def child_fn(x: int) -> int:
+        return x + 1
+
+    parent_fn(
+        1,
+        langsmith_extra=dict(
+            project_name=project_name, metadata={"test_run": run_meta}
+        ),
+    )
+    filter_ = f'and(eq(metadata_key,"test_run"),eq(metadata_value,"{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 2, max_retries=20, filter_=filter_
+    )
+
+    # Get the root run from the API — no child_runs yet.
+    [parent] = list(
+        langchain_client.list_runs(
+            project_name=project_name,
+            filter=filter_,
+            execution_order=1,
+        )
+    )
+    assert parent.child_runs is None or parent.child_runs == []
+
+    populated = langchain_client._load_child_runs(parent)
+
+    assert populated.child_runs is not None
+    assert len(populated.child_runs) == 1
+    child = populated.child_runs[0]
+    # run_type must be lowercase regardless of path (v2 uppercases it on the wire)
+    assert child.run_type == "llm"
+    # status must also be lowercase
+    assert child.status in {"success", "error"}
+    assert child.parent_run_id == parent.id
+
+
 @skip_if_rate_limited
 def test_load_nested_traces_builds_tree(langchain_client: Client):
     """_load_nested_traces must return root runs with child_runs attached.
