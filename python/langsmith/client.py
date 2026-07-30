@@ -7586,6 +7586,11 @@ class Client:
             )
         return results_
 
+    @_deprecated(
+        "evaluate_run() is deprecated and will be removed after Jan 31, 2027. "
+        "There is no replacement: run the evaluator yourself and log the result "
+        "with client.create_feedback()."
+    )
     def evaluate_run(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -7598,6 +7603,11 @@ class Client:
         load_child_runs: bool = False,
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
+
+        .. deprecated:: 0.10.11
+            There is no replacement. Run the evaluator yourself and log the
+            result with :meth:`langsmith.Client.create_feedback`.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run (Union[Run, RunBase, str, UUID]):
@@ -7682,6 +7692,11 @@ class Client:
             )
         return results
 
+    @_deprecated(
+        "aevaluate_run() is deprecated and will be removed after Jan 31, 2027. "
+        "There is no replacement: run the evaluator yourself and log the result "
+        "with client.create_feedback()."
+    )
     async def aevaluate_run(
         self,
         run: Union[ls_schemas.Run, str, uuid.UUID],
@@ -7694,6 +7709,11 @@ class Client:
         load_child_runs: bool = False,
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
+
+        .. deprecated:: 0.10.11
+            There is no replacement. Run the evaluator yourself and log the
+            result with :meth:`langsmith.Client.create_feedback`.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run (Union[Run, str, UUID]):
