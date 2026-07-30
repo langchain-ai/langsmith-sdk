@@ -6,6 +6,7 @@
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { deleteProject, pollRunsUntilCount, waitUntil } from "./utils.js";
+import { requiresV2 } from "./utils/markers.js";
 
 async function setUpProjectWithThread(client: Client) {
   const projectName = `__test_v2_threads_${uuidv4().slice(0, 12)}`;
@@ -106,20 +107,24 @@ test("threads.listTraces returns traces belonging to the thread", async () => {
   }
 });
 
-test("threads.stats returns a well-formed stats response", async () => {
-  const client = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const { projectName, projectId, threadId } =
-    await setUpProjectWithThread(client);
-  try {
-    const stats = await client.threads.stats(threadId, {
-      selects: ["TURNS"],
-      session_id: projectId,
+// V15 answers /v2/threads/{id}/stats with 501 Not Implemented.
+requiresV2.test(
+  "threads.stats returns a well-formed stats response",
+  async () => {
+    const client = new Client({
+      autoBatchTracing: false,
+      callerOptions: { maxRetries: 6 },
     });
-    expect(stats).toBeDefined();
-  } finally {
-    await deleteProject(client, projectName);
-  }
-});
+    const { projectName, projectId, threadId } =
+      await setUpProjectWithThread(client);
+    try {
+      const stats = await client.threads.stats(threadId, {
+        selects: ["TURNS"],
+        session_id: projectId,
+      });
+      expect(stats).toBeDefined();
+    } finally {
+      await deleteProject(client, projectName);
+    }
+  },
+);

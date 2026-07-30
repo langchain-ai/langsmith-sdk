@@ -45,7 +45,11 @@ class InfoResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> InfoListResponse:
-        """Get information about the current deployment of LangSmith."""
+        """
+        Returns information about the current LangSmith deployment: version, instance
+        feature flags, batch-ingest limits, and max SDK versions. Unauthenticated by
+        default; set FF_INFO_ENDPOINT_AUTH_REQUIRED=true to require auth.
+        """
         return self._get(
             "/api/v1/info",
             options=make_request_options(
@@ -81,7 +85,11 @@ class AsyncInfoResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> InfoListResponse:
-        """Get information about the current deployment of LangSmith."""
+        """
+        Returns information about the current LangSmith deployment: version, instance
+        feature flags, batch-ingest limits, and max SDK versions. Unauthenticated by
+        default; set FF_INFO_ENDPOINT_AUTH_REQUIRED=true to require auth.
+        """
         return await self._get(
             "/api/v1/info",
             options=make_request_options(

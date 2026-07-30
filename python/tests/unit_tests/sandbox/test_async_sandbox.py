@@ -150,10 +150,13 @@ class TestAsyncSandboxStatusFields:
         assert sb.status_message is None
 
     async def test_dataplane_op_not_gated_on_status(
-        self, client, httpx_mock: HTTPXMock
+        self, client, httpx_mock: HTTPXMock, monkeypatch
     ):
         """The client does not pre-check status: a stopped sandbox still runs;
         the platform resumes it when the dataplane request arrives."""
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
         httpx_mock.add_response(
             method="POST",
             url="https://sandbox-router.example.com/sb-123/execute",
@@ -186,9 +189,42 @@ class TestAsyncSandboxStatusFields:
         with pytest.raises(DataplaneNotConfiguredError):
             await sb.read("/tmp/test.txt")
 
+    async def test_stop_preserves_dataplane_url(self, client, httpx_mock: HTTPXMock):
+        """stop() must not clear dataplane_url: it stays valid across
+        stop/start and a request on it resumes the sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/test-sandbox/stop",
+            json={},
+        )
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "status": "ready",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+        await sb.stop()
+        assert sb.status == "stopped"
+        assert sb.dataplane_url == "https://sandbox-router.example.com/sb-123"
+
 
 class TestAsyncSandboxRun:
-    """Tests for async sandbox run command."""
+    """AsyncSandbox.run() over the HTTP fallback path.
+
+    run() uses WebSocket by default; these cases pin the request/response
+    shaping of the blocking HTTP endpoint it falls back to when the websockets
+    library is unavailable.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ws_unavailable(self, monkeypatch):
+        """Force the missing-websockets condition so run() takes the HTTP path."""
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
 
     async def test_run_command_success(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a successful command."""

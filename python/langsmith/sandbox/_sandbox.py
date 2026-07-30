@@ -11,7 +11,7 @@ import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
-    SandboxConnectionError,
+    SandboxConnectTimeoutError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
@@ -19,8 +19,14 @@ from langsmith.sandbox._models import (
     ExecutionResult,
     ServiceURL,
     Snapshot,
+    _StreamEndedBeforeStarted,
 )
 from langsmith.sandbox._tunnel import Tunnel
+from langsmith.sandbox._ws_execute import (
+    WEBSOCKETS_AVAILABLE,
+    connect_deadline,
+    open_timeout_for,
+)
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_client import AsyncSandboxClient
@@ -333,10 +339,9 @@ class Sandbox:
                 headers=headers,
             )
 
-        # Default (wait=True, no callbacks): try WS, fall back to HTTP.
-        # Catch broad exceptions so that unexpected WS failures (e.g. version
-        # incompatibilities) don't break users who don't need WS features.
-        try:
+        # Default (wait=True, no callbacks): use WebSocket when the client
+        # library is available, otherwise the blocking HTTP endpoint.
+        if WEBSOCKETS_AVAILABLE:
             return self._run_ws(
                 command,
                 timeout=timeout,
@@ -352,15 +357,14 @@ class Sandbox:
                 pty=pty,
                 headers=headers,
             )
-        except (SandboxConnectionError, ImportError, OSError, TypeError):
-            return self._run_http(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                headers=headers,
-            )
+        return self._run_http(
+            command,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            shell=shell,
+            headers=headers,
+        )
 
     def _run_ws(
         self,
@@ -380,12 +384,22 @@ class Sandbox:
         headers: RequestHeaders = None,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute via WebSocket /execute/ws."""
+        import time
+
         from langsmith.sandbox._ws_execute import run_ws_stream
+        from langsmith.uuid import uuid7
 
         dataplane_url = self._require_dataplane_url()
         api_key = self._client._api_key
 
+        # A client-supplied command_id makes execute idempotent: the daemon does
+        # get-or-create keyed on it, so if the tunnel closes before "started" we
+        # can re-issue the same id and reattach to the existing command instead
+        # of spawning a second one.
+        command_id = uuid7().hex
+
         ws_kwargs: dict[str, Any] = {
+            "command_id": command_id,
             "timeout": timeout,
             "env": env,
             "cwd": cwd,
@@ -399,20 +413,41 @@ class Sandbox:
         if merged:
             ws_kwargs["headers"] = merged
 
-        msg_stream, control = run_ws_stream(
-            dataplane_url,
-            api_key,
-            command,
-            **ws_kwargs,
-        )
-
-        handle = CommandHandle(
-            msg_stream,
-            control,
-            self,
-            on_stdout=on_stdout,
-            on_stderr=on_stderr,
-        )
+        attempt = 0
+        deadline = connect_deadline()
+        while True:
+            ws_kwargs["open_timeout"] = open_timeout_for(deadline)
+            msg_stream, control = run_ws_stream(
+                dataplane_url,
+                api_key,
+                command,
+                **ws_kwargs,
+            )
+            try:
+                handle = CommandHandle(
+                    msg_stream,
+                    control,
+                    self,
+                    on_stdout=on_stdout,
+                    on_stderr=on_stderr,
+                )
+                break
+            except (_StreamEndedBeforeStarted, SandboxConnectTimeoutError):
+                # Idempotent re-issue (same command_id): neither an early close
+                # nor a failed connect can have started a second command.
+                attempt += 1
+                if attempt > CommandHandle.MAX_AUTO_RECONNECTS:
+                    raise
+                backoff = min(
+                    CommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
+                    CommandHandle._BACKOFF_MAX,
+                )
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    backoff = min(backoff, remaining)
+                time.sleep(backoff)
 
         if not wait:
             return handle
@@ -731,8 +766,9 @@ class Sandbox:
             SandboxClientError: For other errors.
         """
         self._client.stop_sandbox(self.name, headers=headers)
+        # dataplane_url stays set: it is stable across stop/start and a request
+        # on it resumes the sandbox.
         self.status = "stopped"
-        self.dataplane_url = None
 
     def delete(self, *, headers: RequestHeaders = None) -> None:
         """Delete this sandbox.

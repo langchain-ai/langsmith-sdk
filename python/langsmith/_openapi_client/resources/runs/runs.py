@@ -100,7 +100,7 @@ class RunsResource(SyncAPIResource):
         if not run_id:
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         return self._get(
-            path_template("/v2/runs/{run_id}/url", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}/url", run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -221,7 +221,7 @@ class RunsResource(SyncAPIResource):
         """
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
-            "/v2/runs/query",
+            "/api/v2/runs/query",
             page=SyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
@@ -300,6 +300,7 @@ class RunsResource(SyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -341,7 +342,7 @@ class RunsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get(
-            path_template("/v2/runs/{run_id}", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}", run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -422,7 +423,7 @@ class AsyncRunsResource(AsyncAPIResource):
         if not run_id:
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         return await self._get(
-            path_template("/v2/runs/{run_id}/url", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}/url", run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -543,7 +544,7 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
-            "/v2/runs/query",
+            "/api/v2/runs/query",
             page=AsyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
@@ -622,6 +623,7 @@ class AsyncRunsResource(AsyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -663,7 +665,7 @@ class AsyncRunsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._get(
-            path_template("/v2/runs/{run_id}", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}", run_id=run_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,

@@ -16,6 +16,33 @@ on:
         description: "Run JS integration tests"
         default: "true"
         required: false
+      integration-environment:
+        description: "Environment to run the Python and JS integration tests and evals against"
+        type: choice
+        default: "beta"
+        required: false
+        options:
+          - beta
+          - v16-ch-only
+          - v16-dual
+          - v16-smithdb-only
+          - all
+      python-integration-exit-first:
+        description: "Stop each Python integration shard at its first failure (-x)"
+        type: choice
+        default: "true"
+        required: false
+        options:
+          - "true"
+          - "false"
+      js-integration-exit-first:
+        description: "Stop the JS integration and eval runs at their first failure (--bail)"
+        type: choice
+        default: "false"
+        required: false
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -503,9 +530,104 @@ jobs:
             echo "js_changed=false" >> $GITHUB_OUTPUT
           fi
 
-  python-integration:
-    name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}"
+  # Builds the Python and JS integration matrices so a workflow_dispatch run can
+  # target one (or all) of the LangSmith environments. Anything other than a
+  # dispatch keeps the previous behavior: beta only.
+  integration-matrix:
+    name: "Integration Matrix"
     needs: integration-changes
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        needs.integration-changes.outputs.python_changed == 'true' ||
+        needs.integration-changes.outputs.js_changed == 'true'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.run-python-integration == 'true' ||
+        github.event.inputs.run-js-integration == 'true'
+      ))
+    runs-on: ubuntu-latest
+    outputs:
+      python_matrix: ${{ steps.build-matrix.outputs.python_matrix }}
+      js_matrix: ${{ steps.build-matrix.outputs.js_matrix }}
+    steps:
+      - name: Build matrix
+        id: build-matrix
+        env:
+          SELECTED_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.integration-environment || 'beta' }}
+        run: |
+          python3 <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          # Allowlist: anything unrecognized falls back to beta.
+          ENDPOINTS = {
+              "beta": "https://beta.api.smith.langchain.com",
+              "v16-ch-only": "https://aks.smith.langchain.dev/api",
+              "v16-dual": "https://stable-dual.eks.smith.langchain.dev/api",
+              "v16-smithdb-only": "https://stable-smithdb.eks.smith.langchain.dev/api",
+          }
+          SHARD_TOTAL = 6
+          # Markers to deselect per environment: SmithDB-only backends don't serve
+          # the legacy ClickHouse-backed endpoints, and ClickHouse-only doesn't serve
+          # the v2 ones.
+          EXCLUDED_MARKERS = {
+              "v16-ch-only": ["require_v2"],
+              "v16-smithdb-only": ["require_clickhouse"],
+          }
+          # The JS suite carries the same two markers plus require_beta_dataset for
+          # the tests pinned to a share token that only the beta tenant resolves.
+          JS_EXCLUDED_MARKERS = {
+              environment: markers + ["require_beta_dataset"]
+              for environment, markers in
+              [(e, EXCLUDED_MARKERS.get(e, [])) for e in ENDPOINTS if e != "beta"]
+          }
+
+          selected = os.environ.get("SELECTED_ENVIRONMENT", "").strip()
+          if selected == "all":
+              environments = list(ENDPOINTS)
+          elif selected in ENDPOINTS:
+              environments = [selected]
+          else:
+              environments = ["beta"]
+
+          python_include = []
+          js_include = []
+          for environment in environments:
+              excluded = EXCLUDED_MARKERS.get(environment, [])
+              marker_expr = " and ".join(f"not {m}" for m in excluded)
+              # Keep the beta job names untouched so required checks still match.
+              name_suffix = "" if environment == "beta" else f" [{environment}]"
+              base = {
+                  "environment": environment,
+                  "endpoint": ENDPOINTS[environment],
+                  "name_suffix": name_suffix,
+              }
+              python_base = {**base, "pytest_addopts": f'-m "{marker_expr}"' if marker_expr else ""}
+              for shard_index in range(SHARD_TOTAL):
+                  python_include.append(
+                      {**python_base, "test-type": "integration", "shard_total": SHARD_TOTAL, "shard_index": shard_index}
+                  )
+              python_include.append({**python_base, "test-type": "evals", "shard_total": "", "shard_index": ""})
+              # Doctests don't exercise the backend, so run them once against beta.
+              if environment == "beta":
+                  python_include.append({**python_base, "test-type": "doctest", "shard_total": "", "shard_index": ""})
+              # Jest has no marker expression, so the exclusions travel as an env
+              # var that src/tests/utils/markers.ts reads. No shards on the JS side.
+              js_include.append(
+                  {**base, "exclude_markers": ",".join(JS_EXCLUDED_MARKERS.get(environment, []))}
+              )
+
+          print("python_matrix=" + json.dumps({"include": python_include}))
+          print("js_matrix=" + json.dumps({"include": js_include}))
+          EOF
+
+  python-integration:
+    name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}${{ matrix.name_suffix }}"
+    needs: [integration-changes, integration-matrix]
+    # The matrix job is shared with JS, so it no longer skips on a JS-only
+    # change: gate the Python shards on the Python conditions here instead.
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
@@ -516,32 +638,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - test-type: integration
-            shard_total: 6
-            shard_index: 0
-          - test-type: integration
-            shard_total: 6
-            shard_index: 1
-          - test-type: integration
-            shard_total: 6
-            shard_index: 2
-          - test-type: integration
-            shard_total: 6
-            shard_index: 3
-          - test-type: integration
-            shard_total: 6
-            shard_index: 4
-          - test-type: integration
-            shard_total: 6
-            shard_index: 5
-          - test-type: doctest
-            shard_total: ""
-            shard_index: ""
-          - test-type: evals
-            shard_total: ""
-            shard_index: ""
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.python_matrix) }}
     defaults:
       run:
         working-directory: python
@@ -551,7 +648,16 @@ jobs:
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v16-ch-only' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb-only' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
+          pytest-addopts: ${{ matrix.pytest_addopts }}
+          # Push/PR runs keep -x; a dispatch can clear it to see every failure.
+          exit-first: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.python-integration-exit-first == 'true' }}
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -561,8 +667,8 @@ jobs:
           shard-index: ${{ matrix.shard_index }}
 
   js-integration:
-    name: "JS Integration Test"
-    needs: integration-changes
+    name: "JS Integration Test${{ matrix.name_suffix }}"
+    needs: [integration-changes, integration-matrix]
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
@@ -571,6 +677,9 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.js_matrix) }}
     defaults:
       run:
         working-directory: js
@@ -592,14 +701,23 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 24.x
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          # Push/PR runs report every failure; a dispatch can ask for --bail.
+          exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v16-ch-only' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb-only' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
+          exclude-markers: ${{ matrix.exclude_markers }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   js-vitest-eval:
-    name: "JS Vitest Runner Test"
-    needs: integration-changes
+    name: "JS Vitest Runner Test${{ matrix.name_suffix }}"
+    needs: [integration-changes, integration-matrix]
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && (
@@ -608,6 +726,9 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-matrix.outputs.js_matrix) }}
     defaults:
       run:
         working-directory: js
@@ -629,7 +750,14 @@ jobs:
         uses: ./.github/actions/js-vitest-eval-test
         with:
           node-version: 24.x
-          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          exit-first: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.js-integration-exit-first == 'true' }}
+          langsmith-endpoint: ${{ matrix.endpoint }}
+          langsmith-api-key: >-
+            ${{ (matrix.environment == 'v16-ch-only' && secrets.LANGSMITH_API_KEY_AKS_V15)
+             || (matrix.environment == 'v16-dual' && secrets.LANGSMITH_API_KEY_STABLE_DUAL)
+             || (matrix.environment == 'v16-smithdb-only' && secrets.LANGSMITH_API_KEY_STABLE_SMITHDB)
+             || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
+             || '' }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   bun-test:
@@ -682,6 +810,7 @@ jobs:
       - python-deepagent-compat
       # Integration
       - integration-changes
+      - integration-matrix
       - python-integration
       - js-integration
       - js-vitest-eval

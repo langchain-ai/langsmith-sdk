@@ -13,14 +13,14 @@ export class Snapshots extends APIResource {
    * Create a snapshot from a Docker image (async build).
    */
   create(body: SnapshotCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.post('/v2/sandboxes/snapshots', { body, ...options });
+    return this._client.post('/api/v2/sandboxes/snapshots', { body, ...options });
   }
 
   /**
    * Get a sandbox snapshot by ID.
    */
   retrieve(snapshotID: string, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.get(path`/v2/sandboxes/snapshots/${snapshotID}`, options);
+    return this._client.get(path`/api/v2/sandboxes/snapshots/${snapshotID}`, options);
   }
 
   /**
@@ -31,14 +31,14 @@ export class Snapshots extends APIResource {
     query: SnapshotListParams | null | undefined = {},
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SnapshotListResponse> {
-    return this._client.get('/v2/sandboxes/snapshots', { query, ...options });
+    return this._client.get('/api/v2/sandboxes/snapshots', { query, ...options });
   }
 
   /**
    * Delete a snapshot by ID. The underlying storage is reclaimed asynchronously.
    */
   delete(snapshotID: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/sandboxes/snapshots/${snapshotID}`, {
+    return this._client.delete(path`/api/v2/sandboxes/snapshots/${snapshotID}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
@@ -52,6 +52,12 @@ export interface SnapshotCreateParams {
 
   name: string;
 
+  /**
+   * Labels seed the snapshot's labels, overriding any label of the same key derived
+   * from the Docker image.
+   */
+  labels?: { [key: string]: string };
+
   registry_id?: string;
 }
 
@@ -60,6 +66,12 @@ export interface SnapshotListParams {
    * Filter by creator identity. Only 'me' is supported.
    */
   created_by?: string;
+
+  /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
 
   /**
    * Maximum number of results

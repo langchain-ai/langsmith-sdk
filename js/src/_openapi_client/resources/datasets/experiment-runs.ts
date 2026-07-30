@@ -22,7 +22,7 @@ export class ExperimentRuns extends APIResource {
     options?: RequestOptions,
   ): PagePromise<ExperimentRunQueryResponsesItemsCursorPostPagination, ExperimentRunQueryResponse> {
     return this._client.getAPIList(
-      path`/v2/datasets/${datasetID}/experiment-runs`,
+      path`/api/v2/datasets/${datasetID}/experiment-runs`,
       ItemsCursorPostPagination<ExperimentRunQueryResponse>,
       { body, method: 'post', ...options },
     );

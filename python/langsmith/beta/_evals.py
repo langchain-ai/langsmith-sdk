@@ -13,6 +13,7 @@ from typing import Optional, TypeVar
 import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import Client
 
@@ -135,9 +136,7 @@ def convert_runs_to_test(
     if not load_child_runs:
         runs_to_copy = runs
     else:
-        runs_to_copy = [
-            client.read_run(r.id, load_child_runs=load_child_runs) for r in runs
-        ]
+        runs_to_copy = [client._load_child_runs(r) for r in runs]
 
     test_project_name = test_project_name or f"prod-baseline-{uuid.uuid4().hex[:6]}"
 
@@ -175,6 +174,12 @@ def convert_runs_to_test(
 
 
 def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Run]:
+    # v1 `/runs/query` returns 501 when ClickHouse query support is disabled;
+    # only then fall back to v2. Dual backends keep using the legacy path.
+    backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
+    if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+        return _v2_migration_utils._load_nested_traces_v2(project_name, client)
+
     runs = client.list_runs(project_name=project_name)
     treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
         collections.defaultdict(list)

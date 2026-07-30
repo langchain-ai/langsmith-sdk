@@ -98,7 +98,7 @@ class ExperimentRunsResource(SyncAPIResource):
         if not dataset_id:
             raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
         return self._get_api_list(
-            path_template("/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
+            path_template("/api/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
             page=SyncItemsCursorPostPagination[ExperimentRunQueryResponse],
             body=maybe_transform(
                 {
@@ -194,7 +194,7 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
         if not dataset_id:
             raise ValueError(f"Expected a non-empty value for `dataset_id` but received {dataset_id!r}")
         return self._get_api_list(
-            path_template("/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
+            path_template("/api/v2/datasets/{dataset_id}/experiment-runs", dataset_id=dataset_id),
             page=AsyncItemsCursorPostPagination[ExperimentRunQueryResponse],
             body=maybe_transform(
                 {

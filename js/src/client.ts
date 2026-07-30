@@ -80,12 +80,12 @@ import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/onli
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
 import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
 import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
+import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { _MIN_BACKEND_VERSION } from "./utils/constants.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -549,6 +549,58 @@ type RecordStringAny = Record<string, any>;
 
 export type FeedbackSourceType = "model" | "api" | "app";
 
+export type CreateFeedbackOptions = {
+  /** The metric name, tag, or aspect to provide feedback on. */
+  key: string;
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object;
+  comment?: string;
+  sourceInfo?: object;
+  feedbackSourceType?: FeedbackSourceType;
+  feedbackConfig?: FeedbackConfig;
+  sourceRunId?: string;
+  feedbackId?: string;
+  comparativeExperimentId?: string;
+  /**
+   * The run's start time, ISO string or epoch ms. Better performance if provided.
+   */
+  startTime?: number | string;
+  /** If false, create feedback without extending the trace's retention tier. */
+  extendTraceRetention?: boolean;
+};
+
+/** @deprecated Pass all params within an object and populate sessionId. */
+export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
+  /** @deprecated This option is no longer used. */
+  eager?: boolean;
+  /**
+   * The session (project) ID of the run. Required for run-level feedback;
+   * omitting it is deprecated. See
+   * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+   */
+  sessionId?: string;
+  /** The project (or experiment) to provide feedback on, for session-level feedback. */
+  projectId?: string;
+};
+
+export type CreateFeedbackParams = CreateFeedbackOptions &
+  (
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** The session (project) ID of the run. */
+        sessionId: string;
+        projectId?: never;
+      }
+    | {
+        runId?: null;
+        /** The project (or experiment) to provide feedback on. */
+        projectId: string;
+        sessionId?: never;
+      }
+  );
+
 export type CreateExampleOptions = {
   /** The ID of the dataset to create the example in. */
   datasetId?: string;
@@ -719,11 +771,15 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
 }
 
 export function _checkBackendVersion(
-  version: string,
-  minVersion: string = _MIN_BACKEND_VERSION,
+  backendVersion: string,
+  minVersion: string,
 ): void {
+  if (!backendVersion) {
+    // /info was unreachable (or skipped): nothing to compare against.
+    return;
+  }
   const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
-  const [maj, min, pat] = parse(version);
+  const [maj, min, pat] = parse(backendVersion);
   const [rMaj, rMin, rPat] = parse(minVersion);
   if (
     isNaN(maj) ||
@@ -734,7 +790,7 @@ export function _checkBackendVersion(
     isNaN(rPat)
   ) {
     console.warn(
-      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(version)} for compatibility check.`,
+      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(backendVersion)} for compatibility check.`,
     );
     return;
   }
@@ -744,7 +800,10 @@ export function _checkBackendVersion(
     (maj === rMaj && min === rMin && pat < rPat)
   ) {
     console.warn(
-      `[LANGSMITH]: Backend version ${JSON.stringify(version)} is older than the minimum version required by this SDK (${JSON.stringify(minVersion)}). Some features may not work as expected.`,
+      `[LANGSMITH]: Backend version ${JSON.stringify(backendVersion)} is older than ` +
+        `the minimum version required by this SDK (${JSON.stringify(minVersion)}). ` +
+        "Some features may not work as expected. See " +
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
     );
   }
 }
@@ -873,7 +932,6 @@ export class AutoBatchQueue {
   }
 }
 
-
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
@@ -935,7 +993,7 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
-  private _stainlessVersionChecked = false;
+  private _stainlessVersionsChecked = new Set<string>();
 
   private manualFlushMode = false;
 
@@ -1445,7 +1503,11 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _getOpenAPIBaseUrl(): string {
-    return this.apiUrl.endsWith("/v1") ? this.apiUrl.slice(0, -3) : this.apiUrl;
+    const url = this.apiUrl.replace(/\/$/, "");
+    for (const suffix of ["/api/v1", "/api"]) {
+      if (url.endsWith(suffix)) return url.slice(0, -suffix.length);
+    }
+    return url;
   }
 
   private _newOpenAPIClient(): OpenAPILangsmith {
@@ -1480,41 +1542,49 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public get evaluators(): Evaluators {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.onlineEvaluators;
   }
 
   public get runs(): OpenAPIRuns {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.runs;
   }
 
   /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
   public get sandboxes(): Sandboxes {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.sandboxes;
   }
 
   /** Access the v2 datasets resource (experimentRuns, etc.). */
   public get datasets(): Datasets {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.datasets;
+  }
+
+  /** Access the annotation queues resource (runs, items). */
+  public get annotationQueues(): AnnotationQueues {
+    // The items endpoints landed in backend 0.16.14; the rest are older.
+    this._checkStainlessVersion("0.16.14");
+    return this.openAPIClient.annotationQueues;
   }
 
   /** Access the threads resource (query, stats, listTraces). */
   public get threads(): Threads {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.threads;
   }
 
   /** Access the traces resource (query, listRuns). */
   public get traces(): Traces {
-    this._checkStainlessVersion();
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.traces;
   }
 
   /** Access the public shared-run resource. */
   public get public(): Public {
+    this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.public;
   }
 
@@ -2105,14 +2175,12 @@ export class Client implements LangSmithTracingClientInterface {
     return json;
   }
 
-  private _checkStainlessVersion(): void {
-    if (this._stainlessVersionChecked) return;
-    this._stainlessVersionChecked = true;
+  private _checkStainlessVersion(minVersion: string): void {
+    if (this._stainlessVersionsChecked.has(minVersion)) return;
+    this._stainlessVersionsChecked.add(minVersion);
     this._ensureServerInfo()
       .then((serverInfo) => {
-        if (serverInfo?.version) {
-          _checkBackendVersion(serverInfo.version);
-        }
+        _checkBackendVersion(serverInfo?.version, minVersion);
       })
       .catch(() => {
         // _ensureServerInfo handles and logs its own errors
@@ -2147,6 +2215,26 @@ export class Client implements LangSmithTracingClientInterface {
   public async _supportsSDBQuery(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
     return serverInfo.instance_flags?.sdb_query_enabled === true;
+  }
+
+  /**
+   * Throw on SmithDB-only deployments, warn elsewhere. Call only when run-level
+   * feedback has no sessionId.
+   */
+  private async _checkFeedbackSessionId(): Promise<void> {
+    const docs =
+      "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
+    const serverInfo = await this._ensureServerInfo();
+    if (serverInfo.instance_flags?.ch_query_enabled === false) {
+      throw new Error(
+        `sessionId must be provided when creating feedback for a run: this ` +
+          `deployment cannot locate the run without it. See ${docs}`,
+      );
+    }
+    warnOnce(
+      `Creating feedback for a run without sessionId is deprecated and will ` +
+        `stop working in a future release. See ${docs}`,
+    );
   }
 
   protected async _getSettings() {
@@ -5092,10 +5180,21 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  public async createFeedback(params: CreateFeedbackParams): Promise<Feedback>;
+  /** @deprecated Pass all params within an object and populate sessionId. */
   public async createFeedback(
     runId: string | null,
     key: string,
-    {
+    options: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback>;
+  public async createFeedback(
+    runIdOrParams: string | null | CreateFeedbackParams,
+    keyArg?: string,
+    optionsArg?: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback> {
+    const {
+      runId = null,
+      key,
       score,
       value,
       correction,
@@ -5110,43 +5209,17 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
-    }: {
-      score?: ScoreType;
-      value?: ValueType;
-      correction?: object;
-      comment?: string;
-      sourceInfo?: object;
-      feedbackSourceType?: FeedbackSourceType;
-      feedbackConfig?: FeedbackConfig;
-      sourceRunId?: string;
-      feedbackId?: string;
-      eager?: boolean;
-      projectId?: string;
-      comparativeExperimentId?: string;
-      /** The session (project) ID of the run this feedback is for. */
-      sessionId?: string;
-      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
-      startTime?: number | string;
-      /** If false, create feedback without extending the trace's retention tier. */
-      extendTraceRetention?: boolean;
-    },
-  ): Promise<Feedback> {
+    } = typeof runIdOrParams === "object" && runIdOrParams !== null
+      ? runIdOrParams
+      : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && !sessionId) {
-      warnOnce(
-        "sessionId will become a required argument to createFeedback() in a future " +
-          "release. Please provide it to avoid errors. " +
-          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create for the migration guide.",
-        {
-          type: "DeprecationWarning",
-          code: "LANGSMITH_DEPRECATED_CREATE_FEEDBACK_SESSION_ID",
-        },
-      );
+    if (runId && sessionId === undefined) {
+      await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",

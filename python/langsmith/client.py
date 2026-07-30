@@ -62,7 +62,7 @@ from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
 )
-from typing_extensions import TypeGuard, overload
+from typing_extensions import TypeGuard, deprecated, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
@@ -71,7 +71,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
-from langsmith._internal import _orjson, _profiles
+from langsmith._internal import _orjson, _profiles, _v2_migration_utils
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -152,6 +152,15 @@ def _reset_tracing_drop_log() -> None:
     with _tracing_drops_lock:
         _tracing_drops_count = 0
         _tracing_drops_last_log_time = 0.0
+
+
+def _get_openapi_base_url(api_url: str) -> str:
+    """Convert a handwritten client API URL to a generated OpenAPI base URL."""
+    api_url = api_url.rstrip("/")
+    for suffix in ("/api/v1", "/api"):
+        if api_url.endswith(suffix):
+            return api_url[: -len(suffix)]
+    return api_url
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -268,6 +277,9 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+    from langsmith._openapi_client.resources.annotation_queues.annotation_queues import (
+        AsyncAnnotationQueuesResource,
+    )
     from langsmith._openapi_client.resources.datasets.datasets import (
         AsyncDatasetsResource,
     )
@@ -283,6 +295,7 @@ if TYPE_CHECKING:
     )
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
+    from langsmith._openapi_client.types.run import Run as V2Run
 
     # OTEL imports for type hints
     try:
@@ -677,6 +690,25 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
         # Truncate at 4 decimal places
         return round(score, 4)
     return score
+
+
+def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
+    """Raise on SmithDB-only deployments, warn elsewhere.
+
+    Call only when run-level feedback has no ``session_id``.
+    """
+    docs = "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create"
+    if (info.instance_flags or {}).get("ch_query_enabled") is False:
+        raise ValueError(
+            "session_id must be provided when creating feedback for a run:"
+            f" this deployment cannot locate the run without it. See {docs}"
+        )
+    warnings.warn(
+        "Creating feedback for a run without session_id is deprecated and will"
+        f" stop working in a future release. See {docs}",
+        ls_utils.LangSmithWarning,
+        stacklevel=3,
+    )
 
 
 def _get_tracing_sampling_rate(
@@ -1485,7 +1517,7 @@ class Client:
             self._langsmith_api = LangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=self.api_url,
+                base_url=_get_openapi_base_url(self.api_url),
                 timeout=_httpx.Timeout(
                     connect=self._timeout[0],
                     read=self._timeout[1],
@@ -1501,7 +1533,7 @@ class Client:
             self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=self.api_url,
+                base_url=_get_openapi_base_url(self.api_url),
                 timeout=_httpx.Timeout(
                     connect=self._timeout[0],
                     read=self._timeout[1],
@@ -1515,43 +1547,50 @@ class Client:
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().runs
 
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().sandboxes
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().datasets
+
+    @property
+    def annotation_queues(self) -> AsyncAnnotationQueuesResource:
+        """Access the annotation queues resource (runs, items)."""
+        # The items endpoints landed in backend 0.16.14; the rest are older.
+        _check_backend_version(self.info.version, min_version="0.16.14")
+        return self._get_langsmith_api().annotation_queues
 
     @property
     def threads(self) -> AsyncThreadsResource:
         """Access the threads resource (query, stats, list_traces)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().threads
 
     @property
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().traces
 
     @property
     def public(self) -> AsyncPublicResource:
         """Access the public shared-run resource."""
-        _check_backend_version(self.info.version)
+        _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().public
 
     def _dump_failed_trace(
@@ -3987,8 +4026,19 @@ class Client:
             Run: The run with loaded child runs.
 
         Raises:
-            LangSmithError: If a child run has no parent.
+            LangSmithError: If a child run has no parent, or on SmithDB-only
+                backends (no ClickHouse query support), where loading child
+                runs isn't supported.
         """
+        backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+        if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+            raise ls_utils.LangSmithError(
+                "Loading child runs is not supported on SmithDB-only"
+                " backends (no ClickHouse query support). See"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                "#load-a-run’s-child-runs"
+            )
+
         child_runs = self.list_runs(
             is_root=False, session_id=run.session_id, trace_id=run.trace_id
         )
@@ -4026,7 +4076,12 @@ class Client:
         "#runs-retrieve for the migration guide."
     )
     def read_run(
-        self, run_id: ID_TYPE, load_child_runs: bool = False
+        self,
+        run_id: ID_TYPE,
+        load_child_runs: bool = False,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -4039,7 +4094,16 @@ class Client:
             run_id (Union[UUID, str]):
                 The ID of the run to read.
             load_child_runs (bool, default=False):
-                Whether to load nested child runs.
+                Whether to load nested child runs. **Deprecated**: this will
+                be removed in a future release, and raises on SmithDB-only
+                backends (no ClickHouse query support), where child runs are
+                never loaded.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required on
+                SmithDB-only backends (no ClickHouse query support).
+            start_time (Optional[datetime]):
+                The run's start time. Required on SmithDB-only backends (no
+                ClickHouse query support).
 
         Returns:
             Run: The run read from the LangSmith API.
@@ -4055,19 +4119,43 @@ class Client:
             stored_run = client.read_run(run_id)
             ```
         """
-        response = self.request_with_retries(
-            "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
-        )
-        attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), attachments_key="s3_urls", api_url=self.api_url
-        )
-        run = ls_schemas.Run(
-            attachments=attachments, **response.json(), _host_url=self._host_url
-        )
+        run_id_ = _as_uuid(run_id, "run_id")
+        backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+        if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+            response = self.request_with_retries("GET", f"/runs/{run_id_}")
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                response.json(), attachments_key="s3_urls", api_url=self.api_url
+            )
+            run = ls_schemas.Run(
+                attachments=attachments, **response.json(), _host_url=self._host_url
+            )
+            if load_child_runs:
+                run = self._load_child_runs(run)
+            return run
 
+        if project_id is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires project_id on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        if start_time is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires start_time on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
         if load_child_runs:
-            run = self._load_child_runs(run)
-        return run
+            raise ls_utils.LangSmithError(
+                "load_child_runs is not supported on SmithDB-only"
+                " backends (no ClickHouse query support). See"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                "#load-a-run’s-child-runs"
+            )
+        return _v2_migration_utils._read_run_v2(
+            run_id_,
+            self,
+            project_id=_as_uuid(project_id, "project_id"),
+            start_time=start_time,
+        )
 
     @_deprecated(
         "read_thread() is deprecated and will be removed after Jan 31, 2027. "
@@ -5172,21 +5260,53 @@ class Client:
 
         import pandas as pd  # type: ignore
 
-        runs = self.list_runs(
-            project_id=project_id,
-            project_name=project_name,
-            is_root=True,
-            select=[
-                "id",
-                "reference_example_id",
-                "inputs",
-                "outputs",
-                "error",
-                "feedback_stats",
-                "start_time",
-                "end_time",
-            ],
-        )
+        backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+        if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+            runs: Iterable[ls_schemas.Run] = self.list_runs(
+                project_id=project_id,
+                project_name=project_name,
+                is_root=True,
+                select=[
+                    "id",
+                    "reference_example_id",
+                    "inputs",
+                    "outputs",
+                    "error",
+                    "feedback_stats",
+                    "start_time",
+                    "end_time",
+                ],
+            )
+        else:
+            if project_id is None and project_name is not None:
+                project_id = self.read_project(project_name=project_name).id
+            if project_id is None:
+                raise ValueError("Either project_id or project_name must be provided.")
+            pager = self._get_langsmith_api_sync().runs.query(
+                project_ids=[str(project_id)],
+                is_root=True,
+                selects=[
+                    "ID",
+                    # NAME and RUN_TYPE are required by `schemas.Run` even though
+                    # they don't reach the returned dataframe.
+                    "NAME",
+                    "RUN_TYPE",
+                    "REFERENCE_EXAMPLE_ID",
+                    "INPUTS",
+                    "OUTPUTS",
+                    "ERROR",
+                    "FEEDBACK_STATS",
+                    "START_TIME",
+                    "END_TIME",
+                ],
+                min_start_time=datetime.datetime(
+                    2000, 1, 1, tzinfo=datetime.timezone.utc
+                ),
+            )
+            # Convert to `schemas.Run` so both branches yield the same datamodel:
+            # the v2 model types `reference_example_id` as `str`, which would not
+            # match the `UUID` example ids when joining the two dataframes below.
+            runs = (_v2_migration_utils._v2_run_to_schema(r) for r in pager)
         results: list[dict] = []
         example_ids = []
 
@@ -5207,11 +5327,11 @@ class Client:
             for r in runs:
                 row = {
                     "example_id": r.reference_example_id,
-                    **{f"input.{k}": v for k, v in r.inputs.items()},
+                    **{f"input.{k}": v for k, v in (r.inputs or {}).items()},
                     **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
                     "execution_time": (
                         (r.end_time - r.start_time).total_seconds()
-                        if r.end_time
+                        if r.end_time and r.start_time
                         else None
                     ),
                     "error": r.error,
@@ -5225,10 +5345,9 @@ class Client:
                             if not (k == "note" and v.get("comments"))
                         }
                     )
-                    if r.feedback_stats.get("note") and (
-                        comments := r.feedback_stats["note"].get("comments")
-                    ):
-                        row["notes"] = comments
+                    if note_stats := r.feedback_stats.get("note"):
+                        if comments := note_stats.get("comments"):
+                            row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:
@@ -7492,16 +7611,25 @@ class Client:
 
     def _resolve_run_id(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         load_child_runs: bool,
-    ) -> ls_schemas.Run:
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+    ) -> Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]:
         """Resolve the run ID.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
+            run (Union[V2Run, Run, RunBase, str, UUID]):
                 The run to resolve.
             load_child_runs (bool):
                 Whether to load child runs.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Required to
+                look the run up on SmithDB-only backends.
+            start_time (Optional[datetime]):
+                The run's start time. Required to look the run up on
+                SmithDB-only backends.
 
         Returns:
             Run: The resolved run.
@@ -7510,22 +7638,49 @@ class Client:
             TypeError: If the run type is invalid.
         """
         if isinstance(run, (str, uuid.UUID)):
-            run_ = self.read_run(run, load_child_runs=load_child_runs)
+            backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
+            if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+                if project_id is None:
+                    raise ls_utils.LangSmithError(
+                        "project_id is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
+                if start_time is None:
+                    raise ls_utils.LangSmithError(
+                        "start_time is required to resolve a run from an ID"
+                        " when ClickHouse query support is disabled"
+                        " (SmithDB-only backend)."
+                    )
+            elif project_id is None:
+                warnings.warn(
+                    "Resolving a run from an ID without passing project_id is"
+                    " deprecated and will raise an error in a future release."
+                    " Pass project_id explicitly.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+            run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
+                run,
+                load_child_runs=load_child_runs,
+                project_id=project_id,
+                start_time=start_time,
+            )
         else:
-            run_ = cast(ls_schemas.Run, run)
+            run_ = run
         return run_
 
     def _resolve_example_id(
         self,
         example: Union[ls_schemas.Example, str, uuid.UUID, dict, None],
-        run: ls_schemas.Run,
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase],
     ) -> Optional[ls_schemas.Example]:
         """Resolve the example ID.
 
         Args:
             example (Optional[Union[Example, str, UUID, dict]]):
                 The example to resolve.
-            run (Run):
+            run (Union[V2Run, Run, RunBase]):
                 The run associated with the example.
 
         Returns:
@@ -7593,9 +7748,11 @@ class Client:
     )
     def evaluate_run(
         self,
-        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7610,10 +7767,19 @@ class Client:
             Will be removed after Jan 31, 2027.
 
         Args:
-            run (Union[Run, RunBase, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7622,20 +7788,27 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             Feedback: The feedback object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = evaluator.evaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         results = self._log_evaluation_feedback(
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         # TODO: Return all results
         return results[0]
@@ -7645,7 +7818,7 @@ class Client:
         evaluator_response: Union[
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
-        run: Optional[ls_schemas.Run] = None,
+        run: Optional[Union[V2Run, ls_schemas.Run, ls_schemas.RunBase]] = None,
         source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
@@ -7658,6 +7831,13 @@ class Client:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
                 self.create_feedback(**kwargs)
+
+        # `session_id` on the legacy `schemas.Run`; `project_id` on the v2 `Run`.
+        run_session_id = (
+            (getattr(run, "session_id", None) or getattr(run, "project_id", None))
+            if run is not None
+            else None
+        )
 
         for res in results:
             source_info_ = source_info or {}
@@ -7685,8 +7865,8 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                trace_id=run.trace_id if run else None,
-                session_id=run.session_id if run and run.session_id else project_id,
+                trace_id=getattr(run, "trace_id", None) if run else None,
+                session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
             )
@@ -7699,9 +7879,11 @@ class Client:
     )
     async def aevaluate_run(
         self,
-        run: Union[ls_schemas.Run, str, uuid.UUID],
+        run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
+        project_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
@@ -7716,10 +7898,19 @@ class Client:
             Will be removed after Jan 31, 2027.
 
         Args:
-            run (Union[Run, str, UUID]):
-                The run to evaluate.
+            run (Union[V2Run, Run, RunBase, str, UUID]):
+                The run to evaluate. Passing `schemas.Run` (the legacy
+                read-side datamodel) is deprecated; pass the v2 `Run`
+                datamodel (from `client.runs.retrieve`) instead.
             evaluator (RunEvaluator):
                 The evaluator to use.
+            project_id (Optional[Union[UUID, str]]):
+                The ID of the project (session) that owns the run. Omitting it is deprecated and will
+                raise in a future release.
+            start_time (Optional[datetime]):
+                The run's start time, passed to `runs.retrieve` when resolving
+                `run` from an ID. Required when resolving a run from an ID on
+                SmithDB-only backends (no ClickHouse query support).
             source_info (Optional[Dict[str, Any]]):
                 Additional information about the source of the evaluation to log
                 as feedback metadata.
@@ -7728,14 +7919,20 @@ class Client:
                 If not provided, the run's reference example will be used.
             load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
+                **Deprecated**: see `read_run`.
 
         Returns:
             EvaluationResult: The evaluation result object created by the evaluation.
         """
-        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        run_ = self._resolve_run_id(
+            run,
+            load_child_runs=load_child_runs,
+            project_id=project_id,
+            start_time=start_time,
+        )
         reference_example_ = self._resolve_example_id(reference_example, run_)
         evaluator_response = await evaluator.aevaluate_run(
-            run_,
+            cast(ls_schemas.Run, run_),
             example=reference_example_,
         )
         # TODO: Return all results and use async API
@@ -7743,6 +7940,7 @@ class Client:
             evaluator_response,
             run_,
             source_info=source_info,
+            project_id=project_id,
         )
         return results[0]
 
@@ -7830,11 +8028,11 @@ class Client:
             extra (Optional[Dict]):
                 Metadata for the feedback.
             session_id (Optional[Union[UUID, str]]):
-                The session (project) ID of the run this feedback is for. Used to
-                optimize feedback ingestion by avoiding server-side lookups.
+                The session (project) ID of the run. Required for run-level
+                feedback; omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
             start_time (Optional[datetime]):
-                The start time of the run this feedback is for. Used to optimize
-                feedback ingestion by avoiding server-side lookups.
+                The start time of the run. Better performance if provided.
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
@@ -7896,12 +8094,7 @@ class Client:
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
         if run_id is not None and session_id is None:
-            warnings.warn(
-                "session_id will become a required argument to create_feedback() in "
-                "a future release. Please provide it to avoid errors.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            _check_feedback_session_id(self.info)
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -8386,6 +8579,21 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    # Composite feedback formula API (deprecated)
+    #
+    # These operations are no longer supported. The signatures are retained so
+    # existing imports and type checks keep working, but every method now raises
+    # NotImplementedError. Add composite feedback scores via the LangSmith UI.
+
+    _FEEDBACK_FORMULA_DEPRECATION_MSG = (
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
+
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def list_feedback_formulas(
         self,
         *,
@@ -8396,55 +8604,33 @@ class Client:
     ) -> Iterator[ls_schemas.FeedbackFormula]:
         """List feedback formulas.
 
-        Args:
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to filter by.
-            session_id (Optional[Union[UUID, str]]):
-                The ID of the session to filter by.
-            limit (Optional[int]):
-                The maximum number of feedback formulas to return.
-            offset (int):
-                The starting offset for pagination.
-
-        Yields:
-            The feedback formulas.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        params: dict[str, Any] = {
-            "dataset_id": (
-                _as_uuid(dataset_id, "dataset_id") if dataset_id is not None else None
-            ),
-            "session_id": (
-                _as_uuid(session_id, "session_id") if session_id is not None else None
-            ),
-            "limit": min(limit, 100) if limit is not None else 100,
-            "offset": offset,
-        }
-        for i, feedback_formula in enumerate(
-            self._get_paginated_list("/feedback/formulas", params=params)
-        ):
-            yield ls_schemas.FeedbackFormula(**feedback_formula)
-            if limit is not None and i + 1 >= limit:
-                break
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def get_feedback_formula_by_id(
         self, feedback_formula_id: ID_TYPE
     ) -> ls_schemas.FeedbackFormula:
         """Get a feedback formula by ID.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to retrieve.
-
-        Returns:
-            The requested feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        response = self.request_with_retries(
-            "GET",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def create_feedback_formula(
         self,
         *,
@@ -8458,48 +8644,17 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Create a feedback formula.
 
-        Args:
-            feedback_key (str):
-                The feedback key for the formula.
-            aggregation_type (Literal["sum", "avg"]):
-                The aggregation type to use when combining parts.
-            formula_parts (Sequence[FeedbackFormulaWeightedVariable | dict]):
-                The weighted feedback keys included in the formula.
-            dataset_id (Optional[Union[UUID, str]]):
-                The dataset to scope the formula to.
-            session_id (Optional[Union[UUID, str]]):
-                The session to scope the formula to.
-
-        Returns:
-            The created feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        typed_parts: list[ls_schemas.FeedbackFormulaWeightedVariable] = [
-            part
-            if isinstance(part, ls_schemas.FeedbackFormulaWeightedVariable)
-            else ls_schemas.FeedbackFormulaWeightedVariable(**part)
-            for part in formula_parts
-        ]
-        payload = ls_schemas.FeedbackFormulaCreate(
-            feedback_key=feedback_key,
-            aggregation_type=aggregation_type,
-            formula_parts=typed_parts,
-            dataset_id=(
-                _as_uuid(dataset_id, "dataset_id") if dataset_id is not None else None
-            ),
-            session_id=(
-                _as_uuid(session_id, "session_id") if session_id is not None else None
-            ),
-        )
-        response = self.request_with_retries(
-            "POST",
-            "/feedback/formulas",
-            request_kwargs={
-                "data": _dumps_json(payload.model_dump(exclude_none=True)),
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def update_feedback_formula(
         self,
         feedback_formula_id: ID_TYPE,
@@ -8512,52 +8667,26 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Update a feedback formula.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to update.
-            feedback_key (str):
-                The feedback key for the formula.
-            aggregation_type (Literal["sum", "avg"]):
-                The aggregation type to use when combining parts.
-            formula_parts (Sequence[FeedbackFormulaWeightedVariable | dict]):
-                The weighted feedback keys included in the formula.
-
-        Returns:
-            The updated feedback formula.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        typed_parts: list[ls_schemas.FeedbackFormulaWeightedVariable] = [
-            part
-            if isinstance(part, ls_schemas.FeedbackFormulaWeightedVariable)
-            else ls_schemas.FeedbackFormulaWeightedVariable(**part)
-            for part in formula_parts
-        ]
-        payload = ls_schemas.FeedbackFormulaUpdate(
-            feedback_key=feedback_key,
-            aggregation_type=aggregation_type,
-            formula_parts=typed_parts,
-        )
-        response = self.request_with_retries(
-            "PUT",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-            request_kwargs={
-                "data": _dumps_json(payload.model_dump(exclude_none=True)),
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.FeedbackFormula(**response.json())
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
+    @deprecated(
+        "Composite feedback formulas are no longer supported in the SDK. "
+        "Add composite feedback scores via the LangSmith UI instead."
+    )
     def delete_feedback_formula(self, feedback_formula_id: ID_TYPE) -> None:
         """Delete a feedback formula by ID.
 
-        Args:
-            feedback_formula_id (Union[UUID, str]):
-                The ID of the feedback formula to delete.
+        .. deprecated::
+            Composite feedback formulas are no longer supported in the SDK.
+            Add composite feedback scores via the LangSmith UI instead.
+            This method now raises ``NotImplementedError``.
         """
-        response = self.request_with_retries(
-            "DELETE",
-            f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-        )
-        ls_utils.raise_for_status_with_text(response)
+        raise NotImplementedError(self._FEEDBACK_FORMULA_DEPRECATION_MSG)
 
     # Feedback Config API
 

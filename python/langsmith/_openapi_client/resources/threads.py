@@ -128,7 +128,7 @@ class ThreadsResource(SyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
-            path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/traces", thread_id=thread_id),
             page=SyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -202,7 +202,7 @@ class ThreadsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/threads/query",
+            "/api/v2/threads/query",
             page=SyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
@@ -285,7 +285,7 @@ class ThreadsResource(SyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get(
-            path_template("/v2/threads/{thread_id}/stats", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/stats", thread_id=thread_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -399,7 +399,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
-            path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/traces", thread_id=thread_id),
             page=AsyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -473,7 +473,7 @@ class AsyncThreadsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/threads/query",
+            "/api/v2/threads/query",
             page=AsyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
@@ -556,7 +556,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return await self._get(
-            path_template("/v2/threads/{thread_id}/stats", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/stats", thread_id=thread_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,

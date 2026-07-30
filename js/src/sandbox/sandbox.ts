@@ -11,10 +11,22 @@ import type {
   Snapshot,
   StartSandboxOptions,
 } from "./types.js";
-import { LangSmithDataplaneNotConfiguredError } from "./errors.js";
+import { uuid7 } from "../uuid.js";
+import {
+  LangSmithDataplaneNotConfiguredError,
+  LangSmithSandboxConnectTimeoutError,
+  LangSmithStreamEndedBeforeStartedError,
+} from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
-import { reconnectWsStream, runWsStream } from "./ws_execute.js";
+import {
+  connectDeadline,
+  isWsAvailable,
+  openTimeoutFor,
+  reconnectWsStream,
+  remainingBudget,
+  runWsStream,
+} from "./ws_execute.js";
 
 /**
  * Represents an active sandbox for running commands and file operations.
@@ -121,7 +133,8 @@ export class Sandbox {
    * Execute a command in the sandbox.
    *
    * When `wait` is true (default) and no streaming callbacks are provided,
-   * tries WebSocket first and falls back to HTTP POST.
+   * uses WebSocket, falling back to HTTP POST only when the optional `ws`
+   * package isn't installed.
    *
    * When `wait` is false or streaming callbacks are provided, uses WebSocket
    * (required). Returns a CommandHandle for streaming output.
@@ -197,8 +210,9 @@ export class Sandbox {
       return handle.result;
     }
 
-    // wait=true, no callbacks: try WS, fall back to HTTP
-    try {
+    // wait=true, no callbacks: use WebSocket when the 'ws' package is
+    // available, otherwise the blocking HTTP endpoint. WS errors propagate.
+    if (await this._wsAvailable()) {
       const handle = await this._runWs(command, {
         ...restOptions,
         idleTimeout,
@@ -207,20 +221,16 @@ export class Sandbox {
         pty,
       });
       return await handle.result;
-    } catch (e) {
-      // Fall back to HTTP on connection errors or missing ws package
-      const name = e != null && typeof e === "object" ? (e as Error).name : "";
-      const message =
-        e != null && typeof e === "object" ? ((e as Error).message ?? "") : "";
-      if (
-        name === "LangSmithSandboxConnectionError" ||
-        name === "LangSmithSandboxServerReloadError" ||
-        message.includes("'ws' package")
-      ) {
-        return this._runHttp(command, restOptions);
-      }
-      throw e;
     }
+    return this._runHttp(command, restOptions);
+  }
+
+  /**
+   * Whether the optional `ws` package is importable (resolved once).
+   * @internal
+   */
+  protected _wsAvailable(): Promise<boolean> {
+    return isWsAvailable();
   }
 
   /**
@@ -247,32 +257,78 @@ export class Sandbox {
     const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = this._client.getDefaultHeaders();
-    const [stream, control] = await runWsStream(
-      dataplaneUrl,
-      this._client.getApiKey(),
-      command,
-      {
-        timeout,
-        env,
-        cwd,
-        shell,
-        commandId,
-        idleTimeout,
-        killOnDisconnect,
-        ttlSeconds,
-        pty,
-        ...(Object.keys(clientHeaders).length > 0
-          ? { headers: clientHeaders }
-          : {}),
-      },
-    );
 
-    const handle = new CommandHandle(stream, control, this, {
-      onStdout,
-      onStderr,
-    });
-    await handle._ensureStarted();
-    return handle;
+    // A client-supplied command_id makes execute idempotent: the daemon does
+    // get-or-create keyed on it, so if the tunnel closes before "started" we
+    // can re-issue the same id and reattach to the existing command instead of
+    // spawning a second one.
+    const execCommandId = commandId ?? uuid7();
+
+    let attempt = 0;
+    const deadline = connectDeadline();
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const [stream, control] = await runWsStream(
+        dataplaneUrl,
+        this._client.getApiKey(),
+        command,
+        {
+          timeout,
+          env,
+          cwd,
+          shell,
+          commandId: execCommandId,
+          idleTimeout,
+          killOnDisconnect,
+          ttlSeconds,
+          pty,
+          openTimeout: openTimeoutFor(deadline),
+          ...(Object.keys(clientHeaders).length > 0
+            ? { headers: clientHeaders }
+            : {}),
+        },
+      );
+
+      const handle = new CommandHandle(stream, control, this, {
+        onStdout,
+        onStderr,
+      });
+      try {
+        await handle._ensureStarted();
+        return handle;
+      } catch (e) {
+        // Idempotent re-issue (same command_id): neither an early close nor a
+        // failed connect can have started a second command.
+        if (
+          !(e instanceof LangSmithStreamEndedBeforeStartedError) &&
+          !(e instanceof LangSmithSandboxConnectTimeoutError)
+        ) {
+          throw e;
+        }
+        attempt++;
+        if (attempt > CommandHandle.MAX_AUTO_RECONNECTS) {
+          throw e;
+        }
+        let delay = Math.min(
+          CommandHandle.BACKOFF_BASE * 2 ** (attempt - 1),
+          CommandHandle.BACKOFF_MAX,
+        );
+        const remaining = remainingBudget(deadline);
+        if (remaining !== undefined) {
+          if (remaining <= 0) {
+            throw e;
+          }
+          delay = Math.min(delay, remaining);
+        }
+        await new Promise((r) => setTimeout(r, delay * 1000));
+        // Never start an attempt with no budget left: openTimeoutFor would
+        // return 0, which ws forwards to Node as "no timeout at all".
+        const left = remainingBudget(deadline);
+        if (left !== undefined && left <= 0) {
+          throw e;
+        }
+      }
+    }
   }
 
   /**
@@ -467,8 +523,9 @@ export class Sandbox {
    */
   async stop(): Promise<void> {
     await this._client.stopSandbox(this.name);
+    // dataplane_url stays set: it is stable across stop/start and a request on
+    // it resumes the sandbox.
     this.status = "stopped";
-    this.dataplane_url = undefined;
   }
 
   /**

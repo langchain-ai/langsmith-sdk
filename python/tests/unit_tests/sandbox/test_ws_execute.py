@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Iterator
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -692,6 +692,7 @@ class TestSandboxRunWs:
             "https://router.example.com/sb-123",
             "test-key",
             "echo hello",
+            command_id=ANY,
             timeout=60,
             env=None,
             cwd=None,
@@ -701,6 +702,7 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            open_timeout=ANY,
         )
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
@@ -724,17 +726,10 @@ class TestSandboxRunWs:
         with pytest.raises(ValueError, match="Cannot combine"):
             sandbox.run("cmd", wait=False, on_stdout=lambda s: None)
 
-    @pytest.mark.parametrize(
-        "exc",
-        [
-            SandboxConnectionError("WS failed"),
-            ImportError("no websockets"),
-        ],
-    )
-    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
-    def test_run_fallback_to_http(self, mock_run_ws, exc):
-        """WS failure (connection error or missing lib) falls back to HTTP."""
-        mock_run_ws.side_effect = exc
+    def test_run_fallback_to_http_when_ws_unavailable(self, monkeypatch):
+        """run() falls back to HTTP only when the websockets library is
+        unavailable."""
+        monkeypatch.setattr("langsmith.sandbox._sandbox.WEBSOCKETS_AVAILABLE", False)
         sandbox = self._make_sandbox()
 
         with patch.object(sandbox, "_run_http") as mock_http:
@@ -745,6 +740,25 @@ class TestSandboxRunWs:
 
         assert result.stdout == "http output"
         mock_http.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            SandboxConnectionError("WS failed"),
+            OSError("socket down"),
+        ],
+    )
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_ws_error_propagates_without_http_fallback(self, mock_run_ws, exc):
+        """Any WS failure other than a missing library propagates; run() must
+        not silently fall back to the capacity-capped blocking HTTP endpoint."""
+        mock_run_ws.side_effect = exc
+        sandbox = self._make_sandbox()
+
+        with patch.object(sandbox, "_run_http") as mock_http:
+            with pytest.raises(type(exc)):
+                sandbox.run("echo hello")
+        mock_http.assert_not_called()
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -922,14 +936,14 @@ class TestHandshakeFailureWrapping:
         return InvalidMessage("did not receive a valid HTTP response")
 
     def test_run_ws_stream_wraps_invalid_message(self):
-        with patch("websockets.sync.client.connect") as mock_connect:
+        with patch("langsmith.sandbox._ws_execute._ws_connect_sync") as mock_connect:
             mock_connect.side_effect = self._invalid_message()
             msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
                 list(msg_stream)
 
     def test_reconnect_ws_stream_wraps_invalid_message(self):
-        with patch("websockets.sync.client.connect") as mock_connect:
+        with patch("langsmith.sandbox._ws_execute._ws_connect_sync") as mock_connect:
             mock_connect.side_effect = self._invalid_message()
             msg_stream, _ = reconnect_ws_stream(
                 "https://sb.example.com", "key", "cmd-123"

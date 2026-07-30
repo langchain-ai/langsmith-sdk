@@ -90,6 +90,7 @@ export {
   LangSmithSandboxAPIError,
   LangSmithSandboxAuthenticationError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxConnectTimeoutError,
   LangSmithSandboxServerReloadError,
   // Resource errors (type-based with resourceType attribute)
   LangSmithResourceNotFoundError,
