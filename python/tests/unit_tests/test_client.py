@@ -5577,7 +5577,7 @@ def test_construct_url_errors(api_url, pathname, error_match):
     "api_url,expected",
     [
         # Cloud API URL: the /api/v1 suffix is stripped so the generated client
-        # can append its own /v2/... path segments.
+        # can append its own /api/v2/... path segments.
         (
             "https://api.smith.langchain.com/api/v1",
             "https://api.smith.langchain.com",

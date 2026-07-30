@@ -1612,7 +1612,7 @@ class TestRegistries:
     def test_registries_create(self, httpx_mock: HTTPXMock):
         httpx_mock.add_response(
             method="POST",
-            url="http://test-server:8080/v2/sandboxes/registries",
+            url="http://test-server:8080/api/v2/sandboxes/registries",
             json={"id": "reg-1", "name": "internal", "url": "registry.example.com"},
         )
         client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")
