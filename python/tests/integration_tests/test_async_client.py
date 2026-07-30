@@ -32,11 +32,14 @@ async def async_client():
     await client.aclose()
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
+    project_id = (await async_client.create_project(project_name=project_name)).id
     run_id = uuid7()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
 
     await async_client.create_run(
         name="test_run",
@@ -44,22 +47,24 @@ async def test_create_run(async_client: AsyncClient):
         run_type="llm",
         project_name=project_name,
         id=run_id,
-        start_time=datetime.datetime.now(datetime.timezone.utc),
+        start_time=start_time,
     )
 
     async def check_run():
         try:
-            run = await async_client.read_run(run_id)
+            run = await async_client.read_run(run_id, project_id=project_id)
             return run.name == "test_run"
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
-    run = await async_client.read_run(run_id)
+
+    run = await async_client.read_run(run_id, project_id=project_id)
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_list_runs(async_client: AsyncClient):
@@ -245,7 +250,7 @@ async def test_create_feedback(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_feedback(async_client: AsyncClient):
-    project_name = "__test_list_feedback"
+    project_name = "__test_list_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -257,6 +262,15 @@ async def test_list_feedback(async_client: AsyncClient):
         start_time=datetime.datetime.now(datetime.timezone.utc),
     )
 
+    session: dict = {}
+
+    async def check_project_exists():
+        session["project"] = await async_client.read_project(project_name=project_name)
+        return True
+
+    await wait_for(check_project_exists, timeout=20)
+    session_id = session["project"].id
+
     for i in range(3):
         await async_client.create_feedback(
             run_id=run_id,
@@ -264,6 +278,7 @@ async def test_list_feedback(async_client: AsyncClient):
             score=0.9,
             value=f"test_value_{i}",
             comment=f"test_comment_{i}",
+            session_id=session_id,
         )
 
     async def check_feedbacks():
@@ -442,6 +457,7 @@ async def test_list_annotation_queues(async_client: AsyncClient):
             await async_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_annotation_queue_runs(async_client: AsyncClient):

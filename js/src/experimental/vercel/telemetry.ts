@@ -1,6 +1,6 @@
 import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
 import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
-import { getCurrentRunTree, withRunTree } from "../../singletons/traceable.js";
+import { getCurrentRunTree, withRunTree } from "../../traceable.js";
 import { isEnvTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./utils.js";
@@ -143,6 +143,15 @@ function _getLsAgentType(parentRunTree: unknown): "subagent" | "root" {
   return "root";
 }
 
+function _hasNonzeroUsageMetadata(runTree: RunTree): boolean {
+  const usageMetadata = runTree.extra?.metadata?.usage_metadata;
+  if (!isRecord(usageMetadata)) return false;
+
+  return ["input_tokens", "output_tokens", "total_tokens"].some(
+    (key) => typeof usageMetadata[key] === "number" && usageMetadata[key] > 0,
+  );
+}
+
 /**
  * Creates a LangSmith `Telemetry` for the Vercel AI SDK.
  *
@@ -187,12 +196,64 @@ export function LangSmithTelemetry(
     extra: customExtra,
   } = config ?? {};
 
+  interface ExperimentalHarnessState {
+    lastStepContent: unknown[];
+    completedStepMessages: Record<string, unknown>[];
+    toolResults: Map<string, { toolName: string; output: unknown }>;
+    /**
+     * Temporary workaround until Harness Pi exposes usage for each inferred
+     * model step instead of reporting only aggregate usage at turn end.
+     */
+    piAggregateUsageWorkaround?: {
+      latestStepRunTree?: RunTree;
+      deferredStepRunTree?: RunTree;
+    };
+  }
+
   // Per-invocation state. Each generateText/streamText call gets its own
   // context so the same integration object can be reused across calls.
   interface InvocationState {
     rootRunTree: RunTree;
     stepRunTrees: Map<number, RunTree>;
     toolRunTrees: Map<string, RunTree>;
+    experimental_harness?: ExperimentalHarnessState;
+  }
+
+  function formatToolResultMessage(
+    toolCallId: string,
+    toolName: string,
+    toolOutput: unknown,
+  ): Record<string, unknown> {
+    const rawOutput = isRecord(toolOutput)
+      ? toolOutput.type === "tool-result"
+        ? toolOutput.output
+        : "error" in toolOutput
+          ? toolOutput.error
+          : toolOutput
+      : toolOutput;
+    const artifact = rawOutput instanceof Error ? rawOutput.message : rawOutput;
+    const content =
+      typeof artifact === "string"
+        ? artifact
+        : (JSON.stringify(artifact) ?? String(artifact));
+    return {
+      role: "tool",
+      content,
+      tool_call_id: toolCallId,
+      name: toolName,
+      artifact,
+    };
+  }
+
+  function appendToolResultMessage(
+    harnessState: ExperimentalHarnessState,
+    toolCallId: string,
+    toolName: string,
+    toolOutput: unknown,
+  ): Record<string, unknown> {
+    const message = formatToolResultMessage(toolCallId, toolName, toolOutput);
+    harnessState.completedStepMessages.push(message);
+    return message;
   }
 
   function getOpenStepOrRoot(state: InvocationState): RunTree {
@@ -203,6 +264,15 @@ export function LangSmithTelemetry(
       }
     });
     return openStep ?? state.rootRunTree;
+  }
+
+  async function flushPiDeferredStepRun(state: InvocationState) {
+    const workaround = state.experimental_harness?.piAggregateUsageWorkaround;
+    if (workaround == null) return;
+    const stepRunTree = workaround.deferredStepRunTree;
+    if (stepRunTree == null) return;
+    workaround.deferredStepRunTree = undefined;
+    await stepRunTree.patchRun({ excludeInputs: true });
   }
 
   async function finalizeOpenToolRuns(
@@ -288,7 +358,6 @@ export function LangSmithTelemetry(
           ai_sdk_method: event.operationId,
           ls_agent_type: _getLsAgentType(parentRunTree),
           ls_model_name: event.modelId,
-          ls_provider: event.provider,
           ls_integration: "vercel-ai-sdk-telemetry",
         },
       },
@@ -308,6 +377,16 @@ export function LangSmithTelemetry(
       rootRunTree,
       stepRunTrees: new Map(),
       toolRunTrees: new Map(),
+      experimental_harness:
+        event.operationId === "ai.harness"
+          ? {
+              lastStepContent: [],
+              completedStepMessages: [],
+              toolResults: new Map(),
+              piAggregateUsageWorkaround:
+                event.provider === "pi" ? {} : undefined,
+            }
+          : undefined,
     });
   };
 
@@ -315,12 +394,16 @@ export function LangSmithTelemetry(
     const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
+    await flushPiDeferredStepRun(state);
     const stepNumber: number = event.stepNumber ?? 0;
 
     let inputs: KVMap = {};
     if (event.recordInputs !== false) {
       if ("messages" in event && event.messages != null) {
-        inputs.messages = _formatMessages(event.messages);
+        inputs.messages = [
+          ..._formatMessages(event.messages),
+          ...(state.experimental_harness?.completedStepMessages ?? []),
+        ];
       }
 
       if ("runtimeContext" in event && event.runtimeContext != null) {
@@ -347,10 +430,20 @@ export function LangSmithTelemetry(
       name: event.provider,
       run_type: "llm",
       inputs,
-      extra: { metadata: { step_number: stepNumber } },
+      extra: {
+        metadata: {
+          step_number: stepNumber,
+          ls_model_name: event.modelId,
+        },
+      },
     });
 
     state.stepRunTrees.set(stepNumber, stepRunTree);
+    const piUsageWorkaround =
+      state.experimental_harness?.piAggregateUsageWorkaround;
+    if (piUsageWorkaround != null) {
+      piUsageWorkaround.latestStepRunTree = stepRunTree;
+    }
     await stepRunTree.postRun();
   };
 
@@ -401,21 +494,23 @@ export function LangSmithTelemetry(
     const state = invocationsByCallId.get(event.callId);
     if (!state) return;
 
-    const parentRunTree = getOpenStepOrRoot(state);
+    const parentRunTree = state.rootRunTree;
 
     let inputs: KVMap = {};
     if (event.recordInputs !== false) {
-      if (isRecord(event.toolCall.input)) {
-        inputs = { ...event.toolCall.input };
-      } else if (typeof event.toolCall.input !== "undefined") {
-        inputs = { input: event.toolCall.input };
+      let toolCallInput = event.toolCall.input;
+      if (typeof toolCallInput === "string") {
+        try {
+          toolCallInput = JSON.parse(toolCallInput);
+        } catch {
+          // The tool argument itself may be a plain string rather than JSON.
+        }
       }
-
-      if ("toolContext" in event && event.toolContext != null) {
-        inputs.toolContext = event.toolContext;
+      if (isRecord(toolCallInput)) {
+        inputs = { ...toolCallInput };
+      } else if (toolCallInput !== undefined) {
+        inputs = { input: toolCallInput };
       }
-    } else {
-      inputs = {};
     }
 
     const toolRunTree = parentRunTree.createChild({
@@ -439,7 +534,13 @@ export function LangSmithTelemetry(
 
     const toolRunTree = state.toolRunTrees.get(event.toolCall.toolCallId);
     if (!toolRunTree) return;
-    state.toolRunTrees.delete(event.toolCall.toolCallId);
+    const harnessState = state.experimental_harness;
+    if (harnessState != null) {
+      harnessState.toolResults.set(event.toolCall.toolCallId, {
+        toolName: event.toolCall.toolName,
+        output: event.toolOutput,
+      });
+    }
 
     let outputs: KVMap | undefined;
     let error: string | undefined;
@@ -447,7 +548,7 @@ export function LangSmithTelemetry(
     if (event.recordOutputs !== false) {
       if (event.toolOutput.type === "tool-result") {
         outputs = { output: event.toolOutput.output };
-      } else if (event.toolOutput.type === "tool-error") {
+      } else if (isRecord(event.toolOutput) && "error" in event.toolOutput) {
         const err = event.toolOutput.error;
         error = err instanceof Error ? err.message : String(err);
       }
@@ -461,6 +562,7 @@ export function LangSmithTelemetry(
       Math.floor(toolRunTree.start_time + event.toolExecutionMs),
     );
     await toolRunTree.patchRun({ excludeInputs: true });
+    state.toolRunTrees.delete(event.toolCall.toolCallId);
   };
 
   const onStepFinish: Telemetry["onStepFinish"] = async (event) => {
@@ -470,9 +572,13 @@ export function LangSmithTelemetry(
     const stepNumber: number = event.stepNumber ?? 0;
     const stepRunTree = state.stepRunTrees.get(stepNumber);
     if (!stepRunTree) return;
+    const harnessState = state.experimental_harness;
 
     let outputs = {};
     if (event.recordOutputs !== false) {
+      if (harnessState != null && Array.isArray(event.content)) {
+        harnessState.lastStepContent = [...event.content];
+      }
       outputs = _formatStepOutput(event, traceRawHttp);
 
       if (processChildLLMRunOutputs) {
@@ -487,12 +593,49 @@ export function LangSmithTelemetry(
       }
     }
 
+    if (harnessState != null && Array.isArray(event.content)) {
+      harnessState.completedStepMessages.push(
+        convertMessageToTracedFormat({
+          role: "assistant",
+          content: event.content,
+        }),
+      );
+
+      for (const part of event.content) {
+        if (
+          !isRecord(part) ||
+          part.type !== "tool-call" ||
+          typeof part.toolCallId !== "string"
+        ) {
+          continue;
+        }
+        const toolResult = harnessState.toolResults.get(part.toolCallId);
+        if (toolResult) {
+          appendToolResultMessage(
+            harnessState,
+            part.toolCallId,
+            toolResult.toolName,
+            toolResult.output,
+          );
+          harnessState.toolResults.delete(part.toolCallId);
+        }
+      }
+    }
+
     // Set usage metadata
     // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
     setUsageMetadataOnRunTree(event, stepRunTree);
 
     await stepRunTree.end(outputs);
-    await stepRunTree.patchRun({ excludeInputs: true });
+    const piUsageWorkaround = harnessState?.piAggregateUsageWorkaround;
+    if (piUsageWorkaround != null && !_hasNonzeroUsageMetadata(stepRunTree)) {
+      // Pi reports zero usage for inferred step boundaries and sends the real
+      // aggregate at turn end. Defer the final PATCH so that aggregate can be
+      // attached to the last LLM run without issuing a duplicate update.
+      piUsageWorkaround.deferredStepRunTree = stepRunTree;
+    } else {
+      await stepRunTree.patchRun({ excludeInputs: true });
+    }
     state.stepRunTrees.delete(stepNumber);
   };
 
@@ -502,6 +645,8 @@ export function LangSmithTelemetry(
     if (!state) return;
 
     const { rootRunTree } = state;
+    const harnessState = state.experimental_harness;
+    const piUsageWorkaround = harnessState?.piAggregateUsageWorkaround;
     await finalizeOpenToolRuns(state, { note: "closed on finish" });
 
     // Ensure any remaining step runs are closed
@@ -510,7 +655,11 @@ export function LangSmithTelemetry(
       const [stepNumber, stepRt] = remainingSteps[i];
       if (stepRt.end_time == null) {
         await stepRt.end({ note: "closed on finish" });
-        await stepRt.patchRun({ excludeInputs: true });
+        if (piUsageWorkaround != null && !_hasNonzeroUsageMetadata(stepRt)) {
+          piUsageWorkaround.deferredStepRunTree = stepRt;
+        } else {
+          await stepRt.patchRun({ excludeInputs: true });
+        }
       }
       state.stepRunTrees.delete(stepNumber);
     }
@@ -521,8 +670,20 @@ export function LangSmithTelemetry(
       // Final result output
       if ("text" in event && event.text != null) {
         outputs.content = event.text;
-      } else if ("content" in event && event.content != null) {
+      } else if (
+        "content" in event &&
+        event.content != null &&
+        (!Array.isArray(event.content) || event.content.length > 0)
+      ) {
         outputs.content = event.content;
+      } else if (
+        harnessState != null &&
+        harnessState.lastStepContent.length > 0
+      ) {
+        // HarnessAgent currently reports an empty root `content` array even
+        // though each completed step contains assistant output. Only the final
+        // step belongs on the root; prior steps have their own child runs.
+        outputs.content = harnessState.lastStepContent;
       }
 
       if (outputs.content != null) {
@@ -565,20 +726,32 @@ export function LangSmithTelemetry(
       }
     }
 
-    // Set aggregated usage on root
-    if ("totalUsage" in event && event.totalUsage != null) {
-      setUsageMetadataOnRunTree(
+    // Pi reports zero usage on inferred step boundaries and provides the actual
+    // aggregate only when the turn ends. Keep that usage on an LLM run rather
+    // than incorrectly elevating it to the parent chain. The latest step is the
+    // only accurate place available until Harness Pi exposes per-step usage.
+    const latestStep = piUsageWorkaround?.latestStepRunTree;
+    if (
+      latestStep?.run_type === "llm" &&
+      !_hasNonzeroUsageMetadata(latestStep)
+    ) {
+      if ("totalUsage" in event && event.totalUsage != null) {
+        setUsageMetadataOnRunTree(
+          // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
+          { usage: event.totalUsage, providerMetadata: event.providerMetadata },
+          latestStep,
+        );
+      } else if ("usage" in event && event.usage != null) {
         // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
-        { usage: event.totalUsage, providerMetadata: event.providerMetadata },
-        rootRunTree,
-      );
-    } else if ("usage" in event && event.usage != null) {
-      // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
-      setUsageMetadataOnRunTree(event, rootRunTree);
+        setUsageMetadataOnRunTree(event, latestStep);
+      }
     }
 
     await rootRunTree.end(outputs);
-    await rootRunTree.patchRun({ excludeInputs: true });
+    await Promise.all([
+      flushPiDeferredStepRun(state),
+      rootRunTree.patchRun({ excludeInputs: true }),
+    ]);
 
     invocationsByCallId.delete(event.callId);
   };
@@ -615,6 +788,7 @@ export function LangSmithTelemetry(
       }
       state.stepRunTrees.delete(stepNumber);
     }
+    await flushPiDeferredStepRun(state);
 
     await rootRunTree.end(undefined, errorMsg);
     await rootRunTree.patchRun({ excludeInputs: true });

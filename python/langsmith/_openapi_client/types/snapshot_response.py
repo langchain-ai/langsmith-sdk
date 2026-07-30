@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import Optional
+from typing import Dict, Optional
 
 from .._models import BaseModel
 
@@ -21,6 +21,8 @@ class SnapshotResponse(BaseModel):
     fs_used_bytes: Optional[int] = None
 
     image_digest: Optional[str] = None
+
+    labels: Optional[Dict[str, str]] = None
 
     memory_snapshot_size_bytes: Optional[int] = None
     """

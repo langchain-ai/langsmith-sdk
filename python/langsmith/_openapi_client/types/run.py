@@ -234,6 +234,12 @@ class Run(BaseModel):
     is_root: Optional[bool] = None
     """`is_root` is true when this run has no parent (it is the trace root)."""
 
+    last_queued_at: Optional[datetime] = None
+    """
+    `last_queued_at` is the most recent time this run was added to an annotation
+    queue.
+    """
+
     latency_seconds: Optional[float] = None
     """`latency_seconds` is wall-clock duration from start to end in seconds."""
 

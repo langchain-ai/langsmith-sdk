@@ -44,6 +44,18 @@ class SandboxConnectionError(SandboxClientError):
     pass
 
 
+class SandboxConnectTimeoutError(SandboxConnectionError):
+    """Raised when the socket fails or times out before the WebSocket handshake.
+
+    Distinct from its parent because it is safely retryable: the execute frame
+    was never sent, so re-issuing the same command_id cannot double-run a
+    command. run() retries this with backoff; a plain SandboxConnectionError
+    (a rejected handshake) is permanent and propagates immediately.
+    """
+
+    pass
+
+
 class SandboxServerReloadError(SandboxConnectionError):
     """Raised when the server sends a 1001 Going Away close frame.
 

@@ -39,7 +39,14 @@ export async function getAssumedTreeFromCalls(
       string,
       { method: string; body: string },
     ];
-    const req = `${fetchArgs.method} ${new URL(url as string).pathname}`;
+    const { method } = fetchArgs;
+    // The API base URL carries a different prefix per deployment ("" on beta,
+    // "/api" on self-hosted, "/api/v1" elsewhere), so match on the endpoint
+    // suffix rather than the whole pathname.
+    const pathname = new URL(url as string).pathname;
+    const createRun = method === "POST" && /(?:^|\/)runs$/.test(pathname);
+    const updateRun =
+      method === "PATCH" && /(?:^|\/)runs\/[^/]+$/.test(pathname);
     let body: Run;
     if (typeof fetchArgs.body === "string") {
       body = JSON.parse(fetchArgs.body);
@@ -50,7 +57,7 @@ export async function getAssumedTreeFromCalls(
       }
     }
 
-    if (req === "POST /runs" || req === "POST /api/v1/runs") {
+    if (createRun) {
       const id = body!.id;
       upsertId(id);
       nodeMap[id] = { ...nodeMap[id], ...body! };
@@ -58,15 +65,8 @@ export async function getAssumedTreeFromCalls(
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         edges.push([nodeMap[id].parent_run_id!, nodeMap[id].id]);
       }
-    } else if (
-      req.startsWith("PATCH /runs/") ||
-      req.startsWith("PATCH /api/v1/runs/")
-    ) {
-      const id = req.substring(
-        req.startsWith("PATCH /api/v1/runs/")
-          ? "PATCH /api/v1/runs/".length
-          : "PATCH /runs/".length,
-      );
+    } else if (updateRun) {
+      const id = pathname.slice(pathname.lastIndexOf("/") + 1);
       upsertId(id);
       nodeMap[id] = { ...nodeMap[id], ...body! };
     }

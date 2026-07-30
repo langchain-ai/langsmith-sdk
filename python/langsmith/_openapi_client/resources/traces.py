@@ -96,6 +96,7 @@ class TracesResource(SyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -145,7 +146,7 @@ class TracesResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get(
-            path_template("/v2/traces/{trace_id}/runs", trace_id=trace_id),
+            path_template("/api/v2/traces/{trace_id}/runs", trace_id=trace_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -239,7 +240,7 @@ class TracesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/traces/query",
+            "/api/v2/traces/query",
             page=SyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {
@@ -331,6 +332,7 @@ class AsyncTracesResource(AsyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -380,7 +382,7 @@ class AsyncTracesResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._get(
-            path_template("/v2/traces/{trace_id}/runs", trace_id=trace_id),
+            path_template("/api/v2/traces/{trace_id}/runs", trace_id=trace_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -474,7 +476,7 @@ class AsyncTracesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/traces/query",
+            "/api/v2/traces/query",
             page=AsyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {
