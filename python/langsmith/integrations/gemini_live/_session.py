@@ -33,6 +33,7 @@ from langsmith._internal.voice.session import (
     EventSession,
     start_session,
 )
+from langsmith.integrations._gemini_usage import normalize_gemini_usage_metadata
 from langsmith.run_helpers import tracing_context
 
 if TYPE_CHECKING:
@@ -98,63 +99,9 @@ class _LiveMessageView:
         return bool(content is not None and getattr(content, "turn_complete", False))
 
 
-def _audio_tokens(details: Any) -> int | None:
-    """Sum the AUDIO token count from a Gemini modality-details sequence."""
-    if not isinstance(details, (list, tuple)):
-        return None
-    total = 0
-    found = False
-    for entry in details:
-        modality = getattr(entry, "modality", None)
-        modality = getattr(modality, "value", modality)
-        count = getattr(entry, "token_count", None)
-        if str(modality).upper() == "AUDIO" and isinstance(count, int):
-            total += count
-            found = True
-    return total if found else None
-
-
 def usage_metadata_from_message(message: Any) -> dict[str, Any] | None:
     """Map Gemini Live usage onto LangSmith's canonical token metadata."""
-    usage = getattr(message, "usage_metadata", None)
-    if usage is None:
-        return None
-
-    result: dict[str, Any] = {}
-    for key, attrs in (
-        ("input_tokens", ("prompt_token_count",)),
-        # Direct Gemini Live uses ``response_*``. ``candidates_*`` keeps the
-        # mapper compatible with older/generated response shapes.
-        ("output_tokens", ("response_token_count", "candidates_token_count")),
-        ("total_tokens", ("total_token_count",)),
-    ):
-        for attr in attrs:
-            value = getattr(usage, attr, None)
-            if isinstance(value, int):
-                result[key] = value
-                break
-
-    input_details: dict[str, int] = {}
-    prompt_details = getattr(usage, "prompt_tokens_details", None)
-    if (audio := _audio_tokens(prompt_details)) is not None:
-        input_details["audio"] = audio
-    if isinstance(cached := getattr(usage, "cached_content_token_count", None), int):
-        input_details["cache_read"] = cached
-    if input_details:
-        result["input_token_details"] = input_details
-
-    output_details: dict[str, int] = {}
-    response_details = getattr(usage, "response_tokens_details", None)
-    if response_details is None:
-        response_details = getattr(usage, "candidates_tokens_details", None)
-    if (audio := _audio_tokens(response_details)) is not None:
-        output_details["audio"] = audio
-    if isinstance(reasoning := getattr(usage, "thoughts_token_count", None), int):
-        output_details["reasoning"] = reasoning
-    if output_details:
-        result["output_token_details"] = output_details
-
-    return result or None
+    return normalize_gemini_usage_metadata(getattr(message, "usage_metadata", None))
 
 
 def _merge_transcript(current: str, fragment: str) -> str:
