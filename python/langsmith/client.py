@@ -156,9 +156,10 @@ def _reset_tracing_drop_log() -> None:
 def _get_openapi_base_url(api_url: str) -> str:
     """Convert a handwritten client API URL to a generated OpenAPI base URL."""
     api_url = api_url.rstrip("/")
-    if api_url.endswith("/api/v1"):
-        return api_url[: -len("/api/v1")]
-    return api_url[:-3] if api_url.endswith("/v1") else api_url
+    for suffix in ("/api/v1", "/api"):
+        if api_url.endswith(suffix):
+            return api_url[: -len(suffix)]
+    return api_url
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends

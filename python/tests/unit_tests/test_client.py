@@ -5587,40 +5587,47 @@ def test_construct_url_errors(api_url, pathname, error_match):
             "https://api.smith.langchain.com/api/v1/",
             "https://api.smith.langchain.com",
         ),
-        # Bare /v1 suffix (no /api prefix).
+        # A bare /v1 suffix (no /api prefix) is not stripped.
         (
             "https://api.smith.langchain.com/v1",
-            "https://api.smith.langchain.com",
+            "https://api.smith.langchain.com/v1",
         ),
-        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com/v1"),
+        (
+            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/langsmith/v1",
+        ),
         # Self-hosted deployments under a path prefix.
         (
             "https://self-hosted.example.com/langsmith/api/v1",
             "https://self-hosted.example.com/langsmith",
         ),
+        # Bare /api suffix (no version segment).
+        ("https://api.smith.langchain.com/api", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/api/", "https://api.smith.langchain.com"),
         (
-            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/api",
+            "https://self-hosted.example.com",
+        ),
+        (
+            "https://self-hosted.example.com/langsmith/api",
             "https://self-hosted.example.com/langsmith",
         ),
-        # No version suffix: left unchanged (aside from trailing slashes).
+        # No /api suffix: left unchanged (aside from trailing slashes).
         ("https://api.smith.langchain.com", "https://api.smith.langchain.com"),
         ("https://api.smith.langchain.com/", "https://api.smith.langchain.com"),
-        (
-            "https://self-hosted.example.com/api",
-            "https://self-hosted.example.com/api",
-        ),
         ("http://localhost:1984", "http://localhost:1984"),
         ("http://localhost:1984/api/v1", "http://localhost:1984"),
-        # /v1 must be a trailing path segment, not a substring.
+        # /api must be a trailing path segment, not a substring.
         (
-            "https://api.smith.langchain.com/v1/runs",
-            "https://api.smith.langchain.com/v1/runs",
+            "https://api.smith.langchain.com/api/runs",
+            "https://api.smith.langchain.com/api/runs",
         ),
-        ("https://v1.example.com", "https://v1.example.com"),
+        ("https://api.example.com", "https://api.example.com"),
     ],
 )
 def test_get_openapi_base_url(api_url: str, expected: str) -> None:
-    """Test _get_openapi_base_url strips the handwritten client's version suffix."""
+    """Test _get_openapi_base_url strips the handwritten client's /api[/v1] suffix."""
     assert _get_openapi_base_url(api_url) == expected
 
 

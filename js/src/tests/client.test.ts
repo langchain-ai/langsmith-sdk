@@ -735,8 +735,20 @@ describe("Client", () => {
       );
     });
 
-    it("should strip a trailing /v1", () => {
+    it("should not strip a bare trailing /v1", () => {
       expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1")).toBe(
+        "https://api.smith.langchain.com/v1",
+      );
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith/v1");
+    });
+
+    it("should strip a trailing /api", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/")).toBe(
         "https://api.smith.langchain.com",
       );
     });
@@ -746,28 +758,25 @@ describe("Client", () => {
         getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api/v1"),
       ).toBe("https://self-hosted.example.com/langsmith");
       expect(
-        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api"),
       ).toBe("https://self-hosted.example.com/langsmith");
     });
 
-    it("should leave a URL without a version suffix unchanged", () => {
+    it("should leave a URL without an /api suffix unchanged", () => {
       expect(getOpenAPIBaseUrl("https://api.smith.langchain.com")).toBe(
         "https://api.smith.langchain.com",
-      );
-      expect(getOpenAPIBaseUrl("https://self-hosted.example.com/api")).toBe(
-        "https://self-hosted.example.com/api",
       );
       expect(getOpenAPIBaseUrl("http://localhost:1984")).toBe(
         "http://localhost:1984",
       );
     });
 
-    it("should only strip /v1 when it is the trailing path segment", () => {
-      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1/runs")).toBe(
-        "https://api.smith.langchain.com/v1/runs",
-      );
-      expect(getOpenAPIBaseUrl("https://v1.example.com")).toBe(
-        "https://v1.example.com",
+    it("should only strip /api when it is the trailing path segment", () => {
+      expect(
+        getOpenAPIBaseUrl("https://api.smith.langchain.com/api/runs"),
+      ).toBe("https://api.smith.langchain.com/api/runs");
+      expect(getOpenAPIBaseUrl("https://api.example.com")).toBe(
+        "https://api.example.com",
       );
     });
   });
