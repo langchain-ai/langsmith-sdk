@@ -104,21 +104,10 @@ def usage_metadata_from_message(message: Any) -> dict[str, Any] | None:
     return normalize_gemini_usage_metadata(getattr(message, "usage_metadata", None))
 
 
-def _merge_transcript(current: str, fragment: str) -> str:
-    """Merge delta-style or cumulative transcription fragments, with a cap."""
-    fragment = fragment[:MAX_TRANSCRIPT_CHARS]
-    if not current:
-        merged = fragment
-    elif fragment.startswith(current):
-        # Some Gemini versions send the full transcript-so-far each time.
-        merged = fragment
-    elif current.startswith(fragment) or current.endswith(fragment):
-        # Ignore an older cumulative snapshot or a repeated final fragment.
-        merged = current
-    else:
-        # Other versions stream true deltas (including their own whitespace).
-        merged = current + fragment
-    return merged[:MAX_TRANSCRIPT_CHARS]
+def _append_transcript(current: str, fragment: str) -> str:
+    """Append one Gemini transcription delta, retaining the per-turn cap."""
+    remaining = MAX_TRANSCRIPT_CHARS - len(current)
+    return current if remaining <= 0 else current + fragment[:remaining]
 
 
 class _GeminiLiveTracer:
@@ -145,12 +134,12 @@ class _GeminiLiveTracer:
         now = self._session.now()
 
         if user_fragment := view.user_transcript:
-            self._user_text = _merge_transcript(self._user_text, user_fragment)
+            self._user_text = _append_transcript(self._user_text, user_fragment)
         if view.user_transcript_finished:
             self._flush_user(message, now)
 
         if agent_fragment := view.agent_transcript:
-            self._agent_text = _merge_transcript(self._agent_text, agent_fragment)
+            self._agent_text = _append_transcript(self._agent_text, agent_fragment)
         usage = usage_metadata_from_message(message)
         if usage is not None:
             self._turn_usage = usage

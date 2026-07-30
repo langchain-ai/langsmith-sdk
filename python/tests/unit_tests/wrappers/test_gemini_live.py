@@ -11,8 +11,8 @@ from langsmith import Client, traceable
 from langsmith._internal.voice import session as session_mod
 from langsmith.integrations.gemini_live import _session as live_mod
 from langsmith.integrations.gemini_live._session import (
+    _append_transcript,
     _LiveMessageView,
-    _merge_transcript,
     usage_metadata_from_message,
     wrap_gemini_live,
 )
@@ -123,11 +123,10 @@ class TestHelpers:
         assert _LiveMessageView(message).user_transcript == "partial"
         assert _LiveMessageView(message).user_transcript_finished is False
 
-    def test_merge_transcript_supports_deltas_cumulative_and_cap(self):
-        assert _merge_transcript("Hello ", "world") == "Hello world"
-        assert _merge_transcript("Hello", "Hello world") == "Hello world"
-        assert _merge_transcript("Hello world", "Hello") == "Hello world"
-        assert len(_merge_transcript("", "x" * 3_000)) == 2_000
+    def test_append_transcript_supports_deltas_repetition_and_cap(self):
+        assert _append_transcript("Hello ", "world") == "Hello world"
+        assert _append_transcript("ha", "ha") == "haha"
+        assert len(_append_transcript("", "x" * 3_000)) == 2_000
 
     def test_usage_maps_direct_live_fields_and_audio(self):
         usage = NS(
@@ -211,7 +210,7 @@ class TestWrapper:
         )
         messages = [
             _message(user="what is ", user_finished=False),
-            _message(user="what is the weather?", user_finished=False),
+            _message(user="the weather?", user_finished=False),
             _message(agent="It is ", agent_finished=False),
             _message(agent="sunny.", agent_finished=False),
             _message(turn_complete=True, usage=usage),
