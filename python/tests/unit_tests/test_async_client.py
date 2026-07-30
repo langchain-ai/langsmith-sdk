@@ -131,7 +131,7 @@ def test_async_client_no_custom_headers(mock_client_cls: mock.Mock) -> None:
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
-def test_async_client_profile_config_uses_oauth_access_token(
+def test_async_client_profile_config_uses_api_key_before_oauth_access_token(
     mock_client_cls: mock.Mock,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -146,6 +146,7 @@ def test_async_client_profile_config_uses_oauth_access_token(
             {
                 "profiles": {
                     "default": {
+                        "api_key": "profile-key",
                         "api_url": "https://profile.example.com",
                         "oauth": {"access_token": "profile-access-token"},
                     }
@@ -160,8 +161,8 @@ def test_async_client_profile_config_uses_oauth_access_token(
 
     assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
     passed_headers = mock_client_cls.call_args.kwargs["headers"]
-    assert passed_headers["Authorization"] == "Bearer profile-access-token"
-    assert "x-api-key" not in passed_headers
+    assert passed_headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in passed_headers
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
