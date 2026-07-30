@@ -15,7 +15,7 @@ export class Items extends APIResource {
   /**
    * Add RUN or THREAD items to a single annotation queue. RUN items require run_id
    * unless they are created from a suggested example. THREAD items require thread_id
-   * and session_id.
+   * and project_id.
    */
   create(
     queueID: string,
@@ -23,7 +23,7 @@ export class Items extends APIResource {
     options?: RequestOptions,
   ): APIPromise<ItemCreateResponse> {
     const { extend_trace_retention, ...body } = params;
-    return this._client.post(path`/api/v1/annotation-queues/${queueID}/items`, {
+    return this._client.post(path`/api/v1/platform/annotation-queues/${queueID}/items`, {
       query: { extend_trace_retention },
       body,
       ...options,
@@ -37,7 +37,7 @@ export class Items extends APIResource {
    */
   update(itemID: string, params: ItemUpdateParams, options?: RequestOptions): APIPromise<ItemUpdateResponse> {
     const { queue_id, ...body } = params;
-    return this._client.patch(path`/api/v1/annotation-queues/${queue_id}/items/${itemID}`, {
+    return this._client.patch(path`/api/v1/platform/annotation-queues/${queue_id}/items/${itemID}`, {
       body,
       ...options,
     });
@@ -57,7 +57,7 @@ export class Items extends APIResource {
     options?: RequestOptions,
   ): PagePromise<ItemListResponsesItemsCursorGetPagination, ItemListResponse> {
     return this._client.getAPIList(
-      path`/api/v1/annotation-queues/${queueID}/items`,
+      path`/api/v1/platform/annotation-queues/${queueID}/items`,
       ItemsCursorGetPagination<ItemListResponse>,
       { query, ...options },
     );
@@ -72,7 +72,7 @@ export class Items extends APIResource {
     body: ItemCreateStatusParams,
     options?: RequestOptions,
   ): APIPromise<ItemCreateStatusResponse> {
-    return this._client.post(path`/api/v1/annotation-queues/items/${queueItemID}/status`, {
+    return this._client.post(path`/api/v1/platform/annotation-queues/items/${queueItemID}/status`, {
       body,
       ...options,
     });
@@ -86,7 +86,10 @@ export class Items extends APIResource {
     body: ItemDeleteAllParams,
     options?: RequestOptions,
   ): APIPromise<ItemDeleteAllResponse> {
-    return this._client.post(path`/api/v1/annotation-queues/${queueID}/items/delete`, { body, ...options });
+    return this._client.post(path`/api/v1/platform/annotation-queues/${queueID}/items/delete`, {
+      body,
+      ...options,
+    });
   }
 
   /**
@@ -98,7 +101,10 @@ export class Items extends APIResource {
     query: ItemRetrieveCountParams,
     options?: RequestOptions,
   ): APIPromise<ItemRetrieveCountResponse> {
-    return this._client.get(path`/api/v1/annotation-queues/${queueID}/items/count`, { query, ...options });
+    return this._client.get(path`/api/v1/platform/annotation-queues/${queueID}/items/count`, {
+      query,
+      ...options,
+    });
   }
 
   /**
@@ -111,7 +117,10 @@ export class Items extends APIResource {
     options?: RequestOptions,
   ): APIPromise<ItemRetrievePlacementResponse> {
     const { queue_id } = params;
-    return this._client.get(path`/api/v1/annotation-queues/${queue_id}/items/${itemID}/placement`, options);
+    return this._client.get(
+      path`/api/v1/platform/annotation-queues/${queue_id}/items/${itemID}/placement`,
+      options,
+    );
   }
 }
 
@@ -134,11 +143,11 @@ export namespace ItemCreateResponse {
      */
     last_reviewed_time?: string;
 
+    project_id?: string;
+
     queue_id?: string;
 
     run_id?: string;
-
-    session_id?: string;
 
     source_proposed_example_id?: string;
 
@@ -160,11 +169,11 @@ export interface ItemUpdateResponse {
    */
   last_reviewed_time?: string;
 
+  project_id?: string;
+
   queue_id?: string;
 
   run_id?: string;
-
-  session_id?: string;
 
   source_proposed_example_id?: string;
 
@@ -189,13 +198,13 @@ export interface ItemListResponse {
    */
   last_reviewed_time?: string;
 
+  project_id?: string;
+
   queue_id?: string;
 
   reserved_by?: Array<string>;
 
   run_id?: string;
-
-  session_id?: string;
 
   source_proposed_example_id?: string;
 
@@ -246,13 +255,15 @@ export namespace ItemCreateParams {
   export interface Item {
     item_type?: 'RUN' | 'THREAD';
 
+    project_id?: string;
+
     /**
      * RUN fields
      */
     run_id?: string;
 
     /**
-     * SessionID is the ID of the tracing project that contains the run or thread.
+     * SessionID is an alias for project_id.
      */
     session_id?: string;
 
@@ -262,14 +273,8 @@ export namespace ItemCreateParams {
      */
     source_proposed_example_id?: string;
 
-    /**
-     * StartTime is the start time of the run being added, used to identify it.
-     */
     start_time?: string;
 
-    /**
-     * ThreadID is the ID of the thread being added.
-     */
     thread_id?: string;
   }
 }

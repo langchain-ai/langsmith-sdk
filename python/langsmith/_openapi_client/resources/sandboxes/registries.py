@@ -65,7 +65,7 @@ class RegistriesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._post(
-            "/v2/sandboxes/registries",
+            "/api/v2/sandboxes/registries",
             body=maybe_transform(
                 {
                     "name": name,
@@ -107,7 +107,7 @@ class RegistriesResource(SyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return self._get(
-            path_template("/v2/sandboxes/registries/{name}", name=name),
+            path_template("/api/v2/sandboxes/registries/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -144,7 +144,7 @@ class RegistriesResource(SyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return self._patch(
-            path_template("/v2/sandboxes/registries/{path_name}", path_name=path_name),
+            path_template("/api/v2/sandboxes/registries/{path_name}", path_name=path_name),
             body=maybe_transform(
                 {
                     "body_name": body_name,
@@ -192,7 +192,7 @@ class RegistriesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get(
-            "/v2/sandboxes/registries",
+            "/api/v2/sandboxes/registries",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -237,7 +237,7 @@ class RegistriesResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._delete(
-            path_template("/v2/sandboxes/registries/{name}", name=name),
+            path_template("/api/v2/sandboxes/registries/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -288,7 +288,7 @@ class AsyncRegistriesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._post(
-            "/v2/sandboxes/registries",
+            "/api/v2/sandboxes/registries",
             body=await async_maybe_transform(
                 {
                     "name": name,
@@ -330,7 +330,7 @@ class AsyncRegistriesResource(AsyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return await self._get(
-            path_template("/v2/sandboxes/registries/{name}", name=name),
+            path_template("/api/v2/sandboxes/registries/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -367,7 +367,7 @@ class AsyncRegistriesResource(AsyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return await self._patch(
-            path_template("/v2/sandboxes/registries/{path_name}", path_name=path_name),
+            path_template("/api/v2/sandboxes/registries/{path_name}", path_name=path_name),
             body=await async_maybe_transform(
                 {
                     "body_name": body_name,
@@ -415,7 +415,7 @@ class AsyncRegistriesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._get(
-            "/v2/sandboxes/registries",
+            "/api/v2/sandboxes/registries",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -460,7 +460,7 @@ class AsyncRegistriesResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._delete(
-            path_template("/v2/sandboxes/registries/{name}", name=name),
+            path_template("/api/v2/sandboxes/registries/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),

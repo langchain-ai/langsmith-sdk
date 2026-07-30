@@ -18,11 +18,11 @@ class ItemUpdateResponse(BaseModel):
     last_reviewed_time: Optional[str] = None
     """LastReviewedTime is always present on the wire (null until reviewed)."""
 
+    project_id: Optional[str] = None
+
     queue_id: Optional[str] = None
 
     run_id: Optional[str] = None
-
-    session_id: Optional[str] = None
 
     source_proposed_example_id: Optional[str] = None
 

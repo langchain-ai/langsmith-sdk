@@ -70,7 +70,7 @@ class ShareResource(SyncAPIResource):
         if not run_id:
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         return self._post(
-            path_template("/v2/runs/{run_id}/share", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}/share", run_id=run_id),
             body=maybe_transform(
                 {
                     "session_id": session_id,
@@ -115,7 +115,7 @@ class ShareResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._delete(
-            path_template("/v2/runs/{trace_id}/share", trace_id=trace_id),
+            path_template("/api/v2/runs/{trace_id}/share", trace_id=trace_id),
             body=maybe_transform({"session_id": session_id}, share_delete_params.ShareDeleteParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -173,7 +173,7 @@ class AsyncShareResource(AsyncAPIResource):
         if not run_id:
             raise ValueError(f"Expected a non-empty value for `run_id` but received {run_id!r}")
         return await self._post(
-            path_template("/v2/runs/{run_id}/share", run_id=run_id),
+            path_template("/api/v2/runs/{run_id}/share", run_id=run_id),
             body=await async_maybe_transform(
                 {
                     "session_id": session_id,
@@ -218,7 +218,7 @@ class AsyncShareResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._delete(
-            path_template("/v2/runs/{trace_id}/share", trace_id=trace_id),
+            path_template("/api/v2/runs/{trace_id}/share", trace_id=trace_id),
             body=await async_maybe_transform({"session_id": session_id}, share_delete_params.ShareDeleteParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout

@@ -71,7 +71,7 @@ class SnapshotsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._post(
-            "/v2/sandboxes/snapshots",
+            "/api/v2/sandboxes/snapshots",
             body=maybe_transform(
                 {
                     "docker_image": docker_image,
@@ -114,7 +114,7 @@ class SnapshotsResource(SyncAPIResource):
         if not snapshot_id:
             raise ValueError(f"Expected a non-empty value for `snapshot_id` but received {snapshot_id!r}")
         return self._get(
-            path_template("/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
+            path_template("/api/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -170,7 +170,7 @@ class SnapshotsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get(
-            "/v2/sandboxes/snapshots",
+            "/api/v2/sandboxes/snapshots",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -221,7 +221,7 @@ class SnapshotsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `snapshot_id` but received {snapshot_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._delete(
-            path_template("/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
+            path_template("/api/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -276,7 +276,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._post(
-            "/v2/sandboxes/snapshots",
+            "/api/v2/sandboxes/snapshots",
             body=await async_maybe_transform(
                 {
                     "docker_image": docker_image,
@@ -319,7 +319,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         if not snapshot_id:
             raise ValueError(f"Expected a non-empty value for `snapshot_id` but received {snapshot_id!r}")
         return await self._get(
-            path_template("/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
+            path_template("/api/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -375,7 +375,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._get(
-            "/v2/sandboxes/snapshots",
+            "/api/v2/sandboxes/snapshots",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -426,7 +426,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `snapshot_id` but received {snapshot_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._delete(
-            path_template("/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
+            path_template("/api/v2/sandboxes/snapshots/{snapshot_id}", snapshot_id=snapshot_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),

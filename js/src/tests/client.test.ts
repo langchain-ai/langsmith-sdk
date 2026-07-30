@@ -219,7 +219,7 @@ describe("Client", () => {
       expect(response.evaluator?.id).toBe("eval-1");
       const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
       const headers = new Headers(init?.headers);
-      expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
+      expect(url).toBe("http://localhost:8080/api/v1/platform/evaluators");
       expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
@@ -274,7 +274,7 @@ describe("Client", () => {
       const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
       const headers = new Headers(init?.headers);
       expect(url).toBe(
-        "http://localhost:8080/api/v1/annotation-queues/queue-1/items/count?status=all",
+        "http://localhost:8080/api/v1/platform/annotation-queues/queue-1/items/count?status=all",
       );
       expect(init).toEqual(expect.objectContaining({ method: "GET" }));
       expect(headers.get("x-api-key")).toBe("test-api-key");

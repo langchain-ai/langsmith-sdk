@@ -1532,7 +1532,7 @@ class Client:
             self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=self.api_url,
+                base_url=_get_openapi_base_url(self.api_url),
                 timeout=_httpx.Timeout(
                     connect=self._timeout[0],
                     read=self._timeout[1],
