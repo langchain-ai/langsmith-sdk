@@ -1990,3 +1990,42 @@ describe("_checkBackendVersion", () => {
     );
   });
 });
+
+describe("getRunUrl deprecation", () => {
+  it("warns and does not emit a nested readRun warning", async () => {
+    const client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    const runId = "00000000-0000-4000-8000-000000000001";
+    const traceId = "00000000-0000-4000-8000-000000000002";
+    const sessionId = "00000000-0000-4000-8000-000000000003";
+
+    const warnings: string[] = [];
+    const emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+    jest
+      .spyOn(client as any, "_getTenantId")
+      .mockResolvedValue("00000000-0000-4000-8000-000000000004" as never);
+
+    try {
+      const url = await client.getRunUrl({
+        run: {
+          id: runId,
+          trace_id: traceId,
+          session_id: sessionId,
+        } as any,
+      });
+      expect(url).toContain(runId);
+      expect(
+        warnings.filter((w) => w.includes("getRunUrl() is deprecated")),
+      ).toHaveLength(1);
+      expect(warnings.filter((w) => w.includes("readRun()"))).toHaveLength(0);
+    } finally {
+      emitWarningSpy.mockRestore();
+    }
+  });
+});

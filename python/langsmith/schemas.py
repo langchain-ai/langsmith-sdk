@@ -1659,7 +1659,8 @@ class InsightsReportResult(BaseModel):
 class FeedbackFormulaWeightedVariable(BaseModel):
     """A feedback key and weight used when calculating feedback formulas.
 
-    .. deprecated::
+    .. admonition:: Deprecated
+
         Composite feedback formulas are no longer supported in the SDK.
         Add composite feedback scores via the LangSmith UI instead. This
         schema is retained only for backwards compatibility and will be
@@ -1674,7 +1675,8 @@ class FeedbackFormulaWeightedVariable(BaseModel):
 class FeedbackFormulaCreate(BaseModel):
     """Schema used for creating a feedback formula.
 
-    .. deprecated::
+    .. admonition:: Deprecated
+
         Composite feedback formulas are no longer supported in the SDK.
         Add composite feedback scores via the LangSmith UI instead. This
         schema is retained only for backwards compatibility and will be
@@ -1693,7 +1695,8 @@ class FeedbackFormulaCreate(BaseModel):
 class FeedbackFormulaUpdate(BaseModel):
     """Schema used for updating a feedback formula.
 
-    .. deprecated::
+    .. admonition:: Deprecated
+
         Composite feedback formulas are no longer supported in the SDK.
         Add composite feedback scores via the LangSmith UI instead. This
         schema is retained only for backwards compatibility and will be
@@ -1710,7 +1713,8 @@ class FeedbackFormulaUpdate(BaseModel):
 class FeedbackFormula(FeedbackFormulaCreate):
     """Schema for getting feedback formulas.
 
-    .. deprecated::
+    .. admonition:: Deprecated
+
         Composite feedback formulas are no longer supported in the SDK.
         Add composite feedback scores via the LangSmith UI instead. This
         schema is retained only for backwards compatibility and will be
