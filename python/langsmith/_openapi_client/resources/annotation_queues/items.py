@@ -88,7 +88,7 @@ class ItemsResource(SyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return self._post(
-            path_template("/api/v1/annotation-queues/{queue_id}/items", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items", queue_id=queue_id),
             body=maybe_transform({"items": items}, item_create_params.ItemCreateParams),
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -135,7 +135,9 @@ class ItemsResource(SyncAPIResource):
         if not item_id:
             raise ValueError(f"Expected a non-empty value for `item_id` but received {item_id!r}")
         return self._patch(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/{item_id}", queue_id=queue_id, item_id=item_id),
+            path_template(
+                "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}", queue_id=queue_id, item_id=item_id
+            ),
             body=maybe_transform(
                 {
                     "added_at": added_at,
@@ -195,7 +197,7 @@ class ItemsResource(SyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return self._get_api_list(
-            path_template("/api/v1/annotation-queues/{queue_id}/items", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items", queue_id=queue_id),
             page=SyncItemsCursorGetPagination[ItemListResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -246,7 +248,9 @@ class ItemsResource(SyncAPIResource):
         if not queue_item_id:
             raise ValueError(f"Expected a non-empty value for `queue_item_id` but received {queue_item_id!r}")
         return self._post(
-            path_template("/api/v1/annotation-queues/items/{queue_item_id}/status", queue_item_id=queue_item_id),
+            path_template(
+                "/api/v1/platform/annotation-queues/items/{queue_item_id}/status", queue_item_id=queue_item_id
+            ),
             body=maybe_transform(
                 {
                     "override_added_at": override_added_at,
@@ -287,7 +291,7 @@ class ItemsResource(SyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return self._post(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/delete", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items/delete", queue_id=queue_id),
             body=maybe_transform({"item_ids": item_ids}, item_delete_all_params.ItemDeleteAllParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -331,7 +335,7 @@ class ItemsResource(SyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return self._get(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/count", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items/count", queue_id=queue_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -380,7 +384,9 @@ class ItemsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `item_id` but received {item_id!r}")
         return self._get(
             path_template(
-                "/api/v1/annotation-queues/{queue_id}/items/{item_id}/placement", queue_id=queue_id, item_id=item_id
+                "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement",
+                queue_id=queue_id,
+                item_id=item_id,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -438,7 +444,7 @@ class AsyncItemsResource(AsyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return await self._post(
-            path_template("/api/v1/annotation-queues/{queue_id}/items", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items", queue_id=queue_id),
             body=await async_maybe_transform({"items": items}, item_create_params.ItemCreateParams),
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -485,7 +491,9 @@ class AsyncItemsResource(AsyncAPIResource):
         if not item_id:
             raise ValueError(f"Expected a non-empty value for `item_id` but received {item_id!r}")
         return await self._patch(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/{item_id}", queue_id=queue_id, item_id=item_id),
+            path_template(
+                "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}", queue_id=queue_id, item_id=item_id
+            ),
             body=await async_maybe_transform(
                 {
                     "added_at": added_at,
@@ -545,7 +553,7 @@ class AsyncItemsResource(AsyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return self._get_api_list(
-            path_template("/api/v1/annotation-queues/{queue_id}/items", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items", queue_id=queue_id),
             page=AsyncItemsCursorGetPagination[ItemListResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -596,7 +604,9 @@ class AsyncItemsResource(AsyncAPIResource):
         if not queue_item_id:
             raise ValueError(f"Expected a non-empty value for `queue_item_id` but received {queue_item_id!r}")
         return await self._post(
-            path_template("/api/v1/annotation-queues/items/{queue_item_id}/status", queue_item_id=queue_item_id),
+            path_template(
+                "/api/v1/platform/annotation-queues/items/{queue_item_id}/status", queue_item_id=queue_item_id
+            ),
             body=await async_maybe_transform(
                 {
                     "override_added_at": override_added_at,
@@ -637,7 +647,7 @@ class AsyncItemsResource(AsyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return await self._post(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/delete", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items/delete", queue_id=queue_id),
             body=await async_maybe_transform({"item_ids": item_ids}, item_delete_all_params.ItemDeleteAllParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -681,7 +691,7 @@ class AsyncItemsResource(AsyncAPIResource):
         if not queue_id:
             raise ValueError(f"Expected a non-empty value for `queue_id` but received {queue_id!r}")
         return await self._get(
-            path_template("/api/v1/annotation-queues/{queue_id}/items/count", queue_id=queue_id),
+            path_template("/api/v1/platform/annotation-queues/{queue_id}/items/count", queue_id=queue_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -730,7 +740,9 @@ class AsyncItemsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `item_id` but received {item_id!r}")
         return await self._get(
             path_template(
-                "/api/v1/annotation-queues/{queue_id}/items/{item_id}/placement", queue_id=queue_id, item_id=item_id
+                "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement",
+                queue_id=queue_id,
+                item_id=item_id,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
