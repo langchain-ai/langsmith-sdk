@@ -1,0 +1,13 @@
+diff --git a/dist/commonjs/index.js b/dist/commonjs/index.js
+index c12dc5e6476874f9dbba429a19e445a4a688e1df..d9a9cd11675e7f06670815b9ae5cfb471dc10346 100644
+--- a/dist/commonjs/index.js
++++ b/dist/commonjs/index.js
+@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
+ const brace_expansion_1 = __importDefault(require("brace-expansion"));
++if (typeof brace_expansion_1.default !== "function")
++    brace_expansion_1.default = brace_expansion_1.expand;
+ const assert_valid_pattern_js_1 = require("./assert-valid-pattern.js");
+ const ast_js_1 = require("./ast.js");
+ const escape_js_1 = require("./escape.js");
