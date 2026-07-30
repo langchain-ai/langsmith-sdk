@@ -68,7 +68,7 @@ class IssuesResource(SyncAPIResource):
         if not id:
             raise ValueError(f"Expected a non-empty value for `id` but received {id!r}")
         return self._get(
-            path_template("/v1/platform/issues/{id}", id=id),
+            path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -128,7 +128,7 @@ class IssuesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/issues",
+            "/api/v1/platform/issues",
             page=SyncOffsetPaginationIssues[Issue],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -198,7 +198,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         if not id:
             raise ValueError(f"Expected a non-empty value for `id` but received {id!r}")
         return await self._get(
-            path_template("/v1/platform/issues/{id}", id=id),
+            path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -258,7 +258,7 @@ class AsyncIssuesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/issues",
+            "/api/v1/platform/issues",
             page=AsyncOffsetPaginationIssues[Issue],
             options=make_request_options(
                 extra_headers=extra_headers,

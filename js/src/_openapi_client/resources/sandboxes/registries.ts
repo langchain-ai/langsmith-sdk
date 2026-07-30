@@ -12,21 +12,21 @@ export class Registries extends APIResource {
    * Create a sandbox registry for pulling private images.
    */
   create(body: RegistryCreateParams, options?: RequestOptions): APIPromise<RegistryResponse> {
-    return this._client.post('/v2/sandboxes/registries', { body, ...options });
+    return this._client.post('/api/v2/sandboxes/registries', { body, ...options });
   }
 
   /**
    * Get a sandbox registry by name.
    */
   retrieve(name: string, options?: RequestOptions): APIPromise<RegistryResponse> {
-    return this._client.get(path`/v2/sandboxes/registries/${name}`, options);
+    return this._client.get(path`/api/v2/sandboxes/registries/${name}`, options);
   }
 
   /**
    * Update a sandbox registry's name and/or credentials.
    */
   update(name: string, body: RegistryUpdateParams, options?: RequestOptions): APIPromise<RegistryResponse> {
-    return this._client.patch(path`/v2/sandboxes/registries/${name}`, { body, ...options });
+    return this._client.patch(path`/api/v2/sandboxes/registries/${name}`, { body, ...options });
   }
 
   /**
@@ -36,14 +36,14 @@ export class Registries extends APIResource {
     query: RegistryListParams | null | undefined = {},
     options?: RequestOptions,
   ): APIPromise<RegistryListResponse> {
-    return this._client.get('/v2/sandboxes/registries', { query, ...options });
+    return this._client.get('/api/v2/sandboxes/registries', { query, ...options });
   }
 
   /**
    * Delete a sandbox registry by name.
    */
   delete(name: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/sandboxes/registries/${name}`, {
+    return this._client.delete(path`/api/v2/sandboxes/registries/${name}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });

@@ -21,11 +21,13 @@ class ItemCreateParams(TypedDict, total=False):
 class Item(TypedDict, total=False):
     item_type: Literal["RUN", "THREAD"]
 
+    project_id: str
+
     run_id: str
     """RUN fields"""
 
     session_id: str
-    """SessionID is the ID of the tracing project that contains the run or thread."""
+    """SessionID is an alias for project_id."""
 
     source_proposed_example_id: str
     """
@@ -34,7 +36,5 @@ class Item(TypedDict, total=False):
     """
 
     start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
-    """StartTime is the start time of the run being added, used to identify it."""
 
     thread_id: str
-    """ThreadID is the ID of the thread being added."""

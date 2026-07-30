@@ -28,7 +28,7 @@ export class Runs extends APIResource {
    */
   retrieve(runID: string, params: RunRetrieveParams, options?: RequestOptions): APIPromise<RunsAPI_.Run> {
     const { share_token, Accept, ...query } = params;
-    return this._client.get(path`/v2/public/${share_token}/run/${runID}`, {
+    return this._client.get(path`/api/v2/public/${share_token}/run/${runID}`, {
       query,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
@@ -49,7 +49,7 @@ export class Runs extends APIResource {
    */
   query(shareToken: string, params: RunQueryParams, options?: RequestOptions): APIPromise<RunQueryResponse> {
     const { Accept, ...body } = params;
-    return this._client.post(path`/v2/public/${shareToken}/runs/v2/query`, {
+    return this._client.post(path`/api/v2/public/${shareToken}/runs/v2/query`, {
       body,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),

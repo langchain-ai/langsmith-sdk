@@ -112,7 +112,7 @@ class BoxesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._post(
-            "/v2/sandboxes/boxes",
+            "/api/v2/sandboxes/boxes",
             body=maybe_transform(
                 {
                     "cpu_millicores": cpu_millicores,
@@ -167,7 +167,7 @@ class BoxesResource(SyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return self._get(
-            path_template("/v2/sandboxes/boxes/{name}", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -210,7 +210,7 @@ class BoxesResource(SyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return self._patch(
-            path_template("/v2/sandboxes/boxes/{path_name}", path_name=path_name),
+            path_template("/api/v2/sandboxes/boxes/{path_name}", path_name=path_name),
             body=maybe_transform(
                 {
                     "cpu_millicores": cpu_millicores,
@@ -280,7 +280,7 @@ class BoxesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get(
-            "/v2/sandboxes/boxes",
+            "/api/v2/sandboxes/boxes",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -332,7 +332,7 @@ class BoxesResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._delete(
-            path_template("/v2/sandboxes/boxes/{name}", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -385,7 +385,7 @@ class BoxesResource(SyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return self._post(
-            path_template("/v2/sandboxes/boxes/{path_name}/snapshot", path_name=path_name),
+            path_template("/api/v2/sandboxes/boxes/{path_name}/snapshot", path_name=path_name),
             body=maybe_transform(
                 {
                     "body_name": body_name,
@@ -434,7 +434,7 @@ class BoxesResource(SyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return self._post(
-            path_template("/v2/sandboxes/boxes/{name}/service-url", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/service-url", name=name),
             body=maybe_transform(
                 {
                     "expires_in_seconds": expires_in_seconds,
@@ -474,7 +474,7 @@ class BoxesResource(SyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return self._get(
-            path_template("/v2/sandboxes/boxes/{name}/status", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/status", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -508,7 +508,7 @@ class BoxesResource(SyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return self._post(
-            path_template("/v2/sandboxes/boxes/{name}/start", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/start", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -544,7 +544,7 @@ class BoxesResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._post(
-            path_template("/v2/sandboxes/boxes/{name}/stop", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/stop", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -631,7 +631,7 @@ class AsyncBoxesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._post(
-            "/v2/sandboxes/boxes",
+            "/api/v2/sandboxes/boxes",
             body=await async_maybe_transform(
                 {
                     "cpu_millicores": cpu_millicores,
@@ -686,7 +686,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return await self._get(
-            path_template("/v2/sandboxes/boxes/{name}", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -729,7 +729,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return await self._patch(
-            path_template("/v2/sandboxes/boxes/{path_name}", path_name=path_name),
+            path_template("/api/v2/sandboxes/boxes/{path_name}", path_name=path_name),
             body=await async_maybe_transform(
                 {
                     "cpu_millicores": cpu_millicores,
@@ -799,7 +799,7 @@ class AsyncBoxesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._get(
-            "/v2/sandboxes/boxes",
+            "/api/v2/sandboxes/boxes",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -851,7 +851,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._delete(
-            path_template("/v2/sandboxes/boxes/{name}", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -904,7 +904,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not path_name:
             raise ValueError(f"Expected a non-empty value for `path_name` but received {path_name!r}")
         return await self._post(
-            path_template("/v2/sandboxes/boxes/{path_name}/snapshot", path_name=path_name),
+            path_template("/api/v2/sandboxes/boxes/{path_name}/snapshot", path_name=path_name),
             body=await async_maybe_transform(
                 {
                     "body_name": body_name,
@@ -953,7 +953,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return await self._post(
-            path_template("/v2/sandboxes/boxes/{name}/service-url", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/service-url", name=name),
             body=await async_maybe_transform(
                 {
                     "expires_in_seconds": expires_in_seconds,
@@ -993,7 +993,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return await self._get(
-            path_template("/v2/sandboxes/boxes/{name}/status", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/status", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -1027,7 +1027,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         if not name:
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         return await self._post(
-            path_template("/v2/sandboxes/boxes/{name}/start", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/start", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -1063,7 +1063,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._post(
-            path_template("/v2/sandboxes/boxes/{name}/stop", name=name),
+            path_template("/api/v2/sandboxes/boxes/{name}/stop", name=name),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),

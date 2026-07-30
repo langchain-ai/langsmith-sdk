@@ -14,14 +14,14 @@ export class Boxes extends APIResource {
    * `snapshot_name`; if neither is provided, the server uses the default snapshot.
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.post('/v2/sandboxes/boxes', { body, ...options });
+    return this._client.post('/api/v2/sandboxes/boxes', { body, ...options });
   }
 
   /**
    * Retrieve a sandbox by name. Stale provisioning sandboxes are auto-failed.
    */
   retrieve(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.get(path`/v2/sandboxes/boxes/${name}`, options);
+    return this._client.get(path`/api/v2/sandboxes/boxes/${name}`, options);
   }
 
   /**
@@ -32,7 +32,7 @@ export class Boxes extends APIResource {
     body: BoxUpdateParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.patch(path`/v2/sandboxes/boxes/${name}`, { body, ...options });
+    return this._client.patch(path`/api/v2/sandboxes/boxes/${name}`, { body, ...options });
   }
 
   /**
@@ -43,7 +43,7 @@ export class Boxes extends APIResource {
     query: BoxListParams | null | undefined = {},
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SandboxListResponse> {
-    return this._client.get('/v2/sandboxes/boxes', { query, ...options });
+    return this._client.get('/api/v2/sandboxes/boxes', { query, ...options });
   }
 
   /**
@@ -51,7 +51,7 @@ export class Boxes extends APIResource {
    * DB record.
    */
   delete(name: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/sandboxes/boxes/${name}`, {
+    return this._client.delete(path`/api/v2/sandboxes/boxes/${name}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
@@ -66,7 +66,7 @@ export class Boxes extends APIResource {
     body: BoxCreateSnapshotParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/snapshot`, { body, ...options });
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/snapshot`, { body, ...options });
   }
 
   /**
@@ -80,21 +80,21 @@ export class Boxes extends APIResource {
     body: BoxGenerateServiceURLParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.ServiceURLResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/service-url`, { body, ...options });
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/service-url`, { body, ...options });
   }
 
   /**
    * Retrieve the lightweight status of a sandbox for polling.
    */
   getStatus(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxStatusResponse> {
-    return this._client.get(path`/v2/sandboxes/boxes/${name}/status`, options);
+    return this._client.get(path`/api/v2/sandboxes/boxes/${name}/status`, options);
   }
 
   /**
    * Start a stopped or failed sandbox. This endpoint is not idempotent.
    */
   start(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/start`, options);
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/start`, options);
   }
 
   /**
@@ -102,7 +102,7 @@ export class Boxes extends APIResource {
    * preserved for later restart.
    */
   stop(name: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/stop`, {
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/stop`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });

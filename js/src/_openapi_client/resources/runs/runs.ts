@@ -31,7 +31,7 @@ export class Runs extends APIResource {
    * ```
    */
   getURL(runID: string, query: RunGetURLParams, options?: RequestOptions): APIPromise<RunGetURLResponse> {
-    return this._client.get(path`/v2/runs/${runID}/url`, { query, ...options });
+    return this._client.get(path`/api/v2/runs/${runID}/url`, { query, ...options });
   }
 
   /**
@@ -52,7 +52,7 @@ export class Runs extends APIResource {
     options?: RequestOptions,
   ): PagePromise<RunsItemsCursorPostPagination, Run> {
     const { Accept, ...body } = params;
-    return this._client.getAPIList('/v2/runs/query', ItemsCursorPostPagination<Run>, {
+    return this._client.getAPIList('/api/v2/runs/query', ItemsCursorPostPagination<Run>, {
       body,
       method: 'post',
       ...options,
@@ -75,7 +75,7 @@ export class Runs extends APIResource {
    */
   retrieveV2(runID: string, params: RunRetrieveV2Params, options?: RequestOptions): APIPromise<Run> {
     const { Accept, ...query } = params;
-    return this._client.get(path`/v2/runs/${runID}`, {
+    return this._client.get(path`/api/v2/runs/${runID}`, {
       query,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),

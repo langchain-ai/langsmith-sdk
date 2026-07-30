@@ -10,6 +10,8 @@ The directories `python/langsmith/_openapi_client/` and `js/src/_openapi_client/
 
 Updates are applied automatically by the [`stlc_sync_python_and_js_sdks`](https://github.com/langchain-ai/langchainplus/actions/workflows/stlc_sync_python_and_js_sdks.yml) workflow in `langchain-ai/langchainplus`, which opens PRs from the `sync/langsmith-api` branch. A CI check ([`protect-openapi-client.yml`](.github/workflows/protect-openapi-client.yml)) blocks any PR that touches these directories from a source other than that workflow.
 
+For the full end-to-end process — how the spec is generated, how the sync PRs are produced, and how to review and land them — see [Releasing the SDKs](https://github.com/langchain-ai/langchainplus/tree/main/smith-sdks#releasing-the-sdks) in `langchain-ai/langchainplus` (internal).
+
 ## Cutting a release
 
 Releases are published by GitHub Actions workflows that fire on `main` when specific files change:

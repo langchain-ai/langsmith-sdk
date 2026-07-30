@@ -19,7 +19,7 @@ export class Share extends APIResource {
    * ```
    */
   create(runID: string, body: ShareCreateParams, options?: RequestOptions): APIPromise<ShareCreateResponse> {
-    return this._client.post(path`/v2/runs/${runID}/share`, { body, ...options });
+    return this._client.post(path`/api/v2/runs/${runID}/share`, { body, ...options });
   }
 
   /**
@@ -34,7 +34,7 @@ export class Share extends APIResource {
    * ```
    */
   delete(traceID: string, body: ShareDeleteParams, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/runs/${traceID}/share`, {
+    return this._client.delete(path`/api/v2/runs/${traceID}/share`, {
       body,
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),

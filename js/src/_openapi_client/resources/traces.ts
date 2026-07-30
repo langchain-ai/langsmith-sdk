@@ -33,7 +33,7 @@ export class Traces extends APIResource {
     options?: RequestOptions,
   ): APIPromise<TraceListRunsResponse> {
     const { Accept, ...query } = params;
-    return this._client.get(path`/v2/traces/${traceID}/runs`, {
+    return this._client.get(path`/api/v2/traces/${traceID}/runs`, {
       query,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
@@ -65,7 +65,7 @@ export class Traces extends APIResource {
     body: TraceQueryParams,
     options?: RequestOptions,
   ): PagePromise<TracesItemsCursorPostPagination, Trace> {
-    return this._client.getAPIList('/v2/traces/query', ItemsCursorPostPagination<Trace>, {
+    return this._client.getAPIList('/api/v2/traces/query', ItemsCursorPostPagination<Trace>, {
       body,
       method: 'post',
       ...options,
