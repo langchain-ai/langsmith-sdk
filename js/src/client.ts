@@ -1565,7 +1565,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   /** Access the annotation queues resource (runs, items). */
   public get annotationQueues(): AnnotationQueues {
-    this._checkStainlessVersion();
+    // The items endpoints landed in backend 0.16.14; the rest are older.
+    this._checkStainlessVersion("0.16.14");
     return this.openAPIClient.annotationQueues;
   }
 

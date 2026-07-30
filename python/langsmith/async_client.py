@@ -376,6 +376,8 @@ class AsyncClient:
     @property
     def annotation_queues(self) -> AsyncAnnotationQueuesResource:
         """Access the annotation queues resource (runs, items)."""
+        # The items endpoints landed in backend 0.16.14; the rest are older.
+        self._schedule_backend_version_check("0.16.14")
         return self._langsmith_api.annotation_queues
 
     @property
