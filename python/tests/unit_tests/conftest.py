@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+import io
 import json
 import re
 from typing import Any, Dict, List
+
+_ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def _normalize_request_data(data: Any) -> bytes:
+    """Return raw bytes for a request payload, decompressing zstd when present."""
+    if isinstance(data, io.IOBase):
+        data = data.read()
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    if isinstance(data, (bytes, bytearray)) and data.startswith(_ZSTD_MAGIC):
+        import zstandard as zstd
+
+        with zstd.ZstdDecompressor().stream_reader(io.BytesIO(bytes(data))) as reader:
+            data = reader.read()
+    return bytes(data) if isinstance(data, bytearray) else data
 
 
 def parse_multipart_data(data: bytes) -> Dict[str, Any]:
@@ -95,14 +112,13 @@ def parse_multipart_data(data: bytes) -> Dict[str, Any]:
     return result
 
 
-def parse_request_data(data: bytes, content_type: str = "") -> Dict[str, Any]:
+def parse_request_data(data: Any, content_type: str = "") -> Dict[str, Any]:
     """Parse request data, handling both JSON and multipart formats.
 
     This function automatically detects the format based on content type
     or data structure.
     """
-    if isinstance(data, str):
-        data = data.encode("utf-8")
+    data = _normalize_request_data(data)
 
     # Try JSON first
     if "multipart" not in content_type.lower():
