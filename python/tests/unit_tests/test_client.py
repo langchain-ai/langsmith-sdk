@@ -297,7 +297,7 @@ def test_profile_config_loads_api_key_and_workspace(
     assert client._headers["X-Tenant-Id"] == "workspace-id"
 
 
-def test_profile_config_uses_oauth_access_token_before_api_key(
+def test_profile_config_uses_api_key_before_oauth_access_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     _clear_profile_env(monkeypatch)
@@ -320,8 +320,8 @@ def test_profile_config_uses_oauth_access_token_before_api_key(
     client = Client(auto_batch_tracing=False)
 
     assert client.api_key is None
-    assert client._headers["Authorization"] == "Bearer profile-access-token"
-    assert "x-api-key" not in client._headers
+    assert client._headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in client._headers
 
 
 def test_profile_config_env_auth_suppresses_profile_auth(
