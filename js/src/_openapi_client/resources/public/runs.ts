@@ -51,7 +51,7 @@ export class Runs extends APIResource {
    */
   query(shareToken: string, params: RunQueryParams, options?: RequestOptions): APIPromise<RunQueryResponse> {
     const { Accept, ...body } = params;
-    return this._client.post(path`/api/v2/public/${shareToken}/runs/v2/query`, {
+    return this._client.post(path`/api/v2/public/${shareToken}/runs/query`, {
       body,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
