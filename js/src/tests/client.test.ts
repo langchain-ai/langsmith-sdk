@@ -6,9 +6,13 @@ import * as path from "node:path";
 import { inspect } from "node:util";
 import {
   Client,
+  ClientConfig,
   mergeRuntimeEnvIntoRun,
   _checkBackendVersion,
 } from "../client.js";
+import { v4 as uuid } from "../utils/uuid/src/index.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
@@ -1600,6 +1604,78 @@ describe("Client", () => {
       expect(result.extra).toBeDefined();
       expect(result.extra.runtime).toBeDefined();
       expect(result.extra.metadata).toBeDefined();
+    });
+  });
+
+  describe("hideMetadata covers runtime env metadata", () => {
+    const postedMetadata = async (
+      hideMetadata: ClientConfig["hideMetadata"],
+    ) => {
+      // Read once at construction, so it has to be set before the client exists.
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const { client, callSpy } = mockClient({ hideMetadata });
+        await client.createRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: { random: 123 } },
+        });
+        const { data } = await getAssumedTreeFromCalls(
+          callSpy.mock.calls,
+          client,
+        );
+        return data["traced:0"].extra?.metadata;
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
+    };
+
+    it("should hide metadata merged in after masking", async () => {
+      expect(await postedMetadata(true)).toEqual({});
+    });
+
+    it("should pass env metadata to a hideMetadata function", async () => {
+      const metadata = await postedMetadata((metadata) =>
+        Object.fromEntries(
+          Object.entries(metadata).filter(
+            ([key]) => !key.startsWith("LANGCHAIN_"),
+          ),
+        ),
+      );
+
+      expect(metadata).not.toHaveProperty("LANGCHAIN_TEST_ENV_METADATA");
+      expect(metadata?.random).toBe(123);
+    });
+
+    // The OTEL exporter consumes queued runs directly, so it needs the same
+    // re-masking the ingest endpoints get from prepareRunCreateOrUpdateInputs.
+    it("should hide metadata merged in before OTEL export", async () => {
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const client = new Client({ apiKey: "MOCK", hideMetadata: true });
+        const exportBatch = jest.fn();
+        (client as any).langSmithToOTELTranslator = { exportBatch };
+
+        // What processRunOperation queues: masked metadata, then env merged in.
+        const item = mergeRuntimeEnvIntoRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: {} },
+        } as any);
+
+        await (client as any)._processBatch([
+          { action: "create", item, otelContext: {} },
+        ]);
+
+        const [operations] = exportBatch.mock.calls[0] as [any[]];
+        expect(operations[0].run.extra.metadata).toEqual({});
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
     });
   });
 

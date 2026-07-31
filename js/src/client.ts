@@ -165,11 +165,11 @@ export interface ClientConfig {
   timeout_ms?: number;
   webUrl?: string;
   /**
-   * A function applied for masking serialized run inputs and outputs,
-   * before sending to the API. Can be called with raw inputs, raw
-   * outputs, or a nested `{ error: string }` object for errors.
+   * A function applied for masking serialized run inputs, outputs and
+   * metadata, before sending to the API. Can be called with raw inputs, raw
+   * outputs, raw metadata, or a nested `{ error: string }` object for errors.
    *
-   * If a `hideInputs` or `hideOutputs` function is present,
+   * If a `hideInputs`, `hideOutputs` or `hideMetadata` function is present,
    * the client will call it instead of the anonymizer as appropriate.
    */
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
@@ -1429,7 +1429,8 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
-    this.hideMetadata = config.hideMetadata ?? defaultConfig.hideMetadata;
+    this.hideMetadata =
+      config.hideMetadata ?? config.anonymizer ?? defaultConfig.hideMetadata;
     this.anonymizer = config.anonymizer;
 
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
@@ -2221,6 +2222,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     try {
       if (this.langSmithToOTELTranslator !== undefined) {
+        for (const item of batch) {
+          item.item = await this._maskRunMetadata(item.item);
+        }
         this._sendBatchToOTELTranslator(batch);
       } else {
         const ingestParams = {
@@ -2297,6 +2301,35 @@ export class Client implements LangSmithTracingClientInterface {
       }
       this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
     }
+  }
+
+  private async _maskRunMetadata<T extends RunCreate | RunUpdate>(
+    run: T,
+  ): Promise<T> {
+    if (run.extra?.metadata == null) {
+      return run;
+    }
+    return {
+      ...run,
+      extra: {
+        ...run.extra,
+        metadata: await this.processMetadata(run.extra.metadata),
+      },
+    };
+  }
+
+  private async _mergeRuntimeEnvAndMaskMetadata<
+    T extends RunCreate | RunUpdate,
+  >(run: T): Promise<T> {
+    const merged = mergeRuntimeEnvIntoRun(
+      run,
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo,
+    );
+    if (this.omitTracedRuntimeInfo) {
+      return merged;
+    }
+    return this._maskRunMetadata(merged);
   }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
@@ -2492,11 +2525,8 @@ export class Client implements LangSmithTracingClientInterface {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
-      runCreate,
-      this.cachedLSEnvVarsForMetadata,
-      this.omitTracedRuntimeInfo,
-    );
+    const mergedRunCreateParam =
+      await this._mergeRuntimeEnvAndMaskMetadata(runCreate);
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
