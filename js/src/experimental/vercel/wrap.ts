@@ -9,12 +9,9 @@ import {
   LangSmithMiddleware,
 } from "./middleware.js";
 import { convertMessageToTracedFormat } from "./utils.js";
-import {
-  isTraceableFunction,
-  traceable,
-  getCurrentRunTree,
-} from "../../traceable.js";
+import { isTraceableFunction, traceable } from "../../traceable.js";
 import type { RunTreeConfig } from "../../run_trees.js";
+import { resolveLsAgentType } from "./_agent_type.js";
 
 const _getModelDisplayName = (
   model: string | Record<string, unknown>,
@@ -410,14 +407,6 @@ const _resolveConfigs = (
   };
 };
 
-const _getLsAgentType = (): string => {
-  const parentRun = getCurrentRunTree(true);
-  if (parentRun != null && parentRun.run_type === "tool") {
-    return "subagent";
-  }
-  return "root";
-};
-
 const _getGenerateTextWrapperConfig = ({
   model,
   runName,
@@ -439,7 +428,7 @@ const _getGenerateTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
-      ls_agent_type: _getLsAgentType(),
+      ls_agent_type: resolveLsAgentType(),
       ai_sdk_method: aiSdkMethodName ?? "ai.generateText",
       ...resolvedLsConfig?.metadata,
     },
@@ -533,7 +522,7 @@ const _getStreamTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
-      ls_agent_type: _getLsAgentType(),
+      ls_agent_type: resolveLsAgentType(),
       ai_sdk_method: aiSdkMethodName ?? "ai.streamText",
       ...resolvedLsConfig?.metadata,
     },
@@ -790,7 +779,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
-            ls_agent_type: _getLsAgentType(),
+            ls_agent_type: resolveLsAgentType(),
             ai_sdk_method: "ai.generateObject",
             ...resolvedLsConfig?.metadata,
           },
@@ -944,7 +933,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
-            ls_agent_type: _getLsAgentType(),
+            ls_agent_type: resolveLsAgentType(),
             ai_sdk_method: "ai.streamObject",
             ...resolvedLsConfig?.metadata,
           },
