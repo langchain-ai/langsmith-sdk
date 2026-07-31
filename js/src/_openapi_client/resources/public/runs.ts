@@ -10,9 +10,10 @@ import * as RunsAPI_ from '../runs/runs.js';
 
 export class Runs extends APIResource {
   /**
-   * **Alpha:** The request and response contract may change; Returns one run within
-   * the trace identified by the share token. The request supplies only the run ID
-   * and that run's exact start_time coordinate.
+   * Returns one run within the trace identified by the share token. The request
+   * supplies only the run ID and that run's exact start_time coordinate.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts
@@ -36,9 +37,10 @@ export class Runs extends APIResource {
   }
 
   /**
-   * **Alpha:** The request and response contract may change; Returns all runs within
-   * the trace identified by the share token. The share token supplies the tenant,
-   * project, and trace scope.
+   * Returns all runs within the trace identified by the share token. The share token
+   * supplies the tenant, project, and trace scope.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts

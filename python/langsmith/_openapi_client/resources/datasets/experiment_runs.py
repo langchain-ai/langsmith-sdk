@@ -64,6 +64,8 @@ class ExperimentRunsResource(SyncAPIResource):
         Returns a paginated page of dataset examples with runs from the requested
         experiments. Response uses the canonical `{items, next_cursor}` envelope.
 
+        Self-hosted deployments require LangSmith `v0.16` or later.
+
         Args:
           comparative_experiment_id: `comparative_experiment_id` scopes pairwise-annotation feedback (optional).
 
@@ -159,6 +161,8 @@ class AsyncExperimentRunsResource(AsyncAPIResource):
         """
         Returns a paginated page of dataset examples with runs from the requested
         experiments. Response uses the canonical `{items, next_cursor}` envelope.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           comparative_experiment_id: `comparative_experiment_id` scopes pairwise-annotation feedback (optional).

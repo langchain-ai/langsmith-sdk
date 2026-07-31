@@ -15,9 +15,10 @@ import { path } from '../internal/utils/path.js';
 
 export class Traces extends APIResource {
   /**
-   * **Alpha:** The request and response contract may change; Returns runs for a
-   * trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-   * select fields to return.
+   * Returns runs for a trace ID within min/max start time. Optional `filter`;
+   * repeatable `selects` to select fields to return.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts
@@ -52,6 +53,8 @@ export class Traces extends APIResource {
    *
    * Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
    * and field projection (`selects`).
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts

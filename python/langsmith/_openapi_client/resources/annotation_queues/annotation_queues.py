@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import typing_extensions
 from typing import Dict, Union, Iterable, Optional
 from datetime import datetime
 from typing_extensions import Literal
@@ -271,6 +272,9 @@ class AnnotationQueuesResource(SyncAPIResource):
             cast_to=AnnotationQueueSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create_status(...) instead, which calls POST /api/v1/platform/annotation-queues/items/{queue_item_id}/status. Will be removed after Jan 31, 2027."
+    )
     def create_run_status(
         self,
         annotation_queue_run_id: str,
@@ -497,6 +501,9 @@ class AnnotationQueuesResource(SyncAPIResource):
             cast_to=AnnotationQueueRetrieveQueuesResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.list(...) and annotation_queues.items.retrieve_placement(...) instead, which call the annotation queue item list and placement endpoints. Will be removed after Jan 31, 2027."
+    )
     def retrieve_run(
         self,
         index: int,
@@ -539,6 +546,9 @@ class AnnotationQueuesResource(SyncAPIResource):
             cast_to=RunSchemaWithAnnotationQueueInfo,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(...) with the desired status instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     def retrieve_size(
         self,
         queue_id: str,
@@ -579,6 +589,9 @@ class AnnotationQueuesResource(SyncAPIResource):
             cast_to=AnnotationQueueSizeSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(..., status='archived') instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     def retrieve_total_archived(
         self,
         queue_id: str,
@@ -624,6 +637,9 @@ class AnnotationQueuesResource(SyncAPIResource):
             cast_to=AnnotationQueueSizeSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(..., status='all') instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     def retrieve_total_size(
         self,
         queue_id: str,
@@ -869,6 +885,9 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
             cast_to=AnnotationQueueSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create_status(...) instead, which calls POST /api/v1/platform/annotation-queues/items/{queue_item_id}/status. Will be removed after Jan 31, 2027."
+    )
     async def create_run_status(
         self,
         annotation_queue_run_id: str,
@@ -1098,6 +1117,9 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
             cast_to=AnnotationQueueRetrieveQueuesResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.list(...) and annotation_queues.items.retrieve_placement(...) instead, which call the annotation queue item list and placement endpoints. Will be removed after Jan 31, 2027."
+    )
     async def retrieve_run(
         self,
         index: int,
@@ -1140,6 +1162,9 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
             cast_to=RunSchemaWithAnnotationQueueInfo,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(...) with the desired status instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     async def retrieve_size(
         self,
         queue_id: str,
@@ -1180,6 +1205,9 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
             cast_to=AnnotationQueueSizeSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(..., status='archived') instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     async def retrieve_total_archived(
         self,
         queue_id: str,
@@ -1225,6 +1253,9 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
             cast_to=AnnotationQueueSizeSchema,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.retrieve_count(..., status='all') instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items/count. Will be removed after Jan 31, 2027."
+    )
     async def retrieve_total_size(
         self,
         queue_id: str,
@@ -1275,8 +1306,10 @@ class AnnotationQueuesResourceWithRawResponse:
         self.annotation_queues = to_raw_response_wrapper(
             annotation_queues.annotation_queues,
         )
-        self.create_run_status = to_raw_response_wrapper(
-            annotation_queues.create_run_status,
+        self.create_run_status = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                annotation_queues.create_run_status,  # pyright: ignore[reportDeprecated],
+            )
         )
         self.export = to_raw_response_wrapper(
             annotation_queues.export,
@@ -1290,17 +1323,25 @@ class AnnotationQueuesResourceWithRawResponse:
         self.retrieve_queues = to_raw_response_wrapper(
             annotation_queues.retrieve_queues,
         )
-        self.retrieve_run = to_raw_response_wrapper(
-            annotation_queues.retrieve_run,
+        self.retrieve_run = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                annotation_queues.retrieve_run,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_size = to_raw_response_wrapper(
-            annotation_queues.retrieve_size,
+        self.retrieve_size = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                annotation_queues.retrieve_size,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_archived = to_raw_response_wrapper(
-            annotation_queues.retrieve_total_archived,
+        self.retrieve_total_archived = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                annotation_queues.retrieve_total_archived,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_size = to_raw_response_wrapper(
-            annotation_queues.retrieve_total_size,
+        self.retrieve_total_size = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                annotation_queues.retrieve_total_size,  # pyright: ignore[reportDeprecated],
+            )
         )
 
     @cached_property
@@ -1328,8 +1369,10 @@ class AsyncAnnotationQueuesResourceWithRawResponse:
         self.annotation_queues = async_to_raw_response_wrapper(
             annotation_queues.annotation_queues,
         )
-        self.create_run_status = async_to_raw_response_wrapper(
-            annotation_queues.create_run_status,
+        self.create_run_status = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                annotation_queues.create_run_status,  # pyright: ignore[reportDeprecated],
+            )
         )
         self.export = async_to_raw_response_wrapper(
             annotation_queues.export,
@@ -1343,17 +1386,25 @@ class AsyncAnnotationQueuesResourceWithRawResponse:
         self.retrieve_queues = async_to_raw_response_wrapper(
             annotation_queues.retrieve_queues,
         )
-        self.retrieve_run = async_to_raw_response_wrapper(
-            annotation_queues.retrieve_run,
+        self.retrieve_run = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                annotation_queues.retrieve_run,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_size = async_to_raw_response_wrapper(
-            annotation_queues.retrieve_size,
+        self.retrieve_size = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                annotation_queues.retrieve_size,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_archived = async_to_raw_response_wrapper(
-            annotation_queues.retrieve_total_archived,
+        self.retrieve_total_archived = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                annotation_queues.retrieve_total_archived,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_size = async_to_raw_response_wrapper(
-            annotation_queues.retrieve_total_size,
+        self.retrieve_total_size = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                annotation_queues.retrieve_total_size,  # pyright: ignore[reportDeprecated],
+            )
         )
 
     @cached_property
@@ -1381,8 +1432,10 @@ class AnnotationQueuesResourceWithStreamingResponse:
         self.annotation_queues = to_streamed_response_wrapper(
             annotation_queues.annotation_queues,
         )
-        self.create_run_status = to_streamed_response_wrapper(
-            annotation_queues.create_run_status,
+        self.create_run_status = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                annotation_queues.create_run_status,  # pyright: ignore[reportDeprecated],
+            )
         )
         self.export = to_streamed_response_wrapper(
             annotation_queues.export,
@@ -1396,17 +1449,25 @@ class AnnotationQueuesResourceWithStreamingResponse:
         self.retrieve_queues = to_streamed_response_wrapper(
             annotation_queues.retrieve_queues,
         )
-        self.retrieve_run = to_streamed_response_wrapper(
-            annotation_queues.retrieve_run,
+        self.retrieve_run = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                annotation_queues.retrieve_run,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_size = to_streamed_response_wrapper(
-            annotation_queues.retrieve_size,
+        self.retrieve_size = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                annotation_queues.retrieve_size,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_archived = to_streamed_response_wrapper(
-            annotation_queues.retrieve_total_archived,
+        self.retrieve_total_archived = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                annotation_queues.retrieve_total_archived,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_size = to_streamed_response_wrapper(
-            annotation_queues.retrieve_total_size,
+        self.retrieve_total_size = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                annotation_queues.retrieve_total_size,  # pyright: ignore[reportDeprecated],
+            )
         )
 
     @cached_property
@@ -1434,8 +1495,10 @@ class AsyncAnnotationQueuesResourceWithStreamingResponse:
         self.annotation_queues = async_to_streamed_response_wrapper(
             annotation_queues.annotation_queues,
         )
-        self.create_run_status = async_to_streamed_response_wrapper(
-            annotation_queues.create_run_status,
+        self.create_run_status = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                annotation_queues.create_run_status,  # pyright: ignore[reportDeprecated],
+            )
         )
         self.export = async_to_streamed_response_wrapper(
             annotation_queues.export,
@@ -1449,17 +1512,25 @@ class AsyncAnnotationQueuesResourceWithStreamingResponse:
         self.retrieve_queues = async_to_streamed_response_wrapper(
             annotation_queues.retrieve_queues,
         )
-        self.retrieve_run = async_to_streamed_response_wrapper(
-            annotation_queues.retrieve_run,
+        self.retrieve_run = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                annotation_queues.retrieve_run,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_size = async_to_streamed_response_wrapper(
-            annotation_queues.retrieve_size,
+        self.retrieve_size = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                annotation_queues.retrieve_size,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_archived = async_to_streamed_response_wrapper(
-            annotation_queues.retrieve_total_archived,
+        self.retrieve_total_archived = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                annotation_queues.retrieve_total_archived,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.retrieve_total_size = async_to_streamed_response_wrapper(
-            annotation_queues.retrieve_total_size,
+        self.retrieve_total_size = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                annotation_queues.retrieve_total_size,  # pyright: ignore[reportDeprecated],
+            )
         )
 
     @cached_property

@@ -10,6 +10,8 @@ import { path } from '../../internal/utils/path.js';
 export class Runs extends APIResource {
   /**
    * Add Runs To Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items create endpoint (POST /api/v1/platform/annotation-queues/{queue_id}/items) instead. Will be removed after Jan 31, 2027.
    */
   create(queueID: string, params: RunCreateParams, options?: RequestOptions): APIPromise<RunCreateResponse> {
     const { body, extend_trace_retention } = params;
@@ -22,6 +24,8 @@ export class Runs extends APIResource {
 
   /**
    * Update Run In Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items update method (PATCH /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}) instead. Will be removed after Jan 31, 2027.
    */
   update(queueRunID: string, params: RunUpdateParams, options?: RequestOptions): APIPromise<unknown> {
     const { queue_id, ...body } = params;
@@ -33,6 +37,8 @@ export class Runs extends APIResource {
 
   /**
    * Get Runs From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items list method (GET /api/v1/platform/annotation-queues/{queue_id}/items) instead. Will be removed after Jan 31, 2027.
    */
   list(
     queueID: string,
@@ -43,7 +49,9 @@ export class Runs extends APIResource {
   }
 
   /**
-   * Add Runs To Annotation Queue By Key
+   * Self-hosted deployments require LangSmith `v0.16` or later.
+   *
+   * @deprecated Deprecated: use the annotation queue items create endpoint (POST /api/v1/platform/annotation-queues/{queue_id}/items) instead. Will be removed after Jan 31, 2027.
    */
   createByKey(
     queueID: string,
@@ -60,6 +68,8 @@ export class Runs extends APIResource {
 
   /**
    * Delete Runs From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items delete_all method (POST /api/v1/platform/annotation-queues/{queue_id}/items/delete) instead. Will be removed after Jan 31, 2027.
    */
   deleteAll(queueID: string, body: RunDeleteAllParams, options?: RequestOptions): APIPromise<unknown> {
     return this._client.post(path`/api/v1/annotation-queues/${queueID}/runs/delete`, { body, ...options });
@@ -67,6 +77,8 @@ export class Runs extends APIResource {
 
   /**
    * Delete Run From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items delete_all method (POST /api/v1/platform/annotation-queues/{queue_id}/items/delete) with the item ID instead. Will be removed after Jan 31, 2027.
    */
   deleteQueue(
     queueRunID: string,

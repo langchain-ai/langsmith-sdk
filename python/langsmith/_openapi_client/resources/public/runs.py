@@ -57,10 +57,12 @@ class RunsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run within
-        the trace identified by the share token. The request supplies only the run ID
-        and that run's exact start_time coordinate.
+        """Returns one run within the trace identified by the share token.
+
+        The request
+        supplies only the run ID and that run's exact start_time coordinate.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: repeatable public run fields to include
@@ -151,10 +153,12 @@ class RunsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunQueryResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns all runs within
-        the trace identified by the share token. The share token supplies the tenant,
-        project, and trace scope.
+        """Returns all runs within the trace identified by the share token.
+
+        The share token
+        supplies the tenant, project, and trace scope.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which public run properties to include on each returned run.
@@ -211,10 +215,12 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run within
-        the trace identified by the share token. The request supplies only the run ID
-        and that run's exact start_time coordinate.
+        """Returns one run within the trace identified by the share token.
+
+        The request
+        supplies only the run ID and that run's exact start_time coordinate.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: repeatable public run fields to include
@@ -305,10 +311,12 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunQueryResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns all runs within
-        the trace identified by the share token. The share token supplies the tenant,
-        project, and trace scope.
+        """Returns all runs within the trace identified by the share token.
+
+        The share token
+        supplies the tenant, project, and trace scope.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which public run properties to include on each returned run.

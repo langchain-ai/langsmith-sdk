@@ -82,6 +82,8 @@ class RunsResource(SyncAPIResource):
         supply the run's project_id and trace_id as query parameters; start_time is
         optional.
 
+        Self-hosted deployments require LangSmith `v0.16` or later.
+
         Args:
           project_id: Project (session) UUID
 
@@ -146,9 +148,11 @@ class RunsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SyncItemsCursorPostPagination[Run]:
         """
-        **Alpha:** The request and response contract may change; Returns a paginated
-        list of runs for the given projects within min/max start_time. Supports filters,
-        cursor pagination, and `selects` to select fields to return.
+        Returns a paginated list of runs for the given projects within min/max
+        start_time. Supports filters, cursor pagination, and `selects` to select fields
+        to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
@@ -315,10 +319,12 @@ class RunsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session. Use the `selects` query parameter (repeatable) to select
-        fields to return.
+        """Returns one run by ID for the given session.
+
+        Use the `selects` query parameter
+        (repeatable) to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the run.
@@ -405,6 +411,8 @@ class AsyncRunsResource(AsyncAPIResource):
         supply the run's project_id and trace_id as query parameters; start_time is
         optional.
 
+        Self-hosted deployments require LangSmith `v0.16` or later.
+
         Args:
           project_id: Project (session) UUID
 
@@ -469,9 +477,11 @@ class AsyncRunsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> AsyncPaginator[Run, AsyncItemsCursorPostPagination[Run]]:
         """
-        **Alpha:** The request and response contract may change; Returns a paginated
-        list of runs for the given projects within min/max start_time. Supports filters,
-        cursor pagination, and `selects` to select fields to return.
+        Returns a paginated list of runs for the given projects within min/max
+        start_time. Supports filters, cursor pagination, and `selects` to select fields
+        to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
@@ -638,10 +648,12 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run by ID
-        for the given session. Use the `selects` query parameter (repeatable) to select
-        fields to return.
+        """Returns one run by ID for the given session.
+
+        Use the `selects` query parameter
+        (repeatable) to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the run.

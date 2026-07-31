@@ -54,6 +54,8 @@ class ShareResource(SyncAPIResource):
 
         Child runs share their trace root.
 
+        Self-hosted deployments require LangSmith `v0.16` or later.
+
         Args:
           session_id: session_id is the tracing project UUID containing the trace.
 
@@ -99,6 +101,8 @@ class ShareResource(SyncAPIResource):
         """
         Deletes the share token for the trace identified by trace_id and session_id.
         Idempotent: returns 204 whether or not a share token existed.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           session_id: session_id is the tracing project UUID containing the trace.
@@ -157,6 +161,8 @@ class AsyncShareResource(AsyncAPIResource):
 
         Child runs share their trace root.
 
+        Self-hosted deployments require LangSmith `v0.16` or later.
+
         Args:
           session_id: session_id is the tracing project UUID containing the trace.
 
@@ -202,6 +208,8 @@ class AsyncShareResource(AsyncAPIResource):
         """
         Deletes the share token for the trace identified by trace_id and session_id.
         Idempotent: returns 204 whether or not a share token existed.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           session_id: session_id is the tracing project UUID containing the trace.

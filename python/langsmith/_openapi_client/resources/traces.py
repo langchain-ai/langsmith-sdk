@@ -110,10 +110,12 @@ class TracesResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TraceListRunsResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns runs for a
-        trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-        select fields to return.
+        """Returns runs for a trace ID within min/max start time.
+
+        Optional `filter`;
+        repeatable `selects` to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the trace.
@@ -197,6 +199,8 @@ class TracesResource(SyncAPIResource):
 
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
@@ -346,10 +350,12 @@ class AsyncTracesResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TraceListRunsResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns runs for a
-        trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-        select fields to return.
+        """Returns runs for a trace ID within min/max start time.
+
+        Optional `filter`;
+        repeatable `selects` to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the trace.
@@ -433,6 +439,8 @@ class AsyncTracesResource(AsyncAPIResource):
 
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
