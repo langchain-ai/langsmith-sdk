@@ -70,9 +70,7 @@ def test_ls_agent_type_defaults_to_root_when_no_parent(monkeypatch):
     assert result["ls_agent_type"] == "root"
 
 
-@pytest.mark.parametrize(
-    "parent_tag", ["middleware", "subagent", "compaction"]
-)
+@pytest.mark.parametrize("parent_tag", ["middleware", "subagent", "compaction"])
 def test_ls_agent_type_inherits_narrowing_parent_tag(monkeypatch, parent_tag):
     from langsmith import run_helpers
 
@@ -106,9 +104,7 @@ def test_ls_agent_type_defaults_root_when_parent_tag_is_root(monkeypatch):
     assert result["ls_agent_type"] == "root"
 
 
-@pytest.mark.parametrize(
-    "user_tag", ["root", "subagent", "middleware", "compaction"]
-)
+@pytest.mark.parametrize("user_tag", ["root", "subagent", "middleware", "compaction"])
 def test_ls_agent_type_respects_user_supplied_per_call_tag(monkeypatch, user_tag):
     from langsmith import run_helpers
 
