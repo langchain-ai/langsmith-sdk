@@ -72,6 +72,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith._internal import _orjson, _profiles, _v2_migration_utils
+from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -754,10 +755,7 @@ def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     Call only when run-level feedback has no ``session_id``.
     """
     docs = "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create"
-    if (
-        _v2_migration_utils.get_query_backend(info.instance_flags)
-        == _v2_migration_utils.QueryBackend.SMITHDB_ONLY
-    ):
+    if get_query_backend(info.instance_flags) == QueryBackend.SMITHDB_ONLY:
         raise ValueError(
             "session_id must be provided when creating feedback for a run:"
             f" this deployment cannot locate the run without it. See {docs}"
